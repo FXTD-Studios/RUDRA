@@ -27,8 +27,8 @@ jobs:
         with: { python-version: "3.12" }
       - name: Tools
         run: |
-          brew install ninja ffmpeg@7
-          echo "$(brew --prefix ffmpeg@7)/bin" >> "$GITHUB_PATH"
+          brew install ninja ffmpeg@6
+          echo "$(brew --prefix ffmpeg@6)/bin" >> "$GITHUB_PATH"
       - name: The model package
         run: |
           python -m pip install --upgrade pip
