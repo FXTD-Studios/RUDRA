@@ -62,12 +62,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev ffmpeg
       - name: GoogleTest, JSON, OpenCV (macOS)
         if: runner.os == 'macOS'
-        # FFmpeg 7: Homebrew's plain ffmpeg (pulled in by OpenCV) has no
+        # FFmpeg 6.1: Homebrew's plain ffmpeg (pulled in by OpenCV) has no
         # zscale, and the movie tests run what a user's Mac would. Keg-only,
         # so it goes first on the PATH.
         run: |
-          brew install googletest nlohmann-json ninja opencv ffmpeg@7
-          echo "$(brew --prefix ffmpeg@7)/bin" >> "$GITHUB_PATH"
+          brew install googletest nlohmann-json ninja opencv ffmpeg@6
+          echo "$(brew --prefix ffmpeg@6)/bin" >> "$GITHUB_PATH"
       - name: vcpkg binary cache (Windows)
         if: runner.os == 'Windows'
         uses: actions/cache@v4

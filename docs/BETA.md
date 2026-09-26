@@ -32,7 +32,7 @@ weights: LICENSE-weights).
 - Packages identify themselves as 0.9.0-beta.2. The shipped model remains
   `sdr2hdr_shadow_v1`; this is an application beta, not newly trained weights.
 - Packaging runs the native app tests on both platforms. macOS movie checks
-  use FFmpeg 7; FFmpeg 9 is not qualified because metadata checks regressed.
+  use FFmpeg 6.1; FFmpeg 7 and 9 are not qualified because metadata checks regressed.
 - This native release is separate from the Python/browser Studio preview;
   it does not claim feature parity with that preview.
 
@@ -50,7 +50,7 @@ there is one; the CPU otherwise.
 
 **Movies, both systems.** RUDRA runs `ffmpeg` and `ffprobe` from the PATH and
 needs a build with `libx265`, `prores_ks` and `zscale`:
-macOS `brew install ffmpeg@7`, with `$(brew --prefix ffmpeg@7)/bin` on PATH; Windows the "full" build from gyan.dev with
+macOS `brew install ffmpeg@6`, with `$(brew --prefix ffmpeg@6)/bin` on PATH; Windows the "full" build from gyan.dev with
 its `bin` folder on the PATH. `rudra-native ffmpeg-check` says whether yours
 has everything. Stills need nothing extra.
 
