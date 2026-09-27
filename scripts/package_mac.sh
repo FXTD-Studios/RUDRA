@@ -13,7 +13,7 @@
 # It is signed ad hoc (no Developer ID yet): the first open is right-click >
 # Open, or `xattr -dr com.apple.quarantine RUDRA.app`. ffmpeg is not bundled
 # (movies need an ffmpeg with libx265, prores_ks and zscale on the PATH, e.g.
-# `brew install ffmpeg-full`); stills need nothing else.
+# `brew install ffmpeg@6` with its bin directory first on PATH); stills need nothing else.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ "$(uname -s)-$(uname -m)" = "Darwin-arm64" ] || { echo "package_mac.sh runs on Apple silicon" >&2; exit 2; }

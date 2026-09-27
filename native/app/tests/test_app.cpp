@@ -1615,7 +1615,8 @@ TEST(AppOpen, RecentShotsNewestFirstAndClearable) {
     w.open_source(QString::fromStdString(decode_dir().string()));   // again: moves to the top, not twice
     const QStringList r = w.recent_sources();
     ASSERT_EQ(r.size(), 2);
-    EXPECT_EQ(r[0].toStdString(), decode_dir().lexically_normal().string());
+    // Qt stores portable separators, including on Windows.
+    EXPECT_EQ(r[0].toStdString(), decode_dir().lexically_normal().generic_string());
     EXPECT_TRUE(r[1].endsWith("png8_rgb.png"));
     // The menu: File > Open recent, the shots then Clear recent.
     QMenu* file = w.menuBar()->actions()[0]->menu();
