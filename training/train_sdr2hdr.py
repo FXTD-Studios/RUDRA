@@ -36,7 +36,7 @@ from rudra.sdr2hdr import (  # noqa: E402
     temporal_spatial_loss,
 )
 from training.sdr2hdr_dataset import (  # noqa: E402
-    SDRHDRDataset, SDRHDRVideoDataset, corpus_ev_of)
+    SDRHDRDataset, SDRHDRVideoDataset, corpus_ev_of, read_jsonl)
 
 
 def seed_everything(seed: int) -> None:
@@ -90,6 +90,17 @@ def _tone_map(x: torch.Tensor) -> torch.Tensor:
 
 
 @torch.no_grad()
+def _source_of(model: torch.nn.Module, batch: dict, device: torch.device) -> torch.Tensor | None:
+    """The batch's source-curve ids, for a model that takes them; else None.
+
+    A model without the input gets None (= unknown), so manifests that now
+    carry labels change nothing for runs that do not ask for them.
+    """
+    if not getattr(model, "source_curve", False) or "source_curve" not in batch:
+        return None
+    return batch["source_curve"].to(device, non_blocking=True)
+
+
 def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
                    max_batches: int = 8, shadow_chroma_weight: float = 0.15,
                    shadow_smoothness_weight: float = 0.02) -> dict[str, float]:
@@ -114,7 +125,7 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
     for batch in loader:
         sdr, target = batch["sdr"].to(device), batch["hdr"].to(device)
         ceiling = batch["ceiling"].to(device) if "ceiling" in batch else None
-        output = model(sdr)
+        output = model(sdr, source_curve=_source_of(model, batch, device))
         losses = sdr2hdr_loss(
             output, sdr, target, shadow_chroma_weight, shadow_smoothness_weight,
             target_ceiling=ceiling,
@@ -268,6 +279,8 @@ def build_loaders(args: argparse.Namespace):
         train = SDRHDRDataset(args.manifest, split="train", augment=True,
                               augmentation_strength=args.augmentation_strength,
                               degradation_probability=args.degradation_probability,
+                              source_curve_dropout=(args.source_curve_dropout
+                                                    if args.source_curve else 0.0),
                               **common)
         val = SDRHDRDataset(args.manifest, split="val", augment=False,
                             augmentation_strength=0.0, max_items=args.max_val_items,
@@ -323,6 +336,31 @@ def build_loaders(args: argparse.Namespace):
     )
 
 
+def check_source_curve_args(args: argparse.Namespace) -> None:
+    """Refuse a --source-curve run that cannot learn anything from the flag."""
+    from rudra.sdr2hdr import SOURCE_CURVES
+
+    if args.mode != "image":
+        raise SystemExit("error: --source-curve is for --mode image")
+    if not args.curve_head:
+        raise SystemExit("error: --source-curve conditions the CurveHead; add --curve-head")
+    if not 0.0 <= args.source_curve_dropout <= 1.0:
+        raise SystemExit("error: --source-curve-dropout must be between 0 and 1")
+    rows = [r for r in read_jsonl(args.manifest) if r.get("split") == "train"]
+    counts = Counter(str(r.get("source_curve", "<none>")) for r in rows)
+    bad = sorted(c for c in counts if c not in SOURCE_CURVES)
+    if bad:
+        raise SystemExit(f"error: {args.manifest} has source_curve labels outside "
+                         f"{SOURCE_CURVES}: {bad}")
+    known = sum(n for c, n in counts.items() if c not in ("unknown", "<none>"))
+    if not known:
+        raise SystemExit(f"error: no train row in {args.manifest} carries a known source_curve; "
+                         f"build it with pipeline/build_source_curve_manifest.py")
+    print("[source-curve] train rows by curve: "
+          + ", ".join(f"{c} {n:,}" for c, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+          + f"; dropout {args.source_curve_dropout:g}, degraded samples train as unknown")
+
+
 def train(args: argparse.Namespace) -> Path:
     seed_everything(args.seed)
     device = torch.device(args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -335,11 +373,14 @@ def train(args: argparse.Namespace) -> Path:
     # assumed: until 16 Sep 2026 this constructor took the class default, the
     # legacy -1 EV, whatever the corpus said.
     corpus_ev = corpus_ev_of(args.manifest)
+    if args.source_curve:
+        check_source_curve_args(args)
     if args.mode == "image":
         model: torch.nn.Module = SDR2HDRNet(
             base_channels=args.base_channels,
             gate_conditioning=args.gate_conditioning,
             curve_head=args.curve_head,
+            source_curve=args.source_curve,
             corpus_ev=corpus_ev).to(device)
     else:
         if not args.image_checkpoint:
@@ -496,7 +537,7 @@ def train(args: argparse.Namespace) -> Path:
         amp = torch.autocast(device_type="cuda", dtype=torch.bfloat16) if device.type == "cuda" else contextlib.nullcontext()
         with amp:
             if args.mode == "image":
-                output = model(sdr)
+                output = model(sdr, source_curve=_source_of(model, batch, device))
                 losses = sdr2hdr_loss(
                     output, sdr, target, args.shadow_chroma_weight,
                     args.shadow_smoothness_weight,
@@ -615,6 +656,14 @@ def parse_args() -> argparse.Namespace:
                              "residual. Needed for SDR that did not come through the "
                              "corpus's own ACES render (bench/oog, 23 Sep 2026). Train on a "
                              "--sdr-render mix corpus, or the head has nothing to learn.")
+    parser.add_argument("--source-curve", action="store_true",
+                        help="Feed each row's source curve (manifest 'source_curve', written by "
+                             "pipeline/build_source_curve_manifest.py) to the CurveHead. Needs "
+                             "--curve-head. Degraded samples and real SDR train as 'unknown'.")
+    parser.add_argument("--source-curve-dropout", type=float, default=0.3,
+                        help="With --source-curve: fraction of clean labelled training samples "
+                             "relabelled 'unknown', so the blind path keeps learning "
+                             "(default %(default)s)")
     parser.add_argument("--baseline-weight", type=float, default=0.25,
                         help="With --curve-head: weight of the direct loss on the corrected "
                              "baseline (default %(default)s)")

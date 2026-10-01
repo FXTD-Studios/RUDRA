@@ -504,10 +504,14 @@ phase 1.
 - [ ] 1.4 Retrain on v4c plus the real SDR pairs (`training/train_sdr2hdr.py
   --curve-head`, new `--source-curve`), with the label dropped to `unknown` on
   30% of rendered pairs so the blind path stays trained
-- [ ] 1.5 Write the gate rule into `training/cp7_verdicts.py` before the run:
+- [x] 1.5 Write the gate rule into `training/cp7_verdicts.py` before the run:
   rows 1 and 2, scored once with the true curve and once as `unknown`
+  (gates `N8/*`, fixed 1 Oct 2026; `export_bench_pairs.py --source-curve`)
 - **Gate:** rows 1 and 2 pass with the curve given, and `unknown` is not worse
-  than `sdr2hdr_shadow_v1.pt`
+  than the inverse on clean ACES nor than v4c (the blind model at the same
+  0 EV) out of generator. Not `shadow_v1`: it is a -1 EV model, and a gate
+  against it would measure that stop. Run: `scripts\run_v7_2026_10_01.ps1`
+  (`-Stage smoke`, then `train`, then `bench`), v7 from scratch
 
 ### Phase 2: external baseline comparison (internal)
 

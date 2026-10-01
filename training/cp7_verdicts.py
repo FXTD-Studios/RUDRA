@@ -43,6 +43,26 @@ NAMED_GATES = (
      "oog", "v4c_studio", "v4c", False, {"pu_psnr_db": 0.3, "cvvdp_jod": 0.03}),
     ("N7/mix", "studio weights within 0.3 dB / 0.03 JOD of v4c, mixed curves",
      "mix", "v4c_studio", "v4c", False, {"pu_psnr_db": 0.3, "cvvdp_jod": 0.03}),
+    # Roadmap 1.4 / 1.5 (rule fixed 1 Oct 2026, before v7 was trained). v7 =
+    # source-curve model on rudra_mix_v4c_netflix_20261001. Two exports per
+    # bench: "v7" with the true curve given (aces bench: aces; oog: hable;
+    # mix: each row's own), "v7_unknown" with no curve (the blind path it
+    # ships with). Release rows 1 (clean, non-regression) and 2 (unknown
+    # curve + codec, both CIs above zero) for each. The blind check is against
+    # v4c, the blind predecessor at the same 0 EV: shadow_v1 is a -1 EV model
+    # and a gate against it would measure that stop (see the module doc).
+    # cp_real/ (Netflix Meridian, real SDR, scored as unknown) gets the
+    # automatic "vs baseline" report row, no gate.
+    ("N8/given/aces", "v7, curve given, not worse than the inverse on clean ACES (0.1 dB / 0.02 JOD)",
+     "aces", "v7", "baseline", False, {"pu_psnr_db": 0.1, "cvvdp_jod": 0.02}),
+    ("N8/given/oog", "v7, curve given (hable), beats the inverse out of generator",
+     "oog", "v7", "baseline", True, None),
+    ("N8/given/mix", "v7, each frame's own curve, beats the inverse on mixed curves",
+     "mix", "v7", "baseline", True, None),
+    ("N8/unknown/aces", "v7 blind, not worse than the inverse on clean ACES (0.1 dB / 0.02 JOD)",
+     "aces", "v7_unknown", "baseline", False, {"pu_psnr_db": 0.1, "cvvdp_jod": 0.02}),
+    ("N8/unknown/oog", "v7 blind, not worse than v4c blind out of generator (0.1 dB / 0.02 JOD)",
+     "oog", "v7_unknown", "v4c", False, {"pu_psnr_db": 0.1, "cvvdp_jod": 0.02}),
 )
 
 
@@ -103,7 +123,7 @@ def main() -> int:
     args.out.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print("named gates")
     for name, g in summary["gates"].items():
-        print(f"  {g['status']:<8} {name:<10} {g['question']}")
+        print(f"  {g['status']:<8} {name:<16} {g['question']}")
         if g["status"] != "not run":
             print(f"           {fmt(g)}")
     print("\nvs baseline (both CIs above zero = PASS; vs shadow_v1 rows are in the JSON, report only)")
