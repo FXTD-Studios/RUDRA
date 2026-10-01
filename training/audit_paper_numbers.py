@@ -13,7 +13,7 @@ paper says.
 Exit status is 1 if any claim disagrees, so it can gate a submission.
 
 It audits the numbers that are DERIVED from the per-pair benchmark results.
-The §6 headroom analysis (the 60 worst/best split and the gain-vs-peak
+The §6.1 headroom analysis (the 60 worst/best split and the gain-vs-peak
 correlation) needs ground-truth peak luminance per frame, which is not in
 these files; that analysis has no script in the repo and is listed as a gap
 at the end of this run rather than silently passed.
@@ -32,92 +32,92 @@ import numpy as np
 # point of the file is to send someone to the line that needs editing.
 CLAIMS = [
     # (label, section, kind, args..., expected, tolerance)
-    ("v5 clean gain dB",        "abstract, 5",  "gain_db",  "clean", "v5",           -3.00, 0.01),
-    ("v5 clean gain JOD",       "abstract, 5",  "gain_jod", "clean", "v5",          -0.046, 0.001),
-    ("v5 hard gain dB",         "abstract, 5",  "gain_db",  "hard",  "v5",          +1.43, 0.01),
-    ("v5 hard gain JOD",        "abstract, 5",  "gain_jod", "hard",  "v5",          +0.443, 0.001),
-    ("v5 hard frames won",      "abstract, 5",  "won",      "hard",  "v5",           348, 0),
-    ("v5 clean frames won",     "5",            "won",      "clean", "v5",           115, 0),
-    ("v5 hard median dB",       "5",            "median_db", "hard", "v5",          +0.609, 0.001),
-    ("v5 clean median dB",      "5",            "median_db", "clean", "v5",         -2.131, 0.001),
-    ("v5 hard median JOD",      "5",            "median_jod", "hard", "v5",         +0.134, 0.001),
-    ("v5 clean median JOD",     "5",            "median_jod", "clean", "v5",        -0.040, 0.001),
+    ("v5 clean gain dB",        "abstract, 5.1",  "gain_db",  "clean", "v5",           -3.00, 0.01),
+    ("v5 clean gain JOD",       "abstract, 5.1",  "gain_jod", "clean", "v5",          -0.046, 0.001),
+    ("v5 hard gain dB",         "abstract, 5.1",  "gain_db",  "hard",  "v5",          +1.43, 0.01),
+    ("v5 hard gain JOD",        "abstract, 5.1",  "gain_jod", "hard",  "v5",          +0.443, 0.001),
+    ("v5 hard frames won",      "abstract, 5.1",  "won",      "hard",  "v5",           348, 0),
+    ("v5 clean frames won",     "5.1",            "won",      "clean", "v5",           115, 0),
+    ("v5 hard median dB",       "5.1",            "median_db", "hard", "v5",          +0.609, 0.001),
+    ("v5 clean median dB",      "5.1",            "median_db", "clean", "v5",         -2.131, 0.001),
+    ("v5 hard median JOD",      "5.1",            "median_jod", "hard", "v5",         +0.134, 0.001),
+    ("v5 clean median JOD",     "5.1",            "median_jod", "clean", "v5",        -0.040, 0.001),
 
-    ("noshadow clean gain dB",  "6.1",          "gain_db",  "clean", "v5_noshadow", +0.51, 0.01),
-    ("noshadow clean gain JOD", "6.1",          "gain_jod", "clean", "v5_noshadow", -0.017, 0.001),
-    ("noshadow hard gain dB",   "6.1",          "gain_db",  "hard",  "v5_noshadow", +0.33, 0.01),
-    ("noshadow hard gain JOD",  "6.1",          "gain_jod", "hard",  "v5_noshadow", +0.134, 0.001),
+    ("noshadow clean gain dB",  "6.3",          "gain_db",  "clean", "v5_noshadow", +0.51, 0.01),
+    ("noshadow clean gain JOD", "6.3",          "gain_jod", "clean", "v5_noshadow", -0.017, 0.001),
+    ("noshadow hard gain dB",   "6.3",          "gain_db",  "hard",  "v5_noshadow", +0.33, 0.01),
+    ("noshadow hard gain JOD",  "6.3",          "gain_jod", "hard",  "v5_noshadow", +0.134, 0.001),
 
-    ("v6 clean gain dB",        "5.2",          "gain_db",  "clean", "v6",          -2.75, 0.01),
-    ("v6 clean gain JOD",       "5.2",          "gain_jod", "clean", "v6",          +0.004, 0.001),
-    ("v6 hard gain dB",         "5.2",          "gain_db",  "hard",  "v6",          +0.96, 0.01),
-    ("v6 hard gain JOD",        "5.2",          "gain_jod", "hard",  "v6",          +0.344, 0.001),
+    ("v6 clean gain dB",        "5.1, 5.6",          "gain_db",  "clean", "v6",          -2.75, 0.01),
+    ("v6 clean gain JOD",       "5.1, 5.6",          "gain_jod", "clean", "v6",          +0.004, 0.001),
+    ("v6 hard gain dB",         "5.1, 5.6",          "gain_db",  "hard",  "v6",          +0.96, 0.01),
+    ("v6 hard gain JOD",        "5.1, 5.6",          "gain_jod", "hard",  "v6",          +0.344, 0.001),
 
-    ("gate clean gain dB",      "6.2",          "gain_db",  "clean", "shadow_v1",   +0.07, 0.01),
-    ("gate clean gain JOD",     "6.2",          "gain_jod", "clean", "shadow_v1",   +0.113, 0.001),
-    ("gate hard gain dB",       "6.2",          "gain_db",  "hard",  "shadow_v1",   +1.24, 0.01),
-    ("gate hard gain JOD",      "6.2",          "gain_jod", "hard",  "shadow_v1",   +0.389, 0.001),
+    ("gate clean gain dB",      "8.2, 8.3",          "gain_db",  "clean", "shadow_v1",   +0.07, 0.01),
+    ("gate clean gain JOD",     "8.2, 8.3",          "gain_jod", "clean", "shadow_v1",   +0.113, 0.001),
+    ("gate hard gain dB",       "8.2, 8.3",          "gain_db",  "hard",  "shadow_v1",   +1.24, 0.01),
+    ("gate hard gain JOD",      "8.2, 8.3",          "gain_jod", "hard",  "shadow_v1",   +0.389, 0.001),
 
     # The abstract's headline: the gate against the SHIPPED model, not the baseline.
-    ("gate vs v5, clean dB",    "abstract, 11", "delta_db",  "clean", "shadow_v1", "v5", +3.06, 0.01),
-    ("gate vs v5, clean JOD",   "abstract, 11", "delta_jod", "clean", "shadow_v1", "v5", +0.159, 0.001),
-    ("gate vs v5, hard dB",     "abstract, 11", "delta_db",  "hard",  "shadow_v1", "v5", -0.19, 0.01),
-    ("gate vs v5, hard JOD",    "abstract, 11", "delta_jod", "hard",  "shadow_v1", "v5", -0.054, 0.001),
+    ("gate vs v5, clean dB",    "abstract, 8.3, 13", "delta_db",  "clean", "shadow_v1", "v5", +3.06, 0.01),
+    ("gate vs v5, clean JOD",   "abstract, 8.3, 13", "delta_jod", "clean", "shadow_v1", "v5", +0.159, 0.001),
+    ("gate vs v5, hard dB",     "abstract, 8.3, 13", "delta_db",  "hard",  "shadow_v1", "v5", -0.19, 0.01),
+    ("gate vs v5, hard JOD",    "abstract, 8.3, 13", "delta_jod", "hard",  "shadow_v1", "v5", -0.054, 0.001),
 
-    # The seed sweep (§6.2). Each row is the claim in that table; the mean and
+    # The seed sweep (§8.3). Each row is the claim in that table; the mean and
     # sd the abstract quotes are checked separately below.
-    ("seed2 clean gain dB",     "6.2",          "gain_db",  "clean", "shadow_s2",  +0.71, 0.01),
-    ("seed2 clean gain JOD",    "6.2",          "gain_jod", "clean", "shadow_s2",  +0.068, 0.001),
-    ("seed2 hard gain dB",      "6.2",          "gain_db",  "hard",  "shadow_s2",  +0.96, 0.01),
-    ("seed2 hard gain JOD",     "6.2",          "gain_jod", "hard",  "shadow_s2",  +0.308, 0.001),
-    ("seed2 clean frames won",  "6.2",          "won",      "clean", "shadow_s2",   315, 0),
-    ("seed3 clean gain dB",     "6.2",          "gain_db",  "clean", "shadow_s3",  +0.45, 0.01),
-    ("seed3 clean gain JOD",    "6.2",          "gain_jod", "clean", "shadow_s3",  +0.089, 0.001),
-    ("seed3 hard gain dB",      "6.2",          "gain_db",  "hard",  "shadow_s3",  +1.18, 0.01),
-    ("seed3 hard gain JOD",     "6.2",          "gain_jod", "hard",  "shadow_s3",  +0.358, 0.001),
-    ("seed3 clean frames won",  "6.2",          "won",      "clean", "shadow_s3",   280, 0),
-    ("seed1 clean frames won",  "6.2",          "won",      "clean", "shadow_v1",   251, 0),
+    ("seed2 clean gain dB",     "8.2, 8.3",          "gain_db",  "clean", "shadow_s2",  +0.71, 0.01),
+    ("seed2 clean gain JOD",    "8.2, 8.3",          "gain_jod", "clean", "shadow_s2",  +0.068, 0.001),
+    ("seed2 hard gain dB",      "8.2, 8.3",          "gain_db",  "hard",  "shadow_s2",  +0.96, 0.01),
+    ("seed2 hard gain JOD",     "8.2, 8.3",          "gain_jod", "hard",  "shadow_s2",  +0.308, 0.001),
+    ("seed2 clean frames won",  "8.2, 8.3",          "won",      "clean", "shadow_s2",   315, 0),
+    ("seed3 clean gain dB",     "8.2, 8.3",          "gain_db",  "clean", "shadow_s3",  +0.45, 0.01),
+    ("seed3 clean gain JOD",    "8.2, 8.3",          "gain_jod", "clean", "shadow_s3",  +0.089, 0.001),
+    ("seed3 hard gain dB",      "8.2, 8.3",          "gain_db",  "hard",  "shadow_s3",  +1.18, 0.01),
+    ("seed3 hard gain JOD",     "8.2, 8.3",          "gain_jod", "hard",  "shadow_s3",  +0.358, 0.001),
+    ("seed3 clean frames won",  "8.2, 8.3",          "won",      "clean", "shadow_s3",   280, 0),
+    ("seed1 clean frames won",  "8.2, 8.3",          "won",      "clean", "shadow_v1",   251, 0),
 
-    # §5.1: ExpandNet on the same split. The absolute rows are checked as
+    # §5.4: ExpandNet on the same split. The absolute rows are checked as
     # deltas against the baseline so one rule covers every method.
-    ("expandnet vs base dB",    "5.1",          "gain_db",  "clean", "expandnet",  -18.49, 0.01),
-    ("expandnet vs base JOD",   "5.1",          "gain_jod", "clean", "expandnet",  -1.916, 0.001),
-    ("expandnet frames won",    "5.1",          "won",      "clean", "expandnet",     1, 0),
-    ("aligned vs base dB",      "5.1",          "gain_db",  "clean", "rudra_aligned", +0.62, 0.01),
-    ("aligned vs base JOD",     "5.1",          "gain_jod", "clean", "rudra_aligned", +0.110, 0.001),
-    ("expandnet vs RUDRA dB",   "5.1",          "delta_db",  "clean", "expandnet", "shadow_v1", -18.56, 0.01),
-    ("expandnet vs RUDRA JOD",  "5.1",          "delta_jod", "clean", "expandnet", "shadow_v1", -2.029, 0.001),
-    ("fit worth to RUDRA dB",   "5.1",          "delta_db",  "clean", "rudra_aligned", "shadow_v1", +0.55, 0.01),
-    ("fit worth to RUDRA JOD",  "5.1",          "delta_jod", "clean", "rudra_aligned", "shadow_v1", -0.0025, 0.0005),
+    ("expandnet vs base dB",    "5.4",          "gain_db",  "clean", "expandnet",  -18.49, 0.01),
+    ("expandnet vs base JOD",   "5.4",          "gain_jod", "clean", "expandnet",  -1.916, 0.001),
+    ("expandnet frames won",    "5.4",          "won",      "clean", "expandnet",     1, 0),
+    ("aligned vs base dB",      "5.4",          "gain_db",  "clean", "rudra_aligned", +0.62, 0.01),
+    ("aligned vs base JOD",     "5.4",          "gain_jod", "clean", "rudra_aligned", +0.110, 0.001),
+    ("expandnet vs RUDRA dB",   "5.4",          "delta_db",  "clean", "expandnet", "shadow_v1", -18.56, 0.01),
+    ("expandnet vs RUDRA JOD",  "5.4",          "delta_jod", "clean", "expandnet", "shadow_v1", -2.029, 0.001),
+    ("fit worth to RUDRA dB",   "5.4",          "delta_db",  "clean", "rudra_aligned", "shadow_v1", +0.55, 0.01),
+    ("fit worth to RUDRA JOD",  "5.4",          "delta_jod", "clean", "rudra_aligned", "shadow_v1", -0.0025, 0.0005),
 
-    # §8: step 72,000 is better on the criterion the selector optimises and
+    # §12.1: step 72,000 is better on the criterion the selector optimises and
     # worse on CVVDP. Both halves are claims, so both are checked.
-    ("72k vs v5, clean dB",     "8",            "delta_db",  "clean", "v5s72k", "v5", +0.55, 0.01),
-    ("72k vs v5, clean JOD",    "8",            "delta_jod", "clean", "v5s72k", "v5", -0.052, 0.001),
-    ("72k vs v5, hard JOD",     "8",            "delta_jod", "hard",  "v5s72k", "v5", -0.071, 0.001),
-    ("72k composite dB",        "8",            "composite", "-",     "v5s72k",      -1.36, 0.01),
-    ("v5 composite dB",         "8",            "composite", "-",     "v5",          -1.57, 0.01),
+    ("72k vs v5, clean dB",     "12.1",            "delta_db",  "clean", "v5s72k", "v5", +0.55, 0.01),
+    ("72k vs v5, clean JOD",    "12.1",            "delta_jod", "clean", "v5s72k", "v5", -0.052, 0.001),
+    ("72k vs v5, hard JOD",     "12.1",            "delta_jod", "hard",  "v5s72k", "v5", -0.071, 0.001),
+    ("72k composite dB",        "12.1",            "composite", "-",     "v5s72k",      -1.36, 0.01),
+    ("v5 composite dB",         "12.1",            "composite", "-",     "v5",          -1.57, 0.01),
 ]
 
 # Aggregates the abstract quotes as mean +/- sd over the seed sweep.
 SEEDS = ("shadow_v1", "shadow_s2", "shadow_s3")
 AGGREGATES = [
-    ("gate clean dB, mean",   "abstract, 6.2, 11", "clean", "pu_psnr_db", "baseline", "mean", +0.41, 0.01),
-    ("gate clean dB, sd",     "abstract, 6.2, 11", "clean", "pu_psnr_db", "baseline", "sd",    0.33, 0.01),
-    ("gate clean JOD, mean",  "abstract, 6.2, 11", "clean", "cvvdp_jod",  "baseline", "mean", +0.090, 0.001),
-    ("gate clean JOD, sd",    "abstract, 6.2, 11", "clean", "cvvdp_jod",  "baseline", "sd",    0.023, 0.001),
-    ("gate hard dB, mean",    "6.2",               "hard",  "pu_psnr_db", "baseline", "mean", +1.12, 0.01),
-    ("gate hard dB, sd",      "6.2",               "hard",  "pu_psnr_db", "baseline", "sd",    0.15, 0.01),
-    ("gate hard JOD, mean",   "6.2",               "hard",  "cvvdp_jod",  "baseline", "mean", +0.352, 0.001),
-    ("gate hard JOD, sd",     "6.2",               "hard",  "cvvdp_jod",  "baseline", "sd",    0.041, 0.001),
-    ("gate vs v5 clean dB, mean",  "abstract, 11", "clean", "pu_psnr_db", "v5", "mean", +3.41, 0.01),
-    ("gate vs v5 clean dB, sd",    "abstract, 11", "clean", "pu_psnr_db", "v5", "sd",    0.32, 0.01),
-    ("gate vs v5 clean JOD, mean", "abstract, 11", "clean", "cvvdp_jod",  "v5", "mean", +0.135, 0.001),
-    ("gate vs v5 clean JOD, sd",   "abstract, 11", "clean", "cvvdp_jod",  "v5", "sd",    0.023, 0.001),
-    ("gate vs v5 hard dB, mean",   "abstract, 11", "hard",  "pu_psnr_db", "v5", "mean", -0.30, 0.01),
-    ("gate vs v5 hard dB, sd",     "abstract, 11", "hard",  "pu_psnr_db", "v5", "sd",    0.15, 0.01),
-    ("gate vs v5 hard JOD, mean",  "abstract, 11", "hard",  "cvvdp_jod",  "v5", "mean", -0.091, 0.001),
-    ("gate vs v5 hard JOD, sd",    "abstract, 11", "hard",  "cvvdp_jod",  "v5", "sd",    0.041, 0.001),
+    ("gate clean dB, mean",   "abstract, 8.3, 13", "clean", "pu_psnr_db", "baseline", "mean", +0.41, 0.01),
+    ("gate clean dB, sd",     "abstract, 8.3, 13", "clean", "pu_psnr_db", "baseline", "sd",    0.33, 0.01),
+    ("gate clean JOD, mean",  "abstract, 8.3, 13", "clean", "cvvdp_jod",  "baseline", "mean", +0.090, 0.001),
+    ("gate clean JOD, sd",    "abstract, 8.3, 13", "clean", "cvvdp_jod",  "baseline", "sd",    0.023, 0.001),
+    ("gate hard dB, mean",    "8.2, 8.3",               "hard",  "pu_psnr_db", "baseline", "mean", +1.12, 0.01),
+    ("gate hard dB, sd",      "8.2, 8.3",               "hard",  "pu_psnr_db", "baseline", "sd",    0.15, 0.01),
+    ("gate hard JOD, mean",   "8.2, 8.3",               "hard",  "cvvdp_jod",  "baseline", "mean", +0.352, 0.001),
+    ("gate hard JOD, sd",     "8.2, 8.3",               "hard",  "cvvdp_jod",  "baseline", "sd",    0.041, 0.001),
+    ("gate vs v5 clean dB, mean",  "abstract, 8.3, 13", "clean", "pu_psnr_db", "v5", "mean", +3.41, 0.01),
+    ("gate vs v5 clean dB, sd",    "abstract, 8.3, 13", "clean", "pu_psnr_db", "v5", "sd",    0.32, 0.01),
+    ("gate vs v5 clean JOD, mean", "abstract, 8.3, 13", "clean", "cvvdp_jod",  "v5", "mean", +0.135, 0.001),
+    ("gate vs v5 clean JOD, sd",   "abstract, 8.3, 13", "clean", "cvvdp_jod",  "v5", "sd",    0.023, 0.001),
+    ("gate vs v5 hard dB, mean",   "abstract, 8.3, 13", "hard",  "pu_psnr_db", "v5", "mean", -0.30, 0.01),
+    ("gate vs v5 hard dB, sd",     "abstract, 8.3, 13", "hard",  "pu_psnr_db", "v5", "sd",    0.15, 0.01),
+    ("gate vs v5 hard JOD, mean",  "abstract, 8.3, 13", "hard",  "cvvdp_jod",  "v5", "mean", -0.091, 0.001),
+    ("gate vs v5 hard JOD, sd",    "abstract, 8.3, 13", "hard",  "cvvdp_jod",  "v5", "sd",    0.041, 0.001),
 ]
 
 
@@ -233,13 +233,13 @@ def main() -> int:
         print(f"   FIX §{section}: {label} -- paper says {expected}, measured {got}")
 
     print("\n   AUDITED ELSEWHERE:")
-    print("     §6  headroom split and the log2(peak_nits) correlation --")
+    print("     §6.1 headroom split and the log2(peak_nits) correlation --")
     print("         training/analyze_headroom.py --check")
     print("\n   NOT AUDITED (no script in the repo reproduces these):")
-    print("     §6  trimmed-PSNR table (discard worst 0.1 / 1 / 10%)")
+    print("     §6.2 trimmed-PSNR table (discard worst 0.1 / 1 / 10%)")
     print("     §7  oracle sweep, ceiling regression, three-lever ablation")
     print("   Both need per-PIXEL statistics over the reference frames, which "
-          "the\n   benchmark files do not carry. §10 says so.\n")
+          "the\n   benchmark files do not carry. Appendix C says so.\n")
     return 1 if failures else 0
 
 

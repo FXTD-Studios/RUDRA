@@ -297,10 +297,11 @@ def cmd_infer(args) -> None:
 
     device = torch.device(args.device)
     out = Path(args.out)
-    frames = stems(Path(args.sdr_dir))[: args.limit or None]
+    frames = stems(Path(args.sdr_dir))[:: args.every][: args.limit or None]
     if not frames:
         raise FileNotFoundError(f"no SDR frames in {args.sdr_dir}")
     runs = [("rudra", Path(args.checkpoint)), ("rudra_base", Path(args.base_checkpoint))]
+    runs = [r for r in runs if r[0] in args.models]
     for name, ckpt in runs:
         model, _ = load_image_checkpoint(ckpt, device)
         model.eval()
@@ -368,11 +369,11 @@ def cmd_hdrtvdm(args) -> None:
     if not (method / "test.py").exists() or not (method / "params.pth").exists():
         raise FileNotFoundError(f"{method}: need test.py and params.pth (git clone the HDRTVDM repo)")
     sdr = sorted(p.resolve() for p in Path(args.sdr_dir).iterdir() if p.suffix.lower() == ".png")
-    sdr = sdr[: args.limit or None]
+    sdr = sdr[:: args.every][: args.limit or None]
     raw = Path(args.out).resolve() / "_raw" / "hdrtvdm"
     raw.mkdir(parents=True, exist_ok=True)
     for i in range(0, len(sdr), 8):
-        cmd = [sys.executable, "test.py", *map(str, sdr[i:i + 8]), "-out", str(raw), "-out_format", "png"]
+        cmd = [sys.executable, "test.py", *map(str, sdr[i:i + 8]), "-out", str(raw), "-out_format", "tif"]
         print(" ".join(cmd[:2]), f"... frames {i + 1}-{min(i + 8, len(sdr))}", flush=True)
         subprocess.run(cmd, cwd=method, check=True)
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
@@ -396,7 +397,7 @@ def cmd_score(args) -> None:
     gt_dir = Path(args.gt_dir)
     methods_dir = out / "methods"
     methods = args.methods or sorted(p.name for p in methods_dir.iterdir() if p.is_dir())
-    frames = [s for s in stems(gt_dir)][: args.limit or None]
+    frames = [s for s in stems(gt_dir)][:: args.every][: args.limit or None]
     device = "cuda" if (args.device == "cuda" and torch.cuda.is_available()) else "cpu"
     cvvdp = CVVDP(args.cvvdp_peaks, device, args.cvvdp_scale) if args.cvvdp else None
     results_dir = out / "results"
@@ -422,7 +423,7 @@ def cmd_score(args) -> None:
         (results_dir / f"{m}.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
         per[m] = {s: done[s] for s in frames}
     summary = summarize(per, frames, load_clusters(args.clusters), args.references)
-    summary.update(gt_dir=str(gt_dir), frames=len(frames), pq_white_code=PQ_WHITE_CODE,
+    summary.update(gt_dir=str(gt_dir), frames=len(frames), every=args.every, pq_white_code=PQ_WHITE_CODE,
                    script_sha256=sha256(Path(__file__)), device=device,
                    cvvdp=None if not args.cvvdp else dict(peaks=args.cvvdp_peaks, scale=args.cvvdp_scale,
                                                           display="standard_hdr_pq geometry"))
@@ -490,6 +491,8 @@ def main(argv=None):
     a.add_argument("--overlap", type=int, default=64)
     a.add_argument("--device", default="cuda")
     a.add_argument("--limit", type=int, default=0)
+    a.add_argument("--every", type=int, default=1, help="every Nth frame (1 = the full published split)")
+    a.add_argument("--models", nargs="+", default=["rudra", "rudra_base"], choices=["rudra", "rudra_base"])
     a.add_argument("--overwrite", action="store_true")
     a.set_defaults(func=cmd_infer)
 
@@ -498,6 +501,7 @@ def main(argv=None):
     h.add_argument("--sdr-dir", required=True)
     h.add_argument("--out", required=True)
     h.add_argument("--limit", type=int, default=0)
+    h.add_argument("--every", type=int, default=1)
     h.set_defaults(func=cmd_hdrtvdm)
 
     i = sub.add_parser("import", help="bring in another method's 16-bit outputs")
@@ -519,6 +523,7 @@ def main(argv=None):
     s.add_argument("--cvvdp-scale", type=float, default=0.5, help="downscale before CVVDP (4K is slow)")
     s.add_argument("--device", default="cuda")
     s.add_argument("--limit", type=int, default=0)
+    s.add_argument("--every", type=int, default=1)
     s.add_argument("--overwrite", action="store_true")
     s.set_defaults(func=cmd_score)
 

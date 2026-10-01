@@ -146,7 +146,7 @@ def cmd_rescore(args):
     import torch
     from rudra.delivery.bench import load_frame
     device = "cuda" if args.device == "cuda" and torch.cuda.is_available() else "cpu"
-    metrics = make_metrics(device)
+    metrics = make_metrics(device, {k: VARIANTS[k] for k in args.variants})
     bench = Path(args.bench)
     out_dir = bench / "results" / "display_check"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -228,6 +228,7 @@ def main(argv=None):
     r.add_argument("--nits-scale", type=float, default=203.0)
     r.add_argument("--device", default="cuda")
     r.add_argument("--limit", type=int, default=0)
+    r.add_argument("--variants", nargs="+", default=list(VARIANTS), choices=list(VARIANTS))
     r.set_defaults(func=cmd_rescore)
     args = p.parse_args(argv)
     args.func(args)
