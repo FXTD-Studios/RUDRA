@@ -505,8 +505,9 @@ phase 1.
 
 ### Phase 2: external baseline comparison (internal)
 
-- [ ] 2.1 Freeze the set: 60 held-out frames and 10 clips from the v4b test
-  split, plus 40 frames from a Netflix test title
+- [x] 2.1 Freeze the set: 60 held-out frames and 8 clips from the v4b test
+  split, plus 40 frames from the Netflix test title (Meridian), in
+  `configs/compare_set_v1.json` by `training/freeze_compare_set.py`
 - [ ] 2.2 Run each external SDR-to-HDR tool on the set and save ACES 2065-1 or
   linear Rec.2020 EXR, with each tool's colour interpretation checked by hand
 - [ ] 2.3 Score with `training/benchmark_hdr.py` (PU21, CVVDP, clipped-pixel

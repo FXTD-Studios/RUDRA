@@ -7,9 +7,9 @@ run may touch:
            60 scenes ranked first by sha256("rudra-compare-v1|" + scene_id);
            within a scene the record with the lowest sha256 of its asset_id.
            Video scenes are excluded here (they are covered as clips).
-  clips    every TEST clip of the corpus_v4b video manifest (7 on 24 Sep 2026,
+  clips    every TEST clip of the corpus_v4b video manifest (8 on 1 Oct 2026,
            all from carousel_fireworks and fireplace; the plan said 10, there
-           are 7).
+           are 8).
   netflix  40 frames from the Netflix real-SDR corpus TEST title (Meridian),
            spread round-robin across its shots, ranked by the same hash.
 
