@@ -393,26 +393,6 @@ holds paired comparisons and an ablation report. No inference defaults or
 training settings are changed; confirm findings on broader validation before
 promoting a different recovery policy.
 
-### Review experiments (1 Oct 2026)
-
-Four checks a reviewer asked for, none of which retrains the model. One command
-runs them all, resumably: `scripts\RUN_REVIEW_EXPERIMENTS.bat`.
-
-- [x] W5: scene-bootstrap 95% intervals for every headline gain on the 429-frame
-  bench (`training/bench_bootstrap.py`)
-- [x] W4: the CVVDP display check (`training/cvvdp_display_check.py`). The
-  `standard_hdr_linear` display hard-clips at 1,500 nits and is defined with
-  BT.709 primaries, so a 2x error on a 2,000-nit patch scores 10.0 JOD. `rescore`
-  re-scores the bench on 1,500/4,000/10,000-nit BT.2020 displays and PU21 inside
-  its 10,000-nit range
-- [x] W1: the HDRTV1K standard test (`training/bench_hdrtv1k.py`): RUDRA,
-  RUDRA-base, the analytic baseline, the 1,000-nit HDR10 master and HDRTVDM,
-  with PSNR/SSIM (code/65535, as published), Delta E ITP, PU21 and CVVDP, and
-  bootstrap intervals
-- [x] W6: H7, the per-source exposure control on real SDR
-  (`training/audit_exposure_control.py`), rule fixed in the docstring
-- [ ] Run on the Windows GPU box and write the results into the paper
-
 ---
 
 ## Desktop app (in progress)
