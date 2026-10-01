@@ -69,7 +69,7 @@ def write_report(out, protocol, records):
                for c in ('clean','hard')}
     (out/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
     lines = ['# RUDRA quality diagnostic', '',
-        'This is a validation diagnostic, not a release qualification or evidence of superiority over Ruby.', '',
+        'This is a validation diagnostic, not a release qualification or evidence of superiority over external tools.', '',
         f"Sample: {len(protocol['rows'])} scenes, one deterministically selected frame per scene, native resolution.",
         'Clean and seeded synthetic-degradation conditions use the same HDR reference. Each scene has equal weight.',
         'Inference: CPU, preservation enabled, both recovery gates, 512-pixel tiles with 64-pixel overlap.',
@@ -90,7 +90,7 @@ def write_report(out, protocol, records):
         '- Non-finite metric values are recorded as unavailable, never replaced with proxy scores.',
         '- This collection is not manually labeled for skin, neon, grain, or sky coverage. Those categories remain unverified.',
         '- Still-frame JOD does not measure temporal stability. No flicker or motion-quality claim is supported.',
-        '- Ruby: pending matching outputs, verified color interpretation, and common delivery conditions. No ranking is possible.',
+        '- External baselines: pending matching outputs, verified color interpretation, and common delivery conditions. No ranking is possible.',
         '- New training candidates: pending completed training and validation selection. No weights promoted.',
         '- Held-out test data remains untouched. Do not tune models on that set.',
         '- Commercial rights and blind HDR-display review remain separate release requirements.', '',
@@ -118,7 +118,7 @@ def main(argv=None):
         checkpoint=str(a.checkpoint.resolve()),checkpoint_sha256=digest(a.checkpoint),
         script_sha256=digest(__file__),rows=selected, selection='SHA256 rudra-quality-v1 scene then asset ordering',
         split='val',device='cpu',tile_size=512,overlap=64,reference_nits_scale=10000,
-        cvvdp_display='standard_hdr_linear',ruby='pending',candidate='pending',test_set_used=False)
+        cvvdp_display='standard_hdr_linear',external_baseline='pending',candidate='pending',test_set_used=False)
     for row in selected:
         row['sdr_sha256']=digest(row['sdr_path'])
         row['hdr_sha256']=digest(row['hdr_path'])

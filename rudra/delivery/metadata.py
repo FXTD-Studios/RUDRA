@@ -1,8 +1,8 @@
 """Dynamic HDR metadata analysis for RUDRA output (torch-free).
 
 Generates per-shot Dolby Vision L1 trim analysis and HDR10+ (ST 2094-40
-style) scene statistics directly from RUDRA's linear frames — the step every
-competitor (Runway Ruby, Topaz Hyperion, Beeble SwitchHDR) leaves to a
+style) scene statistics directly from RUDRA's linear frames — the step SDR→HDR
+tools usually leave to a
 separate mastering pass or skips entirely. Static CTA-861.3 MaxCLL/MaxFALL
 are computed here too, on max(R,G,B) as the spec requires (the legacy
 ``training/export_hdr10.py`` computed them on Rec.2020 luminance, which
