@@ -374,7 +374,7 @@ seeded degraded inputs. It reports PU21-PSNR, real ColorVideoVDP image JOD, and
 shadow/highlight region errors, with paired bootstrap intervals. Missing metrics
 remain unavailable; proxy values never enter the comparison.
 
-This is an image-quality diagnostic, not a motion benchmark or a Ruby comparison.
+This is an image-quality diagnostic, not a motion benchmark or an external comparison.
 Candidate training assessment and final held-out testing remain separate. Do not
 read a small validation sample as proof of general superiority.
 

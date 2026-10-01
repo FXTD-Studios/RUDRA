@@ -32,7 +32,7 @@
 > | 4 | clipped highlights | `measure_clipping.py --score`, 0/+1/+2 EV | error in stops on clipped pixels below the inverse's, CI excluding zero | not run |
 > | 5 | video | v4b/v4c test clips, clip-mode CVVDP + flicker | clip JOD ≥ per-frame JOD on every test clip (N5) | not run |
 > | 6 | commercial weights | `oog`, `mix` | `rudra-studio` within 0.3 dB / 0.03 JOD of the research model (N7) | not trained |
-> | 7 | against the market | N4 set: LTX HDR IC-LoRA, Hyperion, Ruby, SwitchHDR | a table published whatever it says | not run |
+> | 7 | against the market | N4 set: external SDR→HDR baselines | a table published whatever it says | not run |
 >
 > Rows 1, 2 and 6 are scored by `training/cp7_verdicts.py`; rows 3 to 5 get
 > their gates there when their benches exist. A model that passes 1 to 6
@@ -763,7 +763,7 @@ lift them. Full is slow on 64×64-latent backbones (decodes at 512×512). Always
 | §7.1 component ablation | ❌ TBD | — | derived from Stage 1→3 runs |
 | §7.2 descriptor channel ablation (L / L+E / L+H / L+xy / full R⁵) | ❌ TBD | — | `research_sdxl.py --phase ablate` |
 | §7.3 λ conditioning-strength sweep (0.0 … 1.25) | ❌ TBD | — | `research_sdxl.py --phase sweep` |
-| §6 results vs baselines (incl. LTX IC-LoRA-HDR) | ❌ TBD | — | `benchmark_hdr.py` + ColorVideoVDP |
+| §6 results vs external baselines | ❌ TBD | — | `benchmark_hdr.py` + ColorVideoVDP |
 | §8 qualitative grids / EV-over-time | ❌ TBD | — | after the above |
 
 ## Completion path
@@ -771,7 +771,7 @@ lift them. Full is slow on 64×64-latent backbones (decodes at 512×512). Always
 1. **Stage 3 on SDXL** — the paper's intended backbone (U-Net cross-attention; ~5× lighter
    than Flux, fits 16 GB). This is the core contribution. `research_sdxl.py --phase stage3`.
 2. **λ sweep + descriptor ablation** — `--phase sweep` and `--phase ablate` (short runs).
-3. **Benchmark** RUDRA vs LTX IC-LoRA-HDR with ColorVideoVDP (JOD), ΔE2000, EV-error, HRA.
+3. **Benchmark** RUDRA vs external baselines with ColorVideoVDP (JOD), ΔE2000, EV-error, HRA.
 4. **Fill the paper tables** (§6/§7) with the measured values; drop the placeholder numbers.
 5. *(Optional)* Flux port of the conditioning — the paper's §10 generalization experiment.
 
