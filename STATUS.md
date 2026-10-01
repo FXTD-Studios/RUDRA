@@ -409,7 +409,7 @@
 >     FFmpeg 8.0.1. `rudra/video.py`'s QC needs ffprobe ≥ 5
 >     (`frame_side_data`).
 >
-> **The paper ([`paper/main.pdf`](paper/main.pdf)) is about line C.** It is not
+> **The paper (kept out of this repository) is about line C.** It is not
 > the earlier manuscript, which was about line B; what was withdrawn from that
 > one and why is Appendix D of the paper. Line B's
 > completion path is unchanged and is listed below; nothing since 22 Aug has

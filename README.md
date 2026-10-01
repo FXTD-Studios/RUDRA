@@ -567,9 +567,6 @@ phase 1.
 
 | Document | What is in it |
 |---|---|
-| [`paper/main.pdf`](paper/main.pdf) | the measured write-up (1 Oct 2026 edition: adds the real-SDR evaluation, Sections 10 and 11, and the Studio desktop application, Section 12) |
-| [`paper_ieee/main.pdf`](paper_ieee/main.pdf) | academic preprint "RUDRA: Shadow-Gated Residual Inverse Tone Mapping with an Empirical Identifiability Bound" (IEEE two-column, 7 pages), with [`supplement.pdf`](paper_ieee/supplement.pdf) and the referee-style review in [`REVIEW.md`](paper_ieee/REVIEW.md) |
-| [`paper_cvpr/main.pdf`](paper_cvpr/main.pdf) | CVPR-format version of the same preprint (7 pages plus references, arXiv mode with authors shown), with [`supplement.pdf`](paper_cvpr/supplement.pdf) |
 | [`docs/RESULTS.md`](docs/RESULTS.md) | every benchmark table, and how to recompute it |
 | [`docs/TRAINING.md`](docs/TRAINING.md) | training on your own footage, end to end |
 | [`docs/TRAINING_STEPS.md`](docs/TRAINING_STEPS.md) | the next training run, step by step, with the gate each step has to pass |
