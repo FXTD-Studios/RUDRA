@@ -233,24 +233,10 @@ reports mean and spread everywhere.
 
 ---
 
-## The paper
+## Reproducing the numbers
 
-[**`paper/main.pdf`**](../paper/main.pdf) is the write-up of the SDR to HDR model:
-15 pages, 11 sections, three figures, every number traceable to a command. The
-PDF is committed, and so is the LaTeX it is built from, so a clone with no
-LaTeX toolchain still has the document and a clone with one can rebuild it.
-
-```bash
-bash paper/build.sh      # -> paper/main.pdf
-bash paper/mkarxiv.sh    # -> paper/rudra-arxiv.tar.gz, verified to build flat
-```
-
-`paper/main.tex` is the entry point. `paper/_body.tex` and `paper/_abstract.tex`
-are generated, so do not edit them by hand. `paper/ABSTRACT_ARXIV.txt` is a
-trimmed abstract for the submission form, which caps at 1,920 characters where
-the PDF's abstract runs longer.
-
-Every derived number in sections 5, 6 and 6.1 to 6.2 can be recomputed on
+The write-up of the SDR to HDR model is kept out of this repository. Every
+derived number in it (sections 5, 6 and 6.1 to 6.2) can be recomputed on
 demand by two scripts that exit non-zero on any drift: 58 claims from the
 benchmark files and five more from the headroom join. Commands are below.
 
