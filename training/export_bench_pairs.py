@@ -235,8 +235,33 @@ def main() -> int:
                         help="CUDA precision of the model's forward pass. bf16 is what "
                              "every bench before 24 Sep 2026 used; the baseline tree is "
                              "fp32 either way (see predict_image).")
+    parser.add_argument("--source-curve", default="none",
+                        help="for a model built with source_curve=True: 'none' (do not pass "
+                             "one; the blind estimate), 'unknown' (same, recorded explicitly), "
+                             "'from-manifest' (each row's source_curve, else sdr_curve), or a "
+                             "curve name from rudra.sdr2hdr.SOURCE_CURVES. The 'hard' condition "
+                             "degrades the SDR, so it always runs as unknown.")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
+    from rudra.sdr2hdr import SOURCE_CURVES, source_curve_index
+    if args.source_curve not in ("none", "from-manifest") and args.source_curve not in SOURCE_CURVES:
+        raise SystemExit(f"error: --source-curve {args.source_curve!r}: use none, from-manifest "
+                         f"or one of {SOURCE_CURVES}")
+
+    if args.source_curve == "from-manifest" and args.condition == "out-of-generator":
+        raise SystemExit("error: out-of-generator re-renders every frame with Hable + H.264, so the "
+                         "row's own curve is wrong for it; pass --source-curve hable (or none)")
+
+    def curve_for(record: dict) -> int | None:
+        if args.source_curve == "none" or args.condition == "hard":
+            return None
+        if args.source_curve == "from-manifest":
+            name = record.get("source_curve") or record.get("sdr_curve")
+            if name is None:
+                raise SystemExit(f"error: --source-curve from-manifest but {record.get('asset_id')} "
+                                 f"has neither source_curve nor sdr_curve")
+            return source_curve_index(name) or None
+        return source_curve_index(args.source_curve) or None
 
     records = [r for r in read_jsonl(args.manifest) if r.get("split") == args.split]
     if not records:
@@ -254,6 +279,9 @@ def main() -> int:
     model = load_model(Path(args.checkpoint), device)
     print(f"   split      : {args.split}  ({len(indexed)} of {len(records)} records)")
     print(f"   condition  : {args.condition}")
+    print(f"   curve      : {args.source_curve}"
+          + ("  (hard condition: run as unknown)" if args.condition == "hard"
+             and args.source_curve != "none" else ""))
     print(f"   precision  : {args.precision}")
     print(f"   device     : {device}")
     announce_storage(f"image/{args.split}", records[0]["hdr_path"])
@@ -305,7 +333,8 @@ def main() -> int:
                                  tile_size=tile_size, overlap=args.tile_overlap,
                                  recovery_mode=args.recovery_mode,
                                  recovery_strength=args.recovery_strength,
-                                 bf16=args.precision == "bf16")
+                                 bf16=args.precision == "bf16",
+                                 source_curve=curve_for(record))
 
         try:
             hdr = predict(args.tile_size)
@@ -355,6 +384,7 @@ def main() -> int:
         "preserve_outside": bool(args.preserve_outside),
         "recovery_mode": args.recovery_mode,
         "recovery_strength": args.recovery_strength,
+        "source_curve": "none" if args.condition == "hard" else args.source_curve,
         "frames": written, "skipped": skipped,
         "units": "scene-linear, diffuse white = 1.0",
         "nits_scale_for_bench": DIFFUSE_WHITE_NITS,
