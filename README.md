@@ -495,9 +495,12 @@ phase 1.
   `rudra_mix_v4c_netflix_20261001` (21,709 rows) by
   `pipeline/build_source_curve_manifest.py`; it drops v4c's 1,053
   `carousel_fireworks` train rows, a v4b test scene in the frozen comparison set
-- [ ] 1.3 Add a source-curve input to `SDR2HDRNet` (`rudra/sdr2hdr.py`): a
+- [x] 1.3 Add a source-curve input to `SDR2HDRNet` (`rudra/sdr2hdr.py`): a
   one-hot of the curve id plus `unknown`, feeding the CurveHead. `unknown` must
-  reproduce today's blind behaviour
+  reproduce today's blind behaviour. `source_curve=True` (needs `curve_head`);
+  `unknown` is bit-identical to the blind model, a blind checkpoint warm-starts
+  it, and models without the input refuse a known curve
+  (`tests/test_source_curve_model_2026_10_01.py`)
 - [ ] 1.4 Retrain on v4c plus the real SDR pairs (`training/train_sdr2hdr.py
   --curve-head`, new `--source-curve`), with the label dropped to `unknown` on
   30% of rendered pairs so the blind path stays trained
