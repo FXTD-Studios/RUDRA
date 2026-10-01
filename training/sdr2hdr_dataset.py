@@ -35,6 +35,11 @@ def corpus_ev_of(manifest_path: str | Path, records: list[dict] | None = None) -
 
     A corpus without sidecars is the legacy corpus and gets -1 EV. A corpus
     whose rows disagree is refused: one model has one baseline.
+
+    Rows with ``sdr_kind == "real"`` (a real SDR grade, e.g. the Netflix
+    Open Content corpus) were never tone-mapped by us, so they carry no
+    exposure and are left out of the vote; the EV belongs to the rendered
+    rows they are mixed with (1 Oct 2026).
     """
     from rudra.sdr2hdr import LEGACY_CORPUS_EV
 
@@ -42,6 +47,8 @@ def corpus_ev_of(manifest_path: str | Path, records: list[dict] | None = None) -
     seen: dict[float, int] = {}
     unknown = 0
     for row in rows:
+        if row.get("sdr_kind") == "real":
+            continue
         value = row.get("tonemap_ev")
         # An image row carries one sidecar; a clip row (video manifest) carries
         # one per frame. Either way the first one that exists speaks for the row.

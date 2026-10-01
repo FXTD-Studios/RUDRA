@@ -489,9 +489,12 @@ phase 1.
   (CC BY 4.0) with `pipeline/fetch_netflix_pairs.py`: 2,280 pairs from five
   titles, SDR from the Dolby Vision trim pass, split by title (train Nocturne,
   Sparks, Sol Levante 1,830; val Cosmos Laundromat 163; test Meridian 287)
-- [ ] 1.2 Label every pair's source curve: rendered pairs carry their
+- [x] 1.2 Label every pair's source curve: rendered pairs carry their
   `pipeline/sdr_render.py` curve id (`aces`, `hable`, `reinhard`, `agx`,
-  `camera_log`, `clip`), and real SDR pairs are `unknown`
+  `camera_log`, `clip`), and real SDR pairs are `unknown`. Merged manifest
+  `rudra_mix_v4c_netflix_20261001` (21,709 rows) by
+  `pipeline/build_source_curve_manifest.py`; it drops v4c's 1,053
+  `carousel_fireworks` train rows, a v4b test scene in the frozen comparison set
 - [ ] 1.3 Add a source-curve input to `SDR2HDRNet` (`rudra/sdr2hdr.py`): a
   one-hot of the curve id plus `unknown`, feeding the CurveHead. `unknown` must
   reproduce today's blind behaviour
