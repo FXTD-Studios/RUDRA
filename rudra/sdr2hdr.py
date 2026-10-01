@@ -285,6 +285,40 @@ class SDR2HDROutput:
     curve_params: torch.Tensor | None = None
 
 
+# Source-curve vocabulary (roadmap task 1.3). Index 0 is "unknown" and is the
+# all-zero conditioning vector, so a model asked about an unknown source
+# computes exactly what the blind CurveHead computes. The rest are the curves
+# pipeline/sdr_render.py draws (and pipeline/build_source_curve_manifest.py
+# labels), in a fixed order that checkpoints depend on: append, never reorder.
+SOURCE_CURVES: tuple[str, ...] = ("unknown", "aces", "hable", "reinhard", "agx", "camera_log", "clip")
+KNOWN_SOURCE_CURVES = len(SOURCE_CURVES) - 1
+
+
+def source_curve_index(name: str | None) -> int:
+    """Curve name (or None) -> integer id; None and "unknown" are 0."""
+    if name is None:
+        return 0
+    try:
+        return SOURCE_CURVES.index(str(name))
+    except ValueError as exc:
+        raise ValueError(f"unknown source curve {name!r}; known: {SOURCE_CURVES}") from exc
+
+
+def _source_onehot(source: torch.Tensor | None, batch: int, device, dtype) -> torch.Tensor:
+    """(B,) curve ids -> (B, KNOWN_SOURCE_CURVES) one-hot; id 0 (unknown) -> zeros."""
+    if source is None:
+        return torch.zeros(batch, KNOWN_SOURCE_CURVES, device=device, dtype=dtype)
+    source = torch.as_tensor(source, device=device).long().reshape(-1)
+    if source.numel() == 1 and batch > 1:
+        source = source.expand(batch)
+    if source.numel() != batch:
+        raise ValueError(f"source_curve has {source.numel()} ids for a batch of {batch}")
+    if bool(((source < 0) | (source >= len(SOURCE_CURVES))).any()):
+        raise ValueError(f"source_curve ids must be in 0..{len(SOURCE_CURVES) - 1}")
+    full = F.one_hot(source, len(SOURCE_CURVES)).to(dtype)
+    return full[:, 1:]
+
+
 class CurveHead(nn.Module):
     """Estimates, per frame, how this SDR was tone-mapped, and undoes it.
 
@@ -305,9 +339,14 @@ class CurveHead(nn.Module):
     """
 
     def __init__(self, knots: int = 8, hidden: int = 64, bins: int = 32,
-                 max_exposure_stops: float = 3.0, max_knot_stops: float = 2.0):
+                 max_exposure_stops: float = 3.0, max_knot_stops: float = 2.0,
+                 source_inputs: int = 0):
         super().__init__()
         self.knots, self.bins = int(knots), int(bins)
+        # Task 1.3: optional one-hot of the known source curve, appended to the
+        # MLP input. Zero-initialised columns, and "unknown" is the zero vector,
+        # so the blind estimate is reproduced exactly until training moves them.
+        self.source_inputs = int(source_inputs)
         self.max_exposure = float(max_exposure_stops)
         self.max_knot = float(max_knot_stops)
         self.conv = nn.Sequential(
@@ -316,14 +355,29 @@ class CurveHead(nn.Module):
             nn.Conv2d(32, 32, 3, stride=2, padding=1), nn.SiLU(),
         )
         self.mlp = nn.Sequential(
-            nn.Linear(32 + self.bins + 6, hidden), nn.SiLU(),
+            nn.Linear(32 + self.bins + 6 + self.source_inputs, hidden), nn.SiLU(),
             nn.Linear(hidden, hidden), nn.SiLU(),
             nn.Linear(hidden, 1 + self.knots),
         )
         nn.init.zeros_(self.mlp[-1].weight)
         nn.init.zeros_(self.mlp[-1].bias)
+        if self.source_inputs:
+            with torch.no_grad():
+                self.mlp[0].weight[:, -self.source_inputs:].zero_()
 
-    def forward(self, sdr: torch.Tensor) -> torch.Tensor:
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        # A blind CurveHead checkpoint (no source columns) warm-starts a
+        # source-aware head: pad the missing input columns with zeros, which is
+        # exactly the blind function. Strict loading stays strict otherwise.
+        key = prefix + "mlp.0.weight"
+        if self.source_inputs and key in state_dict:
+            w = state_dict[key]
+            want = self.mlp[0].weight.shape[1]
+            if w.shape[1] == want - self.source_inputs:
+                state_dict[key] = torch.cat((w, w.new_zeros(w.shape[0], self.source_inputs)), dim=1)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
+    def forward(self, sdr: torch.Tensor, source: torch.Tensor | None = None) -> torch.Tensor:
         longest = max(sdr.shape[-2:])
         view = sdr
         if longest > 128:
@@ -342,7 +396,13 @@ class CurveHead(nn.Module):
             torch.sigmoid((0.02 - y) * 200.0).mean(1),
             view.amax(dim=(1, 2, 3)), view.flatten(1).median(dim=1).values,
         ), dim=1)
-        raw = self.mlp(torch.cat((pooled, hist, stats), dim=1))
+        features = [pooled, hist, stats]
+        if self.source_inputs:
+            features.append(_source_onehot(source, sdr.shape[0], sdr.device, pooled.dtype))
+        elif source is not None and bool((torch.as_tensor(source) != 0).any()):
+            raise ValueError("this CurveHead has no source-curve input; build the model with "
+                             "source_curve=True or pass only unknown (0)")
+        raw = self.mlp(torch.cat(features, dim=1))
         exposure = torch.tanh(raw[:, :1]) * self.max_exposure
         knots = torch.tanh(raw[:, 1:]) * self.max_knot
         return torch.cat((exposure, knots), dim=1)
@@ -368,8 +428,12 @@ class SDR2HDRNet(nn.Module):
                  corpus_ev: float = LEGACY_CORPUS_EV,
                  gate_conditioning: bool = False,
                  shadow_conditioning: bool = False,
-                 curve_head: bool = False):
+                 curve_head: bool = False,
+                 source_curve: bool = False):
         super().__init__()
+        if source_curve and not curve_head:
+            raise ValueError("source_curve conditions the CurveHead; it needs curve_head=True")
+        self.source_curve = bool(source_curve)
         c = base_channels
         # Off by default so every checkpoint written before 29 Aug 2026 still
         # loads with strict=True: when it is off no parameters are created and
@@ -401,7 +465,8 @@ class SDR2HDRNet(nn.Module):
         self.shadow_gate = ShadowGate(c * 4) if self.shadow_conditioning else None
         # Off by default for the same reason as the gates: no parameters, and
         # every earlier checkpoint loads strict and computes exactly what it did.
-        self.curve = CurveHead() if self.curve_head else None
+        self.curve = (CurveHead(source_inputs=KNOWN_SOURCE_CURVES if self.source_curve else 0)
+                      if self.curve_head else None)
 
     @classmethod
     def from_config(cls, config: dict | None, **overrides) -> "SDR2HDRNet":
@@ -418,6 +483,7 @@ class SDR2HDRNet(nn.Module):
             "gate_conditioning": bool(config.get("gate_conditioning", False)),
             "shadow_conditioning": bool(config.get("shadow_conditioning", False)),
             "curve_head": bool(config.get("curve_head", False)),
+            "source_curve": bool(config.get("source_curve", False)),
         }
         for key in ("log_scale", "max_hdr", "corpus_ev"):
             if config.get(key) is not None:
@@ -425,7 +491,8 @@ class SDR2HDRNet(nn.Module):
         kwargs.update(overrides)
         return cls(**kwargs)
 
-    def baseline_hdr(self, sdr: torch.Tensor, params: torch.Tensor | None = None
+    def baseline_hdr(self, sdr: torch.Tensor, params: torch.Tensor | None = None,
+                     source_curve: torch.Tensor | None = None
                      ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """(baseline, analytic_baseline, curve_params) for this SDR.
 
@@ -436,19 +503,23 @@ class SDR2HDRNet(nn.Module):
         """
         analytic = sdr_to_baseline_hdr(sdr, self.corpus_ev)
         if self.curve is None:
+            if source_curve is not None and bool((torch.as_tensor(source_curve) != 0).any()):
+                raise ValueError("this model has no CurveHead, so it cannot use a source curve")
             return analytic, analytic, None
         if params is None:
-            params = self.curve(sdr)
+            params = self.curve(sdr, source_curve)
         corrected = analytic * torch.exp2(self.curve.correction_log2(sdr, params))
         return corrected, analytic, params
 
     @torch.no_grad()
-    def predict_curve(self, sdr: torch.Tensor) -> torch.Tensor | None:
+    def predict_curve(self, sdr: torch.Tensor,
+                      source_curve: torch.Tensor | None = None) -> torch.Tensor | None:
         """The frame's curve correction, once, for tiled inference and the
-        viewer. None without a CurveHead."""
+        viewer. None without a CurveHead. ``source_curve``: (B,) ids from
+        SOURCE_CURVES, None or 0 = unknown."""
         if self.curve is None:
             return None
-        return self.curve(sdr.float().clamp(0.0, 1.0))
+        return self.curve(sdr.float().clamp(0.0, 1.0), source_curve)
 
     def encode(self, sdr: torch.Tensor, baseline: torch.Tensor):
         x = torch.cat((sdr, baseline), dim=1)
@@ -524,11 +595,12 @@ class SDR2HDRNet(nn.Module):
         residual_scale: float | torch.Tensor | None = None,
         shadow_weight: float | torch.Tensor | None = None,
         curve_params: torch.Tensor | None = None,
+        source_curve: torch.Tensor | None = None,
     ) -> SDR2HDROutput:
         if sdr.ndim != 4 or sdr.shape[1] != 3:
             raise ValueError(f"Expected SDR tensor (B,3,H,W), got {tuple(sdr.shape)}")
         sdr = sdr.float().clamp(0.0, 1.0)
-        baseline, analytic, curve_params = self.baseline_hdr(sdr, curve_params)
+        baseline, analytic, curve_params = self.baseline_hdr(sdr, curve_params, source_curve)
         e1, e2, m = self.encode(sdr, baseline)
         u2 = F.interpolate(m, size=e2.shape[-2:], mode="bilinear", align_corners=False)
         u2 = self.dec2(self.up2(torch.cat((u2, e2), dim=1)))
