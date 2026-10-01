@@ -148,3 +148,9 @@ SCRUB_TRAILERS.txt
 !/native/tests/golden/qc/*
 !/native/tests/golden/queue/*
 !/native/tests/golden/queue/project/*
+
+# The paper and its figures are kept local, out of the published repo (1 Oct 2026).
+/paper/
+/paper_*/
+/research/
+/docs/figures/

@@ -393,6 +393,26 @@ holds paired comparisons and an ablation report. No inference defaults or
 training settings are changed; confirm findings on broader validation before
 promoting a different recovery policy.
 
+### Review experiments (1 Oct 2026)
+
+Four checks a reviewer asked for, none of which retrains the model. One command
+runs them all, resumably: `scripts\RUN_REVIEW_EXPERIMENTS.bat`.
+
+- [x] W5: scene-bootstrap 95% intervals for every headline gain on the 429-frame
+  bench (`training/bench_bootstrap.py`)
+- [x] W4: the CVVDP display check (`training/cvvdp_display_check.py`). The
+  `standard_hdr_linear` display hard-clips at 1,500 nits and is defined with
+  BT.709 primaries, so a 2x error on a 2,000-nit patch scores 10.0 JOD. `rescore`
+  re-scores the bench on 1,500/4,000/10,000-nit BT.2020 displays and PU21 inside
+  its 10,000-nit range
+- [x] W1: the HDRTV1K standard test (`training/bench_hdrtv1k.py`): RUDRA,
+  RUDRA-base, the analytic baseline, the 1,000-nit HDR10 master and HDRTVDM,
+  with PSNR/SSIM (code/65535, as published), Delta E ITP, PU21 and CVVDP, and
+  bootstrap intervals
+- [x] W6: H7, the per-source exposure control on real SDR
+  (`training/audit_exposure_control.py`), rule fixed in the docstring
+- [ ] Run on the Windows GPU box and write the results into the paper
+
 ---
 
 ## Desktop app (in progress)
@@ -454,11 +474,103 @@ Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 
 ---
 
+## Roadmap: interactive reconstruction
+
+The next release makes the artist part of the reconstruction. They tell RUDRA
+what the network cannot know (which curve made the SDR, how bright a clipped
+region should be), and every answer shows at playback rate. Phases run in
+order, and each ends on a gate that must pass before the next starts. Gate
+rows are the release rows in [`STATUS.md`](STATUS.md). Phase 2 runs alongside
+phase 1.
+
+### Phase 1: a floor that holds on real SDR
+
+- [x] 1.1 Pull 2,000+ real SDR/HDR10 frame pairs from Netflix Open Content
+  (CC BY 4.0) with `pipeline/fetch_netflix_pairs.py`: 2,280 pairs from five
+  titles, SDR from the Dolby Vision trim pass, split by title (train Nocturne,
+  Sparks, Sol Levante 1,830; val Cosmos Laundromat 163; test Meridian 287)
+- [x] 1.2 Label every pair's source curve: rendered pairs carry their
+  `pipeline/sdr_render.py` curve id (`aces`, `hable`, `reinhard`, `agx`,
+  `camera_log`, `clip`), and real SDR pairs are `unknown`. Merged manifest
+  `rudra_mix_v4c_netflix_20261001` (21,709 rows) by
+  `pipeline/build_source_curve_manifest.py`; it drops v4c's 1,053
+  `carousel_fireworks` train rows, a v4b test scene in the frozen comparison set
+- [x] 1.3 Add a source-curve input to `SDR2HDRNet` (`rudra/sdr2hdr.py`): a
+  one-hot of the curve id plus `unknown`, feeding the CurveHead. `unknown` must
+  reproduce today's blind behaviour. `source_curve=True` (needs `curve_head`);
+  `unknown` is bit-identical to the blind model, a blind checkpoint warm-starts
+  it, and models without the input refuse a known curve
+  (`tests/test_source_curve_model_2026_10_01.py`)
+- [ ] 1.4 Retrain on v4c plus the real SDR pairs (`training/train_sdr2hdr.py
+  --curve-head`, new `--source-curve`), with the label dropped to `unknown` on
+  30% of rendered pairs so the blind path stays trained
+- [x] 1.5 Write the gate rule into `training/cp7_verdicts.py` before the run:
+  rows 1 and 2, scored once with the true curve and once as `unknown`
+  (gates `N8/*`, fixed 1 Oct 2026; `export_bench_pairs.py --source-curve`)
+- **Gate:** rows 1 and 2 pass with the curve given, and `unknown` is not worse
+  than the inverse on clean ACES nor than v4c (the blind model at the same
+  0 EV) out of generator. Not `shadow_v1`: it is a -1 EV model, and a gate
+  against it would measure that stop. Run: `scripts\run_v7_2026_10_01.ps1`
+  (`-Stage smoke`, then `train`, then `bench`), v7 from scratch
+
+### Phase 2: external baseline comparison (internal)
+
+- [x] 2.1 Freeze the set: 60 held-out frames and 8 clips from the v4b test
+  split, plus 40 frames from the Netflix test title (Meridian), in
+  `configs/compare_set_v1.json` by `training/freeze_compare_set.py`
+- [ ] 2.2 Run each external SDR-to-HDR tool on the set and save ACES 2065-1 or
+  linear Rec.2020 EXR, with each tool's colour interpretation checked by hand
+- [ ] 2.3 Score with `training/benchmark_hdr.py` (PU21, CVVDP, clipped-pixel
+  error in stops) and keep the results in `reports/`, which is not tracked
+- **Gate:** a table we would publish, whatever it says
+
+### Phase 3: the interactive core in the desktop app
+
+- [ ] 3.1 Source panel: a curve picker (Rec.709 camera, filmic, ACES, AgX,
+  camera log, unknown) that re-runs inference with the curve input and caches
+  the fields per choice
+- [ ] 3.2 Three-click calibration: the artist clicks black, 18% grey and a known
+  highlight, RUDRA fits the shot's inverse curve to them (monotone, few knots)
+  and draws the fit on the curve panel
+- [ ] 3.3 Live peak, knee and region EV at 4K on the HDR viewer, with qualifier
+  and painted masks (`native/app/region_editor.cpp`), every control under one
+  frame of latency
+- [ ] 3.4 Reference match: load one graded HDR frame, fit the shot's curve and
+  exposure to it, and report the residual in stops
+- [ ] 3.5 Invented-pixel map: a viewer layer, plus a QC sidecar field, marking
+  where the output departs from what the SDR supports
+- [ ] 3.6 Inference latency recorded per GPU backend at 1080p and 4K
+- **Gate:** a colourist, by hand, on an HDR display, sources, calibrates, grades
+  and masters a 240-frame shot with no control lagging the playhead
+
+### Phase 4: clipped regions, video and commercial weights
+
+- [ ] 4.1 Rebuild on mask: an optional local inpaint pass that runs only inside
+  a clipped mask the artist approves, sized for 8 to 16 GB, its pixels marked
+  in the invented-pixel map and the sidecar
+- [ ] 4.2 Score clipped highlights at 0, +1 and +2 EV with and without rebuild
+  (`measure_clipping.py --score`)
+- [ ] 4.3 Shot keyframes: grade and source parameters stored per shot,
+  keyframed and reset at cuts, scored with clip-mode CVVDP and flicker
+- [ ] 4.4 `rudra-studio` commercial weights: the phase 1 recipe without HdM
+  data, filtered through `pipeline/licences.py`
+- **Gate:** rows 4, 5 and 6 pass
+
+### Phase 5: where colourists work, and release
+
+- [ ] 5.1 OFX plugin for DaVinci Resolve and Nuke on the native engine
+  (`native/engine`, `native/infer`)
+- [ ] 5.2 Opt-in correction logging: an accepted grade on real SDR saved as a
+  training pair, with its source and the user's consent recorded
+- [ ] 5.3 Publish the benchmark and the paper
+- **Gate:** rows 1 to 6 green, then announce
+
+---
+
 ## Documentation
 
 | Document | What is in it |
 |---|---|
-| [`paper/main.pdf`](paper/main.pdf) | the measured write-up |
 | [`docs/RESULTS.md`](docs/RESULTS.md) | every benchmark table, and how to recompute it |
 | [`docs/TRAINING.md`](docs/TRAINING.md) | training on your own footage, end to end |
 | [`docs/TRAINING_STEPS.md`](docs/TRAINING_STEPS.md) | the next training run, step by step, with the gate each step has to pass |

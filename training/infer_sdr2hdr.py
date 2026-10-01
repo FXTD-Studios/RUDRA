@@ -88,8 +88,12 @@ def _tile_weight(height: int, width: int, overlap: int, y: int, x: int,
 @torch.inference_mode()
 def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
                   tile_size: int, overlap: int, recovery_mode: str = "all",
-                  recovery_strength: float = 1.0, bf16: bool = True) -> torch.Tensor:
+                  recovery_strength: float = 1.0, bf16: bool = True,
+                  source_curve: int | None = None) -> torch.Tensor:
     """Memory-bounded image inference with overlap feathering.
+
+    ``source_curve``: an id from rudra.sdr2hdr.SOURCE_CURVES for a model built
+    with ``source_curve=True``; None or 0 is unknown (the blind estimate).
 
     ``bf16=False`` runs CUDA in fp32. The analytic baseline is always fp32, and
     bf16 keeps 8 mantissa bits (0.4 % steps), so on a clean frame the baseline
@@ -107,7 +111,11 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
     shadow_weight = model.predict_shadow_weight(sdr) if hasattr(model, "predict_shadow_weight") else None
     # Same reason for the curve: one tone-curve estimate per FRAME, or every
     # tile would invert its own guess and the seams would show.
-    curve = model.predict_curve(sdr) if hasattr(model, "predict_curve") else None
+    source = None if not source_curve else torch.tensor([int(source_curve)], device=sdr.device)
+    curve = (model.predict_curve(sdr, source) if source is not None else model.predict_curve(sdr)) \
+        if hasattr(model, "predict_curve") else None
+    if source is not None and curve is None:
+        raise ValueError("a source curve was given but this model has no CurveHead")
     if tile_size <= 0 or (height <= tile_size and width <= tile_size):
         amp = torch.autocast("cuda", dtype=torch.bfloat16) if (sdr.is_cuda and bf16) else contextlib.nullcontext()
         with amp:
