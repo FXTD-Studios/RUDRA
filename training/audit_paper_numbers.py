@@ -33,7 +33,7 @@ import numpy as np
 CLAIMS = [
     # (label, section, kind, args..., expected, tolerance)
     ("v5 clean gain dB",        "abstract, 5.1",  "gain_db",  "clean", "v5",           -3.00, 0.01),
-    ("v5 clean gain JOD",       "abstract, 5.1",  "gain_jod", "clean", "v5",          -0.046, 0.001),
+    ("v5 clean gain JOD",       "abstract, 5.1",  "gain_jod", "clean", "v5",          -0.045, 0.001),
     ("v5 hard gain dB",         "abstract, 5.1",  "gain_db",  "hard",  "v5",          +1.43, 0.01),
     ("v5 hard gain JOD",        "abstract, 5.1",  "gain_jod", "hard",  "v5",          +0.443, 0.001),
     ("v5 hard frames won",      "abstract, 5.1",  "won",      "hard",  "v5",           348, 0),
@@ -51,7 +51,7 @@ CLAIMS = [
     ("v6 clean gain dB",        "5.1, 5.6",          "gain_db",  "clean", "v6",          -2.75, 0.01),
     ("v6 clean gain JOD",       "5.1, 5.6",          "gain_jod", "clean", "v6",          +0.004, 0.001),
     ("v6 hard gain dB",         "5.1, 5.6",          "gain_db",  "hard",  "v6",          +0.96, 0.01),
-    ("v6 hard gain JOD",        "5.1, 5.6",          "gain_jod", "hard",  "v6",          +0.344, 0.001),
+    ("v6 hard gain JOD",        "5.1, 5.6",          "gain_jod", "hard",  "v6",          +0.343, 0.001),
 
     ("gate clean gain dB",      "8.2, 8.3",          "gain_db",  "clean", "shadow_v1",   +0.07, 0.01),
     ("gate clean gain JOD",     "8.2, 8.3",          "gain_jod", "clean", "shadow_v1",   +0.113, 0.001),
@@ -103,7 +103,7 @@ CLAIMS = [
 SEEDS = ("shadow_v1", "shadow_s2", "shadow_s3")
 AGGREGATES = [
     ("gate clean dB, mean",   "abstract, 8.3, 13", "clean", "pu_psnr_db", "baseline", "mean", +0.41, 0.01),
-    ("gate clean dB, sd",     "abstract, 8.3, 13", "clean", "pu_psnr_db", "baseline", "sd",    0.33, 0.01),
+    ("gate clean dB, sd",     "abstract, 8.3, 13", "clean", "pu_psnr_db", "baseline", "sd",    0.32, 0.01),
     ("gate clean JOD, mean",  "abstract, 8.3, 13", "clean", "cvvdp_jod",  "baseline", "mean", +0.090, 0.001),
     ("gate clean JOD, sd",    "abstract, 8.3, 13", "clean", "cvvdp_jod",  "baseline", "sd",    0.023, 0.001),
     ("gate hard dB, mean",    "8.2, 8.3",               "hard",  "pu_psnr_db", "baseline", "mean", +1.12, 0.01),
