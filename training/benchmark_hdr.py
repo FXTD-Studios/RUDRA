@@ -2,7 +2,7 @@
 """
 benchmark_hdr.py — apples-to-apples HDR scoring of two methods vs ground truth.
 
-Use this to answer "is RUDRA better than LTX IC-LoRA-HDR?" properly: generate HDR
+Use this to answer "is RUDRA better than method X?" properly: generate HDR
 predictions from each method on the SAME inputs, drop them in two folders, and
 this scores both against ground-truth HDR with the real metrics — ColorVideoVDP
 (JOD), ΔE2000, EV-error, highlight reconstruction, and tone-mapped PSNR/SSIM.
@@ -13,13 +13,13 @@ You produce the predictions; this scores them identically.
 Folder layout (match files by name stem; .exr / .hdr / .png all OK)
   gt/    clip001.exr  clip002.exr ...        (ground-truth scene-linear HDR)
   a/     clip001.exr  ...                    (e.g. RUDRA predictions)
-  b/     clip001.exr  ...                    (e.g. IC-LoRA-HDR predictions)
+  b/     clip001.exr  ...                    (e.g. baseline predictions)
 
 Usage
 -----
   pip install -r requirements-metrics.txt    # cvvdp for the real HDR-VDP metric
-  python training/benchmark_hdr.py --gt gt --a rudra_preds --b iclora_preds \
-      --name-a RUDRA --name-b IC-LoRA-HDR --color-space rec2020 --out bench.csv
+  python training/benchmark_hdr.py --gt gt --a rudra_preds --b baseline_preds \
+      --name-a RUDRA --name-b BASELINE --color-space rec2020 --out bench.csv
 """
 
 from __future__ import annotations
