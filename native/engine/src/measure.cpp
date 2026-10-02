@@ -69,6 +69,8 @@ FrameMeasure measure_frame(const SdrImage& sdr, const Fields& fields, const Fram
     out.measured = measure_view(model_sample, base_sample, grid, out.highlight, out.shadow, out.coverage,
                                 reduce_ladder(out.model.buffer()), reduce_ladder(out.baseline.buffer()), n);
     out.vector_rgba = vectorscope(model_sample);
+    out.compare = compare_stats(out.model, out.baseline);
+    out.support = support_stats(out.model, out.baseline, sdr);
     out.compose_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     return out;
 }

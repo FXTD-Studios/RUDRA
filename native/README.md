@@ -93,7 +93,8 @@ windeployqt), ONNX Runtime (Core ML; DirectML) and `rudra-native`, checks the
 result starts from where it is, and writes its SHA-256. The Windows installer
 is Inno Setup 6 (`native/app/windows/rudra.iss`, `winget install
 JRSoftware.InnoSetup`): per-user by default, Start menu, uninstaller. The macOS app is signed
-ad hoc (no Developer ID yet). ffmpeg is not bundled. Pushing a `v*` tag runs
+with Developer ID, notarized and stapled when the signing secrets are set
+([`docs/MACOS_SIGNING.md`](../docs/MACOS_SIGNING.md)), ad hoc otherwise. ffmpeg is not bundled. Pushing a `v*` tag runs
 `.github/workflows/release.yml`, which builds both on GitHub's runners and
 attaches them to a pre-release with `docs/BETA.md` as its notes.
 
@@ -108,7 +109,8 @@ the golden frames at the manifest's tolerances.
 ```
 rudra-native info dist/models/sdr2hdr_shadow_v1
 rudra-native diff dist/models/sdr2hdr_shadow_v1 --runtime all --device cpu
-rudra-native bench dist/models/sdr2hdr_shadow_v1 --runtime libtorch --device cuda --size 1920x1080
+rudra-native bench dist/models/sdr2hdr_shadow_v1 --runtime libtorch --device cuda   # 1080p and 4K
+rudra-native bench dist/models/sdr2hdr_shadow_v1 --device cuda --budget native/bench/latency_budgets.json --machine rtx4080s-win --json latency.json
 rudra-native master dist/models/sdr2hdr_shadow_v1 plate.png --out plate.exr [--params '{"container": "linear"}']
 rudra-native master-check dist/models/sdr2hdr_shadow_v1 native/tests/golden/master
 rudra-native ffmpeg-check          # can this ffmpeg deliver? a 16-frame HDR10 export through it, cached
@@ -205,7 +207,10 @@ step 5) into RGBA32F and RGBA16F. Both gate B scripts run it on every API the ma
 composite pass, and a composite plus display pass (a slider move), timed at
 1080p and 4K (QRhi GPU timestamps). `rudra-native bench-scopes` times the
 viewer's CPU measurements and scopes; Gate A runs it. Gate A
-times inference at 1080p on every backend that passed (`rudra-native bench`).
+times inference at 1080p and 4K on every backend that passed (`rudra-native
+bench`), writes each to `reports/latency/` and, given a machine label
+(`-Machine`, `MACHINE=`), fails when a row is over its budget in
+`native/bench/latency_budgets.json`.
 
 ## Status
 

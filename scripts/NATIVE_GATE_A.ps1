@@ -25,6 +25,7 @@
 .EXAMPLE
   .\scripts\NATIVE_GATE_A.ps1
   .\scripts\NATIVE_GATE_A.ps1 -BenchDir D:\bench\sdr -Checkpoint checkpoints\sdr2hdr_shadow_v1.pt
+  .\scripts\NATIVE_GATE_A.ps1 -SkipExport -SkipBuild -Machine rtx4080s-win   # latency against the budgets
 #>
 [CmdletBinding()]
 param(
@@ -36,6 +37,9 @@ param(
     [switch]$SkipExport,
     [switch]$SkipBuild,
     [switch]$NoBench,
+    # A label from native\bench\latency_budgets.json ("rtx4080s-win"): the bench
+    # must then be within that machine's budgets or the gate fails.
+    [string]$Machine = "",
     [switch]$InstallBuildTools
 )
 
@@ -179,24 +183,37 @@ foreach ($r in $rows) {
 $log += ($summary | Format-Table -AutoSize | Out-String)
 
 # ---------------------------------------------------------------------------
-# Inference time at 1080p on every backend that passed, for the budget table
-# (NATIVE_ARCHITECTURE.md 6.6). Wall time to fields in host memory.
+# Inference time at 1080p and 4K on every backend that passed, for the budget
+# table (NATIVE_ARCHITECTURE.md 6.6, roadmap 3.6). Wall time to fields in host
+# memory. Each backend's numbers go to reports\latency\ as JSON; with -Machine
+# they are held to native\bench\latency_budgets.json.
 $bench = @()
+$overBudget = @()
 if (-not $NoBench) {
-    Say "Inference time, 1920x1080, fp32 (median of 5)"
+    Say "Inference time, 1920x1080 and 3840x2160, fp32 (median of 5)"
+    $latencyDir = Join-Path $Repo "reports\latency"
+    New-Item -ItemType Directory -Force -Path $latencyDir | Out-Null
+    $budgetArgs = @()
+    if ($Machine) { $budgetArgs = @("--budget", (Join-Path $Repo "native\bench\latency_budgets.json"), "--machine", $Machine) }
     foreach ($r in $rows) {
         $row = $summary | Where-Object { $_.Backend -eq $r.Name }
         if ($row.Result -ne "PASS") { continue }
+        $json = Join-Path $latencyDir "$($Stamp)_$($r.Runtime)_$($r.Device).json"
         $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-        $out = & $Exe bench $Package --runtime $r.Runtime --device $r.Device --size 1920x1080 --iters 5 2>&1 | ForEach-Object { "$_" }
+        $out = & $Exe bench $Package --runtime $r.Runtime --device $r.Device --size 1920x1080,3840x2160 --iters 5 --json $json @budgetArgs 2>&1 | ForEach-Object { "$_" }
+        $code = $LASTEXITCODE
         $ErrorActionPreference = $prev
         $log += "---- bench $($r.Name)"; $log += $out; $log += ""
+        if ($code -eq 1) { $overBudget += $r.Name }
         $ms = @{}
-        foreach ($l in ($out | Where-Object { $_ -match "^BENCH " })) { $f = $l -split " "; $ms[$f[4]] = [double]$f[5] }
-        $bench += [pscustomobject]@{ Backend = $r.Name; "untiled ms" = $ms["untiled"]; "tiled 512/64 ms" = $ms["tiled"] }
+        foreach ($l in ($out | Where-Object { $_ -match "^BENCH " })) { $f = $l -split " "; $ms["$($f[3]) $($f[4])"] = [double]$f[5] }
+        $bench += [pscustomobject]@{ Backend = $r.Name
+            "1080p ms" = $ms["1920x1080 untiled"]; "1080p tiled ms" = $ms["1920x1080 tiled"]
+            "4K ms" = $ms["3840x2160 untiled"]; "4K tiled ms" = $ms["3840x2160 tiled"] }
     }
     $bench | Format-Table -AutoSize | Out-String | Write-Host
     $log += ($bench | Format-Table -AutoSize | Out-String)
+    if ($overBudget) { $log += "OVER BUDGET ($Machine): $($overBudget -join ', ')" }
 
     # The viewer's CPU work after a slider move (Phase 2 step 12): the sample,
     # the measurements, the waveform and histogram, the vectorscope.
@@ -213,3 +230,4 @@ Say "Result"
 $summary | Format-Table -AutoSize
 Write-Host "Full log: $Report"
 if ($summary | Where-Object { $_.Result -in @("FAIL", "ERROR") }) { exit 1 }
+if ($overBudget) { Write-Host "FAILED: over the $Machine latency budget: $($overBudget -join ', ')" -ForegroundColor Red; exit 1 }

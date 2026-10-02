@@ -88,6 +88,7 @@ inline ViewUbo view_ubo(const ViewParams& params, int width) {
     u.extra[0] = std::log2(1.0f + float(std::max(params.diff_gain, 1.0)));
     u.extra[1] = float(width);
     u.extra[2] = params.show == ViewSource::Baseline ? 1.0f : 0.0f;
+    u.extra[3] = params.show_changes ? 1.0f : 0.0f;
     u.target[0] = float(int(params.target.path));
     u.target[1] = float(std::min(params.display_nits, params.target.peak_nits));
     u.target[2] = float(params.target.unit_nits);
@@ -110,6 +111,19 @@ inline void interleave_inputs(const SdrImage& sdr, const Fields& fields, std::ve
         a[i * 4 + 3] = fields.shadow.plane(0)[i];
         b[i * 4 + 3] = fields.highlight.plane(0)[i];
     }
+}
+
+// The baseline as the display pass reads it: rgb, and the SDR's max code in
+// alpha for the Invented layer (core/view.hpp sdr_max_codes).
+inline std::vector<float> baseline_rgba(const PlanarBuffer& rgb, const SdrImage* sdr) {
+    const std::vector<float> codes = sdr_max_codes(sdr, rgb.width(), rgb.height());
+    const std::size_t n = rgb.plane_size();
+    std::vector<float> out(n * 4);
+    for (std::size_t i = 0; i < n; ++i) {
+        for (int c = 0; c < 3; ++c) out[i * 4 + std::size_t(c)] = rgb.plane(c)[i];
+        out[i * 4 + 3] = codes[i];
+    }
+    return out;
 }
 
 // A composite target as an RGBA32F upload: rgb, alpha 1.

@@ -114,12 +114,12 @@ Full tables, the failure analysis, and how to recompute every number:
 
 ## Install
 
-**Desktop beta (no Python).** For Windows x64, download
-`RUDRA-0.9.0-beta.1-windows-x64-setup.exe` from
-[Releases](https://github.com/fxtdstudios/RUDRA/releases): it installs for your
-user (no administrator prompt), with the model and the Visual C++ runtime
-included; the portable ZIP beside it runs from any folder. The macOS DMG
-follows. Details: [`docs/BETA.md`](docs/BETA.md).
+**Desktop beta (no Python).** From
+[Releases](https://github.com/fxtdstudios/RUDRA/releases), the latest
+pre-release: for Windows x64 `RUDRA-<version>-windows-x64-setup.exe`, which
+installs for your user (no administrator prompt) with the model and the Visual
+C++ runtime included, or the portable ZIP beside it; for Apple silicon
+`RUDRA-<version>-macos-arm64.dmg`. Details: [`docs/BETA.md`](docs/BETA.md).
 
 **Python package.** Requires Python 3.10 to 3.13. CUDA is optional: everything runs on CPU, slower.
 FFmpeg is needed for video, not for stills.
@@ -434,17 +434,35 @@ Done:
   (Inno Setup, per-user, Start menu, uninstaller) and the portable ZIP, with the
   MSVC runtime from Visual Studio's redistributable folder; the package starts
   and reads its model from where it is
+- [x] CI green on Windows, macOS and Linux: every job of the `native` workflow
+  passes on all three (run 36907549070, 1 Oct 2026: core, Gate A, Qt shell,
+  Gate B probe)
+- [x] Beta 3, Compare that says what changed: a line under the Compare bar with
+  the share of the frame RUDRA changed, by how many stops, and how much of it
+  the view peak shows, plus **Show at N nits** to raise the peak; the
+  **Changes** tint (amber brighter, blue darker). The tint is held to
+  `core/view.cpp` by `rudra-gpu-parity` and through the viewer window on OpenGL
+  and Vulkan (`docs/view.spec.md` revision 5)
+- [x] Beta 3, macOS signing: `scripts/package_mac.sh` and the release workflow
+  sign with a Developer ID (hardened runtime), notarize and staple the app and
+  the DMG when the signing secrets are set, ad hoc otherwise
+  ([`docs/MACOS_SIGNING.md`](docs/MACOS_SIGNING.md))
 
 Still to do:
 - [ ] macOS: inference on MPS and Core ML, HDR output on an XDR display (Metal
   EDR), GPU composite and display pass on Metal, a clean exit (the fix for an
   abort at exit is in, not yet run there)
 - [ ] Model checks on the full bench set
-- [ ] CI green on Windows, macOS and Linux: every build passes on all three; the
-  core tests' fixes for Windows (3) and macOS (13) are in, waiting on a run
+- [ ] Apple Developer enrollment and the six signing secrets
+  ([`docs/MACOS_SIGNING.md`](docs/MACOS_SIGNING.md)), then the beta 3 tag, so
+  the DMG ships notarized
 - [ ] The macOS beta DMG built and opened on a Mac, and the Windows installer
   on a clean PC, then the `v0.9.0-beta.1` pre-release published
-- [ ] Performance budgets recorded on every GPU backend
+- [ ] Performance budgets recorded on every GPU backend: `rudra-native bench`
+  times 1080p and 4K and checks `native/bench/latency_budgets.json` per machine
+  (CI holds the CPU budget); the 4K rows on the RTX 4080 and the Mac rows wait
+  for their runs (`NATIVE_GATE_A.ps1 -SkipExport -SkipBuild -Machine rtx4080s-win`,
+  `MACHINE=... scripts/native_gate_a.sh`)
 - [ ] The workflow and video review on Windows with no Python, and by hand on an
   HDR display
 
@@ -517,9 +535,15 @@ phase 1.
   frame of latency
 - [ ] 3.4 Reference match: load one graded HDR frame, fit the shot's curve and
   exposure to it, and report the residual in stops
-- [ ] 3.5 Invented-pixel map: a viewer layer, plus a QC sidecar field, marking
-  where the output departs from what the SDR supports
-- [ ] 3.6 Inference latency recorded per GPU backend at 1080p and 4K
+- [x] 3.5 Invented-pixel map: a viewer layer, plus a QC sidecar field, marking
+  where the output departs from what the SDR supports. The **Invented** layer
+  (magenta where the SDR clipped or crushed, cyan where SDR detail was read
+  differently from the baseline), its legend with the shares, and
+  `invented_pixels` in every master's sidecar (`core/compare.cpp`)
+- [ ] 3.6 Inference latency recorded per GPU backend at 1080p and 4K. The tooling
+  is in (`rudra-native bench --size 1920x1080,3840x2160 --budget ... --machine
+  ...`, both gate scripts, the CPU budget in CI); the 4K numbers on the RTX 4080
+  and the Mac numbers are not recorded yet
 - **Gate:** a colourist, by hand, on an HDR display, sources, calibrates, grades
   and masters a 240-frame shot with no control lagging the playhead
 

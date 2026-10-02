@@ -165,6 +165,8 @@ int main(int argc, char** argv) {
                  {"image 1000", view_params(ViewMode::Image, 1000.0)},
                  {"false colour", view_params(ViewMode::FalseColour, 203.0)},
                  {"wipe 0.37", view_params(ViewMode::Image, 406.0, ViewSource::Model, 0.37, 0.02)},
+                 {"changes", [] { auto v = view_params(ViewMode::Image, 203.0); v.show_changes = true; return v; }()},
+                 {"invented", view_params(ViewMode::Invented, 203.0)},
                  {"guides 2.39", view_params(ViewMode::Image, 203.0)},
                  {"guides 4:3", view_params(ViewMode::FalseColour, 203.0)}};
         zooms = {{"fit", 0.0}, {"2x", 2.0}, {"1:1", -1.0}};   // -1: actual pixels (device 1:1)
@@ -245,7 +247,7 @@ int main(int argc, char** argv) {
         const PlacedRect r = place(win.viewport(), {double(win.width()), double(win.height())}, {double(fw), double(fh)});
         ViewParams want_p = vp;
         want_p.target = s.target;
-        const Rgb8Image want = render_view_rgb8(cpu_model, cpu_base, want_p);
+        const Rgb8Image want = render_view_rgb8(cpu_model, cpu_base, want_p, &frame.sdr);
         const bool bgra = g.format == "BGRA8";
         // Device pixel centres against the picture's texels. At a fractional
         // device pixel ratio (150 % display scale) a pixel centre can sit exactly

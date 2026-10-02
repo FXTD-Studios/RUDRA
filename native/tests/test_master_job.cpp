@@ -88,6 +88,10 @@ TEST(MasterJob, WritesEveryTargetInOrderWithItsSidecar) {
         const auto j = nlohmann::json::parse(in);
         EXPECT_EQ(j.at("resolution"), (nlohmann::json{24, 16}));
         EXPECT_EQ(j.at("container"), "ACES 2065-1 (AP0)");
+        // Roadmap 3.5: the invented-pixel shares ride along with every master.
+        ASSERT_TRUE(j.contains("invented_pixels"));
+        EXPECT_GE(j.at("invented_pixels").at("invented_pct").get<double>(), 0.0);
+        EXPECT_EQ(j.at("invented_pixels").at("threshold_stops").get<double>(), 0.1);
     }
     // Staging leaves nothing behind.
     for (const auto& e : fs::directory_iterator(root / "out"))

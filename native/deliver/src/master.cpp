@@ -11,6 +11,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "rudra/core/baseline.hpp"
+#include "rudra/core/compare.hpp"
 #include "rudra/core/master.hpp"
 #include "rudra/core/measure.hpp"
 #include "rudra/deliver/exr.hpp"
@@ -148,6 +150,16 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
 
     pyjson::List regions_json;
     for (const auto& b : q.regions) regions_json.push_back(band_json(b));
+    // Roadmap 3.5: where this reconstruction departs from what the SDR
+    // supports, measured on the composite against its corrected baseline
+    // (before the grade, which is the artist's, not the network's).
+    const SupportStats support =
+        support_stats(network, corrected_baseline(sdr, model.corpus_ev, scalars.curve_params), sdr);
+    auto pct3 = [](double v) {
+        char b[64];
+        std::snprintf(b, sizeof b, "%.3f", v);
+        return std::strtod(b, nullptr);
+    };
     const pyjson::Value sidecar = pyjson::Dict{
         {"maxcll_nits", md.maxcll},
         {"maxfall_nits", md.maxfall},
@@ -166,6 +178,13 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         {"region_ev", graded ? pyjson::Value(regions_json) : pyjson::Value(nullptr)},
         {"region_softness_stops", graded ? pyjson::Value(q.region_softness_stops) : pyjson::Value(nullptr)},
         {"tiled", false},
+        {"invented_pixels", pyjson::Dict{
+             {"invented_pct", pct3(support.invented_pct)},
+             {"reinterpreted_pct", pct3(support.reinterpreted_pct)},
+             {"sdr_without_detail_pct", pct3(support.sdr_without_detail_pct)},
+             {"threshold_stops", kChangeStops},
+             {"basis", "composite vs corrected baseline, max(R,G,B); invented where the SDR's max code is >= 254 or <= 1"},
+         }},
     };
     std::filesystem::path side = out;
     side.replace_extension(".json");

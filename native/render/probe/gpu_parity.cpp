@@ -177,6 +177,14 @@ int main(int argc, char** argv) {
         {"difference", view_params(ViewMode::Difference, 203.0, ViewSource::Model, -1.0, 0.0012, 2000.0)},
         {"wipe 0.37", view_params(ViewMode::Image, 406.0, ViewSource::Model, 0.37, 0.02)},
         {"wipe false colour", view_params(ViewMode::FalseColour, 203.0, ViewSource::Model, 0.61, 0.02)},
+        {"changes 203", [] { auto v = view_params(ViewMode::Image, 203.0); v.show_changes = true; return v; }()},
+        {"invented 203", view_params(ViewMode::Invented, 203.0)},
+        {"invented wipe 1000", view_params(ViewMode::Invented, 1000.0, ViewSource::Model, 0.37, 0.02)},
+        {"changes wipe 1000", [] {
+             auto v = view_params(ViewMode::Image, 1000.0, ViewSource::Model, 0.37, 0.02);
+             v.show_changes = true;
+             return v;
+         }()},
     };
     for (const auto& [name, f] : idx.at("frames").items()) {
         const SdrImage sdr(load(dir, f.at("sdr")));
@@ -187,8 +195,8 @@ int main(int argc, char** argv) {
         const auto m = composite(sdr, fields, sc, model, CompositeParams{});
         const auto b = corrected_baseline(sdr, model.corpus_ev, sc.curve_params);
         for (const auto& [vname, vp] : views) {
-            const Rgb8Image want = render_view_rgb8(m, b, vp);
-            auto got = (*gpu)->view(m, b, vp);
+            const Rgb8Image want = render_view_rgb8(m, b, vp, &sdr);
+            auto got = (*gpu)->view(m, b, vp, &sdr);
             if (!got) {
                 out << "rudra-gpu-parity: " << QString::fromStdString(got.error().message) << "\n";
                 return 2;
@@ -225,6 +233,8 @@ int main(int argc, char** argv) {
         {"false colour", view_params(ViewMode::FalseColour, 203.0)},
         {"difference", view_params(ViewMode::Difference, 203.0)},
         {"wipe", view_params(ViewMode::Image, 10000.0, ViewSource::Model, 0.37, 0.02)},
+        {"changes", [] { auto v = view_params(ViewMode::Image, 600.0); v.show_changes = true; return v; }()},
+        {"invented", view_params(ViewMode::Invented, 600.0)},
     };
     for (const auto& [name, f] : idx.at("frames").items()) {
         const SdrImage sdr(load(dir, f.at("sdr")));
@@ -237,9 +247,9 @@ int main(int argc, char** argv) {
         for (const auto& [tname, t] : targets)
             for (auto [vname, vp] : hdr_views) {
                 vp.target = t;
-                const PlanarBuffer want = render_view(m, b, vp);
-                auto g32 = (*gpu)->view_values(m, b, vp, GpuPrecision::Fp32);
-                auto g16 = (*gpu)->view_values(m, b, vp, GpuPrecision::Fp16);
+                const PlanarBuffer want = render_view(m, b, vp, &sdr);
+                auto g32 = (*gpu)->view_values(m, b, vp, GpuPrecision::Fp32, &sdr);
+                auto g16 = (*gpu)->view_values(m, b, vp, GpuPrecision::Fp16, &sdr);
                 if (!g32 || !g16) {
                     out << "rudra-gpu-parity: " << QString::fromStdString((!g32 ? g32.error() : g16.error()).message) << "\n";
                     return 2;
@@ -339,7 +349,7 @@ int main(int argc, char** argv) {
                                 {"fp16_max_ulp", r.f16_ulp}, {"pass", r.ok()}});
     }
     all = all && hdr_ok;
-    out << QString("  %1 cases (scRGB, HDR10, EDR P3, EDR 709 x 5 views x %2 frames): fp32 max rel %3, fp16 max %4 ulp  %5\n")
+    out << QString("  %1 cases (scRGB, HDR10, EDR P3, EDR 709 x 7 views x %2 frames): fp32 max rel %3, fp16 max %4 ulp  %5\n")
                .arg(hrows.size()).arg(idx.at("frames").size()).arg(worst_hdr_rel, 0, 'e', 2).arg(worst_hdr_ulp)
                .arg(hdr_ok ? "pass" : "FAIL");
     out << "  bound: fp32 1e-5 + " << kRtol << " |ref|; fp16 " << kMaxHalfUlp << " half ulp; HDR10 codes also pass within 1/20 of a 10-bit step\n";

@@ -1,5 +1,6 @@
 #include "rudra/core/view.hpp"
 
+#include "rudra/core/compare.hpp"
 #include "rudra/core/gamut.hpp"
 #include "rudra/core/hdr10.hpp"
 
@@ -59,8 +60,17 @@ float linear_to_srgb(float x) noexcept {
     return x > 0.0031308f ? 1.055f * std::pow(x, 1.0f / 2.4f) - 0.055f : 12.92f * x;
 }
 
+std::vector<float> sdr_max_codes(const SdrImage* sdr, int width, int height) {
+    const std::size_t n = std::size_t(width) * std::size_t(height);
+    std::vector<float> out(n, 0.5f);
+    if (!sdr || sdr->width() != width || sdr->height() != height) return out;
+    const PlanarBuffer& c = sdr->buffer();
+    for (std::size_t i = 0; i < n; ++i) out[i] = std::max(std::max(c.plane(0)[i], c.plane(1)[i]), c.plane(2)[i]);
+    return out;
+}
+
 PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
-                         const ViewParams& p) {
+                         const ViewParams& p, const SdrImage* sdr) {
     assert(model.width() == baseline.width() && model.height() == baseline.height());
     const int w = model.width(), h = model.height();
     const PlanarBuffer& m = model.buffer();
@@ -81,6 +91,7 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
     const Mat3f picture_m = to_float(rgb_to_rgb_matrix(p.source, p.target.primaries));
     const Mat3f graphics_m = to_float(rgb_to_rgb_matrix(Primaries::Rec709, p.target.primaries));
     const float graphics_white = float(kDiffuseWhite.v);
+    const std::vector<float> codes = p.mode == ViewMode::Invented ? sdr_max_codes(sdr, w, h) : std::vector<float>{};
 
     PlanarBuffer out(3, h, w);
     for (int y = 0; y < h; ++y) {
@@ -103,6 +114,16 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                     c[0] = v * 0.95f, c[1] = v * 0.62f, c[2] = v * 0.28f;
                     break;
                 }
+                case ViewMode::Invented: {
+                    const float g = kMapGrey * linear_to_srgb(lum2020(hr, hg, hb) * scale);
+                    const float mn = std::max(std::max(m.at(0, y, x), m.at(1, y, x)), m.at(2, y, x)) * kPeak;
+                    const float bn = std::max(std::max(b.at(0, y, x), b.at(1, y, x)), b.at(2, y, x)) * kPeak;
+                    const float a = kMapMix * std::abs(change_weight(mn, bn));
+                    const auto& col = sdr_has_no_information(codes[std::size_t(y) * std::size_t(w) + std::size_t(x)])
+                                          ? kInventedColour : kReinterpretedColour;
+                    for (int k = 0; k < 3; ++k) c[k] = g * (1.0f - a) + col[std::size_t(k)] * a;
+                    break;
+                }
                 case ViewMode::Image:
                 default:
                     if (hdr) {
@@ -115,6 +136,20 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                         c[2] = linear_to_srgb(hb * scale);
                     }
                     break;
+            }
+            if (p.show_changes && p.mode == ViewMode::Image) {
+                // Model against baseline at this pixel, whichever side is shown.
+                const float mn = std::max(std::max(m.at(0, y, x), m.at(1, y, x)), m.at(2, y, x)) * kPeak;
+                const float bn = std::max(std::max(b.at(0, y, x), b.at(1, y, x)), b.at(2, y, x)) * kPeak;
+                const float cw = change_weight(mn, bn);
+                if (cw != 0.0f) {
+                    const auto& col = cw > 0.0f ? kChangeUp : kChangeDown;
+                    const float a = kChangeTintMix * std::abs(cw);
+                    for (int k = 0; k < 3; ++k) {
+                        const float t = hdr ? graphics_white * srgb_to_linear(col[std::size_t(k)]) : col[std::size_t(k)];
+                        c[k] = c[k] * (1.0f - a) + t * a;
+                    }
+                }
             }
             const bool handle = wiping && std::abs(u - wipe) < half_width;
             if (!hdr) {
@@ -141,8 +176,8 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
 }
 
 Rgb8Image render_view_rgb8(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
-                           const ViewParams& p) {
-    const PlanarBuffer f = render_view(model, baseline, p);
+                           const ViewParams& p, const SdrImage* sdr) {
+    const PlanarBuffer f = render_view(model, baseline, p, sdr);
     Rgb8Image out{f.width(), f.height(), std::vector<std::uint8_t>(f.plane_size() * 3)};
     const std::size_t n = f.plane_size();
     for (std::size_t i = 0; i < n; ++i)

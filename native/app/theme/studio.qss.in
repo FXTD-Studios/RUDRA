@@ -106,6 +106,15 @@ QWidget#hud QWidget[role="seg"] QPushButton:checked { background: var(--raise-2)
 QWidget#hud QPushButton#guideBtn { background: transparent; border: 0; color: var(--ink-2); padding: 4px 10px; font-size: 12px; }
 QWidget#hud QPushButton#guideBtn:checked { background: var(--raise-2); color: var(--ink); }
 QWidget[role="hud-sep"] { background: var(--raise); min-width: 1px; max-width: 1px; min-height: 18px; max-height: 18px; }
+QWidget#hud QPushButton#changesBtn { background: transparent; border: 0; color: var(--ink-2); padding: 4px 10px; font-size: 12px; }
+QWidget#hud QPushButton#changesBtn:checked { background: var(--raise-2); color: var(--gold); }
+QWidget#hud QPushButton#inventedBtn { background: transparent; border: 0; color: var(--ink-2); padding: 4px 10px; font-size: 12px; }
+QWidget#hud QPushButton#inventedBtn:checked { background: var(--raise-2); color: var(--violet); }
+QWidget#compareBar { background: var(--bg); }
+QLabel#compareLine { background: transparent; color: var(--ink-3); font-size: 11px; }
+QLabel#compareLine[state="warn"] { color: var(--gold); }
+QPushButton#compareFit { background: var(--card); border: 1px solid var(--raise); border-radius: 9px; color: var(--ink); padding: 1px 10px; font-size: 11px; }
+QPushButton#compareFit:hover { background: var(--raise-2); }
 QLabel#zoomVal { color: var(--ink-3); font-size: 12px; font-family: "var(--mono-family)"; padding: 0 6px; }
 QWidget[role="badge"] { background: var(--card); border: 1px solid var(--raise); border-radius: 13px; }
 QWidget[role="badge"] QLabel { background: transparent; font-size: 12px; }

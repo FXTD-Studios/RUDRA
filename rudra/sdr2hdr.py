@@ -396,13 +396,23 @@ class CurveHead(nn.Module):
             torch.sigmoid((0.02 - y) * 200.0).mean(1),
             view.amax(dim=(1, 2, 3)), view.flatten(1).median(dim=1).values,
         ), dim=1)
-        features = [pooled, hist, stats]
+        x = torch.cat((pooled, hist, stats), dim=1)
         if self.source_inputs:
-            features.append(_source_onehot(source, sdr.shape[0], sdr.device, pooled.dtype))
-        elif source is not None and bool((torch.as_tensor(source) != 0).any()):
-            raise ValueError("this CurveHead has no source-curve input; build the model with "
-                             "source_curve=True or pass only unknown (0)")
-        raw = self.mlp(torch.cat(features, dim=1))
+            # The first layer in two parts, so that "unknown" (all zeros) runs
+            # exactly the blind model's matmul, bit for bit on any BLAS: a
+            # Linear over [x, 0...0] sums in a different order on some CPUs.
+            onehot = _source_onehot(source, sdr.shape[0], sdr.device, pooled.dtype)
+            first = self.mlp[0]
+            n = x.shape[1]
+            h = F.linear(x, first.weight[:, :n].contiguous(), first.bias)
+            if bool((onehot != 0).any()):
+                h = h + F.linear(onehot, first.weight[:, n:].contiguous())
+            raw = self.mlp[1:](h)
+        else:
+            if source is not None and bool((torch.as_tensor(source) != 0).any()):
+                raise ValueError("this CurveHead has no source-curve input; build the model with "
+                                 "source_curve=True or pass only unknown (0)")
+            raw = self.mlp(x)
         exposure = torch.tanh(raw[:, :1]) * self.max_exposure
         knots = torch.tanh(raw[:, 1:]) * self.max_knot
         return torch.cat((exposure, knots), dim=1)

@@ -323,11 +323,11 @@ public:
     }
 
     Result<Rgb8Image> view(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
-                           const ViewParams& params) override {
+                           const ViewParams& params, const SdrImage* sdr) override {
         if (params.target.path != OutputPath::SdrPqSimulation)
             return make_error(ErrorCode::InvalidArgument, "The 8-bit view is the SDR path; HDR paths read back as floats.");
         QByteArray data;
-        if (auto r = view_pass(model, baseline, params, QRhiTexture::RGBA8, data); !r) return r.error();
+        if (auto r = view_pass(model, baseline, params, QRhiTexture::RGBA8, data, sdr); !r) return r.error();
         const int w = model.width(), h = model.height();
         const std::size_t row = std::size_t(data.size()) / std::size_t(h);
         Rgb8Image o{w, h, std::vector<std::uint8_t>(std::size_t(w) * h * 3)};
@@ -341,12 +341,12 @@ public:
     }
 
     Result<PlanarBuffer> view_values(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
-                                     const ViewParams& params, GpuPrecision precision) override {
+                                     const ViewParams& params, GpuPrecision precision, const SdrImage* sdr) override {
         if (!supports(precision))
             return make_error(ErrorCode::Unsupported, "This GPU cannot render to that float format.");
         const bool f32 = precision == GpuPrecision::Fp32;
         QByteArray data;
-        if (auto r = view_pass(model, baseline, params, f32 ? QRhiTexture::RGBA32F : QRhiTexture::RGBA16F, data); !r)
+        if (auto r = view_pass(model, baseline, params, f32 ? QRhiTexture::RGBA32F : QRhiTexture::RGBA16F, data, sdr); !r)
             return r.error();
         const int w = model.width(), h = model.height();
         const std::size_t row = std::size_t(data.size()) / std::size_t(h);
@@ -472,11 +472,12 @@ public:
 private:
     // One display pass into a `fmt` target, read back raw.
     Result<void> view_pass(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
-                           const ViewParams& params, QRhiTexture::Format fmt, QByteArray& data) {
+                           const ViewParams& params, QRhiTexture::Format fmt, QByteArray& data,
+                           const SdrImage* sdr = nullptr) {
         const int w = model.width(), h = model.height();
         if (baseline.width() != w || baseline.height() != h)
             return make_error(ErrorCode::InvalidArgument, "The two composite targets differ in size.");
-        const std::vector<float> a = rgba_of(model.buffer()), b = rgba_of(baseline.buffer());
+        const std::vector<float> a = rgba_of(model.buffer()), b = detail::baseline_rgba(baseline.buffer(), sdr);
         std::unique_ptr<QRhiTexture> ta(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
         std::unique_ptr<QRhiTexture> tb(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
         std::unique_ptr<QRhiTexture> out(rhi_->newTexture(fmt, QSize(w, h), 1,
