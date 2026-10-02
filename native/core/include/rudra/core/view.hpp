@@ -13,7 +13,10 @@
 
 namespace rudra {
 
-enum class ViewMode : std::uint8_t { Image = 0, FalseColour = 1, Difference = 2 };
+// Invented: the invented-pixel map (core/compare.hpp, roadmap 3.5), a graphic
+// over a dimmed picture: magenta where the network made up values the SDR has
+// no information for, cyan where it reinterpreted SDR detail.
+enum class ViewMode : std::uint8_t { Image = 0, FalseColour = 1, Difference = 2, Invented = 3 };
 
 // Which path the picture takes to the glass. The pipe bar shows it verbatim.
 enum class OutputPath {
@@ -45,6 +48,7 @@ struct ViewParams {
     double wipe = -1.0;              // < 0 off; else [0, 1] across the frame, baseline on the left
     double wipe_half_width = 0.0012;
     double diff_gain = 2000.0;       // nits at which the difference ramp saturates
+    bool show_changes = false;       // Image: tint what the model changed against the baseline
     DisplayTarget target;            // SDR unless the swapchain is HDR
     Primaries source = Primaries::Rec709;   // of the composite: the network keeps the input's primaries
 };
@@ -62,6 +66,22 @@ inline ViewParams view_params(ViewMode mode, double display_nits, ViewSource sho
     v.diff_gain = diff_gain;
     return v;
 }
+
+// The tint of show_changes: amber where the model is brighter than the
+// baseline, blue where it is darker, mixed in by kChangeTintMix times
+// change_weight() (core/compare.hpp). SDR codes; the HDR paths take them as
+// graphics at the SDR white.
+inline constexpr std::array<float, 3> kChangeUp{0.95f, 0.62f, 0.28f};
+inline constexpr std::array<float, 3> kChangeDown{0.32f, 0.56f, 0.95f};
+inline constexpr float kChangeTintMix = 0.55f;
+
+// The Invented layer: the picture's luma at the view exposure times kMapGrey,
+// with kInventedColour or kReinterpretedColour mixed in by kMapMix times
+// |change_weight()|. SDR codes, graphics on the HDR paths.
+inline constexpr float kMapGrey = 0.6f;
+inline constexpr float kMapMix = 0.85f;
+inline constexpr std::array<float, 3> kInventedColour{0.92f, 0.30f, 0.86f};
+inline constexpr std::array<float, 3> kReinterpretedColour{0.25f, 0.78f, 0.86f};
 
 // 8-bit RGB, interleaved, image order (row 0 the top).
 struct Rgb8Image {
@@ -82,8 +102,10 @@ float linear_to_srgb(float x) noexcept;
 // image order): SDR codes in [0, 1] before the 8-bit conversion; scRGB and EDR
 // linear in the target's unit; HDR10 PQ codes. `model` and `baseline` are
 // network units.
+// `sdr` (the frame's SDR codes) is read by the Invented layer only; without it
+// every changed pixel reads as reinterpreted.
 PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
-                         const ViewParams& params);
+                         const ViewParams& params, const SdrImage* sdr = nullptr);
 
 // The exact reductions over m = max(R, G, B) (docs/view.spec.md section 4),
 // in network units, evaluated as the GPU ladder evaluates them: 2x2 boxes in
@@ -108,6 +130,11 @@ Probe probe_pixel(const NetworkLinearImage& model, const NetworkLinearImage& bas
 
 // The SDR picture quantised as the 8-bit framebuffer does: round(255 c).
 Rgb8Image render_view_rgb8(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
-                           const ViewParams& params);
+                           const ViewParams& params, const SdrImage* sdr = nullptr);
+
+// The SDR's max(R, G, B) code per pixel, what the display pass reads for the
+// Invented layer (the GPU gets it as the baseline texture's alpha); 0.5, a
+// code with detail, where there is no SDR.
+std::vector<float> sdr_max_codes(const SdrImage* sdr, int width, int height);
 
 }  // namespace rudra

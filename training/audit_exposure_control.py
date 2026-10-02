@@ -204,10 +204,34 @@ def run(args) -> dict:
     device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=False)
+    originals = {"manifest": args.manifest, "eval": list(args.eval)}
+    if args.root:
+        # Manifests carry absolute Windows paths. Remap their corpus folders to local
+        # copies; hashes are still taken of the ORIGINAL manifest files.
+        roots = dict(r.split("=", 1) for r in args.root)
+
+        def remapped(path):
+            text = Path(path).read_text(encoding="utf-8")
+            rows = []
+            for line in text.splitlines():
+                if not line.strip():
+                    continue
+                r = json.loads(line)
+                for key in ("sdr_path", "hdr_path"):
+                    v = r[key].replace("\\", "/")
+                    for name, local in roots.items():
+                        if name in v:
+                            r[key] = str(Path(local) / v.split(name, 1)[1].lstrip("/"))
+                rows.append(json.dumps(r))
+            dst = out / ("remapped_" + hashlib.sha256(str(path).encode()).hexdigest()[:8] + ".jsonl")
+            dst.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            return str(dst)
+        args.manifest = remapped(args.manifest)
+        args.eval = [remapped(e) for e in args.eval]
     source = json.loads(Path(args.source_protocol).read_text(encoding="utf-8"))
     update_ids = [g if isinstance(g, str) else g["asset_id"] for g in source["groups"]["update"]]
     rows = read_jsonl(args.manifest)
-    if source.get("manifest_sha256") and source["manifest_sha256"] != digest(Path(args.manifest)):
+    if source.get("manifest_sha256") and source["manifest_sha256"] != digest(Path(originals["manifest"])):
         raise ValueError("--manifest is not the manifest the R2 run used")
     train = SDRHDRDataset(args.manifest, split="train", crop_size=args.crop, augment=False,
                           deterministic_degradation=True)
@@ -225,13 +249,14 @@ def run(args) -> dict:
         order = sorted(range(len(ds.records)), key=lambda k: ds.records[k]["asset_id"])
         if set(ds.records[k]["asset_id"] for k in order) & set(update_ids):
             raise ValueError(f"{label}: an update frame is in the evaluation set")
-        sources.append(dict(label=label, ds=ds, fit=order[0::2], test=order[1::2], manifest=str(manifest),
-                            manifest_sha256=digest(Path(manifest))))
+        orig = originals["eval"][len(sources)]
+        sources.append(dict(label=label, ds=ds, fit=order[0::2], test=order[1::2], manifest=str(orig),
+                            manifest_sha256=digest(Path(orig))))
 
     protocol = dict(rule=__doc__.split("Rule (fixed before running).")[1].split("    python -m")[0].strip(),
                     steps=STEPS, lr=LR, seed=SEED, max_stops=MAX_STOPS, crop=args.crop, interior=INTERIOR,
                     updates=update_ids, checkpoint_sha256=digest(CHECKPOINT), script_sha256=digest(Path(__file__)),
-                    manifest_sha256=digest(Path(args.manifest)), source_protocol=str(args.source_protocol),
+                    manifest_sha256=digest(Path(originals["manifest"])), source_protocol=str(args.source_protocol),
                     sources=[{k: s[k] for k in ("label", "manifest", "manifest_sha256")} |
                              dict(fit=[s["ds"].records[k]["asset_id"] for k in s["fit"]],
                                   test=[s["ds"].records[k]["asset_id"] for k in s["test"]]) for s in sources])
@@ -328,6 +353,7 @@ def main(argv=None):
     p.add_argument("--out", required=True)
     p.add_argument("--crop", type=int, default=256)
     p.add_argument("--device", default="cuda")
+    p.add_argument("--root", action="append", default=[], help="NAME=LOCALDIR to remap manifest paths")
     args = p.parse_args(argv)
     if len(args.eval) != len(args.labels):
         p.error("--eval and --labels must have the same length")

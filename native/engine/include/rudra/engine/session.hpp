@@ -55,6 +55,7 @@ public:
     int region_sel = -1;
     std::string show = "model";       // Compare: "model" (RUDRA) or "baseline"
     int view_layer = 0;               // Layer: 0 image, 1 false colour, 2 difference
+    bool show_changes = false;        // Changes: tint what the model changed (view only, not in params())
     bool rail_left = true, rail_right = true, scopes_open = true;   // Window
 
     double display_nits() const;
@@ -92,6 +93,7 @@ public:
     void set_wipe(double x);                     // a drag on the plate, clamped 0..1
     void set_show(std::string_view source);      // the Compare buttons: also ends a wipe
     void set_view_layer(int layer);              // the Layer buttons
+    void toggle_changes();                       // the Changes button
     void toggle_anchor();                        // Deliver: anchor to the source exposure
     void toggle_carry_chroma();                  // Deliver: carry the source chroma
 

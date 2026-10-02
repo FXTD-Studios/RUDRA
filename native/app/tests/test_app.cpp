@@ -52,6 +52,7 @@
 #include <thread>
 #include <cctype>
 #include <cmath>
+#include <limits>
 
 #include <fstream>
 #include <map>
@@ -494,8 +495,10 @@ TEST(AppLayout, TheWordsAreThePages) {
 
 // The frame is the Pro board's ("Pro direction: main window"): the unified
 // toolbar across the top, the 240 px sidebar, the 320 px inspector, and in
-// the middle the compare bar, the viewer, the 30 px colour pipeline and the
-// 128 px timeline; a rail that is hidden gives its width to the viewer.
+// the middle the compare bar, the 24 px compare line (beta 3: what RUDRA
+// changed and how much of it the view shows), the viewer, the 30 px colour
+// pipeline and the 128 px timeline; a rail that is hidden gives its width to
+// the viewer.
 TEST(AppLayout, TheFrameIsTheProBoards) {
     for (const std::string state : {"full", "simple", "rails_hidden"}) {
         Window win(state);
@@ -527,7 +530,10 @@ TEST(AppLayout, TheFrameIsTheProBoards) {
         }
         EXPECT_EQ(side[1], tb[1] + 52) << state;
         EXPECT_EQ(tools[3], 52) << state;
-        EXPECT_EQ(viewer[1], tools[1] + tools[3]) << state;
+        const auto line = box("compareBar");
+        EXPECT_EQ(line[1], tools[1] + tools[3]) << state;
+        EXPECT_EQ(line[3], 24) << state;
+        EXPECT_EQ(viewer[1], line[1] + line[3]) << state;
         EXPECT_EQ(pipe[1], viewer[1] + viewer[3]) << state;
         EXPECT_EQ(pipe[3], 30) << state;
         EXPECT_EQ(time[1], pipe[1] + pipe[3]) << state;
@@ -815,6 +821,64 @@ TEST(AppMeasure, TheFramePanelAndBarsShowTheMeasurement) {
     ASSERT_LT(w.measurement()->measured.metrics.peak_nits, before - 1.0) << "no new measurement within 5 s";
     EXPECT_EQ(rows_of(w.findChild<QWidget*>("measA"))[2][1],
               metrics_text(w.measurement()->frame_metrics(), std::nullopt, 0).a[2].v);   // Peak, redrawn
+}
+
+// The compare line (beta 3): what the model changed against the baseline, how
+// much of it shows at this view peak, and a button that raises the peak far
+// enough to see it. Changes tints the picture (core/view.cpp, display.frag).
+TEST(AppMeasure, TheCompareLineSaysWhatChangedAndRaisesThePeak) {
+    app::MainWindow w(false);
+    w.resize(1600, 1000);
+    w.show();
+    ASSERT_TRUE(QTest::qWaitForWindowExposed(&w));
+    auto* line = w.findChild<QLabel*>("compareLine");
+    auto* fit = w.findChild<QPushButton*>("compareFit");
+    ASSERT_NE(line, nullptr);
+    ASSERT_NE(fit, nullptr);
+    EXPECT_FALSE(fit->isVisible());
+    synthetic_frame(w);
+    w.measure_now();
+    const FrameMeasure* m = w.measurement();
+    ASSERT_NE(m, nullptr);
+    const double inf = std::numeric_limits<double>::infinity();
+    const CompareText want = compare_text(m->compare, 203.0, inf);
+    EXPECT_EQ(line->text().toStdString(), want.line);
+    EXPECT_EQ(line->property("state").toString().toStdString(), want.warn ? "warn" : "");
+    EXPECT_EQ(fit->isVisible(), want.fit_shown);
+    if (want.fit_shown) {
+        EXPECT_EQ(fit->text().toStdString(), want.fit_label);
+        fit->click();
+        EXPECT_DOUBLE_EQ(w.session().peak_ev, want.fit_peak_ev);
+        const CompareText after = compare_text(m->compare, w.session().display_nits(), inf);
+        EXPECT_EQ(line->text().toStdString(), after.line);
+        EXPECT_FALSE(fit->isVisible());
+    }
+    // Changes: a view setting, not part of the grade or its undo.
+    auto* changes = w.findChild<QPushButton*>("changesBtn");
+    ASSERT_NE(changes, nullptr);
+    const std::string params = w.session().params_json();
+    const auto undo = w.session().undo_depth();
+    changes->click();
+    EXPECT_TRUE(w.session().show_changes);
+    EXPECT_TRUE(changes->isChecked());
+    EXPECT_EQ(w.session().params_json(), params);
+    EXPECT_EQ(w.session().undo_depth(), undo);
+    changes->click();
+    EXPECT_FALSE(w.session().show_changes);
+    // Invented (roadmap 3.5): a layer of its own, and the line becomes its legend.
+    auto* invented = w.findChild<QPushButton*>("inventedBtn");
+    ASSERT_NE(invented, nullptr);
+    invented->click();
+    EXPECT_EQ(w.session().view_layer, 3);
+    EXPECT_TRUE(invented->isChecked());
+    EXPECT_EQ(line->text().toStdString(), support_text(m->support));
+    EXPECT_FALSE(fit->isVisible());
+    find<app::Seg>(w, "viewLayer")->button("0")->click();   // Image ends it
+    EXPECT_FALSE(invented->isChecked());
+    invented->click();
+    invented->click();                                      // and so does a second click
+    EXPECT_EQ(w.session().view_layer, 0);
+    EXPECT_EQ(line->text().toStdString(), compare_text(m->compare, w.session().display_nits(), inf).line);
 }
 
 TEST(AppMeasure, TheProbeReadsThePixelUnderThePointer) {

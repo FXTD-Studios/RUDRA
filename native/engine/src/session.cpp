@@ -192,6 +192,11 @@ void Session::set_view_layer(int layer) {
     notify(View);
 }
 
+void Session::toggle_changes() {
+    show_changes = !show_changes;
+    notify(View);
+}
+
 void Session::toggle_anchor() {
     anchor = !anchor;
     notify(Delivery);

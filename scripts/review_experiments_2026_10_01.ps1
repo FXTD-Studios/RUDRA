@@ -8,6 +8,8 @@
 #          1,000-nit HDR10 master, and HDRTVDM (CVPR 2023, weights in its repo); HDRTVNet
 #          too if its outputs are present
 #   4. W6  H7, the per-source exposure control on real SDR (two 64-step corrections)
+#   5. W1  RUDRA vs its analytic baseline on real SDR, full frame, with the exposure
+#          diagnostic (HDRTV1K test/val, Netflix grades)
 #
 # Everything is resumable: a finished step is skipped. Nothing is committed or promoted.
 # Disk: the HDRTV1K step writes ~117 4K 16-bit PNGs per method, about 20 GB in total.
@@ -39,13 +41,13 @@ function Warn([string]$t) { Write-Host "   SKIPPED: $t" -ForegroundColor Yellow 
 if ($LASTEXITCODE -ne 0) { Say "installing cvvdp + opencv into the venv" Yellow; & $py -m pip install cvvdp opencv-python | Out-Host }
 
 # ---------------------------------------------------------------- 1. W5
-Say "1/4  scene bootstrap on the 429-frame benchmark"
+Say "1/5  scene bootstrap on the 429-frame benchmark"
 if (Test-Path (Join-Path $Bench "results\clean_baseline.json")) {
     Run @("-m", "training.bench_bootstrap", "--bench", $Bench) "review_bootstrap.log" | Out-Null
 } else { Warn "no $Bench\results\clean_baseline.json" }
 
 # ---------------------------------------------------------------- 2. W4
-Say "2/4  CVVDP display model"
+Say "2/5  CVVDP display model"
 Run @("-m", "training.cvvdp_display_check", "describe", "--out", (Join-Path $logDir "review_cvvdp_describe.json")) "review_cvvdp_describe.log" | Out-Null
 Run @("-m", "training.cvvdp_display_check", "probe", "--out", (Join-Path $logDir "review_cvvdp_probe.md")) "review_cvvdp_probe.log" | Out-Null
 $methods = @("v5", "v5_noshadow", "v6", "shadow_v1") | Where-Object { Test-Path (Join-Path $Bench "clean\$_") }
@@ -55,7 +57,7 @@ if ($methods -and (Test-Path (Join-Path $Bench "clean\ref"))) {
 
 # ---------------------------------------------------------------- 3. W1
 if (-not $SkipHdrtv1k) {
-    Say "3/4  HDRTV1K standard test"
+    Say "3/5  HDRTV1K standard test"
     $sdr = Join-Path $HdrTv1k "test_sdr"; $hdr = Join-Path $HdrTv1k "test_hdr"
     if (-not (Test-Path $sdr) -or -not (Test-Path $hdr)) { Warn "HDRTV1K test set not found at $HdrTv1k" }
     else {
@@ -84,7 +86,7 @@ if (-not $SkipHdrtv1k) {
 
 # ---------------------------------------------------------------- 4. W6 / H7
 if (-not $SkipH7) {
-    Say "4/4  H7 exposure control on real SDR"
+    Say "4/5  H7 exposure control on real SDR"
     $proto = @("$Repo\outputs\correction_transfer_20261001_031005\protocol.json",
                "$env:USERPROFILE\.codex\worktrees\e1ef\rudra\outputs\correction_transfer_20261001_031005\protocol.json") |
              Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -99,6 +101,14 @@ if (-not $SkipH7) {
     }
 }
 
+# ---------------------------------------------------------------- 5. real SDR
+Say "5/5  real SDR, full frame"
+$rsOut = Join-Path $Repo "outputs\realsdr_eval_20261001"
+if ((Test-Path $Upgrade) -and (Test-Path $Netflix)) {
+    Run @("-m", "training.realsdr_eval", "--manifest", $Upgrade, "--splits", "val", "test",
+          "--manifest", $Netflix, "--splits", "val", "--out", $rsOut, "--cvvdp", "--device", "cuda") "review_realsdr.log" | Out-Null
+} else { Warn "real-SDR manifests not found" }
+
 Write-Host @"
 
 Done. Read, in this order:
@@ -107,4 +117,5 @@ Done. Read, in this order:
   $Bench\results\bootstrap.md                  scene-level CIs for every headline gain
   $TvOut\summary.md                            RUDRA vs baseline vs HDRTVDM on HDRTV1K
   reports\logs\review_h7.log                   H7 verdict: EXPOSURE / SURVIVES / PARTIAL
+  $rsOut\summary.md                           real SDR: gains and where the error lives
 "@ -ForegroundColor Green

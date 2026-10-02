@@ -48,6 +48,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <thread>
 
@@ -488,6 +489,7 @@ void MainWindow::show_sheet(const QString& title, const std::vector<std::pair<QS
 void MainWindow::session_changed(std::uint32_t what) {
     if (what & Session::Grade) schedule_stats();
     if (what & (Session::Peak | Session::Delivery)) update_pipe();
+    if (what & (Session::Peak | Session::View)) update_compare();
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         if (what & Session::Grade) viewer_->set_composite(session_.composite_params());
@@ -495,9 +497,12 @@ void MainWindow::session_changed(std::uint32_t what) {
             auto v = viewer_->view();
             v.display_nits = session_.display_nits();
             v.wipe = session_.wipe ? *session_.wipe : -1.0;
-            v.mode = session_.view_layer == 1 ? ViewMode::FalseColour
-                     : session_.view_layer == 2 ? ViewMode::Difference : ViewMode::Image;
+            v.mode = session_.view_layer == 1   ? ViewMode::FalseColour
+                     : session_.view_layer == 2 ? ViewMode::Difference
+                     : session_.view_layer == 3 ? ViewMode::Invented
+                                                : ViewMode::Image;
             v.show = session_.show == "baseline" ? ViewSource::Baseline : ViewSource::Model;
+            v.show_changes = session_.show_changes;
             viewer_->set_view(v);
         }
     }
@@ -952,6 +957,8 @@ void MainWindow::sync_ui() {
     view_mode_->set_on(session_.wipe ? "#wipeBtn" : QString::fromStdString(session_.show));
     view_layer_->set_on(QString::number(session_.view_layer));
     guide_btn_->setChecked(guides_on_);
+    changes_btn_->setChecked(session_.show_changes);
+    invented_btn_->setChecked(session_.view_layer == 3);
     // Window
     rail_left_->setVisible(session_.rail_left);
     rail_right_->setVisible(session_.rail_right);
@@ -1163,8 +1170,38 @@ void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m) {
         findChild<QLabel*>("colShadows")->setText(QString::number(sh));
     }
     update_pipe();
+    update_compare();
     update_badges();
     refresh_enabled();
+}
+
+void MainWindow::update_compare() {
+    if (!measure_) {
+        compare_line_->setText(" ");
+        compare_fit_->hide();
+        return;
+    }
+    // The SDR view exposes to the view peak; an HDR swapchain clips at the panel.
+    double panel = std::numeric_limits<double>::infinity();
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_ && viewer_->view().target.path != OutputPath::SdrPqSimulation) panel = viewer_->view().target.peak_nits;
+#endif
+    CompareText t = compare_text(measure_->compare, session_.display_nits(), panel, peak_->minimum() / 2.0,
+                                 peak_->maximum() / 2.0);
+    if (session_.view_layer == 3) {   // the Invented layer: the line is its legend
+        t = CompareText{};
+        t.line = support_text(measure_->support);
+    }
+    compare_line_->setText(QString::fromStdString(t.line));
+    const char* state = t.warn ? "warn" : "";
+    if (compare_line_->property("state").toString() != state) {
+        compare_line_->setProperty("state", state);
+        compare_line_->style()->unpolish(compare_line_);
+        compare_line_->style()->polish(compare_line_);
+    }
+    compare_fit_ev_ = t.fit_peak_ev;
+    compare_fit_->setText(QString::fromStdString(t.fit_label));
+    compare_fit_->setVisible(t.fit_shown);
 }
 
 void MainWindow::update_pipe() {

@@ -3,7 +3,7 @@ name: release
 # The desktop beta: RUDRA.app in a DMG (macOS, Apple silicon), and for
 # Windows x64 an installer (setup.exe, Inno Setup) and a portable ZIP, each
 # with its SHA-256, attached to a GitHub pre-release when
-# a v* tag is pushed (git tag v0.9.0-beta.2 && git push origin v0.9.0-beta.2).
+# a v* tag is pushed (git tag v0.9.0-beta.3 && git push origin v0.9.0-beta.3).
 # Run by hand (workflow_dispatch), it builds the two and keeps them as
 # workflow artifacts without publishing. The packaging is the scripts'
 # (scripts/package_mac.sh, scripts/PACKAGE_WINDOWS.ps1); the model package is
@@ -35,8 +35,46 @@ jobs:
           pip install torch onnx onnxruntime numpy opencv-python-headless
           pip install -e .
           tools/ci_run.sh "Export" python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
+      - name: Signing certificate and notary key (when the secrets are set)
+        # docs/MACOS_SIGNING.md. Without MACOS_CERT_P12 the app is signed ad
+        # hoc, as before, and the release still goes out.
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+        run: |
+          if [ -z "$MACOS_CERT_P12" ]; then
+            echo "::warning::No MACOS_CERT_P12 secret: the DMG is signed ad hoc and macOS warns on first open"
+            exit 0
+          fi
+          kc="$RUNNER_TEMP/rudra-signing.keychain-db"
+          kcpw=$(uuidgen)
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpw" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$kc"
+          echo "MAC_SIGN_IDENTITY=$MACOS_SIGN_IDENTITY" >> "$GITHUB_ENV"
+          if [ -n "$MACOS_NOTARY_KEY" ]; then
+            printf '%s' "$MACOS_NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+            echo "MAC_NOTARY_KEY=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+            echo "MAC_NOTARY_KEY_ID=$MACOS_NOTARY_KEY_ID" >> "$GITHUB_ENV"
+            echo "MAC_NOTARY_ISSUER=$MACOS_NOTARY_ISSUER" >> "$GITHUB_ENV"
+          fi
       - name: Build and package
         run: PYTHON=python tools/ci_run.sh "Package" scripts/package_mac.sh
+      - name: Remove the signing keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/rudra-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/notary.p8"
       - uses: actions/upload-artifact@v4
         with:
           name: rudra-macos

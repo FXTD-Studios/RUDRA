@@ -10,8 +10,17 @@
 #   Contents/Frameworks  Qt (macdeployqt) and ONNX Runtime
 #   Contents/MacOS       RUDRA and rudra-native (the CLI: diff, video, deliver, batch)
 #   Contents/Resources   the icon, the model package(s) from dist/models, LICENSE, NOTICE
-# It is signed ad hoc (no Developer ID yet): the first open is right-click >
-# Open, or `xattr -dr com.apple.quarantine RUDRA.app`. ffmpeg is not bundled
+# Signing (docs/MACOS_SIGNING.md):
+#   MAC_SIGN_IDENTITY="Developer ID Application: <name> (<team>)"   a certificate in the keychain
+#   and one way to notarize:
+#     MAC_NOTARY_KEY=<AuthKey_XXXX.p8> MAC_NOTARY_KEY_ID=<key id> MAC_NOTARY_ISSUER=<issuer uuid>
+#     MAC_NOTARY_PROFILE=<name>   (xcrun notarytool store-credentials <name> ...)
+# With both, the app is signed with the hardened runtime, notarized and
+# stapled, and so is the DMG: it opens with no warning. Without an identity it
+# is signed ad hoc as before and macOS warns on first open (right-click > Open,
+# or `xattr -dr com.apple.quarantine RUDRA.app`). An identity without
+# notarization fails, since that build would warn too (ALLOW_UNNOTARIZED=1 to
+# keep it for a local test). ffmpeg is not bundled
 # (movies need an ffmpeg with libx265, prores_ks and zscale on the PATH, e.g.
 # `brew install ffmpeg@6` with its bin directory first on PATH); stills need nothing else.
 set -euo pipefail
@@ -68,9 +77,56 @@ find "$APP/Contents/Resources/models" -name "*.safetensors" -delete -o -name "*.
 cp LICENSE NOTICE "$APP/Contents/Resources/"
 [ -f checkpoints/LICENSE ] && cp checkpoints/LICENSE "$APP/Contents/Resources/LICENSE-weights"
 
-say "Sign (ad hoc)"
-codesign --force --deep --sign - "$APP"
-codesign --verify --deep --strict "$APP"
+IDENTITY=${MAC_SIGN_IDENTITY:-}
+notary_args=()
+if [ -n "${MAC_NOTARY_PROFILE:-}" ]; then
+  notary_args=(--keychain-profile "$MAC_NOTARY_PROFILE")
+elif [ -n "${MAC_NOTARY_KEY:-}" ]; then
+  [ -f "$MAC_NOTARY_KEY" ] && [ -n "${MAC_NOTARY_KEY_ID:-}" ] && [ -n "${MAC_NOTARY_ISSUER:-}" ] ||
+    fail "MAC_NOTARY_KEY needs the .p8 file, MAC_NOTARY_KEY_ID and MAC_NOTARY_ISSUER"
+  notary_args=(--key "$MAC_NOTARY_KEY" --key-id "$MAC_NOTARY_KEY_ID" --issuer "$MAC_NOTARY_ISSUER")
+fi
+if [ -n "$IDENTITY" ] && [ ${#notary_args[@]} -eq 0 ] && [ -z "${ALLOW_UNNOTARIZED:-}" ]; then
+  fail "MAC_SIGN_IDENTITY is set but nothing to notarize with: a signed, unnotarized app still warns"
+fi
+
+# Notarize one file and wait; on rejection print Apple's log, which names the binary.
+notarize() {
+  say "Notarize $(basename "$1")"
+  local out id
+  out=$(xcrun notarytool submit "$1" "${notary_args[@]}" --wait --output-format json) || true
+  echo "$out"
+  id=$(printf '%s' "$out" | sed -n 's/.*"id"[^"]*"\([^"]*\)".*/\1/p' | head -1)
+  if ! printf '%s' "$out" | grep -q '"status"[^"]*"Accepted"'; then
+    [ -n "$id" ] && xcrun notarytool log "$id" "${notary_args[@]}" || true
+    fail "notarization of $1 was not accepted"
+  fi
+}
+
+if [ -n "$IDENTITY" ]; then
+  say "Sign (Developer ID, hardened runtime)"
+  sign() { codesign --force --timestamp --options runtime --sign "$IDENTITY" "$@"; }
+  # Inside out, never --deep: every library and plug-in, then the frameworks,
+  # then the second executable, then the app with its main executable.
+  while IFS= read -r -d '' f; do sign "$f"; done < <(find "$APP/Contents" -type f \( -name "*.dylib" -o -name "*.so" \) -print0)
+  for fw in "$APP"/Contents/Frameworks/*.framework; do [ -d "$fw" ] && sign "$fw"; done
+  sign "$APP/Contents/MacOS/rudra-native"
+  sign "$APP"
+  codesign --verify --deep --strict --verbose=2 "$APP"
+  if [ ${#notary_args[@]} -gt 0 ]; then
+    ditto -c -k --keepParent "$APP" "$OUT/RUDRA.zip"
+    notarize "$OUT/RUDRA.zip"
+    rm -f "$OUT/RUDRA.zip"
+    xcrun stapler staple "$APP"
+    verdict=$(spctl --assess --type execute --verbose=2 "$APP" 2>&1 || true)
+    echo "$verdict"
+    case "$verdict" in *"Notarized Developer ID"*) ;; *) fail "Gatekeeper does not accept the notarized app" ;; esac
+  fi
+else
+  say "Sign (ad hoc: no MAC_SIGN_IDENTITY, macOS will warn on first open)"
+  codesign --force --deep --sign - "$APP"
+  codesign --verify --deep --strict "$APP"
+fi
 
 say "Check the bundle runs from where it is"
 # Nothing may still point into the build tree or Homebrew.
@@ -88,6 +144,19 @@ say "Disk image"
 cp docs/BETA.md "$OUT/Read me first.md" 2>/dev/null || true
 ln -s /Applications "$OUT/Applications"
 hdiutil create -volname "RUDRA $VERSION" -srcfolder "$OUT" -ov -format UDZO "dist/beta/$NAME.dmg" >/dev/null
+if [ -n "$IDENTITY" ]; then
+  codesign --force --timestamp --sign "$IDENTITY" "dist/beta/$NAME.dmg"
+  if [ ${#notary_args[@]} -gt 0 ]; then
+    notarize "dist/beta/$NAME.dmg"
+    xcrun stapler staple "dist/beta/$NAME.dmg"
+    xcrun stapler validate "dist/beta/$NAME.dmg"
+    spctl --assess --type open --context context:primary-signature --verbose=2 "dist/beta/$NAME.dmg"
+  fi
+fi
 shasum -a 256 "dist/beta/$NAME.dmg" | tee "dist/beta/$NAME.dmg.sha256"
 echo
-echo "Built: dist/beta/$NAME.dmg"
+if [ -n "$IDENTITY" ] && [ ${#notary_args[@]} -gt 0 ]; then signed="Developer ID, notarized"
+elif [ -n "$IDENTITY" ]; then signed="Developer ID, NOT notarized (warns on first open)"
+else signed="ad hoc (warns on first open)"; fi
+echo "Built: dist/beta/$NAME.dmg  [$signed]"
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then echo "macOS DMG: $NAME.dmg, signed $signed" >> "$GITHUB_STEP_SUMMARY"; fi

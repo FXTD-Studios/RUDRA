@@ -423,10 +423,17 @@ only when enabled.
 | composite + view, 4K, GPU | ≤ 12 ms | **composite + display pass 1.156 ms (D3D12), 1.154 (D3D11), 1.167 (Vulkan), 1.030 (OpenGL)**; the composite alone 0.49 ms |
 | inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | fp32 172 ms untiled, 296 ms tiled 512/64 (RTX 4080 SUPER, fields in host memory); fp16/bf16 not built yet |
 | inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | 150 ms untiled, 489 ms tiled 512/64; CPU for reference: LibTorch 2.5 s, ONNX Runtime 3.2 s |
+| inference, 4K, RTX 4080, LibTorch CUDA / ORT DirectML fp32 | measure, then measured + 25 % | not yet run: `NATIVE_GATE_A.ps1 -SkipExport -SkipBuild -Machine rtx4080s-win` times it, and its first run sets the 4K budgets |
 | inference, 1080p, Apple M-series, LibTorch MPS / ORT Core ML | measure | [Phase 0] |
+| inference, 1080p, CPU on GitHub's ubuntu-24.04 runner (CI, `native` parity job) | ≤ 40 s LibTorch, ≤ 25 s ONNX Runtime, untiled | 16.7 s and 10.1 s untiled (28.7 s and 16.9 s tiled) on a 2-core cloud VM, 2 Oct 2026; loose on purpose, it catches a debug build or a lost thread pool |
 | viewer measurements and scopes, CPU, after a slider settles (off the render thread) | ≤ 16 ms | 21 ms at 1080p and 23 ms at 4K (768 x 432 sample) plus 5 ms vectorscope on two 2.1 GHz cloud cores (29 and 7 ms on one): the per-pixel work runs in up to eight chunks whose integer counts merge exactly, the order-dependent sums stay sequential, and the result is bit-identical to the browser's still (`rudra-native bench-scopes`); the desktop number comes from `NATIVE_GATE_A.ps1` |
 | first frame after open (warm) | ≤ 2 s | decode plus one inference: 150 to 172 ms of inference at 1080p on the RTX 4080 SUPER (above); end to end from the app on Windows open |
 | scrub to cached frame | ≤ 1 display frame | synchronous: a cached frame is delivered inside `FrameEngine::show()` (0.01 ms in the engine test); the upload and passes are the composite + view row |
+
+The budgets live in `native/bench/latency_budgets.json`, per machine label;
+`rudra-native bench --budget <file> --machine <label>` exits 1 when a budgeted
+row is over (roadmap 3.6), and both gate scripts pass it through (`-Machine`,
+`MACHINE=`).
 
 Instrumentation: Tracy zones on every actor message and GPU timer queries on
 every render pass (QRhi GPU timestamps), from the first commit.

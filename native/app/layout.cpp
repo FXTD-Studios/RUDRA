@@ -350,6 +350,20 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
         else session_.set_show(k.toStdString());
     };
     hudh->addWidget(view_mode_);
+    changes_btn_ = new QPushButton("Changes", hud);
+    changes_btn_->setObjectName("changesBtn");
+    changes_btn_->setCheckable(true);
+    changes_btn_->setToolTip("Tint what RUDRA changed: amber brighter, blue darker than the baseline");
+    connect(changes_btn_, &QPushButton::clicked, this, [this] { session_.toggle_changes(); });
+    hudh->addWidget(changes_btn_);
+    invented_btn_ = new QPushButton("Invented", hud);
+    invented_btn_->setObjectName("inventedBtn");
+    invented_btn_->setCheckable(true);
+    invented_btn_->setToolTip("Invented-pixel map: magenta where RUDRA made up values the SDR clipped or crushed, "
+                              "cyan where it reinterpreted SDR detail");
+    connect(invented_btn_, &QPushButton::clicked, this,
+            [this] { session_.set_view_layer(session_.view_layer == 3 ? 0 : 3); });
+    hudh->addWidget(invented_btn_);
     hudh->addWidget(styled({}, "hud-sep"));
     view_layer_ = new Seg("viewLayer", {{"0", "Image"}, {"1", "False colour"}, {"2", "Difference"}}, hud);
     view_layer_->button("0")->setToolTip("The composed picture");
@@ -393,6 +407,25 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     ch->addWidget(label("MaxCLL \u2014", "cllBadge", {}, cll));
     rh->addWidget(cll);
     v->addWidget(tools);
+
+    // ── the compare line: what RUDRA changed, and how much of it this view shows ──
+    compare_bar_ = styled("compareBar");
+    compare_bar_->setFixedHeight(24);
+    auto* cb = new QHBoxLayout(compare_bar_);
+    cb->setContentsMargins(16, 0, 16, 4);
+    cb->setSpacing(10);
+    cb->addStretch(1);
+    compare_line_ = label({}, "compareLine", {}, compare_bar_);
+    cb->addWidget(compare_line_);
+    compare_fit_ = new QPushButton(compare_bar_);
+    compare_fit_->setObjectName("compareFit");
+    compare_fit_->setToolTip("Raise the view peak so the change is not clipped away (the master is unchanged)");
+    compare_fit_->hide();
+    connect(compare_fit_, &QPushButton::clicked, this, [this] { session_.peak_input(compare_fit_ev_); });
+    cb->addWidget(compare_fit_);
+    cb->addStretch(1);
+    compare_line_->setText(" ");
+    v->addWidget(compare_bar_);
 
     // ── the viewer ──
     viewer_stack_ = new QStackedWidget(centre);
