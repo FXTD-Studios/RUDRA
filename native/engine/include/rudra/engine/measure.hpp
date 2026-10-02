@@ -12,6 +12,7 @@
 #include <optional>
 #include <vector>
 
+#include "rudra/core/compare.hpp"
 #include "rudra/core/composite.hpp"
 #include "rudra/core/fields.hpp"
 #include "rudra/core/image.hpp"
@@ -28,6 +29,8 @@ struct FrameMeasure {
     MaskCoverage coverage;                       // state.maskPct
     Measured measured;                           // metrics, scopes, the sample's luma
     std::vector<std::uint8_t> vector_rgba;       // drawVector's 256 x 256
+    CompareStats compare;                        // what the model changed, for the compare line
+    SupportStats support;                        // the invented-pixel map's shares
     double compose_ms = 0.0;                     // the grade's cost, as the page times it
 
     FrameMetrics frame_metrics() const;          // showMetrics' input

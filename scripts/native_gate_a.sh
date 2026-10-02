@@ -7,6 +7,7 @@
 #   SKIP_EXPORT=1 scripts/native_gate_a.sh            # use dist/models/<stem> as it is
 #   BENCH_DIR=~/bench/sdr scripts/native_gate_a.sh    # add the bench frames to the parity check
 #   NO_BENCH=1 scripts/native_gate_a.sh               # parity only, no timings
+#   MACHINE=m-series-mac scripts/native_gate_a.sh     # timings held to native/bench/latency_budgets.json
 #
 # Rows: LibTorch CPU and ONNX Runtime CPU everywhere; LibTorch MPS and ONNX
 # Runtime Core ML on a Mac; LibTorch CUDA on Linux when this torch sees a GPU.
@@ -163,22 +164,32 @@ table() {
 table | tee -a "$REPORT"
 
 # ---------------------------------------------------------------------------
-# Inference time at 1080p on every backend that passed, for the budget table
-# (NATIVE_ARCHITECTURE.md 6.6). Wall time to fields in host memory.
+# Inference time at 1080p and 4K on every backend that passed, for the budget
+# table (NATIVE_ARCHITECTURE.md 6.6, roadmap 3.6). Wall time to fields in host
+# memory; JSON per backend in reports/latency/. MACHINE=<label> holds them to
+# native/bench/latency_budgets.json.
+over_budget=""
 if [ -z "${NO_BENCH:-}" ]; then
-  say "Inference time, 1920x1080, fp32 (median of 5)"
-  printf '%-22s %12s %16s\n' Backend "untiled ms" "tiled 512/64 ms" | tee -a "$REPORT"
+  say "Inference time, 1920x1080 and 3840x2160, fp32 (median of 5)"
+  mkdir -p reports/latency
+  budget_args=()
+  [ -n "${MACHINE:-}" ] && budget_args=(--budget native/bench/latency_budgets.json --machine "$MACHINE")
+  printf '%-22s %10s %14s %10s %14s\n' Backend "1080p ms" "1080p tiled" "4K ms" "4K tiled" | tee -a "$REPORT"
   i=0
   for row in "${ROWS[@]}"; do
     IFS='|' read -r name runtime device run <<<"$row"
     IFS='|' read -r _ result _ <<<"${SUMMARY[$i]}"; i=$((i + 1))
     [ "$result" = PASS ] || continue
-    out=$("$EXE" bench "$PACKAGE" --runtime "$runtime" --device "$device" --size 1920x1080 --iters 5 2>&1) || true
+    code=0
+    out=$("$EXE" bench "$PACKAGE" --runtime "$runtime" --device "$device" --size 1920x1080,3840x2160 --iters 5 \
+          --json "reports/latency/$(date +%Y-%m-%d_%H%M)_${runtime}_${device}.json" ${budget_args[@]+"${budget_args[@]}"} 2>&1) || code=$?
+    [ "$code" = 1 ] && over_budget="$over_budget $name"
     printf -- '---- bench %s\n%s\n\n' "$name" "$out" >> "$REPORT"
-    untiled=$(printf '%s\n' "$out" | awk '$1=="BENCH" && $5=="untiled" {print $6}')
-    tiled=$(printf '%s\n' "$out" | awk '$1=="BENCH" && $5=="tiled" {print $6}')
-    printf '%-22s %12s %16s\n' "$name" "${untiled:--}" "${tiled:--}" | tee -a "$REPORT"
+    ms() { printf '%s\n' "$out" | awk -v s="$1" -v m="$2" '$1=="BENCH" && $4==s && $5==m {print $6}'; }
+    printf '%-22s %10s %14s %10s %14s\n' "$name" "$(ms 1920x1080 untiled)" "$(ms 1920x1080 tiled)" \
+      "$(ms 3840x2160 untiled)" "$(ms 3840x2160 tiled)" | tee -a "$REPORT"
   done
+  [ -n "$over_budget" ] && echo "OVER BUDGET (${MACHINE}):$over_budget" | tee -a "$REPORT"
 
   say "Viewer measurements and scopes on the CPU"
   out=$("$EXE" bench-scopes 2>&1) || true
@@ -189,4 +200,5 @@ fi
 say "Result"
 table
 echo "Full log: $REPORT"
+[ -n "$over_budget" ] && { echo "FAILED: over the ${MACHINE} latency budget:$over_budget" >&2; exit 1; }
 exit $status

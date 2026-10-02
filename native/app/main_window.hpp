@@ -248,6 +248,9 @@ private:
     void run_stats();
     void apply_measure(std::shared_ptr<const FrameMeasure> m);
     void update_pipe();
+    // The compare line under the Compare bar: what RUDRA changed and how much
+    // of it the view peak shows (core/readouts compare_text).
+    void update_compare();
     void fill_rows(QWidget* ms, const std::vector<MetricRow>& rows);
 
     std::map<std::string, QAction*, std::less<>> actions_;
@@ -269,7 +272,10 @@ private:
     QLabel *strength_val_ = nullptr, *peak_val_ = nullptr, *shot_count_ = nullptr, *frames_empty_ = nullptr,
            *tc_ = nullptr, *src_info_ = nullptr, *zoom_val_ = nullptr, *container_field_ = nullptr,
            *primaries_field_ = nullptr, *ckpt_ = nullptr, *device_ = nullptr, *lamp_ = nullptr,
-           *region_count_ = nullptr, *view_transform_ = nullptr;
+           *region_count_ = nullptr, *view_transform_ = nullptr, *compare_line_ = nullptr;
+    QWidget* compare_bar_ = nullptr;
+    QPushButton *changes_btn_ = nullptr, *invented_btn_ = nullptr, *compare_fit_ = nullptr;
+    double compare_fit_ev_ = 0.0;
     QPushButton *guide_btn_ = nullptr, *probe_btn_ = nullptr, *btn_master_ = nullptr, *btn_reprocess_ = nullptr;
     IconButton *i_media_ = nullptr, *i_scopes_ = nullptr, *i_inspector_ = nullptr, *btn_prev_ = nullptr,
                *btn_play_ = nullptr, *btn_next_ = nullptr;

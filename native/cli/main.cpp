@@ -3,7 +3,8 @@
 //   rudra-native version
 //   rudra-native info <package>
 //   rudra-native diff <package> [--runtime libtorch|onnxruntime|all] [--device cpu|cuda|mps|directml|coreml|rocm|openvino]
-//   rudra-native bench <package> [--runtime ...] [--device ...] [--size 1920x1080] [--iters 5]
+//   rudra-native bench <package> [--runtime ...] [--device ...] [--size 1920x1080,3840x2160] [--iters 5]
+//                      [--json out.json] [--budget native/bench/latency_budgets.json --machine <label>]
 //   rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]
 //   rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]
 //   rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]
@@ -18,8 +19,12 @@
 //
 // `bench` times inference for the budget table (NATIVE_ARCHITECTURE.md 6.6):
 // one warm-up, then the median of --iters runs, untiled and tiled 512/64, on
-// a synthetic frame. Wall time, fields back in host memory, so a GPU run is
-// timed to completion. Each result is also printed as a BENCH line for scripts.
+// a synthetic frame, at each --size (1080p and 4K by default). Wall time,
+// fields back in host memory, so a GPU run is timed to completion. Each result
+// is also printed as a BENCH line for scripts and, with --json, written to a
+// file. With --budget, every result that has a budget for this --machine (a
+// label the budget file names, e.g. "rtx4080-win") must be within it, or the
+// command exits 1: a slower build fails the gate instead of shipping.
 //
 // `bench-scopes` times what the viewer does on the CPU after a slider move
 // (core/scopes.cpp: the 768-side sample, computeStats, buildScopes and the
@@ -35,6 +40,7 @@
 #include <iterator>
 #include <memory>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -121,11 +127,30 @@ int cmd_diff(const fs::path& pkg, const std::string& which, Device device) {
     return all_pass ? 0 : 1;
 }
 
-int cmd_bench(const fs::path& pkg, const std::string& which, Device device, int w, int h, int iters) {
-    auto m = read_manifest(pkg);
-    if (!m) return fail(m.error());
-    // Deterministic synthetic frame: a lit gradient with a clipped patch and
-    // fine texture, so every head has something to do.
+struct BenchSize {
+    int w = 0, h = 0;
+    std::string label() const { return std::to_string(w) + "x" + std::to_string(h); }
+};
+
+// "1920x1080,3840x2160"
+std::optional<std::vector<BenchSize>> parse_sizes(const std::string& s) {
+    std::vector<BenchSize> out;
+    std::size_t at = 0;
+    while (at <= s.size()) {
+        const std::size_t comma = s.find(',', at);
+        const std::string one = s.substr(at, comma == std::string::npos ? std::string::npos : comma - at);
+        BenchSize b;
+        if (std::sscanf(one.c_str(), "%dx%d", &b.w, &b.h) != 2 || b.w <= 0 || b.h <= 0) return std::nullopt;
+        out.push_back(b);
+        if (comma == std::string::npos) break;
+        at = comma + 1;
+    }
+    return out.empty() ? std::nullopt : std::optional(out);
+}
+
+// Deterministic synthetic frame: a lit gradient with a clipped patch and fine
+// texture, so every head has something to do.
+SdrImage bench_frame(int w, int h) {
     PlanarBuffer b(3, h, w);
     std::uint32_t seed = 20260923u;
     for (int y = 0; y < h; ++y)
@@ -136,7 +161,34 @@ int cmd_bench(const fs::path& pkg, const std::string& which, Device device, int 
             const bool clip = std::abs(x - w * 3 / 4) < w / 10 && std::abs(y - h / 3) < h / 8;
             for (int c = 0; c < 3; ++c) b.at(c, y, x) = clip ? 1.0f : std::clamp(g * (1.0f - 0.15f * float(c)) + n, 0.0f, 1.0f);
         }
-    const SdrImage frame(std::move(b));
+    return SdrImage(std::move(b));
+}
+
+int cmd_bench(const fs::path& pkg, const std::string& which, Device device, const std::vector<BenchSize>& sizes,
+              int iters, const std::string& json_out, const std::string& budget_file, const std::string& machine) {
+    auto m = read_manifest(pkg);
+    if (!m) return fail(m.error());
+
+    nlohmann::json budgets = nlohmann::json::array();
+    if (!budget_file.empty()) {
+        std::ifstream in(budget_file);
+        if (!in) return fail(make_error(ErrorCode::InvalidArgument, "Cannot read the budget file.", budget_file));
+        try {
+            budgets = nlohmann::json::parse(in).at("budgets");
+        } catch (const std::exception& e) {
+            return fail(make_error(ErrorCode::InvalidArgument, "The budget file is not valid.", e.what()));
+        }
+        if (machine.empty())
+            return fail(make_error(ErrorCode::InvalidArgument, "--budget needs --machine: budgets are per machine.",
+                                   budget_file));
+    }
+    auto budget_for = [&](const char* rt, const char* dev, const std::string& size, const char* mode) -> double {
+        for (const auto& b : budgets)
+            if (b.value("machine", "") == machine && b.value("runtime", "") == rt && b.value("device", "") == dev &&
+                b.value("size", "") == size && b.value("mode", "") == mode)
+                return b.at("max_ms").get<double>();
+        return 0.0;
+    };
 
     std::vector<Runtime> runtimes;
     for (auto r : compiled_runtimes())
@@ -144,36 +196,84 @@ int cmd_bench(const fs::path& pkg, const std::string& which, Device device, int 
     if (runtimes.empty())
         return fail(make_error(ErrorCode::Unsupported, "No requested runtime is compiled into this build.", which));
 
+    nlohmann::json results = nlohmann::json::array();
+    int over = 0, checked = 0;
     using clock = std::chrono::steady_clock;
     for (auto rt : runtimes) {
         auto backend = rt == Runtime::LibTorch ? make_libtorch_backend(*m, device) : make_onnxruntime_backend(*m, device);
         if (!backend) return fail(backend.error());
         const auto info = (*backend)->info();
-        std::printf("%s %s on %s (%s), %dx%d, fp32, median of %d after one warm-up\n", to_string(info.runtime),
-                    info.version.c_str(), to_string(info.device), info.detail.c_str(), w, h, iters);
-        const std::pair<const char*, TileConfig> modes[] = {{"untiled", TileConfig{0, 0}},
-                                                            {"tiled", TileConfig{m->tile_size, m->overlap}}};
-        for (const auto& [name, cfg] : modes) {
-            std::vector<double> ms;
-            for (int i = 0; i <= iters; ++i) {
-                const auto t0 = clock::now();
-                auto r = infer_frame(**backend, frame, cfg);
-                const auto t1 = clock::now();
-                if (!r) {
-                    std::printf("  %-8s %s\n", name, r.error().message.c_str());
-                    ms.clear();
-                    break;
+        for (const auto& size : sizes) {
+            const SdrImage frame = bench_frame(size.w, size.h);
+            std::printf("%s %s on %s (%s), %s, fp32, median of %d after one warm-up\n", to_string(info.runtime),
+                        info.version.c_str(), to_string(info.device), info.detail.c_str(), size.label().c_str(), iters);
+            const std::pair<const char*, TileConfig> modes[] = {{"untiled", TileConfig{0, 0}},
+                                                                {"tiled", TileConfig{m->tile_size, m->overlap}}};
+            for (const auto& [name, cfg] : modes) {
+                nlohmann::json row{{"runtime", to_string(info.runtime)}, {"device", to_string(info.device)},
+                                   {"version", info.version}, {"detail", info.detail}, {"size", size.label()},
+                                   {"mode", name}, {"iters", iters}};
+                std::vector<double> ms;
+                std::string error;
+                for (int i = 0; i <= iters; ++i) {
+                    const auto t0 = clock::now();
+                    auto r = infer_frame(**backend, frame, cfg);
+                    const auto t1 = clock::now();
+                    if (!r) {
+                        error = r.error().message;
+                        ms.clear();
+                        break;
+                    }
+                    if (i > 0) ms.push_back(std::chrono::duration<double, std::milli>(t1 - t0).count());
                 }
-                if (i > 0) ms.push_back(std::chrono::duration<double, std::milli>(t1 - t0).count());
+                const double limit = budget_for(to_string(info.runtime), to_string(info.device), size.label(), name);
+                if (ms.empty()) {
+                    std::printf("  %-8s %s\n", name, error.c_str());
+                    row["error"] = error;
+                    if (limit > 0.0) {   // a budgeted path that cannot run is over its budget
+                        ++checked;
+                        ++over;
+                        row["budget_ms"] = limit;
+                        row["within_budget"] = false;
+                    }
+                    results.push_back(row);
+                    continue;
+                }
+                std::sort(ms.begin(), ms.end());
+                const double med = ms[ms.size() / 2];
+                row["median_ms"] = med;
+                row["min_ms"] = ms.front();
+                std::string verdict;
+                if (limit > 0.0) {
+                    ++checked;
+                    const bool ok = med <= limit;
+                    over += !ok;
+                    row["budget_ms"] = limit;
+                    row["within_budget"] = ok;
+                    char buf[64];
+                    std::snprintf(buf, sizeof buf, "  budget %8.1f ms  %s", limit, ok ? "ok" : "OVER");
+                    verdict = buf;
+                }
+                std::printf("  %-8s median %8.1f ms  min %8.1f ms%s\n", name, med, ms.front(), verdict.c_str());
+                std::printf("BENCH %s %s %s %s %.2f\n", to_string(info.runtime), to_string(info.device),
+                            size.label().c_str(), name, med);
+                results.push_back(row);
             }
-            if (ms.empty()) continue;
-            std::sort(ms.begin(), ms.end());
-            const double med = ms[ms.size() / 2];
-            std::printf("  %-8s median %8.1f ms  min %8.1f ms\n", name, med, ms.front());
-            std::printf("BENCH %s %s %dx%d %s %.2f\n", to_string(info.runtime), to_string(info.device), w, h, name, med);
         }
     }
-    return 0;
+    if (!budget_file.empty())
+        std::printf("budgets (%s, machine %s): %d checked, %d over => %s\n", budget_file.c_str(), machine.c_str(),
+                    checked, over, over ? "FAIL" : "PASS");
+    if (!json_out.empty()) {
+        nlohmann::json doc{{"package", m->name}, {"source_sha256", m->source_sha256}, {"machine", machine},
+                           {"precision", "fp32"}, {"results", results}};
+        if (!budget_file.empty())
+            doc["budget"] = {{"file", budget_file}, {"checked", checked}, {"over", over}, {"pass", over == 0}};
+        std::ofstream out(json_out);
+        out << doc.dump(2) << "\n";
+        if (!out) return fail(make_error(ErrorCode::IoError, "Cannot write the bench JSON.", json_out));
+    }
+    return over ? 1 : 0;
 }
 
 #ifdef RUDRA_HAVE_STILL_DECODE
@@ -387,7 +487,8 @@ void usage() {
                  "       rudra-native info <package>\n"
                  "       rudra-native diff <package> [--runtime libtorch|onnxruntime|all] [--device cpu|cuda|mps|"
                  "directml|coreml|rocm|openvino]\n"
-                 "       rudra-native bench <package> [--runtime ...] [--device ...] [--size WxH] [--iters N]\n"
+                 "       rudra-native bench <package> [--runtime ...] [--device ...] [--size WxH[,WxH]] [--iters N]\n"
+                 "                          [--json FILE] [--budget FILE --machine LABEL]\n"
                  "       rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]\n"
                  "       rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]\n"
                  "       rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]\n"
@@ -454,19 +555,25 @@ int main(int argc, char** argv) {
     }
 #endif
     if (args[0] == "bench") {
-        std::string runtime = "all", device = "cpu";
-        int w = 1920, h = 1080, iters = 5;
+        std::string runtime = "all", device = "cpu", json_out, budget, machine;
+        std::vector<BenchSize> sizes{{1920, 1080}, {3840, 2160}};
+        int iters = 5;
         for (std::size_t i = 2; i + 1 < args.size(); i += 2) {
             if (args[i] == "--runtime") runtime = args[i + 1];
             else if (args[i] == "--device") device = args[i + 1];
             else if (args[i] == "--size") {
-                if (std::sscanf(args[i + 1].c_str(), "%dx%d", &w, &h) != 2 || w <= 0 || h <= 0) { usage(); return 64; }
+                auto s = parse_sizes(args[i + 1]);
+                if (!s) { usage(); return 64; }
+                sizes = *s;
             } else if (args[i] == "--iters") iters = std::max(1, std::atoi(args[i + 1].c_str()));
+            else if (args[i] == "--json") json_out = args[i + 1];
+            else if (args[i] == "--budget") budget = args[i + 1];
+            else if (args[i] == "--machine") machine = args[i + 1];
             else { usage(); return 64; }
         }
         auto d = parse_device(device);
         if (!d) return fail(d.error());
-        return cmd_bench(pkg, runtime, *d, w, h, iters);
+        return cmd_bench(pkg, runtime, *d, sizes, iters, json_out, budget, machine);
     }
     usage();
     return 64;

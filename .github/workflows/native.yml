@@ -149,6 +149,17 @@ jobs:
           export LD_LIBRARY_PATH="$ORT_ROOT/lib:$LD_LIBRARY_PATH"
           tools/ci_run.sh "Tests" ctest --test-dir build --output-on-failure
           tools/ci_run.sh "Gate A" build/cli/rudra-native diff dist/models/sdr2hdr_shadow_v1 --runtime all
+      - name: Inference latency within the runner's budget (roadmap 3.6)
+        # CPU only and loose (native/bench/latency_budgets.json): a debug build
+        # or a lost thread pool fails here; GPU budgets are checked by the gate
+        # scripts on the machines that have the GPUs.
+        run: |
+          export LD_LIBRARY_PATH="$ORT_ROOT/lib:$LD_LIBRARY_PATH"
+          tools/ci_run.sh "Latency" build/cli/rudra-native bench dist/models/sdr2hdr_shadow_v1 --size 1920x1080 --iters 1 \
+            --budget native/bench/latency_budgets.json --machine gh-ubuntu-24.04 --json latency.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: latency-gh-ubuntu-24.04, path: latency.json, if-no-files-found: ignore }
 
   app:
     name: Qt shell

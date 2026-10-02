@@ -10,17 +10,29 @@
 layout(location = 0) out vec4 frag;
 
 layout(std140, binding = 0) uniform View {
-    vec4 view;    // x mode (0 image, 1 false colour, 2 difference), y exposure (10000 / view peak), z wipe (< 0 off), w wipe half width
-    vec4 extra;   // x log2(1 + diff gain), y frame width, z 1 to show the baseline, w unused
+    vec4 view;    // x mode (0 image, 1 false colour, 2 difference, 3 invented), y exposure (10000 / view peak), z wipe (< 0 off), w wipe half width
+    vec4 extra;   // x log2(1 + diff gain), y frame width, z 1 to show the baseline, w 1 to tint the changes
     vec4 target;  // x path (0 SDR, 1 scRGB, 2 HDR10, 3 EDR), y ceiling nits, z nits per 1.0 (linear paths)
     vec4 pic[3];  // rows of source primaries -> swapchain primaries (xyz)
     vec4 gfx[3];  // rows of Rec.709 -> swapchain primaries, for the overlays
 };
 
 layout(binding = 1) uniform sampler2D model;      // rgb reconstruction, network units
-layout(binding = 2) uniform sampler2D baseline;   // rgb analytic baseline
+layout(binding = 2) uniform sampler2D baseline;   // rgb analytic baseline, a the SDR's max code (Invented)
 
 const float kPeak = 10000.0;
+// core/compare.hpp change_weight() and core/view.hpp kChange*.
+const float kChangeFloor = 0.05;
+const vec3 kChangeUp = vec3(0.95, 0.62, 0.28);
+const vec3 kChangeDown = vec3(0.32, 0.56, 0.95);
+const float kChangeTintMix = 0.55;
+// core/view.hpp kMap*, core/compare.hpp kSdrClipCode / kSdrCrushCode.
+const float kMapGrey = 0.6;
+const float kMapMix = 0.85;
+const vec3 kInventedColour = vec3(0.92, 0.30, 0.86);
+const vec3 kReinterpretedColour = vec3(0.25, 0.78, 0.86);
+const float kSdrClipCode = 254.0 / 255.0;
+const float kSdrCrushCode = 1.0 / 255.0;
 
 float lum2020(vec3 c) { return dot(c, vec3(0.2627, 0.6780, 0.0593)); }
 
@@ -44,6 +56,14 @@ float pq(float nits) {
 
 float encodeNits(float n) { return int(target.x + 0.5) == 2 ? pq(n) : n / target.z; }
 
+float changeWeight(vec3 m, vec3 b) {
+    float mn = max(max(m.r, m.g), m.b) * kPeak;
+    float bn = max(max(b.r, b.g), b.b) * kPeak;
+    float d = log2((mn + kChangeFloor) / (bn + kChangeFloor));
+    float w = clamp((abs(d) - 0.05) / 0.1, 0.0, 1.0);
+    return d < 0.0 ? -w : w;
+}
+
 vec3 falseColour(float n) {
     if (n <     0.1) return vec3(0.169, 0.122, 0.239);
     if (n <     1.0) return vec3(0.184, 0.294, 0.561);
@@ -61,8 +81,10 @@ void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
     float u = (float(p.x) + 0.5) / extra.y;
     bool wiping = view.z >= 0.0;
-    vec3 b = texelFetch(baseline, p, 0).rgb;
-    vec3 src = (!wiping && extra.z > 0.5) ? b : texelFetch(model, p, 0).rgb;
+    vec4 b4 = texelFetch(baseline, p, 0);
+    vec3 b = b4.rgb;
+    vec3 m = texelFetch(model, p, 0).rgb;
+    vec3 src = (!wiping && extra.z > 0.5) ? b : m;
     vec3 h = (wiping && u < view.z) ? b : src;
     int mode = int(view.x + 0.5);
     vec3 c;
@@ -72,10 +94,25 @@ void main() {
         float d = lum2020(abs(src - b));
         float v = clamp(log2(1.0 + d * kPeak) / extra.x, 0.0, 1.0);
         c = v * vec3(0.95, 0.62, 0.28);
+    } else if (mode == 3) {
+        float g = kMapGrey * linearToSrgb(lum2020(h) * view.y);
+        float a = kMapMix * abs(changeWeight(m, b));
+        vec3 col = (b4.a >= kSdrClipCode || b4.a <= kSdrCrushCode) ? kInventedColour : kReinterpretedColour;
+        c = vec3(g) * (1.0 - a) + col * a;
     } else if (target.x < 0.5) {
         c = vec3(linearToSrgb(h.r * view.y), linearToSrgb(h.g * view.y), linearToSrgb(h.b * view.y));
     } else {
         c = clamp(h * kPeak, 0.0, target.y);
+    }
+    if (extra.w > 0.5 && mode == 0) {
+        // Model against baseline at this pixel, whichever side is shown.
+        float w = changeWeight(m, b);
+        if (w != 0.0) {
+            vec3 col = w > 0.0 ? kChangeUp : kChangeDown;
+            float a = kChangeTintMix * abs(w);
+            vec3 t = target.x < 0.5 ? col : 203.0 * vec3(srgbToLinear(col.r), srgbToLinear(col.g), srgbToLinear(col.b));
+            c = c * (1.0 - a) + t * a;
+        }
     }
     bool handle = wiping && abs(u - view.z) < view.w;
     if (target.x < 0.5) {

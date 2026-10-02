@@ -123,4 +123,51 @@ ClipBarText clip_bar(double clipped_pct, double mask_pct) {
     return {js_number(i) + "%", js_number(i) + "%", js_number(u) + "%"};
 }
 
+CompareText compare_text(const CompareStats& s, double view_nits, double display_peak_nits, double min_peak_ev,
+                         double max_peak_ev) {
+    constexpr double kPeakSliderWhite = 203.0;   // the peak slider: 203 * 2^ev nits
+    CompareText t;
+    if (!(s.changed_pct > 0.0)) {
+        t.line = "RUDRA matches the baseline on this frame: no pixel moved more than 0.1 stop";
+        return t;
+    }
+    auto pct = [](double v) { return v < 0.1 ? std::string("under 0.1") : js_to_fixed(v, 1); };
+    const bool up = s.up_stops > kChangeStops, down = s.down_stops < -kChangeStops;
+    const std::string u = "+" + js_to_fixed(s.up_stops, 1), d = std::string(kMinus) + js_to_fixed(-s.down_stops, 1);
+    const std::string range = up && down ? u + " and " + d + " stops" : "up to " + (up ? u : d) + " stops";
+    t.line = "RUDRA changed " + pct(s.changed_pct) + "% of this frame, " + range;
+
+    const double shown_at = std::min(view_nits, display_peak_nits);
+    const double vis = s.visible_pct(shown_at);
+    const double hidden = s.changed_pct - vis;
+    if (hidden <= std::max(0.05 * s.changed_pct, 0.01)) {
+        t.line += "; all of it shows at " + whole(shown_at) + " nits";
+        return t;
+    }
+    t.warn = true;
+    t.line += vis < 0.1 ? "; at " + whole(shown_at) + " nits almost none of it shows"
+                        : "; at " + whole(shown_at) + " nits " + pct(vis) + "% shows";
+    // The lowest slider step at or above the fit, within the slider and the display.
+    double want = s.fit_nits;
+    if (std::isfinite(display_peak_nits)) want = std::min(want, display_peak_nits);
+    double ev = std::ceil(2.0 * std::log2(std::max(want, 1e-6) / kPeakSliderWhite) - 1e-9) / 2.0;
+    ev = std::clamp(ev, min_peak_ev, max_peak_ev);
+    const double nits = kPeakSliderWhite * std::exp2(ev);
+    if (nits > view_nits * 1.01) {
+        t.fit_shown = true;
+        t.fit_peak_ev = ev;
+        t.fit_label = "Show at " + whole(nits) + " nits";
+    } else if (std::isfinite(display_peak_nits) && s.fit_nits > display_peak_nits) {
+        t.line += "; the rest is above this display's peak (Difference shows it)";
+    }
+    return t;
+}
+
+std::string support_text(const SupportStats& s) {
+    auto pct = [](double v) { return v > 0.0 && v < 0.1 ? std::string("under 0.1") : js_to_fixed(v, 1); };
+    return "Invented (magenta) " + pct(s.invented_pct) + "%: values the SDR has no detail for, where it clipped or "
+           "crushed (" + pct(s.sdr_without_detail_pct) + "% of the frame). Reinterpreted (cyan) " +
+           pct(s.reinterpreted_pct) + "%: SDR detail read differently from the baseline";
+}
+
 }  // namespace rudra

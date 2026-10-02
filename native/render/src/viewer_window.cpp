@@ -468,7 +468,7 @@ struct ViewerWindow::Impl {
                     u->uploadTexture(t, QRhiTextureUploadDescription(QRhiTextureUploadEntry(
                         0, 0, QRhiTextureSubresourceUploadDescription(v.data(), quint32(v.size() * sizeof(float))))));
                 };
-                upload(base_t.get(), detail::rgba_of(baseline.buffer()));
+                upload(base_t.get(), detail::baseline_rgba(baseline.buffer(), precomposited ? nullptr : &frame.sdr));
                 if (precomposited) {
                     upload(model_t.get(), detail::rgba_of(precomposite.buffer()));
                     composite_dirty = false;

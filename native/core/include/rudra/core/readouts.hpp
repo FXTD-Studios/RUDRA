@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include "rudra/core/compare.hpp"
+
 namespace rudra {
 
 // ---- the probe ------------------------------------------------------------
@@ -81,5 +83,27 @@ struct ClipBarText {
     std::string i_width, u_left, u_width;
 };
 ClipBarText clip_bar(double clipped_pct, double mask_pct);
+
+// ---- the compare line -----------------------------------------------------
+
+// What RUDRA changed on this frame and how much of it the view shows, under
+// the Compare bar, with a button that raises the view peak far enough to see
+// it. Raising the peak, not exposing each side differently, keeps an A/B flip
+// at one exposure.
+struct CompareText {
+    std::string line;
+    bool warn = false;          // part of the change is clipped away at this view
+    bool fit_shown = false;     // the button
+    std::string fit_label;
+    double fit_peak_ev = 0.0;   // what the button sets: the peak slider's value, 203 * 2^ev nits
+};
+// view_nits: the view peak; display_peak_nits: what the display can show
+// (infinity on the SDR view, which exposes to the view peak); the peak slider
+// runs from min_peak_ev to max_peak_ev in half-EV steps.
+CompareText compare_text(const CompareStats& s, double view_nits, double display_peak_nits,
+                         double min_peak_ev = -1.0, double max_peak_ev = 5.0);
+
+// The same line while the Invented layer is on: its legend, with the shares.
+std::string support_text(const SupportStats& s);
 
 }  // namespace rudra

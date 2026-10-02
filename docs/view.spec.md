@@ -1,8 +1,10 @@
 # The viewer: specification
 
-Status: revision 4, 24 Sep 2026 (Phase 2 steps 2, 5, 9 and 11). Normative for
-every implementation. Revision 2 added the HDR output paths (section 9),
-revision 3 the viewport (section 10), revision 4 the guides (section 11).
+Status: revision 5, 2 Oct 2026. Normative for every implementation. Revision 2
+added the HDR output paths (section 9), revision 3 the viewport (section 10),
+revision 4 the guides (section 11), revision 5 the Changes tint (section 2,
+step 4a) and the compare line (section 12). The browser oracle has neither:
+both are native only and held to `core/view.cpp` and `core/compare.cpp`.
 
 The viewer takes the two float pictures the composite produces, the
 reconstruction and its analytic baseline (docs/composite.spec.md), and turns
@@ -61,6 +63,15 @@ For the output pixel at column `x` (of `W`), in image row `y`:
    * difference: `d = dot(|S[y, x] - B[y, x]|, w)`,
      `v = clamp(log2(1 + d P) / log2(1 + max(diffGain, 1)), 0, 1)`,
      `c = v * (0.95, 0.62, 0.28)`. It reads `S` and `B` whatever the wipe.
+4a. The Changes tint (`showChanges`, image view only): with
+   `m = max(M[y, x]) P` and `b = max(B[y, x]) P` (max over R, G, B, in nits),
+   `d = log2((m + 0.05) / (b + 0.05))`,
+   `w = clamp((|d| - 0.05) / 0.1, 0, 1)` and `a = 0.55 w`, when `w > 0`
+   `c = c (1 - a) + t a` with `t = (0.95, 0.62, 0.28)` for `d > 0` (brighter)
+   and `(0.32, 0.56, 0.95)` for `d < 0` (darker). It reads `M` and `B` whatever
+   `show` and the wipe, so the tint marks the same pixels on both sides. On
+   the HDR paths `t` is a graphic at the SDR white: `203 srgb_to_linear(t)`
+   nits, mixed into `c` before the handle and the primaries matrix.
 5. The wipe handle: when the wipe is on and `|u - wipe| < wipeHalfWidth`,
    `c = 1 - c`.
 6. Encode: `linear_to_srgb(x) = 12.92 x` for `x <= 0.0031308`, else
@@ -289,7 +300,24 @@ With the placed rectangle `(l, t, w, h)` in device pixels and a device pixel
   line, `c (1 - a) + white a` with `a = 46 / 255` and `white` the SDR white
   (1.0 on SDR, 203 / 80 on scRGB, 1.0 on EDR, PQ(203) on HDR10).
 
-## 12. Not in revision 4
+## 12. The compare line
+
+Under the Compare bar, from `core/compare.cpp` over every pixel of `M` and `B`
+(`m`, `b` as in step 4a):
+
+* A pixel **changed** when `|d| > 0.1` stop, `d = log2((m + 0.05) / (b + 0.05))`.
+  The line gives the changed share of the frame and the largest `d` up and down.
+* At a view peak `V` both sides clip to `min(., V)`, so a changed pixel shows
+  once `V >= 2^0.1 (min(m, b) + 0.05) - 0.05`. These thresholds are kept in 160
+  log bins from 0.01 to 10 000 nits; the share that shows at `V` counts the
+  bins up to and including `V`'s own (high by at most one bin, about 0.12 stop).
+  `V` is the lower of the view peak and the display's peak on an HDR path.
+* **Fit**: the 99.5th percentile of `max(m, b)` over the changed pixels, as a
+  bin's upper edge. The button sets the peak slider to the first half-EV step
+  at or above it (capped at the display's peak and the slider's top), which
+  keeps an A/B flip at one exposure; nothing changes in the master.
+
+## 13. Not in revision 5
 
 Nothing the viewer draws is left unspecified; the rest of Phase 2 is the
 backend matrix and the budgets (steps 12 and 13).
