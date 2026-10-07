@@ -74,6 +74,16 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **7 Oct 2026, 12:35 — roadmap 3.1 and 3.2 in and verified (line F).** The Source card: a six-way curve
+> picker (3.1) and three-click calibration (3.2), both expressed as the CurveHead's own per-code log2
+> correction over the ACES inverse (`core/source_curve.cpp`, `core/calibration.cpp`, one knot per 8-bit
+> code; shader knot buffer 9 to 72 vec4), summed with the model's head in `baseline_curve_params`, so
+> the composite, the shader, master, measure and QC carry both with no new path. Unknown and no anchors
+> are bit-identical to every master before. Verified on this box: rudra_tests 159/159, rudra_app_tests
+> 29/29, rudra-gpu-parity 18/18 on D3D12, D3D11, Vulkan and OpenGL (fp32 within 6e-7, fp16 1 ulp on the
+> new rows). Open: the by-hand pass in RUDRA.exe; the source and anchors are per master, not yet per shot
+> on video delivery (5.3).
+>
 > **7 Oct 2026, 11:50 — native tests on Windows, first full run (line F).** `scripts\NATIVE_TESTS.ps1`
 > (new) builds and runs the suites in the gate B build: rudra_tests 154/154 (1 skipped: rudra-native not
 > in that build), rudra_app_tests 29/29, rudra-gpu-parity 16/16 on D3D12, D3D11, Vulkan and OpenGL
