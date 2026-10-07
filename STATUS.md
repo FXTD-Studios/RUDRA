@@ -74,7 +74,10 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
-> **7 Oct 2026, 18:40 — roadmap 3.4 reference match in (line F), awaiting the Windows run.** The
+> **7 Oct 2026, 18:55 — roadmap 3.4 reference match in and verified (line F).** Windows: rudra_tests
+> 172/172 (ReferenceFit 10/10), rudra_app_tests 29/29, rudra-gpu-parity 20/20 cases on D3D12, D3D11,
+> Vulkan and OpenGL, the new `reference hable` row fp32 <= 2.8e-6 abs (the +0.4 to +0.75 stop target
+> raises the magnitudes), fp16 1 ulp, every view row passing. The
 > Reference block in the Source card: load the graded HDR of the frame (EXR by its chromaticities, or
 > 16-bit PQ PNG/TIFF; `engine/reference_image.cpp`) and the baseline is fitted to it as a calibration at
 > every code (`core/reference_fit.cpp`: per-code median of log2 nits, holes interpolated, smoothed,
