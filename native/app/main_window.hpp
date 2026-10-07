@@ -170,6 +170,12 @@ public:
     // The probe at a frame pixel, as a hover with Probe on shows it; nullopt
     // clears it. `global` places the floating box.
     void probe_pixel(std::optional<std::pair<double, double>> px, QPoint global = {});
+    // Calibrate (3.2): arm a slot (-1 disarms) so the next click on the
+    // picture reads the SDR code there (a 5x5 mean of R, G and B) into it.
+    void arm_calibration(int slot);
+    void calibration_picked(double x, double y);
+    // The SDR code at a frame pixel, as the pick reads it; nullopt without a frame.
+    std::optional<int> sdr_code_at(double x, double y) const;
     QWidget* probe_box() const { return probe_box_; }
 
     // The Deliver tab's Master EXR (the page's master()): the render plan from
@@ -296,6 +302,7 @@ private:
         ModelConstants model;
         std::shared_ptr<const NetworkLinearImage> baseline;
         SourceCurve baseline_source = SourceCurve::Unknown;   // the source the baseline was built with (3.1)
+        std::vector<CalibrationPoint> baseline_calibration;    // and the anchors (3.2)
         FrameHeader header;
     };
     std::shared_ptr<const Current> current_frame_;

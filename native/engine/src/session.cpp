@@ -80,6 +80,15 @@ std::string Session::params_json() const {
         o += ",\"source_curve\":";
         append_string(o, grade.source);
     }
+    const auto cal = calibration_points();
+    if (!cal.empty()) {
+        o += ",\"calibration\":[";
+        for (std::size_t i = 0; i < cal.size(); ++i) {
+            if (i) o += ',';
+            o += "{\"code\":" + std::to_string(cal[i].code) + ",\"nits\":" + js_number(cal[i].nits) + "}";
+        }
+        o += "]";
+    }
     o += "}";
     return o;
 }
@@ -92,7 +101,37 @@ CompositeParams Session::composite_params() const {
     for (const auto& r : grade.regions) p.regions.push_back({r.low_nits, r.high_nits, r.ev});
     p.region_softness_stops = 1.0;
     p.source = source_curve();
+    p.calibration = calibration_points();
     return p;
+}
+
+std::vector<CalibrationPoint> Session::calibration_points() const {
+    std::vector<CalibrationPoint> out;
+    for (const auto& c : grade.calibration)
+        if (c.nits > 0.0 && c.code >= 0 && c.code <= 255) out.push_back(c);
+    return out;
+}
+
+void Session::set_calibration(int slot, int code, double nits) {
+    if (slot < 0 || slot >= kMaxCalibrationPoints) return;
+    std::vector<CalibrationPoint> next = grade.calibration;
+    // A slot nobody has clicked yet has code -1: nits typed there are kept but
+    // make no point until a click gives them a code.
+    if (next.size() < std::size_t(kMaxCalibrationPoints)) next.resize(std::size_t(kMaxCalibrationPoints), CalibrationPoint{-1, 0.0});
+    CalibrationPoint& p = next[std::size_t(slot)];
+    if (code >= 0) p.code = std::clamp(code, 0, 255);
+    p.nits = nits > 0.0 ? nits : 0.0;
+    if (next == grade.calibration) return;
+    push_undo();
+    grade.calibration = std::move(next);
+    notify(Grade);
+}
+
+void Session::clear_calibration() {
+    if (calibration_points().empty() && grade.calibration.empty()) return;
+    push_undo();
+    grade.calibration.clear();
+    notify(Grade);
 }
 
 SourceCurve Session::source_curve() const {

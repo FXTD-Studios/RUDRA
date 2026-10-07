@@ -537,6 +537,11 @@ QWidget* MainWindow::build_right_rail() {
         auto scard = card(rec, 12, 12);
         source_panel_ = new SourcePanel(scard.first);
         source_panel_->picked = [this](SourceCurve c) { session_.set_source(source_curve_id(c)); };
+        source_panel_->arm = [this](int slot) { arm_calibration(slot); };
+        source_panel_->anchor_changed = [this](int slot, int code, double nits) {
+            session_.set_calibration(slot, code, nits);
+        };
+        source_panel_->cleared = [this] { session_.clear_calibration(); };
         scard.second->addWidget(source_panel_);
         recv->addWidget(scard.first);
         auto* n0 = label("The baseline is the analytic inverse of this curve. Unknown is the ACES inverse every "

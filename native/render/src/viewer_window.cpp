@@ -169,6 +169,17 @@ struct ViewerWindow::Impl {
     std::function<void(const ViewerStatus&)> status_cb;
     std::function<void(const ViewerWindow::Hover&)> hover_cb;
     std::function<void(const QStringList&)> drop_cb;
+    std::function<void(double, double)> pick_cb;
+    bool pick_mode = false;
+    // The frame pixel under a window position, or nullopt off the picture.
+    std::optional<std::pair<double, double>> frame_pixel(const QPointF& at) const {
+        const PlacedRect r = placed();
+        const ViewSize f = frame_view_size();
+        if (!(has_frame && r.width > 0 && r.height > 0 && at.x() >= r.left && at.y() >= r.top &&
+              at.x() < r.left + r.width && at.y() < r.top + r.height))
+            return std::nullopt;
+        return std::pair{(at.x() - r.left) / r.width * f.width, (at.y() - r.top) / r.height * f.height};
+    }
     void hover(const QPointF& at, bool alt) {
         if (!hover_cb) return;
         ViewerWindow::Hover h;
@@ -710,7 +721,7 @@ ViewerWindow::~ViewerWindow() {
 }
 
 void ViewerWindow::set_frame(ViewerFrame frame) {
-    d_->baseline = corrected_baseline(frame.sdr, frame.model.corpus_ev, baseline_curve_params(frame.scalars, d_->composite));
+    d_->baseline = corrected_baseline(frame.sdr, frame.model.corpus_ev, baseline_curve_params(frame.scalars, d_->composite, frame.model.corpus_ev));
     d_->frame = std::move(frame);
     d_->precomposited = false;
     d_->has_frame = true;
@@ -736,11 +747,12 @@ void ViewerWindow::set_composite(const CompositeParams& params) {
     // The source curve (3.1) is part of the baseline, so the baseline texture
     // the Baseline view and the Changes tint read follows it; the composite
     // shader recomputes its own from the uniforms either way.
-    const bool rebase = params.source != d_->composite.source && d_->has_frame && !d_->precomposited;
+    const bool rebase = (params.source != d_->composite.source || params.calibration != d_->composite.calibration) &&
+                        d_->has_frame && !d_->precomposited;
     d_->composite = params;
     if (rebase) {
         d_->baseline = corrected_baseline(d_->frame.sdr, d_->frame.model.corpus_ev,
-                                          baseline_curve_params(d_->frame.scalars, params));
+                                          baseline_curve_params(d_->frame.scalars, params, d_->frame.model.corpus_ev));
         d_->upload_dirty = true;
     }
     d_->composite_dirty = true;
@@ -868,6 +880,14 @@ void ViewerWindow::mousePressEvent(QMouseEvent* e) {
         return;
     }
     if (e->button() != Qt::LeftButton || !d_->has_frame) return;
+    if (d_->pick_mode) {
+        if (const auto px = d_->frame_pixel(e->position())) {
+            d_->pick_mode = false;
+            setCursor(Qt::ArrowCursor);
+            if (d_->pick_cb) d_->pick_cb(px->first, px->second);
+        }
+        return;
+    }
     // While the wipe is up, left drag moves the seam; otherwise holding shows
     // the baseline. One gesture, one meaning (ui/app.js).
     if (d_->view.wipe >= 0.0) {
@@ -881,6 +901,15 @@ void ViewerWindow::mousePressEvent(QMouseEvent* e) {
 }
 
 void ViewerWindow::on_hover(std::function<void(const Hover&)> cb) { d_->hover_cb = std::move(cb); }
+
+void ViewerWindow::set_pick_mode(bool on) {
+    d_->pick_mode = on;
+    setCursor(on ? Qt::CrossCursor : Qt::ArrowCursor);
+}
+
+bool ViewerWindow::pick_mode() const { return d_->pick_mode; }
+
+void ViewerWindow::on_pick(std::function<void(double, double)> cb) { d_->pick_cb = std::move(cb); }
 
 void ViewerWindow::on_drop(std::function<void(const QStringList&)> cb) { d_->drop_cb = std::move(cb); }
 

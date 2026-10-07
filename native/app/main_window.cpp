@@ -159,6 +159,8 @@ MainWindow::MainWindow(bool with_viewer) {
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         viewer_->on_drop([this](const QStringList& paths) { open_paths(paths); });
+        // Calibrate (3.2): the armed anchor takes the next click on the picture.
+        viewer_->on_pick([this](double x, double y) { calibration_picked(x, y); });
         viewer_->on_hover([this](const ViewerWindow::Hover& h) {
             if (!(probe_on_ || h.alt) || !h.x) {
                 probe_pixel(std::nullopt);
@@ -941,7 +943,7 @@ static QString timecode(int frame, double fps) {
 void MainWindow::sync_ui() {
     const auto& g = session_.grade;
     mode_seg_->set_on(QString::fromStdString(g.mode));
-    source_panel_->sync(session_.source_curve(), manifest_ ? manifest_->corpus_ev : kLegacyCorpusEv);
+    source_panel_->sync(session_.source_curve(), g.calibration, manifest_ ? manifest_->corpus_ev : kLegacyCorpusEv);
     {
         const QSignalBlocker b1(strength_), b2(peak_);
         strength_->setValue(int(std::lround(g.strength * 20.0)));
@@ -1060,8 +1062,9 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
                                FrameHeader header) {
     auto cur = std::make_shared<Current>();
     cur->baseline_source = session_.source_curve();
+    cur->baseline_calibration = session_.grade.calibration;
     cur->baseline = std::make_shared<const NetworkLinearImage>(
-        corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, session_.composite_params())));
+        corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, session_.composite_params(), model.corpus_ev)));
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         viewer_->set_frame({sdr, fields, scalars, model});
@@ -1098,7 +1101,8 @@ void MainWindow::run_stats() {
     if (stats_worker_.joinable()) stats_worker_.join();   // done: stats_running_ was cleared after it posted
     // The cached baseline is the one of the source it was built with; after a
     // source change the measure rebuilds it from the params (3.1).
-    const NetworkLinearImage* cached = frame->baseline_source == params.source ? frame->baseline.get() : nullptr;
+    const NetworkLinearImage* cached = frame->baseline_source == params.source && frame->baseline_calibration == params.calibration
+                                           ? frame->baseline.get() : nullptr;
     stats_worker_ = std::thread([self, frame, params, gen, cached] {
         auto m = std::make_shared<const FrameMeasure>(
             measure_frame(frame->sdr, frame->fields, frame->scalars, frame->model, params, cached));
@@ -1120,7 +1124,8 @@ void MainWindow::measure_now() {
     ++stats_gen_;   // anything in flight is now stale
     const CompositeParams params = session_.composite_params();
     apply_measure(std::make_shared<const FrameMeasure>(measure_frame(
-        f.sdr, f.fields, f.scalars, f.model, params, f.baseline_source == params.source ? f.baseline.get() : nullptr)));
+        f.sdr, f.fields, f.scalars, f.model, params,
+        f.baseline_source == params.source && f.baseline_calibration == params.calibration ? f.baseline.get() : nullptr)));
 }
 
 void MainWindow::fill_rows(QWidget* ms, const std::vector<MetricRow>& rows) {
@@ -1296,6 +1301,7 @@ MasterRequest MainWindow::master_request() const {
     q.carry_chroma = session_.carry_chroma;
     q.container = session_.container;
     q.source_curve = session_.grade.source;
+    q.calibration = session_.calibration_points();
     return q;
 }
 
@@ -1857,6 +1863,45 @@ void MainWindow::resume_queue(const std::filesystem::path& queue) {
 void MainWindow::forget_queue(const std::filesystem::path& queue) {
     queues_->forget(queue);
     save_queues();
+}
+
+}  // namespace rudra::app
+
+// ---- Calibrate (roadmap 3.2) ---------------------------------------------
+
+namespace rudra::app {
+
+void MainWindow::arm_calibration(int slot) {
+    const bool on = slot >= 0 && current_frame_;
+    source_panel_->set_armed(on ? slot : -1);
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) viewer_->set_pick_mode(on);
+#endif
+}
+
+std::optional<int> MainWindow::sdr_code_at(double x, double y) const {
+    if (!current_frame_) return std::nullopt;
+    const SdrImage& sdr = current_frame_->sdr;
+    const int w = sdr.width(), h = sdr.height();
+    const int cx = std::clamp(int(std::floor(x)), 0, w - 1), cy = std::clamp(int(std::floor(y)), 0, h - 1);
+    // A 5x5 mean of the three channels: a neutral patch, not a single pixel's noise.
+    double sum = 0.0;
+    int n = 0;
+    const auto& b = sdr.buffer();
+    for (int yy = std::max(0, cy - 2); yy <= std::min(h - 1, cy + 2); ++yy)
+        for (int xx = std::max(0, cx - 2); xx <= std::min(w - 1, cx + 2); ++xx) {
+            const std::size_t i = std::size_t(yy) * std::size_t(w) + std::size_t(xx);
+            for (int c = 0; c < 3; ++c) sum += b.plane(c)[i];
+            n += 3;
+        }
+    return std::clamp(int(std::lround(sum / std::max(n, 1) * 255.0)), 0, 255);
+}
+
+void MainWindow::calibration_picked(double x, double y) {
+    const int slot = source_panel_->armed();
+    source_panel_->set_armed(-1);
+    if (slot < 0) return;
+    if (const auto code = sdr_code_at(x, y)) source_panel_->set_picked(slot, *code);
 }
 
 }  // namespace rudra::app

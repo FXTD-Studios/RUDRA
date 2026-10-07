@@ -66,7 +66,7 @@ inline CompositeUbo composite_ubo(const FrameScalars& scalars, const ModelConsta
     u.control[3] = static_cast<float>(params.region_softness_stops);
     // The model's CurveHead plus the source curve, as the CPU composite feeds
     // corrected_baseline, so baselineOf() in the shader is the same function.
-    const std::vector<float> curve = baseline_curve_params(scalars, params);
+    const std::vector<float> curve = baseline_curve_params(scalars, params, model.corpus_ev);
     const std::size_t np = std::min<std::size_t>(curve.size(), 288);
     u.counts[0] = np >= 3 ? float(np - 1) : 0.0f;
     std::copy(curve.begin(), curve.begin() + std::ptrdiff_t(np), u.curve);

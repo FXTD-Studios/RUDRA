@@ -144,6 +144,14 @@ int main(int argc, char** argv) {
             cases.emplace_back(name + " source " + std::string(source_curve_id(s)), p);
             python.emplace_back();
         }
+        // Roadmap 3.2: three anchors over the filmic curve, the same knot path.
+        {
+            CompositeParams p;
+            p.source = SourceCurve::Hable;
+            p.calibration = {{8, 0.3}, {118, 18.0}, {235, 400.0}};
+            cases.emplace_back(name + " calibrated hable", p);
+            python.emplace_back();
+        }
 
         for (std::size_t k = 0; k < cases.size(); ++k) {
             const auto& [label, p] = cases[k];

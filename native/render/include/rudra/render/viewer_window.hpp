@@ -95,6 +95,13 @@ public:
     };
     void on_hover(std::function<void(const Hover&)> cb);
 
+    // Picking (roadmap 3.2): while on, a left click on the picture reports the
+    // frame pixel under it instead of flipping to the baseline; off again
+    // after the click. Clicks off the picture report nothing and leave it on.
+    void set_pick_mode(bool on);
+    bool pick_mode() const;
+    void on_pick(std::function<void(double x, double y)> cb);
+
     // Files dropped on the picture (the page's window drop); local paths.
     void on_drop(std::function<void(const QStringList&)> cb);
 

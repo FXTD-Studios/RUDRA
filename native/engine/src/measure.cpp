@@ -52,7 +52,7 @@ FrameMeasure measure_frame(const SdrImage& sdr, const Fields& fields, const Fram
     out.width = sdr.width();
     out.height = sdr.height();
     const std::size_t n = std::size_t(out.width) * std::size_t(out.height);
-    out.baseline = baseline ? *baseline : corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, params));
+    out.baseline = baseline ? *baseline : corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, params, model.corpus_ev));
     out.model = composite(sdr, fields, scalars, model, params);
     out.highlight.assign(fields.highlight.plane(0), fields.highlight.plane(0) + n);
     out.shadow.assign(fields.shadow.plane(0), fields.shadow.plane(0) + n);

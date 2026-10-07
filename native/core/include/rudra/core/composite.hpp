@@ -13,6 +13,7 @@
 
 #include "rudra/core/fields.hpp"
 #include "rudra/core/image.hpp"
+#include "rudra/core/calibration.hpp"
 #include "rudra/core/source_curve.hpp"
 
 namespace rudra {
@@ -47,13 +48,18 @@ struct CompositeParams {
     // Roadmap 3.1: the curve the artist says made the SDR. The baseline is
     // its inverse; Unknown is the ACES inverse every master so far used.
     SourceCurve source = SourceCurve::Unknown;
+    // Roadmap 3.2: the artist's anchors over that curve (calibration.hpp);
+    // empty for none. Applied only when the result is monotone.
+    std::vector<CalibrationPoint> calibration;
 };
 
 // The curve params corrected_baseline takes for a frame under these settings:
-// the model's CurveHead output plus the source curve (source_curve.hpp).
-// Every consumer of the baseline (composite, master, measure, the viewer and
-// its probes) goes through this, so they agree on what the baseline is.
-std::vector<float> baseline_curve_params(const FrameScalars& scalars, const CompositeParams& params);
+// the model's CurveHead output plus the source curve (source_curve.hpp) plus
+// the calibration (calibration.hpp, which needs the model's exposure because
+// its anchors are in nits). Every consumer of the baseline (composite, master,
+// measure, the viewer and its probes) goes through this, so they agree on
+// what the baseline is.
+std::vector<float> baseline_curve_params(const FrameScalars& scalars, const CompositeParams& params, float corpus_ev);
 
 // qualifier_mask for one pixel's Rec.2020 luminance in nits. float32 result,
 // exactly as the Python casts it before the gain sums it.
