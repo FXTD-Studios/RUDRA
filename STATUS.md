@@ -1,6 +1,6 @@
 # RUDRA — Training & Research Status
 
-> **Updated 24 Sep 2026.** The snapshot below the line dates from 22 Aug and is
+> **Updated 7 Oct 2026.** The snapshot below the line dates from 22 Aug and is
 > still accurate for what it covers. Read this section first: the repository
 > holds **five separate lines of work** that share a name, and "is RUDRA
 > finished?" has a different answer for each.
@@ -26,8 +26,8 @@
 >
 > | # | condition | bench | pass when | status |
 > |---|---|---|---|---|
-> | 1 | clean, well-graded SDR | `aces`, paper 429 clean | not worse than the analytic inverse by more than 0.1 dB / 0.02 JOD | FAIL (v4b −8.09 dB, v4c −21.9 dB; bf16 check open) |
-> | 2 | unknown curve + codec | `oog`, `mix` | both metrics above the inverse, CI excluding zero (N3) | FAIL (v4c +1.33 dB but −0.126 JOD) |
+> | 1 | clean, well-graded SDR | `aces`, paper 429 clean | not worse than the analytic inverse by more than 0.1 dB / 0.02 JOD | FAIL (v4b −8.09 dB, v4c −21.9 dB, v7 −19.2 dB curve given / −24.1 blind; bf16 check closed 25 Sep, fp32 within 0.04 dB) |
+> | 2 | unknown curve + codec | `oog`, `mix` | both metrics above the inverse, CI excluding zero (N3) | FAIL (v4c +1.33 dB but −0.126 JOD; v7 −1.2 dB / −0.82 JOD oog, −2.7 dB / −0.59 JOD mix) |
 > | 3 | degraded input | paper 429 hard | at least v5's +1.43 dB / +0.44 JOD, with row 1 held | not run |
 > | 4 | clipped highlights | `measure_clipping.py --score`, 0/+1/+2 EV | error in stops on clipped pixels below the inverse's, CI excluding zero | not run |
 > | 5 | video | v4b/v4c test clips, clip-mode CVVDP + flicker | clip JOD ≥ per-frame JOD on every test clip (N5) | not run |
@@ -38,6 +38,21 @@
 > their gates there when their benches exist. A model that passes 1 to 6
 > replaces `sdr2hdr_shadow_v1.pt` as the default in `models.json`.
 
+> **7 Oct 2026 — v7 (roadmap 1.4, source-curve model on the mixed v4c + Netflix manifest) scored; every N8 gate fails.**
+> 50k steps from scratch, `best.pt` = step 3,000, bench at step 3,000 in bf16. Against the analytic
+> inverse: `aces` −19.21 dB [−20.15, −18.28] / −0.965 JOD with the curve given, −24.12 dB blind;
+> `oog` −1.17 dB / −0.820 JOD (hable given), −1.08 / −0.666 blind, i.e. −2.41 dB under v4c blind;
+> `mix` −2.67 dB / −0.590 JOD with each frame's own curve, −1.88 / −0.459 blind. The true curve
+> helps only on ACES. `reports\logs\cp_results_v7.json`. The `real` (Meridian) export was cut off
+> by a full D: and is still to run. Two measurement defects found on the way, both fixed:
+> the bench stage resumed on a half-written export tree (aces/v7_unknown scored on 366 of 537
+> frames; the script now resumes on `export_<tree>.json`), and every best.pt from v4 to v7 was
+> selected on 8 × 4 = 32 val records (`--eval-batches 0` now scores the whole split, with gains
+> split real vs rendered). The training curve peaked at step 1,500 and decayed for 48k steps while
+> train loss fell; whether that is overfitting or the 32-record slice is what
+> `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default. No further 10 h run
+> until that and `training/bench_by_curve.py` on `mix` have been read.
+>
 > **24 Sep 2026, 22:30 — critical path scored; all four gates that ran fail (line E).**
 > `RUN_CRITICAL_PATH.bat` finished at 14:32: Step 4 re-run on the hold-out
 > manifest (`87a32f…`, 50k steps, best = step 45,500), Step 5 (8k), v4c with

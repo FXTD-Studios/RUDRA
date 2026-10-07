@@ -499,9 +499,24 @@ phase 1.
   `unknown` is bit-identical to the blind model, a blind checkpoint warm-starts
   it, and models without the input refuse a known curve
   (`tests/test_source_curve_model_2026_10_01.py`)
-- [ ] 1.4 Retrain on v4c plus the real SDR pairs (`training/train_sdr2hdr.py
+- [x] 1.4 Retrain on v4c plus the real SDR pairs (`training/train_sdr2hdr.py
   --curve-head`, new `--source-curve`), with the label dropped to `unknown` on
-  30% of rendered pairs so the blind path stays trained
+  30% of rendered pairs so the blind path stays trained. **Trained 6 to 7 Oct
+  2026 (v7, 50k steps, `best.pt` = step 3,000) and it fails the gate:** below
+  the analytic inverse on `aces` (−19.2 dB curve given, −24.1 dB blind), `oog`
+  (−1.2 / −1.1 dB) and `mix` (−2.7 / −1.9 dB), every CI excluding zero, and the
+  true curve helps only on `aces`. In training, the selection metric peaked at
+  step 1,500 and decayed for 48k steps while train loss fell; that metric was
+  8 batches × 4 = 32 val records, ~30% real SDR. `shadow_v1` stays the
+  default. Verdicts: `reports\logs\cp_results_v7.json`; the `real` (Meridian)
+  export is still to run (`-Stage bench` resumes it)
+- [ ] 1.4b Before another run: `--eval-batches 0` (whole val, now supported,
+  with gains split real vs rendered), re-score the 25 v7 checkpoints on the
+  full val with `training/sweep_val_checkpoints.py`, and split the `mix` bench
+  per curve with `training/bench_by_curve.py`. Then decide whether the decay
+  is overfitting or a 32-record artefact, and whether the curve input is
+  miswired or an ACES-only prior. Also note the `oog` bench is exported from
+  `E:\RUDRA_v3_20260822`, a −1 EV render, against 0 EV models
 - [x] 1.5 Write the gate rule into `training/cp7_verdicts.py` before the run:
   rows 1 and 2, scored once with the true curve and once as `unknown`
   (gates `N8/*`, fixed 1 Oct 2026; `export_bench_pairs.py --source-curve`)

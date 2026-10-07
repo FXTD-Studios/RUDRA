@@ -395,6 +395,12 @@ class SDRHDRDataset(Dataset):
             "source_curve": torch.tensor(
                 effective_source_curve(record, degraded, self.augment, self.source_curve_dropout),
                 dtype=torch.long),
+            # 1 for a real SDR grade (sdr_kind "real", e.g. the Netflix trim
+            # pass), 0 for a rendered pair. The evaluator splits its gains on
+            # this: the analytic inverse is near-exact on rendered rows and
+            # stops wrong on real ones, so one pooled gain hides which of the
+            # two the model is actually moving (v7, 7 Oct 2026).
+            "real": torch.tensor(1 if record.get("sdr_kind") == "real" else 0, dtype=torch.long),
         }
 
 

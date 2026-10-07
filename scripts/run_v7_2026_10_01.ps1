@@ -19,7 +19,7 @@ $ErrorActionPreference = "Continue"
 $Repo = "D:\A.I\Devlopments\rudra"
 Set-Location -LiteralPath $Repo
 $logDir = Join-Path $Repo "reports\logs"; New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-Start-Transcript -Path (Join-Path $logDir "v7_$Stage.log") -Append | Out-Null
+Start-Transcript -Path (Join-Path $logDir "v7_$Stage-transcript.log") -Append | Out-Null
 $py = if (Test-Path ".venv\Scripts\python.exe") { (Resolve-Path ".venv\Scripts\python.exe").Path } else { "python" }
 $env:OPENCV_IO_ENABLE_OPENEXR = "1"
 
@@ -79,6 +79,9 @@ if ($Stage -eq "bench") {
     Stage "BENCH  v7 with the true curve and blind, on aces / oog / mix, plus real SDR"
     $ckpt = Join-Path $Out "best.pt"
     if (-not (Test-Path $ckpt)) { Fail "no $ckpt; run -Stage train first" }
+    # Each export tree is 2 to 3 GB; the run on 7 Oct 2026 died with D: full.
+    $freeGB = [math]::Round((Get-PSDrive -Name ($Repo.Substring(0, 1))).Free / 1GB, 1)
+    if ($freeGB -lt 12) { Fail "only $freeGB GB free on $($Repo.Substring(0, 2)); need 12 GB for the remaining exports (delete scored bench trees first)" }
     # bench -> manifest, condition, the TRUE curve of that bench's SDR
     $benches = [ordered]@{
         "aces" = @{ manifest = (Join-Path $v4bRoot "sdr_hdr_manifest.jsonl"); condition = "clean"; curve = "aces" }
@@ -92,7 +95,18 @@ if ($Stage -eq "bench") {
         $runs = [ordered]@{ "v7_unknown" = "none" }
         if ($benches[$b].curve) { $runs["v7"] = $benches[$b].curve }
         foreach ($tree in $runs.Keys) {
-            if (-not (Test-Path (Join-Path $root $tree))) {
+            # Resume on the export's manifest, not the directory: export_bench_pairs
+            # writes export_<tree>.json last, so a tree without it is a partial
+            # export (7 Oct 2026: aces/v7_unknown was scored on 366 of 537
+            # frames after an interrupted first attempt). A partial tree is
+            # removed with its scores and exported again.
+            $done = Join-Path $root "export_$tree.json"
+            if ((Test-Path (Join-Path $root $tree)) -and -not (Test-Path $done)) {
+                Write-Host "partial export $b/$tree (no $done): re-exporting" -ForegroundColor Yellow
+                Remove-Item (Join-Path $root $tree) -Recurse -Force
+                Remove-Item (Join-Path $res "$tree.json"), (Join-Path $res "$tree.csv") -Force -ErrorAction SilentlyContinue
+            }
+            if (-not (Test-Path $done)) {
                 $a = @("training\export_bench_pairs.py", "--checkpoint", $ckpt, "--manifest", $benches[$b].manifest,
                        "--out", $root, "--split", "test", "--condition", $benches[$b].condition,
                        "--test-name", $tree, "--source-curve", $runs[$tree])
