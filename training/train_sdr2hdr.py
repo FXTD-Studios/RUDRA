@@ -121,6 +121,12 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
         # inference to say which kind of SDR arrived.
         "preserved_psnr_log": 0.0,
     }
+    # Per-record log-PSNR of the model and of the analytic inverse, bucketed
+    # by sdr_kind (real grade vs rendered pair). On the mixed manifest the val
+    # slice is ~30% real rows where the inverse is stops wrong, so the pooled
+    # gain_db can read +1.6 dB while the rendered rows alone are worse than the
+    # inverse -- which is what the PU21/CVVDP benches then report. (v7, 7 Oct.)
+    kind_sums = {"real": [0.0, 0.0, 0], "rendered": [0.0, 0.0, 0]}
     count = 0
     for batch in loader:
         sdr, target = batch["sdr"].to(device), batch["hdr"].to(device)
@@ -154,16 +160,35 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
         base_mse = F.mse_loss(base_log, target_log).clamp_min(1e-12)
         sums["baseline_log_l1"] += float(F.l1_loss(base_log, target_log))
         sums["baseline_psnr_log"] += float(20.0 * torch.log10(peak) - 10.0 * torch.log10(base_mse))
+        if "real" in batch:
+            per_mse = ((pred_log - target_log) ** 2).flatten(1).mean(1).clamp_min(1e-12)
+            per_base = ((base_log - target_log) ** 2).flatten(1).mean(1).clamp_min(1e-12)
+            per_psnr = 20.0 * torch.log10(peak) - 10.0 * torch.log10(per_mse)
+            per_base_psnr = 20.0 * torch.log10(peak) - 10.0 * torch.log10(per_base)
+            real_flags = batch["real"].to(device).bool()
+            for kind, flag in (("real", real_flags), ("rendered", ~real_flags)):
+                n = int(flag.sum())
+                if n:
+                    kind_sums[kind][0] += float(per_psnr[flag].sum())
+                    kind_sums[kind][1] += float(per_base_psnr[flag].sum())
+                    kind_sums[kind][2] += n
         recovery = torch.maximum(output.highlight_mask, output.shadow_mask)
         preserved = output.baseline + recovery * (output.hdr - output.baseline)
         pres_mse = F.mse_loss(torch.log1p(preserved.clamp_min(0.0) * 16.0),
                               target_log).clamp_min(1e-12)
         sums["preserved_psnr_log"] += float(20.0 * torch.log10(peak) - 10.0 * torch.log10(pres_mse))
         count += 1
-        if count >= max_batches:
+        if max_batches > 0 and count >= max_batches:
             break
     model.train()
     metrics = {key: value / max(count, 1) for key, value in sums.items()}
+    metrics["eval_batches"] = count
+    for kind, (psnr, base, n) in kind_sums.items():
+        metrics[f"{kind}_frames"] = n
+        if n:
+            metrics[f"{kind}_psnr_log"] = psnr / n
+            metrics[f"{kind}_baseline_psnr_log"] = base / n
+            metrics[f"{kind}_gain_db"] = (psnr - base) / n
     # Positive = the network improved on the analytic baseline. Negative means
     # it is actively making the baseline worse, which is the failure the August
     # 2026 run and the 26 Aug clean-SDR eval both showed.
@@ -238,7 +263,7 @@ def evaluate_temporal(image_model: SDR2HDRNet, temporal: TemporalHDRRefiner,
         sums["initial_log_l1"] += float(F.l1_loss(torch.log1p(initial * 16.0), torch.log1p(target * 16.0)))
         sums["initial_temporal"] += float(temporal_consistency_loss(initial, target))
         count += 1
-        if count >= max_batches:
+        if max_batches > 0 and count >= max_batches:
             break
     temporal.train()
     return {key: value / max(count, 1) for key, value in sums.items()}
@@ -703,7 +728,11 @@ def parse_args() -> argparse.Namespace:
                              "0.1 dB more on degraded. Image mode only; temporal ignores it.")
     parser.add_argument("--val-fraction", type=float, default=0.10)
     parser.add_argument("--eval-every", type=int, default=500)
-    parser.add_argument("--eval-batches", type=int, default=8)
+    parser.add_argument("--eval-batches", type=int, default=8,
+                        help="Batches per eval pass; 0 = the whole val split. The default "
+                             "scores 8 x batch_size records (32 at batch 4), and every "
+                             "best.pt from v4 to v7 was selected on that slice. Use 0 for "
+                             "any run whose best.pt is going to be benched.")
     parser.add_argument("--save-every", type=int, default=2_000)
     parser.add_argument("--log-every", type=int, default=20)
     parser.add_argument("--max-items", type=int)
