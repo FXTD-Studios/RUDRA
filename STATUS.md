@@ -74,6 +74,14 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **7 Oct 2026, 17:00 — roadmap 3.3 latency and knee in and verified (line F).** Every live control is one
+> composite + display pass: 4K 1.08 to 1.33 ms wall across D3D12, D3D11, Vulkan and OpenGL on the RTX 4080
+> SUPER, now gated (`native/bench/latency_budgets.json` `control_latency`, `rudra-gpu-parity --budget
+> --machine`). The master's anchor stage is live on the viewer with an Anchor knee slider in Deliver
+> (`core/view.cpp anchor_gain_f`, the fp32 twin of `anchor_to_sdr`, pinned to 2e-4; the hold from the
+> measure). Verified: rudra_tests 162/162, rudra_app_tests 29/29, parity 18/18 with four anchored view
+> rows at <= 1 code. Open in 3.3: the painted masks. Carry source chroma stays master-only.
+>
 > **7 Oct 2026, 12:35 — roadmap 3.1 and 3.2 in and verified (line F).** The Source card: a six-way curve
 > picker (3.1) and three-click calibration (3.2), both expressed as the CurveHead's own per-code log2
 > correction over the ACES inverse (`core/source_curve.cpp`, `core/calibration.cpp`, one knot per 8-bit
