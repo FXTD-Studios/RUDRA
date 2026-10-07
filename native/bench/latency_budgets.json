@@ -4,18 +4,29 @@
     "Wall time to fields in host memory, fp32, median of the bench's runs on its synthetic frame, model sdr2hdr_shadow_v1.",
     "Each budget is the machine's measured time plus 25 %, rounded up, so a slower build fails its gate instead of shipping. A row without a budget is reported, not checked.",
     "rtx4080s-win: the RTX 4080 SUPER Windows PC, NATIVE_GATE_A.ps1 -Machine rtx4080s-win. 4K rows are added from that machine's first 4K run.",
-    "gh-ubuntu-24.04: GitHub's runner in the native workflow's parity job, CPU only. Loose on purpose (shared, noisy cores): it catches a debug build, a lost thread pool or an accidental tiling, not a few percent."
+    "gh-ubuntu-24.04: GitHub's runner in the native workflow's parity job, CPU only. Loose on purpose (shared, noisy cores): it catches a debug build, a lost thread pool or an accidental tiling, not a few percent.",
+    "control_latency (roadmap 3.3): a slider move is one composite + display pass on the viewer (rudra-gpu-parity --bench). Wall ms, median of 50, RGBA16F picture. Budget = measured 7 Oct 2026 times 3, rounded up: a control must stay far inside one 60 Hz frame (16.7 ms) on every backend, and a tripled budget still catches a pass that stopped being one draw. Checked by rudra-gpu-parity --budget <this file> --machine <label>."
   ],
   "budgets": [
-    {"machine": "rtx4080s-win", "runtime": "libtorch",    "device": "cuda",     "size": "1920x1080", "mode": "untiled", "max_ms": 215,   "measured_ms": 172,  "when": "2026-09-23"},
-    {"machine": "rtx4080s-win", "runtime": "libtorch",    "device": "cuda",     "size": "1920x1080", "mode": "tiled",   "max_ms": 370,   "measured_ms": 296,  "when": "2026-09-23"},
-    {"machine": "rtx4080s-win", "runtime": "onnxruntime", "device": "directml", "size": "1920x1080", "mode": "untiled", "max_ms": 190,   "measured_ms": 150,  "when": "2026-09-23"},
-    {"machine": "rtx4080s-win", "runtime": "onnxruntime", "device": "directml", "size": "1920x1080", "mode": "tiled",   "max_ms": 615,   "measured_ms": 489,  "when": "2026-09-23"},
-    {"machine": "rtx4080s-win", "runtime": "libtorch",    "device": "cpu",      "size": "1920x1080", "mode": "untiled", "max_ms": 3150,  "measured_ms": 2500, "when": "2026-09-23"},
-    {"machine": "rtx4080s-win", "runtime": "onnxruntime", "device": "cpu",      "size": "1920x1080", "mode": "untiled", "max_ms": 4000,  "measured_ms": 3200, "when": "2026-09-23"},
-    {"machine": "gh-ubuntu-24.04", "runtime": "libtorch",    "device": "cpu", "size": "1920x1080", "mode": "untiled", "max_ms": 40000},
-    {"machine": "gh-ubuntu-24.04", "runtime": "libtorch",    "device": "cpu", "size": "1920x1080", "mode": "tiled",   "max_ms": 70000},
+    {"machine": "rtx4080s-win", "runtime": "libtorch", "device": "cuda", "size": "1920x1080", "mode": "untiled", "max_ms": 215, "measured_ms": 172, "when": "2026-09-23"},
+    {"machine": "rtx4080s-win", "runtime": "libtorch", "device": "cuda", "size": "1920x1080", "mode": "tiled", "max_ms": 370, "measured_ms": 296, "when": "2026-09-23"},
+    {"machine": "rtx4080s-win", "runtime": "onnxruntime", "device": "directml", "size": "1920x1080", "mode": "untiled", "max_ms": 190, "measured_ms": 150, "when": "2026-09-23"},
+    {"machine": "rtx4080s-win", "runtime": "onnxruntime", "device": "directml", "size": "1920x1080", "mode": "tiled", "max_ms": 615, "measured_ms": 489, "when": "2026-09-23"},
+    {"machine": "rtx4080s-win", "runtime": "libtorch", "device": "cpu", "size": "1920x1080", "mode": "untiled", "max_ms": 3150, "measured_ms": 2500, "when": "2026-09-23"},
+    {"machine": "rtx4080s-win", "runtime": "onnxruntime", "device": "cpu", "size": "1920x1080", "mode": "untiled", "max_ms": 4000, "measured_ms": 3200, "when": "2026-09-23"},
+    {"machine": "gh-ubuntu-24.04", "runtime": "libtorch", "device": "cpu", "size": "1920x1080", "mode": "untiled", "max_ms": 40000},
+    {"machine": "gh-ubuntu-24.04", "runtime": "libtorch", "device": "cpu", "size": "1920x1080", "mode": "tiled", "max_ms": 70000},
     {"machine": "gh-ubuntu-24.04", "runtime": "onnxruntime", "device": "cpu", "size": "1920x1080", "mode": "untiled", "max_ms": 25000},
-    {"machine": "gh-ubuntu-24.04", "runtime": "onnxruntime", "device": "cpu", "size": "1920x1080", "mode": "tiled",   "max_ms": 45000}
+    {"machine": "gh-ubuntu-24.04", "runtime": "onnxruntime", "device": "cpu", "size": "1920x1080", "mode": "tiled", "max_ms": 45000}
+  ],
+  "control_latency": [
+    {"machine": "rtx4080s-win", "api": "d3d12", "pass": "composite+view", "size": "1920x1080", "max_wall_ms": 1.1, "measured_wall_ms": 0.34, "when": "2026-10-07"},
+    {"machine": "rtx4080s-win", "api": "d3d12", "pass": "composite+view", "size": "3840x2160", "max_wall_ms": 4.0, "measured_wall_ms": 1.33, "when": "2026-10-07"},
+    {"machine": "rtx4080s-win", "api": "d3d11", "pass": "composite+view", "size": "1920x1080", "max_wall_ms": 0.9, "measured_wall_ms": 0.29, "when": "2026-10-07"},
+    {"machine": "rtx4080s-win", "api": "d3d11", "pass": "composite+view", "size": "3840x2160", "max_wall_ms": 3.6, "measured_wall_ms": 1.2, "when": "2026-10-07"},
+    {"machine": "rtx4080s-win", "api": "vulkan", "pass": "composite+view", "size": "1920x1080", "max_wall_ms": 1.0, "measured_wall_ms": 0.31, "when": "2026-10-07"},
+    {"machine": "rtx4080s-win", "api": "vulkan", "pass": "composite+view", "size": "3840x2160", "max_wall_ms": 3.7, "measured_wall_ms": 1.21, "when": "2026-10-07"},
+    {"machine": "rtx4080s-win", "api": "gl", "pass": "composite+view", "size": "1920x1080", "max_wall_ms": 0.9, "measured_wall_ms": 0.27, "when": "2026-10-07"},
+    {"machine": "rtx4080s-win", "api": "gl", "pass": "composite+view", "size": "3840x2160", "max_wall_ms": 3.3, "measured_wall_ms": 1.08, "when": "2026-10-07"}
   ]
 }

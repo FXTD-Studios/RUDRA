@@ -31,6 +31,8 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <map>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -83,7 +85,13 @@ int main(int argc, char** argv) {
     QCommandLineOption golden_opt("golden", "composite golden folder", "dir", RUDRA_COMPOSITE_GOLDEN_DIR);
     QCommandLineOption report_opt("report", "write a JSON report here", "file");
     QCommandLineOption bench_opt("bench", "also time the composite at 1080p and 4K");
-    cli.addOptions({api_opt, golden_opt, report_opt, bench_opt});
+    // Roadmap 3.3: the control-latency gate. A slider move is one composite +
+    // display pass; with --budget, each timed pass must be within the budget
+    // file's "control_latency" row for this --machine, api, pass and size, or
+    // the probe fails as it does on a parity miss.
+    QCommandLineOption budget_opt("budget", "native/bench/latency_budgets.json: fail a timed pass over its control_latency budget", "file");
+    QCommandLineOption machine_opt("machine", "the budget file's machine label (e.g. rtx4080s-win)", "label");
+    cli.addOptions({api_opt, golden_opt, report_opt, bench_opt, budget_opt, machine_opt});
     cli.process(app);
 
     const QString a = cli.value(api_opt).toLower();
@@ -383,6 +391,29 @@ int main(int argc, char** argv) {
     out << "  => " << (all ? "PASS" : "FAIL") << "\n";
 
     QJsonArray jbench;
+    // The control-latency budgets for this machine and api: (pass, size) -> max wall ms.
+    std::map<std::pair<QString, QString>, double> budgets;
+    if (cli.isSet(budget_opt) && cli.isSet(machine_opt)) {
+        QFile bf(cli.value(budget_opt));
+        if (!bf.open(QIODevice::ReadOnly)) {
+            out << "cannot read " << cli.value(budget_opt) << "\n";
+            return 2;
+        }
+        const auto bj = QJsonDocument::fromJson(bf.readAll()).object();
+        for (const auto& v : bj.value("control_latency").toArray()) {
+            const auto b = v.toObject();
+            if (b.value("machine").toString() != cli.value(machine_opt) || b.value("api").toString() != a) continue;
+            budgets[{b.value("pass").toString(), b.value("size").toString()}] = b.value("max_wall_ms").toDouble();
+        }
+        if (budgets.empty()) out << "no control_latency budget for " << cli.value(machine_opt) << " " << a << ": timings reported, not checked\n";
+    }
+    auto check_budget = [&](const QString& pass, int w, int h, double wall_ms) {
+        const auto it = budgets.find({pass, QString("%1x%2").arg(w).arg(h)});
+        if (it == budgets.end()) return;
+        const bool ok = wall_ms <= it->second;
+        out << QString("    budget %1 ms: %2\n").arg(it->second, 0, 'f', 2).arg(ok ? "within" : "OVER");
+        if (!ok) all = false;
+    };
     if (cli.isSet(bench_opt)) {
         out << "Composite pass, RGBA16F target, median of 50 after one warm-up\n";
         for (auto [w, h] : {std::pair{1920, 1080}, std::pair{3840, 2160}}) {
@@ -396,6 +427,7 @@ int main(int argc, char** argv) {
                        .arg(t->wall_ms, 0, 'f', 3);
             out << "BENCH composite " << a << " " << w << "x" << h << " " << (t->has_gpu_timestamps ? t->gpu_ms : -1.0)
                 << " " << t->wall_ms << "\n";
+            check_budget("composite", w, h, t->wall_ms);
             jbench.append(QJsonObject{{"size", QString("%1x%2").arg(w).arg(h)},
                                       {"gpu_ms", t->has_gpu_timestamps ? QJsonValue(t->gpu_ms) : QJsonValue()},
                                       {"wall_ms", t->wall_ms}});
@@ -412,6 +444,7 @@ int main(int argc, char** argv) {
                        .arg(t->wall_ms, 0, 'f', 3);
             out << "BENCH view " << a << " " << w << "x" << h << " " << (t->has_gpu_timestamps ? t->gpu_ms : -1.0) << " "
                 << t->wall_ms << "\n";
+            check_budget("composite+view", w, h, t->wall_ms);
             jbench.append(QJsonObject{{"size", QString("%1x%2").arg(w).arg(h)}, {"pass", "composite+view"},
                                       {"gpu_ms", t->has_gpu_timestamps ? QJsonValue(t->gpu_ms) : QJsonValue()},
                                       {"wall_ms", t->wall_ms}});
