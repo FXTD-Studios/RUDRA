@@ -90,6 +90,16 @@ std::string Session::params_json() const {
         o += "]";
     }
     if (!grade.reference.empty()) o += ",\"reference\":" + reference_fit_json(grade.reference);
+    if (grade.masks && !grade.masks->empty()) {
+        o += ",\"masks\":[";
+        bool first = true;
+        for (int b : grade.masks->bands()) {
+            if (!first) o += ',';
+            first = false;
+            o += std::to_string(b);
+        }
+        o += "]";
+    }
     o += "}";
     return o;
 }
@@ -104,7 +114,79 @@ CompositeParams Session::composite_params() const {
     p.source = source_curve();
     p.calibration = grade.reference.empty() ? calibration_points() : std::vector<CalibrationPoint>{};
     p.reference = grade.reference;
+    if (grade.masks && !grade.masks->empty()) p.masks = grade.masks;
     return p;
+}
+
+// ---- painted masks (3.3) ---------------------------------------------------
+
+void Session::arm_mask(int band) {
+    const int next = band >= 0 && band < kMaxMaskBands && band < int(grade.regions.size()) ? band : -1;
+    if (next == paint_band_) return;
+    paint_band_ = next;
+    in_stroke_ = false;
+    notify(View);
+}
+
+void Session::set_brush(const Brush& brush) {
+    brush_ = brush;
+    brush_.size_px = std::clamp(brush_.size_px, 2.0, 2000.0);
+    brush_.softness = std::clamp(brush_.softness, 0.0, 1.0);
+    brush_.flow = std::clamp(brush_.flow, 0.01, 1.0);
+    notify(View);
+}
+
+void Session::stroke_begin() {
+    if (paint_band_ < 0 || in_stroke_) return;
+    push_undo();
+    in_stroke_ = true;
+}
+
+void Session::stroke(int width, int height, double x0, double y0, double x1, double y1, bool erase) {
+    if (paint_band_ < 0 || width <= 0 || height <= 0) return;
+    if (!in_stroke_) stroke_begin();
+    auto next = std::make_shared<MaskSet>();
+    if (grade.masks && grade.masks->width == width && grade.masks->height == height) *next = *grade.masks;
+    next->width = width;
+    next->height = height;
+    // Copy on write: the stroke's plane is the only one copied.
+    auto plane = next->planes[std::size_t(paint_band_)] ? std::make_shared<MaskPlane>(*next->planes[std::size_t(paint_band_)])
+                                                         : empty_plane(width, height);
+    Brush b = brush_;
+    b.erase = erase;
+    paint_stroke(*plane, width, height, x0, y0, x1, y1, b);
+    next->planes[std::size_t(paint_band_)] = std::move(plane);
+    grade.masks = std::move(next);
+    notify(Grade);
+}
+
+void Session::stroke_end() { in_stroke_ = false; }
+
+void Session::invert_mask() {
+    if (paint_band_ < 0 || !grade.masks || !grade.masks->has(paint_band_)) return;
+    push_undo();
+    auto next = std::make_shared<MaskSet>(*grade.masks);
+    auto plane = std::make_shared<MaskPlane>(*next->planes[std::size_t(paint_band_)]);
+    invert_plane(*plane);
+    next->planes[std::size_t(paint_band_)] = std::move(plane);
+    grade.masks = std::move(next);
+    notify(Grade);
+}
+
+void Session::clear_mask(int band) {
+    if (!grade.masks || !grade.masks->has(band)) return;
+    push_undo();
+    auto next = std::make_shared<MaskSet>(*grade.masks);
+    next->planes[std::size_t(band)].reset();
+    grade.masks = next->empty() ? nullptr : std::move(next);
+    notify(Grade);
+}
+
+void Session::clear_masks() {
+    if (!grade.masks || grade.masks->empty()) return;
+    push_undo();
+    grade.masks.reset();
+    notify(Grade);
 }
 
 void Session::set_reference(ReferenceFit fit) {

@@ -16,8 +16,10 @@ layout(std140, binding = 0) uniform View {
     vec4 pic[3];  // rows of source primaries -> swapchain primaries (xyz)
     vec4 gfx[3];  // rows of Rec.709 -> swapchain primaries, for the overlays
     vec4 anchor;  // roadmap 3.3: x 1 to anchor the model's picture, y knee (SDR max code), z softness, w hold gain
+    vec4 paint;   // roadmap 3.3: x the painted mask's channel (< 0 none), yzw its tint (sRGB)
 };
 
+layout(binding = 3) uniform sampler2D masks;      // painted masks (3.3), RGBA8, a band per channel
 layout(binding = 1) uniform sampler2D model;      // rgb reconstruction, network units; a the SDR's Rec.2020 luma, linearised (the anchor's target)
 layout(binding = 2) uniform sampler2D baseline;   // rgb analytic baseline, a the SDR's max code (Invented)
 
@@ -125,6 +127,16 @@ void main() {
             vec3 col = w > 0.0 ? kChangeUp : kChangeDown;
             float a = kChangeTintMix * abs(w);
             vec3 t = target.x < 0.5 ? col : 203.0 * vec3(srgbToLinear(col.r), srgbToLinear(col.g), srgbToLinear(col.b));
+            c = c * (1.0 - a) + t * a;
+        }
+    }
+    if (paint.x >= 0.0 && mode == 0) {
+        // The mask being painted (3.3), tinted over whichever side is shown.
+        vec4 mv = texelFetch(masks, p, 0);   // at the frame's size (passes.hpp masks_rgba8)
+        int ch = int(paint.x + 0.5);
+        float a = 0.35 * (ch == 0 ? mv.x : ch == 1 ? mv.y : ch == 2 ? mv.z : mv.w);
+        if (a > 0.0) {
+            vec3 t = target.x < 0.5 ? paint.yzw : 203.0 * vec3(srgbToLinear(paint.y), srgbToLinear(paint.z), srgbToLinear(paint.w));
             c = c * (1.0 - a) + t * a;
         }
     }

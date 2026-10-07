@@ -1,2 +1,2 @@
 # platform: files, hashing, results. Depends on nothing first-party.
-rudra_library(rudra_platform SOURCES src/hash.cpp src/npy.cpp src/pyjson.cpp src/process.cpp)
+rudra_library(rudra_platform SOURCES src/hash.cpp src/npy.cpp src/pyjson.cpp src/process.cpp src/png8.cpp)

@@ -5,11 +5,13 @@
 // them; switching view or moving the wipe is a new call on the same inputs.
 
 #include <array>
+#include <memory>
 #include <cstdint>
 #include <vector>
 
 #include "rudra/core/color.hpp"
 #include "rudra/core/image.hpp"
+#include "rudra/core/masks.hpp"
 
 namespace rudra {
 
@@ -62,7 +64,14 @@ struct ViewParams {
     double anchor_knee = 0.9;
     double anchor_softness = 0.04;
     double anchor_hold = 1.0;
+    // Roadmap 3.3: the painted mask being edited, tinted over the picture
+    // (Image mode): the band's channel of `masks`, in `paint_tint` (an sRGB
+    // colour) mixed by kMaskTintMix times the mask. -1 for none.
+    int paint_band = -1;
+    std::array<float, 3> paint_tint{1.0f, 0.7f, 0.25f};
+    std::shared_ptr<const MaskSet> masks;
 };
+inline constexpr float kMaskTintMix = 0.35f;
 
 // A view with the SDR target, for tools and tests: the positional form of
 // ViewParams without its target and source.

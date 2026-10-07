@@ -584,7 +584,7 @@ is loaded, sits behind the same picker.
   Session state undone with the grade, `calibration` in `params()`, the master
   request and the sidecar only when set. Tests: `Calibration.*` in
   `tests/test_source_curve.cpp`; `rudra-gpu-parity` gained a calibrated case
-- [ ] 3.3 Live peak, knee and region EV at 4K on the HDR viewer, with qualifier
+- [x] 3.3 Live peak, knee and region EV at 4K on the HDR viewer, with qualifier
   and painted masks (`native/app/region_editor.cpp`), every control under one
   frame of latency. **Latency, done 7 Oct 2026:** every live control (peak,
   region EV, strength, mode, preserve, source curve, calibration) is one
@@ -600,8 +600,26 @@ is loaded, sits behind the same picker.
   to 2e-4), the frame's hold gain comes from the measure (`anchor_hold`) and
   lands a measure after a knee move. The baseline side is never anchored.
   Parity gained two anchored view cases; `tests/test_anchor_view.cpp`.
-  Carry source chroma stays a master-only stage. **Open:** the painted masks
-  (a per-region mask the artist paints on the viewer, gating the qualifier)
+  Carry source chroma stays a master-only stage. **Painted masks, done 7 Oct
+  2026:** one optional 8-bit mask per Region EV band (the first four), at the
+  preview frame's size, painted on the viewer. It gates the band's qualifier,
+  `gain = 2^(Σ evᵢ · qᵢ(Y) · mᵢ(x,y))`, 1 where a band has none, so a frame
+  without masks is bit-identical to before. The mask button on a Region EV
+  row arms the band (one at a time; the Calibrate pick and painting never
+  overlap): left drag paints, Alt erases, the wheel sizes the brush; the
+  brush card under the rows has Add/Erase, Size, Softness, Flow, Show,
+  Invert, Clear, Done, and the coverage; the mask shows tinted in the band's
+  colour. One stroke is one undo step (`core/masks.cpp`: the brush, the set,
+  bilinear sampling at any frame size; planes shared so a stroke copies one).
+  GPU: one RGBA8 texture, a band per channel, sampled in `composite.frag`,
+  fetched by `display.frag` for the tint, uploaded on a stroke only. Masks
+  travel as `<master>.masks.png` beside the EXR (`platform/png8.cpp`, a
+  dependency-free codec, so the CLI reads them without OpenCV), named in the
+  sidecar's `masks` with the bands and coverage and in the provenance;
+  `params()` lists the painted bands only when set; `--params
+  '{"masks_file":"..."}'` on the CLI. Parity gained a masked composite case
+  and a painted-tint view case; `tests/test_masks.cpp`. Per shot on video is
+  5.3
 - [x] 3.4 Reference match: the Reference block in the Source card. Load the
   graded HDR of the frame on screen (an EXR as the masters write them, AP0 or
   Rec.2020 by its chromaticities, or a 16-bit PQ PNG/TIFF; `engine/

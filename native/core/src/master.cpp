@@ -45,12 +45,17 @@ NitsFrame nits_from_network(const NetworkLinearImage& network) {
     return out;
 }
 
-void apply_region_ev(NitsFrame& nits, std::span<const RegionBand> bands, double softness_stops, double ceiling_nits) {
+void apply_region_ev(NitsFrame& nits, std::span<const RegionBand> bands, double softness_stops, double ceiling_nits,
+                     const MaskSet* masks) {
     if (!any_graded(bands)) return;
+    const bool masked = masks && !masks->empty();
     const std::size_t n = nits.plane_size();
+    const int w = nits.width(), h = nits.height();
     for (std::size_t i = 0; i < n; ++i) {
         double px[3] = {nits.plane(0)[i], nits.plane(1)[i], nits.plane(2)[i]};
-        const double g = region_ev_gain(px, bands, softness_stops);
+        float mw[kMaxMaskBands];
+        if (masked) masks->weights(int(i % std::size_t(w)), int(i / std::size_t(w)), w, h, mw);
+        const double g = region_ev_gain(px, bands, softness_stops, masked ? mw : nullptr);
         for (int c = 0; c < 3; ++c) nits.plane(c)[i] = std::clamp(px[c] * g, 0.0, ceiling_nits);
     }
 }
@@ -294,7 +299,7 @@ MasterPixels render_master_pixels(const NetworkLinearImage& network, const SdrIm
                                   const ModelConstants& model, const MasterParams& params) {
     MasterPixels m;
     m.nits = nits_from_network(network);
-    apply_region_ev(m.nits, params.regions, params.region_softness_stops, double(model.max_hdr) * 10000.0);
+    apply_region_ev(m.nits, params.regions, params.region_softness_stops, double(model.max_hdr) * 10000.0, params.masks.get());
     if (params.anchor) anchor_to_sdr(m.nits, sdr, params.anchor_knee);
     if (params.carry_chroma) carry_source_chroma(m.nits, sdr, params.chroma_knee);
     if (params.settle_grain) settle_highlight_grain(m.nits, sdr, params.anchor_knee);

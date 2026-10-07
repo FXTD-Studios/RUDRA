@@ -57,15 +57,19 @@ float qualifier_mask(double luma_nits, double low_nits, double high_nits, double
     return static_cast<float>(m * m * (3.0 - 2.0 * m));
 }
 
-double region_ev_gain(const double rgb_nits[3], std::span<const RegionBand> bands, double softness_stops) noexcept {
+double region_ev_gain(const double rgb_nits[3], std::span<const RegionBand> bands, double softness_stops,
+                      const float* weights) noexcept {
     double y = 0.0;
     for (int c = 0; c < 3; ++c) y += std::max(rgb_nits[c], 0.0) * kLuma2020f[c];
     double total = 0.0;
+    std::size_t i = 0;
     for (const auto& b : bands) {
+        const std::size_t band = i++;
         if (b.ev == 0.0) continue;
         // numpy: a Python float times a float32 array is a float32 product
         // (NEP 50), widened only when it is added to the float64 total.
-        const float term = static_cast<float>(b.ev) * qualifier_mask(y, b.low_nits, b.high_nits, softness_stops);
+        float term = static_cast<float>(b.ev) * qualifier_mask(y, b.low_nits, b.high_nits, softness_stops);
+        if (weights && band < std::size_t(kMaxMaskBands)) term *= weights[band];   // the painted mask (3.3)
         total += static_cast<double>(term);
     }
     return std::exp2(total);
@@ -86,6 +90,7 @@ NetworkLinearImage composite(const SdrImage& sdr, const Fields& fields, const Fr
     const float log_scale = model.log_scale;
     const float log_ceiling = std::log1p(model.max_hdr * log_scale);
     const bool graded = any_graded(params.regions);
+    const bool masked = graded && params.masks && !params.masks->empty();
     const double ceiling_nits = static_cast<double>(model.max_hdr) * 10000.0;
 
     NetworkLinearImage out(h, w);
@@ -120,7 +125,9 @@ NetworkLinearImage composite(const SdrImage& sdr, const Fields& fields, const Fr
         }
         if (graded) {
             double nits[3] = {px[0] * 10000.0, px[1] * 10000.0, px[2] * 10000.0};
-            const double g = region_ev_gain(nits, params.regions, params.region_softness_stops);
+            float mw[kMaxMaskBands];
+            if (masked) params.masks->weights(int(i % std::size_t(w)), int(i / std::size_t(w)), w, h, mw);
+            const double g = region_ev_gain(nits, params.regions, params.region_softness_stops, masked ? mw : nullptr);
             for (int c = 0; c < 3; ++c)
                 px[c] = static_cast<float>(std::clamp(nits[c] * g, 0.0, ceiling_nits) / 10000.0);
         }

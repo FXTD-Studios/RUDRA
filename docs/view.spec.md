@@ -67,6 +67,13 @@ For the output pixel at column `x` (of `W`), in image row `y`:
    band (`anchor_hold`), computed by the measure and fed back; `knee` defaults
    to 0.9, `softness` to 0.04. The shader reads `target` from the model
    texture's alpha, which composite.frag writes, and `m` from the baseline's.
+   **Painted mask tint (roadmap 3.3).** While a band is being painted
+   (`paint_band >= 0` and the band has a mask), in image mode the view colour
+   `c` of whichever side is shown is mixed toward the band's tint (an sRGB
+   colour; in HDR, 203 nits times its linearised value, like the change
+   tint) by `0.35 * M(x, y)`, the mask read as section 3 of the composite
+   spec reads it. The shader fetches the same RGBA8 texture the composite
+   pass samples.
 4. The view:
    * image: `c = linear_to_srgb(clamp(h * P / displayNits, 0, 1))`, per channel.
      Exposure and a hard clip, no tone curve.

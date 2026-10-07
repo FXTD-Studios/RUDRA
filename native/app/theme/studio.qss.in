@@ -302,6 +302,13 @@ QLabel[role="region-q"] { font-family: "var(--mono-family)"; font-size: 11px; co
 QLabel[role="region-ev"] { font-family: "var(--mono-family)"; font-size: 12px; color: var(--ink-3); padding: 1px 4px; border-radius: 4px; }
 QLabel[role="region-ev"]:hover { background: var(--raise-2); color: var(--ink); }
 QLabel[role="region-ev"][live="true"] { color: var(--gold); }
+QPushButton[role="mask"] { background: transparent; border: 1px solid var(--line-2); border-radius: 4px; color: var(--ink-4); font-family: "var(--mono-family)"; font-size: 10px; padding: 0; }
+QPushButton[role="mask"][has="true"] { border-color: var(--ink-3); color: var(--ink); }
+QPushButton[role="mask"]:checked { border-color: var(--accent); color: var(--accent); }
+QPushButton[role="mask"]:hover:!checked { border-color: var(--ink-2); color: var(--ink-2); }
+QWidget#maskPanel { background: transparent; border-top: 1px solid var(--raise); }
+QWidget#maskPanel QLabel[role="key"] { color: var(--ink-3); }
+QWidget#maskPanel QLabel[role="value"] { color: var(--ink); }
 QLabel[role="region-u"] { font-family: "var(--mono-family)"; font-size: 11px; color: var(--ink-3); }
 
 /* ── panel labels inside cards (Region EV, the scopes) ─────────────── */

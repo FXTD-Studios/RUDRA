@@ -102,6 +102,16 @@ public:
     bool pick_mode() const;
     void on_pick(std::function<void(double x, double y)> cb);
 
+    // Painting (roadmap 3.3): while on, a left drag on the picture reports
+    // stroke segments in frame pixels (press: a zero-length one), Alt held
+    // means erase, the wheel reports brush-size notches instead of zooming,
+    // and the release ends the stroke. Stays on until set off.
+    void set_paint_mode(bool on);
+    bool paint_mode() const;
+    void on_paint(std::function<void(double x0, double y0, double x1, double y1, bool erase)> cb);
+    void on_paint_end(std::function<void()> cb);
+    void on_brush_wheel(std::function<void(double notches)> cb);
+
     // Files dropped on the picture (the page's window drop); local paths.
     void on_drop(std::function<void(const QStringList&)> cb);
 

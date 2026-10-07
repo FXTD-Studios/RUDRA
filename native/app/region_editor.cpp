@@ -6,7 +6,11 @@
 #include <QStyle>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <cmath>
+
 #include "rudra/core/js_format.hpp"
+#include "widgets.hpp"
 
 namespace rudra::app {
 namespace {
@@ -69,6 +73,23 @@ void RegionEditor::build(int n) {
         u->setProperty("role", "region-u");
         u->setFixedWidth(20);
         h->addWidget(u);
+        if (i < kMaxMaskBands) {
+            r.mask = new QPushButton("\u2205", r.row);
+            r.mask->setObjectName(QString("maskBtn%1").arg(i));
+            r.mask->setProperty("role", "mask");
+            r.mask->setCheckable(true);
+            r.mask->setFixedSize(30, 20);
+            r.mask->setToolTip("Paint a mask for this band");
+            r.mask->setCursor(Qt::ArrowCursor);
+            connect(r.mask, &QPushButton::clicked, this, [this, i] {
+                if (mask_pressed) mask_pressed(i);
+            });
+            h->addWidget(r.mask);
+        } else {
+            auto* spacer = new QWidget(r.row);
+            spacer->setFixedSize(30, 20);
+            h->addWidget(spacer);
+        }
         r.row->installEventFilter(this);
         r.ev->installEventFilter(this);
         v->addWidget(r.row);
@@ -85,6 +106,16 @@ void RegionEditor::sync() {
         r.q->setText(QString::fromStdString(nits_label(g.low_nits) + " – " + nits_label(g.high_nits) + " nits"));
         r.ev->setText(QString::fromStdString(js_signed(g.ev, 2)));
         const bool live = std::abs(g.ev) > 1e-9, sel = int(i) == session_.region_sel;
+        if (r.mask) {
+            const bool has = session_.grade.masks && session_.grade.masks->has(int(i));
+            r.mask->setText(has ? QString::number(std::lround(session_.grade.masks->coverage(int(i)) * 100.0)) + "%"
+                                : QStringLiteral("\u2205"));
+            r.mask->setChecked(session_.painted_band() == int(i));
+            if (r.mask->property("has").toBool() != has) {
+                r.mask->setProperty("has", has);
+                repolish(r.mask);
+            }
+        }
         if (r.ev->property("live").toBool() != live) {
             r.ev->setProperty("live", live);
             repolish(r.ev);
@@ -149,6 +180,121 @@ bool RegionEditor::eventFilter(QObject* o, QEvent* e) {
         default: break;
     }
     return QWidget::eventFilter(o, e);
+}
+
+// ---- the brush card (3.3) -------------------------------------------------
+
+MaskPanel::MaskPanel(Session& session, QWidget* parent) : QWidget(parent), session_(session) {
+    setObjectName("maskPanel");
+    auto* v = new QVBoxLayout(this);
+    v->setContentsMargins(8, 8, 8, 4);
+    v->setSpacing(6);
+    auto* head = new QWidget(this);
+    auto* hh = new QHBoxLayout(head);
+    hh->setContentsMargins(0, 0, 0, 0);
+    title_ = new QLabel(head);
+    title_->setProperty("role", "card-head");
+    hh->addWidget(title_);
+    hh->addStretch(1);
+    coverage_ = new QLabel(head);
+    coverage_->setObjectName("maskCoverage");
+    coverage_->setProperty("role", "note");
+    hh->addWidget(coverage_);
+    v->addWidget(head);
+    auto* mode = new QWidget(this);
+    mode->setProperty("role", "seg");
+    auto* mh = new QHBoxLayout(mode);
+    mh->setContentsMargins(2, 2, 2, 2);
+    mh->setSpacing(2);
+    add_ = new QPushButton("Add", mode);
+    add_->setObjectName("maskAdd");
+    erase_ = new QPushButton("Erase", mode);
+    erase_->setObjectName("maskErase");
+    for (QPushButton* b : {add_, erase_}) {
+        b->setCheckable(true);
+        b->setProperty("role", "seg-btn");
+        mh->addWidget(b, 1);
+    }
+    connect(add_, &QPushButton::clicked, this, [this] { Brush b = session_.brush(); b.erase = false; session_.set_brush(b); });
+    connect(erase_, &QPushButton::clicked, this, [this] { Brush b = session_.brush(); b.erase = true; session_.set_brush(b); });
+    v->addWidget(mode);
+    auto slider = [&](const char* name, const QString& label, int lo, int hi, QSlider*& out, QLabel*& value) {
+        auto* row = new QWidget(this);
+        auto* rh = new QHBoxLayout(row);
+        rh->setContentsMargins(0, 0, 0, 0);
+        auto* k = new QLabel(label, row);
+        k->setProperty("role", "key");
+        rh->addWidget(k);
+        rh->addStretch(1);
+        value = new QLabel(row);
+        value->setProperty("role", "value");
+        rh->addWidget(value);
+        v->addWidget(row);
+        out = new QSlider(Qt::Horizontal, this);
+        out->setObjectName(name);
+        out->setRange(lo, hi);
+        v->addWidget(out);
+    };
+    slider("maskSize", "Size", 2, 600, size_, size_v_);
+    slider("maskSoft", "Softness", 0, 100, soft_, soft_v_);
+    slider("maskFlow", "Flow", 1, 100, flow_, flow_v_);
+    connect(size_, &QSlider::valueChanged, this, [this](int v) { if (syncing_) return; Brush b = session_.brush(); b.size_px = v; session_.set_brush(b); });
+    connect(soft_, &QSlider::valueChanged, this, [this](int v) { if (syncing_) return; Brush b = session_.brush(); b.softness = v / 100.0; session_.set_brush(b); });
+    connect(flow_, &QSlider::valueChanged, this, [this](int v) { if (syncing_) return; Brush b = session_.brush(); b.flow = v / 100.0; session_.set_brush(b); });
+    show_ = new CheckRow("maskShow", "Show mask on the viewer", "maskShowHint", "tinted in the band's colour", this);
+    show_->clicked = [this] {
+        session_.show_masks = !session_.show_masks;
+        session_.set_brush(session_.brush());   // a view change: the tint follows
+    };
+    v->addWidget(show_);
+    auto* btns = new QWidget(this);
+    auto* bh = new QHBoxLayout(btns);
+    bh->setContentsMargins(0, 0, 0, 0);
+    bh->addStretch(1);
+    invert_ = new QPushButton("Invert", btns);
+    invert_->setObjectName("maskInvert");
+    connect(invert_, &QPushButton::clicked, this, [this] { session_.invert_mask(); });
+    clear_ = new QPushButton("Clear", btns);
+    clear_->setObjectName("maskClear");
+    connect(clear_, &QPushButton::clicked, this, [this] { session_.clear_mask(session_.painted_band()); });
+    done_ = new QPushButton("Done", btns);
+    done_->setObjectName("maskDone");
+    done_->setProperty("role", "primary");
+    connect(done_, &QPushButton::clicked, this, [this] {
+        if (done) done();
+    });
+    for (QPushButton* b : {invert_, clear_, done_}) bh->addWidget(b);
+    v->addWidget(btns);
+    sync();
+}
+
+void MaskPanel::sync() {
+    const int band = session_.painted_band();
+    setVisible(band >= 0);
+    if (band < 0) return;
+    syncing_ = true;
+    static const char* kNames[] = {"Highlights", "Speculars", "Shadows", "Band 4"};
+    const auto& regions = session_.grade.regions;
+    const QString name = band < int(regions.size()) && !regions[std::size_t(band)].label.empty()
+                             ? QString::fromStdString(regions[std::size_t(band)].label)
+                             : QString(kNames[std::min(band, 3)]);
+    title_->setText("Mask \u00b7 " + name);
+    const bool has = session_.grade.masks && session_.grade.masks->has(band);
+    coverage_->setText(has ? QString::number(std::lround(session_.grade.masks->coverage(band) * 100.0)) + "% of the frame"
+                           : QStringLiteral("nothing painted yet"));
+    const Brush& b = session_.brush();
+    add_->setChecked(!b.erase);
+    erase_->setChecked(b.erase);
+    size_->setValue(int(std::lround(b.size_px)));
+    soft_->setValue(int(std::lround(b.softness * 100.0)));
+    flow_->setValue(int(std::lround(b.flow * 100.0)));
+    size_v_->setText(QString::number(std::lround(b.size_px)) + " px");
+    soft_v_->setText(QString::number(std::lround(b.softness * 100.0)) + "%");
+    flow_v_->setText(QString::number(std::lround(b.flow * 100.0)) + "%");
+    show_->set_on(session_.show_masks);
+    invert_->setEnabled(has);
+    clear_->setEnabled(has);
+    syncing_ = false;
 }
 
 }  // namespace rudra::app

@@ -49,6 +49,11 @@ struct MasterRequest {
     // Roadmap 3.4: the reference match (core/reference_fit.hpp); empty for
     // none, left out of the JSON and the sidecar then. Replaces the anchors.
     ReferenceFit reference;
+    // Roadmap 3.3: the painted masks (core/masks.hpp). In the JSON as
+    // `masks_file`, a PNG path read on parse; written beside the master as
+    // <name>.masks.png and named in the sidecar. Null for none.
+    std::shared_ptr<const MaskSet> masks;
+    std::string masks_file;   // where the JSON pointed, or where write_master wrote them
 };
 
 struct MasterResult {

@@ -30,8 +30,9 @@ struct CompositeUbo {
     float counts[4];
     float curve[288];   // 72 vec4: exposure + up to 287 knots (source_curve.hpp needs 1 + 256)
     float bands[32];
+    float frame[4];     // x width, y height (3.3: the masks sample by normalised position)
 };
-static_assert(sizeof(CompositeUbo) == (3 * 4 + 288 + 32) * sizeof(float));
+static_assert(sizeof(CompositeUbo) == (3 * 4 + 288 + 32 + 4) * sizeof(float));
 static_assert(288 >= 1 + kSourceCurveKnots);
 
 // The View block of shaders/display.frag.
@@ -42,8 +43,9 @@ struct ViewUbo {
     float pic[12];   // three vec4 rows
     float gfx[12];
     float anchor[4];   // x on, y knee, z softness, w hold (roadmap 3.3)
+    float paint[4];    // x the painted mask's channel (< 0 none), yzw its tint (3.3)
 };
-static_assert(sizeof(ViewUbo) == 40 * sizeof(float));
+static_assert(sizeof(ViewUbo) == 44 * sizeof(float));
 
 // The Reduce block of shaders/reduce.frag.
 struct ReduceUbo {
@@ -56,7 +58,7 @@ inline void rows_of(const Mat3& m, float* out) {
 }
 
 inline CompositeUbo composite_ubo(const FrameScalars& scalars, const ModelConstants& model,
-                                  const CompositeParams& params) {
+                                  const CompositeParams& params, int frame_width = 0, int frame_height = 0) {
     CompositeUbo u{};
     u.model[0] = model.log_scale;
     u.model[1] = model.max_hdr;
@@ -72,16 +74,42 @@ inline CompositeUbo composite_ubo(const FrameScalars& scalars, const ModelConsta
     const std::size_t np = std::min<std::size_t>(curve.size(), 288);
     u.counts[0] = np >= 3 ? float(np - 1) : 0.0f;
     std::copy(curve.begin(), curve.begin() + std::ptrdiff_t(np), u.curve);
-    int bands = 0;
+    const bool masked = params.masks && !params.masks->empty();
+    int bands = 0, index = 0;
     for (const auto& band : params.regions) {
+        const int band_index = index++;
         if (band.ev == 0.0 || bands == 8) continue;
         u.bands[bands * 4 + 0] = static_cast<float>(std::log2(band.low_nits));
         u.bands[bands * 4 + 1] = static_cast<float>(std::log2(band.high_nits));
         u.bands[bands * 4 + 2] = static_cast<float>(band.ev);
+        u.bands[bands * 4 + 3] = masked && params.masks->has(band_index) ? float(band_index) : -1.0f;
         ++bands;
     }
     u.counts[1] = float(bands);
+    u.counts[2] = masked ? 1.0f : 0.0f;
+    u.frame[0] = float(std::max(frame_width, 1));
+    u.frame[1] = float(std::max(frame_height, 1));
     return u;
+}
+
+// The masks texture's bytes at the frame's size (RGBA8, a band per channel,
+// 255 for none): the set as it is when the sizes match, else resampled the
+// way MaskSet::weight samples, so the GPU reads what the CPU composite does.
+inline std::vector<std::uint8_t> masks_rgba8(const CompositeParams& params, int frame_width, int frame_height) {
+    const std::size_t n = std::size_t(std::max(frame_width, 1)) * std::size_t(std::max(frame_height, 1));
+    if (!params.masks || params.masks->empty()) return std::vector<std::uint8_t>(n * 4, 255);
+    const MaskSet& m = *params.masks;
+    if (m.width == frame_width && m.height == frame_height) return m.rgba8();
+    std::vector<std::uint8_t> out(n * 4, 255);
+    for (int y = 0; y < frame_height; ++y)
+        for (int x = 0; x < frame_width; ++x) {
+            float w[kMaxMaskBands];
+            m.weights(x, y, frame_width, frame_height, w);
+            for (int b = 0; b < kMaxMaskBands; ++b)
+                out[(std::size_t(y) * std::size_t(frame_width) + std::size_t(x)) * 4 + std::size_t(b)] =
+                    std::uint8_t(std::lround(std::clamp(w[b], 0.0f, 1.0f) * 255.0f));
+        }
+    return out;
 }
 
 // The uniforms as core/view.cpp rounds them to fp32.
@@ -104,7 +132,18 @@ inline ViewUbo view_ubo(const ViewParams& params, int width) {
     u.anchor[1] = float(params.anchor_knee);
     u.anchor[2] = float(params.anchor_softness);
     u.anchor[3] = float(params.anchor_hold);
+    const bool painting = params.paint_band >= 0 && params.masks && params.masks->has(params.paint_band);
+    u.paint[0] = painting ? float(params.paint_band) : -1.0f;
+    for (int k = 0; k < 3; ++k) u.paint[1 + k] = params.paint_tint[std::size_t(k)];
     return u;
+}
+
+// The masks texture for the display pass, from the view's set (see
+// masks_rgba8 above for the composite's).
+inline std::vector<std::uint8_t> view_masks_rgba8(const ViewParams& params, int frame_width, int frame_height) {
+    CompositeParams cp;
+    cp.masks = params.masks;
+    return masks_rgba8(cp, frame_width, frame_height);
 }
 
 // sdr rgb + shadow in a, and residual rgb + highlight in a: the two inputs

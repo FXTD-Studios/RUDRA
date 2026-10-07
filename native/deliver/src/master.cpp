@@ -82,6 +82,12 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
             if (!ref) return make_error(ErrorCode::ParseError, "The master parameters' reference is not a fit.", ref.error().message);
             r.reference = std::move(*ref);
         }
+        if (j.contains("masks_file")) {
+            r.masks_file = j.at("masks_file").get<std::string>();
+            auto m = read_mask_set(r.masks_file);
+            if (!m) return make_error(ErrorCode::ParseError, "The master parameters' masks could not be read.", m.error().message + ": " + m.error().detail);
+            if (!m->empty()) r.masks = std::make_shared<const MaskSet>(std::move(*m));
+        }
         if (j.contains("regions"))
             for (const auto& b : j.at("regions"))
                 r.regions.push_back({b.value("label", std::string()), b.at("low_nits").get<double>(),
@@ -112,6 +118,7 @@ std::string master_request_json(const MasterRequest& q) {
     }
     if (!q.reference.empty())
         j["reference"] = nlohmann::json::parse(reference_fit_json(q.reference));
+    if (!q.masks_file.empty()) j["masks_file"] = q.masks_file;
     return j.dump();
 }
 
@@ -142,6 +149,14 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         cp.reference = q.reference;
         cp.calibration.clear();   // a reference is an anchor at every code
     }
+    // The painted masks (3.3): written beside the master, read by the chain.
+    std::filesystem::path masks_path;
+    if (q.masks && !q.masks->empty()) {
+        cp.masks = q.masks;
+        masks_path = out;
+        masks_path.replace_extension(".masks.png");
+        if (auto w = write_mask_set(masks_path, *q.masks); !w) return w.error();
+    }
     const NetworkLinearImage network = composite(sdr, fields, scalars, model, cp);
 
     // The master chain, stage by stage (render_master_pixels without the
@@ -151,7 +166,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     if (bands.empty()) bands = default_region_bands();
     const bool graded = any_graded(bands);
     NitsFrame nits = nits_from_network(network);
-    apply_region_ev(nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0);
+    apply_region_ev(nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0, cp.masks.get());
     if (q.anchor) anchor_to_sdr(nits, sdr, q.anchor_knee);
     if (q.carry_chroma) carry_source_chroma(nits, sdr, q.chroma_knee);
     if (q.settle_grain) settle_highlight_grain(nits, sdr, q.anchor_knee);
@@ -183,6 +198,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     };
     if (*source != SourceCurve::Unknown) provenance.emplace_back("rudra:sourceCurve", q.source_curve);
     if (!cp.reference.empty()) provenance.emplace_back("rudra:reference", cp.reference.file);
+    if (cp.masks) provenance.emplace_back("rudra:masks", masks_path.filename().string());
     const bool aces = q.container == "aces";
     auto w = aces ? write_aces_exr(out, linear, *src, 1.0, provenance) : write_exr(out, linear, true, std::nullopt, provenance);
     if (!w) return w.error();
@@ -244,6 +260,21 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
             {"residual_mean_stops", py_round(rf.residual_mean, 3)},
             {"residual_p95_stops", py_round(rf.residual_p95, 3)},
             {"target_log2_nits", target},
+        });
+    }
+    if (cp.masks) {
+        pyjson::List bands_json;
+        pyjson::Dict coverage;
+        for (int b : cp.masks->bands()) {
+            bands_json.push_back(std::int64_t(b));
+            coverage.emplace_back(std::to_string(b), py_round(cp.masks->coverage(b), 4));
+        }
+        sidecar_dict.emplace_back("masks", pyjson::Dict{
+            {"file", masks_path.filename().string()},
+            {"width", std::int64_t(cp.masks->width)},
+            {"height", std::int64_t(cp.masks->height)},
+            {"bands", bands_json},
+            {"coverage", coverage},
         });
     }
     const pyjson::Value sidecar = std::move(sidecar_dict);
