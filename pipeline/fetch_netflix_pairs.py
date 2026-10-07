@@ -336,16 +336,26 @@ _PQ_LUT = pq_eotf(np.arange(4096) / 4095.0).astype(np.float32)
 # ----------------------------------------------------------------------------
 # Corpus
 # ----------------------------------------------------------------------------
-def plan(shots: dict) -> list[dict]:
-    """Deterministic selection: every stride-th common frame, offset stride//2."""
+def plan(shots: dict, train_stride: int = 0, train_offset: int = -1) -> list[dict]:
+    """Deterministic selection: every stride-th common frame, offset stride//2.
+
+    ``train_stride`` / ``train_offset`` override the train split only, so a
+    second pull can take the frames between the first pull's (stride 2,
+    offset 1 adds every odd frame to a stride-4 corpus: 3x the train pairs,
+    none repeated). Val and test strides never change: Cosmos and Meridian
+    stay what they were on 1 Oct 2026."""
     jobs = []
     for (title, rng), keys in shots.items():
         split = SPLITS[title]
         stride = STRIDES[split]
+        offset = stride // 2
+        if split == "train" and train_stride > 0:
+            stride = train_stride
+            offset = train_offset if train_offset >= 0 else stride // 2
         hdr_idx = zip_index(BUCKET + keys["HDR"])
         sdr_idx = zip_index(BUCKET + keys["SDR"])
         common = sorted(set(hdr_idx) & set(sdr_idx))
-        for name in common[stride // 2::stride]:
+        for name in common[offset::stride]:
             stem = name.rsplit(".", 1)[0]
             scene = f"nf_{title}_{rng}"
             jobs.append({"title": title, "shot": rng, "split": split, "member": name,
@@ -527,6 +537,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-finalize", action="store_true", help="fetch only (chunked runs)")
     ap.add_argument("--deadline", type=float, default=0,
                     help="seconds after which no new pair is started; in-flight pairs finish")
+    ap.add_argument("--train-stride", type=int, default=0,
+                    help="train split stride (default: the corpus's 4); with --train-offset, a second pull of the frames in between")
+    ap.add_argument("--train-offset", type=int, default=-1, help="first train frame of each shot (default: stride // 2)")
     args = ap.parse_args(argv)
     RANGE_OVERRIDE = args.sdr_range
     out = args.out
@@ -536,11 +549,14 @@ def main(argv: list[str] | None = None) -> int:
         finalize(out, args.path_root)
         return 0
 
-    plan_path = out / "_plan.json"
+    # The plan is cached per selection, so a second pull with another train
+    # stride does not reuse the first pull's.
+    tag = f"_s{args.train_stride}o{args.train_offset}" if args.train_stride > 0 else ""
+    plan_path = out / f"_plan{tag}.json"
     if plan_path.exists():
         jobs = json.loads(plan_path.read_text(encoding="utf-8"))
     else:
-        jobs = plan(list_shots())
+        jobs = plan(list_shots(), args.train_stride, args.train_offset)
         plan_path.write_text(json.dumps(jobs), encoding="utf-8")
     jobs = [j for j in jobs if j["title"] in args.titles]
     done = set()
