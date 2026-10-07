@@ -14,15 +14,38 @@
 >
 > | **F. Native desktop app** | `native/`, C++20 / Qt 6 / QRhi / LibTorch + ONNX Runtime, no Python at runtime | **Phase 0 closed 23 Sep 2026: GO on Windows**, macOS conditional (below). **Phase 1: steps 1 to 10 of 11 done 24 Sep**, step 11 (CI on three OSes) waiting on its first run. **Phase 2** (the QRhi viewer): done on Linux and Windows but for the backend matrix. **Phase 3** (the Qt UI): steps 1 to 11 done 24 Sep, the exit scripted and passing on Linux; the Windows run and the by-hand pass are open (below). **Phase 4** (video delivery): steps 1 to 11 done 24 Sep, the exit scripted (`NATIVE_PHASE4_EXIT.ps1`) and passing on Linux; the Windows run is open (below) |
 >
-> | **E. Corpus programme (v4b, v4c)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint"; v4c adds the mixed-curve render and the curve head | **trained and benched 23-24 Sep; every gate that ran FAILS** (below). Nothing promoted; `sdr2hdr_shadow_v1.pt` stays the default. Three runs from 18-22 Sep were on the wrong corpus and are quarantined |
+> | **E. Corpus programme (v4b, v4c)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint"; v4c adds the mixed-curve render and the curve head | **CLOSED 7 Oct 2026.** v4b, v4c and v7 (real SDR added, source-curve input) all fail every gate, v7 at 0 of 287 on held-out real frames. Nothing promoted; `sdr2hdr_shadow_v1.pt` stays the optional model. Post-mortem pending: `sweep_val_checkpoints.py`, `bench_by_curve.py` |
+> | **G. Model research** | direct regression, real-SDR-first, one bounded attempt after 1.0 | **opened 7 Oct 2026, blocks nothing** (kill rule in the release definition) |
 >
-> **Release definition (agreed 24 Sep 2026).** Line C/E is complete when one
-> set of weights passes every row below on the held-out benches, paired
-> per frame, 95% bootstrap CI, PU21-PSNR and CVVDP read together. Parameter
-> count is not a target: 1.2 M and 4.77 M scored alike, and the oracle bound
-> (+5.84 dB clean) is mostly out of reach from 8 bits. Gains beyond these rows
-> come from more distinct real scenes and the optional clipped-region pass (N6),
-> not from a bigger network. Nothing is announced or shipped before rows 1 to 4.
+> **Release definition (re-scoped 7 Oct 2026; the 24 Sep definition is kept below it).**
+> The learned residual is no longer a release blocker. Four models (v4b, v4c, v7,
+> shadow_v1) across rendered, out-of-generator and real SDR, and none beats the
+> analytic inverse it rides on; v7, trained on 1,830 real pairs, is −4.13 dB on
+> all 287 held-out Meridian frames. The one external comparison (HDRTVDM on
+> HDRTV1K, +14.66 dB) says the residual-on-inverse design is the limit, not the
+> corpus or the label. RUDRA 1.0 ships on the **analytic inverse with the artist
+> in the loop** (curve picker, three-click calibration, live peak/knee/region EV,
+> reference match, invented-pixel map, DoVi/HDR10+ delivery). `shadow_v1` ships
+> as an **optional** model with its measured numbers, never as the default path
+> of a master. The model moves to a research track (line G) that blocks nothing.
+>
+> | # | condition | pass when | status |
+> |---|---|---|---|
+> | R1 | the inverse path, every bench | its own PU21/CVVDP on `aces`, `oog`, `mix`, `real` published as the floor | measured: 49.00 / 9.77, 26.44 / 8.08, 25.54 / 8.11, 21.69 / 6.42 |
+> | R2 | the artist controls (roadmap 3.1 to 3.4) | each control under one frame of latency at 4K, scripted exit passing on Windows | open |
+> | R3 | against the market (roadmap 2.2, 2.3) | the frozen set through every external tool, a table published whatever it says | open |
+> | R4 | the native app's open items (README, "Still open") | macOS inference and HDR output, signing, by-hand workflow on Windows, budgets per backend | open |
+> | R5 | optional model | `shadow_v1` listed with its measured deltas vs the inverse; any model that beats the inverse on `real` with CI excluding zero may join it | shadow_v1 listed |
+>
+> **Line G, model research (opened 7 Oct 2026, blocks nothing).** One bounded
+> attempt, after 1.0: direct regression (SDR in, HDR out, no inverse residual),
+> real-SDR-first (Netflix + HDRTV1K), `--eval-batches 0`, selected on full-val
+> real rows, benched on Meridian and HDRTV1K test against HDRTVDM. Kill rule,
+> written now: stop if the first full-val eval is not above the inverse on real
+> rows. The v7 post-mortem (`sweep_val_checkpoints.py`, `bench_by_curve.py`)
+> closes line E first.
+>
+> **The 24 Sep definition, for the record (all of it failed):**
 >
 > | # | condition | bench | pass when | status |
 > |---|---|---|---|---|
@@ -34,9 +57,7 @@
 > | 6 | commercial weights | `oog`, `mix` | `rudra-studio` within 0.3 dB / 0.03 JOD of the research model (N7) | not trained |
 > | 7 | against the market | N4 set: external SDR→HDR baselines | a table published whatever it says | not run |
 >
-> Rows 1, 2 and 6 are scored by `training/cp7_verdicts.py`; rows 3 to 5 get
-> their gates there when their benches exist. A model that passes 1 to 6
-> replaces `sdr2hdr_shadow_v1.pt` as the default in `models.json`.
+> Rows 1, 2 and 6 were scored by `training/cp7_verdicts.py`. No model passed row 1 or 2.
 
 > **7 Oct 2026 — v7 (roadmap 1.4, source-curve model on the mixed v4c + Netflix manifest) scored; every N8 gate fails.**
 > 50k steps from scratch, `best.pt` = step 3,000, bench at step 3,000 in bf16. Against the analytic
