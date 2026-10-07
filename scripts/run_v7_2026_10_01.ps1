@@ -92,6 +92,24 @@ if ($Stage -eq "bench") {
     foreach ($b in $benches.Keys) {
         $root = Join-Path $Repo "bench\cp_$b"; $res = Join-Path $root "results"
         New-Item -ItemType Directory -Path $res -Force | Out-Null
+        # ref/ and baseline/ are shared by every model's export and reused with
+        # --only-test. They are only reusable if complete: on 7 Oct 2026 the real
+        # bench's first export died with D: full at frame 166 of 287 (one EXR
+        # truncated), the re-run saw ref/ and exported only the test tree, and
+        # the scorer failed on the short file. Complete = every export_*.json
+        # here agrees on "frames" and ref/ and baseline/ both hold that many files.
+        $refDir = Join-Path $root "ref"; $baseDir = Join-Path $root "baseline"
+        if (Test-Path $refDir) {
+            $expected = @(Get-ChildItem $root -Filter "export_*.json" | ForEach-Object { (Get-Content $_.FullName -Raw | ConvertFrom-Json).frames }) | Sort-Object -Unique
+            $nRef = @(Get-ChildItem $refDir -Recurse -File).Count
+            $nBase = if (Test-Path $baseDir) { @(Get-ChildItem $baseDir -Recurse -File).Count } else { 0 }
+            if ($expected.Count -ne 1 -or $nRef -ne $expected[0] -or $nBase -ne $expected[0]) {
+                Write-Host "incomplete ref/baseline in $root (ref $nRef, baseline $nBase, exports say $($expected -join ',')): re-exporting everything" -ForegroundColor Yellow
+                Get-ChildItem $root -Directory | Remove-Item -Recurse -Force
+                Get-ChildItem $root -Filter "export_*.json" | Remove-Item -Force
+                New-Item -ItemType Directory -Path $res -Force | Out-Null
+            }
+        }
         $runs = [ordered]@{ "v7_unknown" = "none" }
         if ($benches[$b].curve) { $runs["v7"] = $benches[$b].curve }
         foreach ($tree in $runs.Keys) {
