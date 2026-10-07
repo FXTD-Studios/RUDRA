@@ -586,7 +586,15 @@ is loaded, sits behind the same picker.
   `tests/test_source_curve.cpp`; `rudra-gpu-parity` gained a calibrated case
 - [ ] 3.3 Live peak, knee and region EV at 4K on the HDR viewer, with qualifier
   and painted masks (`native/app/region_editor.cpp`), every control under one
-  frame of latency
+  frame of latency. **Latency, done 7 Oct 2026:** every live control (peak,
+  region EV, strength, mode, preserve, source curve, calibration) is one
+  composite + display pass; measured on the RTX 4080 SUPER, wall, median of
+  50: 4K 1.33 ms D3D12, 1.20 D3D11, 1.21 Vulkan, 1.08 OpenGL (1080p 0.27 to
+  0.34), under a tenth of a 60 Hz frame. Gated: `native/bench/latency_budgets.json`
+  `control_latency` (3x measured), checked by `rudra-gpu-parity --budget
+  --machine`, which `NATIVE_GATE_B.ps1 -Machine` passes. **Open:** the
+  painted masks (a per-region mask the artist paints on the viewer, gating
+  the qualifier), and the knee
 - [ ] 3.4 Reference match: load one graded HDR frame, fit the shot's curve and
   exposure to it, and report the residual in stops
 - [x] 3.5 Invented-pixel map: a viewer layer, plus a QC sidecar field, marking

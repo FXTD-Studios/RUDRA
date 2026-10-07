@@ -36,6 +36,7 @@ param(
     [string]$QtVersion = "6.8.3",
     [int]$Frames = 240,
     [int]$Screen = -1,
+    [string]$Machine = "rtx4080s-win",   # the control_latency budget label in native\bench\latency_budgets.json (roadmap 3.3); "" to report only
     [switch]$SkipBuild,
     [switch]$InstallBuildTools
 )
@@ -136,10 +137,11 @@ if (Test-Path $Parity) {
     foreach ($api in @("d3d12", "d3d11", "vulkan", "gl")) {
         $json = Join-Path $Reports "native_gpu_parity_${api}_$Stamp.json"
         $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-        $text = & $Parity --api $api --report $json --bench 2>&1 | ForEach-Object { "$_" }
+        $budget = @(); if ($Machine) { $budget = @("--budget", (Join-Path $Repo "native\bench\latency_budgets.json"), "--machine", $Machine) }
+        $text = & $Parity --api $api --report $json --bench @budget 2>&1 | ForEach-Object { "$_" }
         $code = $LASTEXITCODE
         $ErrorActionPreference = $prev
-        $text | Where-Object { $_ -match "^GPU composite parity" } | Write-Host
+        $text | Where-Object { $_ -match "^GPU composite parity|budget .* ms: OVER|no control_latency budget" } | Write-Host
         if (Test-Path $json) {
             $d = Get-Content $json -Raw | ConvertFrom-Json
             $w32 = ($d.cases | Measure-Object -Property fp32_max_abs -Maximum).Maximum
