@@ -192,10 +192,18 @@ def list_shots() -> dict[tuple[str, str], dict[str, str]]:
 def zip_index(url: str) -> dict[str, tuple[int, int, int, int]]:
     """member name -> (local header offset, compressed size, method, crc32)."""
     size = _size(url)
-    tail = _get(url, max(0, size - 65_557), size - 1)
-    pos = tail.rfind(b"PK\x05\x06")
-    if pos < 0:
-        raise ValueError(f"no end-of-central-directory in {url}")
+    # A range response that comes back without the end-of-central-directory
+    # (a throttled or truncated read on 7 Oct 2026) is fetched again.
+    for attempt in range(4):
+        tail = _get(url, max(0, size - 65_557), size - 1)
+        pos = tail.rfind(b"PK\x05\x06")
+        if pos >= 0:
+            break
+        if attempt == 3:
+            raise ValueError(f"no end-of-central-directory in {url} ({len(tail)} bytes of tail, size {size})")
+        _SIZES.pop(url, None)
+        time.sleep(2 ** attempt)
+        size = _size(url)
     cd_size, cd_off = struct.unpack("<II", tail[pos + 12:pos + 20])
     if cd_off == 0xFFFFFFFF:
         raise ValueError(f"zip64 not handled: {url}")
@@ -336,7 +344,7 @@ _PQ_LUT = pq_eotf(np.arange(4096) / 4095.0).astype(np.float32)
 # ----------------------------------------------------------------------------
 # Corpus
 # ----------------------------------------------------------------------------
-def plan(shots: dict, train_stride: int = 0, train_offset: int = -1) -> list[dict]:
+def plan(shots: dict, train_stride: int = 0, train_offset: int = -1, titles: list[str] | None = None) -> list[dict]:
     """Deterministic selection: every stride-th common frame, offset stride//2.
 
     ``train_stride`` / ``train_offset`` override the train split only, so a
@@ -346,6 +354,8 @@ def plan(shots: dict, train_stride: int = 0, train_offset: int = -1) -> list[dic
     stay what they were on 1 Oct 2026."""
     jobs = []
     for (title, rng), keys in shots.items():
+        if titles is not None and title not in titles:
+            continue   # only the requested titles' zips are indexed
         split = SPLITS[title]
         stride = STRIDES[split]
         offset = stride // 2
@@ -552,11 +562,13 @@ def main(argv: list[str] | None = None) -> int:
     # The plan is cached per selection, so a second pull with another train
     # stride does not reuse the first pull's.
     tag = f"_s{args.train_stride}o{args.train_offset}" if args.train_stride > 0 else ""
+    if sorted(args.titles) != sorted(SPLITS):
+        tag += "_" + "-".join(sorted(args.titles))
     plan_path = out / f"_plan{tag}.json"
     if plan_path.exists():
         jobs = json.loads(plan_path.read_text(encoding="utf-8"))
     else:
-        jobs = plan(list_shots(), args.train_stride, args.train_offset)
+        jobs = plan(list_shots(), args.train_stride, args.train_offset, args.titles)
         plan_path.write_text(json.dumps(jobs), encoding="utf-8")
     jobs = [j for j in jobs if j["title"] in args.titles]
     done = set()
