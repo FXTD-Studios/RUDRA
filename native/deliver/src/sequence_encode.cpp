@@ -228,7 +228,9 @@ std::vector<std::string> sequence_encode_command(const SequenceTarget& t, int wi
                        transfer_name(t.transfer), "-color_range", "tv"});
     const bool prores = std::find(t.codec.begin(), t.codec.end(), "prores_ks") != t.codec.end();
     const bool x265 = std::find(t.codec.begin(), t.codec.end(), "libx265") != t.codec.end();
-    if (t.suffix == ".mov" && write_colr) a.insert(a.end(), {"-movflags", "+write_colr"});
+    // MOV and MP4 both take the colr atom from this flag: ffmpeg 6.1 wrote it
+    // for MP4 unasked, the 2025 gyan builds do not (7 Oct 2026, Phase 4 on Windows).
+    if ((t.suffix == ".mov" || t.suffix == ".mp4") && write_colr) a.insert(a.end(), {"-movflags", "+write_colr"});
     if (prores && prores_metadata)
         a.insert(a.end(), {"-bsf:v", std::string("prores_metadata=color_primaries=") + kPrimaries +
                                          ":color_trc=" + transfer_name(t.transfer) + ":colorspace=" + kMatrix});
@@ -383,8 +385,9 @@ Result<fs::path> encode_sequence(const std::function<std::optional<NitsFrame>()>
     std::error_code ec;
     if (output.has_parent_path()) fs::create_directories(output.parent_path(), ec);
     const bool prores = spec->suffix == ".mov";
+    const bool colr = spec->suffix == ".mov" || spec->suffix == ".mp4";
     const auto args = sequence_encode_command(*spec, width, height, o.fps, o.peak_nits, o.maxcll, o.maxfall, o.min_nits,
-                                              output, prores && ffmpeg_supports("muxer", "mov", "write_colr"),
+                                              output, colr && ffmpeg_supports("muxer", "mov", "write_colr"),
                                               prores && ffmpeg_supports("bsf", "prores_metadata", "color_primaries"));
     const fs::path log = fs::temp_directory_path() / ("rudra-encode-" + std::to_string(std::hash<std::string>{}(output.string())) + ".log");
     auto process = Process::start_writer(args, log);

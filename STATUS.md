@@ -74,6 +74,15 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **7 Oct 2026, 11:50 — native tests on Windows, first full run (line F).** `scripts\NATIVE_TESTS.ps1`
+> (new) builds and runs the suites in the gate B build: rudra_tests 154/154 (1 skipped: rudra-native not
+> in that build), rudra_app_tests 29/29, rudra-gpu-parity 16/16 on D3D12, D3D11, Vulkan and OpenGL
+> including roadmap 3.1's source-curve rows. Two ffmpeg-build findings, both fixed: the 2025 gyan build
+> writes no `colr` atom for MP4 unless asked (`+write_colr` now goes on MP4 as well as MOV, in
+> `rudra/delivery/video.py` and `sequence_encode.cpp`), and it cannot put BT.2020/PQ in a MOV's legacy
+> `nclc` atom, the case the oracle already notes and delivers; the golden now records that note and the
+> test compares it. Golden re-emitted on this box (index only; the Linux frame and code oracles kept).
+>
 > **7 Oct 2026, 11:00 — v7 post-mortem, line E closed.** `sweep_val_checkpoints.py` on the full
 > 538-row val (163 real, 375 rendered), every other checkpoint, and `bench_by_curve.py` on `mix`:
 > 1. *Not overfitting.* Full-val composite is flat, +1.44 (2k) to +1.77 (34k) to +1.72 (50k); real-row
