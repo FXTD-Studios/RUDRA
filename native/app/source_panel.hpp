@@ -6,6 +6,8 @@
 // session's (Session::set_source) and comes back through sync().
 
 #include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
 #include <QWidget>
 
 #include <functional>
@@ -16,8 +18,6 @@
 namespace rudra::app {
 
 class Seg;
-class QLineEdit;
-class QPushButton;
 
 // The plot: SDR code on x, nits on a log y; the ACES inverse in grey, the
 // chosen curve in the accent, dashed marks at code 235 and 255.
