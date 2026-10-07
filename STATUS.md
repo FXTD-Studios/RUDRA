@@ -27,7 +27,7 @@
 > | # | condition | bench | pass when | status |
 > |---|---|---|---|---|
 > | 1 | clean, well-graded SDR | `aces`, paper 429 clean | not worse than the analytic inverse by more than 0.1 dB / 0.02 JOD | FAIL (v4b −8.09 dB, v4c −21.9 dB, v7 −19.2 dB curve given / −24.1 blind; bf16 check closed 25 Sep, fp32 within 0.04 dB) |
-> | 2 | unknown curve + codec | `oog`, `mix` | both metrics above the inverse, CI excluding zero (N3) | FAIL (v4c +1.33 dB but −0.126 JOD; v7 −1.2 dB / −0.82 JOD oog, −2.7 dB / −0.59 JOD mix) |
+> | 2 | unknown curve + codec | `oog`, `mix` | both metrics above the inverse, CI excluding zero (N3) | FAIL (v4c +1.33 dB but −0.126 JOD; v7 −1.2 dB / −0.82 JOD oog, −2.7 dB / −0.59 JOD mix, −4.1 dB / −0.33 JOD real) |
 > | 3 | degraded input | paper 429 hard | at least v5's +1.43 dB / +0.44 JOD, with row 1 held | not run |
 > | 4 | clipped highlights | `measure_clipping.py --score`, 0/+1/+2 EV | error in stops on clipped pixels below the inverse's, CI excluding zero | not run |
 > | 5 | video | v4b/v4c test clips, clip-mode CVVDP + flicker | clip JOD ≥ per-frame JOD on every test clip (N5) | not run |
@@ -40,11 +40,12 @@
 
 > **7 Oct 2026 — v7 (roadmap 1.4, source-curve model on the mixed v4c + Netflix manifest) scored; every N8 gate fails.**
 > 50k steps from scratch, `best.pt` = step 3,000, bench at step 3,000 in bf16. Against the analytic
-> inverse: `aces` −19.21 dB [−20.15, −18.28] / −0.965 JOD with the curve given, −24.12 dB blind;
+> inverse: `aces` −19.21 dB [−20.15, −18.28] / −0.965 JOD with the curve given, −21.64 dB blind;
 > `oog` −1.17 dB / −0.820 JOD (hable given), −1.08 / −0.666 blind, i.e. −2.41 dB under v4c blind;
 > `mix` −2.67 dB / −0.590 JOD with each frame's own curve, −1.88 / −0.459 blind. The true curve
-> helps only on ACES. `reports\logs\cp_results_v7.json`. The `real` (Meridian) export was cut off
-> by a full D: and is still to run. Two measurement defects found on the way, both fixed:
+> helps only on ACES. **Real SDR (Netflix Meridian, 287 held-out frames, blind): −4.13 dB
+> [−4.22, −4.02] / −0.328 JOD, 0 of 287 wins.** The model trained on 1,830 real pairs is worse than
+> the analytic inverse on every real frame it was meant to fix. `reports\logs\cp_results_v7.json`. Two measurement defects found on the way, both fixed:
 > the bench stage resumed on a half-written export tree (aces/v7_unknown scored on 366 of 537
 > frames; the script now resumes on `export_<tree>.json`), and every best.pt from v4 to v7 was
 > selected on 8 × 4 = 32 val records (`--eval-batches 0` now scores the whole split, with gains

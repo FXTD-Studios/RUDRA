@@ -503,13 +503,14 @@ phase 1.
   --curve-head`, new `--source-curve`), with the label dropped to `unknown` on
   30% of rendered pairs so the blind path stays trained. **Trained 6 to 7 Oct
   2026 (v7, 50k steps, `best.pt` = step 3,000) and it fails the gate:** below
-  the analytic inverse on `aces` (−19.2 dB curve given, −24.1 dB blind), `oog`
-  (−1.2 / −1.1 dB) and `mix` (−2.7 / −1.9 dB), every CI excluding zero, and the
-  true curve helps only on `aces`. In training, the selection metric peaked at
+  the analytic inverse on `aces` (−19.2 dB curve given, −21.6 dB blind), `oog`
+  (−1.2 / −1.1 dB), `mix` (−2.7 / −1.9 dB) and **real SDR (Meridian, 287
+  held-out frames: −4.13 dB [−4.22, −4.02], −0.33 JOD, 0 wins)**, every CI
+  excluding zero, and the true curve helps only on `aces`. In training, the selection metric peaked at
   step 1,500 and decayed for 48k steps while train loss fell; that metric was
   8 batches × 4 = 32 val records, ~30% real SDR. `shadow_v1` stays the
-  default. Verdicts: `reports\logs\cp_results_v7.json`; the `real` (Meridian)
-  export is still to run (`-Stage bench` resumes it)
+  default. Verdicts: `reports\logs\cp_results_v7.json` (bench complete 7 Oct
+  09:40)
 - [ ] 1.4b Before another run: `--eval-batches 0` (whole val, now supported,
   with gains split real vs rendered), re-score the 25 v7 checkpoints on the
   full val with `training/sweep_val_checkpoints.py`, and split the `mix` bench
