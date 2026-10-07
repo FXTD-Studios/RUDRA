@@ -575,13 +575,30 @@ def excess(ref: dict, got: dict, tol: dict) -> float:
     return worst
 
 
+def bench_paths(folder: Path) -> list[Path]:
+    """The frames of a --bench-dir: a folder (walked, so a corpus laid out by
+    shot is one bench) or a manifest.jsonl, whose test split's sdr_path rows are
+    the bench (the Meridian frames of the real-SDR corpus, say); a path in the
+    manifest is relative to the manifest's folder unless absolute."""
+    kinds = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
+    if folder.is_file() and folder.suffix.lower() == ".jsonl":
+        out = []
+        for line in folder.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            if r.get("split", "test") != "test" or not r.get("sdr_path"):
+                continue
+            p = Path(r["sdr_path"])
+            out.append(p if p.is_absolute() else folder.parent / p)
+        return out
+    return [p for p in sorted(folder.rglob("*")) if p.is_file() and p.suffix.lower() in kinds]
+
+
 def bench_frames(folder: Path, limit: int) -> list[tuple[str, np.ndarray]]:
     import cv2
     out = []
-    # Recursive, so a corpus laid out by shot (sdr/<shot>/<frame>.png) is one --bench-dir.
-    for p in sorted(folder.rglob("*")):
-        if not p.is_file() or p.suffix.lower() not in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}:
-            continue
+    for p in bench_paths(folder):
         img = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
         if img is None:
             continue
@@ -743,7 +760,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, default=REPO / "dist" / "models")
     ap.add_argument("--opset", type=int, default=17)
     ap.add_argument("--bench-dir", type=Path, default=None,
-                    help="folder of SDR frames to add to the parity check (e.g. the 429 bench frames)")
+                    help="SDR frames to add to the parity check: a folder (walked) or a manifest.jsonl (its test split)")
     ap.add_argument("--bench-limit", type=int, default=0)
     args = ap.parse_args(argv)
     manifest = build_package(args.checkpoint, args.out, args.opset, args.bench_dir, args.bench_limit)
