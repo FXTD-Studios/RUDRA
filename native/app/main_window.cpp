@@ -68,7 +68,9 @@
 #include "rudra/render/viewer_window.hpp"
 #endif
 #ifdef RUDRA_HAVE_STILL_DECODE
+#ifdef RUDRA_HAVE_STILL_DECODE
 #include "rudra/media/still.hpp"
+#endif
 #endif
 
 namespace rudra::app {
@@ -1950,9 +1952,11 @@ bool MainWindow::load_reference(const std::filesystem::path& path) {
     // is brought to it the same way, INTER_AREA in float, so the codes line up.
     const SdrImage& sdr = current_frame_->sdr;
     PlanarBuffer linear = std::move(img->linear709);
+#ifdef RUDRA_HAVE_STILL_DECODE
     if ((linear.width() != sdr.width() || linear.height() != sdr.height()) && preview_max_side_ > 0 &&
         std::max(linear.width(), linear.height()) > preview_max_side_)
         linear = fit_max_side(SdrImage(std::move(linear)), preview_max_side_).buffer();
+#endif
     auto fit = fit_reference(sdr, linear, file.filename().string());
     if (!fit) {
         QMessageBox::warning(this, "RUDRA", QString::fromStdString(fit.error().message + "\n" + fit.error().detail));
