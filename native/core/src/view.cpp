@@ -69,6 +69,62 @@ std::vector<float> sdr_max_codes(const SdrImage* sdr, int width, int height) {
     return out;
 }
 
+namespace {
+// core/master.cpp srgb_to_linear_d: the anchor's own decode, in double.
+double srgb_to_linear_dbl(double c) noexcept {
+    c = std::clamp(c, 0.0, 1.0);
+    return c > 0.04045 ? std::pow((c + 0.055) / 1.055, 2.4) : c / 12.92;
+}
+}  // namespace
+
+double anchor_hold(const NetworkLinearImage& model, const SdrImage& sdr, double knee, double softness) {
+    // anchor_to_sdr's hold, on the composite in network units (x 10 000 = nits).
+    const std::size_t n = model.buffer().plane_size();
+    const PlanarBuffer& m = model.buffer();
+    const PlanarBuffer& s = sdr.buffer();
+    constexpr double eps = 1e-4, luma[3] = {0.2627, 0.6780, 0.0593};
+    std::vector<double> want, band;
+    want.reserve(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        double target = 0.0, actual = 0.0, mx = -1.0;
+        for (int c = 0; c < 3; ++c) {
+            const double v = s.plane(c)[i];
+            target += srgb_to_linear_dbl(v) * luma[c];
+            actual += double(m.plane(c)[i]) * 10000.0 * luma[c];
+            mx = std::max(mx, v);
+        }
+        target *= 203.0;
+        const double g = (target + eps) / (actual + eps);
+        want.push_back(g);
+        if (mx > knee - softness && mx < knee + softness && actual > 1e-9) band.push_back(g);
+    }
+    auto median = [](std::vector<double> v) {
+        if (v.empty()) return 1.0;
+        const std::size_t mid = v.size() / 2;
+        std::nth_element(v.begin(), v.begin() + std::ptrdiff_t(mid), v.end());
+        double hi = v[mid];
+        if (v.size() % 2 == 0) {
+            const double lo = *std::max_element(v.begin(), v.begin() + std::ptrdiff_t(mid));
+            return (lo + hi) * 0.5;
+        }
+        return hi;
+    };
+    const double hold = band.size() >= 64 ? median(std::move(band)) : median(std::move(want));
+    return std::isfinite(hold) ? hold : 1.0;
+}
+
+float anchor_gain_f(float target_luma, float r, float g, float b, float max_code, float knee, float softness,
+                    float hold) noexcept {
+    const float eps = 1e-4f;
+    const float target = target_luma * 203.0f;
+    const float actual = (0.2627f * r + 0.6780f * g + 0.0593f * b) * kPeak;
+    float gain = (target + eps) / (actual + eps);
+    const float t = std::clamp((max_code - (knee - softness)) / (2.0f * softness), 0.0f, 1.0f);
+    const float ramp = t * t * (3.0f - 2.0f * t);
+    gain = gain * (1.0f - ramp) + hold * ramp;
+    return std::isfinite(gain) ? gain : 1.0f;
+}
+
 PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
                          const ViewParams& p, const SdrImage* sdr) {
     assert(model.width() == baseline.width() && model.height() == baseline.height());
@@ -91,14 +147,28 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
     const Mat3f picture_m = to_float(rgb_to_rgb_matrix(p.source, p.target.primaries));
     const Mat3f graphics_m = to_float(rgb_to_rgb_matrix(Primaries::Rec709, p.target.primaries));
     const float graphics_white = float(kDiffuseWhite.v);
-    const std::vector<float> codes = p.mode == ViewMode::Invented ? sdr_max_codes(sdr, w, h) : std::vector<float>{};
+    const bool anchoring = p.anchor && sdr != nullptr;
+    const std::vector<float> codes =
+        (p.mode == ViewMode::Invented || anchoring) ? sdr_max_codes(sdr, w, h) : std::vector<float>{};
+    const float knee = float(p.anchor_knee), softness = float(p.anchor_softness), hold = float(p.anchor_hold);
+    const PlanarBuffer* sdr_buf = anchoring ? &sdr->buffer() : nullptr;
 
     PlanarBuffer out(3, h, w);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const float u = (float(x) + 0.5f) / float(w);
             const PlanarBuffer& pic = (wiping && u < wipe) ? b : source;
-            const float hr = pic.at(0, y, x), hg = pic.at(1, y, x), hb = pic.at(2, y, x);
+            float hr = pic.at(0, y, x), hg = pic.at(1, y, x), hb = pic.at(2, y, x);
+            // The anchor (3.3) on the model's picture only: the baseline is the
+            // inverse as it is, on its own or on the wipe's left.
+            if (anchoring && &pic == &m) {
+                const std::size_t i = std::size_t(y) * std::size_t(w) + std::size_t(x);
+                const float target = 0.2627f * srgb_to_linear(sdr_buf->plane(0)[i]) +
+                                     0.6780f * srgb_to_linear(sdr_buf->plane(1)[i]) +
+                                     0.0593f * srgb_to_linear(sdr_buf->plane(2)[i]);
+                const float gain = anchor_gain_f(target, hr, hg, hb, codes[i], knee, softness, hold);
+                hr *= gain, hg *= gain, hb *= gain;
+            }
             float c[3];
             switch (p.mode) {
                 case ViewMode::FalseColour: {

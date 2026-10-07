@@ -219,7 +219,22 @@ int main(int argc, char** argv) {
         sc.curve_params = f.at("curve_params").get<std::vector<float>>();
         const auto m = composite(sdr, fields, sc, model, CompositeParams{});
         const auto b = corrected_baseline(sdr, model.corpus_ev, sc.curve_params);
-        for (const auto& [vname, vp] : views) {
+        // Roadmap 3.3: the anchor live on the picture, with this frame's hold,
+        // on its own and across a wipe (the baseline side stays unanchored).
+        std::vector<std::pair<std::string, ViewParams>> frame_views = views;
+        {
+            auto v = view_params(ViewMode::Image, 1000.0);
+            v.anchor = true;
+            v.anchor_knee = 0.9;
+            v.anchor_hold = anchor_hold(m, sdr, 0.9);
+            frame_views.emplace_back("anchored 1000", v);
+            auto w = view_params(ViewMode::Image, 406.0, ViewSource::Model, 0.37, 0.02);
+            w.anchor = true;
+            w.anchor_knee = 0.8;
+            w.anchor_hold = anchor_hold(m, sdr, 0.8);
+            frame_views.emplace_back("anchored wipe knee 0.8", w);
+        }
+        for (const auto& [vname, vp] : frame_views) {
             const Rgb8Image want = render_view_rgb8(m, b, vp, &sdr);
             auto got = (*gpu)->view(m, b, vp, &sdr);
             if (!got) {

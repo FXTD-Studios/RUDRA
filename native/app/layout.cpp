@@ -658,6 +658,33 @@ QWidget* MainWindow::build_right_rail() {
                                   : "master will keep the per-channel expansion's own hue");
     };
     ocv->addWidget(anchor_);
+    // The anchor's knee (roadmap 3.3): where on the SDR's code range the
+    // per-pixel level match hands over to the frame's hold gain. Live on the
+    // viewer while Anchor is on, so what is seen is what the master does.
+    {
+        auto* w = new QWidget(ocard);
+        w->setProperty("role", "slider");
+        auto* sv2 = column(w, 0, 6);
+        auto* top = new QWidget(w);
+        auto* tph = new QHBoxLayout(top);
+        tph->setContentsMargins(0, 0, 0, 0);
+        tph->setSpacing(4);
+        tph->addWidget(label("Anchor knee", {}, "slider-lab"));
+        tph->addStretch(1);
+        anchor_knee_val_ = label("", "anchorKneeVal", "slider-val");
+        tph->addWidget(anchor_knee_val_);
+        tph->addWidget(label("code", {}, "unit"));
+        sv2->addWidget(top);
+        anchor_knee_ = new QSlider(Qt::Horizontal, w);
+        anchor_knee_->setObjectName("anchorKnee");
+        anchor_knee_->setRange(50, 99);   // 0.50 to 0.99 by 0.01
+        sv2->addWidget(anchor_knee_);
+        connect(anchor_knee_, &QSlider::valueChanged, this, [this](int n) {
+            if (std::lround(session_.anchor_knee * 100.0) == n) return;   // sync_ui, not a move
+            session_.set_anchor_knee(n / 100.0);
+        });
+        ocv->addWidget(w);
+    }
     ocv->addWidget(carry_chroma_);
     dv->addWidget(ocard);
 

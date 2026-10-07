@@ -258,6 +258,13 @@ void Session::toggle_anchor() {
     notify(Delivery);
 }
 
+void Session::set_anchor_knee(double knee) {
+    knee = std::max(0.5, std::min(0.99, knee));
+    if (knee == anchor_knee) return;
+    anchor_knee = knee;
+    notify(Delivery);
+}
+
 void Session::toggle_carry_chroma() {
     carry_chroma = !carry_chroma;
     notify(Delivery);

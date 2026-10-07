@@ -32,6 +32,8 @@ struct FrameMeasure {
     CompareStats compare;                        // what the model changed, for the compare line
     SupportStats support;                        // the invented-pixel map's shares
     double compose_ms = 0.0;                     // the grade's cost, as the page times it
+    double anchor_hold = 1.0;                    // the anchor's hold gain at anchor_knee (core/view.hpp anchor_hold), roadmap 3.3
+    double anchor_knee = 0.9;                    // the knee it was computed for
 
     FrameMetrics frame_metrics() const;          // showMetrics' input
     // The probe at a frame pixel (probeAt, floor of the position): nullopt
@@ -43,6 +45,6 @@ struct FrameMeasure {
 // frame only, never on the grade).
 FrameMeasure measure_frame(const SdrImage& sdr, const Fields& fields, const FrameScalars& scalars,
                            const ModelConstants& model, const CompositeParams& params,
-                           const NetworkLinearImage* baseline = nullptr);
+                           const NetworkLinearImage* baseline = nullptr, double anchor_knee = 0.9);
 
 }  // namespace rudra

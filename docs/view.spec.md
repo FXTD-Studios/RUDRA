@@ -55,6 +55,18 @@ For the output pixel at column `x` (of `W`), in image row `y`:
    With the wipe on the right-hand side is always the reconstruction.
 3. The picture sample: `h = B[y, x]` when the wipe is on and `u < wipe`,
    else `h = S[y, x]`.
+   **Anchor (roadmap 3.3, a Deliver setting, live).** When `anchor` is on and
+   `h` is the reconstruction (never the baseline, on its own or on the wipe's
+   left), `h` is scaled by the master's anchor gain (core/master.cpp
+   `anchor_to_sdr`, in fp32: core/view.cpp `anchor_gain_f`): with `target` the
+   SDR's Rec.2020 luma of its linearised codes times 203 nits, `actual` the
+   reconstruction's luma in nits and `eps = 1e-4`, `g = (target + eps) /
+   (actual + eps)`; above the knee on the SDR's max code `m`, `t =
+   clamp((m - (knee - softness)) / (2 softness), 0, 1)`, `r = t^2 (3 - 2t)`,
+   `g = g (1 - r) + hold r`. `hold` is the frame's median gain in the knee
+   band (`anchor_hold`), computed by the measure and fed back; `knee` defaults
+   to 0.9, `softness` to 0.04. The shader reads `target` from the model
+   texture's alpha, which composite.frag writes, and `m` from the baseline's.
 4. The view:
    * image: `c = linear_to_srgb(clamp(h * P / displayNits, 0, 1))`, per channel.
      Exposure and a hard clip, no tone curve.

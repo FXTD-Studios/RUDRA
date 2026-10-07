@@ -273,6 +273,8 @@ private:
     QWidget* panels_ = nullptr;          // the inspector's tab page (#ipanels)
     std::vector<QWidget*> pages_;        // Reconstruct, Grade, Deliver
     SourcePanel* source_panel_ = nullptr;
+    QSlider* anchor_knee_ = nullptr;
+    QLabel* anchor_knee_val_ = nullptr;
     Seg *view_mode_ = nullptr, *view_layer_ = nullptr, *zoom_seg_ = nullptr, *mode_seg_ = nullptr, *tabs_ = nullptr,
         *ws_ = nullptr;
     CheckRow *preserve_ = nullptr, *anchor_ = nullptr, *carry_chroma_ = nullptr;

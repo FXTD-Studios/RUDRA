@@ -46,7 +46,7 @@ std::optional<ProbeInput> FrameMeasure::probe_at(double fx, double fy) const {
 
 FrameMeasure measure_frame(const SdrImage& sdr, const Fields& fields, const FrameScalars& scalars,
                            const ModelConstants& model, const CompositeParams& params,
-                           const NetworkLinearImage* baseline) {
+                           const NetworkLinearImage* baseline, double anchor_knee) {
     const auto t0 = std::chrono::steady_clock::now();
     FrameMeasure out;
     out.width = sdr.width();
@@ -54,6 +54,8 @@ FrameMeasure measure_frame(const SdrImage& sdr, const Fields& fields, const Fram
     const std::size_t n = std::size_t(out.width) * std::size_t(out.height);
     out.baseline = baseline ? *baseline : corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, params, model.corpus_ev));
     out.model = composite(sdr, fields, scalars, model, params);
+    out.anchor_knee = anchor_knee;
+    out.anchor_hold = anchor_hold(out.model, sdr, anchor_knee);
     out.highlight.assign(fields.highlight.plane(0), fields.highlight.plane(0) + n);
     out.shadow.assign(fields.shadow.plane(0), fields.shadow.plane(0) + n);
     out.sdr8.resize(n * 3);
