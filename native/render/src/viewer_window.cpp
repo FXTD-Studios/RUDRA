@@ -134,12 +134,14 @@ struct ViewerWindow::Impl {
     bool initialized = false, has_swapchain = false;
 
     QShader vert, composite_frag, display_frag, blit_vert, blit_frag;
-    std::unique_ptr<QRhiSampler> nearest, trilinear, fetch;
+    std::unique_ptr<QRhiSampler> nearest, trilinear, fetch, linear;
     std::unique_ptr<QRhiBuffer> composite_ubo, view_ubo, blit_ubo;
 
     // Frame-sized resources, rebuilt when the frame size changes.
     QSize frame_size;
-    std::unique_ptr<QRhiTexture> in_a, in_b, model_t, base_t, picture;
+    std::unique_ptr<QRhiTexture> in_a, in_b, model_t, base_t, picture, mask_t;
+    std::shared_ptr<const MaskSet> uploaded_masks;   // what mask_t holds (3.3); null for none
+    bool masks_dirty = false;
     std::unique_ptr<QRhiTextureRenderTarget> model_rt, picture_rt;
     std::unique_ptr<QRhiRenderPassDescriptor> model_rp, picture_rp;
     std::unique_ptr<QRhiShaderResourceBindings> composite_srb, display_srb, blit_srb_nearest, blit_srb_trilinear;
@@ -171,6 +173,11 @@ struct ViewerWindow::Impl {
     std::function<void(const QStringList&)> drop_cb;
     std::function<void(double, double)> pick_cb;
     bool pick_mode = false;
+    std::function<void(double, double, double, double, bool)> paint_cb;
+    std::function<void()> paint_end_cb;
+    std::function<void(double)> brush_cb;
+    bool paint_mode = false, painting = false;
+    double paint_x = 0.0, paint_y = 0.0;
     // The frame pixel under a window position, or nullopt off the picture.
     std::optional<std::pair<double, double>> frame_pixel(const QPointF& at) const {
         const PlacedRect r = placed();
@@ -208,6 +215,7 @@ struct ViewerWindow::Impl {
 
     ViewParams effective_view() const {
         ViewParams v = view;
+        v.masks = composite.masks;   // the display pass reads the composite's mask texture (3.3)
         if (flip_held_key || flip_held_mouse) v.show = ViewSource::Baseline;
         if (precomposited) v.anchor = false;   // a card has no SDR behind it to anchor to
         return v;
@@ -271,10 +279,12 @@ struct ViewerWindow::Impl {
                                       QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
         trilinear.reset(rhi->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::Linear,
                                         QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
+        linear.reset(rhi->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
+                                     QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
         composite_ubo.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(detail::CompositeUbo)));
         view_ubo.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(detail::ViewUbo)));
         blit_ubo.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(BlitUbo)));
-        if (!fetch->create() || !nearest->create() || !trilinear->create() || !composite_ubo->create() ||
+        if (!fetch->create() || !nearest->create() || !trilinear->create() || !linear->create() || !composite_ubo->create() ||
             !view_ubo->create() || !blit_ubo->create())
             return false;
 
@@ -377,12 +387,16 @@ struct ViewerWindow::Impl {
         picture_rp.reset();
         in_a.reset(rhi->newTexture(QRhiTexture::RGBA32F, size));
         in_b.reset(rhi->newTexture(QRhiTexture::RGBA32F, size));
+        mask_t.reset(rhi->newTexture(QRhiTexture::RGBA8, size));
+        uploaded_masks.reset();
+        masks_dirty = true;
         base_t.reset(rhi->newTexture(QRhiTexture::RGBA32F, size));
         model_t.reset(rhi->newTexture(QRhiTexture::RGBA32F, size, 1, QRhiTexture::RenderTarget));   // uploads too (set_composited)
         picture.reset(rhi->newTexture(QRhiTexture::RGBA16F, size, 1,
                                       QRhiTexture::RenderTarget | QRhiTexture::MipMapped |
                                           QRhiTexture::UsedWithGenerateMips));
-        if (!in_a->create() || !in_b->create() || !base_t->create() || !model_t->create() || !picture->create())
+        if (!in_a->create() || !in_b->create() || !mask_t->create() || !base_t->create() || !model_t->create() ||
+            !picture->create())
             return false;
         model_rt.reset(rhi->newTextureRenderTarget({QRhiColorAttachment(model_t.get())}));
         model_rp.reset(model_rt->newCompatibleRenderPassDescriptor());
@@ -397,12 +411,14 @@ struct ViewerWindow::Impl {
             QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::FragmentStage, composite_ubo.get()),
             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, in_a.get(), fetch.get()),
             QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, in_b.get(), fetch.get()),
+            QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, mask_t.get(), linear.get()),
         });
         display_srb.reset(rhi->newShaderResourceBindings());
         display_srb->setBindings({
             QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::FragmentStage, view_ubo.get()),
             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, model_t.get(), fetch.get()),
             QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, base_t.get(), fetch.get()),
+            QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, mask_t.get(), fetch.get()),
         });
         if (!composite_srb->create() || !display_srb->create()) return false;
         auto pipeline = [&](const QShader& frag, QRhiShaderResourceBindings* srb, QRhiRenderPassDescriptor* rp) {
@@ -498,8 +514,20 @@ struct ViewerWindow::Impl {
 
         const QSize px = sc->currentPixelSize();
         if (has_frame && frame_size.isValid()) {
+            if (masks_dirty) {
+                // The painted masks (3.3): one RGBA8 texture at the frame's size,
+                // read by both passes; uploaded on a stroke, not per frame.
+                const std::vector<std::uint8_t> bytes = detail::masks_rgba8(composite, frame_size.width(), frame_size.height());
+                u->uploadTexture(mask_t.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
+                    0, 0, QRhiTextureSubresourceUploadDescription(bytes.data(), quint32(bytes.size())))));
+                uploaded_masks = composite.masks;
+                masks_dirty = false;
+                composite_dirty = true;
+                view_dirty = true;
+            }
             if (composite_dirty && !precomposited) {
-                const detail::CompositeUbo cu = detail::composite_ubo(frame.scalars, frame.model, composite);
+                const detail::CompositeUbo cu = detail::composite_ubo(frame.scalars, frame.model, composite,
+                                                                     frame_size.width(), frame_size.height());
                 u->updateDynamicBuffer(composite_ubo.get(), 0, sizeof(cu), &cu);
                 cb->beginPass(model_rt.get(), Qt::black, {1.0f, 0}, u);
                 u = nullptr;
@@ -639,6 +667,7 @@ struct ViewerWindow::Impl {
         picture_rp.reset();
         in_a.reset();
         in_b.reset();
+        mask_t.reset();
         base_t.reset();
         model_t.reset();
         picture.reset();
@@ -648,6 +677,7 @@ struct ViewerWindow::Impl {
         nearest.reset();
         trilinear.reset();
         fetch.reset();
+        linear.reset();
         release_swapchain();
         sc_rp.reset();
         sc.reset();
@@ -751,6 +781,8 @@ void ViewerWindow::set_composite(const CompositeParams& params) {
     const bool rebase = (params.source != d_->composite.source || params.calibration != d_->composite.calibration ||
                          params.reference != d_->composite.reference) &&
                         d_->has_frame && !d_->precomposited;
+    if (params.masks != d_->composite.masks && !(params.masks && d_->composite.masks && *params.masks == *d_->composite.masks))
+        d_->masks_dirty = true;
     d_->composite = params;
     if (rebase) {
         d_->baseline = corrected_baseline(d_->frame.sdr, d_->frame.model.corpus_ev,
@@ -865,6 +897,10 @@ void ViewerWindow::wheelEvent(QWheelEvent* e) {
     if (!d_->has_frame) return;
     const double notches = e->angleDelta().y() / 120.0;
     if (notches == 0.0) return;
+    if (d_->paint_mode) {
+        if (d_->brush_cb) d_->brush_cb(notches);
+        return;
+    }
     // One wheel notch is the Studio's step; a trackpad's fractions scale it.
     zoom_about(d_->viewport, d_->viewer_size(), d_->frame_view_size(), e->position().x(), e->position().y(),
                std::pow(kWheelStep, notches));
@@ -882,6 +918,15 @@ void ViewerWindow::mousePressEvent(QMouseEvent* e) {
         return;
     }
     if (e->button() != Qt::LeftButton || !d_->has_frame) return;
+    if (d_->paint_mode) {
+        if (const auto px = d_->frame_pixel(e->position())) {
+            d_->painting = true;
+            d_->paint_x = px->first;
+            d_->paint_y = px->second;
+            if (d_->paint_cb) d_->paint_cb(px->first, px->second, px->first, px->second, e->modifiers() & Qt::AltModifier);
+        }
+        return;
+    }
     if (d_->pick_mode) {
         if (const auto px = d_->frame_pixel(e->position())) {
             d_->pick_mode = false;
@@ -911,6 +956,18 @@ void ViewerWindow::set_pick_mode(bool on) {
 
 bool ViewerWindow::pick_mode() const { return d_->pick_mode; }
 
+void ViewerWindow::set_paint_mode(bool on) {
+    d_->paint_mode = on;
+    if (!on) d_->painting = false;
+    setCursor(on ? Qt::CrossCursor : (d_->pick_mode ? Qt::CrossCursor : Qt::ArrowCursor));
+}
+
+bool ViewerWindow::paint_mode() const { return d_->paint_mode; }
+
+void ViewerWindow::on_paint(std::function<void(double, double, double, double, bool)> cb) { d_->paint_cb = std::move(cb); }
+void ViewerWindow::on_paint_end(std::function<void()> cb) { d_->paint_end_cb = std::move(cb); }
+void ViewerWindow::on_brush_wheel(std::function<void(double)> cb) { d_->brush_cb = std::move(cb); }
+
 void ViewerWindow::on_pick(std::function<void(double, double)> cb) { d_->pick_cb = std::move(cb); }
 
 void ViewerWindow::on_drop(std::function<void(const QStringList&)> cb) { d_->drop_cb = std::move(cb); }
@@ -918,6 +975,19 @@ void ViewerWindow::on_drop(std::function<void(const QStringList&)> cb) { d_->dro
 void ViewerWindow::mouseMoveEvent(QMouseEvent* e) {
     if (!d_->input) return;
     if (!d_->panning && !d_->wipe_dragging) d_->hover(e->position(), e->modifiers() & Qt::AltModifier);
+    if (d_->painting) {
+        // Off the picture the stroke clamps to the edge, like a brush dragged past the frame.
+        const PlacedRect r = d_->placed();
+        const ViewSize f = d_->frame_view_size();
+        if (r.width > 0 && r.height > 0) {
+            const double x = std::clamp((e->position().x() - r.left) / r.width, 0.0, 1.0) * f.width;
+            const double y = std::clamp((e->position().y() - r.top) / r.height, 0.0, 1.0) * f.height;
+            if (d_->paint_cb) d_->paint_cb(d_->paint_x, d_->paint_y, x, y, e->modifiers() & Qt::AltModifier);
+            d_->paint_x = x;
+            d_->paint_y = y;
+        }
+        return;
+    }
     if (d_->panning) {
         d_->viewport.pan_x = d_->pan_x0 + (e->position().x() - d_->pan_from.x());
         d_->viewport.pan_y = d_->pan_y0 + (e->position().y() - d_->pan_from.y());
@@ -933,6 +1003,11 @@ void ViewerWindow::mouseMoveEvent(QMouseEvent* e) {
 void ViewerWindow::mouseReleaseEvent(QMouseEvent* e) {
     if (!d_->input) return;
     if (e->button() == Qt::MiddleButton) d_->panning = false;
+    if (e->button() == Qt::LeftButton && d_->painting) {
+        d_->painting = false;
+        if (d_->paint_end_cb) d_->paint_end_cb();
+        return;
+    }
     if (e->button() == Qt::LeftButton) {
         d_->wipe_dragging = false;
         if (d_->flip_held_mouse) {

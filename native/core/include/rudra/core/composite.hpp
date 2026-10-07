@@ -14,6 +14,7 @@
 #include "rudra/core/fields.hpp"
 #include "rudra/core/image.hpp"
 #include "rudra/core/calibration.hpp"
+#include "rudra/core/masks.hpp"
 #include "rudra/core/reference_fit.hpp"
 #include "rudra/core/source_curve.hpp"
 
@@ -56,6 +57,9 @@ struct CompositeParams {
     // A reference is an anchor at every code, so when set it replaces the
     // calibration.
     ReferenceFit reference;
+    // Roadmap 3.3: painted masks gating the bands' qualifiers (masks.hpp);
+    // null or empty for none.
+    std::shared_ptr<const MaskSet> masks;
 };
 
 // The curve params corrected_baseline takes for a frame under these settings:
@@ -71,8 +75,11 @@ std::vector<float> baseline_curve_params(const FrameScalars& scalars, const Comp
 // exactly as the Python casts it before the gain sums it.
 float qualifier_mask(double luma_nits, double low_nits, double high_nits, double softness_stops) noexcept;
 
-// region_ev_gain for one pixel in absolute nits: 2^(sum ev * mask).
-double region_ev_gain(const double rgb_nits[3], std::span<const RegionBand> bands, double softness_stops) noexcept;
+// region_ev_gain for one pixel in absolute nits: 2^(sum ev * mask), each
+// band's term times its painted weight when `weights` is given (one per band
+// index up to kMaxMaskBands, 1 beyond; masks.hpp).
+double region_ev_gain(const double rgb_nits[3], std::span<const RegionBand> bands, double softness_stops,
+                      const float* weights = nullptr) noexcept;
 
 // The full composite into the network convention (1.0 = 10 000 nits). With a
 // grade, Region EV is applied and the result clamped to [0, max_hdr].

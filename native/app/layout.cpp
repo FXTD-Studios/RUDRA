@@ -620,7 +620,11 @@ QWidget* MainWindow::build_right_rail() {
     gcv->addWidget(panel_label("Region EV", "3", "regionCount", gcard));
     region_count_ = gcard->findChild<QLabel*>("regionCount");
     regions_ = new RegionEditor(session_, gcard);
+    regions_->mask_pressed = [this](int band) { arm_mask(session_.painted_band() == band ? -1 : band); };
     gcv->addWidget(regions_);
+    mask_panel_ = new MaskPanel(session_, gcard);
+    mask_panel_->done = [this] { arm_mask(-1); };
+    gcv->addWidget(mask_panel_);
     gv->addWidget(gcard);
     auto* n2 = label("A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to "
                      "scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file.",

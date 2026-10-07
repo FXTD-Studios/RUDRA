@@ -13,6 +13,7 @@
 // names the stage that disagreed.
 
 #include <cstddef>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -60,13 +61,17 @@ struct MasterParams {
     bool settle_grain = true;              // at the anchor's knee
     Primaries source_primaries = Primaries::Rec709;
     MasterContainer container = MasterContainer::Aces2065;
+    std::shared_ptr<const MaskSet> masks;   // the painted masks (3.3), or null
 };
 
 // network * 10 000, widened.
 NitsFrame nits_from_network(const NetworkLinearImage& network);
 
-// apply_region_ev, then np.clip(0, ceiling). A no-op without a grade.
-void apply_region_ev(NitsFrame& nits, std::span<const RegionBand> bands, double softness_stops, double ceiling_nits);
+// apply_region_ev, then np.clip(0, ceiling). A no-op without a grade. With
+// `masks` (masks.hpp, painted at the preview's size), each band's term is
+// weighted by its mask sampled at this frame's size.
+void apply_region_ev(NitsFrame& nits, std::span<const RegionBand> bands, double softness_stops, double ceiling_nits,
+                     const MaskSet* masks = nullptr);
 
 // rudra.anchor.anchor_gain / anchor_to_sdr.
 void anchor_to_sdr(NitsFrame& nits, const SdrImage& sdr, double knee = kAnchorKnee,

@@ -94,6 +94,15 @@ For a pixel in absolute nits `n`:
   `m = smoothstep(min(rise, fall))`, cast to float32.
 * `G = 2^(sum ev * m)`, where each `ev * m` product is float32 (a Python float
   times a float32 array, NEP 50) and the sum is float64.
+* **Painted masks (roadmap 3.3, a user control).** A band `i < 4` may carry
+  a mask `M_i`, 8-bit at the preview frame's size (core/masks.hpp). Its term
+  becomes `ev * m * M_i(x, y)`, with `M_i` read at the frame pixel's centre
+  mapped into the mask, bilinear on the mask's pixel centres, clamped at the
+  edges, rounded to a code (so the GPU's RGBA8 texture reads the same): 1
+  when the frame and the mask share a size and the pixel is on; 1 everywhere
+  for a band without one. The shader samples one RGBA8 texture, a band per
+  channel, by normalised position. Masks travel as `<master>.masks.png`
+  beside the EXR (the sidecar's `masks` names it), never in the params JSON.
 
 Default bands (neutral): highlights 400 to 2 000, speculars 2 000 to 8 000,
 shadows 0.05 to 12 nits, all at 0 EV. Neutral bands are a no-op, bit for bit.

@@ -45,6 +45,10 @@ struct GradeSnapshot {
     // the grade; left out of params() when empty. Loading one clears the
     // anchors: a reference is an anchor at every code.
     ReferenceFit reference;
+    // Roadmap 3.3: the painted masks (core/masks.hpp), one stroke one undo
+    // step (planes are shared, a stroke copies the one it paints). Left out
+    // of params() when none; the data travels as a file with the master.
+    std::shared_ptr<const MaskSet> masks;
 };
 
 // The page's defaultRegions(): highlights 400 to 2 000, speculars 2 000 to
@@ -116,6 +120,22 @@ public:
     // out. No-op when nothing changes.
     void set_reference(ReferenceFit fit);
     void clear_reference();
+    // Painted masks (3.3). arm_mask picks the band being painted (-1 none; a
+    // view change, not undone); the brush is a tool setting. A stroke:
+    // stroke_begin (one undo step), then strokes in frame pixels of a
+    // width x height frame (the set takes that size; a set of another size is
+    // dropped first), then stroke_end. Invert and clear are steps of their own.
+    void arm_mask(int band);
+    int painted_band() const { return paint_band_; }
+    void set_brush(const Brush& brush);
+    const Brush& brush() const { return brush_; }
+    void stroke_begin();
+    void stroke(int width, int height, double x0, double y0, double x1, double y1, bool erase);
+    void stroke_end();
+    void invert_mask();
+    void clear_mask(int band);
+    void clear_masks();
+    bool show_masks = true;   // the tint on the viewer while a band is armed
     void toggle_wipe();                          // ACTIONS.wipe
     void set_wipe(double x);                     // a drag on the plate, clamped 0..1
     void set_show(std::string_view source);      // the Compare buttons: also ends a wipe
@@ -146,6 +166,9 @@ private:
     void notify(std::uint32_t what) const;
 
     std::vector<GradeSnapshot> undo_, redo_;
+    int paint_band_ = -1;
+    Brush brush_;
+    bool in_stroke_ = false;
     std::function<void(std::uint32_t)> changed_;
     // The Region EV drag.
     int drag_ = -1;

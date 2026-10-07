@@ -59,6 +59,7 @@ class CheckRow;
 class IconButton;
 class RegionEditor;
 class SourcePanel;
+class MaskPanel;
 class ScopePlot;
 class VectorscopeView;
 class ScrubBar;
@@ -178,6 +179,10 @@ public:
     // `path`), fits it and hands the fit to the session; the message of a
     // refused file goes to the Source card's line. False when refused.
     bool load_reference(const std::filesystem::path& path);
+    // Painted masks (3.3): arms a band for painting (-1 none), which puts the
+    // viewer in paint mode; strokes come back through paint_stroke.
+    void arm_mask(int band);
+    void paint_stroke(double x0, double y0, double x1, double y1, bool erase);
     // The SDR code at a frame pixel, as the pick reads it; nullopt without a frame.
     std::optional<int> sdr_code_at(double x, double y) const;
     QWidget* probe_box() const { return probe_box_; }
@@ -277,6 +282,7 @@ private:
     QWidget* panels_ = nullptr;          // the inspector's tab page (#ipanels)
     std::vector<QWidget*> pages_;        // Reconstruct, Grade, Deliver
     SourcePanel* source_panel_ = nullptr;
+    MaskPanel* mask_panel_ = nullptr;
     QSlider* anchor_knee_ = nullptr;
     QLabel* anchor_knee_val_ = nullptr;
     Seg *view_mode_ = nullptr, *view_layer_ = nullptr, *zoom_seg_ = nullptr, *mode_seg_ = nullptr, *tabs_ = nullptr,

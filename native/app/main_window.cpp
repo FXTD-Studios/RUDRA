@@ -48,6 +48,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -165,6 +166,14 @@ MainWindow::MainWindow(bool with_viewer) {
         viewer_->on_drop([this](const QStringList& paths) { open_paths(paths); });
         // Calibrate (3.2): the armed anchor takes the next click on the picture.
         viewer_->on_pick([this](double x, double y) { calibration_picked(x, y); });
+        // Painted masks (3.3): strokes while a band is armed, the wheel sizes the brush.
+        viewer_->on_paint([this](double x0, double y0, double x1, double y1, bool erase) { paint_stroke(x0, y0, x1, y1, erase); });
+        viewer_->on_paint_end([this] { session_.stroke_end(); });
+        viewer_->on_brush_wheel([this](double notches) {
+            Brush b = session_.brush();
+            b.size_px = std::clamp(b.size_px * std::pow(1.15, notches), 2.0, 600.0);
+            session_.set_brush(b);
+        });
         viewer_->on_hover([this](const ViewerWindow::Hover& h) {
             if (!(probe_on_ || h.alt) || !h.x) {
                 probe_pixel(std::nullopt);
@@ -520,6 +529,12 @@ void MainWindow::session_changed(std::uint32_t what) {
                                                 : ViewMode::Image;
             v.show = session_.show == "baseline" ? ViewSource::Baseline : ViewSource::Model;
             v.show_changes = session_.show_changes;
+            // The mask being painted (3.3), tinted in its band's colour.
+            static const std::array<float, 3> kBandTints[kMaxMaskBands] = {
+                {1.0f, 0.70f, 0.25f}, {0.75f, 0.35f, 0.95f}, {0.04f, 0.52f, 1.0f}, {0.19f, 0.82f, 0.35f}};
+            const int band = session_.show_masks ? session_.painted_band() : -1;
+            v.paint_band = band;
+            if (band >= 0) v.paint_tint = kBandTints[band];
             viewer_->set_view(v);
         }
     }
@@ -979,6 +994,7 @@ void MainWindow::sync_ui() {
     primaries_field_->setText(aces ? "AP0 (ST 2065-4)" : "Rec.2020");
     region_count_->setText(QString::number(g.regions.size()));
     regions_->sync();
+    mask_panel_->sync();
     view_mode_->set_on(session_.wipe ? "#wipeBtn" : QString::fromStdString(session_.show));
     view_layer_->set_on(QString::number(session_.view_layer));
     guide_btn_->setChecked(guides_on_);
@@ -1339,6 +1355,7 @@ MasterRequest MainWindow::master_request() const {
     q.source_curve = session_.grade.source;
     q.calibration = session_.calibration_points();
     q.reference = session_.grade.reference;
+    q.masks = session_.composite_params().masks;
     return q;
 }
 
@@ -1910,6 +1927,7 @@ namespace rudra::app {
 
 void MainWindow::arm_calibration(int slot) {
     const bool on = slot >= 0 && current_frame_;
+    if (on) arm_mask(-1);   // one pointer mode at a time (3.3)
     source_panel_->set_armed(on ? slot : -1);
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) viewer_->set_pick_mode(on);
@@ -1964,6 +1982,23 @@ bool MainWindow::load_reference(const std::filesystem::path& path) {
     }
     session_.set_reference(std::move(*fit));
     return true;
+}
+
+// ---- painted masks (roadmap 3.3) -------------------------------------------
+
+void MainWindow::arm_mask(int band) {
+    const bool on = band >= 0 && current_frame_;
+    session_.arm_mask(on ? band : -1);
+    if (on) arm_calibration(-1);   // one pointer mode at a time
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) viewer_->set_paint_mode(on);
+#endif
+}
+
+void MainWindow::paint_stroke(double x0, double y0, double x1, double y1, bool erase) {
+    if (!current_frame_ || session_.painted_band() < 0) return;
+    const SdrImage& sdr = current_frame_->sdr;
+    session_.stroke(sdr.width(), sdr.height(), x0, y0, x1, y1, erase);
 }
 
 void MainWindow::calibration_picked(double x, double y) {

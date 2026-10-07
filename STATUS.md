@@ -74,6 +74,15 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **7 Oct 2026, 19:40 — roadmap 3.3 painted masks in (line F), awaiting the Windows run.** One 8-bit
+> mask per Region EV band (first four), painted on the viewer at the preview's size, gating the band's
+> qualifier (`core/masks.cpp`; the brush, bilinear sampling at any frame size, PNG codec in
+> `platform/png8.cpp` with no library). GPU: one RGBA8 texture read by composite.frag and display.frag
+> (the tint), uploaded per stroke. Session: a stroke an undo step; master writes `<name>.masks.png`,
+> sidecar `masks`, provenance `rudra:masks`; CLI `masks_file`. Brush card under the Region EV rows.
+> `tests/test_masks.cpp` (8, green with g++ on the VM); parity cases `masked region EV` and view
+> `painted mask tint`. 3.3 closes with it.
+>
 > **7 Oct 2026, 18:55 — roadmap 3.4 reference match in and verified (line F).** Windows: rudra_tests
 > 172/172 (ReferenceFit 10/10), rudra_app_tests 29/29, rudra-gpu-parity 20/20 cases on D3D12, D3D11,
 > Vulkan and OpenGL, the new `reference hable` row fp32 <= 2.8e-6 abs (the +0.4 to +0.75 stop target

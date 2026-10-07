@@ -132,6 +132,7 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
     const PlanarBuffer& m = model.buffer();
     const PlanarBuffer& b = baseline.buffer();
     const bool wiping = p.wipe >= 0.0;
+    const bool painting = p.paint_band >= 0 && p.masks && p.masks->has(p.paint_band);
     const PlanarBuffer& source = (!wiping && p.show == ViewSource::Baseline) ? b : m;
     // Uniforms reach the shader as fp32.
     const float scale = float(double(kPeak) / std::max(p.display_nits, 1e-3));
@@ -220,6 +221,15 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                         c[k] = c[k] * (1.0f - a) + t * a;
                     }
                 }
+            }
+            if (painting && p.mode == ViewMode::Image) {
+                // The mask being painted (3.3), tinted over whichever side is shown.
+                const float a = kMaskTintMix * p.masks->weight(p.paint_band, x, y, w, h);
+                if (a > 0.0f)
+                    for (int k = 0; k < 3; ++k) {
+                        const float t = hdr ? graphics_white * srgb_to_linear(p.paint_tint[std::size_t(k)]) : p.paint_tint[std::size_t(k)];
+                        c[k] = c[k] * (1.0f - a) + t * a;
+                    }
             }
             const bool handle = wiping && std::abs(u - wipe) < half_width;
             if (!hdr) {

@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -40,6 +41,7 @@
 #include "rudra/core/baseline.hpp"
 #include "rudra/core/calibration.hpp"
 #include "rudra/core/composite.hpp"
+#include "rudra/core/masks.hpp"
 #include "rudra/core/view.hpp"
 #include "rudra/platform/npy.hpp"
 #include "rudra/render/gpu_composite.hpp"
@@ -162,6 +164,26 @@ int main(int argc, char** argv) {
             cases.emplace_back(name + " calibrated hable", p);
             python.emplace_back();
         }
+        // Roadmap 3.3: a painted mask on the highlights band (a soft stroke
+        // across the frame) gating a three-band grade; the shader samples the
+        // RGBA8 mask texture where the CPU reads the plane.
+        auto painted = std::make_shared<MaskSet>();
+        {
+            painted->width = sdr.width();
+            painted->height = sdr.height();
+            auto plane = empty_plane(sdr.width(), sdr.height());
+            Brush brush;
+            brush.size_px = std::max(8.0, sdr.width() * 0.3);
+            brush.softness = 0.6;
+            brush.flow = 0.8;
+            paint_stroke(*plane, sdr.width(), sdr.height(), sdr.width() * 0.2, sdr.height() * 0.3, sdr.width() * 0.8,
+                         sdr.height() * 0.7, brush);
+            painted->planes[0] = std::move(plane);
+            CompositeParams p = graded;
+            p.masks = painted;
+            cases.emplace_back(name + " masked region EV", p);
+            python.emplace_back();
+        }
         // Roadmap 3.4: a reference fit over the filmic curve, a target at
         // every code (the frame's own baseline +0.4 stops with a lifted
         // shoulder), the same knot path again.
@@ -255,6 +277,11 @@ int main(int argc, char** argv) {
             w.anchor_knee = 0.8;
             w.anchor_hold = anchor_hold(m, sdr, 0.8);
             frame_views.emplace_back("anchored wipe knee 0.8", w);
+            // Roadmap 3.3: the mask being painted, tinted over the picture.
+            auto t = view_params(ViewMode::Image, 1000.0);
+            t.paint_band = 0;
+            t.masks = painted;
+            frame_views.emplace_back("painted mask tint", t);
         }
         for (const auto& [vname, vp] : frame_views) {
             const Rgb8Image want = render_view_rgb8(m, b, vp, &sdr);

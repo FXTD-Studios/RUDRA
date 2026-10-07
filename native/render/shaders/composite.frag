@@ -11,13 +11,15 @@ layout(location = 0) out vec4 frag;
 layout(std140, binding = 0) uniform Composite {
     vec4 model;     // x log_scale, y max_hdr, z baseline scale (2^-ev * 203/10000), w strength
     vec4 control;   // x mode (0 all, 1 highlights, 2 shadows, 3 off), y preserve, z shadow weight, w region softness (stops)
-    vec4 counts;    // x curve knots (0: no curve), y region bands
+    vec4 counts;    // x curve knots (0: no curve), y region bands, z 1 when painted masks are bound (3.3), w frame width
     vec4 curve[72]; // curve params, packed four to a vec4: [0] exposure, [1..] knots. Up to 287
                     // knots: the CurveHead's 8, or the source curve's one per 8-bit code (3.1)
-    vec4 bands[8];  // x log2(low nits), y log2(high nits), z ev
+    vec4 bands[8];  // x log2(low nits), y log2(high nits), z ev, w the band's mask channel (0..3) or -1
+    vec4 frame;     // x width, y height of the frame (the masks sample by normalised position)
 };
 
 layout(binding = 1) uniform sampler2D sdrShadow;   // rgb SDR code values, a shadow mask
+layout(binding = 3) uniform sampler2D masks;       // painted masks (3.3), RGBA8, a band per channel; sampled bilinear
 layout(binding = 2) uniform sampler2D fields;      // rgb log residual (scale folded in), a highlight mask
 
 float curveParam(int i) { return curve[i >> 2][i & 3]; }
@@ -69,17 +71,22 @@ float expm1Accurate(float x) {
 float sigmoid(float x) { return 1.0 / (1.0 + exp(-x)); }
 
 // qualifier_mask and region_ev_gain (rudra/delivery/controls.py), in fp32.
-float regionGain(vec3 nits) {
+float maskChannel(vec4 m, int c) { return c == 0 ? m.x : c == 1 ? m.y : c == 2 ? m.z : m.w; }
+
+float regionGain(vec3 nits, vec2 uv) {
     float y = max(dot(max(nits, vec3(0.0)), vec3(0.2627, 0.6780, 0.0593)), 1e-6);
     float logY = log2(y);
     float soft = max(control.w, 1e-3);
     float total = 0.0;
     int n = int(counts.y);
+    vec4 mv = counts.z > 0.5 ? texture(masks, uv) : vec4(1.0);
     for (int i = 0; i < n; ++i) {
         float rise = clamp((logY - (bands[i].x - soft)) / soft, 0.0, 1.0);
         float fall = clamp(((bands[i].y + soft) - logY) / soft, 0.0, 1.0);
         float m = min(rise, fall);
-        total += bands[i].z * (m * m * (3.0 - 2.0 * m));
+        float term = bands[i].z * (m * m * (3.0 - 2.0 * m));
+        if (bands[i].w >= 0.0) term *= maskChannel(mv, int(bands[i].w + 0.5));   // the painted mask (3.3)
+        total += term;
     }
     return exp2(total);
 }
@@ -112,7 +119,8 @@ void main() {
     }
     if (counts.y > 0.0) {
         vec3 nits = pred * 10000.0;
-        pred = clamp(nits * regionGain(nits), vec3(0.0), vec3(model.y * 10000.0)) / 10000.0;
+        vec2 uv = (vec2(p) + 0.5) / frame.xy;
+        pred = clamp(nits * regionGain(nits, uv), vec3(0.0), vec3(model.y * 10000.0)) / 10000.0;
     }
     // a: the SDR's Rec.2020 luma of its linearised codes, the anchor's target
     // for the display pass (roadmap 3.3). The CPU composite is rgb only.
