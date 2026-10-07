@@ -104,7 +104,7 @@ void SourceCurvePlot::paintEvent(QPaintEvent*) {
         p.drawText(QRectF(x - 16, r.height() - B + 2, 32, 14), Qt::AlignHCenter | Qt::AlignTop, QString::number(c));
     }
     QColor gold = theme_colour("gold");
-    gold.setAlphaF(0.55);
+    gold.setAlphaF(0.55f);
     p.setPen(QPen(gold, 1.0, Qt::DashLine));
     for (int c : {235, 255}) p.drawLine(QPointF(X(c), T), QPointF(X(c), r.height() - B));
 
