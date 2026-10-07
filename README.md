@@ -602,8 +602,29 @@ is loaded, sits behind the same picker.
   Parity gained two anchored view cases; `tests/test_anchor_view.cpp`.
   Carry source chroma stays a master-only stage. **Open:** the painted masks
   (a per-region mask the artist paints on the viewer, gating the qualifier)
-- [ ] 3.4 Reference match: load one graded HDR frame, fit the shot's curve and
-  exposure to it, and report the residual in stops
+- [x] 3.4 Reference match: the Reference block in the Source card. Load the
+  graded HDR of the frame on screen (an EXR as the masters write them, AP0 or
+  Rec.2020 by its chromaticities, or a 16-bit PQ PNG/TIFF; `engine/
+  reference_image.cpp`; a full-size reference is fitted to the preview the way
+  the frame was). The fit is a calibration at every code: per pixel and
+  channel, the SDR code and the reference's nits give one log2 sample; per
+  code the median is the target, codes with under 16 samples interpolate from
+  their neighbours, flat beyond the outermost seen code, smoothed over ±3 codes
+  and made monotone by isotonic regression, so it never refuses; the residual
+  (mean and p95 of the per-sample error after the fit, in stops) says what the
+  curve could not carry, orange over half a stop (`core/reference_fit.cpp`).
+  The target is log2 nits per code, independent of the picker and the model,
+  so the correction over any source curve is `target − log2(source nits)`:
+  the same 256-knot vector as 3.1 and 3.2 through `baseline_curve_params`,
+  nothing new on the GPU, in master or in QC. A reference replaces the
+  anchors (it is one at every code): loading one clears them and greys the
+  Calibrate rows until Clear. Drawn in violet over the picker's curve with a
+  dot per code seen; the card shows the file, the exposure it asks for over
+  the picker's curve, the residual and the codes covered. Session state undone
+  with the grade, `reference` in `params()`, the master request and the
+  sidecar only when set (`rudra:reference` in the EXR's provenance). Tests:
+  `tests/test_reference_fit.cpp`; `rudra-gpu-parity` gained a reference case.
+  Not yet: wiping against the reference itself on the viewer
 - [x] 3.5 Invented-pixel map: a viewer layer, plus a QC sidecar field, marking
   where the output departs from what the SDR supports. The **Invented** layer
   (magenta where the SDR clipped or crushed, cyan where SDR detail was read

@@ -748,7 +748,8 @@ void ViewerWindow::set_composite(const CompositeParams& params) {
     // The source curve (3.1) is part of the baseline, so the baseline texture
     // the Baseline view and the Changes tint read follows it; the composite
     // shader recomputes its own from the uniforms either way.
-    const bool rebase = (params.source != d_->composite.source || params.calibration != d_->composite.calibration) &&
+    const bool rebase = (params.source != d_->composite.source || params.calibration != d_->composite.calibration ||
+                         params.reference != d_->composite.reference) &&
                         d_->has_frame && !d_->precomposited;
     d_->composite = params;
     if (rebase) {

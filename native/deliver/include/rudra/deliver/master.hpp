@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "rudra/core/composite.hpp"
+#include "rudra/core/reference_fit.hpp"
 #include "rudra/core/fields.hpp"
 #include "rudra/core/image.hpp"
 #include "rudra/platform/result.hpp"
@@ -45,6 +46,9 @@ struct MasterRequest {
     // Roadmap 3.2: the anchors over it; empty for none, left out of the JSON
     // and the sidecar then.
     std::vector<CalibrationPoint> calibration;
+    // Roadmap 3.4: the reference match (core/reference_fit.hpp); empty for
+    // none, left out of the JSON and the sidecar then. Replaces the anchors.
+    ReferenceFit reference;
 };
 
 struct MasterResult {

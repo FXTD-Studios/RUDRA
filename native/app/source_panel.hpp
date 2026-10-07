@@ -13,6 +13,7 @@
 #include <functional>
 
 #include "rudra/core/calibration.hpp"
+#include "rudra/core/reference_fit.hpp"
 #include "rudra/core/source_curve.hpp"
 
 namespace rudra::app {
@@ -28,6 +29,9 @@ public:
     // The anchors (3.2): the calibrated curve is drawn over the source's when
     // they describe a monotone one, with a dot per anchor.
     void set_calibration(std::vector<CalibrationPoint> points);
+    // The reference (3.4): its target curve drawn in violet with a dot per
+    // code the fit saw; replaces the calibrated curve while set.
+    void set_reference(ReferenceFit fit);
     QSize sizeHint() const override { return {296, 150}; }
 
 protected:
@@ -37,6 +41,7 @@ private:
     SourceCurve source_ = SourceCurve::Unknown;
     float corpus_ev_ = -1.0f;
     std::vector<CalibrationPoint> calibration_;
+    ReferenceFit reference_;
 };
 
 class SourcePanel : public QWidget {
@@ -44,7 +49,8 @@ public:
     explicit SourcePanel(QWidget* parent = nullptr);
     // The session's choice, its anchors by slot, and the loaded model's
     // exposure convention.
-    void sync(SourceCurve source, const std::vector<CalibrationPoint>& calibration, float corpus_ev);
+    void sync(SourceCurve source, const std::vector<CalibrationPoint>& calibration, float corpus_ev,
+              const ReferenceFit& reference = {});
     std::function<void(SourceCurve)> picked;
     // Calibrate (3.2): a slot's pick button was pressed (the app arms the
     // viewer; set_picked() when the click lands), its nits were typed (code -1:
@@ -52,6 +58,10 @@ public:
     std::function<void(int slot)> arm;
     std::function<void(int slot, int code, double nits)> anchor_changed;
     std::function<void()> cleared;
+    // Reference (3.4): Load… was pressed (the app asks for the file and fits
+    // it), or its Clear.
+    std::function<void()> load_reference;
+    std::function<void()> reference_cleared;
     void set_armed(int slot);          // -1 for none; the button shows it
     int armed() const { return armed_; }
     // A click landed for the armed slot: the code it read goes into the row;
@@ -72,10 +82,16 @@ private:
     Row rows_[kMaxCalibrationPoints];
     QLabel* fit_line_ = nullptr;
     QPushButton* clear_ = nullptr;
+    QWidget* calibrate_ = nullptr;
+    QPushButton *ref_load_ = nullptr, *ref_clear_ = nullptr;
+    QLabel *ref_file_ = nullptr, *ref_exposure_ = nullptr, *ref_residual_ = nullptr, *ref_codes_ = nullptr,
+           *ref_line_ = nullptr;
+    QWidget* ref_stats_ = nullptr;
     int armed_ = -1;
     SourceCurve source_ = SourceCurve::Unknown;
     float corpus_ev_ = -1.0f;
     std::vector<CalibrationPoint> calibration_;
+    ReferenceFit reference_;
     bool syncing_ = false;
 };
 

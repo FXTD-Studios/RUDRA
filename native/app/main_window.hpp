@@ -174,6 +174,10 @@ public:
     // picture reads the SDR code there (a 5x5 mean of R, G and B) into it.
     void arm_calibration(int slot);
     void calibration_picked(double x, double y);
+    // Reference (3.4): asks for the graded HDR of the current frame (or takes
+    // `path`), fits it and hands the fit to the session; the message of a
+    // refused file goes to the Source card's line. False when refused.
+    bool load_reference(const std::filesystem::path& path);
     // The SDR code at a frame pixel, as the pick reads it; nullopt without a frame.
     std::optional<int> sdr_code_at(double x, double y) const;
     QWidget* probe_box() const { return probe_box_; }
@@ -305,6 +309,7 @@ private:
         std::shared_ptr<const NetworkLinearImage> baseline;
         SourceCurve baseline_source = SourceCurve::Unknown;   // the source the baseline was built with (3.1)
         std::vector<CalibrationPoint> baseline_calibration;    // and the anchors (3.2)
+        ReferenceFit baseline_reference;                        // and the reference (3.4)
         FrameHeader header;
     };
     std::shared_ptr<const Current> current_frame_;

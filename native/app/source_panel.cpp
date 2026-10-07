@@ -68,6 +68,11 @@ void SourceCurvePlot::set_calibration(std::vector<CalibrationPoint> points) {
     update();
 }
 
+void SourceCurvePlot::set_reference(ReferenceFit fit) {
+    reference_ = std::move(fit);
+    update();
+}
+
 void SourceCurvePlot::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
@@ -120,8 +125,27 @@ void SourceCurvePlot::paintEvent(QPaintEvent*) {
     };
     curve(SourceCurve::Aces, theme_colour("ink-4"), 1.25);
     curve(source_, theme_colour("accent"), 2.0);
+    // The reference's target (3.4) over it, a dot per code the fit saw.
+    if (!reference_.empty()) {
+        const QColor violet = theme_colour("violet");
+        QColor dot = violet;
+        dot.setAlphaF(0.45f);
+        p.setPen(Qt::NoPen);
+        p.setBrush(dot);
+        for (int c = 0; c < kSourceCurveKnots; ++c)
+            if (c < int(reference_.samples_per_code.size()) && reference_.samples_per_code[std::size_t(c)] > 0)
+                p.drawEllipse(QPointF(X(c), Y(std::exp2(double(reference_.target_log2_nits[std::size_t(c)])))), 1.6, 1.6);
+        QPainterPath path;
+        for (int c = 1; c <= 255; ++c) {
+            const QPointF pt(X(c), Y(std::exp2(double(reference_.target_log2_nits[std::size_t(c)]))));
+            c == 1 ? path.moveTo(pt) : path.lineTo(pt);
+        }
+        p.setPen(QPen(violet, 2.0));
+        p.setBrush(Qt::NoBrush);
+        p.drawPath(path);
+    }
     // The calibrated curve (3.2) over it, when the anchors describe one.
-    if (!calibration_.empty() && calibration_is_monotone(calibration_, source_, corpus_ev_)) {
+    else if (!calibration_.empty() && calibration_is_monotone(calibration_, source_, corpus_ev_)) {
         const auto params = calibration_params(calibration_, source_, corpus_ev_);
         if (!params.empty()) {
             QPainterPath path;
@@ -175,6 +199,7 @@ SourcePanel::SourcePanel(QWidget* parent) : QWidget(parent) {
     // Calibrate (3.2): three anchors, each a pick button, the code it read,
     // the nits it should be, and its delta against the picker's curve.
     auto* cal = new QWidget(this);
+    calibrate_ = cal;
     cal->setObjectName("calibrate");
     auto* cv = new QVBoxLayout(cal);
     cv->setContentsMargins(0, 8, 0, 0);
@@ -251,6 +276,76 @@ SourcePanel::SourcePanel(QWidget* parent) : QWidget(parent) {
     bh->addWidget(clear_);
     cv->addWidget(btns);
     v->addWidget(cal);
+
+    // Reference (3.4): the graded HDR of this frame, loaded and fitted; the
+    // file, the exposure it asks for, the residual, the codes it covered.
+    auto* ref = new QWidget(this);
+    ref->setObjectName("reference");
+    auto* rv2 = new QVBoxLayout(ref);
+    rv2->setContentsMargins(0, 8, 0, 0);
+    rv2->setSpacing(6);
+    auto* rhead = new QWidget(ref);
+    auto* rhh = new QHBoxLayout(rhead);
+    rhh->setContentsMargins(0, 0, 0, 0);
+    auto* rtitle = new QLabel("Reference", rhead);
+    rtitle->setProperty("role", "card-head");
+    rhh->addWidget(rtitle);
+    rhh->addStretch(1);
+    auto* rhint = new QLabel("the graded HDR of this frame", rhead);
+    rhint->setProperty("role", "note");
+    rhh->addWidget(rhint);
+    rv2->addWidget(rhead);
+    auto* rrow = new QWidget(ref);
+    auto* rrh = new QHBoxLayout(rrow);
+    rrh->setContentsMargins(0, 0, 0, 0);
+    rrh->setSpacing(8);
+    ref_load_ = new QPushButton("Load…", rrow);
+    ref_load_->setObjectName("refLoad");
+    connect(ref_load_, &QPushButton::clicked, this, [this] {
+        if (load_reference) load_reference();
+    });
+    rrh->addWidget(ref_load_);
+    ref_file_ = new QLabel(rrow);
+    ref_file_->setObjectName("refFile");
+    ref_file_->setProperty("role", "file");
+    ref_file_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    rrh->addWidget(ref_file_, 1);
+    rv2->addWidget(rrow);
+    ref_stats_ = new QWidget(ref);
+    auto* sg = new QGridLayout(ref_stats_);
+    sg->setContentsMargins(0, 0, 0, 0);
+    sg->setHorizontalSpacing(6);
+    sg->setVerticalSpacing(1);
+    auto stat = [&](int col, const QString& key, QLabel*& value, const char* name) {
+        auto* k = new QLabel(key, ref_stats_);
+        k->setProperty("role", "note");
+        value = new QLabel(ref_stats_);
+        value->setObjectName(name);
+        value->setProperty("role", "value");
+        sg->addWidget(k, 0, col);
+        sg->addWidget(value, 1, col);
+    };
+    stat(0, "Exposure", ref_exposure_, "refExposure");
+    stat(1, "Residual µ · p95", ref_residual_, "refResidual");
+    stat(2, "Codes seen", ref_codes_, "refCodes");
+    rv2->addWidget(ref_stats_);
+    ref_line_ = new QLabel(ref);
+    ref_line_->setObjectName("refFit");
+    ref_line_->setProperty("role", "note");
+    ref_line_->setWordWrap(true);
+    rv2->addWidget(ref_line_);
+    auto* rbtns = new QWidget(ref);
+    auto* rbh = new QHBoxLayout(rbtns);
+    rbh->setContentsMargins(0, 0, 0, 0);
+    rbh->addStretch(1);
+    ref_clear_ = new QPushButton("Clear", rbtns);
+    ref_clear_->setObjectName("refClear");
+    connect(ref_clear_, &QPushButton::clicked, this, [this] {
+        if (reference_cleared) reference_cleared();
+    });
+    rbh->addWidget(ref_clear_);
+    rv2->addWidget(rbtns);
+    v->addWidget(ref);
     sync(SourceCurve::Unknown, {}, -1.0f);
 }
 
@@ -272,10 +367,37 @@ void SourcePanel::set_picked(int slot, int code) {
     emit_anchor(slot, code);
 }
 
-void SourcePanel::sync(SourceCurve source, const std::vector<CalibrationPoint>& calibration, float corpus_ev) {
+void SourcePanel::sync(SourceCurve source, const std::vector<CalibrationPoint>& calibration, float corpus_ev,
+                       const ReferenceFit& reference) {
     source_ = source;
     corpus_ev_ = corpus_ev;
     calibration_ = calibration;
+    reference_ = reference;
+    plot_->set_reference(reference);
+    const bool has_ref = !reference.empty();
+    calibrate_->setEnabled(!has_ref);
+    ref_stats_->setVisible(has_ref);
+    ref_clear_->setEnabled(has_ref);
+    if (has_ref) {
+        ref_file_->setText(QString::fromStdString(reference.file));
+        ref_file_->setProperty("state", "");
+        const double ev = reference_exposure(reference, source, corpus_ev);
+        ref_exposure_->setText((ev >= 0 ? "+" : "") + QString::number(ev, 'f', 2) + " st");
+        ref_residual_->setText(QString::number(reference.residual_mean, 'f', 2) + " · " +
+                               QString::number(reference.residual_p95, 'f', 2) + " st");
+        ref_residual_->setProperty("state", reference.residual_p95 > 0.5 ? "warn" : "");
+        ref_codes_->setText(QString::number(reference.codes_seen) + " / 256");
+        ref_line_->setText(QString::fromStdString(reference_summary(reference, source, corpus_ev)));
+    } else {
+        ref_file_->setText("EXR, PQ PNG or TIFF, same frame");
+        ref_file_->setProperty("state", "empty");
+        ref_residual_->setProperty("state", "");
+        ref_line_->setText("No reference. Anchors above drive the fit.");
+    }
+    for (QLabel* l : {ref_file_, ref_residual_}) {
+        l->style()->unpolish(l);
+        l->style()->polish(l);
+    }
     seg_->set_on(QString::fromUtf8(source_curve_id(source).data(), int(source_curve_id(source).size())));
     plot_->set_source(source, corpus_ev);
     std::vector<CalibrationPoint> usable;
@@ -297,18 +419,28 @@ void SourcePanel::sync(SourceCurve source, const std::vector<CalibrationPoint>& 
     }
     syncing_ = false;
     const std::string summary = calibration_summary(usable, source, corpus_ev);
-    fit_line_->setText(summary.empty() ? QStringLiteral("No anchors. The curve above is the picker's.")
-                                       : QString::fromStdString(summary));
+    fit_line_->setText(has_ref ? QStringLiteral("Replaced by the reference.")
+                       : summary.empty() ? QStringLiteral("No anchors. The curve above is the picker's.")
+                                         : QString::fromStdString(summary));
     fit_line_->setProperty("state", summary.rfind("These anchors", 0) == 0 ? "bad" : "");
     fit_line_->style()->unpolish(fit_line_);
     fit_line_->style()->polish(fit_line_);
     clear_->setEnabled(!usable.empty() || !calibration.empty());
-    const double g = source_code_nits(source, 118, corpus_ev), w = source_code_nits(source, 235, corpus_ev),
-                 c = source_code_nits(source, 255, corpus_ev);
+    // The readouts show the effective curve: the picker's, with the anchors
+    // or the reference over it.
+    std::vector<float> corr;
+    if (has_ref) corr = reference_params(reference, source, corpus_ev);
+    else if (!usable.empty() && calibration_is_monotone(usable, source, corpus_ev))
+        corr = calibration_params(usable, source, corpus_ev);
+    auto eff = [&](int code) {
+        const double n = source_code_nits(source, code, corpus_ev);
+        return corr.empty() ? n : n * std::exp2(double(corr[1 + std::size_t(code)]));
+    };
+    const double g = eff(118), w = eff(235), c = eff(255);
     grey_->setText(nits_text(g));
     white_->setText(nits_text(w));
     clip_->setText(nits_text(c));
-    if (source == SourceCurve::Unknown || source == SourceCurve::Aces) delta_->setText("identical");
+    if ((source == SourceCurve::Unknown || source == SourceCurve::Aces) && corr.empty()) delta_->setText("identical");
     else
         delta_->setText(stops_text(g, source_code_nits(SourceCurve::Aces, 118, corpus_ev)) + " · " +
                         stops_text(w, source_code_nits(SourceCurve::Aces, 235, corpus_ev)) + " stops");

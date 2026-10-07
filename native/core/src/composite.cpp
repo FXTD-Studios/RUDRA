@@ -24,8 +24,10 @@ std::vector<RegionBand> default_region_bands() {
 
 std::vector<float> baseline_curve_params(const FrameScalars& scalars, const CompositeParams& params, float corpus_ev) {
     std::vector<float> out = effective_curve_params(scalars.curve_params, params.source);
-    if (params.calibration.empty() || !calibration_is_monotone(params.calibration, params.source, corpus_ev)) return out;
-    const std::vector<float> cal = calibration_params(params.calibration, params.source, corpus_ev);
+    std::vector<float> cal;
+    if (!params.reference.empty()) cal = reference_params(params.reference, params.source, corpus_ev);
+    else if (!params.calibration.empty() && calibration_is_monotone(params.calibration, params.source, corpus_ev))
+        cal = calibration_params(params.calibration, params.source, corpus_ev);
     if (cal.empty()) return out;
     if (out.size() < 3) return cal;   // nothing else: the calibration alone
     if (out.size() == cal.size()) {

@@ -1,6 +1,6 @@
 # core (librudra): types, colour, baseline, tiling, manifests. No Qt, no GPU
 # API, no inference runtime: builds and tests headless (principle P6).
-rudra_library(rudra_core SOURCES src/baseline.cpp src/source_curve.cpp src/calibration.cpp src/tiling.cpp src/model_manifest.cpp
+rudra_library(rudra_core SOURCES src/baseline.cpp src/source_curve.cpp src/calibration.cpp src/reference_fit.cpp src/tiling.cpp src/model_manifest.cpp
               src/composite.cpp src/gamut.cpp src/master.cpp src/measure.cpp src/compare.cpp
               src/grade.cpp src/hdr10.cpp src/metadata.cpp src/view.cpp src/scopes.cpp src/viewport.cpp src/guides.cpp
               src/js_format.cpp src/scope_draw.cpp src/readouts.cpp src/hdr_card.cpp src/js_json.cpp src/copy_texts.cpp src/video_predict.cpp src/video_clock.cpp)
