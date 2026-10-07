@@ -51,6 +51,26 @@ namespace fs = std::filesystem;
 
 namespace {
 
+// Roadmap 3.3: a painted highlights mask, one soft stroke across the frame.
+std::shared_ptr<const rudra::MaskSet> painted_mask(const rudra::SdrImage& sdr) {
+    auto set = std::make_shared<rudra::MaskSet>();
+    set->width = sdr.width();
+    set->height = sdr.height();
+    auto plane = rudra::empty_plane(sdr.width(), sdr.height());
+    rudra::Brush brush;
+    brush.size_px = std::max(8.0, sdr.width() * 0.3);
+    brush.softness = 0.6;
+    brush.flow = 0.8;
+    rudra::paint_stroke(*plane, sdr.width(), sdr.height(), sdr.width() * 0.2, sdr.height() * 0.3, sdr.width() * 0.8,
+                        sdr.height() * 0.7, brush);
+    set->planes[0] = std::move(plane);
+    return set;
+}
+
+}  // namespace
+
+namespace {
+
 constexpr double kAtol = 1e-6, kRtol = 2e-4;
 constexpr int kMaxHalfUlp = 2;
 
@@ -167,20 +187,9 @@ int main(int argc, char** argv) {
         // Roadmap 3.3: a painted mask on the highlights band (a soft stroke
         // across the frame) gating a three-band grade; the shader samples the
         // RGBA8 mask texture where the CPU reads the plane.
-        auto painted = std::make_shared<MaskSet>();
         {
-            painted->width = sdr.width();
-            painted->height = sdr.height();
-            auto plane = empty_plane(sdr.width(), sdr.height());
-            Brush brush;
-            brush.size_px = std::max(8.0, sdr.width() * 0.3);
-            brush.softness = 0.6;
-            brush.flow = 0.8;
-            paint_stroke(*plane, sdr.width(), sdr.height(), sdr.width() * 0.2, sdr.height() * 0.3, sdr.width() * 0.8,
-                         sdr.height() * 0.7, brush);
-            painted->planes[0] = std::move(plane);
             CompositeParams p = graded;
-            p.masks = painted;
+            p.masks = painted_mask(sdr);
             cases.emplace_back(name + " masked region EV", p);
             python.emplace_back();
         }
@@ -280,7 +289,7 @@ int main(int argc, char** argv) {
             // Roadmap 3.3: the mask being painted, tinted over the picture.
             auto t = view_params(ViewMode::Image, 1000.0);
             t.paint_band = 0;
-            t.masks = painted;
+            t.masks = painted_mask(sdr);
             frame_views.emplace_back("painted mask tint", t);
         }
         for (const auto& [vname, vp] : frame_views) {
