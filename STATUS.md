@@ -74,6 +74,13 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **7 Oct 2026, 20:05 — roadmap 3.6 closed, masks verified (line F).** Gate A on the RTX 4080 SUPER
+> (fp32, median of 5): LibTorch CUDA 170 ms 1080p / 689 ms 4K (tiled 290 / 900), DirectML 139 ms /
+> 3 535 ms untiled, 1 504 tiled, CPU LibTorch 2.45 s / 9.3 s, ORT 3.1 s / 13.6 s; every 4K row now
+> budgeted (+25 %) and gated. Parity on all four backends 1e-7 to 6e-5. Phase 3 items are all ticked;
+> the phase 3 gate (a colourist by hand on an HDR display) and the beta items that need a Mac remain.
+> The masks commit passed rudra_tests 180/180 and rudra_app_tests 29/29 (19:16); gate B for it pending.
+>
 > **7 Oct 2026, 19:40 — roadmap 3.3 painted masks in (line F), awaiting the Windows run.** One 8-bit
 > mask per Region EV band (first four), painted on the viewer at the preview's size, gating the band's
 > qualifier (`core/masks.cpp`; the brush, bilinear sampling at any frame size, PNG codec in

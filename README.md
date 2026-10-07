@@ -458,11 +458,11 @@ Still to do:
   the DMG ships notarized
 - [ ] The macOS beta DMG built and opened on a Mac, and the Windows installer
   on a clean PC, then the `v0.9.0-beta.1` pre-release published
-- [ ] Performance budgets recorded on every GPU backend: `rudra-native bench`
-  times 1080p and 4K and checks `native/bench/latency_budgets.json` per machine
-  (CI holds the CPU budget); the 4K rows on the RTX 4080 and the Mac rows wait
-  for their runs (`NATIVE_GATE_A.ps1 -SkipExport -SkipBuild -Machine rtx4080s-win`,
-  `MACHINE=... scripts/native_gate_a.sh`)
+- [x] Performance budgets recorded on every GPU backend on the Windows PC:
+  `rudra-native bench` times 1080p and 4K and checks
+  `native/bench/latency_budgets.json` per machine (CI holds the CPU budget);
+  the RTX 4080 rows at both sizes are in (roadmap 3.6, 7 Oct 2026). The Mac rows
+  wait for a Mac (`MACHINE=... scripts/native_gate_a.sh`)
 - [ ] The workflow and video review on Windows with no Python, and by hand on an
   HDR display
 
@@ -648,10 +648,17 @@ is loaded, sits behind the same picker.
   (magenta where the SDR clipped or crushed, cyan where SDR detail was read
   differently from the baseline), its legend with the shares, and
   `invented_pixels` in every master's sidecar (`core/compare.cpp`)
-- [ ] 3.6 Inference latency recorded per GPU backend at 1080p and 4K. The tooling
-  is in (`rudra-native bench --size 1920x1080,3840x2160 --budget ... --machine
-  ...`, both gate scripts, the CPU budget in CI); the 4K numbers on the RTX 4080
-  and the Mac numbers are not recorded yet
+- [x] 3.6 Inference latency recorded per GPU backend at 1080p and 4K
+  (`rudra-native bench --size 1920x1080,3840x2160 --budget ... --machine ...`,
+  both gate scripts, the CPU budget in CI). RTX 4080 SUPER, fp32, median of 5,
+  wall to fields in host memory, 7 Oct 2026: LibTorch CUDA 170 ms at 1080p
+  (290 tiled), 689 ms at 4K (900 tiled); ONNX Runtime DirectML 139 ms at 1080p
+  (582 tiled), 3 535 ms at 4K untiled, 1 504 tiled; LibTorch CPU 2.45 s / 9.3 s;
+  ONNX Runtime CPU 3.1 s / 13.6 s. All rows budgeted (+25 %) in
+  `native/bench/latency_budgets.json` and gated by `NATIVE_GATE_A.ps1 -Machine
+  rtx4080s-win`. Live controls on top of that: 3.3's 1.1 to 1.3 ms at 4K.
+  Playback at these numbers is phase R's job (R1 fp16/TensorRT). Mac rows wait
+  for a Mac
 - **Gate:** a colourist, by hand, on an HDR display, sources, calibrates, grades
   and masters a 240-frame shot with no control lagging the playhead
 
