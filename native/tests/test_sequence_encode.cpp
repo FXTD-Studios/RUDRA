@@ -176,6 +176,8 @@ TEST(SequenceEncode, DeliverReportIsThePythons) {
         ASSERT_TRUE(p);
         ASSERT_EQ(p->exit_code, 0) << p->err;
         std::string got = p->out;
+        // Windows writes the console in text mode: \r\n for the oracle's \n.
+        for (std::size_t at = got.find("\r\n"); at != std::string::npos; at = got.find("\r\n", at)) got.erase(at, 1);
         const std::string file = (work / ("shot" + find_sequence_target(r["target"].get<std::string>())->suffix)).string();
         std::string escaped;
         for (char c : file) escaped += c == '\\' ? std::string("\\\\") : std::string(1, c);
