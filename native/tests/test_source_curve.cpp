@@ -229,8 +229,8 @@ TEST(Calibration, SessionOwnsTheAnchors) {
     s.clear_calibration();
     EXPECT_TRUE(s.calibration_points().empty());
     EXPECT_EQ(s.params_json(), before);
-    s.undo();
-    EXPECT_EQ(s.calibration_points().size(), 1u);
+    s.undo();                         // back to the two points the clear took
+    EXPECT_EQ(s.calibration_points().size(), 2u);
     s.clear_calibration();
     s.clear_calibration();            // already clear: no undo entry
     EXPECT_EQ(s.undo_depth(), 6u);
