@@ -476,12 +476,18 @@ Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 
 The next release makes the artist part of the reconstruction. They tell RUDRA
 what the network cannot know (which curve made the SDR, how bright a clipped
-region should be), and every answer shows at playback rate. Phases run in
-order, and each ends on a gate that must pass before the next starts. Gate
-rows are the release rows in [`STATUS.md`](STATUS.md). Phase 2 runs alongside
-phase 1.
+region should be), and every answer shows at playback rate. Gate rows are the
+release rows in [`STATUS.md`](STATUS.md).
 
-### Phase 1: a floor that holds on real SDR
+**Re-scoped 7 Oct 2026.** Phase 1 is closed, failed: no learned residual has
+beaten the analytic inverse on any bench, and v7 (trained on real SDR) is
+−4.13 dB on every held-out real frame. RUDRA 1.0 ships on the analytic inverse
+with the artist in the loop. **Phase 3 is the critical path**, phase 2 runs
+alongside it, and the model is a research track (STATUS line G) that blocks
+nothing. `shadow_v1` stays available as an optional model with its measured
+numbers.
+
+### Phase 1: a floor that holds on real SDR (closed 7 Oct 2026, failed)
 
 - [x] 1.1 Pull 2,000+ real SDR/HDR10 frame pairs from Netflix Open Content
   (CC BY 4.0) with `pipeline/fetch_netflix_pairs.py`: 2,280 pairs from five
@@ -511,13 +517,15 @@ phase 1.
   8 batches × 4 = 32 val records, ~30% real SDR. `shadow_v1` stays the
   default. Verdicts: `reports\logs\cp_results_v7.json` (bench complete 7 Oct
   09:40)
-- [ ] 1.4b Before another run: `--eval-batches 0` (whole val, now supported,
-  with gains split real vs rendered), re-score the 25 v7 checkpoints on the
-  full val with `training/sweep_val_checkpoints.py`, and split the `mix` bench
-  per curve with `training/bench_by_curve.py`. Then decide whether the decay
-  is overfitting or a 32-record artefact, and whether the curve input is
-  miswired or an ACES-only prior. Also note the `oog` bench is exported from
-  `E:\RUDRA_v3_20260822`, a −1 EV render, against 0 EV models
+- [ ] 1.4b Post-mortem, closes the phase: re-score the 25 v7 checkpoints on
+  the full val with `training/sweep_val_checkpoints.py` (was the in-training
+  gain ever there on 538 rows, and in which rows), and split the `mix` bench
+  per curve with `training/bench_by_curve.py` (curve input miswired, or an
+  ACES-only prior). Record both in STATUS line E. Also note the `oog` bench is
+  exported from `E:\RUDRA_v3_20260822`, a −1 EV render, against 0 EV models
+- **Outcome:** the gate was not passed by any model. The residual-on-inverse
+  recipe is retired as a release path; see STATUS line G for the one bounded
+  research attempt that may follow 1.0
 - [x] 1.5 Write the gate rule into `training/cp7_verdicts.py` before the run:
   rows 1 and 2, scored once with the true curve and once as `unknown`
   (gates `N8/*`, fixed 1 Oct 2026; `export_bench_pairs.py --source-curve`)
@@ -538,7 +546,11 @@ phase 1.
   error in stops) and keep the results in `reports/`, which is not tracked
 - **Gate:** a table we would publish, whatever it says
 
-### Phase 3: the interactive core in the desktop app
+### Phase 3: the interactive core in the desktop app (critical path for 1.0)
+
+With no model in the master path, 3.1 to 3.4 are what make the inverse right
+for a given shot. They run on the analytic inverse directly; a model, when one
+is loaded, sits behind the same picker.
 
 - [ ] 3.1 Source panel: a curve picker (Rec.709 camera, filmic, ACES, AgX,
   camera log, unknown) that re-runs inference with the curve input and caches
