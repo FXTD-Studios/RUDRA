@@ -27,6 +27,7 @@
 #include <QJsonObject>
 #include <QTextStream>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -37,6 +38,7 @@
 #include <nlohmann/json.hpp>
 
 #include "rudra/core/baseline.hpp"
+#include "rudra/core/calibration.hpp"
 #include "rudra/core/composite.hpp"
 #include "rudra/core/view.hpp"
 #include "rudra/platform/npy.hpp"
@@ -158,6 +160,26 @@ int main(int argc, char** argv) {
             p.source = SourceCurve::Hable;
             p.calibration = {{8, 0.3}, {118, 18.0}, {235, 400.0}};
             cases.emplace_back(name + " calibrated hable", p);
+            python.emplace_back();
+        }
+        // Roadmap 3.4: a reference fit over the filmic curve, a target at
+        // every code (the frame's own baseline +0.4 stops with a lifted
+        // shoulder), the same knot path again.
+        {
+            CompositeParams p;
+            p.source = SourceCurve::Hable;
+            ReferenceFit fit;
+            fit.file = "parity.exr";
+            fit.samples_per_code.assign(std::size_t(kSourceCurveKnots), 64);
+            for (int c = 0; c < kSourceCurveKnots; ++c) {
+                const double t = std::clamp((c - 180.0) / 75.0, 0.0, 1.0);
+                const double lift = 0.4 + 0.35 * t * t * (3.0 - 2.0 * t);
+                fit.target_log2_nits.push_back(float(std::log2(std::max(source_code_nits(SourceCurve::Hable, c, model.corpus_ev), 1e-6)) + lift));
+            }
+            fit.codes_seen = kSourceCurveKnots;
+            fit.samples = 64LL * kSourceCurveKnots;
+            p.reference = std::move(fit);
+            cases.emplace_back(name + " reference hable", p);
             python.emplace_back();
         }
 

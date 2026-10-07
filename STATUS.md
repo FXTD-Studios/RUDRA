@@ -74,6 +74,16 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **7 Oct 2026, 18:40 — roadmap 3.4 reference match in (line F), awaiting the Windows run.** The
+> Reference block in the Source card: load the graded HDR of the frame (EXR by its chromaticities, or
+> 16-bit PQ PNG/TIFF; `engine/reference_image.cpp`) and the baseline is fitted to it as a calibration at
+> every code (`core/reference_fit.cpp`: per-code median of log2 nits, holes interpolated, smoothed,
+> isotonic, residual mean and p95 in stops). Stored as log2 nits per code, independent of the picker, so
+> it rides the same 256-knot path through `baseline_curve_params` and replaces the anchors. In
+> `params()`, the master request, the sidecar and the EXR provenance only when set. New:
+> `tests/test_reference_fit.cpp` (10 tests), a parity case `reference hable`. Phase 3 critical path
+> left: 3.3 painted masks, 3.6 numbers, wiping against the reference (optional).
+>
 > **7 Oct 2026, 17:00 — roadmap 3.3 latency and knee in and verified (line F).** Every live control is one
 > composite + display pass: 4K 1.08 to 1.33 ms wall across D3D12, D3D11, Vulkan and OpenGL on the RTX 4080
 > SUPER, now gated (`native/bench/latency_budgets.json` `control_latency`, `rudra-gpu-parity --budget

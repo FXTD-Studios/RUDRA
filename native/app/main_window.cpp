@@ -54,6 +54,8 @@
 #include <thread>
 
 #include "rudra/core/baseline.hpp"
+#include "rudra/core/reference_fit.hpp"
+#include "rudra/engine/reference_image.hpp"
 #include "rudra/core/copy_texts.hpp"
 #include "rudra/core/readouts.hpp"
 #include "rudra/engine/actions.hpp"
@@ -949,7 +951,8 @@ static QString timecode(int frame, double fps) {
 void MainWindow::sync_ui() {
     const auto& g = session_.grade;
     mode_seg_->set_on(QString::fromStdString(g.mode));
-    source_panel_->sync(session_.source_curve(), g.calibration, manifest_ ? manifest_->corpus_ev : kLegacyCorpusEv);
+    source_panel_->sync(session_.source_curve(), g.calibration, manifest_ ? manifest_->corpus_ev : kLegacyCorpusEv,
+                        g.reference);
     {
         const QSignalBlocker b1(strength_), b2(peak_);
         strength_->setValue(int(std::lround(g.strength * 20.0)));
@@ -1075,6 +1078,7 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
     auto cur = std::make_shared<Current>();
     cur->baseline_source = session_.source_curve();
     cur->baseline_calibration = session_.grade.calibration;
+    cur->baseline_reference = session_.grade.reference;
     cur->baseline = std::make_shared<const NetworkLinearImage>(
         corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, session_.composite_params(), model.corpus_ev)));
 #ifdef RUDRA_APP_VIEWER
@@ -1113,7 +1117,9 @@ void MainWindow::run_stats() {
     if (stats_worker_.joinable()) stats_worker_.join();   // done: stats_running_ was cleared after it posted
     // The cached baseline is the one of the source it was built with; after a
     // source change the measure rebuilds it from the params (3.1).
-    const NetworkLinearImage* cached = frame->baseline_source == params.source && frame->baseline_calibration == params.calibration
+    const NetworkLinearImage* cached = frame->baseline_source == params.source &&
+                                               frame->baseline_calibration == params.calibration &&
+                                               frame->baseline_reference == params.reference
                                            ? frame->baseline.get() : nullptr;
     const double knee = session_.anchor_knee;
     stats_worker_ = std::thread([self, frame, params, gen, cached, knee] {
@@ -1138,7 +1144,9 @@ void MainWindow::measure_now() {
     const CompositeParams params = session_.composite_params();
     apply_measure(std::make_shared<const FrameMeasure>(measure_frame(
         f.sdr, f.fields, f.scalars, f.model, params,
-        f.baseline_source == params.source && f.baseline_calibration == params.calibration ? f.baseline.get() : nullptr,
+        f.baseline_source == params.source && f.baseline_calibration == params.calibration &&
+                f.baseline_reference == params.reference
+            ? f.baseline.get() : nullptr,
         session_.anchor_knee)));
 }
 
@@ -1328,6 +1336,7 @@ MasterRequest MainWindow::master_request() const {
     q.container = session_.container;
     q.source_curve = session_.grade.source;
     q.calibration = session_.calibration_points();
+    q.reference = session_.grade.reference;
     return q;
 }
 
@@ -1921,6 +1930,36 @@ std::optional<int> MainWindow::sdr_code_at(double x, double y) const {
             n += 3;
         }
     return std::clamp(int(std::lround(sum / std::max(n, 1) * 255.0)), 0, 255);
+}
+
+bool MainWindow::load_reference(const std::filesystem::path& path) {
+    if (!current_frame_) return false;
+    std::filesystem::path file = path;
+    if (file.empty()) {
+        const QString chosen = QFileDialog::getOpenFileName(this, "Open the graded HDR of this frame", {},
+                                                            "HDR frames (*.exr *.png *.tif *.tiff)");
+        if (chosen.isEmpty()) return false;
+        file = chosen.toStdString();
+    }
+    auto img = read_reference(file);
+    if (!img) {
+        QMessageBox::warning(this, "RUDRA", QString::fromStdString(img.error().message + "\n" + img.error().detail));
+        return false;
+    }
+    // The frame on screen is the preview (fit_max_side); a full-size reference
+    // is brought to it the same way, INTER_AREA in float, so the codes line up.
+    const SdrImage& sdr = current_frame_->sdr;
+    PlanarBuffer linear = std::move(img->linear709);
+    if ((linear.width() != sdr.width() || linear.height() != sdr.height()) && preview_max_side_ > 0 &&
+        std::max(linear.width(), linear.height()) > preview_max_side_)
+        linear = fit_max_side(SdrImage(std::move(linear)), preview_max_side_).buffer();
+    auto fit = fit_reference(sdr, linear, file.filename().string());
+    if (!fit) {
+        QMessageBox::warning(this, "RUDRA", QString::fromStdString(fit.error().message + "\n" + fit.error().detail));
+        return false;
+    }
+    session_.set_reference(std::move(*fit));
+    return true;
 }
 
 void MainWindow::calibration_picked(double x, double y) {

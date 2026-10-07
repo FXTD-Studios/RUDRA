@@ -44,6 +44,13 @@ double py_round1(double x) {
     return std::strtod(b, nullptr);
 }
 
+// round(x, n) the same way.
+double py_round(double x, int n) {
+    char b[64];
+    std::snprintf(b, sizeof b, "%.*f", n, x);
+    return std::strtod(b, nullptr);
+}
+
 pyjson::Value band_json(const MasterBand& b) {
     return pyjson::Dict{{"label", b.label}, {"low_nits", b.low_nits}, {"high_nits", b.high_nits}, {"ev", b.ev}};
 }
@@ -70,6 +77,11 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
         if (j.contains("calibration"))
             for (const auto& c : j.at("calibration"))
                 r.calibration.push_back({c.at("code").get<int>(), c.at("nits").get<double>()});
+        if (j.contains("reference")) {
+            auto ref = reference_fit_from_json(j.at("reference").dump());
+            if (!ref) return make_error(ErrorCode::ParseError, "The master parameters' reference is not a fit.", ref.error().message);
+            r.reference = std::move(*ref);
+        }
         if (j.contains("regions"))
             for (const auto& b : j.at("regions"))
                 r.regions.push_back({b.value("label", std::string()), b.at("low_nits").get<double>(),
@@ -98,6 +110,8 @@ std::string master_request_json(const MasterRequest& q) {
         for (const auto& c : q.calibration) cal.push_back({{"code", c.code}, {"nits", c.nits}});
         j["calibration"] = cal;
     }
+    if (!q.reference.empty())
+        j["reference"] = nlohmann::json::parse(reference_fit_json(q.reference));
     return j.dump();
 }
 
@@ -122,6 +136,12 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         if (c.nits > 0.0 && c.code >= 0 && c.code <= 255) cp.calibration.push_back(c);
     if (!cp.calibration.empty() && !calibration_is_monotone(cp.calibration, cp.source, model.corpus_ev))
         return make_error(ErrorCode::InvalidArgument, "calibration anchors do not describe a monotone curve", q.source_curve);
+    if (!q.reference.empty()) {
+        if (int(q.reference.target_log2_nits.size()) != kSourceCurveKnots)
+            return make_error(ErrorCode::InvalidArgument, "reference fit must carry 256 targets", q.reference.file);
+        cp.reference = q.reference;
+        cp.calibration.clear();   // a reference is an anchor at every code
+    }
     const NetworkLinearImage network = composite(sdr, fields, scalars, model, cp);
 
     // The master chain, stage by stage (render_master_pixels without the
@@ -162,6 +182,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         {"rudra:sourceSpace", q.source_space},
     };
     if (*source != SourceCurve::Unknown) provenance.emplace_back("rudra:sourceCurve", q.source_curve);
+    if (!cp.reference.empty()) provenance.emplace_back("rudra:reference", cp.reference.file);
     const bool aces = q.container == "aces";
     auto w = aces ? write_aces_exr(out, linear, *src, 1.0, provenance) : write_exr(out, linear, true, std::nullopt, provenance);
     if (!w) return w.error();
@@ -210,6 +231,20 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         for (const auto& c : cp.calibration)
             cal.push_back(pyjson::Dict{{"code", std::int64_t(c.code)}, {"nits", c.nits}});
         sidecar_dict.emplace_back("calibration", cal);
+    }
+    if (!cp.reference.empty()) {
+        const auto& rf = cp.reference;
+        pyjson::List target;
+        for (float v : rf.target_log2_nits) target.push_back(py_round(double(v), 4));
+        sidecar_dict.emplace_back("reference", pyjson::Dict{
+            {"file", rf.file},
+            {"samples", std::int64_t(rf.samples)},
+            {"codes_seen", std::int64_t(rf.codes_seen)},
+            {"exposure_stops", py_round(reference_exposure(rf, cp.source, model.corpus_ev), 3)},
+            {"residual_mean_stops", py_round(rf.residual_mean, 3)},
+            {"residual_p95_stops", py_round(rf.residual_p95, 3)},
+            {"target_log2_nits", target},
+        });
     }
     const pyjson::Value sidecar = std::move(sidecar_dict);
     std::filesystem::path side = out;

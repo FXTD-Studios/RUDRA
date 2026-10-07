@@ -14,6 +14,7 @@
 #include "rudra/core/fields.hpp"
 #include "rudra/core/image.hpp"
 #include "rudra/core/calibration.hpp"
+#include "rudra/core/reference_fit.hpp"
 #include "rudra/core/source_curve.hpp"
 
 namespace rudra {
@@ -51,12 +52,17 @@ struct CompositeParams {
     // Roadmap 3.2: the artist's anchors over that curve (calibration.hpp);
     // empty for none. Applied only when the result is monotone.
     std::vector<CalibrationPoint> calibration;
+    // Roadmap 3.4: the reference match (reference_fit.hpp); empty for none.
+    // A reference is an anchor at every code, so when set it replaces the
+    // calibration.
+    ReferenceFit reference;
 };
 
 // The curve params corrected_baseline takes for a frame under these settings:
 // the model's CurveHead output plus the source curve (source_curve.hpp) plus
 // the calibration (calibration.hpp, which needs the model's exposure because
-// its anchors are in nits). Every consumer of the baseline (composite, master,
+// its anchors are in nits), or the reference fit in the calibration's place
+// (reference_fit.hpp). Every consumer of the baseline (composite, master,
 // measure, the viewer and its probes) goes through this, so they agree on
 // what the baseline is.
 std::vector<float> baseline_curve_params(const FrameScalars& scalars, const CompositeParams& params, float corpus_ev);

@@ -81,7 +81,7 @@ std::string Session::params_json() const {
         append_string(o, grade.source);
     }
     const auto cal = calibration_points();
-    if (!cal.empty()) {
+    if (!cal.empty() && grade.reference.empty()) {
         o += ",\"calibration\":[";
         for (std::size_t i = 0; i < cal.size(); ++i) {
             if (i) o += ',';
@@ -89,6 +89,7 @@ std::string Session::params_json() const {
         }
         o += "]";
     }
+    if (!grade.reference.empty()) o += ",\"reference\":" + reference_fit_json(grade.reference);
     o += "}";
     return o;
 }
@@ -101,8 +102,24 @@ CompositeParams Session::composite_params() const {
     for (const auto& r : grade.regions) p.regions.push_back({r.low_nits, r.high_nits, r.ev});
     p.region_softness_stops = 1.0;
     p.source = source_curve();
-    p.calibration = calibration_points();
+    p.calibration = grade.reference.empty() ? calibration_points() : std::vector<CalibrationPoint>{};
+    p.reference = grade.reference;
     return p;
+}
+
+void Session::set_reference(ReferenceFit fit) {
+    if (fit.empty() || fit == grade.reference) return;
+    push_undo();
+    grade.reference = std::move(fit);
+    grade.calibration.clear();
+    notify(Grade);
+}
+
+void Session::clear_reference() {
+    if (grade.reference.empty()) return;
+    push_undo();
+    grade.reference = ReferenceFit{};
+    notify(Grade);
 }
 
 std::vector<CalibrationPoint> Session::calibration_points() const {

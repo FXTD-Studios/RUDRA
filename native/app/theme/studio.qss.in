@@ -170,6 +170,9 @@ QWidget#sourcePanel QPushButton[role="pick"]:hover { border-color: var(--ink-2);
 QWidget#sourcePanel QLineEdit { background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; padding: 2px 6px; color: var(--ink); font-family: "var(--mono-family)"; font-size: 11px; }
 QWidget#sourcePanel QLineEdit:focus { border-color: var(--accent); }
 QWidget#sourcePanel QLabel[role="note"][state="bad"] { color: var(--bad); }
+QWidget#sourcePanel QLabel[role="file"] { background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; padding: 3px 8px; color: var(--ink-2); font-family: "var(--mono-family)"; font-size: 11px; }
+QWidget#sourcePanel QLabel[role="file"][state="empty"] { color: var(--ink-4); border-style: dashed; }
+QWidget#sourcePanel QWidget#calibrate:disabled QLabel, QWidget#sourcePanel QWidget#calibrate:disabled QLineEdit, QWidget#sourcePanel QWidget#calibrate:disabled QPushButton { color: var(--ink-4); }
 QWidget[role="field"] { border-bottom: 1px solid var(--raise); }
 QWidget[role="field"] QLabel[role="value"] { color: var(--ink-3); font-family: "var(--ui-family)"; }
 QWidget#frameStats QLabel[role="value"] { color: var(--ink); font-family: "var(--ui-family)"; font-size: 15px; font-weight: 600; }

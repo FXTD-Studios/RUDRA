@@ -41,6 +41,10 @@ struct GradeSnapshot {
     // highlight); a slot with nits 0 is empty. Undone with the grade; left out
     // of params() when every slot is empty.
     std::vector<CalibrationPoint> calibration;
+    // Roadmap 3.4: the reference match (core/reference_fit.hpp). Undone with
+    // the grade; left out of params() when empty. Loading one clears the
+    // anchors: a reference is an anchor at every code.
+    ReferenceFit reference;
 };
 
 // The page's defaultRegions(): highlights 400 to 2 000, speculars 2 000 to
@@ -107,6 +111,11 @@ public:
     void clear_calibration();
     // The usable anchors (nits > 0), what the composite takes.
     std::vector<CalibrationPoint> calibration_points() const;
+    // The Reference block (3.4): a fit the app made from a loaded frame
+    // (reference_fit.hpp fit_reference) replaces the anchors; Clear takes it
+    // out. No-op when nothing changes.
+    void set_reference(ReferenceFit fit);
+    void clear_reference();
     void toggle_wipe();                          // ACTIONS.wipe
     void set_wipe(double x);                     // a drag on the plate, clamped 0..1
     void set_show(std::string_view source);      // the Compare buttons: also ends a wipe

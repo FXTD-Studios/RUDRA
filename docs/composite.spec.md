@@ -58,6 +58,17 @@ Per pixel, per channel `k`, in float32:
    (`calibration.cpp`, `baseline_curve_params`). Applied only when the
    calibrated curve is monotone over the codes; otherwise ignored and the
    panel says so.
+   **Reference match (roadmap 3.4, a user control).** A graded HDR of the
+   frame gives a target `t[code]` in log2 nits: per pixel and channel the
+   median of `log2(203 * reference)` over the pixels at that SDR code
+   (`reference_fit.cpp`: codes with under 16 samples interpolated from their
+   neighbours, flat beyond the outermost seen code, triangular smoothing over
+   ±3 codes, then isotonic regression weighted by sample count). Its
+   correction over the source curve is `t[code] - log2(source_nits(code))`,
+   taking the calibration's place in `c` (a reference is an anchor at every
+   code, so the two never add). The residual, mean and p95 of
+   `|log2(203 * reference) - t[code]|` over codes 1..254, is reported, not
+   applied.
 2. Luma of the SDR: `y = 0.2126 s_0 + 0.7152 s_1 + 0.0722 s_2` (Rec.709).
 3. Priors: `hp = sigmoid(24 (y - 0.82))`, `sp = sigmoid(24 (0.10 - y)) * w_s`.
 4. Gate by recovery mode: all `max(hp, sp)`, highlights `hp`, shadows `sp`,
