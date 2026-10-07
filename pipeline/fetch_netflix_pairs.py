@@ -159,13 +159,20 @@ def _at_eof(url: str, start: int, got: int) -> bool:
     return start + got == _size(url)
 
 
-def _size(url: str) -> int:
+def _size(url: str, tries: int = 6) -> int:
     if url in _SIZES:
         return _SIZES[url]
-    req = urllib.request.Request(url, method="HEAD")
-    with urllib.request.urlopen(req, timeout=60) as r:
-        _SIZES[url] = int(r.headers["Content-Length"])
-    return _SIZES[url]
+    for attempt in range(tries):   # the HEAD flakes like any other request: same backoff as _get
+        try:
+            req = urllib.request.Request(url, method="HEAD")
+            with urllib.request.urlopen(req, timeout=60) as r:
+                _SIZES[url] = int(r.headers["Content-Length"])
+            return _SIZES[url]
+        except Exception:  # noqa: BLE001 - network: retry with backoff
+            if attempt == tries - 1:
+                raise
+            time.sleep(2 ** attempt)
+    raise AssertionError
 
 
 def list_shots() -> dict[tuple[str, str], dict[str, str]]:
