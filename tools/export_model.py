@@ -595,21 +595,24 @@ def bench_paths(folder: Path) -> list[Path]:
     return [p for p in sorted(folder.rglob("*")) if p.is_file() and p.suffix.lower() in kinds]
 
 
-def bench_frames(folder: Path, limit: int) -> list[tuple[str, np.ndarray]]:
+def bench_frames(folder: Path, limit: int):
+    """Yields (stem, float32 HWC rgb) one frame at a time: a 1080p frame is
+    25 MB as float32, so a bench of hundreds is never held at once."""
     import cv2
-    out = []
+    n = 0
     for p in bench_paths(folder):
         img = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
         if img is None:
+            print(f"  bench: unreadable, skipped: {p}", file=sys.stderr)
             continue
         if img.ndim == 2:
             img = np.repeat(img[..., None], 3, axis=2)
         rgb = cv2.cvtColor(img[..., :3], cv2.COLOR_BGR2RGB).astype(np.float32)
         rgb /= float(np.iinfo(img.dtype).max) if np.issubdtype(img.dtype, np.integer) else 1.0
-        out.append((p.stem, rgb))
-        if limit and len(out) >= limit:
+        yield p.stem, rgb
+        n += 1
+        if limit and n >= limit:
             break
-    return out
 
 
 # --------------------------------------------------------------------------
@@ -783,4 +786,16 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except BaseException:  # noqa: BLE001 - the gate script only sees the exit code: keep the traceback
+        import traceback
+        log_dir = REPO / "reports" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log = log_dir / f"export_model_{_dt.datetime.now().strftime('%Y-%m-%d_%H%M')}.log"
+        log.write_text(traceback.format_exc(), encoding="utf-8")
+        traceback.print_exc()
+        print(f"traceback -> {log}", file=sys.stderr)
+        raise SystemExit(1)
