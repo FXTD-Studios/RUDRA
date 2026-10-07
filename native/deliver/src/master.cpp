@@ -66,6 +66,7 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
         r.settle_grain = j.value("settle_grain", true);
         r.source_space = j.value("source_space", std::string("rec709"));
         r.container = j.value("container", std::string("aces"));
+        r.source_curve = j.value("source_curve", std::string("unknown"));
         if (j.contains("regions"))
             for (const auto& b : j.at("regions"))
                 r.regions.push_back({b.value("label", std::string()), b.at("low_nits").get<double>(),
@@ -88,6 +89,7 @@ std::string master_request_json(const MasterRequest& q) {
     for (const auto& b : q.regions)
         regions.push_back({{"label", b.label}, {"low_nits", b.low_nits}, {"high_nits", b.high_nits}, {"ev", b.ev}});
     j["regions"] = regions;
+    if (q.source_curve != "unknown") j["source_curve"] = q.source_curve;
     return j.dump();
 }
 
@@ -101,10 +103,13 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     if (q.container != "aces" && q.container != "linear")
         return make_error(ErrorCode::InvalidArgument, "container must be aces or linear", q.container);
 
+    const auto source = parse_source_curve(q.source_curve);
+    if (!source) return make_error(ErrorCode::InvalidArgument, "source_curve must be unknown, aces, hable, agx, camera_log, or clip", q.source_curve);
     CompositeParams cp;
     cp.mode = *mode;
     cp.strength = static_cast<float>(q.strength);
     cp.preserve_outside = q.preserve_outside;
+    cp.source = *source;
     const NetworkLinearImage network = composite(sdr, fields, scalars, model, cp);
 
     // The master chain, stage by stage (render_master_pixels without the
@@ -131,7 +136,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         for (const auto& b : q.regions) l.push_back(band_json(b));
         region_text = pyjson::dumps(l);
     }
-    const ExrAttributes provenance{
+    ExrAttributes provenance{
         {"rudra:checkpoint", q.checkpoint},
         {"rudra:maxCLL", std::to_string(md.maxcll)},
         {"rudra:maxFALL", std::to_string(md.maxfall)},
@@ -144,6 +149,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         {"rudra:grainSettled", q.settle_grain ? "True" : "False"},
         {"rudra:sourceSpace", q.source_space},
     };
+    if (*source != SourceCurve::Unknown) provenance.emplace_back("rudra:sourceCurve", q.source_curve);
     const bool aces = q.container == "aces";
     auto w = aces ? write_aces_exr(out, linear, *src, 1.0, provenance) : write_exr(out, linear, true, std::nullopt, provenance);
     if (!w) return w.error();
@@ -154,13 +160,13 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     // supports, measured on the composite against its corrected baseline
     // (before the grade, which is the artist's, not the network's).
     const SupportStats support =
-        support_stats(network, corrected_baseline(sdr, model.corpus_ev, scalars.curve_params), sdr);
+        support_stats(network, corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, cp)), sdr);
     auto pct3 = [](double v) {
         char b[64];
         std::snprintf(b, sizeof b, "%.3f", v);
         return std::strtod(b, nullptr);
     };
-    const pyjson::Value sidecar = pyjson::Dict{
+    pyjson::Dict sidecar_dict{
         {"maxcll_nits", md.maxcll},
         {"maxfall_nits", md.maxfall},
         {"peak_nits", py_round1(peak)},
@@ -186,6 +192,8 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
              {"basis", "composite vs corrected baseline, max(R,G,B); invented where the SDR's max code is >= 254 or <= 1"},
          }},
     };
+    if (*source != SourceCurve::Unknown) sidecar_dict.emplace_back("source_curve", q.source_curve);
+    const pyjson::Value sidecar = std::move(sidecar_dict);
     std::filesystem::path side = out;
     side.replace_extension(".json");
     if (auto s = write_text_file(side, pyjson::dumps(sidecar, 2)); !s) return s.error();

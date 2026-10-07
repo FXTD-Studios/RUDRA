@@ -58,6 +58,7 @@ namespace rudra::app {
 class CheckRow;
 class IconButton;
 class RegionEditor;
+class SourcePanel;
 class ScopePlot;
 class VectorscopeView;
 class ScrubBar;
@@ -265,6 +266,7 @@ private:
     QStackedWidget* viewer_stack_ = nullptr;
     QWidget* panels_ = nullptr;          // the inspector's tab page (#ipanels)
     std::vector<QWidget*> pages_;        // Reconstruct, Grade, Deliver
+    SourcePanel* source_panel_ = nullptr;
     Seg *view_mode_ = nullptr, *view_layer_ = nullptr, *zoom_seg_ = nullptr, *mode_seg_ = nullptr, *tabs_ = nullptr,
         *ws_ = nullptr;
     CheckRow *preserve_ = nullptr, *anchor_ = nullptr, *carry_chroma_ = nullptr;
@@ -293,6 +295,7 @@ private:
         FrameScalars scalars;
         ModelConstants model;
         std::shared_ptr<const NetworkLinearImage> baseline;
+        SourceCurve baseline_source = SourceCurve::Unknown;   // the source the baseline was built with (3.1)
         FrameHeader header;
     };
     std::shared_ptr<const Current> current_frame_;

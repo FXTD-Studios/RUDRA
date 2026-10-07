@@ -161,6 +161,9 @@ QLabel[role="value"][state="hi"] { color: var(--gold); }
 QLabel[role="value"][state="bad"] { color: var(--bad); }
 QLabel[role="unit"] { color: var(--ink-3); font-size: 11px; }
 QWidget[role="prow"] { border-bottom: 1px solid var(--card); }
+QWidget#sourcePanel QLabel[role="key"] { color: var(--ink-3); }
+QWidget#sourcePanel QLabel[role="value"] { color: var(--ink); }
+QWidget#sourcePanel QWidget[role="prow"] { border-bottom: 1px solid var(--raise); }
 QWidget[role="field"] { border-bottom: 1px solid var(--raise); }
 QWidget[role="field"] QLabel[role="value"] { color: var(--ink-3); font-family: "var(--ui-family)"; }
 QWidget#frameStats QLabel[role="value"] { color: var(--ink); font-family: "var(--ui-family)"; font-size: 15px; font-weight: 600; }

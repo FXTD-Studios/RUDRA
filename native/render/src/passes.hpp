@@ -27,10 +27,11 @@ struct CompositeUbo {
     float model[4];
     float control[4];
     float counts[4];
-    float curve[36];
+    float curve[288];   // 72 vec4: exposure + up to 287 knots (source_curve.hpp needs 1 + 256)
     float bands[32];
 };
-static_assert(sizeof(CompositeUbo) == (3 * 4 + 36 + 32) * sizeof(float));
+static_assert(sizeof(CompositeUbo) == (3 * 4 + 288 + 32) * sizeof(float));
+static_assert(288 >= 1 + kSourceCurveKnots);
 
 // The View block of shaders/display.frag.
 struct ViewUbo {
@@ -63,9 +64,12 @@ inline CompositeUbo composite_ubo(const FrameScalars& scalars, const ModelConsta
     u.control[1] = params.preserve_outside ? 1.0f : 0.0f;
     u.control[2] = scalars.shadow_weight;
     u.control[3] = static_cast<float>(params.region_softness_stops);
-    const std::size_t np = std::min<std::size_t>(scalars.curve_params.size(), 36);
+    // The model's CurveHead plus the source curve, as the CPU composite feeds
+    // corrected_baseline, so baselineOf() in the shader is the same function.
+    const std::vector<float> curve = baseline_curve_params(scalars, params);
+    const std::size_t np = std::min<std::size_t>(curve.size(), 288);
     u.counts[0] = np >= 3 ? float(np - 1) : 0.0f;
-    std::copy(scalars.curve_params.begin(), scalars.curve_params.begin() + std::ptrdiff_t(np), u.curve);
+    std::copy(curve.begin(), curve.begin() + std::ptrdiff_t(np), u.curve);
     int bands = 0;
     for (const auto& band : params.regions) {
         if (band.ev == 0.0 || bands == 8) continue;

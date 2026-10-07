@@ -12,7 +12,8 @@ layout(std140, binding = 0) uniform Composite {
     vec4 model;     // x log_scale, y max_hdr, z baseline scale (2^-ev * 203/10000), w strength
     vec4 control;   // x mode (0 all, 1 highlights, 2 shadows, 3 off), y preserve, z shadow weight, w region softness (stops)
     vec4 counts;    // x curve knots (0: no curve), y region bands
-    vec4 curve[9];  // curve params, packed four to a vec4: [0] exposure, [1..] knots
+    vec4 curve[72]; // curve params, packed four to a vec4: [0] exposure, [1..] knots. Up to 287
+                    // knots: the CurveHead's 8, or the source curve's one per 8-bit code (3.1)
     vec4 bands[8];  // x log2(low nits), y log2(high nits), z ev
 };
 

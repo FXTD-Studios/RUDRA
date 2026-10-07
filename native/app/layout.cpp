@@ -28,6 +28,7 @@
 #include "main_window.hpp"
 #include "region_editor.hpp"
 #include "scope_widgets.hpp"
+#include "source_panel.hpp"
 #include "widgets.hpp"
 
 #ifdef RUDRA_APP_VIEWER
@@ -528,6 +529,23 @@ QWidget* MainWindow::build_right_rail() {
     // Reconstruct
     auto* rec = ctl();
     auto* recv = column(rec, 0, 12);
+    // Source (roadmap 3.1): the curve that made the SDR, before anything is
+    // reconstructed from it. The baseline is its inverse; the masks and the
+    // residual do not depend on it, so the picker runs no inference.
+    recv->addWidget(label("Source", {}, "title", rec));
+    {
+        auto scard = card(rec, 12, 12);
+        source_panel_ = new SourcePanel(scard.first);
+        source_panel_->picked = [this](SourceCurve c) { session_.set_source(source_curve_id(c)); };
+        scard.second->addWidget(source_panel_);
+        recv->addWidget(scard.first);
+        auto* n0 = label("The baseline is the analytic inverse of this curve. Unknown is the ACES inverse every "
+                         "master so far used. The masks and the residual are unchanged by the choice.",
+                         {}, "note", rec);   // "note", not "note-p": the page's three note-p are compared in order
+        n0->setWordWrap(true);
+        notes_.push_back(n0);
+        recv->addWidget(n0);
+    }
     recv->addWidget(label("Reconstruction", {}, "title", rec));
     // Not a structured binding: the lambdas below use both, and Apple clang 15
     // cannot capture a structured binding (C++20 allows it, from clang 16).

@@ -3,6 +3,7 @@
 #include "theme.hpp"
 
 #include <QButtonGroup>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
@@ -25,15 +26,25 @@ void repolish(QWidget* w) {
 
 }  // namespace
 
-Seg::Seg(const QString& id, const std::vector<std::pair<QString, QString>>& buttons, QWidget* parent, bool exclusive)
+Seg::Seg(const QString& id, const std::vector<std::pair<QString, QString>>& buttons, QWidget* parent, bool exclusive,
+         int columns)
     : QWidget(parent) {
     setObjectName(id);
     setProperty("role", "seg");
-    auto* row = new QHBoxLayout(this);
-    row->setContentsMargins(0, 0, 0, 0);
-    row->setSpacing(0);
+    QHBoxLayout* row = nullptr;
+    QGridLayout* grid = nullptr;
+    if (columns > 0) {
+        grid = new QGridLayout(this);
+        grid->setContentsMargins(0, 0, 0, 0);
+        grid->setSpacing(0);
+    } else {
+        row = new QHBoxLayout(this);
+        row->setContentsMargins(0, 0, 0, 0);
+        row->setSpacing(0);
+    }
     auto* group = new QButtonGroup(this);
     group->setExclusive(exclusive);
+    int index = 0;
     for (const auto& entry : buttons) {
         // Not a structured binding: the click lambda captures the key, which
         // Apple clang 15 cannot do with a binding (C++20 allows it, clang 16+).
@@ -45,7 +56,9 @@ Seg::Seg(const QString& id, const std::vector<std::pair<QString, QString>>& butt
         b->setFocusPolicy(Qt::NoFocus);
         if (key.startsWith('#')) b->setObjectName(key.mid(1));   // a button with its own id (wipeBtn)
         group->addButton(b);
-        row->addWidget(b, 1);
+        if (grid) grid->addWidget(b, index / columns, index % columns);
+        else row->addWidget(b, 1);
+        ++index;
         buttons_.push_back(b);
         keys_.push_back(key);
         connect(b, &QPushButton::clicked, this, [this, key] {

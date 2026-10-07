@@ -30,7 +30,7 @@ Goldens: `tools/emit_composite_golden.py` writes
 | `r` | 3 x H x W | log-domain residual, the frame's residual scale already folded in |
 | `mh`, `ms` | 1 x H x W | highlight and shadow masks in [0, 1] |
 | `w_s` | scalar | per-frame shadow weight (1 without a shadow gate) |
-| `c` | 1 + K | per-frame curve parameters (`{0}` without a curve head) |
+| `c` | 1 + K | per-frame curve parameters (`{0}` without a curve head), plus the source curve (below) |
 | `L`, `M`, `ev_c` | scalars | model constants: `log_scale` (16), `max_hdr` (4.0), `corpus_ev` (-1) |
 
 Units: the network convention is linear Rec.709, 1.0 = 10 000 nits. Scene
@@ -44,6 +44,13 @@ Per pixel, per channel `k`, in float32:
    `invACES` is the larger root of the Narkowicz fit with the input clamped to
    [0, 0.995]; `curve` is the piecewise-linear CurveHead correction in log2
    (native/core baseline.cpp, rudra/sdr2hdr.py).
+   **Source curve (roadmap 3.1, a user control).** When the artist names the
+   curve that made the SDR (`aces`, `hable`, `agx`, `camera_log`, `clip`), `c`
+   becomes the model's head plus `log2(inv_source / invACES)` sampled at every
+   8-bit code (K = 256), summed in log2 (native/core source_curve.cpp
+   `effective_curve_params`). The forward curves are pipeline/sdr_render.py's;
+   the inverses are numeric. `unknown` leaves `c` as the model's, bit for bit.
+   The masks and the residual do not depend on it.
 2. Luma of the SDR: `y = 0.2126 s_0 + 0.7152 s_1 + 0.0722 s_2` (Rec.709).
 3. Priors: `hp = sigmoid(24 (y - 0.82))`, `sp = sigmoid(24 (0.10 - y)) * w_s`.
 4. Gate by recovery mode: all `max(hp, sp)`, highlights `hp`, shadows `sp`,

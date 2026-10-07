@@ -556,9 +556,21 @@ With no model in the master path, 3.1 to 3.4 are what make the inverse right
 for a given shot. They run on the analytic inverse directly; a model, when one
 is loaded, sits behind the same picker.
 
-- [ ] 3.1 Source panel: a curve picker (Rec.709 camera, filmic, ACES, AgX,
-  camera log, unknown) that re-runs inference with the curve input and caches
-  the fields per choice
+- [x] 3.1 Source panel: a curve picker (unknown, ACES, filmic/Hable, AgX,
+  camera log, Rec.709 plain clip) above Reconstruction in the inspector, with
+  the chosen inverse drawn against the ACES inverse and readouts at codes 118,
+  235 and 255 in nits. The choice changes only the baseline: it becomes the
+  inverse of that curve, expressed as the CurveHead's own per-code log2
+  correction (one knot per 8-bit code, `core/source_curve.cpp`), so the CPU
+  composite, the shader (knot buffer 9 to 72 vec4), master, measure and the
+  parity probes carry it with no new path. Masks and residual depend on the
+  SDR alone, so nothing re-runs and nothing is cached per choice; `unknown`
+  is bit-identical to every master before it. Session state, undone with the
+  grade, `source_curve` in `params()`, the master request, the EXR provenance
+  and the sidecar only when not `unknown` (every golden unchanged); menu
+  Reconstruct > Source; `--params '{"source_curve":"hable"}'` on the CLI.
+  Tests: `tests/test_source_curve.cpp`; `rudra-gpu-parity` gained two source
+  cases. Not yet on video delivery, which takes the source per shot in 5.3
 - [ ] 3.2 Three-click calibration: the artist clicks black, 18% grey and a known
   highlight, RUDRA fits the shot's inverse curve to them (monotone, few knots)
   and draws the fit on the curve panel

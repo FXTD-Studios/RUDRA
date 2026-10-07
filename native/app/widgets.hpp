@@ -20,8 +20,10 @@ namespace rudra::app {
 // .seg: a row of buttons, one of which may be "on".
 class Seg : public QWidget {
 public:
+    // columns > 0 lays the buttons out as a grid that many wide (the Source
+    // picker's six); 0 is the page's single row.
     Seg(const QString& id, const std::vector<std::pair<QString, QString>>& buttons, QWidget* parent = nullptr,
-        bool exclusive = true);
+        bool exclusive = true, int columns = 0);
     QPushButton* button(const QString& key) const;   // by its data-* value
     void set_on(const QString& key);                  // the one that is on ("" for none)
     QString on() const;
