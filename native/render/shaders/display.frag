@@ -15,9 +15,10 @@ layout(std140, binding = 0) uniform View {
     vec4 target;  // x path (0 SDR, 1 scRGB, 2 HDR10, 3 EDR), y ceiling nits, z nits per 1.0 (linear paths)
     vec4 pic[3];  // rows of source primaries -> swapchain primaries (xyz)
     vec4 gfx[3];  // rows of Rec.709 -> swapchain primaries, for the overlays
+    vec4 anchor;  // roadmap 3.3: x 1 to anchor the model's picture, y knee (SDR max code), z softness, w hold gain
 };
 
-layout(binding = 1) uniform sampler2D model;      // rgb reconstruction, network units
+layout(binding = 1) uniform sampler2D model;      // rgb reconstruction, network units; a the SDR's Rec.2020 luma, linearised (the anchor's target)
 layout(binding = 2) uniform sampler2D baseline;   // rgb analytic baseline, a the SDR's max code (Invented)
 
 const float kPeak = 10000.0;
@@ -83,9 +84,22 @@ void main() {
     bool wiping = view.z >= 0.0;
     vec4 b4 = texelFetch(baseline, p, 0);
     vec3 b = b4.rgb;
-    vec3 m = texelFetch(model, p, 0).rgb;
+    vec4 m4 = texelFetch(model, p, 0);
+    vec3 m = m4.rgb;
     vec3 src = (!wiping && extra.z > 0.5) ? b : m;
-    vec3 h = (wiping && u < view.z) ? b : src;
+    bool left = wiping && u < view.z;
+    vec3 h = left ? b : src;
+    // The anchor (core/view.cpp anchor_gain_f) on the model's picture only.
+    if (anchor.x > 0.5 && !left && !(!wiping && extra.z > 0.5)) {
+        float eps = 1e-4;
+        float target = m4.a * 203.0;
+        float actual = lum2020(m) * kPeak;
+        float gain = (target + eps) / (actual + eps);
+        float t = clamp((b4.a - (anchor.y - anchor.z)) / (2.0 * anchor.z), 0.0, 1.0);
+        float ramp = t * t * (3.0 - 2.0 * t);
+        gain = gain * (1.0 - ramp) + anchor.w * ramp;
+        h = m * gain;
+    }
     int mode = int(view.x + 0.5);
     vec3 c;
     if (mode == 1) {

@@ -209,6 +209,7 @@ struct ViewerWindow::Impl {
     ViewParams effective_view() const {
         ViewParams v = view;
         if (flip_held_key || flip_held_mouse) v.show = ViewSource::Baseline;
+        if (precomposited) v.anchor = false;   // a card has no SDR behind it to anchor to
         return v;
     }
 

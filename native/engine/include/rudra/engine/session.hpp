@@ -57,6 +57,7 @@ public:
     GradeSnapshot grade;              // mode, strength, preserve, regions
     double peak_ev = 0.0;             // the view peak slider: 203 * 2^peak_ev nits
     bool anchor = true, carry_chroma = true;
+    double anchor_knee = 0.9;         // Deliver: the anchor's knee on the SDR's max code (3.3); live on the viewer
     std::string container = "aces";   // "aces" or "linear"
     std::optional<double> wipe;       // off, or 0..1 across the plate
     bool flip_held = false;
@@ -112,6 +113,7 @@ public:
     void set_view_layer(int layer);              // the Layer buttons
     void toggle_changes();                       // the Changes button
     void toggle_anchor();                        // Deliver: anchor to the source exposure
+    void set_anchor_knee(double knee);           // Deliver: the knee, 0.5 to 0.99; not undone (a delivery setting)
     void toggle_carry_chroma();                  // Deliver: carry the source chroma
 
     // A Region EV value: press, move, release (the pointer's x in pixels),

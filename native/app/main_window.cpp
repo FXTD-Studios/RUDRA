@@ -494,15 +494,21 @@ void MainWindow::show_sheet(const QString& title, const std::vector<std::pair<QS
 }
 
 void MainWindow::session_changed(std::uint32_t what) {
-    if (what & Session::Grade) schedule_stats();
+    if (what & (Session::Grade | Session::Delivery)) schedule_stats();   // Delivery: the anchor knee moves the hold (3.3)
     if (what & (Session::Peak | Session::Delivery)) update_pipe();
     if (what & (Session::Peak | Session::View)) update_compare();
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         if (what & Session::Grade) viewer_->set_composite(session_.composite_params());
-        if (what & (Session::Peak | Session::Wipe | Session::View)) {
+        if (what & (Session::Peak | Session::Wipe | Session::View | Session::Delivery)) {
             auto v = viewer_->view();
             v.display_nits = session_.display_nits();
+            // The anchor (3.3): the Deliver setting, live, with the hold the
+            // last measure computed for this knee (a stale hold until the
+            // measure after a knee move lands; the per-pixel part is current).
+            v.anchor = session_.anchor;
+            v.anchor_knee = session_.anchor_knee;
+            v.anchor_hold = measure_ ? measure_->anchor_hold : 1.0;
             v.wipe = session_.wipe ? *session_.wipe : -1.0;
             v.mode = session_.view_layer == 1   ? ViewMode::FalseColour
                      : session_.view_layer == 2 ? ViewMode::Difference
@@ -955,6 +961,12 @@ void MainWindow::sync_ui() {
     preserve_->set_hint(g.preserve ? "do-no-harm" : "raw prediction");
     anchor_->set_on(session_.anchor);
     anchor_->set_hint(session_.anchor ? "conform" : "raw ITM level");
+    {
+        const QSignalBlocker b(anchor_knee_);
+        anchor_knee_->setValue(int(std::lround(session_.anchor_knee * 100.0)));
+    }
+    anchor_knee_val_->setText(QString::number(session_.anchor_knee, 'f', 2));
+    anchor_knee_->setEnabled(session_.anchor);
     carry_chroma_->set_on(session_.carry_chroma);
     carry_chroma_->set_hint(session_.carry_chroma ? "below the clip" : "per-channel");
     const bool aces = session_.container == "aces";
@@ -1103,9 +1115,10 @@ void MainWindow::run_stats() {
     // source change the measure rebuilds it from the params (3.1).
     const NetworkLinearImage* cached = frame->baseline_source == params.source && frame->baseline_calibration == params.calibration
                                            ? frame->baseline.get() : nullptr;
-    stats_worker_ = std::thread([self, frame, params, gen, cached] {
+    const double knee = session_.anchor_knee;
+    stats_worker_ = std::thread([self, frame, params, gen, cached, knee] {
         auto m = std::make_shared<const FrameMeasure>(
-            measure_frame(frame->sdr, frame->fields, frame->scalars, frame->model, params, cached));
+            measure_frame(frame->sdr, frame->fields, frame->scalars, frame->model, params, cached, knee));
         QMetaObject::invokeMethod(qApp, [self, m, gen] {
             if (!self) return;
             self->stats_running_ = false;
@@ -1125,7 +1138,8 @@ void MainWindow::measure_now() {
     const CompositeParams params = session_.composite_params();
     apply_measure(std::make_shared<const FrameMeasure>(measure_frame(
         f.sdr, f.fields, f.scalars, f.model, params,
-        f.baseline_source == params.source && f.baseline_calibration == params.calibration ? f.baseline.get() : nullptr)));
+        f.baseline_source == params.source && f.baseline_calibration == params.calibration ? f.baseline.get() : nullptr,
+        session_.anchor_knee)));
 }
 
 void MainWindow::fill_rows(QWidget* ms, const std::vector<MetricRow>& rows) {
@@ -1159,6 +1173,17 @@ void MainWindow::fill_rows(QWidget* ms, const std::vector<MetricRow>& rows) {
 void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m) {
     measure_ = std::move(m);
     const auto& f = *measure_;
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_ && session_.anchor) {
+        auto v = viewer_->view();
+        if (v.anchor_hold != f.anchor_hold || v.anchor_knee != f.anchor_knee) {
+            v.anchor = true;
+            v.anchor_knee = f.anchor_knee;
+            v.anchor_hold = f.anchor_hold;
+            viewer_->set_view(v);
+        }
+    }
+#endif
     const MetricsText t = metrics_text(f.frame_metrics(), current_frame_ ? std::optional(current_frame_->header)
                                                                           : std::nullopt,
                                        f.coverage.clipped_pct);
@@ -1298,6 +1323,7 @@ MasterRequest MainWindow::master_request() const {
     q.strength = session_.grade.strength;
     for (const auto& r : session_.grade.regions) q.regions.push_back({r.label, r.low_nits, r.high_nits, r.ev});
     q.anchor = session_.anchor;
+    q.anchor_knee = session_.anchor_knee;
     q.carry_chroma = session_.carry_chroma;
     q.container = session_.container;
     q.source_curve = session_.grade.source;

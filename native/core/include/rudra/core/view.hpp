@@ -51,6 +51,17 @@ struct ViewParams {
     bool show_changes = false;       // Image: tint what the model changed against the baseline
     DisplayTarget target;            // SDR unless the swapchain is HDR
     Primaries source = Primaries::Rec709;   // of the composite: the network keeps the input's primaries
+    // Roadmap 3.3: the master's anchor stage (core/master.hpp anchor_to_sdr),
+    // live on the model's picture so what is seen is what the master does.
+    // Per pixel the gain that puts unclipped picture back on the SDR's level;
+    // above the knee (the SDR's max code) it blends to anchor_hold, the
+    // frame's median gain in the knee band, which the measure computes
+    // (anchor_hold()) and the app feeds back. Off: the composite as it is.
+    // Needs the frame's SDR; the baseline side of a wipe is never anchored.
+    bool anchor = false;
+    double anchor_knee = 0.9;
+    double anchor_softness = 0.04;
+    double anchor_hold = 1.0;
 };
 
 // A view with the SDR target, for tools and tests: the positional form of
@@ -82,6 +93,18 @@ inline constexpr float kMapGrey = 0.6f;
 inline constexpr float kMapMix = 0.85f;
 inline constexpr std::array<float, 3> kInventedColour{0.92f, 0.30f, 0.86f};
 inline constexpr std::array<float, 3> kReinterpretedColour{0.25f, 0.78f, 0.86f};
+
+// The anchor's hold gain for a composite (network units) against its SDR:
+// the median of the per-pixel gains in the knee band, or of all gains when
+// the band holds fewer than 64 pixels. What anchor_to_sdr computes inside
+// itself; the live view needs it as a number (ViewParams::anchor_hold).
+double anchor_hold(const NetworkLinearImage& model, const SdrImage& sdr, double knee = 0.9, double softness = 0.04);
+
+// The anchor gain of one pixel, fp32 as the display shader computes it:
+// target the SDR's Rec.2020 luma of its linearised codes (diffuse white 1.0),
+// actual the picture's in network units, max_code the SDR's max channel.
+float anchor_gain_f(float target_luma, float actual_r, float actual_g, float actual_b, float max_code, float knee,
+                    float softness, float hold) noexcept;
 
 // 8-bit RGB, interleaved, image order (row 0 the top).
 struct Rgb8Image {

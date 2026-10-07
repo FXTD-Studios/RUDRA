@@ -10,6 +10,7 @@
 #include <cmath>
 #include <vector>
 
+#include "rudra/core/baseline.hpp"
 #include "rudra/core/composite.hpp"
 #include "rudra/core/fields.hpp"
 #include "rudra/core/gamut.hpp"
@@ -40,8 +41,9 @@ struct ViewUbo {
     float target[4];
     float pic[12];   // three vec4 rows
     float gfx[12];
+    float anchor[4];   // x on, y knee, z softness, w hold (roadmap 3.3)
 };
-static_assert(sizeof(ViewUbo) == 36 * sizeof(float));
+static_assert(sizeof(ViewUbo) == 40 * sizeof(float));
 
 // The Reduce block of shaders/reduce.frag.
 struct ReduceUbo {
@@ -98,6 +100,10 @@ inline ViewUbo view_ubo(const ViewParams& params, int width) {
     u.target[2] = float(params.target.unit_nits);
     rows_of(rgb_to_rgb_matrix(params.source, params.target.primaries), u.pic);
     rows_of(rgb_to_rgb_matrix(Primaries::Rec709, params.target.primaries), u.gfx);
+    u.anchor[0] = params.anchor ? 1.0f : 0.0f;
+    u.anchor[1] = float(params.anchor_knee);
+    u.anchor[2] = float(params.anchor_softness);
+    u.anchor[3] = float(params.anchor_hold);
     return u;
 }
 
@@ -136,6 +142,20 @@ inline std::vector<float> rgba_of(const PlanarBuffer& rgb) {
     std::vector<float> out(n * 4, 1.0f);
     for (std::size_t i = 0; i < n; ++i)
         for (int c = 0; c < 3; ++c) out[i * 4 + std::size_t(c)] = rgb.plane(c)[i];
+    return out;
+}
+
+// The model target as the composite shader writes it: rgb, alpha the SDR's
+// Rec.2020 luma of its linearised codes (the anchor's target, roadmap 3.3);
+// alpha 1 without an SDR.
+inline std::vector<float> model_rgba(const PlanarBuffer& rgb, const SdrImage* sdr) {
+    std::vector<float> out = rgba_of(rgb);
+    if (!sdr) return out;
+    const PlanarBuffer& s = sdr->buffer();
+    const std::size_t n = rgb.plane_size();
+    for (std::size_t i = 0; i < n; ++i)
+        out[i * 4 + 3] = 0.2627f * srgb_to_linear(s.plane(0)[i]) + 0.6780f * srgb_to_linear(s.plane(1)[i]) +
+                         0.0593f * srgb_to_linear(s.plane(2)[i]);
     return out;
 }
 
