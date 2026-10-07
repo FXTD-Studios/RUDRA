@@ -21,7 +21,11 @@ Set-Location -LiteralPath $Repo
 $Stamp = Get-Date -Format "yyyy-MM-dd_HHmm"
 $Report = Join-Path $Repo "reports\native_tests_$Stamp.txt"
 function Say([string]$m) { Write-Host "`n== $m" -ForegroundColor Cyan }
-function Fail([string]$m) { Write-Host "`nFAILED: $m" -ForegroundColor Red; exit 1 }
+$log = @()
+function Fail([string]$m) {
+    if ($log.Count) { $log | Set-Content -Path $Report -Encoding UTF8; Write-Host "report: $Report" }
+    Write-Host "`nFAILED: $m" -ForegroundColor Red; exit 1
+}
 
 if (-not (Test-Path (Join-Path $Build "CMakeCache.txt"))) { Fail "$Build is not configured; run scripts\NATIVE_GATE_B.ps1 first" }
 $cache = Get-Content (Join-Path $Build "CMakeCache.txt") -Raw
@@ -47,7 +51,7 @@ $out = & $Core "--gtest_filter=$Filter" 2>&1 | ForEach-Object { "$_" }
 $out | Out-Host; $log += "--- rudra_tests"; $log += $out
 if ($LASTEXITCODE -ne 0) { $failed = $true }
 if (-not $NoApp) {
-    $App = Join-Path $Build "app\tests\Release\rudra_app_tests.exe"
+    $App = Join-Path $Build "app\Release\rudra_app_tests.exe"   # add_executable in app/CMakeLists.txt, so app\, not app\tests\
     if (-not (Test-Path $App)) { Fail "not built: $App" }
     Say "rudra_app_tests (offscreen)"
     $env:QT_QPA_PLATFORM = "offscreen"
