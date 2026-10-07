@@ -1,6 +1,6 @@
 {
  "oracle": "rudra/delivery/video.py encode_sequence via rudra deliver",
- "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+ "ffmpeg": "ffmpeg version 2025-01-05-git-19c95ecbff-full_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers",
  "codes": [
   {
    "target": "hdr10",
@@ -185,6 +185,8 @@
     "smpte2084",
     "-color_range",
     "tv",
+    "-movflags",
+    "+write_colr",
     "-x265-params",
     "repeat-headers=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:hdr10-opt=1:master-display=G(8500,39850)B(6550,2300)R(35400,14600)WP(15635,16450)L(10000000,50):max-cll=1000,924",
     "OUTPUT.mp4"
@@ -209,10 +211,11 @@
    "report_json": "{\n  \"file\": \"OUTPUT.mp4\",\n  \"frames\": 3,\n  \"target\": \"hdr10\",\n  \"fps\": 23.976,\n  \"peak_nits\": 1000.0,\n  \"maxcll\": 1000,\n  \"maxfall\": 924,\n  \"colour_tags\": {\n    \"color_primaries\": \"bt2020\",\n    \"color_transfer\": \"smpte2084\",\n    \"color_space\": \"bt2020nc\"\n  },\n  \"prores_frame_tags\": null,\n  \"tags_verified\": true,\n  \"note\": \"HEVC Main10 PQ with static HDR10 metadata. The delivery format.\"\n}",
    "container_colr": {
     "subtype": "nclx",
-    "color_primaries": "bt2020",
-    "color_transfer": "smpte2084",
+    "color_primaries": "unspecified",
+    "color_transfer": "unspecified",
     "color_space": "bt2020nc"
    },
+   "note": "",
    "write_colr": true,
    "prores_metadata": true
   },
@@ -253,6 +256,8 @@
     "arib-std-b67",
     "-color_range",
     "tv",
+    "-movflags",
+    "+write_colr",
     "-x265-params",
     "repeat-headers=1:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc:range=limited",
     "OUTPUT.mp4"
@@ -277,10 +282,11 @@
    "report_json": "{\n  \"file\": \"OUTPUT.mp4\",\n  \"frames\": 3,\n  \"target\": \"hlg\",\n  \"fps\": 23.976,\n  \"peak_nits\": 1000.0,\n  \"maxcll\": 1000,\n  \"maxfall\": 924,\n  \"colour_tags\": {\n    \"color_primaries\": \"bt2020\",\n    \"color_transfer\": \"arib-std-b67\",\n    \"color_space\": \"bt2020nc\"\n  },\n  \"prores_frame_tags\": null,\n  \"tags_verified\": true,\n  \"note\": \"HEVC Main10 hybrid log-gamma, for broadcast paths that refuse PQ.\"\n}",
    "container_colr": {
     "subtype": "nclx",
-    "color_primaries": "bt2020",
-    "color_transfer": "arib-std-b67",
+    "color_primaries": "unspecified",
+    "color_transfer": "unspecified",
     "color_space": "bt2020nc"
    },
+   "note": "",
    "write_colr": true,
    "prores_metadata": true
   },
@@ -336,8 +342,8 @@
     "maxcll": 1000,
     "maxfall": 924,
     "colour_tags": {
-     "color_primaries": "bt2020",
-     "color_transfer": "smpte2084",
+     "color_primaries": "unknown",
+     "color_transfer": "unknown",
      "color_space": "bt2020nc"
     },
     "prores_frame_tags": {
@@ -348,13 +354,14 @@
     "tags_verified": true,
     "note": "10-bit ProRes 422 HQ, Rec.2020 PQ. The review format."
    },
-   "report_json": "{\n  \"file\": \"OUTPUT.mov\",\n  \"frames\": 3,\n  \"target\": \"prores422hq\",\n  \"fps\": 23.976,\n  \"peak_nits\": 1000.0,\n  \"maxcll\": 1000,\n  \"maxfall\": 924,\n  \"colour_tags\": {\n    \"color_primaries\": \"bt2020\",\n    \"color_transfer\": \"smpte2084\",\n    \"color_space\": \"bt2020nc\"\n  },\n  \"prores_frame_tags\": {\n    \"color_primaries\": \"bt2020\",\n    \"color_transfer\": \"smpte2084\",\n    \"color_space\": \"bt2020nc\"\n  },\n  \"tags_verified\": true,\n  \"note\": \"10-bit ProRes 422 HQ, Rec.2020 PQ. The review format.\"\n}",
+   "report_json": "{\n  \"file\": \"OUTPUT.mov\",\n  \"frames\": 3,\n  \"target\": \"prores422hq\",\n  \"fps\": 23.976,\n  \"peak_nits\": 1000.0,\n  \"maxcll\": 1000,\n  \"maxfall\": 924,\n  \"colour_tags\": {\n    \"color_primaries\": \"unknown\",\n    \"color_transfer\": \"unknown\",\n    \"color_space\": \"bt2020nc\"\n  },\n  \"prores_frame_tags\": {\n    \"color_primaries\": \"bt2020\",\n    \"color_transfer\": \"smpte2084\",\n    \"color_space\": \"bt2020nc\"\n  },\n  \"tags_verified\": true,\n  \"note\": \"10-bit ProRes 422 HQ, Rec.2020 PQ. The review format.\"\n}",
    "container_colr": {
     "subtype": "nclc",
-    "color_primaries": "bt2020",
-    "color_transfer": "smpte2084",
+    "color_primaries": "unspecified",
+    "color_transfer": "unspecified",
     "color_space": "bt2020nc"
    },
+   "note": "note: shot.mov is correctly tagged in its ProRes frame headers, but this ffmpeg writes an incomplete colr atom, so ffprobe reports {'color_primaries': 'unknown', 'color_transfer': 'unknown', 'color_space': 'bt2020nc'}. Tools that read the frame headers (Resolve, FCP) are unaffected; anything reading only the container may assume Rec.709.\n",
    "write_colr": true,
    "prores_metadata": true
   },
@@ -410,8 +417,8 @@
     "maxcll": 1000,
     "maxfall": 924,
     "colour_tags": {
-     "color_primaries": "bt2020",
-     "color_transfer": "smpte2084",
+     "color_primaries": "unknown",
+     "color_transfer": "unknown",
      "color_space": "bt2020nc"
     },
     "prores_frame_tags": {
@@ -422,13 +429,14 @@
     "tags_verified": true,
     "note": "12-bit ProRes 4444, Rec.2020 PQ. The finishing format."
    },
-   "report_json": "{\n  \"file\": \"OUTPUT.mov\",\n  \"frames\": 3,\n  \"target\": \"prores4444\",\n  \"fps\": 23.976,\n  \"peak_nits\": 1000.0,\n  \"maxcll\": 1000,\n  \"maxfall\": 924,\n  \"colour_tags\": {\n    \"color_primaries\": \"bt2020\",\n    \"color_transfer\": \"smpte2084\",\n    \"color_space\": \"bt2020nc\"\n  },\n  \"prores_frame_tags\": {\n    \"color_primaries\": \"bt2020\",\n    \"color_transfer\": \"smpte2084\",\n    \"color_space\": \"bt2020nc\"\n  },\n  \"tags_verified\": true,\n  \"note\": \"12-bit ProRes 4444, Rec.2020 PQ. The finishing format.\"\n}",
+   "report_json": "{\n  \"file\": \"OUTPUT.mov\",\n  \"frames\": 3,\n  \"target\": \"prores4444\",\n  \"fps\": 23.976,\n  \"peak_nits\": 1000.0,\n  \"maxcll\": 1000,\n  \"maxfall\": 924,\n  \"colour_tags\": {\n    \"color_primaries\": \"unknown\",\n    \"color_transfer\": \"unknown\",\n    \"color_space\": \"bt2020nc\"\n  },\n  \"prores_frame_tags\": {\n    \"color_primaries\": \"bt2020\",\n    \"color_transfer\": \"smpte2084\",\n    \"color_space\": \"bt2020nc\"\n  },\n  \"tags_verified\": true,\n  \"note\": \"12-bit ProRes 4444, Rec.2020 PQ. The finishing format.\"\n}",
    "container_colr": {
     "subtype": "nclc",
-    "color_primaries": "bt2020",
-    "color_transfer": "smpte2084",
+    "color_primaries": "unspecified",
+    "color_transfer": "unspecified",
     "color_space": "bt2020nc"
    },
+   "note": "note: shot.mov is correctly tagged in its ProRes frame headers, but this ffmpeg writes an incomplete colr atom, so ffprobe reports {'color_primaries': 'unknown', 'color_transfer': 'unknown', 'color_space': 'bt2020nc'}. Tools that read the frame headers (Resolve, FCP) are unaffected; anything reading only the container may assume Rec.709.\n",
    "write_colr": true,
    "prores_metadata": true
   }

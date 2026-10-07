@@ -441,12 +441,14 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
             "-color_trc", TRANSFER_NAME[spec.transfer],
             "-color_range", "tv"]
 
-    if spec.suffix == ".mov":
-        # MOV carries the colour description in a 'colr' atom. Some builds
+    if spec.suffix in (".mov", ".mp4"):
+        # MOV and MP4 carry the colour description in a 'colr' atom. Some builds
         # write it whenever the colour info is set and some only when asked,
-        # and a ProRes master without it is read as Rec.709 SDR by everything.
-        # The flag is documented as experimental, so its presence is checked
-        # rather than assumed: an option ffmpeg does not know aborts the run.
+        # and a master without it is read as Rec.709 SDR by everything. ffmpeg
+        # 6.1 wrote it for MP4 unasked; the 2025 gyan builds do not (found 7 Oct
+        # 2026, native Phase 4 on Windows), so the flag goes on both containers.
+        # It is documented as experimental, so its presence is checked rather
+        # than assumed: an option ffmpeg does not know aborts the run.
         if _ffmpeg_supports("muxer", "mov", "write_colr"):
             args += ["-movflags", "+write_colr"]
 

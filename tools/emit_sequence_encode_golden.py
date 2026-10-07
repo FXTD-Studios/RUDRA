@@ -78,8 +78,9 @@ def main() -> int:
         shutil.rmtree(work, ignore_errors=True)
         video_mod.subprocess.Popen = popen
         out = io.StringIO()
+        err = io.StringIO()   # the note the oracle prints when this ffmpeg writes an incomplete colr atom
         try:
-            with contextlib.redirect_stdout(out):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                 cli_mod.main(["deliver", str(OUT / "frames"), "--output", str(work / "shot"), "--target", target,
                               "--fps", "23.976", "--peak-nits", "1000", "--source-space", "rec709"])
         finally:
@@ -91,6 +92,8 @@ def main() -> int:
         runs.append({"target": target, "fps": 23.976, "source_space": "rec709", "command": command,
                      "report": report, "report_json": json.dumps(report, indent=2),
                      "container_colr": video_mod.container_colr(produced),
+                     # "" when the oracle printed nothing; the native encode must then say nothing too.
+                     "note": "".join(line for line in err.getvalue().splitlines(True) if line.startswith("note:")),
                      "write_colr": video_mod._ffmpeg_supports("muxer", "mov", "write_colr"),
                      "prores_metadata": video_mod._ffmpeg_supports("bsf", "prores_metadata", "color_primaries")})
         shutil.rmtree(work)
