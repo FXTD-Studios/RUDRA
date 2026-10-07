@@ -9,7 +9,9 @@
 #include "rudra/core/gamut.hpp"
 #include "rudra/core/hdr10.hpp"
 #include "rudra/deliver/exr.hpp"
+#ifdef RUDRA_HAVE_STILL_DECODE
 #include "rudra/media/still.hpp"
+#endif
 
 namespace rudra {
 namespace {
@@ -56,6 +58,9 @@ Result<ReferenceImage> read_reference(const std::filesystem::path& path) {
         out.note = std::string("EXR, ") + how;
         return out;
     }
+#ifndef RUDRA_HAVE_STILL_DECODE
+    return make_error(ErrorCode::Unsupported, "This build reads EXR references only (no still decoder).", path.string());
+#else
     auto still = decode_sdr_file(path);
     if (!still) return still.error();
     if (still->bits < 10)
@@ -71,6 +76,7 @@ Result<ReferenceImage> read_reference(const std::filesystem::path& path) {
     out.linear709 = convert_primaries(nits2020, Primaries::Rec2020, Primaries::Rec709);
     out.note = (ext == ".tif" || ext == ".tiff") ? "TIFF 16-bit PQ, Rec.2020" : "PNG 16-bit PQ, Rec.2020";
     return out;
+#endif
 }
 
 }  // namespace rudra
