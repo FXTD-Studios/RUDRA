@@ -76,6 +76,13 @@ const std::vector<ActionSpec> kActions = {
     {"aspect-16:9", "16:9", "", "aspect:16:9", O::Native, E::Always, ""},
     {"aspect-4:3", "4:3", "", "aspect:4:3", O::Native, E::Always, ""},
     {"aspect-1:1", "1:1", "", "aspect:1:1", O::Native, E::Always, ""},
+    // Roadmap 3.1: the Source picker. Ids are core/source_curve.hpp's.
+    {"source-unknown", "Source: unknown (ACES inverse)", "", "source:unknown", O::Native, E::Always, ""},
+    {"source-aces", "Source: ACES", "", "source:aces", O::Native, E::Always, ""},
+    {"source-hable", "Source: filmic (Hable)", "", "source:hable", O::Native, E::Always, ""},
+    {"source-agx", "Source: AgX", "", "source:agx", O::Native, E::Always, ""},
+    {"source-camera_log", "Source: camera log", "", "source:camera_log", O::Native, E::Always, ""},
+    {"source-clip", "Source: Rec.709, plain clip", "", "source:clip", O::Native, E::Always, ""},
 };
 
 const std::vector<MenuSpec> kMenus = {
@@ -83,7 +90,8 @@ const std::vector<MenuSpec> kMenus = {
     {"Edit", {"undo", "redo", "-", "reset-recon", "reset-regions"}},
     {"Clip", {"first", "prev", "next", "last", "-", "play"}},
     {"Reconstruct",
-     {"mode-all", "mode-highlights", "mode-shadows", "mode-off", "-", "preserve", "-", "strength-down", "strength-up"}},
+     {">Source", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
+      "mode-all", "mode-highlights", "mode-shadows", "mode-off", "-", "preserve", "-", "strength-down", "strength-up"}},
     {"Measure", {"copy-metrics", "copy-scopes", "-", "remeasure"}},
     {"Deliver", {"master", "-", "container-aces", "container-linear", "-", "copy-delivery"}},
     {"View",

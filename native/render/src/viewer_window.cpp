@@ -710,7 +710,7 @@ ViewerWindow::~ViewerWindow() {
 }
 
 void ViewerWindow::set_frame(ViewerFrame frame) {
-    d_->baseline = corrected_baseline(frame.sdr, frame.model.corpus_ev, frame.scalars.curve_params);
+    d_->baseline = corrected_baseline(frame.sdr, frame.model.corpus_ev, baseline_curve_params(frame.scalars, d_->composite));
     d_->frame = std::move(frame);
     d_->precomposited = false;
     d_->has_frame = true;
@@ -733,7 +733,16 @@ void ViewerWindow::clear_frame() {
 }
 
 void ViewerWindow::set_composite(const CompositeParams& params) {
+    // The source curve (3.1) is part of the baseline, so the baseline texture
+    // the Baseline view and the Changes tint read follows it; the composite
+    // shader recomputes its own from the uniforms either way.
+    const bool rebase = params.source != d_->composite.source && d_->has_frame && !d_->precomposited;
     d_->composite = params;
+    if (rebase) {
+        d_->baseline = corrected_baseline(d_->frame.sdr, d_->frame.model.corpus_ev,
+                                          baseline_curve_params(d_->frame.scalars, params));
+        d_->upload_dirty = true;
+    }
     d_->composite_dirty = true;
     requestUpdate();
 }

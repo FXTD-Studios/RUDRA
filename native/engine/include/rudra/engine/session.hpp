@@ -33,6 +33,10 @@ struct GradeSnapshot {
     double strength = 1.0;
     bool preserve = true;
     std::vector<RegionState> regions;
+    // Roadmap 3.1: the curve the artist says made the SDR (source_curve.hpp
+    // ids). Undone with the grade; "unknown" is the ACES inverse and is left
+    // out of params() so every golden before 3.1 reads the same.
+    std::string source = "unknown";
 };
 
 // The page's defaultRegions(): highlights 400 to 2 000, speculars 2 000 to
@@ -63,6 +67,8 @@ public:
     std::string params_json() const;
     // The composite the viewer draws with these settings.
     CompositeParams composite_params() const;
+    // The source curve of the moment (3.1), the grade's; as a core enum.
+    SourceCurve source_curve() const;
 
     std::size_t undo_depth() const { return undo_.size(); }
     std::size_t redo_depth() const { return redo_.size(); }
@@ -89,6 +95,7 @@ public:
     void undo();
     void redo();
     void set_container(std::string_view kind);
+    void set_source(std::string_view id);          // the Source picker (3.1): no-op when unchanged or unknown id
     void toggle_wipe();                          // ACTIONS.wipe
     void set_wipe(double x);                     // a drag on the plate, clamped 0..1
     void set_show(std::string_view source);      // the Compare buttons: also ends a wipe

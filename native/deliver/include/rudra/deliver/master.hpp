@@ -38,6 +38,10 @@ struct MasterRequest {
     bool settle_grain = true;               // at anchor_knee
     std::string source_space = "rec709";
     std::string container = "aces";         // aces or linear
+    // Roadmap 3.1: the curve that made the SDR (core/source_curve.hpp ids).
+    // "unknown" is the ACES inverse, and is left out of the JSON and the
+    // sidecar so every master before 3.1 reads the same.
+    std::string source_curve = "unknown";
 };
 
 struct MasterResult {

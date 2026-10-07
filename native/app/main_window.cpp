@@ -43,6 +43,7 @@
 #include "model_dialogs.hpp"
 #include "region_editor.hpp"
 #include "scope_widgets.hpp"
+#include "source_panel.hpp"
 #include "widgets.hpp"
 
 #include <algorithm>
@@ -375,6 +376,8 @@ void MainWindow::build_menus() {
                 {"act:reset-regions", "grade"},  {"act:container-aces", "deliver"}, {"act:container-linear", "deliver"},
                 {"act:copy-delivery", "deliver"}, {"act:mode-all", "rec"},         {"act:mode-highlights", "rec"},
                 {"act:mode-shadows", "rec"},      {"act:mode-off", "rec"},         {"act:preserve", "rec"},
+                {"act:source-unknown", "rec"},    {"act:source-aces", "rec"},     {"act:source-hable", "rec"},
+                {"act:source-agx", "rec"},        {"act:source-camera_log", "rec"}, {"act:source-clip", "rec"},
                 {"act:strength-up", "rec"},       {"act:strength-down", "rec"},    {"act:reset-recon", "rec"}};
             const auto it = tab_for.find(a->objectName());
             if (it != tab_for.end()) show_tab(it->second);
@@ -414,6 +417,8 @@ void MainWindow::sync_checks() {
     set("mode-shadows", grade.mode == "shadows");
     set("mode-off", grade.mode == "off");
     set("preserve", grade.preserve);
+    for (SourceCurve c : all_source_curves())
+        set("source-" + std::string(source_curve_id(c)), grade.source == source_curve_id(c));
     set("container-aces", session_.container == "aces");
     set("container-linear", session_.container == "linear");
     set("wipe", session_.wipe.has_value());
@@ -936,6 +941,7 @@ static QString timecode(int frame, double fps) {
 void MainWindow::sync_ui() {
     const auto& g = session_.grade;
     mode_seg_->set_on(QString::fromStdString(g.mode));
+    source_panel_->sync(session_.source_curve(), manifest_ ? manifest_->corpus_ev : kLegacyCorpusEv);
     {
         const QSignalBlocker b1(strength_), b2(peak_);
         strength_->setValue(int(std::lround(g.strength * 20.0)));
@@ -1053,8 +1059,9 @@ void MainWindow::clear_scopes() {
 void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars, ModelConstants model,
                                FrameHeader header) {
     auto cur = std::make_shared<Current>();
+    cur->baseline_source = session_.source_curve();
     cur->baseline = std::make_shared<const NetworkLinearImage>(
-        corrected_baseline(sdr, model.corpus_ev, scalars.curve_params));
+        corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, session_.composite_params())));
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         viewer_->set_frame({sdr, fields, scalars, model});
@@ -1089,9 +1096,12 @@ void MainWindow::run_stats() {
     // Joined, not detached: a detached measurement outlived its window and, at
     // exit, the libraries it uses (a destroyed mutex aborts on macOS).
     if (stats_worker_.joinable()) stats_worker_.join();   // done: stats_running_ was cleared after it posted
-    stats_worker_ = std::thread([self, frame, params, gen] {
+    // The cached baseline is the one of the source it was built with; after a
+    // source change the measure rebuilds it from the params (3.1).
+    const NetworkLinearImage* cached = frame->baseline_source == params.source ? frame->baseline.get() : nullptr;
+    stats_worker_ = std::thread([self, frame, params, gen, cached] {
         auto m = std::make_shared<const FrameMeasure>(
-            measure_frame(frame->sdr, frame->fields, frame->scalars, frame->model, params, frame->baseline.get()));
+            measure_frame(frame->sdr, frame->fields, frame->scalars, frame->model, params, cached));
         QMetaObject::invokeMethod(qApp, [self, m, gen] {
             if (!self) return;
             self->stats_running_ = false;
@@ -1108,8 +1118,9 @@ void MainWindow::measure_now() {
     if (!current_frame_) return;
     const auto& f = *current_frame_;
     ++stats_gen_;   // anything in flight is now stale
-    apply_measure(std::make_shared<const FrameMeasure>(
-        measure_frame(f.sdr, f.fields, f.scalars, f.model, session_.composite_params(), f.baseline.get())));
+    const CompositeParams params = session_.composite_params();
+    apply_measure(std::make_shared<const FrameMeasure>(measure_frame(
+        f.sdr, f.fields, f.scalars, f.model, params, f.baseline_source == params.source ? f.baseline.get() : nullptr)));
 }
 
 void MainWindow::fill_rows(QWidget* ms, const std::vector<MetricRow>& rows) {
@@ -1284,6 +1295,7 @@ MasterRequest MainWindow::master_request() const {
     q.anchor = session_.anchor;
     q.carry_chroma = session_.carry_chroma;
     q.container = session_.container;
+    q.source_curve = session_.grade.source;
     return q;
 }
 

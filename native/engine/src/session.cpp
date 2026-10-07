@@ -75,7 +75,12 @@ std::string Session::params_json() const {
         o += ",\"low_nits\":" + js_number(r.low_nits) + ",\"high_nits\":" + js_number(r.high_nits) +
              ",\"ev\":" + js_number(r.ev) + "}";
     }
-    o += "],\"region_softness_stops\":1,\"tile_size\":0,\"tile_overlap\":64,\"max_side\":1600}";
+    o += "],\"region_softness_stops\":1,\"tile_size\":0,\"tile_overlap\":64,\"max_side\":1600";
+    if (grade.source != "unknown") {
+        o += ",\"source_curve\":";
+        append_string(o, grade.source);
+    }
+    o += "}";
     return o;
 }
 
@@ -86,7 +91,12 @@ CompositeParams Session::composite_params() const {
     p.preserve_outside = grade.preserve;
     for (const auto& r : grade.regions) p.regions.push_back({r.low_nits, r.high_nits, r.ev});
     p.region_softness_stops = 1.0;
+    p.source = source_curve();
     return p;
+}
+
+SourceCurve Session::source_curve() const {
+    return parse_source_curve(grade.source).value_or(SourceCurve::Unknown);
 }
 
 void Session::notify(std::uint32_t what) const {
@@ -162,6 +172,13 @@ void Session::reset_recon() {
 void Session::reset_regions() {
     push_undo();
     grade.regions = default_regions();
+    notify(Grade);
+}
+
+void Session::set_source(std::string_view id) {
+    if (grade.source == id || !parse_source_curve(id)) return;
+    push_undo();
+    grade.source = std::string(id);
     notify(Grade);
 }
 
@@ -253,6 +270,7 @@ bool Session::owns(std::string_view a) {
                                             "strength-down", "strength-up", "reset-recon", "reset-regions", "undo",
                                             "redo", "container-aces", "container-linear", "wipe",
                                             "rail-left", "rail-right", "scopes"};
+    if (a.size() > 7 && a.substr(0, 7) == "source-" && parse_source_curve(a.substr(7))) return true;
     return std::find(std::begin(mine), std::end(mine), a) != std::end(mine);
 }
 
@@ -271,6 +289,7 @@ bool Session::run(std::string_view a) {
     else if (a == "container-aces") set_container("aces");
     else if (a == "container-linear") set_container("linear");
     else if (a == "wipe") toggle_wipe();
+    else if (a.size() > 7 && a.substr(0, 7) == "source-" && parse_source_curve(a.substr(7))) set_source(a.substr(7));
     else if (a == "rail-left") {
         rail_left = !rail_left;
         notify(Window);
