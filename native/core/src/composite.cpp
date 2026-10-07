@@ -22,8 +22,23 @@ std::vector<RegionBand> default_region_bands() {
     return {{400.0, 2000.0, 0.0}, {2000.0, 8000.0, 0.0}, {0.05, 12.0, 0.0}};
 }
 
-std::vector<float> baseline_curve_params(const FrameScalars& scalars, const CompositeParams& params) {
-    return effective_curve_params(scalars.curve_params, params.source);
+std::vector<float> baseline_curve_params(const FrameScalars& scalars, const CompositeParams& params, float corpus_ev) {
+    std::vector<float> out = effective_curve_params(scalars.curve_params, params.source);
+    if (params.calibration.empty() || !calibration_is_monotone(params.calibration, params.source, corpus_ev)) return out;
+    const std::vector<float> cal = calibration_params(params.calibration, params.source, corpus_ev);
+    if (cal.empty()) return out;
+    if (out.size() < 3) return cal;   // nothing else: the calibration alone
+    if (out.size() == cal.size()) {
+        for (std::size_t i = 1; i < out.size(); ++i) out[i] += cal[i];
+        return out;
+    }
+    // A CurveHead with its own knot count and no source: resample it onto the
+    // calibration's codes and add.
+    std::vector<float> merged(cal);
+    merged[0] += out[0];
+    for (int i = 0; i < kSourceCurveKnots; ++i)
+        merged[1 + i] += curve_correction_log2(float(i) / (kSourceCurveKnots - 1), out) - out[0];
+    return merged;
 }
 
 bool any_graded(std::span<const RegionBand> bands) noexcept {
@@ -64,7 +79,7 @@ NetworkLinearImage composite(const SdrImage& sdr, const Fields& fields, const Fr
     PlanarBuffer clamped = sdr.buffer();
     for (float& v : clamped.span()) v = std::clamp(v, 0.0f, 1.0f);
     const SdrImage sdr_c(std::move(clamped));
-    const NetworkLinearImage base = corrected_baseline(sdr_c, model.corpus_ev, baseline_curve_params(scalars, params));
+    const NetworkLinearImage base = corrected_baseline(sdr_c, model.corpus_ev, baseline_curve_params(scalars, params, model.corpus_ev));
 
     const float log_scale = model.log_scale;
     const float log_ceiling = std::log1p(model.max_hdr * log_scale);

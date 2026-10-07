@@ -37,6 +37,10 @@ struct GradeSnapshot {
     // ids). Undone with the grade; "unknown" is the ACES inverse and is left
     // out of params() so every golden before 3.1 reads the same.
     std::string source = "unknown";
+    // Roadmap 3.2: the artist's anchors over that curve, by slot (black, grey,
+    // highlight); a slot with nits 0 is empty. Undone with the grade; left out
+    // of params() when every slot is empty.
+    std::vector<CalibrationPoint> calibration;
 };
 
 // The page's defaultRegions(): highlights 400 to 2 000, speculars 2 000 to
@@ -96,6 +100,12 @@ public:
     void redo();
     void set_container(std::string_view kind);
     void set_source(std::string_view id);          // the Source picker (3.1): no-op when unchanged or unknown id
+    // The Calibrate rows (3.2): slot 0..2; code -1 keeps the slot's code,
+    // nits <= 0 empties the slot. No-op when nothing changes.
+    void set_calibration(int slot, int code, double nits);
+    void clear_calibration();
+    // The usable anchors (nits > 0), what the composite takes.
+    std::vector<CalibrationPoint> calibration_points() const;
     void toggle_wipe();                          // ACTIONS.wipe
     void set_wipe(double x);                     // a drag on the plate, clamped 0..1
     void set_show(std::string_view source);      // the Compare buttons: also ends a wipe

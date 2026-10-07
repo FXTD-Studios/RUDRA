@@ -571,9 +571,19 @@ is loaded, sits behind the same picker.
   Reconstruct > Source; `--params '{"source_curve":"hable"}'` on the CLI.
   Tests: `tests/test_source_curve.cpp`; `rudra-gpu-parity` gained two source
   cases. Not yet on video delivery, which takes the source per shot in 5.3
-- [ ] 3.2 Three-click calibration: the artist clicks black, 18% grey and a known
-  highlight, RUDRA fits the shot's inverse curve to them (monotone, few knots)
-  and draws the fit on the curve panel
+- [x] 3.2 Three-click calibration: Calibrate rows in the Source card (Black,
+  18% grey, Highlight). Arm a row, click the frame (the viewer's pick mode
+  reads a 5×5 mean of the SDR codes there), type the nits it should be; one,
+  two or three anchors all fit. The fit is a log2 correction over the picked
+  curve's inverse, linear in code between anchors and flat outside, exact at
+  the anchors (`core/calibration.cpp`), drawn in green over the picker's curve
+  with a dot per anchor and the delta against the picker in stops per row; a
+  set whose curve would not be monotone is refused and the row says so. Same
+  256-knot vector as 3.1, summed with the picker's and the model's head in
+  `baseline_curve_params`, so nothing new on the GPU, in master or in QC.
+  Session state undone with the grade, `calibration` in `params()`, the master
+  request and the sidecar only when set. Tests: `Calibration.*` in
+  `tests/test_source_curve.cpp`; `rudra-gpu-parity` gained a calibrated case
 - [ ] 3.3 Live peak, knee and region EV at 4K on the HDR viewer, with qualifier
   and painted masks (`native/app/region_editor.cpp`), every control under one
   frame of latency

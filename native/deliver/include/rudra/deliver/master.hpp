@@ -42,6 +42,9 @@ struct MasterRequest {
     // "unknown" is the ACES inverse, and is left out of the JSON and the
     // sidecar so every master before 3.1 reads the same.
     std::string source_curve = "unknown";
+    // Roadmap 3.2: the anchors over it; empty for none, left out of the JSON
+    // and the sidecar then.
+    std::vector<CalibrationPoint> calibration;
 };
 
 struct MasterResult {

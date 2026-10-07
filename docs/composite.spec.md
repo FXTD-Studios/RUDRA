@@ -51,6 +51,13 @@ Per pixel, per channel `k`, in float32:
    `effective_curve_params`). The forward curves are pipeline/sdr_render.py's;
    the inverses are numeric. `unknown` leaves `c` as the model's, bit for bit.
    The masks and the residual do not depend on it.
+   **Calibration (roadmap 3.2, a user control).** Up to three anchors
+   `(code, nits)` add a second log2 correction over the source curve's
+   inverse at the model's exposure: `log2(nits / source_nits(code))` at each
+   anchor, linear in code between anchors, flat outside, summed into `c`
+   (`calibration.cpp`, `baseline_curve_params`). Applied only when the
+   calibrated curve is monotone over the codes; otherwise ignored and the
+   panel says so.
 2. Luma of the SDR: `y = 0.2126 s_0 + 0.7152 s_1 + 0.0722 s_2` (Rec.709).
 3. Priors: `hp = sigmoid(24 (y - 0.82))`, `sp = sigmoid(24 (0.10 - y)) * w_s`.
 4. Gate by recovery mode: all `max(hp, sp)`, highlights `hp`, shadows `sp`,

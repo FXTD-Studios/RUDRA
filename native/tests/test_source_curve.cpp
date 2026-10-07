@@ -101,11 +101,11 @@ TEST(SourceCurve, CompositeUnknownIsBitIdentical) {
     FrameScalars scalars;
     CompositeParams a, b;
     b.source = SourceCurve::Unknown;
-    EXPECT_EQ(baseline_curve_params(scalars, a), scalars.curve_params);
-    EXPECT_EQ(baseline_curve_params(scalars, b), scalars.curve_params);
+    EXPECT_EQ(baseline_curve_params(scalars, a, -1.0f), scalars.curve_params);
+    EXPECT_EQ(baseline_curve_params(scalars, b, -1.0f), scalars.curve_params);
     CompositeParams h;
     h.source = SourceCurve::Hable;
-    EXPECT_EQ(baseline_curve_params(scalars, h).size(), 1u + kSourceCurveKnots);
+    EXPECT_EQ(baseline_curve_params(scalars, h, -1.0f).size(), 1u + kSourceCurveKnots);
 }
 
 TEST(SourceCurve, SessionOwnsTheChoice) {
@@ -129,4 +129,109 @@ TEST(SourceCurve, SessionOwnsTheChoice) {
     EXPECT_EQ(s.params_json(), before);
     s.redo();
     EXPECT_EQ(s.grade.source, "hable");
+}
+
+// ---- Roadmap 3.2: three-click calibration --------------------------------
+
+TEST(Calibration, ExactAtTheAnchorsFlatOutsideLinearBetween) {
+    const float ev = -1.0f;
+    const std::vector<CalibrationPoint> pts = {{8, 0.3}, {118, 18.0}, {235, 400.0}};
+    for (SourceCurve s : {SourceCurve::Unknown, SourceCurve::Hable}) {
+        const auto p = calibration_params(pts, s, ev);
+        ASSERT_EQ(p.size(), 1u + kSourceCurveKnots);
+        EXPECT_EQ(p[0], 0.0f);
+        for (const auto& a : pts)
+            EXPECT_NEAR(source_code_nits(s, a.code, ev) * std::exp2(double(p[1 + a.code])), a.nits, a.nits * 1e-5)
+                << source_curve_id(s) << " code " << a.code;
+        // Flat outside the outer anchors, linear in log2 between.
+        EXPECT_FLOAT_EQ(p[1 + 0], p[1 + 8]);
+        EXPECT_FLOAT_EQ(p[1 + 255], p[1 + 235]);
+        const float mid = (p[1 + 8] + p[1 + 118]) * 0.5f;
+        EXPECT_NEAR(p[1 + 63], mid, 1e-5f);
+        EXPECT_TRUE(calibration_is_monotone(pts, s, ev));
+    }
+}
+
+TEST(Calibration, OneAnchorIsAnExposureShift) {
+    const auto p = calibration_params(std::vector<CalibrationPoint>{{118, 36.0}}, SourceCurve::Aces, -1.0f);
+    ASSERT_EQ(p.size(), 1u + kSourceCurveKnots);
+    const float want = float(std::log2(36.0 / source_code_nits(SourceCurve::Aces, 118, -1.0f)));
+    for (int code = 0; code < 256; ++code) EXPECT_NEAR(p[1 + code], want, 1e-6f) << code;
+    EXPECT_NE(calibration_summary(std::vector<CalibrationPoint>{{118, 36.0}}, SourceCurve::Aces, -1.0f).find("1 anchor"),
+              std::string::npos);
+}
+
+TEST(Calibration, UnusablePointsAreSkippedAndNonMonotoneRefused) {
+    EXPECT_TRUE(calibration_params(std::vector<CalibrationPoint>{{118, 0.0}, {-1, 5.0}, {300, 5.0}}, SourceCurve::Aces, -1.0f).empty());
+    EXPECT_EQ(calibration_summary(std::vector<CalibrationPoint>{{118, 0.0}}, SourceCurve::Aces, -1.0f), "");
+    // A highlight darker than the grey: the curve would go down.
+    const std::vector<CalibrationPoint> bad = {{118, 100.0}, {235, 10.0}};
+    EXPECT_FALSE(calibration_is_monotone(bad, SourceCurve::Aces, -1.0f));
+    EXPECT_EQ(calibration_summary(bad, SourceCurve::Aces, -1.0f).rfind("These anchors", 0), 0u);
+    // The composite ignores a refused set and keeps the picker's curve.
+    FrameScalars scalars;
+    CompositeParams p;
+    p.source = SourceCurve::Hable;
+    p.calibration = bad;
+    const auto hable = source_curve_params(SourceCurve::Hable);
+    const auto got = baseline_curve_params(scalars, p, -1.0f);
+    ASSERT_EQ(got.size(), hable.size());
+    for (std::size_t i = 0; i < got.size(); ++i) EXPECT_EQ(got[i], hable[i]);
+}
+
+TEST(Calibration, SumsWithTheSourceAndTheHead) {
+    const float ev = -1.0f;
+    const std::vector<CalibrationPoint> pts = {{118, 60.0}};
+    FrameScalars scalars;
+    CompositeParams p;
+    p.source = SourceCurve::Hable;
+    p.calibration = pts;
+    const auto got = baseline_curve_params(scalars, p, ev);
+    const auto hable = source_curve_params(SourceCurve::Hable);
+    const auto cal = calibration_params(pts, SourceCurve::Hable, ev);
+    ASSERT_EQ(got.size(), hable.size());
+    for (std::size_t i = 1; i < got.size(); ++i) EXPECT_NEAR(got[i], hable[i] + cal[i], 1e-6f) << i;
+    // Through corrected_baseline the anchor lands on its nits.
+    const float sdr = 118.0f / 255.0f;
+    const double nits = inverse_aces_approx(srgb_to_linear(sdr)) * std::exp2(-double(ev)) * 203.0 *
+                        std::exp2(double(curve_correction_log2(sdr, got)));
+    EXPECT_NEAR(nits, 60.0, 60.0 * 1e-4);
+    // No source, a CurveHead of 3 knots, one anchor: the head is resampled and the anchor still lands.
+    scalars.curve_params = {0.1f, 0.0f, 0.2f, 0.4f};
+    CompositeParams q;
+    q.calibration = pts;
+    const auto merged = baseline_curve_params(scalars, q, ev);
+    ASSERT_EQ(merged.size(), 1u + kSourceCurveKnots);
+    const double head_at = curve_correction_log2(sdr, scalars.curve_params);
+    const double cal_at = calibration_params(pts, SourceCurve::Unknown, ev)[1 + 118];
+    EXPECT_NEAR(curve_correction_log2(sdr, merged), head_at + cal_at, 2e-3);
+}
+
+TEST(Calibration, SessionOwnsTheAnchors) {
+    Session s;
+    const std::string before = s.params_json();
+    s.set_calibration(1, 118, 18.0);
+    EXPECT_EQ(s.undo_depth(), 1u);
+    EXPECT_EQ(s.calibration_points().size(), 1u);
+    EXPECT_NE(s.params_json().find("\"calibration\":[{\"code\":118,\"nits\":18}]"), std::string::npos);
+    EXPECT_EQ(s.composite_params().calibration.size(), 1u);
+    s.set_calibration(1, -1, 18.0);   // nothing changed: no undo entry
+    EXPECT_EQ(s.undo_depth(), 1u);
+    s.set_calibration(1, -1, 20.0);   // keeps the code
+    EXPECT_EQ(s.calibration_points()[0].code, 118);
+    EXPECT_EQ(s.calibration_points()[0].nits, 20.0);
+    s.set_calibration(0, 8, 0.0);     // a code without nits: a slot, not a point
+    EXPECT_EQ(s.calibration_points().size(), 1u);
+    s.set_calibration(2, -1, 400.0);  // nits before any click: kept, but no point until a code lands
+    EXPECT_EQ(s.calibration_points().size(), 1u);
+    s.set_calibration(2, 235, 400.0);
+    EXPECT_EQ(s.calibration_points().size(), 2u);
+    s.clear_calibration();
+    EXPECT_TRUE(s.calibration_points().empty());
+    EXPECT_EQ(s.params_json(), before);
+    s.undo();
+    EXPECT_EQ(s.calibration_points().size(), 1u);
+    s.clear_calibration();
+    s.clear_calibration();            // already clear: no undo entry
+    EXPECT_EQ(s.undo_depth(), 6u);
 }

@@ -67,6 +67,9 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
         r.source_space = j.value("source_space", std::string("rec709"));
         r.container = j.value("container", std::string("aces"));
         r.source_curve = j.value("source_curve", std::string("unknown"));
+        if (j.contains("calibration"))
+            for (const auto& c : j.at("calibration"))
+                r.calibration.push_back({c.at("code").get<int>(), c.at("nits").get<double>()});
         if (j.contains("regions"))
             for (const auto& b : j.at("regions"))
                 r.regions.push_back({b.value("label", std::string()), b.at("low_nits").get<double>(),
@@ -90,6 +93,11 @@ std::string master_request_json(const MasterRequest& q) {
         regions.push_back({{"label", b.label}, {"low_nits", b.low_nits}, {"high_nits", b.high_nits}, {"ev", b.ev}});
     j["regions"] = regions;
     if (q.source_curve != "unknown") j["source_curve"] = q.source_curve;
+    if (!q.calibration.empty()) {
+        auto cal = nlohmann::json::array();
+        for (const auto& c : q.calibration) cal.push_back({{"code", c.code}, {"nits", c.nits}});
+        j["calibration"] = cal;
+    }
     return j.dump();
 }
 
@@ -110,6 +118,10 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     cp.strength = static_cast<float>(q.strength);
     cp.preserve_outside = q.preserve_outside;
     cp.source = *source;
+    for (const auto& c : q.calibration)
+        if (c.nits > 0.0 && c.code >= 0 && c.code <= 255) cp.calibration.push_back(c);
+    if (!cp.calibration.empty() && !calibration_is_monotone(cp.calibration, cp.source, model.corpus_ev))
+        return make_error(ErrorCode::InvalidArgument, "calibration anchors do not describe a monotone curve", q.source_curve);
     const NetworkLinearImage network = composite(sdr, fields, scalars, model, cp);
 
     // The master chain, stage by stage (render_master_pixels without the
@@ -160,7 +172,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     // supports, measured on the composite against its corrected baseline
     // (before the grade, which is the artist's, not the network's).
     const SupportStats support =
-        support_stats(network, corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, cp)), sdr);
+        support_stats(network, corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, cp, model.corpus_ev)), sdr);
     auto pct3 = [](double v) {
         char b[64];
         std::snprintf(b, sizeof b, "%.3f", v);
@@ -193,6 +205,12 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
          }},
     };
     if (*source != SourceCurve::Unknown) sidecar_dict.emplace_back("source_curve", q.source_curve);
+    if (!cp.calibration.empty()) {
+        pyjson::List cal;
+        for (const auto& c : cp.calibration)
+            cal.push_back(pyjson::Dict{{"code", std::int64_t(c.code)}, {"nits", c.nits}});
+        sidecar_dict.emplace_back("calibration", cal);
+    }
     const pyjson::Value sidecar = std::move(sidecar_dict);
     std::filesystem::path side = out;
     side.replace_extension(".json");

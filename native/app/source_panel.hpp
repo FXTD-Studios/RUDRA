@@ -10,11 +10,14 @@
 
 #include <functional>
 
+#include "rudra/core/calibration.hpp"
 #include "rudra/core/source_curve.hpp"
 
 namespace rudra::app {
 
 class Seg;
+class QLineEdit;
+class QPushButton;
 
 // The plot: SDR code on x, nits on a log y; the ACES inverse in grey, the
 // chosen curve in the accent, dashed marks at code 235 and 255.
@@ -22,6 +25,9 @@ class SourceCurvePlot : public QWidget {
 public:
     explicit SourceCurvePlot(QWidget* parent = nullptr);
     void set_source(SourceCurve source, float corpus_ev);
+    // The anchors (3.2): the calibrated curve is drawn over the source's when
+    // they describe a monotone one, with a dot per anchor.
+    void set_calibration(std::vector<CalibrationPoint> points);
     QSize sizeHint() const override { return {296, 150}; }
 
 protected:
@@ -30,22 +36,48 @@ protected:
 private:
     SourceCurve source_ = SourceCurve::Unknown;
     float corpus_ev_ = -1.0f;
+    std::vector<CalibrationPoint> calibration_;
 };
 
 class SourcePanel : public QWidget {
 public:
     explicit SourcePanel(QWidget* parent = nullptr);
-    // The session's choice and the loaded model's exposure convention.
-    void sync(SourceCurve source, float corpus_ev);
+    // The session's choice, its anchors by slot, and the loaded model's
+    // exposure convention.
+    void sync(SourceCurve source, const std::vector<CalibrationPoint>& calibration, float corpus_ev);
     std::function<void(SourceCurve)> picked;
+    // Calibrate (3.2): a slot's pick button was pressed (the app arms the
+    // viewer; set_picked() when the click lands), its nits were typed (code -1:
+    // keep), or Clear.
+    std::function<void(int slot)> arm;
+    std::function<void(int slot, int code, double nits)> anchor_changed;
+    std::function<void()> cleared;
+    void set_armed(int slot);          // -1 for none; the button shows it
+    int armed() const { return armed_; }
+    // A click landed for the armed slot: the code it read goes into the row;
+    // nits typed before the click are kept.
+    void set_picked(int slot, int code);
 
 private:
+    struct Row {
+        QPushButton* pick = nullptr;
+        QLabel* code = nullptr;
+        QLineEdit* nits = nullptr;
+        QLabel* delta = nullptr;
+    };
+    void emit_anchor(int slot, int code);
     Seg* seg_ = nullptr;
     SourceCurvePlot* plot_ = nullptr;
     QLabel *grey_ = nullptr, *white_ = nullptr, *clip_ = nullptr, *delta_ = nullptr;
+    Row rows_[kMaxCalibrationPoints];
+    QLabel* fit_line_ = nullptr;
+    QPushButton* clear_ = nullptr;
+    int armed_ = -1;
+    SourceCurve source_ = SourceCurve::Unknown;
+    float corpus_ev_ = -1.0f;
+    std::vector<CalibrationPoint> calibration_;
+    bool syncing_ = false;
 };
 
-// nits of an SDR code under a source curve at the model's exposure.
-double source_code_nits(SourceCurve source, int code, float corpus_ev);
 
 }  // namespace rudra::app

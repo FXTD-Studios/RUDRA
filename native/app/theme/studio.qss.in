@@ -164,6 +164,12 @@ QWidget[role="prow"] { border-bottom: 1px solid var(--card); }
 QWidget#sourcePanel QLabel[role="key"] { color: var(--ink-3); }
 QWidget#sourcePanel QLabel[role="value"] { color: var(--ink); }
 QWidget#sourcePanel QWidget[role="prow"] { border-bottom: 1px solid var(--raise); }
+QWidget#sourcePanel QPushButton[role="pick"] { background: transparent; border: 1.5px solid var(--ink-4); border-radius: 11px; color: var(--ink-4); font-size: 10px; padding: 0; }
+QWidget#sourcePanel QPushButton[role="pick"]:checked { border-color: var(--accent); color: var(--accent); }
+QWidget#sourcePanel QPushButton[role="pick"]:hover { border-color: var(--ink-2); color: var(--ink-2); }
+QWidget#sourcePanel QLineEdit { background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; padding: 2px 6px; color: var(--ink); font-family: "var(--mono-family)"; font-size: 11px; }
+QWidget#sourcePanel QLineEdit:focus { border-color: var(--accent); }
+QWidget#sourcePanel QLabel[role="note"][state="bad"] { color: var(--bad); }
 QWidget[role="field"] { border-bottom: 1px solid var(--raise); }
 QWidget[role="field"] QLabel[role="value"] { color: var(--ink-3); font-family: "var(--ui-family)"; }
 QWidget#frameStats QLabel[role="value"] { color: var(--ink); font-family: "var(--ui-family)"; font-size: 15px; font-weight: 600; }

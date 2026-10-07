@@ -1,10 +1,16 @@
 #include "source_panel.hpp"
 
+#include <QDoubleValidator>
+#include <QGridLayout>
 #include <QHBoxLayout>
+#include <QLineEdit>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPushButton>
+#include <QStyle>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cmath>
 
 #include "rudra/core/baseline.hpp"
@@ -45,12 +51,6 @@ QLabel* readout_row(QVBoxLayout* v, const QString& key, QLabel*& value, QWidget*
 
 }  // namespace
 
-double source_code_nits(SourceCurve source, int code, float corpus_ev) {
-    const float display = srgb_to_linear(float(code) / 255.0f);
-    const double scene = source_curve_inverse(source, display);
-    return scene * std::exp2(-double(corpus_ev)) * 203.0;
-}
-
 SourceCurvePlot::SourceCurvePlot(QWidget* parent) : QWidget(parent) {
     setObjectName("sourcePlot");
     setMinimumHeight(140);
@@ -60,6 +60,11 @@ SourceCurvePlot::SourceCurvePlot(QWidget* parent) : QWidget(parent) {
 void SourceCurvePlot::set_source(SourceCurve source, float corpus_ev) {
     source_ = source;
     corpus_ev_ = corpus_ev;
+    update();
+}
+
+void SourceCurvePlot::set_calibration(std::vector<CalibrationPoint> points) {
+    calibration_ = std::move(points);
     update();
 }
 
@@ -115,6 +120,26 @@ void SourceCurvePlot::paintEvent(QPaintEvent*) {
     };
     curve(SourceCurve::Aces, theme_colour("ink-4"), 1.25);
     curve(source_, theme_colour("accent"), 2.0);
+    // The calibrated curve (3.2) over it, when the anchors describe one.
+    if (!calibration_.empty() && calibration_is_monotone(calibration_, source_, corpus_ev_)) {
+        const auto params = calibration_params(calibration_, source_, corpus_ev_);
+        if (!params.empty()) {
+            QPainterPath path;
+            for (int c = 1; c <= 255; ++c) {
+                const double n = source_code_nits(source_, c, corpus_ev_) * std::exp2(double(params[1 + c]));
+                const QPointF pt(X(c), Y(n));
+                c == 1 ? path.moveTo(pt) : path.lineTo(pt);
+            }
+            const QColor ok = theme_colour("ok");
+            p.setPen(QPen(ok, 2.0));
+            p.setBrush(Qt::NoBrush);
+            p.drawPath(path);
+            p.setPen(Qt::NoPen);
+            p.setBrush(ok);
+            for (const auto& a : calibration_)
+                if (a.nits > 0.0) p.drawEllipse(QPointF(X(a.code), Y(a.nits)), 3.5, 3.5);
+        }
+    }
 }
 
 SourcePanel::SourcePanel(QWidget* parent) : QWidget(parent) {
@@ -146,12 +171,138 @@ SourcePanel::SourcePanel(QWidget* parent) : QWidget(parent) {
     readout_row(rv, "Clip (code 255)", clip_, rows);
     readout_row(rv, "vs ACES at grey \u00b7 white", delta_, rows);
     v->addWidget(rows);
-    sync(SourceCurve::Unknown, -1.0f);
+
+    // Calibrate (3.2): three anchors, each a pick button, the code it read,
+    // the nits it should be, and its delta against the picker's curve.
+    auto* cal = new QWidget(this);
+    cal->setObjectName("calibrate");
+    auto* cv = new QVBoxLayout(cal);
+    cv->setContentsMargins(0, 8, 0, 0);
+    cv->setSpacing(6);
+    auto* head = new QWidget(cal);
+    auto* hh = new QHBoxLayout(head);
+    hh->setContentsMargins(0, 0, 0, 0);
+    auto* title = new QLabel("Calibrate", head);
+    title->setProperty("role", "card-head");
+    hh->addWidget(title);
+    hh->addStretch(1);
+    auto* hint = new QLabel("click the frame, type the nits it should be", head);
+    hint->setProperty("role", "note");
+    hh->addWidget(hint);
+    cv->addWidget(head);
+    auto* grid = new QGridLayout;
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(6);
+    grid->setVerticalSpacing(4);
+    static const char* kLabels[kMaxCalibrationPoints] = {"Black", "18% grey", "Highlight"};
+    for (int i = 0; i < kMaxCalibrationPoints; ++i) {
+        Row& r = rows_[i];
+        r.pick = new QPushButton(QString::number(i + 1), cal);
+        r.pick->setObjectName(QString("calPick%1").arg(i));
+        r.pick->setProperty("role", "pick");
+        r.pick->setCheckable(true);
+        r.pick->setToolTip("Pick on the frame");
+        r.pick->setFixedSize(22, 22);
+        connect(r.pick, &QPushButton::clicked, this, [this, i] {
+            if (arm) arm(armed_ == i ? -1 : i);
+        });
+        auto* lab = new QLabel(kLabels[i], cal);
+        lab->setProperty("role", "key");
+        r.code = new QLabel("\u2014", cal);
+        r.code->setObjectName(QString("calCode%1").arg(i));
+        r.code->setProperty("role", "value");
+        r.code->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        r.nits = new QLineEdit(cal);
+        r.nits->setObjectName(QString("calNits%1").arg(i));
+        r.nits->setPlaceholderText("nits");
+        r.nits->setAlignment(Qt::AlignRight);
+        auto* valid = new QDoubleValidator(0.0, 100000.0, 3, r.nits);
+        valid->setNotation(QDoubleValidator::StandardNotation);
+        r.nits->setValidator(valid);
+        connect(r.nits, &QLineEdit::editingFinished, this, [this, i] {
+            if (!syncing_) emit_anchor(i, -1);
+        });
+        r.delta = new QLabel(cal);
+        r.delta->setObjectName(QString("calDelta%1").arg(i));
+        r.delta->setProperty("role", "note");
+        r.delta->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        grid->addWidget(r.pick, i, 0);
+        grid->addWidget(lab, i, 1);
+        grid->addWidget(r.code, i, 2);
+        grid->addWidget(r.nits, i, 3);
+        grid->addWidget(r.delta, i, 4);
+    }
+    grid->setColumnStretch(3, 1);
+    cv->addLayout(grid);
+    fit_line_ = new QLabel(cal);
+    fit_line_->setObjectName("calFit");
+    fit_line_->setProperty("role", "note");
+    fit_line_->setWordWrap(true);
+    cv->addWidget(fit_line_);
+    auto* btns = new QWidget(cal);
+    auto* bh = new QHBoxLayout(btns);
+    bh->setContentsMargins(0, 0, 0, 0);
+    bh->addStretch(1);
+    clear_ = new QPushButton("Clear", btns);
+    clear_->setObjectName("calClear");
+    connect(clear_, &QPushButton::clicked, this, [this] {
+        if (cleared) cleared();
+    });
+    bh->addWidget(clear_);
+    cv->addWidget(btns);
+    v->addWidget(cal);
+    sync(SourceCurve::Unknown, {}, -1.0f);
 }
 
-void SourcePanel::sync(SourceCurve source, float corpus_ev) {
+void SourcePanel::emit_anchor(int slot, int code) {
+    if (!anchor_changed) return;
+    bool ok = false;
+    const double nits = rows_[slot].nits->text().toDouble(&ok);
+    anchor_changed(slot, code, ok ? nits : 0.0);
+}
+
+void SourcePanel::set_armed(int slot) {
+    armed_ = slot;
+    for (int i = 0; i < kMaxCalibrationPoints; ++i) rows_[i].pick->setChecked(i == slot);
+}
+
+void SourcePanel::set_picked(int slot, int code) {
+    if (slot < 0 || slot >= kMaxCalibrationPoints) return;
+    rows_[slot].code->setText(QString::number(code));
+    emit_anchor(slot, code);
+}
+
+void SourcePanel::sync(SourceCurve source, const std::vector<CalibrationPoint>& calibration, float corpus_ev) {
+    source_ = source;
+    corpus_ev_ = corpus_ev;
+    calibration_ = calibration;
     seg_->set_on(QString::fromUtf8(source_curve_id(source).data(), int(source_curve_id(source).size())));
     plot_->set_source(source, corpus_ev);
+    std::vector<CalibrationPoint> usable;
+    for (const auto& c : calibration)
+        if (c.nits > 0.0) usable.push_back(c);
+    plot_->set_calibration(usable);
+    syncing_ = true;
+    for (int i = 0; i < kMaxCalibrationPoints; ++i) {
+        Row& r = rows_[i];
+        const CalibrationPoint c = i < int(calibration.size()) ? calibration[std::size_t(i)] : CalibrationPoint{};
+        const bool has_code = i < int(calibration.size()) && c.code >= 0;
+        r.code->setText(has_code ? QString::number(c.code) : QStringLiteral("\u2014"));
+        if (!r.nits->hasFocus()) r.nits->setText(c.nits > 0.0 ? QString::number(c.nits, 'g', 6) : QString());
+        if (c.nits > 0.0 && has_code) {
+            const double st = std::log2(c.nits / std::max(source_code_nits(source, c.code, corpus_ev), 1e-9));
+            r.delta->setText((st >= 0 ? "+" : "") + QString::number(st, 'f', 2) + " st");
+        } else r.delta->clear();
+        r.pick->setChecked(i == armed_);
+    }
+    syncing_ = false;
+    const std::string summary = calibration_summary(usable, source, corpus_ev);
+    fit_line_->setText(summary.empty() ? QStringLiteral("No anchors. The curve above is the picker's.")
+                                       : QString::fromStdString(summary));
+    fit_line_->setProperty("state", summary.rfind("These anchors", 0) == 0 ? "bad" : "");
+    fit_line_->style()->unpolish(fit_line_);
+    fit_line_->style()->polish(fit_line_);
+    clear_->setEnabled(!usable.empty() || !calibration.empty());
     const double g = source_code_nits(source, 118, corpus_ev), w = source_code_nits(source, 235, corpus_ev),
                  c = source_code_nits(source, 255, corpus_ev);
     grey_->setText(nits_text(g));
