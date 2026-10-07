@@ -578,8 +578,9 @@ def excess(ref: dict, got: dict, tol: dict) -> float:
 def bench_frames(folder: Path, limit: int) -> list[tuple[str, np.ndarray]]:
     import cv2
     out = []
-    for p in sorted(folder.iterdir()):
-        if p.suffix.lower() not in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}:
+    # Recursive, so a corpus laid out by shot (sdr/<shot>/<frame>.png) is one --bench-dir.
+    for p in sorted(folder.rglob("*")):
+        if not p.is_file() or p.suffix.lower() not in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}:
             continue
         img = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
         if img is None:
