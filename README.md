@@ -517,12 +517,16 @@ numbers.
   8 batches × 4 = 32 val records, ~30% real SDR. `shadow_v1` stays the
   default. Verdicts: `reports\logs\cp_results_v7.json` (bench complete 7 Oct
   09:40)
-- [ ] 1.4b Post-mortem, closes the phase: re-score the 25 v7 checkpoints on
-  the full val with `training/sweep_val_checkpoints.py` (was the in-training
-  gain ever there on 538 rows, and in which rows), and split the `mix` bench
-  per curve with `training/bench_by_curve.py` (curve input miswired, or an
-  ACES-only prior). Record both in STATUS line E. Also note the `oog` bench is
-  exported from `E:\RUDRA_v3_20260822`, a −1 EV render, against 0 EV models
+- [x] 1.4b Post-mortem (7 Oct 2026, STATUS line E): not overfitting, the
+  full-val composite is flat at +1.4 to +1.8 dB across 50k steps and the
+  32-record slice invented the decay; the training eval (256-px crops,
+  log-PSNR) does not predict the bench (full frames, PU21/CVVDP), which is why
+  no selection could pass it; the real val split (Cosmos Laundromat) is
+  animation while the real test (Meridian) is live action; the curve label is
+  wired right (`aces` helps) but makes `hable` and `agx` 1.3 dB worse than
+  blind, and only `clip` and `reinhard` are positive for any model. Still
+  open: the `oog` bench is exported from `E:\RUDRA_v3_20260822`, a −1 EV
+  render, against 0 EV models
 - **Outcome:** the gate was not passed by any model. The residual-on-inverse
   recipe is retired as a release path; see STATUS line G for the one bounded
   research attempt that may follow 1.0

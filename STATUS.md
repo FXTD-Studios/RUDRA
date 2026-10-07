@@ -72,8 +72,27 @@
 > selected on 8 × 4 = 32 val records (`--eval-batches 0` now scores the whole split, with gains
 > split real vs rendered). The training curve peaked at step 1,500 and decayed for 48k steps while
 > train loss fell; whether that is overfitting or the 32-record slice is what
-> `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default. No further 10 h run
-> until that and `training/bench_by_curve.py` on `mix` have been read.
+> `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
+>
+> **7 Oct 2026, 11:00 — v7 post-mortem, line E closed.** `sweep_val_checkpoints.py` on the full
+> 538-row val (163 real, 375 rendered), every other checkpoint, and `bench_by_curve.py` on `mix`:
+> 1. *Not overfitting.* Full-val composite is flat, +1.44 (2k) to +1.77 (34k) to +1.72 (50k); real-row
+>    hard gain −0.40 at 2k, +0.74 at 34k, +0.51 at 50k. The step-1,500 peak and 48k-step decay were the
+>    32-record slice. `best.pt` (step 3,000) was picked where the real rows were still negative.
+> 2. *The training eval does not predict the bench.* Full val says +1.5 dB over the inverse on every
+>    row kind; the bench says −2 to −24 dB and 0 of 287 on real. 256-px centre crops and log-PSNR on the
+>    mixed manifest's val versus full frames and PU21/CVVDP: selection on the former cannot find a
+>    checkpoint that passes the latter, whichever step. Every run since v4 selected this way.
+> 3. *The real val split is animation.* Cosmos Laundromat is a Blender short; the real test (Meridian)
+>    is live action. Real-row training gains were measured on a cartoon.
+> 4. *Curve input: not miswired, harmful.* `aces` label helps (mix −0.98 dB vs −2.29 blind; aces bench
+>    +2.4 over blind). `hable` −4.58 vs −3.32 blind, `agx` −4.42 vs −3.03: the label makes the filmic
+>    curves 1.3 dB worse on both metrics. Only `clip` (+1.49 blind, v4c +2.94) and `reinhard` (+1.19,
+>    v4c +2.35) are positive for any model: the recipe helps when the SDR is nearly a plain clip and
+>    hurts on the curves it was built for.
+> Evidence: `checkpoints\sdr2hdr_image_v7\val_sweep.jsonl`, `bench_by_curve.py` output in the 7 Oct
+> project note. Optional, research track only: bench step 34,000 once to see how much of the gap is
+> the step-3,000 pick (expected: little; the −4 dB on real has 0 wins).
 >
 > **24 Sep 2026, 22:30 — critical path scored; all four gates that ran fail (line E).**
 > `RUN_CRITICAL_PATH.bat` finished at 14:32: Step 4 re-run on the hold-out
