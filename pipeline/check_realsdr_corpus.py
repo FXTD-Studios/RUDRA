@@ -126,8 +126,12 @@ def main(argv=None) -> int:
         for j in (i - 1, i + 1):
             if 0 <= j < len(shot) and abs(shot[j]["frame_index"] - r["frame_index"]) <= 2:
                 other = read_u16(path_of(shot[j]["hdr_path"]))
-                lo = log_luma(linear_to_nits(decode_hdr_u16(other, storage), storage))
-                corr1.append(float(np.corrcoef(ls.ravel(), lo.ravel())[0, 1]))
+                # Letterbox bars are trimmed per frame, so a neighbour can be a
+                # few rows taller or shorter: compare the common window.
+                h = min(ls.shape[0], other.shape[0])
+                w = min(ls.shape[1], other.shape[1])
+                lo = log_luma(linear_to_nits(decode_hdr_u16(other[:h, :w], storage), storage))
+                corr1.append(float(np.corrcoef(ls[:h, :w].ravel(), lo.ravel())[0, 1]))
                 break
     report["sample"] = len(sample)
     report["geometry_mismatch"] = geom_bad
