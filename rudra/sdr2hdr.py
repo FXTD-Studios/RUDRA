@@ -813,8 +813,18 @@ def sdr2hdr_loss(
     shadow_smoothness_weight: float = 0.02,
     target_ceiling: torch.Tensor | None = None,
     baseline_weight: float = 0.0,
+    region_focus: float = 0.0,
 ) -> dict[str, torch.Tensor]:
     """Stable HDR recovery objective in log-radiance and masked regions.
+
+    ``region_focus`` f in (0, 1] (v8, 8 Oct 2026) narrows the target to what
+    the analytic inverse cannot do: the loss becomes (1 - f) x the objective
+    below + f x (the error inside the SDR's destroyed pixels + 2 x the
+    residual outside them). Destroyed = max(R, G, B) code >= 254/255 (clipped)
+    or <= 1/255 (crushed), dilated by 3 px so the edge of a clip is in it. The
+    tone fit is the artist's in 1.0 (source curve, calibration, reference
+    match), so outside those pixels the network is held to the inverse.
+    0 leaves every term and weight as it was.
 
     ``baseline_weight`` > 0 adds a direct term on ``output.baseline`` -- the
     curve-corrected baseline when the model has a CurveHead. Without it the
@@ -872,6 +882,18 @@ def sdr2hdr_loss(
              float(shadow_chroma_weight) * shadow_chroma +
              float(shadow_smoothness_weight) * shadow_smoothness +
              0.10 * edge + 0.05 * mask + 0.05 * outside + 0.10 * residual_outside)
+    region_term = torch.zeros((), device=total.device, dtype=total.dtype)
+    outside_hard = torch.zeros((), device=total.device, dtype=total.dtype)
+    region_fraction = torch.zeros((), device=total.device, dtype=total.dtype)
+    if region_focus > 0:
+        top = sdr.clamp(0.0, 1.0).amax(dim=1, keepdim=True)
+        destroyed = ((top >= 254.0 / 255.0) | (top <= 1.0 / 255.0)).to(error.dtype)
+        destroyed = F.max_pool2d(destroyed, kernel_size=7, stride=1, padding=3)
+        region_fraction = destroyed.mean()
+        region_term = (error * destroyed).sum() / (destroyed.sum() * 3.0 + 1e-6)
+        outside_hard = (output.log_residual.abs() * (1.0 - destroyed)).sum() / ((1.0 - destroyed).sum() * 3.0 + 1e-6)
+        f = float(min(max(region_focus, 0.0), 1.0))
+        total = (1.0 - f) * total + f * (region_term + 2.0 * outside_hard)
     baseline_term = torch.zeros((), device=total.device, dtype=total.dtype)
     if baseline_weight > 0 and output.curve_params is not None:
         baseline_error, _, _, _ = censored_log_error(output.baseline, target, target_ceiling, scale)
@@ -885,6 +907,7 @@ def sdr2hdr_loss(
         "mask": mask, "outside": outside, "residual_outside": residual_outside,
         "censored_fraction": censored_fraction,
         "curve_baseline": baseline_term,
+        "region": region_term, "outside_hard": outside_hard, "region_fraction": region_fraction,
     }
 
 

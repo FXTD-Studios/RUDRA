@@ -686,8 +686,15 @@ is loaded, sits behind the same picker.
 - [ ] 4.1 Rebuild on mask: an optional local inpaint pass that runs only inside
   a clipped mask the artist approves, sized for 8 to 16 GB, its pixels marked
   in the invented-pixel map and the sidecar
-- [ ] 4.2 Score clipped highlights at 0, +1 and +2 EV with and without rebuild
-  (`measure_clipping.py --score`)
+- [ ] 4.2 Score clipped highlights at 0, +1 and +2 EV with and without rebuild.
+  **Tooling in, 8 Oct 2026:** `export_bench_pairs.py --condition exposure
+  --exposure-ev E` re-renders a reference with a named curve at the model's
+  exposure + E and scales the reference by 2^E, so the inverse is exact below
+  the clip and each stop moves more of the frame into it;
+  `training/score_regions.py` scores any export only inside the SDR's clipped
+  (code >= 254) and crushed (<= 1) pixels, error in stops of luminance;
+  `training/cp8_verdicts.py` gates on it (v8). Not yet run on a model, and the
+  "with rebuild" half waits for 4.1
 - [ ] 4.3 Shot keyframes: grade and source parameters stored per shot,
   keyframed and reset at cuts, scored with clip-mode CVVDP and flicker
 - [ ] 4.4 `rudra-studio` commercial weights: the phase 1 recipe without HdM
