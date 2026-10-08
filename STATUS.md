@@ -74,6 +74,22 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **9 Oct 2026, 00:30 — v8 scored (line G): FAIL, the gate holds; v8 stays research, not shipped.** 50k
+> steps, best.pt = step 48,000 (whole-val composite 0.786; clean real val gain −0.12 dB, peak +0.61 at
+> 6k). Against the inverse: **real Meridian +0.023 dB [−0.025, +0.077] / +0.020 JOD [+0.003, +0.036],
+> 38/287** (FAIL on the PU21 CI; the first model with a CVVDP CI above the inverse on real, v7 was
+> −4.13 dB, 0/287); aces −11.20 dB / −0.873 JOD (v4b −8.09, v7 −19.21; on aces the inverse is exact,
+> 49 dB); oog −0.29 / −0.086; mix −0.03 / −0.120. Inside clipped pixels: +0 EV −0.36 stops
+> [−0.42, −0.30] (worse), +1 EV −0.02, +2 EV +0.00 (ties): the region-focused loss did not teach
+> highlight reconstruction. Crushed pixels: 3.96 stops vs the inverse's 1.59 (+2 EV), 4.83 stops worse
+> on real. Diagnosis by luminance band: v8 tracks the inverse to 0.01 stop from 2 to 200 nits; its
+> loss is below 2 nits, where it lifts black (median +5.8 stops over the reference under 0.05 nits on
+> Meridian, the inverse +3.1), and on aces from 200 to 1,000 nits (0.54 stop vs 0.05). Above 200 nits
+> on Meridian it is a stop closer than the inverse (−0.54 vs −1.55). An inference-time shadow pin
+> (the inverse where the inverse is under 1 nit, log ramp to v8 at 4 nits) measured on bench subsets:
+> real +0.20 dB, mix +0.26, oog +0.21, aces −6.9 (from −11.1). Not adopted: its thresholds were found
+> on the test benches. `reports\logs\cp8_results_v8.json`, `v8_verdicts.log`.
+>
 > **8 Oct 2026, 15:00 — v8 tooling in (line G), no GPU time spent.** The gate is written before the run:
 > `training/cp8_verdicts.py` (real Meridian both CIs above the inverse; aces/oog/mix not worse; inside
 > clipped pixels at +0/+1/+2 EV lower error than the inverse, CI above zero). The clip benches:
