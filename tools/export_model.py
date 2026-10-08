@@ -52,6 +52,7 @@ Writes ``<out>/<checkpoint stem>/``::
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime as _dt
 import hashlib
 import json
@@ -110,6 +111,54 @@ TOLERANCE = {"torchscript": {"atol": 1e-5, "rtol": 0.0},
 # The exported module
 # --------------------------------------------------------------------------
 
+CORE_MODULES = ("stem", "enc1", "down1", "enc2", "down2", "mid", "up2", "dec2", "up1", "dec1", "head")
+
+
+class StagedGroupNorm(nn.Module):
+    """nn.GroupNorm with its statistics reduced in stages (W, then H, then the
+    group's channels) instead of one reduction over the whole group.
+
+    ONNX Runtime's InstanceNormalization, which torch.onnx emits for
+    GroupNorm, sums each group's H x W x C/G elements in float32 in one pass,
+    and at 1080p (8 million elements per group in the first level) that sum
+    drifts: on 8 Oct 2026 the ONNX fields left eager PyTorch by 2e-3 on real
+    frames, 20x the error at 540p and 40x the one at 512 px, with no session
+    option changing it. Three short ReduceMeans carry a rounding error that
+    grows with sqrt of each stage's length, not with the frame. Same maths
+    as GroupNorm, same affine; the TorchScript graph keeps nn.GroupNorm.
+    The fp16 tile graph computes the statistics in float32."""
+
+    def __init__(self, gn: nn.GroupNorm):
+        super().__init__()
+        self.groups = int(gn.num_groups)
+        self.channels = int(gn.num_channels)
+        self.eps = float(gn.eps)
+        self.weight = nn.Parameter(gn.weight.detach().clone(), requires_grad=False)
+        self.bias = nn.Parameter(gn.bias.detach().clone(), requires_grad=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        dtype = x.dtype
+        n, c, h, w = x.shape
+        xg = x.float().reshape(n, self.groups, c // self.groups, h, w)
+        mean = xg.mean(dim=-1, keepdim=True).mean(dim=-2, keepdim=True).mean(dim=-3, keepdim=True)
+        d = xg - mean
+        var = (d * d).mean(dim=-1, keepdim=True).mean(dim=-2, keepdim=True).mean(dim=-3, keepdim=True)
+        y = (d * torch.rsqrt(var + self.eps)).reshape(n, c, h, w)
+        y = y * self.weight.float().view(1, c, 1, 1) + self.bias.float().view(1, c, 1, 1)
+        return y.to(dtype)
+
+
+def _staged_group_norms(module: nn.Module) -> nn.Module:
+    """A deep copy of ``module`` with every nn.GroupNorm replaced."""
+    module = copy.deepcopy(module)
+    for name, child in list(module.named_children()):
+        if isinstance(child, nn.GroupNorm):
+            setattr(module, name, StagedGroupNorm(child))
+        else:
+            setattr(module, name, _staged_group_norms(child))
+    return module
+
+
 class NativeModel(nn.Module):
     """``frame_pass`` and ``tile_pass`` over the submodules of one SDR2HDRNet.
 
@@ -136,6 +185,12 @@ class NativeModel(nn.Module):
         self.enc2, self.down2, self.mid = net.enc2, net.down2, net.mid
         self.up2, self.dec2, self.up1, self.dec1, self.head = (
             net.up2, net.dec2, net.up1, net.dec1, net.head)
+        if self.onnx_safe:
+            # The ONNX graphs get GroupNorm with staged statistics
+            # (StagedGroupNorm); copies, so the eager net and the TorchScript
+            # graph keep nn.GroupNorm.
+            for name in CORE_MODULES:
+                setattr(self, name, _staged_group_norms(getattr(self, name)))
 
         self.has_gate = net.gate is not None
         self.has_shadow = net.shadow_gate is not None
