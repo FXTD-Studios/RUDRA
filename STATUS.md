@@ -74,6 +74,13 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **9 Oct 2026, 01:45 — shadow_v1 on real SDR for the first time (line G, release row R5).** Netflix
+> Meridian, 287 test frames, against the inverse: −4.11 dB [−4.18, −4.04] / −0.006 JOD
+> [−0.008, −0.004], 0/287 wins on PU21; crushed-pixel error 5.58 stops vs the inverse's 1.56. v8 against
+> shadow_v1 on the same frames: +4.14 dB [+4.10, +4.17], 287/287, +0.026 JOD [+0.008, +0.044]. The
+> optional model the app ships loses to the inverse on every real frame. `models.json` notes updated;
+> `scripts\bench_shadow_v1_real_2026_10_09.ps1`, `reports\logs\shadow_v1_real_vs_baseline.json`.
+>
 > **9 Oct 2026, 01:20 — phase 3 gate passed by hand on Windows (line F).** The beta 3 package
 > (`PACKAGE_WINDOWS.ps1 -NoInstaller`, `dist\beta\RUDRA-0.9.0-beta.3-windows-x64`) on the RTX 4080 box
 > and its HDR display, launched with no Python: source, three-click calibration, reference match,
