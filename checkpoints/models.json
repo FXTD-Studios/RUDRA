@@ -6,7 +6,7 @@
       "file": "sdr2hdr_shadow_v1.pt",
       "kind": "sdr2hdr",
       "title": "v5 + shadow gate (optional)",
-      "note": "The model the paper reports, seed 20260901. Optional since 7 Oct 2026: the master path is the analytic inverse. Measured vs the inverse (paired, 95% CI): aces -24.3 dB / -0.64 JOD, oog +0.33 dB [-0.32, +0.98] / +0.03 JOD, mix -1.21 dB / +0.08 JOD. Not a -1 EV match for 0 EV sources.",
+      "note": "The model the paper reports, seed 20260901. Optional since 7 Oct 2026: the master path is the analytic inverse. Measured vs the inverse (paired, 95% CI): aces -24.3 dB / -0.64 JOD, oog +0.33 dB [-0.32, +0.98] / +0.03 JOD, mix -1.21 dB / +0.08 JOD; real SDR (Netflix Meridian, 287 frames, 9 Oct 2026) -4.11 dB [-4.18, -4.04] / -0.006 JOD, 0/287 wins, crushed-pixel error 5.6 stops vs 1.6. Not a -1 EV match for 0 EV sources.",
       "params": 1217318
     },
     {
