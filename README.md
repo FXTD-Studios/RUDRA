@@ -452,7 +452,21 @@ Still to do:
 - [ ] macOS: inference on MPS and Core ML, HDR output on an XDR display (Metal
   EDR), GPU composite and display pass on Metal, a clean exit (the fix for an
   abort at exit is in, not yet run there)
-- [ ] Model checks on the full bench set
+- [x] Model checks on the full bench set: `NATIVE_GATE_A.ps1 -BenchDir
+  <manifest.jsonl>` runs every Meridian test frame (287, 1080p) through eager
+  PyTorch, TorchScript, ONNX fp32 and fp16 and holds them to the package
+  tolerances. First run (8 Oct 2026) failed: ONNX fp32 left eager by 5.6e-3
+  (tolerance 3e-4), 20x the error at 540p, invisible on the 300 px golden
+  frames. Cause: `nn.GroupNorm` exports as `InstanceNormalization`, whose
+  statistics ORT sums over the whole group in one float32 pass (8 million
+  elements at 1080p). Fix: the ONNX graphs get `StagedGroupNorm`
+  (`tools/export_model.py`), the same maths with the mean and variance as three
+  short reductions; eager and TorchScript keep `nn.GroupNorm`. After: ONNX
+  fp32 8.8e-6 on the 287 frames (golden 2.2e-6, was 5.8e-5), fp16 2.5e-3;
+  native CPU 2.2e-6, DirectML 3.5e-6, fp16 7.8e-3. Cost: DirectML, which is
+  dispatch-bound at this model size, runs the extra ops at 1080p untiled 139 ->
+  207 ms and 4K tiled 1.5 -> 2.1 s (budgets re-measured); CUDA and the CPU
+  paths are unchanged or faster. Phase R owns the DirectML op count
 - [ ] Apple Developer enrollment and the six signing secrets
   ([`docs/MACOS_SIGNING.md`](docs/MACOS_SIGNING.md)), then the beta 3 tag, so
   the DMG ships notarized
@@ -656,7 +670,12 @@ is loaded, sits behind the same picker.
   (582 tiled), 3 535 ms at 4K untiled, 1 504 tiled; LibTorch CPU 2.45 s / 9.3 s;
   ONNX Runtime CPU 3.1 s / 13.6 s. All rows budgeted (+25 %) in
   `native/bench/latency_budgets.json` and gated by `NATIVE_GATE_A.ps1 -Machine
-  rtx4080s-win`. Live controls on top of that: 3.3's 1.1 to 1.3 ms at 4K.
+  rtx4080s-win`. DirectML rows re-measured 8 Oct 2026 on the parity-fixed
+  graph: 207 ms at 1080p (675 tiled), 4K tiled 2 059 ms; its 4K untiled
+  number swings run to run (0.7 to 7.2 s) and is reported, not trusted. fp16
+  on DirectML is no faster than fp32 at this model size: the path is
+  dispatch-bound, which is phase R's problem to solve, not a budget's. Live
+  controls on top of that: 3.3's 1.1 to 1.3 ms at 4K.
   Playback at these numbers is phase R's job (R1 fp16/TensorRT). Mac rows wait
   for a Mac
 - **Gate:** a colourist, by hand, on an HDR display, sources, calibrates, grades
