@@ -477,8 +477,10 @@ Still to do:
   `native/bench/latency_budgets.json` per machine (CI holds the CPU budget);
   the RTX 4080 rows at both sizes are in (roadmap 3.6, 7 Oct 2026). The Mac rows
   wait for a Mac (`MACHINE=... scripts/native_gate_a.sh`)
-- [ ] The workflow and video review on Windows with no Python, and by hand on an
-  HDR display
+- [x] The workflow and video review on Windows with no Python, and by hand on an
+  HDR display (9 Oct 2026, the beta 3 package on the RTX 4080 box, launched with
+  no Python: source, calibrate, reference, mask, anchor, master and a 240-frame
+  video job)
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:
@@ -679,7 +681,8 @@ is loaded, sits behind the same picker.
   Playback at these numbers is phase R's job (R1 fp16/TensorRT). Mac rows wait
   for a Mac
 - **Gate:** a colourist, by hand, on an HDR display, sources, calibrates, grades
-  and masters a 240-frame shot with no control lagging the playhead
+  and masters a 240-frame shot with no control lagging the playhead. **Passed on
+  Windows 9 Oct 2026** (beta 3 package, RTX 4080); the Mac half waits for a Mac
 
 ### Phase 4: clipped regions, video and commercial weights
 

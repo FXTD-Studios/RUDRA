@@ -74,6 +74,15 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **9 Oct 2026, 01:20 — phase 3 gate passed by hand on Windows (line F).** The beta 3 package
+> (`PACKAGE_WINDOWS.ps1 -NoInstaller`, `dist\beta\RUDRA-0.9.0-beta.3-windows-x64`) on the RTX 4080 box
+> and its HDR display, launched with no Python: source, three-click calibration, reference match,
+> painted mask with Region EV, anchors with no control lagging the playhead, a master still and a
+> 240-frame video job. Beta item "workflow by hand on an HDR display" ticked. The gate B build
+> (`build\native_gate_b`) is a viewer test build with no still decode or backend and opens no frames;
+> the by-hand pass runs on the package. Left for 1.0: the Mac items, Apple enrollment, the installer
+> on a clean PC, the tag.
+>
 > **9 Oct 2026, 00:30 — v8 scored (line G): FAIL, the gate holds; v8 stays research, not shipped.** 50k
 > steps, best.pt = step 48,000 (whole-val composite 0.786; clean real val gain −0.12 dB, peak +0.61 at
 > 6k). Against the inverse: **real Meridian +0.023 dB [−0.025, +0.077] / +0.020 JOD [+0.003, +0.036],
