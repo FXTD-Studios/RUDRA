@@ -29,13 +29,13 @@ import numpy as np
 METRICS = ("pu_psnr_db", "cvvdp_jod")
 
 
-def load(path: Path) -> dict[str, dict[str, float]]:
+def load(path: Path, metrics: tuple[str, ...] = METRICS) -> dict[str, dict[str, float]]:
     rows = {}
     with path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             key = row.get("frame") or row.get("asset_id")
             vals = {}
-            for m in METRICS:
+            for m in metrics:
                 try:
                     v = float(row.get(m, "nan"))
                 except ValueError:
@@ -45,10 +45,11 @@ def load(path: Path) -> dict[str, dict[str, float]]:
     return rows
 
 
-def compare(a: dict, b: dict, draws: int = 5000, seed: int = 20260923) -> dict:
+def compare(a: dict, b: dict, draws: int = 5000, seed: int = 20260923,
+            metrics: tuple[str, ...] = METRICS) -> dict:
     out = {}
     rng = np.random.default_rng(seed)
-    for m in METRICS:
+    for m in metrics:
         d = np.array([a[k][m] - b[k][m] for k in a if k in b
                       and math.isfinite(a[k][m]) and math.isfinite(b[k][m])])
         if d.size == 0:
@@ -65,7 +66,8 @@ REGRESSION_KEYS = {"pu_psnr_db": "max_regression_db", "cvvdp_jod": "max_regressi
 
 
 def verdict(result: dict, require_positive: bool = False,
-            max_regression: dict[str, float] | None = None) -> bool | None:
+            max_regression: dict[str, float] | None = None,
+            metrics: tuple[str, ...] = METRICS) -> bool | None:
     """True/False against the gate asked for; None when no gate was asked for.
 
     ``max_regression`` maps metric -> the largest mean loss allowed.
@@ -75,7 +77,7 @@ def verdict(result: dict, require_positive: bool = False,
     if not require_positive and not max_regression:
         return None
     ok = True
-    for m in METRICS:
+    for m in metrics:
         r = result.get(m, {})
         if not r.get("frames"):
             return False

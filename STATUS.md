@@ -74,6 +74,15 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **8 Oct 2026, 15:00 — v8 tooling in (line G), no GPU time spent.** The gate is written before the run:
+> `training/cp8_verdicts.py` (real Meridian both CIs above the inverse; aces/oog/mix not worse; inside
+> clipped pixels at +0/+1/+2 EV lower error than the inverse, CI above zero). The clip benches:
+> `export_bench_pairs.py --condition exposure` and `training/score_regions.py` (roadmap 4.2 tooling).
+> The narrowed target: `sdr2hdr_loss(region_focus=f)` / `train_sdr2hdr.py --region-focus` (f of the loss
+> on the SDR's clipped/crushed pixels, the rest held to the inverse; 0 is the old loss to the bit).
+> `scripts/run_v8_2026_10_08.ps1` smoke/train/bench on `rudra_mix_v4c_netflix_20261008b`, region focus
+> 0.5, whole-val eval every 2k steps, no curve head or label. `tests/test_v8_bench_2026_10_08.py`.
+>
 > **8 Oct 2026, 14:20 — full-set model check closed with a real fix (line F); v8 data in (line G).** The
 > 287 Meridian frames through every runtime: ONNX fp32 had left eager PyTorch by 5.6e-3 at 1080p (3e-4
 > allowed), unseen on the 300 px golden frames. `nn.GroupNorm` -> ONNX `InstanceNormalization`, whose

@@ -163,6 +163,22 @@ def out_of_generator_sdr(hdr_np: np.ndarray, crf: int) -> torch.Tensor:
     return torch.from_numpy(coded.astype(np.float32)).permute(2, 0, 1)[None]
 
 
+def exposure_sdr(hdr_np: np.ndarray, ev: float, curve: str) -> torch.Tensor:
+    """The reference re-rendered to 8-bit sRGB with a named curve at ``ev``.
+
+    ``hdr_np`` is in network units. The render is the corpus's own
+    (pipeline/sdr_render.py): curve(scene x 2^ev), sRGB OETF, rounded to 8 bits.
+    With ev = the model's corpus_ev + E and the reference scaled by 2^E, the
+    analytic inverse is exact below the clip and E only moves more of the
+    frame into it. Deterministic."""
+    from pipeline.sdr_render import CURVES, _srgb_oetf
+
+    scene = np.maximum(hdr_np, 0.0) * (NETWORK_PEAK_NITS / DIFFUSE_WHITE_NITS)
+    display = CURVES[curve](scene * (2.0 ** ev))
+    code = np.clip(np.rint(_srgb_oetf(display) * 255.0), 0, 255).astype(np.float32) / 255.0
+    return torch.from_numpy(code).permute(2, 0, 1)[None]
+
+
 def load_model(checkpoint: Path, device: torch.device) -> SDR2HDRNet:
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
     config = payload.get("config", {}) or {}
@@ -182,11 +198,20 @@ def main() -> int:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--split", default="test")
-    parser.add_argument("--condition", choices=("clean", "hard", "out-of-generator"),
+    parser.add_argument("--condition", choices=("clean", "hard", "out-of-generator", "exposure"),
                         default="clean",
                         help="hard applies the eval's seeded camera/codec degradation; "
                              "out-of-generator re-tone-maps the reference with a Hable "
                              "curve and a real H.264 round trip -- SDR the model never saw")
+    parser.add_argument("--exposure-ev", type=float, default=0.0,
+                        help="--condition exposure: the shot made this many stops brighter. The "
+                             "reference is scaled by 2^EV and the SDR re-rendered from it with "
+                             "--exposure-curve at the model's own exposure, so the inverse is exact "
+                             "below the clip and every extra stop moves more of the frame into it "
+                             "(roadmap 4.2: clipped highlights at 0, +1, +2 EV)")
+    parser.add_argument("--exposure-curve", default="aces",
+                        help="--condition exposure: the tone curve of the re-render "
+                             "(pipeline/sdr_render.py CURVES)")
     parser.add_argument("--oog-crf", type=int, default=28,
                         help="H.264 CRF for --condition out-of-generator (default 28)")
     parser.add_argument("--max-side", type=int, default=0,
@@ -248,6 +273,13 @@ def main() -> int:
         raise SystemExit(f"error: --source-curve {args.source_curve!r}: use none, from-manifest "
                          f"or one of {SOURCE_CURVES}")
 
+    if args.condition == "exposure":
+        from pipeline.sdr_render import CURVES as _RENDER_CURVES
+        if args.exposure_curve not in _RENDER_CURVES:
+            raise SystemExit(f"error: --exposure-curve {args.exposure_curve!r}: one of {sorted(_RENDER_CURVES)}")
+        if args.source_curve == "from-manifest":
+            raise SystemExit("error: --condition exposure re-renders every frame with --exposure-curve, so "
+                             "the row's own curve is wrong for it; pass that curve (or none)")
     if args.source_curve == "from-manifest" and args.condition == "out-of-generator":
         raise SystemExit("error: out-of-generator re-renders every frame with Hable + H.264, so the "
                          "row's own curve is wrong for it; pass --source-curve hable (or none)")
@@ -326,6 +358,9 @@ def main() -> int:
             sdr = degrade_like_eval(sdr[0], index)[None]
         elif args.condition == "out-of-generator":
             sdr = out_of_generator_sdr(reference, args.oog_crf)
+        elif args.condition == "exposure":
+            sdr = exposure_sdr(reference, float(model.corpus_ev) + args.exposure_ev, args.exposure_curve)
+            reference = (reference * (2.0 ** args.exposure_ev)).astype(np.float32)
         sdr = sdr.to(device)
 
         def predict(tile_size: int) -> torch.Tensor:
@@ -380,6 +415,8 @@ def main() -> int:
         "manifest": str(Path(args.manifest).resolve()),
         "split": args.split, "condition": args.condition,
         "oog_crf": args.oog_crf,
+        "exposure_ev": args.exposure_ev if args.condition == "exposure" else None,
+        "exposure_curve": args.exposure_curve if args.condition == "exposure" else None,
         "test_name": args.test_name,
         "preserve_outside": bool(args.preserve_outside),
         "recovery_mode": args.recovery_mode,

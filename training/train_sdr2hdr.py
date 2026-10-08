@@ -569,6 +569,7 @@ def train(args: argparse.Namespace) -> Path:
                     target_ceiling=(batch["ceiling"].to(device, non_blocking=True)
                                     if "ceiling" in batch else None),
                     baseline_weight=args.baseline_weight if args.curve_head else 0.0,
+                    region_focus=args.region_focus,
                 )
                 loss = losses["total"]
             else:
@@ -689,6 +690,9 @@ def parse_args() -> argparse.Namespace:
                         help="With --source-curve: fraction of clean labelled training samples "
                              "relabelled 'unknown', so the blind path keeps learning "
                              "(default %(default)s)")
+    parser.add_argument("--region-focus", type=float, default=0.0,
+                        help="v8: share of the loss on the SDR's clipped/crushed pixels, the rest of the "
+                             "frame held to the inverse (rudra/sdr2hdr.py sdr2hdr_loss); 0 = as before")
     parser.add_argument("--baseline-weight", type=float, default=0.25,
                         help="With --curve-head: weight of the direct loss on the corrected "
                              "baseline (default %(default)s)")
