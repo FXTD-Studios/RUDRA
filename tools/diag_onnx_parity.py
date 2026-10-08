@@ -53,6 +53,9 @@ def main(argv=None) -> int:
     ap.add_argument("--checkpoint", type=Path, required=True)
     ap.add_argument("--bench-dir", type=Path, required=True)
     ap.add_argument("--frames", type=int, default=3)
+    ap.add_argument("--variants", action="store_true",
+                    help="also run the full frame under ORT with graph optimisations off, one thread, and "
+                         "no pre-packing, to see which knob the error follows")
     args = ap.parse_args(argv)
     net, _ = load_network(args.checkpoint)
     ts = torch.jit.load(str(args.package / "model.ts"))
@@ -75,6 +78,35 @@ def main(argv=None) -> int:
             print(f"{name} [{vname}] {v.shape[1]}x{v.shape[0]}")
             report("torchscript", ref, run_torchscript(ts, sdr))
             report("onnx", ref, run_onnx(f_sess, t_sess, sdr))
+        if args.variants:
+            sdr = _to_tensor(hwc)
+            ref = eager_reference(net, sdr)
+            def session(path, **kw):
+                o = ort.SessionOptions()
+                o.log_severity_level = 3
+                for k, v in kw.items():
+                    if k == "config":
+                        for ck, cv in v.items():
+                            o.add_session_config_entry(ck, cv)
+                    else:
+                        setattr(o, k, v)
+                return ort.InferenceSession(str(path), o, providers=["CPUExecutionProvider"])
+            variants = {
+                "opt off": dict(graph_optimization_level=ort.GraphOptimizationLevel.ORT_DISABLE_ALL),
+                "opt basic": dict(graph_optimization_level=ort.GraphOptimizationLevel.ORT_ENABLE_BASIC),
+                "1 thread": dict(intra_op_num_threads=1),
+                "no prepack": dict(config={"session.disable_prepacking": "1"}),
+                "no nchwc": dict(config={"session.use_nchwc": "0"}),   # ignored by builds without the knob
+            }
+            print(f"{name} [full] ORT variants, residual / highlight / shadow max|d| vs eager:")
+            for vname, kw in variants.items():
+                try:
+                    fs = session(args.package / "model.frame.onnx", **kw)
+                    tsess = session(args.package / "model.tile.onnx", **kw)
+                    got = run_onnx(fs, tsess, sdr)
+                    print(f"    {vname:11s} " + "  ".join(f"{k} {np.max(np.abs(ref[k].astype(np.float64) - got[k])):.3e}" for k in ("residual", "highlight", "shadow")))
+                except Exception as e:  # noqa: BLE001
+                    print(f"    {vname:11s} failed: {e}")
         # The ONNX tile session on the frame's own tiles vs eager tiled: is the
         # error in the untiled full-frame pass only?
         sdr = _to_tensor(hwc)
