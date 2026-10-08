@@ -74,6 +74,16 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **8 Oct 2026, 14:20 — full-set model check closed with a real fix (line F); v8 data in (line G).** The
+> 287 Meridian frames through every runtime: ONNX fp32 had left eager PyTorch by 5.6e-3 at 1080p (3e-4
+> allowed), unseen on the 300 px golden frames. `nn.GroupNorm` -> ONNX `InstanceNormalization`, whose
+> group statistics ORT sums in one float32 pass; `StagedGroupNorm` in the ONNX graphs reduces them in
+> three stages. Now 8.8e-6 on the 287 frames, golden 2.2e-6 (was 5.8e-5), fp16 2.5e-3; native DirectML
+> 3.5e-6. DirectML pays for the extra ops (1080p 139 -> 207 ms, 4K tiled 1.5 -> 2.1 s; dispatch-bound,
+> fp16 no faster), budgets re-measured. Line G: the Netflix corpus is 5,494 train / 163 val / 287 test
+> real pairs (second pull, every odd frame; `check_realsdr_corpus.py` PASS), the v8 training manifest
+> `rudra_mix_v4c_netflix_20261008b`. Beta items left: the by-hand workflow on an HDR display and the Mac.
+>
 > **7 Oct 2026, 20:05 — roadmap 3.6 closed, masks verified (line F).** Gate A on the RTX 4080 SUPER
 > (fp32, median of 5): LibTorch CUDA 170 ms 1080p / 689 ms 4K (tiled 290 / 900), DirectML 139 ms /
 > 3 535 ms untiled, 1 504 tiled, CPU LibTorch 2.45 s / 9.3 s, ORT 3.1 s / 13.6 s; every 4K row now
