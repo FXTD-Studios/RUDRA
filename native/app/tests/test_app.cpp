@@ -23,6 +23,7 @@
 #include <QImage>
 #include <QMouseEvent>
 #include <QComboBox>
+#include <QFile>
 #include <QPlainTextEdit>
 #include <QSpinBox>
 #include <QSettings>
@@ -55,6 +56,7 @@
 #include <limits>
 
 #include <fstream>
+#include <optional>
 #include <map>
 #include <set>
 
@@ -63,6 +65,7 @@
 #include "main_window.hpp"
 #include "model_dialogs.hpp"
 #include "workflow_check.hpp"
+#include "startup.hpp"
 #include "rudra/deliver/master.hpp"
 #include "region_editor.hpp"
 #include "scope_widgets.hpp"
@@ -1504,6 +1507,81 @@ TEST(AppModels, OldSettingsGiveWayToTheDefaultOnlyForAPackageOutsideTheCatalog) 
     QSettings().setValue("model/package", QString::fromStdString((m->root / "gamma").string()));
     ASSERT_TRUE(booted(w));
     EXPECT_EQ(w.model_package(), m->root / "gamma");
+}
+
+// Startup (9 Oct 2026): a packaged RUDRA ignores Qt settings other software
+// left in the environment, and keeps a log file.
+namespace {
+struct SavedEnv {
+    std::vector<std::pair<const char*, std::optional<QByteArray>>> saved;
+    explicit SavedEnv(std::initializer_list<const char*> names) {
+        for (const char* n : names)
+            saved.emplace_back(n, qEnvironmentVariableIsSet(n) ? std::optional<QByteArray>(qgetenv(n)) : std::nullopt);
+    }
+    ~SavedEnv() {
+        for (const auto& [n, v] : saved) {
+            if (v) qputenv(n, *v);
+            else qunsetenv(n);
+        }
+    }
+};
+}  // namespace
+
+TEST(AppStartup, ForeignQtSettingsGiveWayToTheShippedPlugins) {
+    SavedEnv keep{"QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH", "QT_QPA_PLATFORM"};
+    const auto exe = std::filesystem::temp_directory_path() / "rudra-app-startup-exe";
+    std::filesystem::remove_all(exe);
+    // A development build on the system's Qt ships no plugins: nothing changes.
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    EXPECT_TRUE(app::shipped_platforms_dir(exe).empty());
+    EXPECT_TRUE(app::ignore_foreign_qt_environment({}).empty());
+    EXPECT_EQ(qgetenv("QT_QPA_PLATFORM"), "offscreen");
+    // A package: the plugins beside the exe (Windows), or in the bundle (macOS).
+    std::filesystem::create_directories(exe / "platforms");
+    std::ofstream(exe / "platforms" / "qwindows.dll") << "";
+    const auto dir = app::shipped_platforms_dir(exe);
+    ASSERT_EQ(dir, exe / "platforms");
+    qputenv("QT_PLUGIN_PATH", "C:/conda/Library/plugins");
+    qputenv("QT_QPA_PLATFORM_PLUGIN_PATH", "C:/conda/Library/plugins/platforms");
+    qputenv("QT_QPA_PLATFORM", "offscreen");   // the package has no offscreen plugin
+    const auto ignored = app::ignore_foreign_qt_environment(dir);
+    ASSERT_EQ(ignored.size(), 3u);
+    EXPECT_NE(ignored[0].find("QT_PLUGIN_PATH=C:/conda/Library/plugins"), std::string::npos) << ignored[0];
+    EXPECT_NE(ignored[2].find("no 'offscreen' platform plugin"), std::string::npos) << ignored[2];
+    EXPECT_FALSE(qEnvironmentVariableIsSet("QT_PLUGIN_PATH"));
+    EXPECT_FALSE(qEnvironmentVariableIsSet("QT_QPA_PLATFORM_PLUGIN_PATH"));
+    EXPECT_FALSE(qEnvironmentVariableIsSet("QT_QPA_PLATFORM"));
+    // A plugin the package does ship stays chosen, options and all.
+    qputenv("QT_QPA_PLATFORM", "windows:darkmode=2");
+    EXPECT_TRUE(app::ignore_foreign_qt_environment(dir).empty());
+    EXPECT_EQ(qgetenv("QT_QPA_PLATFORM"), "windows:darkmode=2");
+    // macOS: RUDRA.app/Contents/MacOS/RUDRA beside Contents/PlugIns/platforms.
+    const auto bundle = exe / "RUDRA.app" / "Contents";
+    std::filesystem::create_directories(bundle / "MacOS");
+    std::filesystem::create_directories(bundle / "PlugIns" / "platforms");
+    EXPECT_EQ(app::shipped_platforms_dir(bundle / "MacOS"), bundle / "PlugIns" / "platforms");
+    std::filesystem::remove_all(exe);
+}
+
+TEST(AppStartup, TheLogFileRotatesAndKeepsTheWindowsLog) {
+    const auto dir = std::filesystem::temp_directory_path() / "rudra-app-startup-log";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    std::ofstream(dir / "rudra.log") << std::string(64, 'x');   // past the limit below
+    std::ofstream(dir / "rudra.1.log") << "older";
+    const QString path = app::install_app_log(QString::fromStdString(dir.string()), 32, 2);
+    ASSERT_FALSE(path.isEmpty());
+    EXPECT_EQ(app::app_log_path(), path);
+    EXPECT_TRUE(std::filesystem::exists(dir / "rudra.1.log"));   // the big one, moved
+    EXPECT_TRUE(std::filesystem::exists(dir / "rudra.2.log"));   // the older one, moved on
+    app::MainWindow w(false);
+    w.log("a line in the window");
+    qWarning("a Qt warning");
+    QFile f(path);
+    ASSERT_TRUE(f.open(QIODevice::ReadOnly));
+    const QString text = QString::fromUtf8(f.readAll());
+    EXPECT_TRUE(text.contains("app   a line in the window")) << text.toStdString();
+    EXPECT_TRUE(text.contains("warn  a Qt warning")) << text.toStdString();
 }
 
 TEST(AppModels, NoPackageAnywhereSaysWhereItLooked) {
