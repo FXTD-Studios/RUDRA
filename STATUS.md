@@ -74,6 +74,19 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **9 Oct 2026, 21:30 — beta 4 prepared (line F).** `RUDRA_RELEASE` beta.4; the release workflow
+> exports `sdr2hdr_image_v8` (it still exported shadow_v1, so a tag would have shipped the retired
+> model); `docs/BETA.md` lists what changed since the beta 3 tag (source panel, calibration, reference
+> match, painted masks, anchor live, ProRes 4444 and log, v8, GroupNorm parity, fp16/TensorRT). A bare
+> start follows the default when it moves (`model/followsDefault`; an older beta's own package gives
+> way), `AppModels.*` 10/10 on Linux. PR #29's macOS core job failed `SequenceEncode.LiveEncodesCarryTheirTags`
+> and `DeliverReportIsThePythons`: the 7 Oct goldens were recorded with the 2025 gyan.dev ffmpeg, whose
+> MOV/MP4 colr atom leaves BT.2020/PQ unspecified, and ffmpeg 6.1 (Homebrew, Ubuntu) fills them in. The
+> tests now accept either form for the container atom and require the ProRes frame headers to match; 5/5
+> on Ubuntu with ffmpeg 6.1. Ship-path review and fixes:
+> `reports/CODE_REVIEW_SHIP_PATH_2026-10-09.md`. Tag and push from PowerShell:
+> `scripts/release_beta4_2026-10-09.ps1`.
+>
 > **9 Oct 2026, 13:45 — the optional model is v8 (line G, release row R5); shadow_v1 retired.**
 > `checkpoints/sdr2hdr_image_v8.pt` (best.pt, step 48,000) committed with its config and SHA-256;
 > both `models.json` default to it, shadow_v1 kept in the registry as retired, its package moved out

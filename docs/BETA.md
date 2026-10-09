@@ -1,7 +1,7 @@
-# RUDRA 0.9.0 beta 3
+# RUDRA 0.9.0 beta 4
 
 The desktop RUDRA: SDR footage in, scene-linear HDR out, with the places the
-model reconstructed shown to you. This is the third public beta of the native
+model reconstructed shown to you. This is the fourth public beta of the native
 app (C++20, Qt 6.8, no Python at runtime). It is for evaluation and
 non-commercial use (PolyForm Noncommercial 1.0.0, see LICENSE; the model
 weights: LICENSE-weights).
@@ -42,21 +42,38 @@ weights: LICENSE-weights).
 - `rudra-native`, the command line: `diff`, `video`, `deliver`, `batch`,
   `ffmpeg-check`.
 
-## Changes since beta 2
+## Changes since beta 3
 
-- Compare looked like it did nothing: at the default 203-nit view peak the
-  reconstruction and the baseline clip to the same white, because RUDRA's
-  changes sit above diffuse white or in deep shadow. The compare line now says
-  so, and **Show at N nits** raises the view peak (the master is unchanged).
-- New: the **Changes** tint and the **Invented** layer (above), held to the
-  CPU reference on every GPU path.
-- macOS: the DMG is signed with a Developer ID and notarized by Apple when the
-  release is built with the signing certificate, so it opens with no warning.
-- `rudra-native bench` times 1080p and 4K and checks per-machine latency
-  budgets (`native/bench/latency_budgets.json`).
-- Packages identify themselves as 0.9.0-beta.3. The shipped model is now
-  `sdr2hdr_image_v8` (9 Oct 2026): `shadow_v1` lost to the analytic inverse on
-  every real Meridian frame (−4.11 dB) and is retired.
+- **Source panel.** Name the curve that made the SDR (unknown, ACES,
+  filmic/Hable, AgX, camera log, plain Rec.709 clip) and the baseline becomes
+  its inverse, drawn against the ACES inverse with readouts in nits.
+- **Three-click calibration.** Click black, 18% grey or a highlight and type
+  the nits it should be; one to three anchors are fitted over the picked curve.
+- **Reference match.** Load the graded HDR of the frame (EXR, or 16-bit PQ
+  PNG/TIFF) and the curve is fitted to it at every code, with the residual in
+  stops.
+- **Painted masks** for the first four Region EV bands (left drag paints, Alt
+  erases, the wheel sizes the brush); they travel with the master as
+  `<master>.masks.png`.
+- **Anchor live on the viewer**, with an Anchor knee slider: the master's
+  anchor stage is what you see while Anchor is on.
+- **ProRes 4444** beside 422 HQ, and on both an **Encoding** row: graded PQ,
+  or scene-referred **ACEScct** (AP1) or **ARRI LogC4** (AWG4).
+- **The model is `sdr2hdr_image_v8`** (optional; masters default to the
+  analytic inverse). `shadow_v1` lost to the inverse on every real Meridian
+  frame (−4.11 dB) and is retired. A bare start now follows the default when
+  it changes, so an install upgraded from an earlier beta opens v8 instead of
+  the package it used last; a model you picked yourself stays picked.
+- **Model parity on real 1080p frames:** the ONNX graphs reduce GroupNorm in
+  stages, so ONNX Runtime matches PyTorch to 9e-6 on all 287 Meridian test
+  frames (it was 5.6e-3).
+- Half precision: packages carry an fp16 tile graph, held to a 1% tolerance;
+  `--precision fp16` on `rudra-native diff` and `bench`, and a TensorRT device
+  (`--device tensorrt`) where ONNX Runtime has it.
+- Every live control (peak, region EV, strength, mode, preserve, source curve,
+  calibration) is one composite and display pass: 1.1 to 1.3 ms at 4K on an
+  RTX 4080, under a tenth of a 60 Hz frame. Inference time is separate:
+  `rudra-native bench` reports and budgets it per machine.
 
 ## Install
 
@@ -66,7 +83,7 @@ opens with no warning. A DMG built without the certificate (the build log says
 "ad hoc") makes macOS warn on first open: System Settings > Privacy &
 Security > Open Anyway, or `xattr -dr com.apple.quarantine /Applications/RUDRA.app`.
 
-**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.3-windows-x64-setup.exe`:
+**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.4-windows-x64-setup.exe`:
 it installs for your user by default (no administrator prompt), adds RUDRA to
 the Start menu and can be removed from Settings > Apps. Or take the portable
 ZIP: unzip anywhere and run `RUDRA.exe`. A GPU with DirectX 12 is used when
