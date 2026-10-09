@@ -40,8 +40,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$Clip,
     [string]$Frames = "",
-    [string]$Package = "dist\models\sdr2hdr_shadow_v1",
-    [string]$Checkpoint = "checkpoints\sdr2hdr_shadow_v1.pt",
+    [string]$Package = "dist\models\sdr2hdr_image_v8",
+    [string]$Checkpoint = "checkpoints\sdr2hdr_image_v8.pt",
     [string]$Backend = "onnxruntime/directml",
     [string]$Ffmpeg = "",
     [string]$Python = "python",

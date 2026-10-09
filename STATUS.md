@@ -74,6 +74,16 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **9 Oct 2026, 13:45 — the optional model is v8 (line G, release row R5); shadow_v1 retired.**
+> `checkpoints/sdr2hdr_image_v8.pt` (best.pt, step 48,000) committed with its config and SHA-256;
+> both `models.json` default to it, shadow_v1 kept in the registry as retired, its package moved out
+> of `dist\models`. Gate A on v8 (RTX 4080 SUPER): ONNX vs eager 4.3e-6, the 287 Meridian frames
+> 3.9e-6 (fp16 2.3e-3), every runtime PASS (worst DirectML fp16 8.4e-3), 1080p DirectML 158 ms, CUDA
+> 154 ms. Beta 3 repackaged with v8 (zip sha256 87dfdd2f…). The phase 3 and 4 exit scripts and the
+> package script default to the v8 package. Why: on real SDR v8 is level with the inverse (+0.02 dB,
+> CVVDP CI above zero) and +4.14 dB over shadow_v1 on all 287 frames; it does not pass its own gate
+> (clipped pixels no better, black lifted), so the master path stays the inverse.
+>
 > **9 Oct 2026, 03:30 — ProRes 4444 and log masters in the app's Export sheet (line F).** A 4444 tile
 > beside 422 HQ; on both ProRes tiles an Encoding row: PQ (graded, as before), ACEScct (AP1) or ARRI
 > LogC4 (AWG4). The log files carry the scene-linear master before peak and knee (the ACES EXR's

@@ -17,7 +17,7 @@
 
   Needs what NATIVE_PHASE3_EXIT.ps1 needs: Visual Studio 2022 or 2026 (or the
   Build Tools) with the C++ tools, a Python for aqtinstall, and a model package
-  (NATIVE_GATE_A.ps1 exports dist\models\sdr2hdr_shadow_v1). Movies need an
+  (NATIVE_GATE_A.ps1 -Checkpoint checkpoints\sdr2hdr_image_v8.pt exports dist\models\sdr2hdr_image_v8). Movies need an
   ffmpeg with libx265, prores_ks and zscale on the PATH (the gyan.dev "full"
   build); it is not bundled.
 
