@@ -153,11 +153,15 @@ $env:PATH = "$TorchLib;$env:PATH"
 
 # ---------------------------------------------------------------------------
 Say "Gate A"
+# The fp16 row (roadmap R1, real time) needs a package exported with the fp16
+# tile graph (tools/export_model.py from 2 Oct 2026); an older one skips it.
+$HasFp16 = Test-Path (Join-Path $Package "model.tile.fp16.onnx")
 $rows = @(
-    @{ Name = "LibTorch CPU";          Runtime = "libtorch";    Device = "cpu";      Run = $WithLibTorch },
-    @{ Name = "LibTorch CUDA";         Runtime = "libtorch";    Device = "cuda";     Run = $WithCuda },
-    @{ Name = "ONNX Runtime CPU";      Runtime = "onnxruntime"; Device = "cpu";      Run = $true },
-    @{ Name = "ONNX Runtime DirectML"; Runtime = "onnxruntime"; Device = "directml"; Run = $true }
+    @{ Name = "LibTorch CPU";               Runtime = "libtorch";    Device = "cpu";      Precision = "fp32"; Run = $WithLibTorch },
+    @{ Name = "LibTorch CUDA";              Runtime = "libtorch";    Device = "cuda";     Precision = "fp32"; Run = $WithCuda },
+    @{ Name = "ONNX Runtime CPU";           Runtime = "onnxruntime"; Device = "cpu";      Precision = "fp32"; Run = $true },
+    @{ Name = "ONNX Runtime DirectML";      Runtime = "onnxruntime"; Device = "directml"; Precision = "fp32"; Run = $true },
+    @{ Name = "ONNX Runtime DirectML fp16"; Runtime = "onnxruntime"; Device = "directml"; Precision = "fp16"; Run = $HasFp16 }
 )
 $log = @("RUDRA native Gate A, $Stamp", "package $Package", "torch $TorchVersion (cuda '$TorchCuda'), ONNX Runtime $OrtVersion, DirectML $DmlVersion", "")
 $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
@@ -171,7 +175,7 @@ foreach ($r in $rows) {
     # terminating error under "Stop"; a runtime's warning is not a failure,
     # the exit code is. Collect both streams as text and judge by the code.
     $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-    $out = & $Exe diff $Package --runtime $r.Runtime --device $r.Device 2>&1 | ForEach-Object { "$_" }
+    $out = & $Exe diff $Package --runtime $r.Runtime --device $r.Device --precision $r.Precision 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
     $ErrorActionPreference = $prev
     $log += "---- $($r.Name)"; $log += $out; $log += ""
@@ -198,9 +202,9 @@ if (-not $NoBench) {
     foreach ($r in $rows) {
         $row = $summary | Where-Object { $_.Backend -eq $r.Name }
         if ($row.Result -ne "PASS") { continue }
-        $json = Join-Path $latencyDir "$($Stamp)_$($r.Runtime)_$($r.Device).json"
+        $json = Join-Path $latencyDir "$($Stamp)_$($r.Runtime)_$($r.Device)_$($r.Precision).json"
         $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-        $out = & $Exe bench $Package --runtime $r.Runtime --device $r.Device --size 1920x1080,3840x2160 --iters 5 --json $json @budgetArgs 2>&1 | ForEach-Object { "$_" }
+        $out = & $Exe bench $Package --runtime $r.Runtime --device $r.Device --precision $r.Precision --size 1920x1080,3840x2160 --iters 5 --json $json @budgetArgs 2>&1 | ForEach-Object { "$_" }
         $code = $LASTEXITCODE
         $ErrorActionPreference = $prev
         $log += "---- bench $($r.Name)"; $log += $out; $log += ""

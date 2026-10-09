@@ -111,6 +111,8 @@ rudra-native info dist/models/sdr2hdr_shadow_v1
 rudra-native diff dist/models/sdr2hdr_shadow_v1 --runtime all --device cpu
 rudra-native bench dist/models/sdr2hdr_shadow_v1 --runtime libtorch --device cuda   # 1080p and 4K
 rudra-native bench dist/models/sdr2hdr_shadow_v1 --device cuda --budget native/bench/latency_budgets.json --machine rtx4080s-win --json latency.json
+rudra-native diff dist/models/sdr2hdr_shadow_v1 --runtime onnxruntime --device directml --precision fp16   # the fp16 tile graph
+rudra-native bench dist/models/sdr2hdr_shadow_v1 --runtime onnxruntime --device tensorrt --precision fp16  # onnxruntime-gpu with TensorRT
 rudra-native master dist/models/sdr2hdr_shadow_v1 plate.png --out plate.exr [--params '{"container": "linear"}']
 rudra-native master-check dist/models/sdr2hdr_shadow_v1 native/tests/golden/master
 rudra-native ffmpeg-check          # can this ffmpeg deliver? a 16-frame HDR10 export through it, cached

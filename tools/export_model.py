@@ -102,17 +102,22 @@ QUANTILE_CEILING = 1_000_000  # frame_conditioning_stats subsampling threshold
 # CPU even in true fp32 (TF32 off). Measured 23 Sep 2026 on an RTX 4080 SUPER:
 # 1.4e-5 worst, in the residual. atol is set at a little over three times that,
 # still six times tighter than ONNX.
+#
+# "fp16" holds the half-precision tile graph (model.tile.fp16.onnx, the
+# real-time path) to 1e-2 in the fields: in the residual that is 0.0144 stop,
+# a 1% luminance step, the just-noticeable difference the other tolerances are
+# measured against. Measured 2 Oct 2026 on ONNX Runtime CPU: 5.9e-3 (0.0086
+# stop) worst in the residual, 1.8e-3 in the masks. It is checked here on CPU
+# and by rudra-native diff --precision fp16 on each GPU.
 TOLERANCE = {"torchscript": {"atol": 1e-5, "rtol": 0.0},
              "onnx": {"atol": 3e-4, "rtol": 1e-4},
-             "gpu_fp32": {"atol": 5e-5, "rtol": 1e-5}}
+             "gpu_fp32": {"atol": 5e-5, "rtol": 1e-5},
+             "fp16": {"atol": 1e-2, "rtol": 0.0}}
 
 
 # --------------------------------------------------------------------------
 # The exported module
 # --------------------------------------------------------------------------
-
-CORE_MODULES = ("stem", "enc1", "down1", "enc2", "down2", "mid", "up2", "dec2", "up1", "dec1", "head")
-
 
 class StagedGroupNorm(nn.Module):
     """nn.GroupNorm with its statistics reduced in stages (W, then H, then the
@@ -195,6 +200,10 @@ class NativeModel(nn.Module):
             # graph keep nn.GroupNorm.
             for name in CORE_MODULES:
                 setattr(self, name, _staged_group_norms(getattr(self, name)))
+
+        # True only in the fp16 tile graph (export_onnx_fp16): the U-Net runs
+        # in half precision between an fp32 baseline and fp32 heads.
+        self.half_core = False
 
         self.has_gate = net.gate is not None
         self.has_shadow = net.shadow_gate is not None
@@ -452,11 +461,14 @@ class NativeModel(nn.Module):
         """(log residual x scale (1,3,h,w), highlight (1,1,h,w), shadow (1,1,h,w))."""
         sdr = sdr.float().clamp(0.0, 1.0)
         baseline = self._baseline(sdr, curve_params)
-        e1, e2, m = self._encode(sdr, baseline)
+        if self.half_core:
+            e1, e2, m = self._encode(sdr.half(), baseline.half())
+        else:
+            e1, e2, m = self._encode(sdr, baseline)
         u2 = self._resize_like(m, e2)
         u2 = self.dec2(self.up2(torch.cat((u2, e2), dim=1)))
         u1 = self._resize_like(u2, e1)
-        raw = self.head(self.dec1(self.up1(torch.cat((u1, e1), dim=1))))
+        raw = self.head(self.dec1(self.up1(torch.cat((u1, e1), dim=1)))).float()
         residual = raw[:, 0:3]
         if self.has_gate:
             residual = residual * residual_scale
@@ -529,6 +541,34 @@ def export_onnx(net: SDR2HDRNet, frame_path: Path, tile_path: Path, opset: int) 
             input_names=["sdr"], output_names=["residual_scale", "shadow_weight", "curve_params"],
             dynamic_axes={"sdr": {2: "height", 3: "width"}})
         scale, _, curve = m.frame_pass(sample)
+        torch.onnx.export(
+            _TileOnly(m), (sample, scale, curve), str(tile_path), dynamo=False, opset_version=opset,
+            input_names=["sdr", "residual_scale", "curve_params"],
+            output_names=["residual", "highlight", "shadow"],
+            dynamic_axes={"sdr": {2: "height", 3: "width"},
+                          "residual": {2: "height", 3: "width"},
+                          "highlight": {2: "height", 3: "width"},
+                          "shadow": {2: "height", 3: "width"}})
+
+
+# The U-Net of the tile pass, the only part with real cost, in half precision
+# (roadmap R1: real time). The baseline before it and the heads after it stay
+# fp32: the inverse ACES curve is steep near the clip, and its constants or
+# input rounded to fp16 moved a clipped highlight by 0.07 stop, while the
+# U-Net alone in fp16 moves it by 0.016 stop at worst (bf16: 0.06).
+CORE_MODULES = ("stem", "enc1", "down1", "enc2", "down2", "mid", "up2", "dec2", "up1", "dec1", "head")
+
+
+def export_onnx_fp16(net: SDR2HDRNet, tile_path: Path, opset: int) -> None:
+    m = NativeModel(copy.deepcopy(net), onnx_safe=True).eval()
+    for name in CORE_MODULES:
+        getattr(m, name).half()
+    m.half_core = True
+    sample = torch.rand(1, 3, 96, 128)
+    with torch.inference_mode(False), torch.no_grad(), warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        ref = NativeModel(net, onnx_safe=True).eval()
+        scale, _, curve = ref.frame_pass(sample)
         torch.onnx.export(
             _TileOnly(m), (sample, scale, curve), str(tile_path), dynamo=False, opset_version=opset,
             input_names=["sdr", "residual_scale", "curve_params"],
@@ -715,16 +755,20 @@ def build_package(checkpoint: Path, out_root: Path, opset: int = 17,
     so.log_severity_level = 3
     f_sess = ort.InferenceSession(str(tmp / "model.frame.onnx"), so, providers=["CPUExecutionProvider"])
     t_sess = ort.InferenceSession(str(tmp / "model.tile.onnx"), so, providers=["CPUExecutionProvider"])
+    export_onnx_fp16(net, tmp / "model.tile.fp16.onnx", opset)
+    t16_sess = ort.InferenceSession(str(tmp / "model.tile.fp16.onnx"), so, providers=["CPUExecutionProvider"])
 
-    worst = {"torchscript": {k: 0.0 for k in OUTPUTS}, "onnx": {k: 0.0 for k in OUTPUTS}}
-    margin = {"torchscript": -float("inf"), "onnx": -float("inf")}
+    worst = {"torchscript": {k: 0.0 for k in OUTPUTS}, "onnx": {k: 0.0 for k in OUTPUTS},
+             "fp16": {k: 0.0 for k in OUTPUTS}}
+    margin = {"torchscript": -float("inf"), "onnx": -float("inf"), "fp16": -float("inf")}
     index = []
     frames = golden_inputs()
     for name_i, hwc in frames:
         sdr = _to_tensor(hwc)
         ref = eager_reference(net, sdr)
         for label, got in (("torchscript", run_torchscript(ts, sdr)),
-                           ("onnx", run_onnx(f_sess, t_sess, sdr))):
+                           ("onnx", run_onnx(f_sess, t_sess, sdr)),
+                           ("fp16", run_onnx(f_sess, t16_sess, sdr))):
             for k, v in compare(ref, got).items():
                 worst[label][k] = max(worst[label][k], v)
             margin[label] = max(margin[label], excess(ref, got, TOLERANCE[label]))
@@ -751,19 +795,27 @@ def build_package(checkpoint: Path, out_root: Path, opset: int = 17,
 
     bench = None
     if bench_dir is not None:
-        bw = {"torchscript": 0.0, "onnx": 0.0}
+        bw = {"torchscript": 0.0, "onnx": 0.0, "fp16": 0.0}
         count = 0
         for _, hwc in bench_frames(bench_dir, bench_limit):
             sdr = _to_tensor(hwc)
             ref = eager_reference(net, sdr)
             for label, got in (("torchscript", run_torchscript(ts, sdr)),
-                               ("onnx", run_onnx(f_sess, t_sess, sdr))):
+                               ("onnx", run_onnx(f_sess, t_sess, sdr)),
+                               ("fp16", run_onnx(f_sess, t16_sess, sdr))):
                 bw[label] = max(bw[label], max(compare(ref, got).values()))
                 margin[label] = max(margin[label], excess(ref, got, TOLERANCE[label]))
             count += 1
         bench = {"folder": str(bench_dir), "frames": count, "max_abs": bw}
 
     passed = {label: margin[label] <= 0.0 for label in margin}
+    # The fp16 graph is an option, not the reference: one that misses its
+    # tolerance is left out of the package (the app then has no fp16 path),
+    # it does not stop the fp32 package being written.
+    fp16_ok = passed.pop("fp16")
+    if not fp16_ok:
+        (tmp / "model.tile.fp16.onnx").unlink()
+        print(f"WARNING: fp16 tile graph over its tolerance ({margin['fp16']:+.2e}), left out of the package")
 
     lic = REPO / "checkpoints" / "LICENSE"
     if lic.exists():
@@ -799,11 +851,17 @@ def build_package(checkpoint: Path, out_root: Path, opset: int = 17,
         "onnx_inputs": {"frame": [i.name for i in f_sess.get_inputs()],
                         "tile": [i.name for i in t_sess.get_inputs()]},
         "tolerance": {"rule": "|exported - eager| <= atol + rtol*|eager|, every element", **TOLERANCE},
-        "parity": {"golden_frames": len(frames), "max_abs": worst,
-                   "worst_excess_over_tolerance": margin, "bench": bench, "passed": passed},
+        "parity": {"golden_frames": len(frames),
+                   "max_abs": {k: worst[k] for k in ("torchscript", "onnx")},
+                   "worst_excess_over_tolerance": {k: margin[k] for k in ("torchscript", "onnx")}, "bench": bench, "passed": passed},
     }
-    for key in ("torchscript", "onnx_frame", "onnx_tile"):
-        manifest["files"][key + "_sha256"] = sha256(tmp / manifest["files"][key])
+    if fp16_ok:
+        manifest["files"]["onnx_tile_fp16"] = "model.tile.fp16.onnx"
+    manifest["parity"]["fp16"] = {"included": fp16_ok, "max_abs": worst["fp16"],
+                                  "worst_excess_over_tolerance": margin["fp16"]}
+    for key in ("torchscript", "onnx_frame", "onnx_tile", "onnx_tile_fp16"):
+        if key in manifest["files"]:
+            manifest["files"][key + "_sha256"] = sha256(tmp / manifest["files"][key])
     (tmp / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
 
     if not all(passed.values()):
@@ -832,6 +890,9 @@ def main(argv: list[str] | None = None) -> int:
         t = TOLERANCE[label]
         print(f"  {label:11s} max |d| {max(p['max_abs'][label].values()):.2e}"
               f"  (atol {t['atol']:.0e}, rtol {t['rtol']:.0e})  {'PASS' if p['passed'][label] else 'FAIL'}")
+    t = TOLERANCE["fp16"]
+    print(f"  {'fp16 tile':11s} max |d| {max(p['fp16']['max_abs'].values()):.2e}"
+          f"  (atol {t['atol']:.0e})  {'included' if p['fp16']['included'] else 'LEFT OUT'}")
     if p["bench"]:
         print(f"  bench: {p['bench']['frames']} frames, {p['bench']['max_abs']}")
     print(f"  written to {args.out / manifest['name']}")

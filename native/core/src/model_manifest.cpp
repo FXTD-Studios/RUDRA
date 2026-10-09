@@ -51,6 +51,10 @@ Result<ModelManifest> read_manifest(const std::filesystem::path& package_root) {
         m.golden = files.at("golden").get<std::string>();
         for (const char* key : {"torchscript", "onnx_frame", "onnx_tile"})
             m.file_sha256[files.at(key).get<std::string>()] = files.at(std::string(key) + "_sha256").get<std::string>();
+        if (files.contains("onnx_tile_fp16")) {
+            m.onnx_tile_fp16 = files.at("onnx_tile_fp16").get<std::string>();
+            m.file_sha256[m.onnx_tile_fp16.string()] = files.at("onnx_tile_fp16_sha256").get<std::string>();
+        }
         m.onnx_frame_inputs = j.at("onnx_inputs").at("frame").get<std::vector<std::string>>();
         m.onnx_tile_inputs = j.at("onnx_inputs").at("tile").get<std::vector<std::string>>();
         for (const char* key : {"torchscript", "onnx"}) {
@@ -63,6 +67,10 @@ Result<ModelManifest> read_manifest(const std::filesystem::path& package_root) {
         if (const auto& tol = j.at("tolerance"); tol.contains("gpu_fp32"))
             m.tolerance["gpu_fp32"] = Tolerance{tol.at("gpu_fp32").at("atol").get<double>(),
                                                 tol.at("gpu_fp32").at("rtol").get<double>()};
+        if (const auto& tol = j.at("tolerance"); tol.contains("fp16"))
+            m.tolerance["fp16"] = Tolerance{tol.at("fp16").at("atol").get<double>(), tol.at("fp16").at("rtol").get<double>()};
+        if (!m.onnx_tile_fp16.empty() && !m.tolerance.count("fp16"))
+            return make_error(ErrorCode::ParseError, "The model manifest lists an fp16 graph without its tolerance.");
     } catch (const std::exception& e) {
         return make_error(ErrorCode::ParseError, "The model manifest is missing a required field.", e.what());
     }

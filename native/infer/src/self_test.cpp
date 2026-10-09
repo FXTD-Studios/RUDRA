@@ -69,6 +69,7 @@ std::string tolerance_key(const BackendInfo& info) {
     // CPU LibTorch runs eager's own kernels; LibTorch on a GPU is true fp32
     // with the vendor's summation order; ONNX Runtime is another graph
     // compiler on any device.
+    if (info.precision == Precision::Fp16) return "fp16";
     if (info.runtime == Runtime::OnnxRuntime) return "onnx";
     return info.device == Device::Cpu ? "torchscript" : "gpu_fp32";
 }

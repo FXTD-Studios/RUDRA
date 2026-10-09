@@ -423,6 +423,7 @@ only when enabled.
 | composite + view, 4K, GPU | ≤ 12 ms | **composite + display pass 1.156 ms (D3D12), 1.154 (D3D11), 1.167 (Vulkan), 1.030 (OpenGL)**; the composite alone 0.49 ms |
 | inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | fp32 172 ms untiled, 296 ms tiled 512/64 (RTX 4080 SUPER, fields in host memory); fp16/bf16 not built yet |
 | inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | 150 ms untiled, 489 ms tiled 512/64; CPU for reference: LibTorch 2.5 s, ONNX Runtime 3.2 s |
+| inference, 1080p and 4K, RTX 4080, ORT DirectML / TensorRT fp16 (`model.tile.fp16.onnx`, roadmap R1) | 1080p ≤ 20 ms | not yet run; the export holds the fp16 graph to 1e-2 in the fields (0.0144 stop), measured 5.9e-3 on CPU |
 | inference, 4K, RTX 4080, LibTorch CUDA / ORT DirectML fp32 | measure, then measured + 25 % | not yet run: `NATIVE_GATE_A.ps1 -SkipExport -SkipBuild -Machine rtx4080s-win` times it, and its first run sets the 4K budgets |
 | inference, 1080p, Apple M-series, LibTorch MPS / ORT Core ML | measure | [Phase 0] |
 | inference, 1080p, CPU on GitHub's ubuntu-24.04 runner (CI, `native` parity job) | ≤ 40 s LibTorch, ≤ 25 s ONNX Runtime, untiled | 16.7 s and 10.1 s untiled (28.7 s and 16.9 s tiled) on a 2-core cloud VM, 2 Oct 2026; loose on purpose, it catches a debug build or a lost thread pool |

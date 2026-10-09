@@ -2,8 +2,9 @@
 //
 //   rudra-native version
 //   rudra-native info <package>
-//   rudra-native diff <package> [--runtime libtorch|onnxruntime|all] [--device cpu|cuda|mps|directml|coreml|rocm|openvino]
-//   rudra-native bench <package> [--runtime ...] [--device ...] [--size 1920x1080,3840x2160] [--iters 5]
+//   rudra-native diff <package> [--runtime libtorch|onnxruntime|all] [--device cpu|cuda|mps|directml|coreml|rocm|openvino|tensorrt]
+//                     [--precision fp32|fp16]
+//   rudra-native bench <package> [--runtime ...] [--device ...] [--precision fp32|fp16] [--size 1920x1080,3840x2160] [--iters 5]
 //                      [--json out.json] [--budget native/bench/latency_budgets.json --machine <label>]
 //   rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]
 //   rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]
@@ -73,13 +74,17 @@ int fail(const Error& e) {
 }
 
 Result<Device> parse_device(const std::string& s) {
-    static const std::map<std::string, Device> m{{"cpu", Device::Cpu},       {"cuda", Device::Cuda},
-                                                 {"mps", Device::Mps},       {"directml", Device::DirectML},
-                                                 {"coreml", Device::CoreML}, {"rocm", Device::Rocm},
-                                                 {"openvino", Device::OpenVino}};
-    auto it = m.find(s);
-    if (it == m.end()) return make_error(ErrorCode::InvalidArgument, "Unknown device.", s);
-    return it->second;
+    if (auto d = device_from_string(s)) return *d;
+    return make_error(ErrorCode::InvalidArgument, "Unknown device.", s);
+}
+
+Result<Precision> parse_precision(const std::string& s) {
+    if (auto p = precision_from_string(s)) return *p;
+    return make_error(ErrorCode::InvalidArgument, "Unknown precision (fp32 or fp16).", s);
+}
+
+Result<std::unique_ptr<InferenceBackend>> make_backend(Runtime rt, const ModelManifest& m, Device d, Precision p) {
+    return rt == Runtime::LibTorch ? make_libtorch_backend(m, d, p) : make_onnxruntime_backend(m, d, p);
 }
 
 int cmd_info(const fs::path& pkg) {
@@ -99,7 +104,7 @@ int cmd_info(const fs::path& pkg) {
     return v ? 0 : 3;
 }
 
-int cmd_diff(const fs::path& pkg, const std::string& which, Device device) {
+int cmd_diff(const fs::path& pkg, const std::string& which, Device device, Precision precision) {
     auto m = read_manifest(pkg);
     if (!m) return fail(m.error());
     if (auto v = verify_package_files(*m); !v) return fail(v.error());
@@ -112,13 +117,18 @@ int cmd_diff(const fs::path& pkg, const std::string& which, Device device) {
 
     bool all_pass = true;
     for (auto rt : runtimes) {
-        auto backend = rt == Runtime::LibTorch ? make_libtorch_backend(*m, device) : make_onnxruntime_backend(*m, device);
+        auto backend = make_backend(rt, *m, device, precision);
+        if (!backend && precision == Precision::Fp16 && rt == Runtime::LibTorch && which == "all") {
+            std::printf("libtorch: skipped, fp16 runs through ONNX Runtime\n\n");
+            continue;
+        }
         if (!backend) return fail(backend.error());
         auto r = self_test(*m, **backend);   // infer/self_test, shared with the app's first load
         if (!r) return fail(r.error());
-        std::printf("%s %s on %s (%s): %d golden frames + stitch, atol %.0e rtol %.0e (%s)\n",
+        std::printf("%s %s on %s (%s), %s: %d golden frames + stitch, atol %.0e rtol %.0e (%s)\n",
                     to_string(r->backend.runtime), r->backend.version.c_str(), to_string(r->backend.device),
-                    r->backend.detail.c_str(), r->frames, r->tolerance.atol, r->tolerance.rtol, r->tolerance_key.c_str());
+                    r->backend.detail.c_str(), to_string(r->backend.precision), r->frames, r->tolerance.atol,
+                    r->tolerance.rtol, r->tolerance_key.c_str());
         for (const auto& [key, st] : r->outputs)
             std::printf("  %-20s max |d| %.3e  %s\n", key.c_str(), st.max_abs, st.pass() ? "pass" : "FAIL");
         std::printf("  => %s\n\n", r->pass() ? "PASS" : "FAIL");
@@ -164,8 +174,9 @@ SdrImage bench_frame(int w, int h) {
     return SdrImage(std::move(b));
 }
 
-int cmd_bench(const fs::path& pkg, const std::string& which, Device device, const std::vector<BenchSize>& sizes,
-              int iters, const std::string& json_out, const std::string& budget_file, const std::string& machine) {
+int cmd_bench(const fs::path& pkg, const std::string& which, Device device, Precision precision,
+              const std::vector<BenchSize>& sizes, int iters, const std::string& json_out,
+              const std::string& budget_file, const std::string& machine) {
     auto m = read_manifest(pkg);
     if (!m) return fail(m.error());
 
@@ -182,10 +193,12 @@ int cmd_bench(const fs::path& pkg, const std::string& which, Device device, cons
             return fail(make_error(ErrorCode::InvalidArgument, "--budget needs --machine: budgets are per machine.",
                                    budget_file));
     }
+    // A budget row without "precision" is fp32, as every row was before fp16.
     auto budget_for = [&](const char* rt, const char* dev, const std::string& size, const char* mode) -> double {
         for (const auto& b : budgets)
             if (b.value("machine", "") == machine && b.value("runtime", "") == rt && b.value("device", "") == dev &&
-                b.value("size", "") == size && b.value("mode", "") == mode)
+                b.value("size", "") == size && b.value("mode", "") == mode &&
+                b.value("precision", "fp32") == to_string(precision))
                 return b.at("max_ms").get<double>();
         return 0.0;
     };
@@ -200,17 +213,23 @@ int cmd_bench(const fs::path& pkg, const std::string& which, Device device, cons
     int over = 0, checked = 0;
     using clock = std::chrono::steady_clock;
     for (auto rt : runtimes) {
-        auto backend = rt == Runtime::LibTorch ? make_libtorch_backend(*m, device) : make_onnxruntime_backend(*m, device);
+        auto backend = make_backend(rt, *m, device, precision);
+        if (!backend && precision == Precision::Fp16 && rt == Runtime::LibTorch && which == "all") {
+            std::printf("libtorch: skipped, fp16 runs through ONNX Runtime\n");
+            continue;
+        }
         if (!backend) return fail(backend.error());
         const auto info = (*backend)->info();
         for (const auto& size : sizes) {
             const SdrImage frame = bench_frame(size.w, size.h);
-            std::printf("%s %s on %s (%s), %s, fp32, median of %d after one warm-up\n", to_string(info.runtime),
-                        info.version.c_str(), to_string(info.device), info.detail.c_str(), size.label().c_str(), iters);
+            std::printf("%s %s on %s (%s), %s, %s, median of %d after one warm-up\n", to_string(info.runtime),
+                        info.version.c_str(), to_string(info.device), info.detail.c_str(), size.label().c_str(),
+                        to_string(precision), iters);
             const std::pair<const char*, TileConfig> modes[] = {{"untiled", TileConfig{0, 0}},
                                                                 {"tiled", TileConfig{m->tile_size, m->overlap}}};
             for (const auto& [name, cfg] : modes) {
                 nlohmann::json row{{"runtime", to_string(info.runtime)}, {"device", to_string(info.device)},
+                                   {"precision", to_string(precision)},
                                    {"version", info.version}, {"detail", info.detail}, {"size", size.label()},
                                    {"mode", name}, {"iters", iters}};
                 std::vector<double> ms;
@@ -255,8 +274,8 @@ int cmd_bench(const fs::path& pkg, const std::string& which, Device device, cons
                     verdict = buf;
                 }
                 std::printf("  %-8s median %8.1f ms  min %8.1f ms%s\n", name, med, ms.front(), verdict.c_str());
-                std::printf("BENCH %s %s %s %s %.2f\n", to_string(info.runtime), to_string(info.device),
-                            size.label().c_str(), name, med);
+                std::printf("BENCH %s %s %s %s %.2f %s\n", to_string(info.runtime), to_string(info.device),
+                            size.label().c_str(), name, med, to_string(precision));
                 results.push_back(row);
             }
         }
@@ -266,7 +285,7 @@ int cmd_bench(const fs::path& pkg, const std::string& which, Device device, cons
                     checked, over, over ? "FAIL" : "PASS");
     if (!json_out.empty()) {
         nlohmann::json doc{{"package", m->name}, {"source_sha256", m->source_sha256}, {"machine", machine},
-                           {"precision", "fp32"}, {"results", results}};
+                           {"precision", to_string(precision)}, {"results", results}};
         if (!budget_file.empty())
             doc["budget"] = {{"file", budget_file}, {"checked", checked}, {"over", over}, {"pass", over == 0}};
         std::ofstream out(json_out);
@@ -486,8 +505,8 @@ void usage() {
                  "usage: rudra-native version\n"
                  "       rudra-native info <package>\n"
                  "       rudra-native diff <package> [--runtime libtorch|onnxruntime|all] [--device cpu|cuda|mps|"
-                 "directml|coreml|rocm|openvino]\n"
-                 "       rudra-native bench <package> [--runtime ...] [--device ...] [--size WxH[,WxH]] [--iters N]\n"
+                 "directml|coreml|rocm|openvino|tensorrt] [--precision fp32|fp16]\n"
+                 "       rudra-native bench <package> [--runtime ...] [--device ...] [--precision fp32|fp16] [--size WxH[,WxH]] [--iters N]\n"
                  "                          [--json FILE] [--budget FILE --machine LABEL]\n"
                  "       rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]\n"
                  "       rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]\n"
@@ -525,15 +544,18 @@ int main(int argc, char** argv) {
     const fs::path pkg = args[1];
     if (args[0] == "info") return cmd_info(pkg);
     if (args[0] == "diff") {
-        std::string runtime = "all", device = "cpu";
+        std::string runtime = "all", device = "cpu", precision = "fp32";
         for (std::size_t i = 2; i + 1 < args.size(); i += 2) {
             if (args[i] == "--runtime") runtime = args[i + 1];
             else if (args[i] == "--device") device = args[i + 1];
+            else if (args[i] == "--precision") precision = args[i + 1];
             else { usage(); return 64; }
         }
         auto d = parse_device(device);
         if (!d) return fail(d.error());
-        return cmd_diff(pkg, runtime, *d);
+        auto p = parse_precision(precision);
+        if (!p) return fail(p.error());
+        return cmd_diff(pkg, runtime, *d, *p);
     }
 #ifdef RUDRA_HAVE_STILL_DECODE
     if (args[0] == "master" || args[0] == "master-check" || args[0] == "master-compare") {
@@ -555,7 +577,7 @@ int main(int argc, char** argv) {
     }
 #endif
     if (args[0] == "bench") {
-        std::string runtime = "all", device = "cpu", json_out, budget, machine;
+        std::string runtime = "all", device = "cpu", precision = "fp32", json_out, budget, machine;
         std::vector<BenchSize> sizes{{1920, 1080}, {3840, 2160}};
         int iters = 5;
         for (std::size_t i = 2; i + 1 < args.size(); i += 2) {
@@ -569,11 +591,14 @@ int main(int argc, char** argv) {
             else if (args[i] == "--json") json_out = args[i + 1];
             else if (args[i] == "--budget") budget = args[i + 1];
             else if (args[i] == "--machine") machine = args[i + 1];
+            else if (args[i] == "--precision") precision = args[i + 1];
             else { usage(); return 64; }
         }
         auto d = parse_device(device);
         if (!d) return fail(d.error());
-        return cmd_bench(pkg, runtime, *d, sizes, iters, json_out, budget, machine);
+        auto p = parse_precision(precision);
+        if (!p) return fail(p.error());
+        return cmd_bench(pkg, runtime, *d, *p, sizes, iters, json_out, budget, machine);
     }
     usage();
     return 64;

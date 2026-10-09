@@ -24,6 +24,8 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 
 #include "rudra/infer/backend.hpp"
 
@@ -58,14 +60,17 @@ PlanarBuffer to_planar(Ort::Value& v) {
 
 class OrtBackend final : public InferenceBackend {
 public:
-    OrtBackend(const ModelManifest& m, Ort::SessionOptions& so, Device device, std::string providers)
+    OrtBackend(const ModelManifest& m, Ort::SessionOptions& so, Device device, std::string providers,
+               Precision precision)
         : frame_(env(), (m.root / m.onnx_frame).c_str(), so),
-          tile_(env(), (m.root / m.onnx_tile).c_str(), so),
+          tile_(env(), (m.root / (precision == Precision::Fp16 ? m.onnx_tile_fp16 : m.onnx_tile)).c_str(), so),
           frame_inputs_(m.onnx_frame_inputs), tile_inputs_(m.onnx_tile_inputs),
-          device_(device), providers_(std::move(providers)) {}
+          device_(device), providers_(std::move(providers)), precision_(precision) {}
 
     BackendInfo info() const override {
-        return {Runtime::OnnxRuntime, device_, Ort::GetVersionString(), providers_};
+        BackendInfo i{Runtime::OnnxRuntime, device_, Ort::GetVersionString(), providers_};
+        i.precision = precision_;
+        return i;
     }
 
     Result<FrameScalars> frame_pass(const SdrImage& frame) override {
@@ -128,11 +133,44 @@ private:
     std::vector<std::string> frame_inputs_, tile_inputs_;
     Device device_;
     std::string providers_;
+    Precision precision_;
 };
+
+// TensorRT builds an engine per input shape range the first time it sees it,
+// which takes minutes; the engines are cached on disk and reused. One profile
+// covers every frame and tile size the app sends: 16 px to 4K on each side.
+void append_tensorrt(Ort::SessionOptions& so, Precision precision) {
+    const OrtApi& api = Ort::GetApi();
+    OrtTensorRTProviderOptionsV2* trt = nullptr;
+    Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&trt));
+    std::error_code ec;
+    const auto cache = std::filesystem::temp_directory_path(ec) / "rudra-tensorrt";
+    std::filesystem::create_directories(cache, ec);
+    const std::string cache_s = cache.string();
+    const char* keys[] = {"device_id", "trt_fp16_enable", "trt_engine_cache_enable", "trt_engine_cache_path",
+                          "trt_timing_cache_enable", "trt_profile_min_shapes", "trt_profile_opt_shapes",
+                          "trt_profile_max_shapes"};
+    // Half precision only for the fp16 graph. With it on, TensorRT may also
+    // choose fp16 for the graph's fp32 baseline; the self-test against the
+    // "fp16" tolerance is what says whether the result still holds.
+    const char* values[] = {"0", precision == Precision::Fp16 ? "1" : "0", "1", cache_s.c_str(), "1",
+                            "sdr:1x3x16x16", "sdr:1x3x1080x1920", "sdr:1x3x2160x3840"};
+    const OrtStatus* st = api.UpdateTensorRTProviderOptions(trt, keys, values, std::size(keys));
+    if (st) {
+        api.ReleaseTensorRTProviderOptions(trt);
+        Ort::ThrowOnError(const_cast<OrtStatus*>(st));
+    }
+    so.AppendExecutionProvider_TensorRT_V2(*trt);
+    api.ReleaseTensorRTProviderOptions(trt);
+}
 
 }  // namespace
 
-Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelManifest& m, Device device) {
+Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelManifest& m, Device device,
+                                                                   Precision precision) {
+    if (precision == Precision::Fp16 && m.onnx_tile_fp16.empty())
+        return make_error(ErrorCode::Unsupported, "This model package has no fp16 graph.",
+                          "re-export it with tools/export_model.py (packages from 2 Oct 2026 carry model.tile.fp16.onnx)");
     try {
         // The Env first: it registers ONNX Runtime's default logger, and adding
         // an execution provider logs (Core ML does), which aborts the process
@@ -192,10 +230,22 @@ Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelMa
                 so.AppendExecutionProvider_OpenVINO_V2({});
                 providers = "OpenVINOExecutionProvider,CPUExecutionProvider";
                 break;
+            case Device::TensorRT:
+                if (!offered("TensorrtExecutionProvider"))
+                    return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no TensorRT provider.",
+                                      "use the onnxruntime-gpu package with TensorRT and CUDA on the PATH");
+                append_tensorrt(so, precision);
+                providers = "TensorrtExecutionProvider";
+                if (offered("CUDAExecutionProvider")) {
+                    so.AppendExecutionProvider_CUDA(OrtCUDAProviderOptions{});
+                    providers += ",CUDAExecutionProvider";
+                }
+                providers += ",CPUExecutionProvider";
+                break;
             case Device::Mps:
                 return make_error(ErrorCode::Unsupported, "ONNX Runtime reaches the Apple GPU through Core ML, not MPS.");
         }
-        return std::unique_ptr<InferenceBackend>(new OrtBackend(m, so, device, providers));
+        return std::unique_ptr<InferenceBackend>(new OrtBackend(m, so, device, providers, precision));
     } catch (const std::exception& e) {
         return make_error(ErrorCode::BackendError, "ONNX Runtime could not load the model.", e.what());
     }
