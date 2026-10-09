@@ -16,6 +16,7 @@
 #include <map>
 
 #include "main_window.hpp"
+#include "widgets.hpp"
 
 namespace rudra::app {
 namespace {
@@ -72,7 +73,7 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
     setObjectName("exportSheet");
     setWindowTitle("Export");
     setModal(true);
-    setFixedWidth(720);
+    setFixedWidth(800);
     auto* v = new QVBoxLayout(this);
     v->setContentsMargins(26, 22, 26, 16);
     v->setSpacing(14);
@@ -96,7 +97,8 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
         {"exr-linear", "EXR linear", "Rec.2020 linear, half", true},
         {"hdr10", "HDR10", "HEVC 10-bit, streaming", false},
         {"hlg", "HLG", "HEVC 10-bit, broadcast", false},
-        {"prores", "422 HQ", "ProRes, editorial", false}};
+        {"prores", "422 HQ", "ProRes, editorial", false},
+        {"prores4444", "4444", "ProRes, finishing", false}};
     int col = 0;
     for (const auto& f : formats) {
         auto* t = new Tile(f.id, f.name, f.sub, f.offered, tiles);
@@ -125,6 +127,23 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
         h->addWidget(value);
         cv->addWidget(r);
     };
+    {
+        // ProRes only: graded PQ, or the scene-referred master in a camera log.
+        enc_row_ = new QWidget(card);
+        enc_row_->setObjectName("exportEncodingRow");
+        enc_row_->setProperty("role", "field");
+        auto* h = new QHBoxLayout(enc_row_);
+        h->setContentsMargins(0, 8, 0, 8);
+        h->addWidget(label("Encoding", {}, "key", enc_row_));
+        h->addStretch(1);
+        auto* seg = enc_seg_ = new Seg("exportEncoding", {{"pq", "PQ"}, {"acescct", "ACEScct"}, {"logc4", "LogC4"}}, enc_row_);
+        seg->button("pq")->setToolTip("Rec.2020 PQ, graded to the peak and knee on the Deliver tab");
+        seg->button("acescct")->setToolTip("ACEScct in ACES AP1: the scene-linear master, no peak or knee");
+        seg->button("logc4")->setToolTip("ARRI LogC4 in ARRI Wide Gamut 4: the scene-linear master, no peak or knee");
+        seg->clicked = [this](const QString& k) { set_encoding(k); };
+        h->addWidget(seg);
+        cv->addWidget(enc_row_);
+    }
     signal_ = label("", "exportSignal", {}, card);
     frames_ = label("", "exportFrames", {}, card);
     dest_ = label("", "exportDest", {}, card);
@@ -133,6 +152,9 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
     row("Save to", dest_);
     row("White", label("diffuse 1.0 = 203 nits", {}, {}, card));
     v->addWidget(card);
+    hint_ = label("", "exportHint", "note", this);
+    hint_->setWordWrap(true);
+    v->addWidget(hint_);
 
     auto* checks = new QWidget(this);
     auto* chv = new QVBoxLayout(checks);
@@ -178,8 +200,20 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
 }
 
 namespace {
-bool is_video_format(const QString& id) { return id == "hdr10" || id == "hlg" || id == "prores"; }
+bool is_video_format(const QString& id) { return id == "hdr10" || id == "hlg" || id == "prores" || id == "prores4444"; }
+bool is_prores(const QString& id) { return id == "prores" || id == "prores4444"; }
 }  // namespace
+
+void ExportSheet::set_encoding(const QString& e) {
+    if (e != "pq" && e != "acescct" && e != "logc4") return;
+    encoding_ = e;
+    refresh();
+}
+
+QString ExportSheet::video_format() const {
+    const QString base = picked_ == "prores" ? QString("prores422hq") : picked_;
+    return is_prores(picked_) && encoding_ != "pq" ? base + "_" + encoding_ : base;
+}
 
 void ExportSheet::pick(const QString& id) {
     if (is_video_format(id)) {
@@ -197,10 +231,10 @@ void ExportSheet::pick(const QString& id) {
 
 void ExportSheet::refresh() {
     const bool movie = w_->shot_is_video();
-    for (const char* id : {"hdr10", "hlg", "prores"})
+    for (const char* id : {"hdr10", "hlg", "prores", "prores4444"})
         if (auto it = tiles_.find(id); it != tiles_.end()) static_cast<Tile*>(it->second)->set_offered(movie);
     if (!(movie && is_video_format(picked_))) picked_ = w_->container() == "linear" ? "exr-linear" : "exr-aces";
-    for (const char* id : {"exr-aces", "exr-linear", "hdr10", "hlg", "prores"})
+    for (const char* id : {"exr-aces", "exr-linear", "hdr10", "hlg", "prores", "prores4444"})
         if (auto* t = findChild<QWidget*>(id)) {
             t->setProperty("on", picked_ == id);
             t->style()->unpolish(t);
@@ -212,15 +246,28 @@ void ExportSheet::refresh() {
     sub_->setText(QStringLiteral("%1 frame%2 loaded").arg(frames.size()).arg(frames.size() == 1 ? "" : "s"));
     const QString dir = w_->findChild<QLineEdit*>("renderDir")->text().trimmed();
     const QString name = w_->findChild<QLineEdit*>("renderName")->text().trimmed();
+    const bool prores = is_prores(picked_);
+    enc_row_->setVisible(prores);
+    if (enc_seg_) enc_seg_->set_on(encoding_);
+    const QString pr = picked_ == "prores4444" ? "ProRes 4444" : "ProRes 422 HQ 10-bit";
+    const bool log = prores && encoding_ != "pq";
+    hint_->setVisible(log);
+    hint_->setText(encoding_ == "acescct"
+                       ? "Scene-referred: the master before peak and knee. Set the clip's input to ACEScct (AP1) in "
+                         "Resolve, or read it as ACEScct in an ACES pipeline."
+                       : "Scene-referred: the master before peak and knee. Set the clip to ARRI LogC4 / AWG4 in "
+                         "Resolve, or apply ARRI's LogC4 input transform.");
     if (is_video_format(picked_)) {
         signal_->setText(picked_ == "hdr10"  ? "PQ · Rec.2020 · HEVC 10-bit · HDR10 metadata"
                          : picked_ == "hlg" ? "HLG · Rec.2020 · HEVC 10-bit"
-                                            : "PQ · Rec.2020 · ProRes 422 HQ 10-bit");
+                         : encoding_ == "acescct" ? "ACEScct · AP1 · " + pr + " · scene-referred"
+                         : encoding_ == "logc4"   ? "LogC4 · ARRI Wide Gamut 4 · " + pr + " · scene-referred"
+                                                  : "PQ · Rec.2020 · " + pr);
         frames_->setText(QStringLiteral("All %1, as a movie with its audio").arg(frames.size()));
         const QString file = (name.isEmpty() ? QString::fromStdString(w_->shot_video()->path.stem().string()) + "_" +
-                                                   (picked_ == "prores" ? QString("prores422hq") : picked_)
-                                             : name) +
-                             (picked_ == "prores" ? ".mov" : ".mp4");
+                                                   video_format()
+                                             : name + (log ? "_" + encoding_ : QString())) +
+                             (picked_.startsWith("prores") ? ".mov" : ".mp4");
         dest_->setText(dir.isEmpty() ? QStringLiteral("choose a folder on the Deliver tab")
                                      : QDir::toNativeSeparators(dir) + QDir::separator() + file);
     } else {
@@ -237,8 +284,7 @@ void ExportSheet::refresh() {
 
 void ExportSheet::export_now() {
     if (is_video_format(picked_)) {
-        const QString fmt = picked_ == "prores" ? QString("prores422hq") : picked_;
-        if (w_->queue_video_export(fmt)) {
+        if (w_->queue_video_export(video_format())) {
             accept();
             w_->open_queue_window();
         }

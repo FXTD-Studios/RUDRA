@@ -19,7 +19,7 @@ inline constexpr Nits kScRgbUnit{80.0f};
 
 // ---- encodings ----------------------------------------------------------------
 enum class Transfer : std::uint8_t { Srgb, Rec709, Gamma22, Gamma24, Linear, Pq, Hlg };
-enum class Primaries : std::uint8_t { Rec709, Rec2020, P3D65, Ap0, Ap1 };
+enum class Primaries : std::uint8_t { Rec709, Rec2020, P3D65, Ap0, Ap1, Awg4 };   // Awg4: ARRI Wide Gamut 4
 enum class Range : std::uint8_t { Full, Limited };
 
 struct ColorEncoding {

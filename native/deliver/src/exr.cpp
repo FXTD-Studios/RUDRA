@@ -174,6 +174,7 @@ const char* primaries_name(Primaries p) noexcept {
         case Primaries::P3D65: return "p3d65";
         case Primaries::Ap0: return "ap0";
         case Primaries::Ap1: return "ap1";
+        case Primaries::Awg4: return "awg4";
     }
     return "?";
 }

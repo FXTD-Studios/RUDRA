@@ -12,11 +12,7 @@ namespace rudra {
 namespace fs = std::filesystem;
 
 namespace {
-const DeliveryProfile* find_profile(const std::string& name) {
-    for (const auto& p : delivery_profiles())
-        if (p.name == name) return &p;
-    return nullptr;
-}
+const DeliveryProfile* find_profile(const std::string& name) { return find_delivery_profile(name); }
 
 std::string lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::tolower(c)); });
@@ -37,6 +33,12 @@ Result<std::vector<std::string>> encode_command(const std::string& ffmpeg, const
     const DeliveryProfile* profile = find_profile(r.format);
     if (!profile) return make_error(ErrorCode::InvalidArgument, "Unknown delivery format: " + r.format);
     const std::string& transfer = profile->transfer;
+    // Log masters are spooled already encoded: zscale only changes the matrix
+    // and range (linear in, linear out leaves the code values alone), and the
+    // file says unknown primaries and transfer, as there are no codes for them.
+    const bool log = !profile->log.empty();
+    const std::string zs_transfer = log ? "linear" : transfer;
+    const std::string tag_primaries = log ? "unknown" : "bt2020";
     std::string params = "hdr-opt=1:repeat-headers=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:"
                          "master-display=" + mastering_display(r.peak_nits, r.min_nits) +
                          ":max-cll=" + std::to_string(max_cll) + "," + std::to_string(max_fall);
@@ -48,8 +50,8 @@ Result<std::vector<std::string>> encode_command(const std::string& ffmpeg, const
     if (r.audio == "aac") cmd.insert(cmd.end(), {"-b:a", "320k"});
     const std::string pix = r.alpha ? "yuva444p10le" : profile->pixel_format;
     cmd.insert(cmd.end(), {"-map_metadata", "1", "-map_chapters", "-1", "-vf",
-                           "zscale=matrixin=gbr:transferin=" + transfer + ":primariesin=2020:rangein=full:"
-                           "matrix=2020_ncl:transfer=" + transfer + ":primaries=2020:range=limited,format=" + pix,
+                           "zscale=matrixin=gbr:transferin=" + zs_transfer + ":primariesin=2020:rangein=full:"
+                           "matrix=2020_ncl:transfer=" + zs_transfer + ":primaries=2020:range=limited,format=" + pix,
                            "-c:v", profile->encoder});
     if (profile->codec == "hevc") {
         if (r.format == "hlg") params = "repeat-headers=1:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc";
@@ -59,7 +61,7 @@ Result<std::vector<std::string>> encode_command(const std::string& ffmpeg, const
         cmd.insert(cmd.end(), {"-profile:v", std::to_string(profile->prores_profile), "-tag:v", profile->tag,
                                "-alpha_bits", r.alpha ? "16" : "0"});
     }
-    cmd.insert(cmd.end(), {"-color_primaries", "bt2020", "-color_trc", transfer, "-colorspace", "bt2020nc",
+    cmd.insert(cmd.end(), {"-color_primaries", tag_primaries, "-color_trc", transfer, "-colorspace", "bt2020nc",
                            "-color_range", "tv", "-fps_mode", "passthrough", "-frames:v", std::to_string(clock.frames),
                            "-t", pyjson::repr(clock.duration), "-avoid_negative_ts", "disabled"});
     const std::string ext = lower(output.extension().string());

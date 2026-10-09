@@ -88,9 +88,7 @@ Result<VideoQcFindings> evaluate_video_qc(std::string_view source_streams_json, 
     } catch (const ojson::exception& e) {
         return make_error(ErrorCode::ParseError, "ffprobe output is not JSON", e.what());
     }
-    const DeliveryProfile* profile = nullptr;
-    for (const auto& p : delivery_profiles())
-        if (p.name == r.format) profile = &p;
+    const DeliveryProfile* profile = find_delivery_profile(r.format);
     if (!profile) return make_error(ErrorCode::InvalidArgument, "Unknown delivery format: " + r.format);
     const ojson empty = ojson::array();
     const ojson& src_streams = src.contains("streams") ? src["streams"] : empty;
@@ -103,7 +101,9 @@ Result<VideoQcFindings> evaluate_video_qc(std::string_view source_streams_json, 
     VideoQcFindings f;
     auto& errors = f.errors;
     const bool prores = profile->codec == "prores";
-    const std::string pix = r.format == "prores4444" ? (r.alpha ? "yuva444p12le" : "yuv444p12le") : profile->pixel_format;
+    const bool log = !profile->log.empty();
+    // ProRes 4444 decodes as 12-bit whatever went in.
+    const std::string pix = profile->prores_profile == 4 ? (r.alpha ? "yuva444p12le" : "yuv444p12le") : profile->pixel_format;
     const std::vector<std::pair<const char*, ojson>> expected_tags = {
         {"codec_name", profile->codec},   {"pix_fmt", pix},
         {"color_primaries", "bt2020"},    {"color_transfer", profile->transfer},
@@ -113,6 +113,14 @@ Result<VideoQcFindings> evaluate_video_qc(std::string_view source_streams_json, 
         const ojson* got = key(*video, k);
         // MOV's nclc atom carries primaries, transfer and matrix, not a range bit.
         if (std::string(k) == "color_range" && prores && (!got || got->is_null())) continue;
+        // A log master says unknown primaries and transfer; ffprobe leaves them out or says so.
+        if (log && (std::string(k) == "color_primaries" || std::string(k) == "color_transfer")) {
+            if (!got || got->is_null() || (got->is_string() && (got->get<std::string>() == "unknown" ||
+                                                                 got->get<std::string>() == "unspecified")))
+                continue;
+            errors.push_back(std::string(k) + ": expected unknown, got " + py_str(got));
+            continue;
+        }
         if (!py_equal(got, want)) errors.push_back(std::string(k) + ": expected " + py_str(&want) + ", got " + py_str(got));
     }
     if (static_cast<int>(frames.size()) != clock.frames) errors.push_back("Video frame count changed");

@@ -17,6 +17,7 @@ constexpr Chromaticities chroma(Primaries p) noexcept {
         case Primaries::P3D65:   return {0.680, 0.320, 0.265, 0.690, 0.150, 0.060, 0.3127, 0.3290};
         case Primaries::Ap0:     return {0.7347, 0.2653, 0.0000, 1.0000, 0.0001, -0.0770, 0.32168, 0.33767};
         case Primaries::Ap1:     return {0.7130, 0.2930, 0.1650, 0.8300, 0.1280, 0.0440, 0.32168, 0.33767};
+        case Primaries::Awg4:    return {0.7347, 0.2653, 0.1424, 0.8576, 0.0991, -0.0308, 0.3127, 0.3290};
     }
     return {};
 }

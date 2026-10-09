@@ -447,6 +447,14 @@ Done:
   sign with a Developer ID (hardened runtime), notarize and staple the app and
   the DMG when the signing secrets are set, ad hoc otherwise
   ([`docs/MACOS_SIGNING.md`](docs/MACOS_SIGNING.md))
+- [x] Beta 4, ProRes 4444 and log masters in Export (9 Oct 2026): a **4444**
+  tile beside 422 HQ, and on both ProRes tiles an **Encoding** row, PQ
+  (graded) or the scene-referred master before peak and knee in **ACEScct**
+  (AP1, S-2016-001) or **ARRI LogC4** (AWG4), tagged unknown primaries and
+  transfer (no codes exist for them), the curve and gamut in the sidecar
+  (`core/log_encode.cpp`, `tests/test_log_encode.cpp`: the curves and both
+  gamut matrices against their published values, the encoder's tags, the QC).
+  Native only: the Python profiles keep their five formats
 
 Still to do:
 - [ ] macOS: inference on MPS and Core ML, HDR output on an XDR display (Metal
