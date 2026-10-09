@@ -83,7 +83,10 @@
 > and `DeliverReportIsThePythons`: the 7 Oct goldens were recorded with the 2025 gyan.dev ffmpeg, whose
 > MOV/MP4 colr atom leaves BT.2020/PQ unspecified, and ffmpeg 6.1 (Homebrew, Ubuntu) fills them in. The
 > tests now accept either form for the container atom and require the ProRes frame headers to match; 5/5
-> on Ubuntu with ffmpeg 6.1. Ship-path review and fixes:
+> on Ubuntu with ffmpeg 6.1. Startup and errors (item 1 of the product list): foreign `QT_*` variables
+> ignored by a packaged app (`app/startup.cpp`), a rotating log file, and every failed write names its OS
+> reason and free space (`platform/io_error.cpp`; writers check `close()`, truncated EXRs removed); native
+> 190/190, app 34/34 on Linux (Qt 6.4, no OpenCV/ORT). Ship-path review and fixes:
 > `reports/CODE_REVIEW_SHIP_PATH_2026-10-09.md`. Tag and push from PowerShell:
 > `scripts/release_beta4_2026-10-09.ps1`.
 >
