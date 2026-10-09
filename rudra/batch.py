@@ -5,7 +5,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
+import time
 
 from . import video
 
@@ -25,7 +27,17 @@ def save(path, data):
             json.dump(data, stream, indent=2)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(name, path)
+        # Windows refuses to replace a file another process has open without
+        # FILE_SHARE_DELETE -- `rudra batch status`, an editor, a virus scan.
+        # Those holds are brief, so wait them out rather than fail the job.
+        for attempt in range(20):
+            try:
+                os.replace(name, path)
+                break
+            except PermissionError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.1 * (attempt + 1))
     finally:
         if os.path.exists(name): os.unlink(name)
 
@@ -130,8 +142,16 @@ def run_queue(path, retry_failed=False):
                 print(f'Job {index+1}/{len(jobs)}: {args.input.name}', flush=True)
 
                 def progress(value):
+                    # Progress is advisory. A failed save here used to raise
+                    # out of the inference loop and mark hours of work failed
+                    # (review 9 Oct 2026); the next save or the final one
+                    # catches the record up.
                     record['progress'] = value
-                    save(state_path, state)
+                    try:
+                        save(state_path, state)
+                    except OSError as exc:
+                        print(f'warning: could not save queue progress: {exc}',
+                              file=sys.stderr, flush=True)
 
                 video.convert_video(args, progress=progress)
                 report = json.loads(sidecar.read_text(encoding='utf-8'))

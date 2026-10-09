@@ -33,6 +33,7 @@ from . import bench as bench_mod
 from . import controls as controls_mod
 from . import metadata as metadata_mod
 from . import video as video_mod
+from .colorspace import convert
 from .exr import write_exr
 
 __all__ = ["main"]
@@ -150,8 +151,14 @@ def _cmd_deliver(args) -> int:
         for path in paths:
             yield _load(path, args.nits_scale)
 
+    # Into Rec.2020 FIRST, then the roll-off. The shoulder weighs luminance
+    # with Rec.2020 coefficients, so shouldering Rec.709 pixels and converting
+    # afterwards (as this did until 9 Oct 2026) rolled off a slightly wrong
+    # luminance and disagreed with encode_sequence(shoulder=True).
     def mastered():
         for frame in frames():
+            if args.source_space != "rec2020":
+                frame = convert(frame, args.source_space, "rec2020").astype(np.float64)
             yield video_mod.shoulder_to_peak(frame, args.peak_nits)
 
     stats = [metadata_mod.analyze_frame(frame, index=i)
@@ -161,7 +168,7 @@ def _cmd_deliver(args) -> int:
     out = video_mod.encode_sequence(
         mastered(), args.output, target=args.target, fps=args.fps,
         peak_nits=args.peak_nits, maxcll=maxcll, maxfall=maxfall,
-        source_space=args.source_space, min_nits=args.min_nits,
+        source_space="rec2020", min_nits=args.min_nits,
         verify_tags=args.verify_tags, shoulder=False)
     # The tags go in the report whether or not they were enforced, so a file
     # made with --no-verify-tags still says on the record what it came out as.
@@ -173,7 +180,10 @@ def _cmd_deliver(args) -> int:
         tags = video_mod.colour_tags(out)
     except video_mod.EncodeError:
         tags = None
-    frame_tags = video_mod.prores_frame_tags(out)
+    # Only ProRes has frame headers. Scanning an HEVC file for the 'icpf'
+    # marker can match compressed data and report tags that do not exist.
+    frame_tags = (video_mod.prores_frame_tags(out)
+                  if "prores_ks" in video_mod.TARGETS[args.target].codec else None)
     print(json.dumps({"file": str(out), "frames": len(paths), "target": args.target,
                       "fps": args.fps, "peak_nits": args.peak_nits,
                       "maxcll": maxcll, "maxfall": maxfall,
