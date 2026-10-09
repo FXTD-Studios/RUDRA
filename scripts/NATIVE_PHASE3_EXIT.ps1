@@ -172,13 +172,33 @@ $testsOk = $true
 if (-not $SkipTests -and (Test-Path $AppTests)) {
     Say "The app's Qt tests (offscreen)"
     $env:QT_QPA_PLATFORM = "offscreen"
-    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-    $text = & $AppTests "--gtest_brief=1" 2>&1 | ForEach-Object { "$_" }
-    $code = $LASTEXITCODE
-    $ErrorActionPreference = $prev
-    Remove-Item Env:QT_QPA_PLATFORM
     $testLog = Join-Path $Reports "native_phase3_app_tests_$Stamp.txt"
-    $text | Set-Content -Encoding utf8 $testLog
+    $testErr = "$testLog.stderr"
+    # In its own hidden console, with output straight to files. Run inline
+    # (& $AppTests 2>&1), a crash, a hang or a console control event in the
+    # tests ended this script with no message and no log (9 Oct 2026); now the
+    # log is on disk as it is written and the exit code is always reported.
+    $tp = Start-Process -FilePath $AppTests -ArgumentList "--gtest_brief=1" -PassThru `
+          -WindowStyle Hidden -WorkingDirectory (Split-Path $AppTests) `
+          -RedirectStandardOutput $testLog -RedirectStandardError $testErr
+    $null = $tp.Handle   # keeps ExitCode readable after exit on Windows PowerShell 5.1
+    $timeoutMin = 30
+    if (-not $tp.WaitForExit($timeoutMin * 60 * 1000)) {
+        Stop-Process -Id $tp.Id -Force -ErrorAction SilentlyContinue
+        Write-Host "  the app tests did not finish in $timeoutMin min; stopped" -ForegroundColor Red
+        $code = -1
+    } else {
+        $code = $tp.ExitCode
+        if ($null -eq $code) { $code = -2 }   # exit code unavailable
+    }
+    Remove-Item Env:QT_QPA_PLATFORM
+    $text = @(Get-Content $testLog -ErrorAction SilentlyContinue) + @(Get-Content $testErr -ErrorAction SilentlyContinue)
+    if ($code -ne 0) {
+        # 0xC0000005 access violation, 0xC0000409 stack buffer overrun / fail-fast,
+        # 0xC0000135 a DLL not found, 0xC000013A ended by Ctrl+C or a console close.
+        Write-Host ("  rudra_app_tests exit code {0} (0x{0:X8})" -f [int]$code) -ForegroundColor Red
+        if ($text.Count) { $text | Select-Object -Last 15 | Write-Host }
+    }
     # The failures with the lines around them, and the summary.
     $lines = @($text)
     for ($i = 0; $i -lt $lines.Count; $i++) {

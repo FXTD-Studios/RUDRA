@@ -1443,6 +1443,69 @@ TEST(AppModels, ABareStartOpensTheLastPackageOnItsBackend) {
     EXPECT_EQ(w.findChild<QDialog*>("firstRun"), nullptr);
 }
 
+namespace {
+// Point the fake registry's default at another package, as a release that
+// replaces its default model does (shadow_v1 -> v8, 9 Oct 2026).
+void set_default(const Models& m, const std::string& file) {
+    std::ofstream(m.root / "models.json") << json{{"default", file},
+                                                  {"models", {{{"file", "alpha.pt"}, {"kind", "sdr2hdr"}, {"title", "Alpha"}},
+                                                              {{"file", "beta.pt"}, {"kind", "sdr2hdr"}, {"title", "Beta"}},
+                                                              {{"file", "gamma.pt"}, {"kind", "sdr2hdr"}, {"title", "Gamma"}}}}}
+                                                 .dump();
+}
+QString log_text(app::MainWindow& w) { return w.findChild<QPlainTextEdit*>("log")->toPlainText(); }
+bool booted(app::MainWindow& w) {
+    w.boot();
+    return wait_for([&] { return !w.loading_model() && !w.model_package().empty(); });
+}
+}  // namespace
+
+TEST(AppModels, ABareStartFollowsTheDefaultWhenItMoves) {
+    QSettings().clear();
+    QSettings().setValue("firstRun/done", true);
+    app::MainWindow w(false);
+    auto m = fake_models(w, "follow");
+    ASSERT_TRUE(booted(w));
+    EXPECT_EQ(w.model_package(), m->root / "beta");   // the default, never picked
+    set_default(*m, "alpha.pt");
+    ASSERT_TRUE(booted(w));
+    EXPECT_EQ(w.model_package(), m->root / "alpha");
+    EXPECT_TRUE(log_text(w).contains("the default model is now Alpha; opening it instead of beta")) << log_text(w).toStdString();
+}
+
+TEST(AppModels, APickedPackageStaysPickedWhenTheDefaultMoves) {
+    QSettings().clear();
+    QSettings().setValue("firstRun/done", true);
+    app::MainWindow w(false);
+    auto m = fake_models(w, "picked");
+    ASSERT_TRUE(booted(w));
+    ASSERT_TRUE(use(w, m->root / "gamma"));
+    set_default(*m, "alpha.pt");
+    ASSERT_TRUE(booted(w));
+    EXPECT_EQ(w.model_package(), m->root / "gamma");
+    EXPECT_FALSE(log_text(w).contains("the default model is now"));
+}
+
+TEST(AppModels, OldSettingsGiveWayToTheDefaultOnlyForAPackageOutsideTheCatalog) {
+    // Settings written before model/followsDefault existed: an older beta's
+    // own package (outside every folder this install searches) gives way...
+    QSettings().clear();
+    QSettings().setValue("firstRun/done", true);
+    app::MainWindow w(false);
+    auto old = fake_models(w, "old-install");
+    auto m = fake_models(w, "new-install");   // the roots are now only this one
+    QSettings().setValue("model/package", QString::fromStdString((old->root / "alpha").string()));
+    ASSERT_TRUE(booted(w));
+    EXPECT_EQ(w.model_package(), m->root / "beta");
+    EXPECT_TRUE(log_text(w).contains("the default model is now Beta")) << log_text(w).toStdString();
+    // ...while one inside them is taken as picked.
+    QSettings().clear();
+    QSettings().setValue("firstRun/done", true);
+    QSettings().setValue("model/package", QString::fromStdString((m->root / "gamma").string()));
+    ASSERT_TRUE(booted(w));
+    EXPECT_EQ(w.model_package(), m->root / "gamma");
+}
+
 TEST(AppModels, NoPackageAnywhereSaysWhereItLooked) {
     QSettings().clear();
     QSettings().setValue("firstRun/done", true);
