@@ -1,6 +1,7 @@
 #include "rudra/deliver/queue.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
@@ -9,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "rudra/platform/hash.hpp"
+#include "rudra/platform/io_error.hpp"
 
 #if defined(_WIN32)
 #include <io.h>
@@ -141,11 +143,22 @@ Result<void> save(const fs::path& path, const Value& data) {
     const std::string text = pyjson::dumps(data, 2);
     const fs::path tmp = path.parent_path() / (path.filename().string() + ".rudra-native.tmp");
     {
+        errno = 0;
         std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
-        if (!f) return make_error(ErrorCode::IoError, "The queue state could not be written.", tmp.string());
+        if (!f) {
+            const int err = errno;
+            return make_error(ErrorCode::IoError,
+                              "The queue state could not be written (" + io_failure_reason(tmp, err, text.size()) + ").",
+                              tmp.string());
+        }
         f.write(text.data(), std::streamsize(text.size()));
-        f.flush();
-        if (!f) return make_error(ErrorCode::IoError, "The queue state could not be written.", tmp.string());
+        f.close();
+        if (!f) {
+            const int err = errno;
+            return make_error(ErrorCode::IoError,
+                              "The queue state could not be written (" + io_failure_reason(tmp, err, text.size()) + ").",
+                              tmp.string());
+        }
     }
 #if !defined(_WIN32)
     if (int fd = ::open(tmp.c_str(), O_RDONLY); fd >= 0) { ::fsync(fd); ::close(fd); }
@@ -154,7 +167,7 @@ Result<void> save(const fs::path& path, const Value& data) {
     fs::rename(tmp, path, ec);   // os.replace
     if (ec) {
         fs::remove(tmp, ec);
-        return make_error(ErrorCode::IoError, "The queue state could not be replaced.", path.string());
+        return make_error(ErrorCode::IoError, "The queue state could not be replaced (" + ec.message() + ").", path.string());
     }
     return {};
 }

@@ -1,19 +1,31 @@
 #include "rudra/deliver/sidecars.hpp"
 
+#include <cerrno>
 #include <fstream>
 
 #include "rudra/core/metadata.hpp"
 #include "rudra/platform/pyjson.hpp"
+#include "rudra/platform/io_error.hpp"
 
 namespace rudra {
 
 Result<void> write_text_file(const std::filesystem::path& path, const std::string& text) {
     std::error_code ec;
     if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), ec);
+    errno = 0;
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    if (!f) return make_error(ErrorCode::IoError, "The file could not be created.", path.string());
+    if (!f) {
+        const int err = errno;
+        return make_error(ErrorCode::IoError, "The file could not be created (" + io_failure_reason(path, err, text.size()) + ").",
+                          path.string());
+    }
     f.write(text.data(), static_cast<std::streamsize>(text.size()));
-    if (!f) return make_error(ErrorCode::IoError, "The file could not be written.", path.string());
+    f.close();   // the last bytes land on close: check it, not the destructor
+    if (!f) {
+        const int err = errno;
+        return make_error(ErrorCode::IoError, "The file could not be written (" + io_failure_reason(path, err, text.size()) + ").",
+                          path.string());
+    }
     return {};
 }
 
