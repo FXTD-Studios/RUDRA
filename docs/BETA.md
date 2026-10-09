@@ -34,7 +34,8 @@ weights: LICENSE-weights).
   curves); set the clip's input to the curve in Resolve. Its sidecar names
   the curve and gamut.
 - Masters as ACES 2065-1 EXR sequences.
-- The model: `sdr2hdr_shadow_v1`, the shipped RUDRA model, run by ONNX
+- The model (optional; masters default to the analytic inverse):
+  `sdr2hdr_image_v8`, level with the inverse on real SDR, run by ONNX
   Runtime (DirectML on Windows GPUs, Core ML on Apple silicon, CPU
   everywhere). Every package is checked against its reference frames the
   first time it runs on a device, and refused if it drifts.
@@ -53,8 +54,9 @@ weights: LICENSE-weights).
   release is built with the signing certificate, so it opens with no warning.
 - `rudra-native bench` times 1080p and 4K and checks per-machine latency
   budgets (`native/bench/latency_budgets.json`).
-- Packages identify themselves as 0.9.0-beta.3. The shipped model remains
-  `sdr2hdr_shadow_v1`; this is an application beta, not newly trained weights.
+- Packages identify themselves as 0.9.0-beta.3. The shipped model is now
+  `sdr2hdr_image_v8` (9 Oct 2026): `shadow_v1` lost to the analytic inverse on
+  every real Meridian frame (−4.11 dB) and is retired.
 
 ## Install
 

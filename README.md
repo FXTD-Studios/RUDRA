@@ -508,8 +508,9 @@ beaten the analytic inverse on any bench, and v7 (trained on real SDR) is
 −4.13 dB on every held-out real frame. RUDRA 1.0 ships on the analytic inverse
 with the artist in the loop. **Phase 3 is the critical path**, phase 2 runs
 alongside it, and the model is a research track (STATUS line G) that blocks
-nothing. `shadow_v1` stays available as an optional model with its measured
-numbers.
+nothing. The optional model is `sdr2hdr_image_v8` since 9 Oct 2026 (level
+with the inverse on real SDR, +0.02 dB / +0.020 JOD; `shadow_v1`, −4.11 dB on
+every real frame, retired), listed with its measured numbers.
 
 ### Phase 1: a floor that holds on real SDR (closed 7 Oct 2026, failed)
 

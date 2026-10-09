@@ -26,7 +26,7 @@
     7. The table, a report in reports\, and the by-hand checklist.
 
   Needs: Visual Studio 2022 or 2026 with the C++ tools (see NATIVE_GATE_B.ps1),
-  a model package (NATIVE_GATE_A.ps1 exports dist\models\sdr2hdr_shadow_v1),
+  a model package (NATIVE_GATE_A.ps1 -Checkpoint checkpoints\sdr2hdr_image_v8.pt exports dist\models\sdr2hdr_image_v8),
   and a folder of frames (-Frames, 240 of them for the exit).
 
 .EXAMPLE
@@ -37,7 +37,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Frames,
-    [string]$Package = "dist\models\sdr2hdr_shadow_v1",
+    [string]$Package = "dist\models\sdr2hdr_image_v8",
     [string]$Backend = "onnxruntime/directml",
     [string]$Python = "python",
     [string]$QtVersion = "6.8.3",
