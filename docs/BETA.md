@@ -70,6 +70,18 @@ weights: LICENSE-weights).
 - Half precision: packages carry an fp16 tile graph, held to a 1% tolerance;
   `--precision fp16` on `rudra-native diff` and `bench`, and a TensorRT device
   (`--device tensorrt`) where ONNX Runtime has it.
+- **Starts the same on every machine.** Qt settings left in the environment by
+  other software (a conda env with PyQt, a Qt SDK) no longer stop RUDRA with
+  "no Qt platform plugin could be initialized": the package uses its own
+  plugins and the log says what it ignored.
+- **A log file**, rotated at 5 MB: on Windows
+  `%LOCALAPPDATA%\FXTD Studios\RUDRA\logs\rudra.log`, on macOS
+  `~/Library/Application Support/FXTD Studios/RUDRA/logs/rudra.log`. Attach it
+  to a report.
+- **Failed writes say why**: "The EXR file could not be written (the disk is
+  full: 1.2 GB free on D:\, 3.4 GB needed)", access denied (with a pointer to
+  Windows Security's Controlled folder access), or a missing folder. A master
+  cut short by a full disk is removed rather than left truncated.
 - Every live control (peak, region EV, strength, mode, preserve, source curve,
   calibration) is one composite and display pass: 1.1 to 1.3 ms at 4K on an
   RTX 4080, under a tenth of a 60 Hz frame. Inference time is separate:

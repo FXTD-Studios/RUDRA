@@ -52,6 +52,11 @@ $commits = @(
                  "ui/sequence.py", "ui/server.py") },
     @{ msg = "Hub: sdr2hdr_image_v8 in the export and the model card (optional model, its real-SDR numbers); Netflix Open Content attribution for v8's training titles";
        paths = @("checkpoints/LICENSE", "docs/HUB_MODEL_CARD.md", "training/export_for_hub.py") },
+    @{ msg = "Startup and errors: a packaged app ignores foreign QT_* variables, keeps a rotating log file (AppLocalData/logs/rudra.log), and every failed write names its reason (disk full with free/needed, access denied, missing folder); writers check close() and remove truncated EXRs";
+       paths = @("native/app/startup.cpp", "native/app/startup.hpp", "native/app/main.cpp", "native/app/CMakeLists.txt",
+                 "native/platform/include/rudra/platform/io_error.hpp", "native/platform/src/io_error.cpp",
+                 "native/platform/CMakeLists.txt", "native/platform/src/png8.cpp", "native/deliver/src/exr.cpp",
+                 "native/deliver/src/sidecars.cpp", "native/deliver/src/queue.cpp", "native/tests/test_platform.cpp") },
     @{ msg = "App: a bare start follows the default when it moves (an older beta's package gives way to v8); sequence-encode tests accept ffmpeg 6.1's complete colr atom (macOS CI); phase 3 exit runs the app tests in their own console";
        paths = @("native/app/main_window.cpp", "native/app/tests/test_app.cpp", "native/tests/test_sequence_encode.cpp",
                  "scripts/NATIVE_PHASE3_EXIT.ps1") },
