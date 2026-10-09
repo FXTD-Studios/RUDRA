@@ -204,6 +204,7 @@ std::string BackendChoice::label() const {
         case Device::CoreML: d = "Core ML"; break;
         case Device::Rocm: d = "ROCm"; break;
         case Device::OpenVino: d = "OpenVINO"; break;
+        case Device::TensorRT: d = "TensorRT"; break;
     }
     return std::string(r) + " on " + d;
 }
@@ -213,8 +214,7 @@ std::string BackendChoice::key() const { return std::string(to_string(runtime)) 
 std::optional<BackendChoice> BackendChoice::from_key(const std::string& k) {
     // Any pair, compiled here or not: a setting from another build still reads.
     for (Runtime r : {Runtime::LibTorch, Runtime::OnnxRuntime})
-        for (Device d : {Device::Cpu, Device::Cuda, Device::Mps, Device::DirectML, Device::CoreML, Device::Rocm,
-                         Device::OpenVino})
+        for (Device d : kAllDevices)
             if (BackendChoice{r, d}.key() == k) return BackendChoice{r, d};
     return std::nullopt;
 }

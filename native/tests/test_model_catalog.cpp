@@ -184,3 +184,16 @@ TEST(ModelCatalog, BackendChoicesAreEveryCompiledRuntimeGpuFirst) {
     EXPECT_EQ(device_pill(BackendInfo{Runtime::LibTorch, Device::Cpu, "", "cpu"}), "CPU");
     EXPECT_EQ(device_pill(BackendInfo{Runtime::OnnxRuntime, Device::DirectML, "", ""}), "DirectML");
 }
+
+// The names the command line and the settings use, both ways, TensorRT included.
+TEST(ModelCatalog, DeviceAndPrecisionNamesRoundTrip) {
+    for (Device d : kAllDevices) EXPECT_EQ(device_from_string(to_string(d)), d);
+    EXPECT_EQ(device_from_string("tensorrt"), Device::TensorRT);
+    EXPECT_FALSE(device_from_string("gpu"));
+    EXPECT_EQ(precision_from_string("fp16"), Precision::Fp16);
+    EXPECT_EQ(precision_from_string("fp32"), Precision::Fp32);
+    EXPECT_FALSE(precision_from_string("bf16"));
+    EXPECT_EQ(BackendChoice::from_key("onnxruntime/tensorrt"),
+              std::optional<BackendChoice>(BackendChoice{Runtime::OnnxRuntime, Device::TensorRT}));
+    EXPECT_EQ((BackendChoice{Runtime::OnnxRuntime, Device::TensorRT}).label(), "ONNX Runtime on TensorRT");
+}

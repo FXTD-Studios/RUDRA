@@ -62,12 +62,9 @@ int cmd_batch(const std::vector<std::string>& args) {
         if (k == "--package") o.package = fs::path(v);
         else if (k == "--runtime") o.runtime = v;
         else if (k == "--device") {
-            static const std::map<std::string, Device> m{{"cpu", Device::Cpu}, {"cuda", Device::Cuda}, {"mps", Device::Mps},
-                                                         {"directml", Device::DirectML}, {"coreml", Device::CoreML},
-                                                         {"rocm", Device::Rocm}, {"openvino", Device::OpenVino}};
-            const auto it = m.find(v);
-            if (it == m.end()) return usage();
-            o.device = it->second;
+            const auto d = device_from_string(v);
+            if (!d) return usage();
+            o.device = *d;
         } else return usage();
     }
     o.package_roots = default_roots(queue);

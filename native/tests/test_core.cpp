@@ -206,3 +206,29 @@ TEST(Manifest, DetectsATamperedModelFile) {
     ASSERT_FALSE(v);
     EXPECT_EQ(v.error().code, ErrorCode::IntegrityError);
 }
+
+// Roadmap R1: the half-precision tile graph is optional, and comes with its tolerance.
+TEST(Manifest, TheFp16GraphIsOptionalAndCarriesItsTolerance) {
+    {
+        auto m = read_manifest(write_package("no_fp16", minimal_manifest()));
+        ASSERT_TRUE(m);
+        EXPECT_TRUE(m->onnx_tile_fp16.empty());
+        EXPECT_FALSE(m->tolerance.count("fp16"));
+    }
+    auto j = minimal_manifest();
+    j["files"]["onnx_tile_fp16"] = "model.tile.fp16.onnx";
+    j["files"]["onnx_tile_fp16_sha256"] = sha256_hex(std::as_bytes(std::span("oh", 2)));
+    j["tolerance"]["fp16"] = {{"atol", 1e-2}, {"rtol", 0.0}};
+    const auto dir = write_package("fp16", j);
+    std::ofstream(dir / "model.tile.fp16.onnx", std::ios::binary) << "oh";
+    auto m = read_manifest(dir);
+    ASSERT_TRUE(m) << m.error().detail;
+    EXPECT_EQ(m->onnx_tile_fp16, fs::path("model.tile.fp16.onnx"));
+    EXPECT_DOUBLE_EQ(m->tolerance.at("fp16").atol, 1e-2);
+    EXPECT_TRUE(verify_package_files(*m));   // its hash is checked with the rest
+    std::ofstream(dir / "model.tile.fp16.onnx", std::ios::binary) << "changed";
+    EXPECT_FALSE(verify_package_files(*m));
+    // A graph without its tolerance cannot be held to anything: refused.
+    j["tolerance"].erase("fp16");
+    EXPECT_FALSE(read_manifest(write_package("fp16_no_tol", j)));
+}

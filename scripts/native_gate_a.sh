@@ -123,14 +123,17 @@ else export LD_LIBRARY_PATH="$ORT_ROOT/lib:$TORCH_LIB${LD_LIBRARY_PATH:+:$LD_LIB
 # ---------------------------------------------------------------------------
 say "Gate A"
 # name|runtime|device|run
-ROWS=("LibTorch CPU|libtorch|cpu|$WITH_LIBTORCH")
+ROWS=("LibTorch CPU|libtorch|cpu|$WITH_LIBTORCH|fp32")
 if [ "$OS" = mac ]; then
-  ROWS+=("LibTorch MPS|libtorch|mps|$((WITH_LIBTORCH && MPS_AVAIL))")
+  ROWS+=("LibTorch MPS|libtorch|mps|$((WITH_LIBTORCH && MPS_AVAIL))|fp32")
 else
-  ROWS+=("LibTorch CUDA|libtorch|cuda|$((WITH_LIBTORCH && CUDA_AVAIL))")
+  ROWS+=("LibTorch CUDA|libtorch|cuda|$((WITH_LIBTORCH && CUDA_AVAIL))|fp32")
 fi
-ROWS+=("ONNX Runtime CPU|onnxruntime|cpu|1")
-[ "$OS" = mac ] && ROWS+=("ONNX Runtime Core ML|onnxruntime|coreml|1")
+ROWS+=("ONNX Runtime CPU|onnxruntime|cpu|1|fp32")
+[ "$OS" = mac ] && ROWS+=("ONNX Runtime Core ML|onnxruntime|coreml|1|fp32")
+# The fp16 tile graph (roadmap R1), when the package carries it.
+HAS_FP16=0; [ -f "$PACKAGE/model.tile.fp16.onnx" ] && HAS_FP16=1
+[ "$OS" = mac ] && ROWS+=("ONNX Runtime Core ML fp16|onnxruntime|coreml|$HAS_FP16|fp16")
 
 {
   echo "RUDRA native Gate A, $STAMP, $(uname -sm)"
@@ -144,10 +147,10 @@ ROWS+=("ONNX Runtime CPU|onnxruntime|cpu|1")
 status=0
 SUMMARY=()
 for row in "${ROWS[@]}"; do
-  IFS='|' read -r name runtime device run <<<"$row"
+  IFS='|' read -r name runtime device run precision <<<"$row"
   if [ "$run" != 1 ]; then SUMMARY+=("$name|skipped|"); continue; fi
   code=0
-  out=$("$EXE" diff "$PACKAGE" --runtime "$runtime" --device "$device" 2>&1) || code=$?
+  out=$("$EXE" diff "$PACKAGE" --runtime "$runtime" --device "$device" --precision "$precision" 2>&1) || code=$?
   printf -- '---- %s\n%s\n\n' "$name" "$out" >> "$REPORT"
   worst=$(printf '%s\n' "$out" | grep -oE 'max \|d\| [0-9.eE+-]+' | awk '{print $3}' | sort -g | tail -1)
   case $code in
@@ -177,12 +180,12 @@ if [ -z "${NO_BENCH:-}" ]; then
   printf '%-22s %10s %14s %10s %14s\n' Backend "1080p ms" "1080p tiled" "4K ms" "4K tiled" | tee -a "$REPORT"
   i=0
   for row in "${ROWS[@]}"; do
-    IFS='|' read -r name runtime device run <<<"$row"
+    IFS='|' read -r name runtime device run precision <<<"$row"
     IFS='|' read -r _ result _ <<<"${SUMMARY[$i]}"; i=$((i + 1))
     [ "$result" = PASS ] || continue
     code=0
-    out=$("$EXE" bench "$PACKAGE" --runtime "$runtime" --device "$device" --size 1920x1080,3840x2160 --iters 5 \
-          --json "reports/latency/$(date +%Y-%m-%d_%H%M)_${runtime}_${device}.json" ${budget_args[@]+"${budget_args[@]}"} 2>&1) || code=$?
+    out=$("$EXE" bench "$PACKAGE" --runtime "$runtime" --device "$device" --precision "$precision" --size 1920x1080,3840x2160 --iters 5 \
+          --json "reports/latency/$(date +%Y-%m-%d_%H%M)_${runtime}_${device}_${precision}.json" ${budget_args[@]+"${budget_args[@]}"} 2>&1) || code=$?
     [ "$code" = 1 ] && over_budget="$over_budget $name"
     printf -- '---- bench %s\n%s\n\n' "$name" "$out" >> "$REPORT"
     ms() { printf '%s\n' "$out" | awk -v s="$1" -v m="$2" '$1=="BENCH" && $4==s && $5==m {print $6}'; }

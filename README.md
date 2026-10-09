@@ -693,6 +693,41 @@ is loaded, sits behind the same picker.
   and masters a 240-frame shot with no control lagging the playhead. **Passed on
   Windows 9 Oct 2026** (beta 3 package, RTX 4080); the Mac half waits for a Mac
 
+### Phase R: real time (beta 4)
+
+Runs alongside phase 3 and serves it: every interactive control needs the
+network to keep up with playback. Measured with `rudra-native bench` against
+`native/bench/latency_budgets.json`. Starting point on the RTX 4080 SUPER, fp32:
+150 to 172 ms for one 1080p frame (about 6 fps); grading and display already
+take 0.24 ms at 1080p and 1.2 ms at 4K.
+
+- [ ] R1 Half precision and TensorRT. **In:** `tools/export_model.py` writes
+  `model.tile.fp16.onnx`, the U-Net in fp16 between an fp32 baseline and fp32
+  heads (the inverse ACES curve is too steep near the clip for fp16; the whole
+  graph in fp16 moved a clipped highlight 0.07 stop, the U-Net alone 0.009),
+  held to a new `fp16` tolerance of 1e-2 (0.0144 stop, a 1% step); the native
+  app reads it (`--precision fp16` on `diff` and `bench`, both gate scripts) and
+  has a TensorRT device (`--device tensorrt`, ONNX Runtime's TensorRT provider
+  with an engine cache). **Left:** the RTX 4080 numbers through DirectML fp16
+  and TensorRT fp16, then the app's playback on the fastest path that passes.
+  Target 1080p ≤ 20 ms
+- [ ] R2 Frames stay on the GPU: NVDEC decode, inference, and the fields handed
+  to the viewer through Direct3D 12 or Vulkan interop, with no copy through
+  host memory, and frames prepared ahead of the playhead
+- [ ] R3 Each part at the rate it needs: the curve once per shot or every few
+  frames, the masks at half resolution, only the residual at full 4K. Target
+  4K at 24 fps and above
+- [ ] R4 Two models, one recipe: a small realtime model for playback and live
+  use, the quality model for masters, in the same package format, with a fixed
+  limit on how far the realtime model may fall below the quality one
+- [ ] R5 No flicker: the curve and masks smoothed over time, then a model that
+  sees neighbouring frames, held to a flicker measure on the clip bench
+- [ ] R6 Live input and output for broadcast: DeckLink and AJA over SDI,
+  10-bit Y'CbCr in, HLG or PQ out, a fixed delay of 2 frames or less
+- **Gate:** 1080p plays at 24 fps with inference live and every control
+  interactive on the RTX 4080, within the R4 quality limit and the R5 flicker
+  limit
+
 ### Phase 4: clipped regions, video and commercial weights
 
 - [ ] 4.1 Rebuild on mask: an optional local inpaint pass that runs only inside
@@ -715,8 +750,15 @@ is loaded, sits behind the same picker.
 
 ### Phase 5: where colourists work, and release
 
-- [ ] 5.1 OFX plugin for DaVinci Resolve and Nuke on the native engine
-  (`native/engine`, `native/infer`)
+- [ ] 5.1 OFX plugin for DaVinci Resolve, Nuke, Baselight and Flame on the
+  native engine (`native/engine`, `native/infer`), plus a render-farm command
+  line and an SDK
+- [ ] 5.4 Conform by shot: cut detection, EDL and XML import, settings per shot
+  (with 4.3), a whole programme in one pass
+- [ ] 5.5 Delivery metadata in the native app: Dolby Vision XML with per-shot
+  analysis, HDR10+ JSON, MaxCLL and MaxFALL per shot
+- [ ] 5.6 Commercial release: Windows code signing, a Linux package, licence
+  and support terms for studios
 - [ ] 5.2 Opt-in correction logging: an accepted grade on real SDR saved as a
   training pair, with its source and the user's consent recorded
 - [ ] 5.3 Publish the benchmark and the paper

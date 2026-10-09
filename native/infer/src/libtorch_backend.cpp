@@ -102,7 +102,11 @@ private:
 
 }  // namespace
 
-Result<std::unique_ptr<InferenceBackend>> make_libtorch_backend(const ModelManifest& m, Device device) {
+Result<std::unique_ptr<InferenceBackend>> make_libtorch_backend(const ModelManifest& m, Device device,
+                                                                Precision precision) {
+    if (precision != Precision::Fp32)
+        return make_error(ErrorCode::Unsupported, "LibTorch runs the package in fp32 only.",
+                          "fp16 runs through ONNX Runtime (model.tile.fp16.onnx)");
     torch::Device dev(torch::kCPU);
     switch (device) {
         case Device::Cpu: break;

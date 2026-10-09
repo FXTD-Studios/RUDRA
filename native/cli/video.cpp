@@ -95,19 +95,15 @@ int cmd_video(const std::vector<std::string>& args) {
     };
     auto m = read_manifest(a.package);
     if (!m) return fail(m.error());
-    static const std::map<std::string, Device> devices{{"cpu", Device::Cpu},       {"cuda", Device::Cuda},
-                                                       {"mps", Device::Mps},       {"directml", Device::DirectML},
-                                                       {"coreml", Device::CoreML}, {"rocm", Device::Rocm},
-                                                       {"openvino", Device::OpenVino}};
-    const auto dev = devices.find(device);
-    if (dev == devices.end()) return usage_error("invalid --device: " + device);
+    const auto dev = device_from_string(device);
+    if (!dev) return usage_error("invalid --device: " + device);
     Result<std::unique_ptr<InferenceBackend>> b = make_error(ErrorCode::Unsupported, "No runtime");
-    if (runtime == "libtorch") b = make_libtorch_backend(*m, dev->second);
-    else if (runtime == "onnxruntime") b = make_onnxruntime_backend(*m, dev->second);
+    if (runtime == "libtorch") b = make_libtorch_backend(*m, *dev);
+    else if (runtime == "onnxruntime") b = make_onnxruntime_backend(*m, *dev);
     else {
         for (auto r : compiled_runtimes())
-            if (r == Runtime::LibTorch) b = make_libtorch_backend(*m, dev->second);
-        if (!b) b = make_onnxruntime_backend(*m, dev->second);
+            if (r == Runtime::LibTorch) b = make_libtorch_backend(*m, *dev);
+        if (!b) b = make_onnxruntime_backend(*m, *dev);
     }
     if (!b) return fail(b.error());
     VideoConvertHooks hooks;
