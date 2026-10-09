@@ -695,6 +695,13 @@ void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::fun
     QSettings st;
     st.setValue("model/package", QString::fromStdString(m.root.string()));
     st.setValue("model/backend", QString::fromStdString(backend_choice_->key()));
+    // Whether the package in use is the catalog's default. A bare start
+    // follows the default when it moves (shadow_v1 -> v8 on 9 Oct 2026);
+    // a package picked over the default stays picked.
+    {
+        const auto in_use = catalog_.find(m.root);
+        st.setValue("model/followsDefault", bool(in_use && catalog_.chosen && *in_use == *catalog_.chosen));
+    }
     set_model_pills();
     log("model " + describe(m));
     log("device " + device_->text());
@@ -748,6 +755,25 @@ void MainWindow::boot() {
     const auto choice = BackendChoice::from_key(st.value("model/backend").toString().toStdString());
     std::error_code ec;
     if (!last.empty() && std::filesystem::is_regular_file(last / "manifest.json", ec)) {
+        // The last package wins, unless it was only ever the default and the
+        // default has moved on. Settings from before this flag existed say
+        // nothing either way: there a package outside every folder this
+        // install searches (an older beta's own models) gives way to the
+        // default, and one inside them is taken as picked. Before this, a
+        // beta 1 user upgraded to beta 3 kept opening beta 1's retired
+        // shadow_v1 with v8 sitting unused beside the app.
+        const QVariant follows = st.value("model/followsDefault");
+        const auto known = catalog_.find(last);
+        const bool moved = catalog_.chosen && known != catalog_.chosen &&
+                           (follows.isValid() ? follows.toBool() : !known.has_value());
+        if (moved) {
+            const CatalogEntry& def = catalog_.entries[*catalog_.chosen];
+            log("the default model is now " + QString::fromStdString(def.label()) + "; opening it instead of " +
+                QString::fromStdString(last.filename().string()) +
+                " (File > Model packages… switches back)");
+            use_model(def.package, choice);
+            return;
+        }
         use_model(last, choice);
         return;
     }

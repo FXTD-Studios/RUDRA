@@ -34,6 +34,46 @@ json index() {
 Primaries primaries_of(const std::string& s) {
     return s == "rec709" ? Primaries::Rec709 : s == "p3d65" ? Primaries::P3D65 : Primaries::Rec2020;
 }
+
+// A ProRes MOV states its colour twice: in every frame header (what Resolve
+// and FCP read, and what RUDRA checks) and in the container's colr atom (what
+// ffprobe reports). Whether the atom can carry BT.2020 and PQ depends on the
+// ffmpeg build: 6.1 (Homebrew's ffmpeg@6, Ubuntu 24.04) writes them; the 2025
+// gyan.dev builds leave them unspecified, ffprobe says "unknown", and RUDRA
+// adds a note. The goldens are recorded on one build (index.json "ffmpeg"), so
+// for ProRes either form is right and the frame headers are what must match.
+// macOS CI failed on exactly this after the goldens were re-recorded on Windows
+// (PR #29, 9 Oct 2026).
+const char* const kCompleteProres[][2] = {
+    {"color_primaries", "bt2020"}, {"color_transfer", "smpte2084"}, {"color_space", "bt2020nc"}};
+
+bool is_prores(const std::string& target) { return target.rfind("prores", 0) == 0; }
+
+template <class Tags>
+bool complete_prores_tags(const Tags& tags) {
+    for (const auto& [key, want] : kCompleteProres) {
+        bool found = false;
+        for (const auto& [k, v] : tags)
+            if (k == key) found = v == want;
+        if (!found) return false;
+    }
+    return true;
+}
+
+// The golden deliver report with its ProRes colour_tags as a build that
+// writes a complete colr atom reports them.
+std::string with_complete_colour_tags(std::string report) {
+    const auto at = report.find("\"colour_tags\"");
+    if (at == std::string::npos) return report;
+    const auto end = report.find('}', at);
+    std::string block = report.substr(at, end - at);
+    for (const auto& [key, want] : kCompleteProres) {
+        const std::string from = std::string("\"") + key + "\": \"unknown\"";
+        if (const auto i = block.find(from); i != std::string::npos)
+            block.replace(i, from.size(), std::string("\"") + key + "\": \"" + want + "\"");
+    }
+    return report.substr(0, at) + block + report.substr(end);
+}
 }  // namespace
 
 TEST(SequenceEncode, FrameCodesAreThePythons) {
@@ -132,14 +172,34 @@ TEST(SequenceEncode, LiveEncodesCarryTheirTags) {
         EXPECT_EQ(out->extension(), find_sequence_target(o.target)->suffix);
         auto tags = colour_tags(*out);
         ASSERT_TRUE(tags);
-        for (const auto& [key, value] : *tags) EXPECT_EQ(value, r["report"]["colour_tags"][key].get<std::string>());
         const auto frame_tags = prores_frame_tags(*out);
         EXPECT_EQ(frame_tags.has_value(), !r["report"]["prores_frame_tags"].is_null());
+        if (frame_tags) {
+            for (const auto& [key, value] : *frame_tags)
+                EXPECT_EQ(value, r["report"]["prores_frame_tags"][key].get<std::string>()) << key;
+        }
         const auto colr = container_colr(*out);
         ASSERT_EQ(colr.has_value(), !r["container_colr"].is_null());
+        // The colr atom is the container's second statement of the colour, and
+        // what goes into it is the ffmpeg build's: the golden's build left
+        // primaries and transfer unspecified there (HEVC too, whose VUI carries
+        // them), 6.1 fills them in. Each field is the golden's or the stream's own.
         if (colr) {
-            for (const auto& [key, value] : *colr) EXPECT_EQ(value, r["container_colr"][key].get<std::string>());
+            const auto stream = expected_tags(o.target);
+            ASSERT_TRUE(stream);
+            for (const auto& [key, value] : *colr) {
+                const std::string golden = r["container_colr"][key].get<std::string>();
+                if (key == "subtype" || value == golden) EXPECT_EQ(value, golden) << key;
+                else EXPECT_EQ(value, tag_of(*stream, key)) << key << " (golden: " << golden << ")";
+            }
         }
+        // ProRes on a build whose colr atom carries BT.2020 and PQ: complete
+        // tags and nothing to note (see above).
+        if (is_prores(o.target) && complete_prores_tags(*tags)) {
+            EXPECT_TRUE(notes.empty()) << notes;
+            continue;
+        }
+        for (const auto& [key, value] : *tags) EXPECT_EQ(value, r["report"]["colour_tags"][key].get<std::string>());
         // The oracle's note, when this ffmpeg writes an incomplete colr atom for
         // a MOV (bt2020 primaries and PQ do not fit its legacy nclc), is the
         // native encode's note too. Old goldens have no "note" field: then none.
@@ -182,7 +242,12 @@ TEST(SequenceEncode, DeliverReportIsThePythons) {
         std::string escaped;
         for (char c : file) escaped += c == '\\' ? std::string("\\\\") : std::string(1, c);
         got.replace(got.find(escaped), escaped.size(), "OUTPUT" + find_sequence_target(r["target"].get<std::string>())->suffix);
-        EXPECT_EQ(got, r["report_json"].get<std::string>() + "\n");
+        const std::string want = r["report_json"].get<std::string>() + "\n";
+        // ProRes: the golden's build or one whose colr atom is complete (see above).
+        if (is_prores(r["target"].get<std::string>()) && got != want)
+            EXPECT_EQ(got, with_complete_colour_tags(want));
+        else
+            EXPECT_EQ(got, want);
     }
     fs::remove_all(work);
 #else
