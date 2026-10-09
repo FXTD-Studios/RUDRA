@@ -5,7 +5,11 @@
 #include <string>
 #include <vector>
 
+#include <cerrno>
+
 #include "rudra/platform/hash.hpp"
+#include "rudra/platform/io_error.hpp"
+#include "rudra/platform/png8.hpp"
 #include "rudra/platform/npy.hpp"
 #include "rudra/platform/process.hpp"
 
@@ -141,4 +145,47 @@ TEST(Process, KillEndsARunningProgram) {
     (*p)->kill();
     (*p)->wait();
     EXPECT_FALSE((*p)->running());
+}
+
+// A failed write says why (9 Oct 2026: a master failed with only "The EXR file
+// could not be written." and nothing to tell a full disk from a blocked folder).
+TEST(IoError, BytesReadLikeAPerson) {
+    EXPECT_EQ(human_bytes(17), "17 bytes");
+    EXPECT_EQ(human_bytes(812'000), "812 KB");
+    EXPECT_EQ(human_bytes(52'000'000), "52.0 MB");
+    EXPECT_EQ(human_bytes(1'500'000'000), "1.5 GB");
+}
+
+TEST(IoError, TheReasonNamesWhatToFix) {
+    const auto tmp = std::filesystem::temp_directory_path() / "rudra-io-error";
+    std::filesystem::create_directories(tmp);
+    const auto target = tmp / "master.exr";
+    // Full: from errno, or because the file is bigger than the free space.
+    EXPECT_EQ(io_failure_reason(target, ENOSPC, 1000).rfind("the disk is full: ", 0), 0u) << io_failure_reason(target, ENOSPC);
+    const std::string huge = io_failure_reason(target, 0, std::uintmax_t(1) << 62);
+    EXPECT_EQ(huge.rfind("the disk is full: ", 0), 0u) << huge;
+    EXPECT_NE(huge.find(" free on "), std::string::npos) << huge;
+    EXPECT_NE(huge.find(" needed"), std::string::npos) << huge;
+    EXPECT_EQ(io_failure_reason(target, EACCES).rfind("access denied", 0), 0u);
+    EXPECT_EQ(io_failure_reason(tmp / "gone" / "x.exr", ENOENT).rfind("the folder does not exist", 0), 0u);
+    EXPECT_FALSE(io_failure_reason(target, EIO).empty());
+    EXPECT_FALSE(io_failure_reason(target, 0).empty());   // never an empty reason
+    std::filesystem::remove_all(tmp);
+}
+
+TEST(IoError, AWriterThatFailsSaysWhy) {
+    // A "folder" that is a file: the open fails, and the message carries a reason.
+    const auto tmp = std::filesystem::temp_directory_path() / "rudra-io-error-writer";
+    std::filesystem::remove_all(tmp);
+    std::filesystem::create_directories(tmp);
+    std::ofstream(tmp / "not-a-folder") << "x";
+    Png8 img;
+    img.width = img.height = 2;
+    img.channels = 1;
+    img.data.assign(4, 0);
+    auto r = write_png8(tmp / "not-a-folder" / "mask.png", img);
+    ASSERT_FALSE(r);
+    EXPECT_EQ(r.error().message.rfind("The PNG could not be written (", 0), 0u) << r.error().message;
+    EXPECT_EQ(r.error().message.back(), '.');
+    std::filesystem::remove_all(tmp);
 }

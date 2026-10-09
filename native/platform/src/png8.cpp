@@ -1,7 +1,9 @@
 #include "rudra/platform/png8.hpp"
+#include "rudra/platform/io_error.hpp"
 
 #include <array>
 #include <cstring>
+#include <cerrno>
 #include <fstream>
 
 namespace rudra {
@@ -228,10 +230,20 @@ Result<void> write_png8(const std::filesystem::path& path, const Png8& img) {
         img.data.size() != std::size_t(img.width) * std::size_t(img.height) * std::size_t(img.channels))
         return make_error(ErrorCode::InvalidArgument, "PNG image is not 8-bit with 1 to 4 channels at its size", path.string());
     const auto bytes = png8_bytes(img);
+    errno = 0;
     std::ofstream out(path, std::ios::binary);
-    if (!out) return make_error(ErrorCode::IoError, "The PNG could not be written.", path.string());
+    if (!out) {
+        const int err = errno;
+        return make_error(ErrorCode::IoError, "The PNG could not be written (" + io_failure_reason(path, err, bytes.size()) + ").",
+                          path.string());
+    }
     out.write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
-    if (!out) return make_error(ErrorCode::IoError, "The PNG could not be written.", path.string());
+    out.close();   // the last bytes land on close: check it, not the destructor
+    if (!out) {
+        const int err = errno;
+        return make_error(ErrorCode::IoError, "The PNG could not be written (" + io_failure_reason(path, err, bytes.size()) + ").",
+                          path.string());
+    }
     return {};
 }
 

@@ -15,21 +15,40 @@
 #include <QDir>
 #include <QFile>
 #include <QSettings>
+#include <QStandardPaths>
+#include <QSysInfo>
 #include <QTimer>
 
 #include <algorithm>
 
 #include "main_window.hpp"
+#include "startup.hpp"
 #include "workflow_check.hpp"
 #include "theme.hpp"
 
 int main(int argc, char** argv) {
+    // Before QApplication, which reads them to pick its platform plugin: a
+    // packaged RUDRA ignores Qt settings other software left in the
+    // environment (startup.hpp).
+    const std::vector<std::string> ignored_env =
+        rudra::app::ignore_foreign_qt_environment(rudra::app::shipped_platforms_dir(rudra::app::executable_dir()));
     QApplication app(argc, argv);
     QApplication::setApplicationName("RUDRA");
     QApplication::setOrganizationName("FXTD Studios");
 #ifdef RUDRA_VERSION_LABEL
     QApplication::setApplicationVersion(QStringLiteral(RUDRA_VERSION_LABEL));
 #endif
+    // The log file, so a failure leaves a record: on Windows
+    // %LOCALAPPDATA%\FXTD Studios\RUDRA\logs\rudra.log, on macOS
+    // ~/Library/Application Support/FXTD Studios/RUDRA/logs/rudra.log.
+    const QString log_file = rudra::app::install_app_log(
+        QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QStringLiteral("/logs"));
+    if (!log_file.isEmpty()) {
+        rudra::app::app_log_line(QStringLiteral("RUDRA %1 started on %2, Qt %3; arguments: %4")
+                                     .arg(QApplication::applicationVersion(), QSysInfo::prettyProductName(),
+                                          QString::fromLatin1(qVersion()), QApplication::arguments().join(' ')));
+    }
+    for (const auto& line : ignored_env) rudra::app::app_log_line(QString::fromStdString(line));
     const rudra::app::ThemeReport theme = rudra::app::apply_theme(app);
     // RUDRA --theme-check out.json: the look as this machine resolves it
     // (fonts, weights, style), for CI and the gates; exit 1 on a problem.
@@ -81,6 +100,8 @@ int main(int argc, char** argv) {
         rest.remove(i, 2);
     }
     rudra::app::MainWindow w;
+    for (const auto& line : ignored_env) w.log(QString::fromStdString(line));
+    if (!log_file.isEmpty()) w.log("log file: " + QDir::toNativeSeparators(log_file));
     w.restore_settings();   // the window, rails, tab, container and Render fields of the last run
     if (const qsizetype t = rest.indexOf("--tab"); t >= 0 && t + 1 < rest.size()) {   // for the review grabs
         w.show_tab(rest[t + 1]);

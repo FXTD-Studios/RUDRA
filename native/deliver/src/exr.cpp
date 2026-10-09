@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -10,6 +11,7 @@
 #include <limits>
 
 #include "rudra/core/gamut.hpp"
+#include "rudra/platform/io_error.hpp"
 #include "rudra/platform/pyjson.hpp"
 
 namespace rudra {
@@ -160,10 +162,26 @@ Result<void> write_exr(const std::filesystem::path& path, const PlanarBuffer& rg
     if (!bytes) return bytes.error();
     std::error_code ec;
     if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), ec);
+    // errno is cleared first so a reason left over from earlier is never
+    // reported as this one's, and the file is closed here, not by the
+    // destructor: the last buffered bytes reach the disk on close, and a full
+    // disk there used to pass as a written master.
+    errno = 0;
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    if (!f) return make_error(ErrorCode::IoError, "The EXR file could not be created.", path.string());
+    if (!f) {
+        const int err = errno;
+        return make_error(ErrorCode::IoError,
+                          "The EXR file could not be created (" + io_failure_reason(path, err, bytes->size()) + ").",
+                          path.string());
+    }
     f.write(reinterpret_cast<const char*>(bytes->data()), static_cast<std::streamsize>(bytes->size()));
-    if (!f) return make_error(ErrorCode::IoError, "The EXR file could not be written.", path.string());
+    f.close();
+    if (!f) {
+        const int err = errno;
+        std::string reason = io_failure_reason(path, err, bytes->size());
+        std::filesystem::remove(path, ec);   // never leave a truncated master behind
+        return make_error(ErrorCode::IoError, "The EXR file could not be written (" + reason + ").", path.string());
+    }
     return {};
 }
 
