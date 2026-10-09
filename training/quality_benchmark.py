@@ -21,7 +21,7 @@ def capture_environment(out):
             versions[package] = importlib.metadata.version(package)
         except importlib.metadata.PackageNotFoundError:
             pass
-    files = ('training/quality_benchmark.py', 'training/infer_sdr2hdr.py',
+    files = ('training/quality_benchmark.py', 'training/infer_sdr2hdr.py', 'rudra/inference.py',
              'training/export_bench_pairs.py', 'training/sdr2hdr_dataset.py',
              'rudra/sdr2hdr.py', 'rudra/hdrvdp.py', 'rudra/delivery/bench.py')
     (out/'environment.json').write_text(json.dumps(dict(python=platform.python_version(),
