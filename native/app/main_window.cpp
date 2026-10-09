@@ -1,4 +1,5 @@
 #include "main_window.hpp"
+#include "startup.hpp"
 
 #include "rudra/video/ffmpeg_check.hpp"
 
@@ -1843,6 +1844,7 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e) {
 
 void MainWindow::log(const QString& line) {
     if (log_) log_->appendPlainText(line);
+    app_log_line(line);   // and the log file, when the app installed one (startup.hpp)
 }
 
 }  // namespace rudra::app
