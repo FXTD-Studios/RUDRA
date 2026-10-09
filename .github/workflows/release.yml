@@ -3,7 +3,7 @@ name: release
 # The desktop beta: RUDRA.app in a DMG (macOS, Apple silicon), and for
 # Windows x64 an installer (setup.exe, Inno Setup) and a portable ZIP, each
 # with its SHA-256, attached to a GitHub pre-release when
-# a v* tag is pushed (git tag v0.9.0-beta.4 && git push origin v0.9.0-beta.4).
+# a v* tag is pushed (git tag v0.9.0-beta.5 && git push origin v0.9.0-beta.5).
 # Run by hand (workflow_dispatch), it builds the two and keeps them as
 # workflow artifacts without publishing. The packaging is the scripts'
 # (scripts/package_mac.sh, scripts/PACKAGE_WINDOWS.ps1); the model package is

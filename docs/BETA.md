@@ -1,7 +1,7 @@
-# RUDRA 0.9.0 beta 4
+# RUDRA 0.9.0 beta 5
 
 The desktop RUDRA: SDR footage in, scene-linear HDR out, with the places the
-model reconstructed shown to you. This is the fourth public beta of the native
+model reconstructed shown to you. This is the fifth public beta of the native
 app (C++20, Qt 6.8, no Python at runtime). It is for evaluation and
 non-commercial use (PolyForm Noncommercial 1.0.0, see LICENSE; the model
 weights: LICENSE-weights).
@@ -42,7 +42,22 @@ weights: LICENSE-weights).
 - `rudra-native`, the command line: `diff`, `video`, `deliver`, `batch`,
   `ffmpeg-check`.
 
-## Changes since beta 3
+## Changes since beta 4
+
+- **Starts the same on every machine.** Qt settings left in the environment by
+  other software (a conda env with PyQt, a Qt SDK) no longer stop RUDRA with
+  "no Qt platform plugin could be initialized": the package uses its own
+  plugins and the log says what it ignored.
+- **A log file**, rotated at 5 MB: on Windows
+  `%LOCALAPPDATA%\FXTD Studios\RUDRA\logs\rudra.log`, on macOS
+  `~/Library/Application Support/FXTD Studios/RUDRA/logs/rudra.log`. Attach it
+  to a report.
+- **Failed writes say why**: "The EXR file could not be written (the disk is
+  full: 1.2 GB free on D:\, 3.4 GB needed)", access denied (with a pointer to
+  Windows Security's Controlled folder access), or a missing folder. A master
+  cut short by a full disk is removed rather than left truncated.
+
+## New in beta 4 (since beta 3)
 
 - **Source panel.** Name the curve that made the SDR (unknown, ACES,
   filmic/Hable, AgX, camera log, plain Rec.709 clip) and the baseline becomes
@@ -70,18 +85,6 @@ weights: LICENSE-weights).
 - Half precision: packages carry an fp16 tile graph, held to a 1% tolerance;
   `--precision fp16` on `rudra-native diff` and `bench`, and a TensorRT device
   (`--device tensorrt`) where ONNX Runtime has it.
-- **Starts the same on every machine.** Qt settings left in the environment by
-  other software (a conda env with PyQt, a Qt SDK) no longer stop RUDRA with
-  "no Qt platform plugin could be initialized": the package uses its own
-  plugins and the log says what it ignored.
-- **A log file**, rotated at 5 MB: on Windows
-  `%LOCALAPPDATA%\FXTD Studios\RUDRA\logs\rudra.log`, on macOS
-  `~/Library/Application Support/FXTD Studios/RUDRA/logs/rudra.log`. Attach it
-  to a report.
-- **Failed writes say why**: "The EXR file could not be written (the disk is
-  full: 1.2 GB free on D:\, 3.4 GB needed)", access denied (with a pointer to
-  Windows Security's Controlled folder access), or a missing folder. A master
-  cut short by a full disk is removed rather than left truncated.
 - Every live control (peak, region EV, strength, mode, preserve, source curve,
   calibration) is one composite and display pass: 1.1 to 1.3 ms at 4K on an
   RTX 4080, under a tenth of a 60 Hz frame. Inference time is separate:
@@ -95,7 +98,7 @@ opens with no warning. A DMG built without the certificate (the build log says
 "ad hoc") makes macOS warn on first open: System Settings > Privacy &
 Security > Open Anyway, or `xattr -dr com.apple.quarantine /Applications/RUDRA.app`.
 
-**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.4-windows-x64-setup.exe`:
+**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.5-windows-x64-setup.exe`:
 it installs for your user by default (no administrator prompt), adds RUDRA to
 the Start menu and can be removed from Settings > Apps. Or take the portable
 ZIP: unzip anywhere and run `RUDRA.exe`. A GPU with DirectX 12 is used when
