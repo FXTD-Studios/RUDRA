@@ -74,6 +74,11 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **9 Oct 2026, 23:45 — beta 5 (line F).** Beta 4 was tagged and published at `9397ae0` (8 assets)
+> before the startup and error-reporting commit (`5f2f6c2`) landed, so that ships as beta 5 rather than
+> by moving a published tag: foreign `QT_*` variables ignored, a rotating log file, failed writes that
+> name their reason. `RUDRA_RELEASE` beta.5; `docs/BETA.md` leads with the changes since beta 4.
+>
 > **9 Oct 2026, 21:30 — beta 4 prepared (line F).** `RUDRA_RELEASE` beta.4; the release workflow
 > exports `sdr2hdr_image_v8` (it still exported shadow_v1, so a tag would have shipped the retired
 > model); `docs/BETA.md` lists what changed since the beta 3 tag (source panel, calibration, reference
