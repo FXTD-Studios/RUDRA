@@ -1871,6 +1871,9 @@ bool MainWindow::queue_video_export(const QString& format) {
     }
     QString name = findChild<QLineEdit*>("renderName")->text().trimmed();
     if (name.isEmpty()) name = QString::fromStdString(shot_video_->path.stem().string()) + "_" + format;
+    // A log master never takes the graded file's name: the curve goes on the end.
+    else if (format.endsWith("_acescct")) name += "_acescct";
+    else if (format.endsWith("_logc4")) name += "_logc4";
     const bool prores = format.startsWith("prores");
     const std::filesystem::path output =
         std::filesystem::path(dir.toStdString()) / (name.toStdString() + (prores ? ".mov" : ".mp4"));
@@ -1898,7 +1901,12 @@ bool MainWindow::queue_video_export(const QString& format) {
         say(QString::fromStdString(queue.error().message));
         return false;
     }
-    const QString label = format == "hdr10" ? "HDR10" : format == "hlg" ? "HLG" : "ProRes 422 HQ";
+    QString label = format == "hdr10" ? "HDR10"
+                    : format == "hlg" ? "HLG"
+                    : format.startsWith("prores4444") ? "ProRes 4444"
+                                                      : "ProRes 422 HQ";
+    if (format.endsWith("_acescct")) label += " ACEScct";
+    if (format.endsWith("_logc4")) label += " LogC4";
     const std::string title = shot_title().toStdString() + " \xe2\x86\x92 " + label.toStdString() + ", " + output.filename().string();
     queues_->run({*queue, title}, queue_options());
     save_queues();

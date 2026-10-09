@@ -40,7 +40,9 @@ const std::vector<Opt>& video_options() {
     static const std::vector<Opt> o{
         {"output", Kind::Path, {}},
         {"checkpoint", Kind::Path, {}},
-        {"format", Kind::Str, {"hdr10", "hlg", "prores422", "prores422hq", "prores4444"}},
+        // The Python's five, then the native log masters (core/hdr10.hpp log_delivery_profiles).
+        {"format", Kind::Str, {"hdr10", "hlg", "prores422", "prores422hq", "prores4444", "prores422hq_acescct",
+                               "prores422hq_logc4", "prores4444_acescct", "prores4444_logc4"}},
         {"alpha-mode", Kind::Str, {"straight"}},
         {"device", Kind::Str, {}},
         {"input-transfer", Kind::Str, {"auto", "srgb", "rec709", "gamma22", "gamma24"}},

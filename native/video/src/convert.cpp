@@ -7,6 +7,7 @@
 #include <fstream>
 
 #include "rudra/core/hdr10.hpp"
+#include "rudra/core/log_encode.hpp"
 #include "rudra/deliver/video_encode.hpp"
 #include "rudra/deliver/video_master.hpp"
 #include "rudra/media/png16.hpp"
@@ -49,9 +50,7 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     const fs::path sidecar = video_sidecar_path(output);
     const std::string ext = lower(output.extension().string());
     if (ext != ".mp4" && ext != ".mov" && ext != ".mkv") return refuse("Output must be MP4, MOV or MKV");
-    const DeliveryProfile* profile = nullptr;
-    for (const auto& p : delivery_profiles())
-        if (p.name == a.format) profile = &p;
+    const DeliveryProfile* profile = find_delivery_profile(a.format);
     if (!profile) return refuse("Unknown delivery format: " + a.format);
     if (profile->codec == "prores" && ext != ".mov") return refuse("ProRes delivery requires a .mov output");
     std::error_code ec;
@@ -194,6 +193,13 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         pyjson::set(*std::get<std::shared_ptr<pyjson::Dict>>(qc->v), "alpha", *al);
     }
     pyjson::set(report, "qc", *qc);
+    if (auto curve = log_curve_from_name(profile->log))
+        pyjson::set(report, "log_encoding",
+                    pyjson::Dict{{"curve", log_curve_label(*curve)}, {"gamut", log_gamut_label(*curve)},
+                                 {"scene_referred", true},
+                                 {"exposure_convention", "0.18 = 18% grey (scene), diffuse white = 1.0"},
+                                 {"note", "Peak and knee are not applied. Tagged unknown primaries and transfer: "
+                                          "set the clip's input to this curve and gamut."}});
     if (a.format == "hlg")
         pyjson::set(report, "hlg_reference",
                     pyjson::Dict{{"display_peak_nits", a.peak_nits}, {"black_nits", 0},

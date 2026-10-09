@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "rudra/core/log_encode.hpp"
+
 namespace rudra {
 namespace {
 
@@ -86,17 +88,43 @@ double hlg_inverse(double code) noexcept {
 
 const std::vector<DeliveryProfile>& delivery_profiles() {
     static const std::vector<DeliveryProfile> p{
-        {"hdr10", "hevc", "libx265", "smpte2084", "yuv420p10le", -1, ""},
-        {"hlg", "hevc", "libx265", "arib-std-b67", "yuv420p10le", -1, ""},
-        {"prores422", "prores", "prores_ks", "smpte2084", "yuv422p10le", 2, "apcn"},
-        {"prores422hq", "prores", "prores_ks", "smpte2084", "yuv422p10le", 3, "apch"},
-        {"prores4444", "prores", "prores_ks", "smpte2084", "yuv444p10le", 4, "ap4h"},
+        {"hdr10", "hevc", "libx265", "smpte2084", "yuv420p10le", -1, "", ""},
+        {"hlg", "hevc", "libx265", "arib-std-b67", "yuv420p10le", -1, "", ""},
+        {"prores422", "prores", "prores_ks", "smpte2084", "yuv422p10le", 2, "apcn", ""},
+        {"prores422hq", "prores", "prores_ks", "smpte2084", "yuv422p10le", 3, "apch", ""},
+        {"prores4444", "prores", "prores_ks", "smpte2084", "yuv444p10le", 4, "ap4h", ""},
     };
     return p;
 }
 
+const std::vector<DeliveryProfile>& log_delivery_profiles() {
+    static const std::vector<DeliveryProfile> p{
+        {"prores422hq_acescct", "prores", "prores_ks", "unknown", "yuv422p10le", 3, "apch", "acescct"},
+        {"prores422hq_logc4", "prores", "prores_ks", "unknown", "yuv422p10le", 3, "apch", "logc4"},
+        {"prores4444_acescct", "prores", "prores_ks", "unknown", "yuv444p10le", 4, "ap4h", "acescct"},
+        {"prores4444_logc4", "prores", "prores_ks", "unknown", "yuv444p10le", 4, "ap4h", "logc4"},
+    };
+    return p;
+}
+
+const DeliveryProfile* find_delivery_profile(std::string_view name) {
+    for (const auto* list : {&delivery_profiles(), &log_delivery_profiles()})
+        for (const auto& p : *list)
+            if (p.name == name) return &p;
+    return nullptr;
+}
+
 Result<std::pair<PlanarBuffer, PlanarBuffer>> encode_master(const PlanarBuffer& in, const std::string& profile,
                                                             double peak, std::optional<double> knee) {
+    if (const DeliveryProfile* lp = find_delivery_profile(profile); lp && !lp->log.empty()) {
+        // Scene-referred: the master itself through the log curve, no peak or knee.
+        // The light measured for the report is the scene's, in nits.
+        PlanarBuffer light(3, in.height(), in.width());
+        auto o = light.span();
+        const auto s = in.span();
+        for (std::size_t i = 0; i < o.size(); ++i) o[i] = std::max(s[i], 0.0f) * kPqPeak.v;
+        return std::pair{encode_log(in, *log_curve_from_name(lp->log)), std::move(light)};
+    }
     auto m = master_to_peak(in, peak, knee);
     if (!m) return m.error();
     if (profile != "hlg") {

@@ -23,10 +23,16 @@ weights: LICENSE-weights).
   detail differently from the baseline. Every master's sidecar carries the
   same shares (`invented_pixels`).
 - Stills and sequences: PNG, JPEG, TIFF, WebP, BMP, a frame or a folder.
-- Movies: open, scrub, and export HDR10 (HEVC 10-bit with its metadata), HLG
-  or ProRes 422 HQ, with the audio, checked before it is published, through a
-  queue you can stop and resume (ProRes 4444 with alpha from the command
-  line: `rudra-native video --format prores4444`).
+- Movies: open, scrub, and export HDR10 (HEVC 10-bit with its metadata), HLG,
+  ProRes 422 HQ or ProRes 4444 (the finishing master), with the audio,
+  checked before it is published, through a queue you can stop and resume
+  (ProRes 4444 with alpha from the command line:
+  `rudra-native video --format prores4444`). The ProRes files come graded in
+  PQ, or scene-referred in **ACEScct** (AP1) or **ARRI LogC4** (AWG4): the
+  master before peak and knee, to grade like camera footage. A log file is
+  tagged unknown primaries and transfer (there are no codes for these
+  curves); set the clip's input to the curve in Resolve. Its sidecar names
+  the curve and gamut.
 - Masters as ACES 2065-1 EXR sequences.
 - The model: `sdr2hdr_shadow_v1`, the shipped RUDRA model, run by ONNX
   Runtime (DirectML on Windows GPUs, Core ML on Apple silicon, CPU

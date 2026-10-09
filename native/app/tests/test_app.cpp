@@ -1848,6 +1848,28 @@ TEST(AppVideo, TheExportTilesQueueAMovieAndTheQueueWindowFollowsIt) {
     EXPECT_EQ(text_of(*sheet, "exportFrames"), "All 6, as a movie with its audio");
     EXPECT_TRUE(text_of(*sheet, "exportDest").endsWith("sh010.mp4"));
     EXPECT_EQ(text_of(*sheet, "exportSignal"), "PQ · Rec.2020 · HEVC 10-bit · HDR10 metadata");
+    // ProRes 4444: the finishing master, a .mov; PQ, ACEScct or LogC4.
+    EXPECT_FALSE(sheet->findChild<QWidget*>("exportEncodingRow")->isVisibleTo(sheet));   // HDR10: no encoding row
+    EXPECT_TRUE(sheet->findChild<QWidget*>("prores4444")->isEnabled());
+    sheet->pick("prores4444");
+    EXPECT_EQ(sheet->picked(), "prores4444");
+    EXPECT_TRUE(sheet->findChild<QWidget*>("exportEncodingRow")->isVisibleTo(sheet));
+    EXPECT_EQ(sheet->video_format(), "prores4444");
+    EXPECT_TRUE(text_of(*sheet, "exportDest").endsWith("sh010.mov"));
+    EXPECT_EQ(text_of(*sheet, "exportSignal"), "PQ · Rec.2020 · ProRes 4444");
+    sheet->set_encoding("logc4");
+    EXPECT_EQ(sheet->video_format(), "prores4444_logc4");
+    EXPECT_TRUE(text_of(*sheet, "exportDest").endsWith("sh010_logc4.mov"));
+    EXPECT_EQ(text_of(*sheet, "exportSignal"), "LogC4 · ARRI Wide Gamut 4 · ProRes 4444 · scene-referred");
+    EXPECT_TRUE(sheet->findChild<QLabel*>("exportHint")->isVisibleTo(sheet));
+    sheet->pick("prores");
+    sheet->set_encoding("acescct");
+    EXPECT_EQ(sheet->video_format(), "prores422hq_acescct");
+    EXPECT_EQ(text_of(*sheet, "exportSignal"), "ACEScct · AP1 · ProRes 422 HQ 10-bit · scene-referred");
+    sheet->set_encoding("pq");
+    EXPECT_EQ(sheet->video_format(), "prores422hq");
+    sheet->pick("hdr10");
+    EXPECT_EQ(sheet->video_format(), "hdr10");
     sheet->export_now();
     // The queue file, in batch.py's format, beside the master to be.
     const auto queue = out / "sh010.hdr10.queue.json";

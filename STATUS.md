@@ -74,6 +74,19 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **9 Oct 2026, 03:30 — ProRes 4444 and log masters in the app's Export sheet (line F).** A 4444 tile
+> beside 422 HQ; on both ProRes tiles an Encoding row: PQ (graded, as before), ACEScct (AP1) or ARRI
+> LogC4 (AWG4). The log files carry the scene-linear master before peak and knee (the ACES EXR's
+> pixels), Rec.2020 to the curve's gamut by Bradford, then the curve; tagged unknown primaries and
+> transfer, the curve and gamut in the sidecar's `log_encoding`, `_acescct`/`_logc4` on the name.
+> Four native-only delivery profiles (`log_delivery_profiles`); the Python's five and their parity
+> tests unchanged. `tests/test_log_encode.cpp` (6): ACEScct 0.18 -> 0.41359, LogC4 0.18 -> 0.27840 and
+> black at 95/1023, the AP1 and AWG4 matrices to 1e-9, the encoder's tags, QC on an untagged file.
+> End to end with ffmpeg 6.1 (Linux): ProRes 4444 LogC4 `ap4h` yuv444p12le, no primaries or transfer
+> tag, QC passed, grey decoded 0.27854 (10-bit step). ffmpeg's prores_ks takes 10-bit input, so 4444
+> is 10-bit in a 12-bit container; the label says ProRes 4444, not 12-bit. Native tests 186/186, app
+> 29/29 (the movie export test runs in the OpenCV build, NATIVE_PHASE3_EXIT).
+>
 > **9 Oct 2026, 01:45 — shadow_v1 on real SDR for the first time (line G, release row R5).** Netflix
 > Meridian, 287 test frames, against the inverse: −4.11 dB [−4.18, −4.04] / −0.006 JOD
 > [−0.008, −0.004], 0/287 wins on PU21; crushed-pixel error 5.58 stops vs the inverse's 1.56. v8 against
