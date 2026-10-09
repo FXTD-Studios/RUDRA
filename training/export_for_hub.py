@@ -34,7 +34,10 @@ if str(REPO) not in sys.path:
 
 # The SDR->HDR models, in the order the card lists them.
 MODELS = [
-    ("sdr2hdr_shadow_v1", "the shipped model: v5 backbone + trained shadow gate"),
+    ("sdr2hdr_image_v8", "the optional model since 9 Oct 2026: level with the analytic "
+                         "inverse on real SDR; masters use the inverse by default"),
+    ("sdr2hdr_shadow_v1", "retired 9 Oct 2026 (was the shipped model): v5 backbone + "
+                          "trained shadow gate"),
     ("sdr2hdr_shadow_s2", "same recipe, seed 2"),
     ("sdr2hdr_shadow_s3", "same recipe, seed 3"),
     ("sdr2hdr_image_v5", "the backbone alone, no gate"),
