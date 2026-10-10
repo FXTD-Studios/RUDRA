@@ -13,11 +13,11 @@
   <img src="https://img.shields.io/badge/python-3.10%2B-blue">
   <img src="https://img.shields.io/badge/torch-2.x-ee4c2c">
   <img src="https://img.shields.io/badge/weights-noncommercial-orange">
-  <img src="https://github.com/fxtdstudios/RUDRA/actions/workflows/tests.yml/badge.svg">
-  <a href="https://github.com/fxtdstudios/RUDRA/releases"><img alt="Desktop beta" src="https://img.shields.io/github/v/release/fxtdstudios/RUDRA?include_prereleases&label=desktop%20beta"></a>
-  <a href="https://github.com/fxtdstudios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="Windows build" src="https://img.shields.io/github/check-runs/fxtdstudios/RUDRA/native?nameFilter=core%2C%20windows-2022&label=Windows&logo=windows"></a>
-  <a href="https://github.com/fxtdstudios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="macOS build" src="https://img.shields.io/github/check-runs/fxtdstudios/RUDRA/native?nameFilter=core%2C%20macos-14&label=macOS&logo=apple"></a>
-  <a href="https://github.com/fxtdstudios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="Linux build" src="https://img.shields.io/github/check-runs/fxtdstudios/RUDRA/native?nameFilter=core%2C%20ubuntu-24.04&label=Linux&logo=linux"></a>
+  <img src="https://github.com/FXTD-Studios/RUDRA/actions/workflows/tests.yml/badge.svg">
+  <a href="https://github.com/FXTD-Studios/RUDRA/releases"><img alt="Desktop beta" src="https://img.shields.io/github/v/release/FXTD-Studios/RUDRA?include_prereleases&label=desktop%20beta"></a>
+  <a href="https://github.com/FXTD-Studios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="Windows build" src="https://img.shields.io/github/check-runs/FXTD-Studios/RUDRA/native?nameFilter=core%2C%20windows-2022&label=Windows&logo=windows"></a>
+  <a href="https://github.com/FXTD-Studios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="macOS build" src="https://img.shields.io/github/check-runs/FXTD-Studios/RUDRA/native?nameFilter=core%2C%20macos-14&label=macOS&logo=apple"></a>
+  <a href="https://github.com/FXTD-Studios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="Linux build" src="https://img.shields.io/github/check-runs/FXTD-Studios/RUDRA/native?nameFilter=core%2C%20ubuntu-24.04&label=Linux&logo=linux"></a>
 </p>
 
 ---
@@ -115,7 +115,7 @@ Full tables, the failure analysis, and how to recompute every number:
 ## Install
 
 **Desktop beta (no Python).** From
-[Releases](https://github.com/fxtdstudios/RUDRA/releases), the latest
+[Releases](https://github.com/FXTD-Studios/RUDRA/releases), the latest
 pre-release: for Windows x64 `RUDRA-<version>-windows-x64-setup.exe`, which
 installs for your user (no administrator prompt) with the model and the Visual
 C++ runtime included, or the portable ZIP beside it; for Apple silicon
@@ -125,7 +125,7 @@ C++ runtime included, or the portable ZIP beside it; for Apple silicon
 FFmpeg is needed for video, not for stills.
 
 ```bash
-git clone https://github.com/fxtdstudios/RUDRA.git
+git clone https://github.com/FXTD-Studios/RUDRA.git
 cd RUDRA
 pip install -e .
 (cd checkpoints && sha256sum -c SHA256SUMS)

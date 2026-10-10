@@ -74,6 +74,21 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **10 Oct 2026 — beta 6 prepared (line F, R4).** Product items 2 to 5 of the 9 Oct "professional"
+> list. Projects (`engine/project`, `.rudra` JSON v1, atomic, masks as `<name>.rudra.masks.png`,
+> relative paths, validated and clamped on load) with File > Open/Save/Save as, autosave a few seconds
+> after a change, File > Reopen last session (the last run's file kept as previous-session.rudra; one
+> instance owns it, QLockFile), a save prompt before a dirty project is replaced. The Windows package
+> carries the gyan.dev full ffmpeg 7.1.1 (SHA-256 pinned; GPL v3, licence and source note in `ffmpeg\`),
+> put first on PATH by `platform/tools`; the DMG only with `MAC_FFMPEG_DIR` (a static build), so macOS
+> still needs Homebrew's. Every Windows executable now runs in the UTF-8 code page (`cmake/utf8.manifest`),
+> which fixes non-ASCII user and folder names reaching ffmpeg and OpenCV. Daily update check against
+> GitHub releases (betas follow betas), Help > Getting started, User guide (F1, `docs/USER_GUIDE.md`),
+> Open log folder, tooltips. Signing hooks: signtool with `RUDRA_SIGN_PFX`, `WINDOWS_CERT_PFX` in the
+> release workflow; certificates still to buy. Reviewed twice (independent pass: 9 findings, all fixed;
+> re-review: 2 more, fixed). Linux: core 199/199 (206/206 with OpenCV), app 50/50 offscreen; Windows and
+> macOS run in CI. Not done: Dolby Vision / HDR10+ metadata, OFX plug-in, real-time playback (item 6).
+>
 > **9 Oct 2026, 23:45 — beta 5 (line F).** Beta 4 was tagged and published at `9397ae0` (8 assets)
 > before the startup and error-reporting commit (`5f2f6c2`) landed, so that ships as beta 5 rather than
 > by moving a published tag: foreign `QT_*` variables ignored, a rotating log file, failed writes that
