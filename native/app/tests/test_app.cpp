@@ -66,6 +66,9 @@
 #include "model_dialogs.hpp"
 #include "workflow_check.hpp"
 #include "startup.hpp"
+#include "updates.hpp"
+#include "rudra/engine/project.hpp"
+#include <QStatusBar>
 #include "rudra/deliver/master.hpp"
 #include "region_editor.hpp"
 #include "scope_widgets.hpp"
@@ -242,6 +245,10 @@ TEST(AppActions, EnabledAsThePageEnablesThem) {
     // later step; the only ones off are the viewer's, in a window without one.
     for (const auto& spec : action_specs()) {
         const QString why = w.pending_reason(spec.id);
+        if (spec.id == "reopen-session") {   // off until a run has left a session to reopen
+            EXPECT_EQ(why, "No earlier session was saved.");
+            continue;
+        }
         EXPECT_TRUE(why.isEmpty() || why == "This build has no viewer.") << spec.id << ": " << why.toStdString();
     }
     for (const char* id : {"master", "copy-metrics", "copy-scopes", "copy-delivery", "models", "recent-clear"})
@@ -2058,6 +2065,270 @@ TEST(AppVideo, TheExportTilesQueueAMovieAndTheQueueWindowFollowsIt) {
     QSettings().clear();
 }
 #endif
+
+// ---- Projects, autosave, updates, help (product items 3 to 5) --------------
+
+TEST(AppProject, SaveAndOpenBringTheGradeAndTheModelBack) {
+    QSettings().clear();
+    const auto dir = fresh_dir("project");
+    std::filesystem::path saved;
+    std::string params;
+    {
+        app::MainWindow w(false);
+        auto m = fake_models(w, "project-a");
+        ASSERT_TRUE(use(w, m->root / "gamma"));
+        EXPECT_EQ(w.windowTitle(), "RUDRA");
+        w.run("strength-up");
+        w.run("mode-shadows");
+        w.run("preserve");
+        w.run("container-linear");
+        w.session().peak_input(1.25);
+        params = w.session().params_json();
+        ASSERT_TRUE(w.save_project_to(dir / "my shot"));
+        saved = w.project_path();
+        EXPECT_EQ(saved, dir / "my shot.rudra");
+        EXPECT_FALSE(w.project_dirty());
+        EXPECT_EQ(w.windowTitle(), QString::fromUtf8("my shot.rudra[*] — RUDRA"));
+        EXPECT_FALSE(w.isWindowModified());
+        EXPECT_EQ(w.recent_sources().value(0).toStdString(), saved.generic_string());   // File > Open recent has it
+        w.run("strength-up");
+        EXPECT_TRUE(w.project_dirty());
+        EXPECT_TRUE(w.isWindowModified());
+    }
+    app::MainWindow w(false);
+    auto m = fake_models(w, "project-b");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    ASSERT_TRUE(w.open_project(saved));
+    EXPECT_EQ(w.session().params_json(), params);
+    EXPECT_EQ(w.session().container, "linear");
+    EXPECT_DOUBLE_EQ(w.session().peak_ev, 1.25);
+    // The project's model, not the one in use.
+    ASSERT_TRUE(wait_for([&] { return !w.loading_model() && w.model_package().filename() == "gamma"; }));
+    EXPECT_FALSE(w.project_dirty());
+    EXPECT_EQ(w.project_path(), saved);
+    EXPECT_TRUE(last_log(w).contains("opened project") || w.findChild<QPlainTextEdit*>("log")->toPlainText().contains(
+                                                              "opened project"));
+    // Undo goes back to the grade before the project.
+    w.run("undo");
+    EXPECT_NE(w.session().params_json(), params);
+    // A project from a newer RUDRA is refused, and says why; the session stays.
+    const std::string now = w.session().params_json();
+    std::ofstream(dir / "newer.rudra") << R"({"rudra_project": 99})";
+    EXPECT_FALSE(w.open_project(dir / "newer.rudra"));
+    EXPECT_TRUE(last_log(w).contains("newer RUDRA")) << last_log(w).toStdString();
+    EXPECT_EQ(w.session().params_json(), now);
+    EXPECT_EQ(w.project_path(), saved);
+    // A dropped project opens like File > Open project.
+    w.open_paths({QString::fromStdString(saved.string())});
+    EXPECT_EQ(w.session().params_json(), params);
+}
+
+TEST(AppProject, TheSessionIsAutosavedAndTheLastOneReopens) {
+    QSettings().clear();
+    const auto dir = fresh_dir("autosave");
+    const auto file = dir / "autosave" / "last-session.rudra";
+    std::string params;
+    {
+        app::MainWindow w(false);
+        auto m = fake_models(w, "autosave-a");
+        ASSERT_TRUE(use(w, m->root / "alpha"));
+        w.set_autosave_path(file, 30);
+        EXPECT_TRUE(w.reopen_path().empty());
+        EXPECT_FALSE(w.action("reopen-session")->isEnabled());
+        w.run("mode-highlights");
+        ASSERT_TRUE(wait_for([&] { return std::filesystem::exists(file); }));
+        EXPECT_TRUE(w.project_path().empty());   // the autosave is not the project
+        EXPECT_EQ(w.windowTitle(), "RUDRA");
+        // A change just before the window closes is saved by the close.
+        w.run("strength-down");
+        params = w.session().params_json();
+        w.show();
+        w.close();
+    }
+    auto q = load_project(file);
+    ASSERT_TRUE(q) << q.error().message;
+    EXPECT_EQ(q->grade.mode, "highlights");
+    // The next run keeps that session aside before writing its own.
+    app::MainWindow w(false);
+    auto m = fake_models(w, "autosave-b");
+    ASSERT_TRUE(use(w, m->root / "beta"));
+    w.set_autosave_path(file, 30);
+    EXPECT_EQ(w.reopen_path(), dir / "autosave" / "previous-session.rudra");
+    EXPECT_FALSE(std::filesystem::exists(file));
+    w.refresh_enabled();
+    EXPECT_TRUE(w.action("reopen-session")->isEnabled());
+    w.run("reopen-session");
+    EXPECT_EQ(w.session().params_json(), params);
+    EXPECT_TRUE(w.project_path().empty());
+    EXPECT_TRUE(w.project_dirty());   // unsaved work until it is saved as a project
+    ASSERT_TRUE(wait_for([&] { return !w.loading_model() && w.model_package().filename() == "alpha"; }));
+    ASSERT_TRUE(wait_for([&] { return std::filesystem::exists(file); }));   // and autosaved again
+}
+
+TEST(AppProject, AProjectOpenedWhileAModelLoadsGetsItsOwnModel) {
+    // A .rudra dropped or double-clicked while the start-up model still loads:
+    // the project's model follows that load instead of being refused, and a
+    // save meanwhile still names the project's model.
+    QSettings().clear();
+    const auto dir = fresh_dir("project-queued");
+    std::filesystem::path saved;
+    {
+        app::MainWindow w(false);
+        auto m = fake_models(w, "queued-a");
+        ASSERT_TRUE(use(w, m->root / "gamma"));
+        ASSERT_TRUE(w.save_project_to(dir / "g.rudra"));
+        saved = w.project_path();
+    }
+    app::MainWindow w(false);
+    auto m = fake_models(w, "queued-b");
+    w.use_model(m->root / "alpha");   // not waited for
+    ASSERT_TRUE(w.loading_model());
+    ASSERT_TRUE(w.open_project(saved));
+    EXPECT_EQ(w.current_project().package.filename(), "gamma");
+    ASSERT_TRUE(wait_for([&] { return !w.loading_model() && w.model_package().filename() == "gamma"; }));
+    EXPECT_EQ(w.current_project().package.filename(), "gamma");
+}
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+TEST(AppProject, TheShotAndTheFrameComeBack) {
+    QSettings().clear();
+    const auto dir = fresh_dir("project-shot");
+    std::filesystem::create_directories(dir);
+    std::filesystem::path saved;
+    std::size_t count = 0;
+    {
+        app::MainWindow w(false);
+        auto m = fake_models(w, "shot-a");
+        ASSERT_TRUE(use(w, m->root / "alpha"));
+        w.open_source(QString::fromStdString(decode_dir().string()), true);
+        count = w.frame_count();
+        ASSERT_GE(count, 3u);
+        w.run("next");
+        w.run("next");
+        ASSERT_TRUE(w.save_project_to(dir / "folder.rudra"));
+        auto p = load_project(dir / "folder.rudra");
+        ASSERT_TRUE(p);
+        EXPECT_EQ(p->source_kind, "folder");
+        EXPECT_EQ(p->frame, 2);
+    }
+    app::MainWindow w(false);
+    auto m = fake_models(w, "shot-b");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    ASSERT_TRUE(w.open_project(dir / "folder.rudra"));
+    EXPECT_EQ(w.frame_count(), count);
+    EXPECT_EQ(w.current_index(), 2);
+    EXPECT_FALSE(w.project_dirty());
+    // Stills added to the frames are saved by name, in order.
+    w.run("close");
+    w.add_files({decode_dir() / "png8_rgb.png", decode_dir() / "png8_rgb.png"});
+    ASSERT_TRUE(w.save_project_to(dir / "stills.rudra"));
+    auto p = load_project(dir / "stills.rudra");
+    ASSERT_TRUE(p);
+    EXPECT_EQ(p->source_kind, "files");
+    EXPECT_EQ(p->sources.size(), 2u);
+    // Footage that has gone is named, and the grade still opens.
+    std::ofstream(dir / "gone.rudra") << R"({"rudra_project": 1, "shot": {"kind": "folder", "sources": [{"path": "/nowhere/plates"}]}, "grade": {"mode": "off"}})";
+    ASSERT_TRUE(w.open_project(dir / "gone.rudra"));
+    EXPECT_EQ(w.frame_count(), 0u);
+    EXPECT_EQ(w.session().grade.mode, "off");
+    EXPECT_TRUE(w.findChild<QPlainTextEdit*>("log")->toPlainText().contains("the project's footage is missing: /nowhere/plates"));
+}
+#endif
+
+TEST(AppUpdates, VersionsCompareAsSemverSays) {
+    using app::compare_versions;
+    EXPECT_EQ(compare_versions("0.9.0", "0.9.0"), 0);
+    EXPECT_EQ(compare_versions("v0.9.0", "0.9.0"), 0);
+    EXPECT_GT(compare_versions("0.9.0", "0.9.0-beta.5"), 0);   // a release is newer than its betas
+    EXPECT_GT(compare_versions("0.9.0-beta.10", "0.9.0-beta.9"), 0);
+    EXPECT_GT(compare_versions("0.9.0-beta.6", "0.9.0-beta.5"), 0);
+    EXPECT_GT(compare_versions("0.9.0-rc.1", "0.9.0-beta.12"), 0);
+    EXPECT_GT(compare_versions("0.10.0", "0.9.9"), 0);
+    EXPECT_GT(compare_versions("1.0.0-alpha.1", "1.0.0-alpha"), 0);
+    EXPECT_LT(compare_versions("1.0.0-alpha.1", "1.0.0-alpha.beta"), 0);   // numeric before alphanumeric
+    EXPECT_EQ(compare_versions("1.0.0+build.7", "1.0.0"), 0);
+    EXPECT_LT(compare_versions("0.9.0-beta.5", "0.9.1-beta.1"), 0);
+}
+
+TEST(AppUpdates, TheNewestReleaseForThisChannel) {
+    const std::string feed = R"([
+        {"tag_name": "v0.9.0-beta.7", "html_url": "u7", "prerelease": true, "draft": true},
+        {"tag_name": "v0.9.0-beta.6", "html_url": "u6", "prerelease": true},
+        {"tag_name": "v0.8.2", "html_url": "u82", "prerelease": false},
+        {"tag_name": "nightly", "html_url": "un", "prerelease": true},
+        {"tag_name": "v0.9.0-beta.10", "html_url": "u10", "prerelease": true}])";
+    const auto beta = app::newest_release(feed, true);
+    ASSERT_TRUE(beta);
+    EXPECT_EQ(beta->version, "0.9.0-beta.10");   // the draft and the non-version tag are skipped
+    EXPECT_EQ(beta->url, "u10");
+    const auto release = app::newest_release(feed, false);
+    ASSERT_TRUE(release);
+    EXPECT_EQ(release->version, "0.8.2");
+    EXPECT_FALSE(app::newest_release("{\"message\": \"rate limited\"}", true));
+    EXPECT_FALSE(app::newest_release("not json", true));
+    EXPECT_TRUE(app::is_prerelease("0.9.0-beta.5"));
+    EXPECT_FALSE(app::is_prerelease("0.9.0"));
+}
+
+TEST(AppUpdates, TheCheckSaysWhatIsNewer) {
+    const QString keep = QCoreApplication::applicationVersion();
+    QCoreApplication::setApplicationVersion("0.9.0-beta.5");
+    const auto dir = fresh_dir("updates");
+    std::filesystem::create_directories(dir);
+    std::ofstream(dir / "feed.json") << R"([{"tag_name": "v0.9.0-beta.6", "html_url": "https://example.test/b6", "prerelease": true}])";
+    app::MainWindow w(false);
+    w.set_updates_feed(QUrl::fromLocalFile(QString::fromStdString((dir / "feed.json").string())).toString());
+    std::optional<QString> line;
+    w.check_for_updates(false, [&](const QString& l) { line = l; });
+    ASSERT_TRUE(wait_for([&] { return line.has_value(); }));
+    EXPECT_EQ(*line, "RUDRA 0.9.0-beta.6 is available (this is 0.9.0-beta.5): https://example.test/b6");
+    EXPECT_EQ(w.update_url(), "https://example.test/b6");
+    EXPECT_EQ(w.statusBar()->currentMessage(), *line);
+    // Up to date.
+    QCoreApplication::setApplicationVersion("0.9.0-beta.6");
+    line.reset();
+    w.check_for_updates(false, [&](const QString& l) { line = l; });
+    ASSERT_TRUE(wait_for([&] { return line.has_value(); }));
+    EXPECT_EQ(*line, "RUDRA is up to date (0.9.0-beta.6)");
+    EXPECT_TRUE(w.update_url().isEmpty());
+    // No network: said, not thrown.
+    w.set_updates_feed(QUrl::fromLocalFile(QString::fromStdString((dir / "absent.json").string())).toString());
+    line.reset();
+    w.check_for_updates(false, [&](const QString& l) { line = l; });
+    ASSERT_TRUE(wait_for([&] { return line.has_value(); }));
+    EXPECT_TRUE(line->startsWith("update check failed")) << line->toStdString();
+    // Once a day at most, and never when turned off.
+    QSettings().setValue("updates/auto", false);
+    QSettings().remove("updates/last");
+    w.maybe_check_for_updates();
+    EXPECT_FALSE(QSettings().contains("updates/last"));
+    QSettings().setValue("updates/auto", true);
+    w.maybe_check_for_updates();
+    EXPECT_TRUE(QSettings().contains("updates/last"));
+    QCoreApplication::setApplicationVersion(keep);
+}
+
+TEST(AppHelp, GettingStartedTheGuideAndTips) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    w.run("getting-started");
+    ASSERT_NE(w.sheet(), nullptr);
+    EXPECT_EQ(w.sheet()->windowTitle(), "Getting started");
+    QStringList keys;
+    for (auto* l : w.sheet()->findChildren<QLabel*>())
+        if (l->property("role").toString() == "value") keys << l->text();
+    EXPECT_EQ(keys.mid(0, 5), (QStringList{"1  Source", "2  Calibrate", "3  Reconstruct", "4  Check", "5  Deliver"}));
+    EXPECT_TRUE(app::MainWindow::user_guide_url().endsWith("docs/USER_GUIDE.md"));
+    EXPECT_EQ(w.action("user-guide")->shortcut(), QKeySequence(Qt::Key_F1));
+    EXPECT_EQ(w.action("save-project")->shortcut(), QKeySequence(QKeySequence::Save));
+    // Every control a new user asks about says what it does.
+    for (const char* id : {"mode", "renderDir", "renderName", "renderMode", "btnMaster", "btnReprocess", "calibrate"}) {
+        QWidget* c = w.findChild<QWidget*>(id);
+        ASSERT_NE(c, nullptr) << id;
+        EXPECT_FALSE(c->toolTip().isEmpty()) << id;
+    }
+    for (auto* s : w.findChildren<QSlider*>()) EXPECT_FALSE(s->toolTip().isEmpty()) << s->objectName().toStdString();
+}
 
 int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");

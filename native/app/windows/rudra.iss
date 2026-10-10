@@ -21,7 +21,7 @@ AppVersion={#AppVersion}
 AppVerName=RUDRA {#AppVersion}
 AppPublisher=FXTD Studios
 AppPublisherURL=https://fxtdstudios.com
-AppSupportURL=https://github.com/fxtdstudios/RUDRA/issues
+AppSupportURL=https://github.com/FXTD-Studios/RUDRA/issues
 AppCopyright=Copyright 2026 FXTD Studios. PolyForm Noncommercial 1.0.0.
 DefaultDirName={autopf}\RUDRA
 DefaultGroupName=RUDRA
@@ -40,6 +40,8 @@ OutputBaseFilename=RUDRA-{#AppVersion}-windows-x64-setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+; .rudra projects open in RUDRA (a double-click, Open with).
+ChangesAssociations=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -49,6 +51,12 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Registry]
+Root: HKA; Subkey: "Software\Classes\.rudra"; ValueType: string; ValueName: ""; ValueData: "RUDRA.Project"; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\RUDRA.Project"; ValueType: string; ValueName: ""; ValueData: "RUDRA project"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\RUDRA.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\RUDRA.exe,0"
+Root: HKA; Subkey: "Software\Classes\RUDRA.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\RUDRA.exe"" ""%1"""
 
 [Icons]
 Name: "{autoprograms}\RUDRA"; Filename: "{app}\RUDRA.exe"

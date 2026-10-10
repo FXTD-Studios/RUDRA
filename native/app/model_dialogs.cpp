@@ -401,6 +401,7 @@ void FirstRun::start() {
     if (w_->model_package().empty() && !w_->loading_model())
         if (const auto p = w_->catalog().pick()) w_->use_model(w_->catalog().entries[*p].package, backend_from_combo(backend_));
     accept();
+    w_->show_getting_started_once();   // the five steps, after the check
 }
 
 // ---------------------------------------------------------------------------

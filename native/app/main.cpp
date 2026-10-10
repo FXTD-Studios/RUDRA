@@ -14,6 +14,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QFile>
+#include <QLockFile>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QSysInfo>
@@ -23,6 +24,7 @@
 
 #include "main_window.hpp"
 #include "startup.hpp"
+#include "rudra/platform/tools.hpp"
 #include "workflow_check.hpp"
 #include "theme.hpp"
 
@@ -49,6 +51,11 @@ int main(int argc, char** argv) {
                                           QString::fromLatin1(qVersion()), QApplication::arguments().join(' ')));
     }
     for (const auto& line : ignored_env) rudra::app::app_log_line(QString::fromStdString(line));
+    // The package's own ffmpeg and ffprobe, first on the PATH (platform/tools.hpp).
+    const auto tools = rudra::use_bundled_tools(rudra::executable_dir());
+    const QString tools_line = tools ? "ffmpeg: " + QDir::toNativeSeparators(QString::fromStdString(tools->string()))
+                                     : QStringLiteral("ffmpeg: from the PATH");
+    rudra::app::app_log_line(tools_line);
     const rudra::app::ThemeReport theme = rudra::app::apply_theme(app);
     // RUDRA --theme-check out.json: the look as this machine resolves it
     // (fonts, weights, style), for CI and the gates; exit 1 on a problem.
@@ -110,9 +117,35 @@ int main(int argc, char** argv) {
     w.show();
     // A package named on the command line, else the bare start: the first-run
     // check once, then the package used last or the catalog's pick (step 10).
-    if (rest.size() > 0) w.open_package(rest[0]);
-    else w.boot();
-    if (rest.size() > 1) w.open_source(rest[1]);
+    // A project on the command line (a double-clicked .rudra) opens after the
+    // bare start, with its own model.
+    const bool project_arg = rest.size() > 0 && rest[0].endsWith(".rudra", Qt::CaseInsensitive);
+    if (project_arg) {
+        w.open_project(std::filesystem::path(rest[0].toStdU16String()));
+        if (!w.loading_model() && w.model_package().empty()) w.boot();   // its model is missing: the usual one
+    } else if (rest.size() > 0) {
+        w.open_package(rest[0]);
+    } else {
+        w.boot();
+    }
+    if (!project_arg && rest.size() > 1) w.open_source(rest[1]);
+    // The session is autosaved; the one the last run left is offered by File >
+    // Reopen last session. One running RUDRA owns the autosave: a second one
+    // (a .rudra double-clicked while the first is open) does without.
+    const QString autosave_dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/autosave";
+    QDir().mkpath(autosave_dir);
+    QLockFile autosave_lock(autosave_dir + "/autosave.lock");
+    if (grab_to.isEmpty()) {
+        if (autosave_lock.tryLock(0))
+            w.set_autosave_path(std::filesystem::path((autosave_dir + "/last-session.rudra").toStdU16String()));
+        else
+            w.log("another RUDRA is running and keeps the autosave; this window does not autosave");
+        // Once a day at most; Help > Check for updates any time.
+        w.maybe_check_for_updates();
+        // The five steps once, after the first-run check has been through
+        // (the check shows them itself when it closes).
+        if (QSettings().value("firstRun/done", false).toBool()) w.show_getting_started_once();
+    }
     if (!grab_to.isEmpty()) {
         QTimer::singleShot(grab_delay, &w, [&w, grab_to, dialog] {
             if (!dialog.isEmpty()) {
