@@ -85,6 +85,9 @@ const std::vector<ActionSpec> kActions = {
     {"source-clip", "Source: Rec.709, plain clip", "", "source:clip", O::Native, E::Always, ""},
     // Projects (engine/project.hpp): the shot, the model and the grade in a
     // .rudra file; the app autosaves the session and can reopen it.
+    // The reconstruction (the 10 Oct review): the analytic inverse by default,
+    // the model only when asked for. Checked: the model runs.
+    {"use-model", "Use the model (AI-assisted)", "", "useModel", O::Native, E::Always, ""},
     {"open-project", "Open project…", "", "", O::Native, E::Always, "Ctrl+O"},
     {"save-project", "Save project", "", "", O::Native, E::Always, "Ctrl+S"},
     {"save-project-as", "Save project as…", "", "", O::Native, E::Always, "Ctrl+Shift+S"},
@@ -103,7 +106,7 @@ const std::vector<MenuSpec> kMenus = {
     {"Edit", {"undo", "redo", "-", "reset-recon", "reset-regions"}},
     {"Clip", {"first", "prev", "next", "last", "-", "play"}},
     {"Reconstruct",
-     {">Source", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
+     {"use-model", "-", ">Source", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
       "mode-all", "mode-highlights", "mode-shadows", "mode-off", "-", "preserve", "-", "strength-down", "strength-up"}},
     {"Measure", {"copy-metrics", "copy-scopes", "-", "remeasure"}},
     {"Deliver", {"master", "-", "container-aces", "container-linear", "-", "copy-delivery"}},

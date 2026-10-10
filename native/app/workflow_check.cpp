@@ -92,6 +92,9 @@ int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
         o["load_s"] = double(t.elapsed()) / 1000.0;
         if (!why.isEmpty()) o["why"] = why;
         if (!step("model", o, done.value_or(false))) return finish();
+        // This check is of the model's workflow: the model runs (the app's
+        // default is the analytic reconstruction).
+        w.set_use_model(true);
     }
 
     // 2. The shot.

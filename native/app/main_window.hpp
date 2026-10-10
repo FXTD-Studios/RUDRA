@@ -235,6 +235,17 @@ public:
     void maybe_check_for_updates();
     QString update_url() const { return update_url_; }   // the newer release's page, empty for none
 
+    // The reconstruction (the 10 Oct 2026 review): the analytic inverse by
+    // default, with no model run for the view or a master; the model's
+    // reconstruction (AI-assisted) only when turned on (Reconstruct > Use the
+    // model, kept in the settings and in a project). A package may still be
+    // loaded in the background so turning it on is quick; it runs only when on.
+    bool using_model() const { return use_model_; }
+    void set_use_model(bool on, bool remember = true);   // remember: the default for the next start
+    // The constants frames are composed with: the package's when the model
+    // is on, kAnalyticConstants otherwise.
+    ModelConstants frame_constants() const;
+
     // Help: the five steps, the user guide's address.
     static QString user_guide_url();
     void show_getting_started();
@@ -289,6 +300,10 @@ private:
     bool save_interactive();   // Save, or Save as for an untitled session
     std::filesystem::path project_path_, autosave_path_, reopen_path_;
     bool dirty_ = false, restoring_ = false;
+    bool use_model_ = false;
+    bool needs_model() const { return use_model_ && !backend_; }   // frames wait for a package
+    class QLabel* mode_label_ = nullptr;   // the status bar's "Analytic" / "AI-assisted: <model>"
+    void show_mode();
     QString problem_;   // why the last open or save failed, for its dialog
     QTimer autosave_timer_;
     QString updates_feed_ = default_updates_feed(), update_url_;

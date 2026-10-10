@@ -29,6 +29,11 @@ struct ModelConstants {
     float corpus_ev = -1.0f;
 };
 
+// The analytic reconstruction's constants, whatever package is installed: the
+// inverse at the plate's own exposure (corpus EV 0, as sdr2hdr_image_v8's) and
+// the network convention's 40 000-nit ceiling.
+inline constexpr ModelConstants kAnalyticConstants{16.0f, 4.0f, 0.0f};
+
 // One luminance-qualified EV band, in absolute nits (Rec.2020 luma).
 struct RegionBand {
     double low_nits = 0.0;

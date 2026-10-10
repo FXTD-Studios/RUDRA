@@ -60,6 +60,7 @@ Project sample(const fs::path& footage) {
     p.frame = 7;
     p.package = "/models/sdr2hdr_image_v8";
     p.backend = "onnxruntime:cpu";
+    p.use_model = true;
     p.app_version = "0.9.0-beta.6";
     return p;
 }
@@ -83,6 +84,8 @@ TEST(Project, WhatIsSavedComesBack) {
     EXPECT_EQ(q->frame, 7);
     EXPECT_EQ(q->package.generic_string(), "/models/sdr2hdr_image_v8");
     EXPECT_EQ(q->backend, "onnxruntime:cpu");
+    EXPECT_TRUE(q->use_model);
+    EXPECT_FALSE(Project().use_model);   // a project that does not say: the analytic reconstruction
     EXPECT_EQ(q->app_version, "0.9.0-beta.6");
     EXPECT_EQ(q->grade.mode, p.grade.mode);
     EXPECT_DOUBLE_EQ(q->grade.strength, p.grade.strength);

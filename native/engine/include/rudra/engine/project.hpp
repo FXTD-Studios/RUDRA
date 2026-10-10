@@ -36,6 +36,7 @@ struct Project {
     int frame = 0;                                // the frame on screen
     std::filesystem::path package;                // the model package in use, empty for none
     std::string backend;                          // BackendChoice::key(), "" for the default
+    bool use_model = false;                       // false: the analytic reconstruction, no model runs
     GradeSnapshot grade;                          // with its masks, if any
     double peak_ev = 0.0;
     bool anchor = true, carry_chroma = true;
