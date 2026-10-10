@@ -25,7 +25,7 @@ Two independent families live in this repository.
 
 | family | what it does | files |
 |---|---|---|
-| **`sdr2hdr/`** | takes an ordinary 8-bit frame and reconstructs scene-linear HDR | 6 |
+| **`sdr2hdr/`** | takes an ordinary 8-bit frame and reconstructs scene-linear HDR | 7 |
 | **decoders (root)** | decode diffusion latents straight to scene-linear HDR, skipping the tone-mapped VAE | 14 |
 
 They share a name and a radiometric convention and nothing else. Pick the one
@@ -40,11 +40,15 @@ map**, not the image itself. Six channels in (SDR RGB plus the analytic
 baseline), five out (a log-domain residual and two masks). The curve does the
 mapping; the network supplies only what a curve cannot know.
 
-**Start with `sdr2hdr_shadow_v1.safetensors`.**
+**Start with `sdr2hdr_image_v8.safetensors`** -- and read what it scores
+first. RUDRA's own masters use the analytic inverse by default; v8 is the
+*optional* learned model, offered with its measured numbers, not in place of
+the inverse.
 
 | file | params | what it is |
 |---|---:|---|
-| **`sdr2hdr_shadow_v1`** | 1,217,318 | **the shipped model.** v5 backbone plus a trained shadow gate, seed 20260901 |
+| **`sdr2hdr_image_v8`** | 1,196,197 | **the optional model since 9 Oct 2026.** No gate; trained with real SDR in the mix, 0 EV corpus (step 48,000) |
+| `sdr2hdr_shadow_v1` | 1,217,318 | retired 9 Oct 2026 (the model the paper reports). v5 backbone plus a trained shadow gate, seed 20260901 |
 | `sdr2hdr_shadow_s2` | 1,217,318 | same recipe, seed 2 |
 | `sdr2hdr_shadow_s3` | 1,217,318 | same recipe, seed 3 |
 | `sdr2hdr_image_v5` | 1,196,197 | the backbone alone, no gate |
@@ -65,7 +69,7 @@ from safetensors import safe_open
 from safetensors.torch import load_file
 from rudra.sdr2hdr import SDR2HDRNet          # pip install -e . from the GitHub repo
 
-path = "sdr2hdr/sdr2hdr_shadow_v1.safetensors"
+path = "sdr2hdr/sdr2hdr_image_v8.safetensors"
 with safe_open(path, framework="pt") as f:
     config = json.loads(f.metadata()["config"])
 model = SDR2HDRNet.from_config(config)
@@ -73,7 +77,33 @@ model.load_state_dict(load_file(path), strict=True)
 model.eval()
 ```
 
-`SHA256SUMS` and `index.json` sit beside the weights.
+`SHA256SUMS` and `index.json` sit beside the weights. The config also carries
+`corpus_ev`, which sets the analytic baseline the residual rides on: v8 is
+`0.0`, every earlier file is the legacy `-1`. `from_config` reads it; do not
+drop it.
+
+### v8 on real SDR
+
+Paired against the analytic inverse, 95% bootstrap CIs. `real` is 287 held-out
+Netflix *Meridian* frames, SDR from the Dolby Vision trim pass against its
+HDR10 grade (live action; never seen in training or selection). `aces`, `oog`
+and `mix` are rendered benches: the inverse's own curve, other curves, and a
+mix with codec damage.
+
+| bench | PU21 dB vs inverse | CVVDP JOD vs inverse |
+|---|---:|---:|
+| **real** (Meridian, 287) | **+0.02** [-0.03, +0.08], 38/287 frames ahead | **+0.020** [+0.003, +0.036] |
+| oog | -0.29 | -0.09 |
+| mix | -0.03 | -0.12 |
+| aces | -11.2 | -0.87 |
+
+- The first model whose CVVDP interval is above the inverse on real SDR, and
+  level with it on PU21. Against `shadow_v1` on the same 287 frames:
+  +4.14 dB [+4.10, +4.17], 287/287, +0.026 JOD.
+- **It does not pass its own gate.** Inside clipped highlights it is no better
+  than the inverse (-0.36 stops at 0 EV, ties at +1 and +2 EV), and it lifts
+  black below about 2 nits. On `aces`, where the inverse is exact, it loses
+  11 dB. That is why it is optional.
 
 ### What it scores
 
@@ -118,7 +148,10 @@ four measures.
 
 Training data is documented in the GitHub README: Poly Haven HDRIs (CC0),
 HdM-HDR-2014 and HdM-HFR-2017 (academic licence), Netflix Chimera (CC BY 4.0),
-plus proprietary FXTD footage that is not redistributed.
+plus proprietary FXTD footage that is not redistributed. `sdr2hdr_image_v8`
+adds real SDR/HDR10 frame pairs from Netflix Open Content (CC BY 4.0):
+*Nocturne*, *Sparks* and *Sol Levante* for training, *Cosmos Laundromat* for
+checkpoint selection, *Meridian* held out for test.
 
 ---
 
@@ -173,7 +206,15 @@ table covers the recommended decoder per backbone, not every file above:
 
 ## Licence and citation
 
-Apache 2.0. If the SDR→HDR work is useful in yours:
+**Non-commercial.** The weights here are licensed for research, teaching,
+evaluation, benchmarking and personal use only
+([`checkpoints/LICENSE`](https://github.com/fxtdstudios/RUDRA/blob/main/checkpoints/LICENSE)),
+because one of their training sources (HdM-HDR-2014 / HdM-HFR-2017) is free
+for academic use only. The code that runs them is licensed under the
+[PolyForm Noncommercial License 1.0.0](https://github.com/fxtdstudios/RUDRA/blob/main/LICENSE).
+Commercial licensing: [FXTD Studios](https://fxtdstudios.com).
+
+If the SDR→HDR work is useful in yours:
 
 ```bibtex
 @misc{rudra2026,

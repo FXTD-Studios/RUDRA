@@ -49,8 +49,23 @@ const char* to_string(Device d) noexcept {
         case Device::CoreML: return "coreml";
         case Device::Rocm: return "rocm";
         case Device::OpenVino: return "openvino";
+        case Device::TensorRT: return "tensorrt";
     }
     return "?";
+}
+
+const char* to_string(Precision p) noexcept { return p == Precision::Fp16 ? "fp16" : "fp32"; }
+
+std::optional<Device> device_from_string(std::string_view name) noexcept {
+    for (Device d : kAllDevices)
+        if (name == to_string(d)) return d;
+    return std::nullopt;
+}
+
+std::optional<Precision> precision_from_string(std::string_view name) noexcept {
+    if (name == "fp32") return Precision::Fp32;
+    if (name == "fp16") return Precision::Fp16;
+    return std::nullopt;
 }
 
 std::vector<Runtime> compiled_runtimes() {
@@ -65,13 +80,13 @@ std::vector<Runtime> compiled_runtimes() {
 }
 
 #ifndef RUDRA_HAVE_LIBTORCH
-Result<std::unique_ptr<InferenceBackend>> make_libtorch_backend(const ModelManifest&, Device) {
+Result<std::unique_ptr<InferenceBackend>> make_libtorch_backend(const ModelManifest&, Device, Precision) {
     return make_error(ErrorCode::Unsupported, "This build of RUDRA does not include LibTorch.",
                       "configure with -DRUDRA_WITH_LIBTORCH=ON");
 }
 #endif
 #ifndef RUDRA_HAVE_ONNXRUNTIME
-Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelManifest&, Device) {
+Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelManifest&, Device, Precision) {
     return make_error(ErrorCode::Unsupported, "This build of RUDRA does not include ONNX Runtime.",
                       "configure with -DRUDRA_WITH_ONNXRUNTIME=ON -DONNXRUNTIME_ROOT=<path>");
 }

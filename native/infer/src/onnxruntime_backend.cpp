@@ -5,9 +5,27 @@
 
 #include <onnxruntime_cxx_api.h>
 
+// Provider factories that are not part of the generic C++ API. Each ships only
+// in the ORT package built with that provider (DirectML on Windows, Core ML on
+// Apple), so their presence decides what this build can offer.
+#if __has_include(<dml_provider_factory.h>)
+#include <dml_provider_factory.h>
+#define RUDRA_ORT_HAS_DML 1
+#else
+#define RUDRA_ORT_HAS_DML 0
+#endif
+#if __has_include(<coreml_provider_factory.h>)
+#include <coreml_provider_factory.h>
+#define RUDRA_ORT_HAS_COREML 1
+#else
+#define RUDRA_ORT_HAS_COREML 0
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 
 #include "rudra/infer/backend.hpp"
 
@@ -15,7 +33,14 @@ namespace rudra {
 namespace {
 
 Ort::Env& env() {
-    static Ort::Env e(ORT_LOGGING_LEVEL_WARNING, "rudra");
+    // ERROR, not WARNING: ORT warns on every GPU session that it placed shape
+    // ops on the CPU, which is by design and not something to act on.
+    // A function-local static, destroyed at exit before ONNX Runtime's own
+    // statics (it is made after them): its release then finds ORT's logger and
+    // mutexes alive. Leaked instead, ORT tears its environment down after its
+    // logger mutex is gone, and macOS aborts ("mutex lock failed"). Every
+    // session is owned by an object that is gone before exit.
+    static Ort::Env e(ORT_LOGGING_LEVEL_ERROR, "rudra");
     return e;
 }
 
@@ -35,14 +60,17 @@ PlanarBuffer to_planar(Ort::Value& v) {
 
 class OrtBackend final : public InferenceBackend {
 public:
-    OrtBackend(const ModelManifest& m, Ort::SessionOptions& so, Device device, std::string providers)
+    OrtBackend(const ModelManifest& m, Ort::SessionOptions& so, Device device, std::string providers,
+               Precision precision)
         : frame_(env(), (m.root / m.onnx_frame).c_str(), so),
-          tile_(env(), (m.root / m.onnx_tile).c_str(), so),
+          tile_(env(), (m.root / (precision == Precision::Fp16 ? m.onnx_tile_fp16 : m.onnx_tile)).c_str(), so),
           frame_inputs_(m.onnx_frame_inputs), tile_inputs_(m.onnx_tile_inputs),
-          device_(device), providers_(std::move(providers)) {}
+          device_(device), providers_(std::move(providers)), precision_(precision) {}
 
     BackendInfo info() const override {
-        return {Runtime::OnnxRuntime, device_, Ort::GetVersionString(), providers_};
+        BackendInfo i{Runtime::OnnxRuntime, device_, Ort::GetVersionString(), providers_};
+        i.precision = precision_;
+        return i;
     }
 
     Result<FrameScalars> frame_pass(const SdrImage& frame) override {
@@ -105,12 +133,49 @@ private:
     std::vector<std::string> frame_inputs_, tile_inputs_;
     Device device_;
     std::string providers_;
+    Precision precision_;
 };
+
+// TensorRT builds an engine per input shape range the first time it sees it,
+// which takes minutes; the engines are cached on disk and reused. One profile
+// covers every frame and tile size the app sends: 16 px to 4K on each side.
+void append_tensorrt(Ort::SessionOptions& so, Precision precision) {
+    const OrtApi& api = Ort::GetApi();
+    OrtTensorRTProviderOptionsV2* trt = nullptr;
+    Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&trt));
+    std::error_code ec;
+    const auto cache = std::filesystem::temp_directory_path(ec) / "rudra-tensorrt";
+    std::filesystem::create_directories(cache, ec);
+    const std::string cache_s = cache.string();
+    const char* keys[] = {"device_id", "trt_fp16_enable", "trt_engine_cache_enable", "trt_engine_cache_path",
+                          "trt_timing_cache_enable", "trt_profile_min_shapes", "trt_profile_opt_shapes",
+                          "trt_profile_max_shapes"};
+    // Half precision only for the fp16 graph. With it on, TensorRT may also
+    // choose fp16 for the graph's fp32 baseline; the self-test against the
+    // "fp16" tolerance is what says whether the result still holds.
+    const char* values[] = {"0", precision == Precision::Fp16 ? "1" : "0", "1", cache_s.c_str(), "1",
+                            "sdr:1x3x16x16", "sdr:1x3x1080x1920", "sdr:1x3x2160x3840"};
+    const OrtStatus* st = api.UpdateTensorRTProviderOptions(trt, keys, values, std::size(keys));
+    if (st) {
+        api.ReleaseTensorRTProviderOptions(trt);
+        Ort::ThrowOnError(const_cast<OrtStatus*>(st));
+    }
+    so.AppendExecutionProvider_TensorRT_V2(*trt);
+    api.ReleaseTensorRTProviderOptions(trt);
+}
 
 }  // namespace
 
-Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelManifest& m, Device device) {
+Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelManifest& m, Device device,
+                                                                   Precision precision) {
+    if (precision == Precision::Fp16 && m.onnx_tile_fp16.empty())
+        return make_error(ErrorCode::Unsupported, "This model package has no fp16 graph.",
+                          "re-export it with tools/export_model.py (packages from 2 Oct 2026 carry model.tile.fp16.onnx)");
     try {
+        // The Env first: it registers ONNX Runtime's default logger, and adding
+        // an execution provider logs (Core ML does), which aborts the process
+        // when no logger exists yet.
+        (void)env();
         Ort::SessionOptions so;
         so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
         const auto available = Ort::GetAvailableProviders();
@@ -125,33 +190,62 @@ Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelMa
                 so.AppendExecutionProvider_CUDA(OrtCUDAProviderOptions{});
                 providers = "CUDAExecutionProvider,CPUExecutionProvider";
                 break;
-            case Device::DirectML:
-            case Device::CoreML:
-            case Device::Rocm:
-            case Device::OpenVino: {
-                const char* name = device == Device::DirectML ? "DmlExecutionProvider"
-                                   : device == Device::CoreML ? "CoreMLExecutionProvider"
-                                   : device == Device::Rocm   ? "ROCMExecutionProvider"
-                                                              : "OpenVINOExecutionProvider";
-                if (!offered(name))
-                    return make_error(ErrorCode::Unsupported, "This ONNX Runtime build does not offer that device.", name);
-                // Generic registration by provider name (ORT >= 1.14). DirectML
-                // additionally needs memory patterns off and sequential execution.
-                if (device == Device::DirectML) {
-                    so.DisableMemPattern();
-                    so.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
-                }
-                so.AppendExecutionProvider(device == Device::DirectML ? "DML"
-                                           : device == Device::CoreML ? "CoreML"
-                                           : device == Device::Rocm   ? "ROCM"
-                                                                      : "OpenVINO");
-                providers = std::string(name) + ",CPUExecutionProvider";
+            case Device::DirectML: {
+                if (!offered("DmlExecutionProvider"))
+                    return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no DirectML provider.",
+                                      "use the Microsoft.ML.OnnxRuntime.DirectML package");
+#if RUDRA_ORT_HAS_DML
+                // DirectML needs memory patterns off and sequential execution.
+                so.DisableMemPattern();
+                so.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+                Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(so, 0));
+                providers = "DmlExecutionProvider,CPUExecutionProvider";
                 break;
+#else
+                return make_error(ErrorCode::Unsupported, "This build was compiled without the DirectML header.",
+                                  "dml_provider_factory.h not found under ONNXRUNTIME_ROOT/include");
+#endif
             }
+            case Device::CoreML: {
+                if (!offered("CoreMLExecutionProvider"))
+                    return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no Core ML provider.");
+#if RUDRA_ORT_HAS_COREML
+                Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(so, 0));
+                providers = "CoreMLExecutionProvider,CPUExecutionProvider";
+                break;
+#else
+                return make_error(ErrorCode::Unsupported, "This build was compiled without the Core ML header.",
+                                  "coreml_provider_factory.h not found under ONNXRUNTIME_ROOT/include");
+#endif
+            }
+            case Device::Rocm:
+                if (!offered("ROCMExecutionProvider"))
+                    return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no ROCm provider.");
+                so.AppendExecutionProvider_ROCM(OrtROCMProviderOptions{});
+                providers = "ROCMExecutionProvider,CPUExecutionProvider";
+                break;
+            case Device::OpenVino:
+                if (!offered("OpenVINOExecutionProvider"))
+                    return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no OpenVINO provider.");
+                so.AppendExecutionProvider_OpenVINO_V2({});
+                providers = "OpenVINOExecutionProvider,CPUExecutionProvider";
+                break;
+            case Device::TensorRT:
+                if (!offered("TensorrtExecutionProvider"))
+                    return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no TensorRT provider.",
+                                      "use the onnxruntime-gpu package with TensorRT and CUDA on the PATH");
+                append_tensorrt(so, precision);
+                providers = "TensorrtExecutionProvider";
+                if (offered("CUDAExecutionProvider")) {
+                    so.AppendExecutionProvider_CUDA(OrtCUDAProviderOptions{});
+                    providers += ",CUDAExecutionProvider";
+                }
+                providers += ",CPUExecutionProvider";
+                break;
             case Device::Mps:
                 return make_error(ErrorCode::Unsupported, "ONNX Runtime reaches the Apple GPU through Core ML, not MPS.");
         }
-        return std::unique_ptr<InferenceBackend>(new OrtBackend(m, so, device, providers));
+        return std::unique_ptr<InferenceBackend>(new OrtBackend(m, so, device, providers, precision));
     } catch (const std::exception& e) {
         return make_error(ErrorCode::BackendError, "ONNX Runtime could not load the model.", e.what());
     }

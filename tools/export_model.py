@@ -52,6 +52,7 @@ Writes ``<out>/<checkpoint stem>/``::
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime as _dt
 import hashlib
 import json
@@ -94,13 +95,78 @@ QUANTILE_CEILING = 1_000_000  # frame_conditioning_stats subsampling threshold
 # that worst case. In the log domain 3e-4 is a 0.03% luminance difference,
 # roughly thirty times below a 1% just-noticeable difference, while a real
 # export mistake (a wrong op, a dropped branch) shows up at 1e-2 to 1.
+#
+# "gpu_fp32" is not checked here (the export runs on CPU); it is what
+# rudra-native diff holds a GPU run of model.ts to. cuDNN picks its own
+# convolution algorithms and summation order, so a GPU is never bit-exact with
+# CPU even in true fp32 (TF32 off). Measured 23 Sep 2026 on an RTX 4080 SUPER:
+# 1.4e-5 worst, in the residual. atol is set at a little over three times that,
+# still six times tighter than ONNX.
+#
+# "fp16" holds the half-precision tile graph (model.tile.fp16.onnx, the
+# real-time path) to 1e-2 in the fields: in the residual that is 0.0144 stop,
+# a 1% luminance step, the just-noticeable difference the other tolerances are
+# measured against. Measured 2 Oct 2026 on ONNX Runtime CPU: 5.9e-3 (0.0086
+# stop) worst in the residual, 1.8e-3 in the masks. It is checked here on CPU
+# and by rudra-native diff --precision fp16 on each GPU.
 TOLERANCE = {"torchscript": {"atol": 1e-5, "rtol": 0.0},
-             "onnx": {"atol": 3e-4, "rtol": 1e-4}}
+             "onnx": {"atol": 3e-4, "rtol": 1e-4},
+             "gpu_fp32": {"atol": 5e-5, "rtol": 1e-5},
+             "fp16": {"atol": 1e-2, "rtol": 0.0}}
 
 
 # --------------------------------------------------------------------------
 # The exported module
 # --------------------------------------------------------------------------
+
+class StagedGroupNorm(nn.Module):
+    """nn.GroupNorm with its statistics reduced in stages (W, then H, then the
+    group's channels) instead of one reduction over the whole group.
+
+    ONNX Runtime's InstanceNormalization, which torch.onnx emits for
+    GroupNorm, sums each group's H x W x C/G elements in float32 in one pass,
+    and at 1080p (8 million elements per group in the first level) that sum
+    drifts: on 8 Oct 2026 the ONNX fields left eager PyTorch by 2e-3 on real
+    frames, 20x the error at 540p and 40x the one at 512 px, with no session
+    option changing it. Three short ReduceMeans carry a rounding error that
+    grows with sqrt of each stage's length, not with the frame. Same maths
+    as GroupNorm, same affine; the TorchScript graph keeps nn.GroupNorm.
+    The fp16 tile graph computes the statistics in float32."""
+
+    def __init__(self, gn: nn.GroupNorm):
+        super().__init__()
+        self.groups = int(gn.num_groups)
+        self.channels = int(gn.num_channels)
+        self.eps = float(gn.eps)
+        self.weight = nn.Parameter(gn.weight.detach().clone(), requires_grad=False)
+        self.bias = nn.Parameter(gn.bias.detach().clone(), requires_grad=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        dtype = x.dtype
+        n, c, h, w = x.shape
+        xg = x.float().reshape(n, self.groups, c // self.groups, h, w)
+        mean = xg.mean(dim=-1, keepdim=True).mean(dim=-2, keepdim=True).mean(dim=-3, keepdim=True)
+        d = xg - mean
+        var = (d * d).mean(dim=-1, keepdim=True).mean(dim=-2, keepdim=True).mean(dim=-3, keepdim=True)
+        # One fused pass over the tensor: d * (rsqrt * weight) + bias, the
+        # per-channel scale folded into the per-group one (DirectML and ORT
+        # fuse Mul + Add; 8 Oct 2026: the unfolded form cost DirectML 25 %
+        # at 4K tiled).
+        scale = torch.rsqrt(var + self.eps) * self.weight.float().view(1, self.groups, c // self.groups, 1, 1)
+        y = d * scale
+        return (y.reshape(n, c, h, w) + self.bias.float().view(1, c, 1, 1)).to(dtype)
+
+
+def _staged_group_norms(module: nn.Module) -> nn.Module:
+    """A deep copy of ``module`` with every nn.GroupNorm replaced."""
+    module = copy.deepcopy(module)
+    for name, child in list(module.named_children()):
+        if isinstance(child, nn.GroupNorm):
+            setattr(module, name, StagedGroupNorm(child))
+        else:
+            setattr(module, name, _staged_group_norms(child))
+    return module
+
 
 class NativeModel(nn.Module):
     """``frame_pass`` and ``tile_pass`` over the submodules of one SDR2HDRNet.
@@ -128,6 +194,16 @@ class NativeModel(nn.Module):
         self.enc2, self.down2, self.mid = net.enc2, net.down2, net.mid
         self.up2, self.dec2, self.up1, self.dec1, self.head = (
             net.up2, net.dec2, net.up1, net.dec1, net.head)
+        if self.onnx_safe:
+            # The ONNX graphs get GroupNorm with staged statistics
+            # (StagedGroupNorm); copies, so the eager net and the TorchScript
+            # graph keep nn.GroupNorm.
+            for name in CORE_MODULES:
+                setattr(self, name, _staged_group_norms(getattr(self, name)))
+
+        # True only in the fp16 tile graph (export_onnx_fp16): the U-Net runs
+        # in half precision between an fp32 baseline and fp32 heads.
+        self.half_core = False
 
         self.has_gate = net.gate is not None
         self.has_shadow = net.shadow_gate is not None
@@ -385,11 +461,14 @@ class NativeModel(nn.Module):
         """(log residual x scale (1,3,h,w), highlight (1,1,h,w), shadow (1,1,h,w))."""
         sdr = sdr.float().clamp(0.0, 1.0)
         baseline = self._baseline(sdr, curve_params)
-        e1, e2, m = self._encode(sdr, baseline)
+        if self.half_core:
+            e1, e2, m = self._encode(sdr.half(), baseline.half())
+        else:
+            e1, e2, m = self._encode(sdr, baseline)
         u2 = self._resize_like(m, e2)
         u2 = self.dec2(self.up2(torch.cat((u2, e2), dim=1)))
         u1 = self._resize_like(u2, e1)
-        raw = self.head(self.dec1(self.up1(torch.cat((u1, e1), dim=1))))
+        raw = self.head(self.dec1(self.up1(torch.cat((u1, e1), dim=1)))).float()
         residual = raw[:, 0:3]
         if self.has_gate:
             residual = residual * residual_scale
@@ -462,6 +541,34 @@ def export_onnx(net: SDR2HDRNet, frame_path: Path, tile_path: Path, opset: int) 
             input_names=["sdr"], output_names=["residual_scale", "shadow_weight", "curve_params"],
             dynamic_axes={"sdr": {2: "height", 3: "width"}})
         scale, _, curve = m.frame_pass(sample)
+        torch.onnx.export(
+            _TileOnly(m), (sample, scale, curve), str(tile_path), dynamo=False, opset_version=opset,
+            input_names=["sdr", "residual_scale", "curve_params"],
+            output_names=["residual", "highlight", "shadow"],
+            dynamic_axes={"sdr": {2: "height", 3: "width"},
+                          "residual": {2: "height", 3: "width"},
+                          "highlight": {2: "height", 3: "width"},
+                          "shadow": {2: "height", 3: "width"}})
+
+
+# The U-Net of the tile pass, the only part with real cost, in half precision
+# (roadmap R1: real time). The baseline before it and the heads after it stay
+# fp32: the inverse ACES curve is steep near the clip, and its constants or
+# input rounded to fp16 moved a clipped highlight by 0.07 stop, while the
+# U-Net alone in fp16 moves it by 0.016 stop at worst (bf16: 0.06).
+CORE_MODULES = ("stem", "enc1", "down1", "enc2", "down2", "mid", "up2", "dec2", "up1", "dec1", "head")
+
+
+def export_onnx_fp16(net: SDR2HDRNet, tile_path: Path, opset: int) -> None:
+    m = NativeModel(copy.deepcopy(net), onnx_safe=True).eval()
+    for name in CORE_MODULES:
+        getattr(m, name).half()
+    m.half_core = True
+    sample = torch.rand(1, 3, 96, 128)
+    with torch.inference_mode(False), torch.no_grad(), warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        ref = NativeModel(net, onnx_safe=True).eval()
+        scale, _, curve = ref.frame_pass(sample)
         torch.onnx.export(
             _TileOnly(m), (sample, scale, curve), str(tile_path), dynamo=False, opset_version=opset,
             input_names=["sdr", "residual_scale", "curve_params"],
@@ -567,23 +674,44 @@ def excess(ref: dict, got: dict, tol: dict) -> float:
     return worst
 
 
-def bench_frames(folder: Path, limit: int) -> list[tuple[str, np.ndarray]]:
+def bench_paths(folder: Path) -> list[Path]:
+    """The frames of a --bench-dir: a folder (walked, so a corpus laid out by
+    shot is one bench) or a manifest.jsonl, whose test split's sdr_path rows are
+    the bench (the Meridian frames of the real-SDR corpus, say); a path in the
+    manifest is relative to the manifest's folder unless absolute."""
+    kinds = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
+    if folder.is_file() and folder.suffix.lower() == ".jsonl":
+        out = []
+        for line in folder.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            if r.get("split", "test") != "test" or not r.get("sdr_path"):
+                continue
+            p = Path(r["sdr_path"])
+            out.append(p if p.is_absolute() else folder.parent / p)
+        return out
+    return [p for p in sorted(folder.rglob("*")) if p.is_file() and p.suffix.lower() in kinds]
+
+
+def bench_frames(folder: Path, limit: int):
+    """Yields (stem, float32 HWC rgb) one frame at a time: a 1080p frame is
+    25 MB as float32, so a bench of hundreds is never held at once."""
     import cv2
-    out = []
-    for p in sorted(folder.iterdir()):
-        if p.suffix.lower() not in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}:
-            continue
+    n = 0
+    for p in bench_paths(folder):
         img = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
         if img is None:
+            print(f"  bench: unreadable, skipped: {p}", file=sys.stderr)
             continue
         if img.ndim == 2:
             img = np.repeat(img[..., None], 3, axis=2)
         rgb = cv2.cvtColor(img[..., :3], cv2.COLOR_BGR2RGB).astype(np.float32)
         rgb /= float(np.iinfo(img.dtype).max) if np.issubdtype(img.dtype, np.integer) else 1.0
-        out.append((p.stem, rgb))
-        if limit and len(out) >= limit:
+        yield p.stem, rgb
+        n += 1
+        if limit and n >= limit:
             break
-    return out
 
 
 # --------------------------------------------------------------------------
@@ -627,16 +755,20 @@ def build_package(checkpoint: Path, out_root: Path, opset: int = 17,
     so.log_severity_level = 3
     f_sess = ort.InferenceSession(str(tmp / "model.frame.onnx"), so, providers=["CPUExecutionProvider"])
     t_sess = ort.InferenceSession(str(tmp / "model.tile.onnx"), so, providers=["CPUExecutionProvider"])
+    export_onnx_fp16(net, tmp / "model.tile.fp16.onnx", opset)
+    t16_sess = ort.InferenceSession(str(tmp / "model.tile.fp16.onnx"), so, providers=["CPUExecutionProvider"])
 
-    worst = {"torchscript": {k: 0.0 for k in OUTPUTS}, "onnx": {k: 0.0 for k in OUTPUTS}}
-    margin = {"torchscript": -float("inf"), "onnx": -float("inf")}
+    worst = {"torchscript": {k: 0.0 for k in OUTPUTS}, "onnx": {k: 0.0 for k in OUTPUTS},
+             "fp16": {k: 0.0 for k in OUTPUTS}}
+    margin = {"torchscript": -float("inf"), "onnx": -float("inf"), "fp16": -float("inf")}
     index = []
     frames = golden_inputs()
     for name_i, hwc in frames:
         sdr = _to_tensor(hwc)
         ref = eager_reference(net, sdr)
         for label, got in (("torchscript", run_torchscript(ts, sdr)),
-                           ("onnx", run_onnx(f_sess, t_sess, sdr))):
+                           ("onnx", run_onnx(f_sess, t_sess, sdr)),
+                           ("fp16", run_onnx(f_sess, t16_sess, sdr))):
             for k, v in compare(ref, got).items():
                 worst[label][k] = max(worst[label][k], v)
             margin[label] = max(margin[label], excess(ref, got, TOLERANCE[label]))
@@ -663,25 +795,33 @@ def build_package(checkpoint: Path, out_root: Path, opset: int = 17,
 
     bench = None
     if bench_dir is not None:
-        bw = {"torchscript": 0.0, "onnx": 0.0}
+        bw = {"torchscript": 0.0, "onnx": 0.0, "fp16": 0.0}
         count = 0
         for _, hwc in bench_frames(bench_dir, bench_limit):
             sdr = _to_tensor(hwc)
             ref = eager_reference(net, sdr)
             for label, got in (("torchscript", run_torchscript(ts, sdr)),
-                               ("onnx", run_onnx(f_sess, t_sess, sdr))):
+                               ("onnx", run_onnx(f_sess, t_sess, sdr)),
+                               ("fp16", run_onnx(f_sess, t16_sess, sdr))):
                 bw[label] = max(bw[label], max(compare(ref, got).values()))
                 margin[label] = max(margin[label], excess(ref, got, TOLERANCE[label]))
             count += 1
         bench = {"folder": str(bench_dir), "frames": count, "max_abs": bw}
 
     passed = {label: margin[label] <= 0.0 for label in margin}
+    # The fp16 graph is an option, not the reference: one that misses its
+    # tolerance is left out of the package (the app then has no fp16 path),
+    # it does not stop the fp32 package being written.
+    fp16_ok = passed.pop("fp16")
+    if not fp16_ok:
+        (tmp / "model.tile.fp16.onnx").unlink()
+        print(f"WARNING: fp16 tile graph over its tolerance ({margin['fp16']:+.2e}), left out of the package")
 
     lic = REPO / "checkpoints" / "LICENSE"
     if lic.exists():
         shutil.copy2(lic, tmp / "LICENSE")
     (tmp / "golden" / "golden.json").write_text(json.dumps(
-        {"frames": index, "stitch": stitch, "layout": "sdr is (H,W,3); outputs are NCHW"}, indent=2))
+        {"frames": index, "stitch": stitch, "layout": "sdr is (H,W,3); outputs are NCHW"}, indent=2), encoding="utf-8", newline="\n")
 
     import onnx
     manifest = {
@@ -711,12 +851,18 @@ def build_package(checkpoint: Path, out_root: Path, opset: int = 17,
         "onnx_inputs": {"frame": [i.name for i in f_sess.get_inputs()],
                         "tile": [i.name for i in t_sess.get_inputs()]},
         "tolerance": {"rule": "|exported - eager| <= atol + rtol*|eager|, every element", **TOLERANCE},
-        "parity": {"golden_frames": len(frames), "max_abs": worst,
-                   "worst_excess_over_tolerance": margin, "bench": bench, "passed": passed},
+        "parity": {"golden_frames": len(frames),
+                   "max_abs": {k: worst[k] for k in ("torchscript", "onnx")},
+                   "worst_excess_over_tolerance": {k: margin[k] for k in ("torchscript", "onnx")}, "bench": bench, "passed": passed},
     }
-    for key in ("torchscript", "onnx_frame", "onnx_tile"):
-        manifest["files"][key + "_sha256"] = sha256(tmp / manifest["files"][key])
-    (tmp / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    if fp16_ok:
+        manifest["files"]["onnx_tile_fp16"] = "model.tile.fp16.onnx"
+    manifest["parity"]["fp16"] = {"included": fp16_ok, "max_abs": worst["fp16"],
+                                  "worst_excess_over_tolerance": margin["fp16"]}
+    for key in ("torchscript", "onnx_frame", "onnx_tile", "onnx_tile_fp16"):
+        if key in manifest["files"]:
+            manifest["files"][key + "_sha256"] = sha256(tmp / manifest["files"][key])
+    (tmp / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
 
     if not all(passed.values()):
         raise SystemExit(
@@ -734,7 +880,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, default=REPO / "dist" / "models")
     ap.add_argument("--opset", type=int, default=17)
     ap.add_argument("--bench-dir", type=Path, default=None,
-                    help="folder of SDR frames to add to the parity check (e.g. the 429 bench frames)")
+                    help="SDR frames to add to the parity check: a folder (walked) or a manifest.jsonl (its test split)")
     ap.add_argument("--bench-limit", type=int, default=0)
     args = ap.parse_args(argv)
     manifest = build_package(args.checkpoint, args.out, args.opset, args.bench_dir, args.bench_limit)
@@ -744,11 +890,32 @@ def main(argv: list[str] | None = None) -> int:
         t = TOLERANCE[label]
         print(f"  {label:11s} max |d| {max(p['max_abs'][label].values()):.2e}"
               f"  (atol {t['atol']:.0e}, rtol {t['rtol']:.0e})  {'PASS' if p['passed'][label] else 'FAIL'}")
+    t = TOLERANCE["fp16"]
+    print(f"  {'fp16 tile':11s} max |d| {max(p['fp16']['max_abs'].values()):.2e}"
+          f"  (atol {t['atol']:.0e})  {'included' if p['fp16']['included'] else 'LEFT OUT'}")
     if p["bench"]:
         print(f"  bench: {p['bench']['frames']} frames, {p['bench']['max_abs']}")
     print(f"  written to {args.out / manifest['name']}")
+    # The registry beside the packages: the app's checkpoint manager reads it
+    # as the server reads checkpoints/models.json (titles, notes, the default).
+    registry = REPO / "checkpoints" / "models.json"
+    if registry.is_file() and not (args.out / "models.json").exists():
+        shutil.copyfile(registry, args.out / "models.json")
+        print(f"  registry copied to {args.out / 'models.json'}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except BaseException:  # noqa: BLE001 - the gate script only sees the exit code: keep the traceback
+        import traceback
+        log_dir = REPO / "reports" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log = log_dir / f"export_model_{_dt.datetime.now().strftime('%Y-%m-%d_%H%M')}.log"
+        log.write_text(traceback.format_exc(), encoding="utf-8")
+        traceback.print_exc()
+        print(f"traceback -> {log}", file=sys.stderr)
+        raise SystemExit(1)

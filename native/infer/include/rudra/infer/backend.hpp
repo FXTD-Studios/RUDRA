@@ -4,41 +4,42 @@
 // stitching and everything after the fields live outside it.
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "rudra/core/fields.hpp"
 #include "rudra/core/image.hpp"
 #include "rudra/core/model_manifest.hpp"
 #include "rudra/platform/result.hpp"
 
 namespace rudra {
 
-// Once per frame, from the whole frame. A model without a head reports the
-// value that head's absence means: scale 1, weight 1, a one-element zero curve.
-struct FrameScalars {
-    float residual_scale = 1.0f;
-    float shadow_weight = 1.0f;
-    std::vector<float> curve_params{0.0f};
-};
-
-// The fields for a tile or a whole frame. Invariant to every user control.
-struct Fields {
-    PlanarBuffer residual;    // 3 x h x w, log domain, residual scale folded in
-    PlanarBuffer highlight;   // 1 x h x w, in [0,1]
-    PlanarBuffer shadow;      // 1 x h x w, in [0,1]
-};
-
 enum class Runtime { LibTorch, OnnxRuntime };
-enum class Device { Cpu, Cuda, Mps, DirectML, CoreML, Rocm, OpenVino };
+// TensorRT: ONNX Runtime's TensorRT provider on an NVIDIA GPU (CUDA after it
+// for what TensorRT does not take), the real-time path on the RTX cards.
+enum class Device { Cpu, Cuda, Mps, DirectML, CoreML, Rocm, OpenVino, TensorRT };
+// Fp16: the package's half-precision tile graph (model.tile.fp16.onnx, roadmap
+// R1), held to the manifest's "fp16" tolerance. The frame pass stays fp32.
+enum class Precision { Fp32, Fp16 };
 
 const char* to_string(Runtime r) noexcept;
 const char* to_string(Device d) noexcept;
+const char* to_string(Precision p) noexcept;
+// "cpu", "cuda", ..., "tensorrt": the names the command line and settings use.
+std::optional<Device> device_from_string(std::string_view name) noexcept;
+std::optional<Precision> precision_from_string(std::string_view name) noexcept;
+// Every device, in enum order.
+inline constexpr Device kAllDevices[] = {Device::Cpu,    Device::Cuda, Device::Mps,      Device::DirectML,
+                                         Device::CoreML, Device::Rocm, Device::OpenVino, Device::TensorRT};
 
 struct BackendInfo {
     Runtime runtime;
     Device device;
     std::string version;       // runtime version
     std::string detail;        // device name or provider list
+    Precision precision = Precision::Fp32;
 };
 
 class InferenceBackend {
@@ -50,8 +51,11 @@ public:
 };
 
 // Factories. Each returns an Unsupported error when this build lacks the runtime.
-Result<std::unique_ptr<InferenceBackend>> make_libtorch_backend(const ModelManifest& m, Device device);
-Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelManifest& m, Device device);
+// Fp16 needs a package with the fp16 graph; LibTorch is fp32 only for now.
+Result<std::unique_ptr<InferenceBackend>> make_libtorch_backend(const ModelManifest& m, Device device,
+                                                                Precision precision = Precision::Fp32);
+Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelManifest& m, Device device,
+                                                                   Precision precision = Precision::Fp32);
 
 // Which runtimes this binary was built with.
 std::vector<Runtime> compiled_runtimes();

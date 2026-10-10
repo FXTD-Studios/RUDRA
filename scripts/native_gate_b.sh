@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Gate B on macOS (Metal, EDR) or Linux (Vulkan): does an HDR swapchain carry
+# a 1 000-nit patch above SDR white? The Windows twin is NATIVE_GATE_B.ps1.
+#
+#   scripts/native_gate_b.sh               # build, run, report
+#   FRAMES=0 scripts/native_gate_b.sh      # keep the window open and look (Esc quits)
+#
+# Qt 6.8 (with Qt Shader Tools) is fetched into tmp/native_deps/Qt with
+# aqtinstall, run from a venv in tmp/native_deps; nothing is installed
+# system-wide. Needs CMake 3.24+, Ninja or Make, a C++20 compiler (Xcode CLT
+# on macOS) and python3.
+#
+# PASS means the swapchain carried the 1 000-nit patch at least a stop above
+# SDR white. On a Mac, run it on the XDR panel (or an HDR display with "High
+# Dynamic Range" on) and check the patch by eye or meter too.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+QT_VERSION=${QT_VERSION:-6.8.3}
+FRAMES=${FRAMES:-240}
+PY=${PYTHON:-python3}
+DEPS=tmp/native_deps
+STAMP=$(date +%Y-%m-%d_%H%M)
+mkdir -p "$DEPS" reports
+
+case "$(uname -s)" in
+  Darwin) HOST=mac; ARCH=clang_64; QT_DIR=macos; RUNS="metal:p3 metal:scrgb"; PARITY_APIS="metal gl" ;;
+  Linux)  HOST=linux; ARCH=linux_gcc_64; QT_DIR=gcc_64; RUNS="vulkan:scrgb vulkan:hdr10 gl:scrgb"; PARITY_APIS="vulkan gl" ;;
+  *) echo "use scripts/NATIVE_GATE_B.ps1 on Windows" >&2; exit 2 ;;
+esac
+QT_ROOT="$DEPS/Qt/$QT_VERSION/$QT_DIR"
+
+if [ ! -x "$QT_ROOT/bin/qsb" ]; then
+  echo "== Qt $QT_VERSION ($ARCH, qtshadertools) into $DEPS/Qt"
+  # A venv of its own: brew's and Debian's Pythons refuse system-wide pip (PEP 668).
+  VENV=$DEPS/venv_tools
+  [ -x "$VENV/bin/python" ] || "$PY" -m venv "$VENV"
+  "$VENV/bin/python" -m pip install --quiet --upgrade aqtinstall
+  "$VENV/bin/python" -m aqt install-qt "$HOST" desktop "$QT_VERSION" "$ARCH" -m qtshadertools -O "$DEPS/Qt"
+fi
+
+# Qt 6.8's FindWrapOpenGL links -framework AGL, which the macOS 15+ SDKs no
+# longer ship ("ld: framework 'AGL' not found"). Nothing here uses AGL.
+if [ "$HOST" = mac ]; then
+  WRAP_GL="$QT_ROOT/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+  [ -f "$WRAP_GL" ] && sed -i '' '/target_link_libraries.*__opengl_agl_fw_path/d' "$WRAP_GL"
+fi
+
+echo "== build rudra-hdr-probe"
+GEN=(); command -v ninja >/dev/null && GEN=(-G Ninja)
+# Qt6_DIR, not only the prefix path: a Homebrew or distro Qt 6 elsewhere on the
+# machine (brew's opencv pulls one in) has no Shader Tools, and a cache from an
+# earlier configure keeps whichever Qt it found first. --fresh drops that cache.
+cmake --fresh -S native -B build/native_gate_b ${GEN[@]+"${GEN[@]}"} -DCMAKE_BUILD_TYPE=Release \
+  -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_APP=OFF -DRUDRA_BUILD_HDR_PROBE=ON \
+  -DCMAKE_PREFIX_PATH="$PWD/$QT_ROOT" -DQt6_DIR="$PWD/$QT_ROOT/lib/cmake/Qt6" >/dev/null
+cmake --build build/native_gate_b --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check --parallel
+EXE=build/native_gate_b/render/probe/rudra-hdr-probe
+PARITY=build/native_gate_b/render/probe/rudra-gpu-parity
+VIEWER=build/native_gate_b/render/probe/rudra-viewer-check
+
+status=1
+printf "\n%-8s %-6s %-6s %8s %8s %8s  %s\n" API ASKED GOT 203 1000 2000 VERDICT
+for run in $RUNS; do
+  api=${run%%:*}; fmt=${run##*:}
+  json="reports/native_gate_b_${api}_${fmt}_${STAMP}.json"
+  "$EXE" --api "$api" --format "$fmt" --frames "$FRAMES" --report "$json" >/dev/null 2>&1 || true
+  if [ -f "$json" ]; then
+    "$PY" - "$json" "$api" "$fmt" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+p = {int(x["target_nits"]): x["swapchain_nits"] for x in d["patches"]}
+print(f"{sys.argv[2]:<8} {sys.argv[3]:<6} {d['output_path']:<6} {p[203]:>8} {p[1000]:>8} {p[2000]:>8}  {d['verdict']}")
+PY
+    grep -q '"verdict": "PASS"' "$json" && status=0
+  else
+    printf "%-8s %-6s %-6s %8s %8s %8s  %s\n" "$api" "$fmt" "" "" "" "" ERROR
+  fi
+done
+echo; echo "Reports in reports/. PASS is the swapchain half of the gate; confirm on the glass."
+
+echo; echo "== GPU composite parity (day 8)"
+for api in $PARITY_APIS; do
+  code=0
+  outp=$("$PARITY" --api "$api" --report "reports/native_gpu_parity_${api}_${STAMP}.json" --bench 2>&1) || code=$?
+  printf '%s\n' "$outp" | grep -E "^GPU composite|^Display pass|^Composite|=>|^  [0-9]+x[0-9]+ |FAIL" || true
+  case $code in
+    0) ;;
+    2) echo "  $api: not available here" ;;
+    *) echo "  $api: FAIL"; status=1 ;;
+  esac
+done
+
+echo; echo "== The viewer window (Phase 2 step 9): swapchain parity, then Gate B through the display pass"
+for api in $PARITY_APIS; do
+  for mode in parity card; do
+    code=0
+    extra=(); [ "$mode" = card ] && extra=(--card)
+    outp=$("$VIEWER" --api "$api" ${extra[@]+"${extra[@]}"} --report "reports/native_viewer_${mode}_${api}_${STAMP}.json" 2>&1) || code=$?
+    printf '%s\n' "$outp" | grep -E "^Viewer window|^Gate B through|patch|=>|FAIL" || true
+    case $code in
+      0) ;;
+      2) echo "  $api $mode: not available here" ;;
+      *) echo "  $api $mode: FAIL"; status=1 ;;
+    esac
+  done
+done
+exit $status

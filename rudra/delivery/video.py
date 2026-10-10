@@ -21,7 +21,9 @@ not fit in memory and should not have to.
 """
 from __future__ import annotations
 
+import errno
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -32,10 +34,11 @@ import numpy as np
 
 from ..hdr10 import master_to_peak, pq_oetf
 from .colorspace import convert
+from .profiles import hlg_system_gamma
 
 __all__ = ["TARGETS", "encode_sequence", "colour_tags", "expected_tags",
            "prores_frame_tags", "container_colr", "EncodeError",
-           "shoulder_to_peak", "hlg_inverse_ootf"]
+           "shoulder_to_peak", "hlg_inverse_ootf", "hlg_code"]
 
 DIFFUSE_WHITE_NITS = 203.0
 
@@ -97,21 +100,37 @@ def hlg_inverse_ootf(display_normalized: np.ndarray, peak_nits: float = 1000.0) 
     """BT.2100 inverse OOTF: display-referred (1.0 = peak) -> scene-referred.
 
     HLG's OETF expects SCENE light. What RUDRA has is display light -- nits --
-    and the display's OOTF (Y_d = Y_s ** gamma, gamma 1.2 at 1,000 nits and
-    0.42 * log2(peak / 1000) more or less per BT.2100 note 5e) sits between the
-    two. Feeding display light straight to the OETF, which this module did
+    and the display's OOTF (Y_d = Y_s ** gamma, gamma = 1.2 + 0.42 *
+    log10(peak / 1000) per BT.2100 note 5e) sits between the two. This used
+    log2 until 9 Oct 2026: identical at 1,000 nits, +0.6 stop on diffuse white
+    at 2,000 and +1.24 at 4,000, and out of step with `rudra video` and the
+    native app. The gamma now comes from profiles.hlg_system_gamma, the one
+    definition both paths share. Feeding display light straight to the OETF, which this module did
     until 16 Sep 2026, put diffuse white 0.46 stop and 18% grey 0.96 stop dark
     on a 1,000-nit HLG display. The inverse is applied on luminance and the
     ratio carried to RGB, which is the form the standard gives it in.
     """
     d = np.maximum(np.asarray(display_normalized, dtype=np.float64), 0.0)
-    gamma = 1.2 + 0.42 * np.log2(max(float(peak_nits), 1e-6) / 1000.0)
+    gamma = hlg_system_gamma(max(float(peak_nits), 1e-6))
     y_d = np.sum(d * HLG_LUMA, axis=-1, keepdims=True)
     y_s = np.power(np.maximum(y_d, 1e-12), 1.0 / gamma)
     return d * (y_s / np.maximum(y_d, 1e-12))
 
 
 HLG_LUMA = np.array([0.2627, 0.6780, 0.0593], dtype=np.float64)
+
+
+def hlg_code(display_normalized: np.ndarray, peak_nits: float = 1000.0) -> np.ndarray:
+    """Display light (1.0 = peak) -> HLG signal, as `rudra video` codes it.
+
+    Saturated display colours can map to scene RGB above 1.0; they are scaled
+    down together, preserving RGB ratios, instead of each channel clipping at
+    the signal ceiling and shifting hue. Same rule as profiles.encode_master,
+    so both delivery paths produce the same code values.
+    """
+    scene = hlg_inverse_ootf(display_normalized, peak_nits)
+    scene = scene / np.maximum(1.0, np.max(scene, axis=-1, keepdims=True))
+    return np.clip(hlg_oetf(scene), 0.0, 1.0)
 
 
 def shoulder_to_peak(rgb_nits: np.ndarray, peak_nits: float) -> np.ndarray:
@@ -234,13 +253,33 @@ _PRORES_MATRIX = {0: "unspecified", 1: "bt709", 2: "unspecified", 6: "smpte170m"
                   9: "bt2020nc"}
 
 
+# How much of a file the tag readers look at. The first ProRes frame header
+# follows the mdat header, and a faststart 'colr' atom sits in the moov at the
+# front, so the head of the file is where both live. Reading the whole file,
+# as these did until 9 Oct 2026, is several GB for a 4K ProRes 4444 master
+# and ended a successful encode in MemoryError.
+_TAG_SCAN_BYTES = 64 * 1024 * 1024
+
+
+def _read_head(path: Path, limit: int = _TAG_SCAN_BYTES) -> bytes:
+    with Path(path).open("rb") as stream:
+        return stream.read(limit)
+
+
+def _read_tail(path: Path, limit: int = _TAG_SCAN_BYTES) -> bytes:
+    with Path(path).open("rb") as stream:
+        stream.seek(0, 2)
+        stream.seek(max(0, stream.tell() - limit))
+        return stream.read(limit)
+
+
 def prores_frame_tags(path: Path) -> dict[str, str] | None:
     """Colour description from the first ProRes frame header, or None.
 
     None means no ProRes frame was found, which for a .mov this module wrote
     is itself a failure, not an absence of opinion.
     """
-    data = Path(path).read_bytes()
+    data = _read_head(path)
     marker = data.find(b"icpf")
     if marker < 0:
         return None
@@ -263,7 +302,9 @@ def container_colr(path: Path) -> dict[str, str] | None:
     A file with no atom is not necessarily untagged: HEVC states its colour
     description in the bitstream VUI and usually carries no atom at all.
     """
-    data = Path(path).read_bytes()
+    # The moov (and its colr atom) is at the END of a file written without
+    # +faststart, which is how encode_sequence writes, so read both ends.
+    data = _read_tail(path) + _read_head(path)
     at = data.find(b"colr")
     if at < 0 or len(data) < at + 14:
         return None
@@ -361,7 +402,7 @@ def _encode_frame(rgb_nits: np.ndarray, target: Target, peak_nits: float,
         # this repo has made before and written up.
         coded = pq_oetf(np.clip(rgb, 0.0, 10_000.0))
     elif target.transfer == "hlg":
-        coded = hlg_oetf(hlg_inverse_ootf(rgb / max(peak_nits, 1e-6), peak_nits))
+        coded = hlg_code(rgb / max(peak_nits, 1e-6), peak_nits)
     else:
         coded = np.clip(rgb / max(peak_nits, 1e-6), 0.0, 1.0)
     return (np.clip(coded, 0.0, 1.0) * 65535.0 + 0.5).astype(np.uint16)
@@ -441,12 +482,14 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
             "-color_trc", TRANSFER_NAME[spec.transfer],
             "-color_range", "tv"]
 
-    if spec.suffix == ".mov":
-        # MOV carries the colour description in a 'colr' atom. Some builds
+    if spec.suffix in (".mov", ".mp4"):
+        # MOV and MP4 carry the colour description in a 'colr' atom. Some builds
         # write it whenever the colour info is set and some only when asked,
-        # and a ProRes master without it is read as Rec.709 SDR by everything.
-        # The flag is documented as experimental, so its presence is checked
-        # rather than assumed: an option ffmpeg does not know aborts the run.
+        # and a master without it is read as Rec.709 SDR by everything. ffmpeg
+        # 6.1 wrote it for MP4 unasked; the 2025 gyan builds do not (found 7 Oct
+        # 2026, native Phase 4 on Windows), so the flag goes on both containers.
+        # It is documented as experimental, so its presence is checked rather
+        # than assumed: an option ffmpeg does not know aborts the run.
         if _ffmpeg_supports("muxer", "mov", "write_colr"):
             args += ["-movflags", "+write_colr"]
 
@@ -482,35 +525,69 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
                 params.append(f":max-cll={int(maxcll)},{int(maxfall)}")
         args += ["-x265-params", "".join(params)]
 
-    args.append(str(output))
+    # Encode under a partial name and publish with one rename. A failure part
+    # way through (ffmpeg rejecting an option, a frame changing size, the
+    # frame generator raising) used to leave a truncated file at the final
+    # name and ffmpeg blocked on its stdin (review 9 Oct 2026).
+    partial = output.with_name(f".{output.stem}.partial{output.suffix}")
+    args.append(str(partial))
     process = subprocess.Popen(args, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     written = 0
+    pipe_closed = False
     try:
-        frame = first
-        while True:
-            process.stdin.write(_encode_frame(frame, spec, peak_nits, source_space,
-                                              shoulder).tobytes())
-            written += 1
-            try:
-                frame = np.asarray(next(iterator), dtype=np.float64)
-            except StopIteration:
-                break
-            if frame.shape[:2] != (height, width):
-                raise EncodeError(
-                    f"frame {written} is {frame.shape[1]}x{frame.shape[0]}, "
-                    f"the first was {width}x{height}. A sequence must not change size.")
-        process.stdin.close()
-    except BrokenPipeError:
-        pass
-    stderr = process.stderr.read().decode("utf-8", "replace").strip()
-    if process.wait() != 0:
-        # The whole tail, not the last line: "Error opening output files:
-        # Invalid argument" is the last line of every bad-option failure and
-        # names no option (23 Sep 2026). The command travels with it.
-        lines = stderr.splitlines() or ["unknown error"]
-        raise EncodeError(f"ffmpeg failed after {written} frame(s): "
-                          + " | ".join(lines[-6:])
-                          + "\n  command: " + " ".join(args))
+        try:
+            frame = first
+            while True:
+                process.stdin.write(_encode_frame(frame, spec, peak_nits, source_space,
+                                                  shoulder).tobytes())
+                written += 1
+                try:
+                    frame = np.asarray(next(iterator), dtype=np.float64)
+                except StopIteration:
+                    break
+                if frame.shape[:2] != (height, width):
+                    raise EncodeError(
+                        f"frame {written} is {frame.shape[1]}x{frame.shape[0]}, "
+                        f"the first was {width}x{height}. A sequence must not change size.")
+            process.stdin.close()
+        except BrokenPipeError:
+            pipe_closed = True
+        except OSError as exc:
+            # Windows reports a pipe whose reader has exited as EINVAL, not
+            # EPIPE (CPython's subprocess special-cases it the same way).
+            # Without this the user saw "Invalid argument" instead of the
+            # ffmpeg error below.
+            if exc.errno != errno.EINVAL:
+                raise
+            pipe_closed = True
+        stderr = process.stderr.read().decode("utf-8", "replace").strip()
+        if process.wait() != 0:
+            # The whole tail, not the last line: "Error opening output files:
+            # Invalid argument" is the last line of every bad-option failure and
+            # names no option (23 Sep 2026). The command travels with it.
+            lines = stderr.splitlines() or ["unknown error"]
+            raise EncodeError(f"ffmpeg failed after {written} frame(s): "
+                              + " | ".join(lines[-6:])
+                              + "\n  command: " + " ".join(args))
+        if pipe_closed:
+            raise EncodeError(f"ffmpeg closed its input after {written} frame(s) "
+                              f"but reported success: {stderr or 'no output'}")
+        os.replace(partial, output)
+    finally:
+        if process.poll() is None:
+            process.kill()
+        try:
+            if process.stdin and not process.stdin.closed:
+                process.stdin.close()
+        except OSError:
+            pass
+        process.wait()
+        if process.stderr and not process.stderr.closed:
+            process.stderr.close()
+        try:
+            partial.unlink()
+        except FileNotFoundError:
+            pass
     if verify_tags:
         _verify_tags(output, target)
     return output

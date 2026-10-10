@@ -1,18 +1,26 @@
 name: native
 
-# The native app (native/, docs/NATIVE_ARCHITECTURE.md). Four jobs:
+# The native app (native/, docs/NATIVE_ARCHITECTURE.md). Five jobs:
 #   layers  - the dependency rule, tools/check_layers.py
-#   core    - librudra + CLI + GoogleTest on Windows, macOS and Linux, no runtimes
+#   core    - librudra + CLI + GoogleTest on Windows, macOS and Linux against
+#             goldens re-emitted by each runner's Python; OpenCV, no runtimes
 #   parity  - Gate A: export the shipped checkpoint, build with LibTorch and
 #             ONNX Runtime, and run the package's golden frames in C++
 #   app     - the Qt shell compiles and starts headless
+#   probe   - Gate B's rudra-hdr-probe builds on Qt 6.8 on all three OSes and
+#             reports its SDR fallback honestly on a headless Linux runner;
+#             the composite shader matches the C++ composite on llvmpipe
 
 on:
   push:
-    paths: ["native/**", "tools/export_model.py", "tools/emit_core_golden.py", "tools/check_layers.py",
-            "rudra/sdr2hdr.py", "training/infer_sdr2hdr.py", ".github/workflows/native.yml"]
+    paths: ["native/**", "tools/export_model.py", "tools/emit_core_golden.py", "tools/emit_composite_golden.py", "tools/emit_decode_golden.py", "tools/emit_delivery_golden.py", "tools/emit_master_golden.py", "tools/emit_qc_golden.py", "tools/emit_queue_golden.py", "tools/emit_sequence_golden.py", "tools/emit_viewer_golden.py", "tools/emit_viewport_golden.py", "tools/emit_golden.py", "rudra/decode.py", "rudra/hdr10.py",
+            "tools/check_layers.py", "tools/ci_run.sh", "rudra/sdr2hdr.py", "rudra/anchor.py", "rudra/chroma.py",
+            "rudra/delivery/**", "rudra/qc.py", "rudra/batch.py", "ui/sequence.py", "training/infer_sdr2hdr.py", "ui/server.py",
+            "ui/compositor.js", "ui/app.js", "ui/style.css", "ui/theme.css", ".github/workflows/native.yml"]
   pull_request:
-    paths: ["native/**", "tools/**", "rudra/sdr2hdr.py", "training/infer_sdr2hdr.py", ".github/workflows/native.yml"]
+    paths: ["native/**", "tools/**", "rudra/sdr2hdr.py", "rudra/decode.py", "rudra/anchor.py", "rudra/chroma.py", "rudra/delivery/**",
+            "rudra/qc.py", "rudra/batch.py", "ui/sequence.py", "training/infer_sdr2hdr.py", "ui/server.py",
+            "ui/compositor.js", "ui/app.js", "ui/style.css", "ui/theme.css", ".github/workflows/native.yml"]
   workflow_dispatch:
 
 jobs:
@@ -25,33 +33,76 @@ jobs:
       - run: python tools/check_layers.py
 
   core:
+    # Every module against goldens this runner's Python emits: the exact ones
+    # must equal what is committed, the rest are re-emitted and the C++ tests
+    # run against them. OpenCV on every OS, so still decode is tested too.
     name: core, ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-14, windows-2022]
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
     steps:
       - uses: actions/checkout@v7
-      - name: GoogleTest and JSON (Linux)
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: Python side
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ "$RUNNER_OS" = "macOS" ]; then pip install torch; else pip install torch --index-url https://download.pytorch.org/whl/cpu; fi
+          pip install -e ".[test]"
+      - name: Headless Chromium for the viewer oracle (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build
-      - name: GoogleTest and JSON (macOS)
+        run: pip install playwright && python -m playwright install --with-deps chromium
+      - name: GoogleTest, JSON, OpenCV (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev ffmpeg
+      - name: GoogleTest, JSON, OpenCV (macOS)
         if: runner.os == 'macOS'
-        run: brew install googletest nlohmann-json ninja
-      - name: GoogleTest and JSON (Windows)
+        # FFmpeg 6.1: Homebrew's plain ffmpeg (pulled in by OpenCV) has no
+        # zscale, and the movie tests run what a user's Mac would. Keg-only,
+        # so it goes first on the PATH.
+        run: |
+          brew install googletest nlohmann-json ninja opencv ffmpeg@6
+          echo "$(brew --prefix ffmpeg@6)/bin" >> "$GITHUB_PATH"
+      - name: vcpkg binary cache (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-x64-windows-gtest-json-opencv4-core-jpeg-png-tiff-webp-v1
+      - name: GoogleTest, JSON, OpenCV (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          "$VCPKG_INSTALLATION_ROOT/vcpkg" install gtest nlohmann-json --triplet x64-windows
-          echo "TOOLCHAIN=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          "$VCPKG_INSTALLATION_ROOT/vcpkg" install gtest nlohmann-json "opencv4[core,jpeg,png,tiff,webp]" --triplet x64-windows
+          # Classic mode: native/vcpkg.json (a manifest) would otherwise make the
+          # toolchain ignore the packages installed above, OpenCV among them.
+          echo "TOOLCHAIN=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake -DVCPKG_MANIFEST_MODE=OFF" >> "$GITHUB_ENV"
+      - name: Every golden, from this Python
+        # The viewer golden comes from the browser Studio on SwiftShader, which
+        # the Linux runner has; macOS and Windows test against the committed one.
+        # So does fit: OpenCV's INTER_AREA differs in the last bits on arm64
+        # (NEON), and the golden is the x86 Linux one.
+        # The video clips are kept once made; ffprobe's JSON may vary by version,
+        # so only the Python's verdicts (video/index.json) must not move.
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then tools/ci_run.sh "Goldens" python tools/emit_golden.py; else tools/ci_run.sh "Goldens" python tools/emit_golden.py --except viewer viewport session layout scopes readouts copy fit sequence video video_predict video_master video_qc video_convert sequence_encode video_queue; fi
+          tools/ci_run.sh "Goldens moved" git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json native/tests/golden/actions native/tests/golden/session native/tests/golden/layout native/tests/golden/scopes/drawings.json native/tests/golden/readouts native/tests/golden/render_plan native/tests/golden/catalog native/tests/golden/copy native/tests/golden/fit native/tests/golden/video/index.json
       - name: Configure
         shell: bash
-        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=ON ${TOOLCHAIN:-}
+        run: tools/ci_run.sh "Configure" cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=ON -DRUDRA_WITH_OPENCV=ON ${TOOLCHAIN:-}
       - name: Build
-        run: cmake --build build --config Release --parallel
+        shell: bash
+        run: tools/ci_run.sh "Build" cmake --build build --config Release --parallel 4
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
+        shell: bash
+        run: tools/ci_run.sh "Test" ctest --test-dir build -C Release --output-on-failure
 
   parity:
     name: Gate A (LibTorch + ONNX Runtime, CPU)
@@ -67,11 +118,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[test]" onnx onnxruntime
-          sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build
-      - name: Core goldens are current
+          sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev ffmpeg
+      - name: Every golden, from this Python
+        # tools/emit_golden.py runs every emitter. Core, decode, queue and
+        # sequence are exact and must not move; composite, delivery, master and qc are re-emitted, not diffed (torch on the
+        # runner may differ in the last bit) and the C++ tests below then run
+        # against what the Python on this runner computes.
         run: |
-          python tools/emit_core_golden.py
-          git diff --exit-code native/tests/golden/core/index.json
+          # The browser-made goldens need Playwright, which this job does not install;
+          # its C++ tests use the committed ones.
+          tools/ci_run.sh "Goldens" python tools/emit_golden.py --except viewer viewport session layout scopes readouts copy
+          tools/ci_run.sh "Goldens moved" git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json
       - name: Export the shipped model package
         run: python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
       - name: ONNX Runtime C API
@@ -82,16 +139,27 @@ jobs:
       - name: Configure
         run: |
           cmake -S native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DRUDRA_WITH_LIBTORCH=ON -DRUDRA_WITH_ONNXRUNTIME=ON -DONNXRUNTIME_ROOT="$ORT_ROOT" \
+            -DRUDRA_WITH_LIBTORCH=ON -DRUDRA_WITH_ONNXRUNTIME=ON -DONNXRUNTIME_ROOT="$ORT_ROOT" -DRUDRA_WITH_OPENCV=ON \
             -DCMAKE_PREFIX_PATH="$(python -c 'import torch; print(torch.utils.cmake_prefix_path)')" \
             -DRUDRA_TEST_PACKAGE="$PWD/dist/models/sdr2hdr_shadow_v1"
       - name: Build
-        run: cmake --build build --parallel
+        run: tools/ci_run.sh "Build" cmake --build build --parallel
       - name: Gate A
         run: |
           export LD_LIBRARY_PATH="$ORT_ROOT/lib:$LD_LIBRARY_PATH"
-          ctest --test-dir build --output-on-failure
-          build/cli/rudra-native diff dist/models/sdr2hdr_shadow_v1 --runtime all
+          tools/ci_run.sh "Tests" ctest --test-dir build --output-on-failure
+          tools/ci_run.sh "Gate A" build/cli/rudra-native diff dist/models/sdr2hdr_shadow_v1 --runtime all
+      - name: Inference latency within the runner's budget (roadmap 3.6)
+        # CPU only and loose (native/bench/latency_budgets.json): a debug build
+        # or a lost thread pool fails here; GPU budgets are checked by the gate
+        # scripts on the machines that have the GPUs.
+        run: |
+          export LD_LIBRARY_PATH="$ORT_ROOT/lib:$LD_LIBRARY_PATH"
+          tools/ci_run.sh "Latency" build/cli/rudra-native bench dist/models/sdr2hdr_shadow_v1 --size 1920x1080 --iters 1 \
+            --budget native/bench/latency_budgets.json --machine gh-ubuntu-24.04 --json latency.json
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with: { name: latency-gh-ubuntu-24.04, path: latency.json, if-no-files-found: ignore }
 
   app:
     name: Qt shell
@@ -99,11 +167,68 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y qt6-base-dev libgl-dev nlohmann-json3-dev ninja-build
-      - run: cmake -S native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_TESTS=OFF
-      - run: cmake --build build --parallel
+      - run: cmake -S native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_TESTS=ON -DRUDRA_BUILD_CLI=OFF
+      - run: tools/ci_run.sh "Build" cmake --build build --parallel --target RUDRA rudra_app_tests
+      - name: The window against the Studio page (menus, keys, actions), offscreen
+        run: tools/ci_run.sh "App tests" ctest --test-dir build -R '^app\.' --output-on-failure
       - name: Starts headless
         run: |
           set +e
           QT_QPA_PLATFORM=offscreen timeout 5 build/app/RUDRA
           code=$?
           test "$code" = "124" || { echo "RUDRA exited with $code before the timeout"; exit 1; }
+      - name: The look resolves (Plex weights, Fusion, the sheet from ui/theme.css)
+        run: |
+          QT_QPA_PLATFORM=offscreen build/app/RUDRA --theme-check theme-check.json || { cat theme-check.json; exit 1; }
+          cat theme-check.json
+
+  probe:
+    name: Gate B probe, ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          modules: qtshadertools
+          cache: true
+      - name: Linux display deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb libxcb-cursor0 libgl-dev nlohmann-json3-dev mesa-vulkan-drivers libvulkan1 libvulkan-dev
+      - name: Configure
+        shell: bash
+        # The app too: the viewer build without still decode is the one the
+        # Windows gate script makes, and it must compile on every OS.
+        run: tools/ci_run.sh "Configure" cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_HDR_PROBE=ON -DRUDRA_BUILD_APP=ON
+      - name: Build
+        shell: bash
+        run: tools/ci_run.sh "Build" cmake --build build --config Release --parallel 4 --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check RUDRA
+      - name: SDR fallback is reported, not hidden (Linux, llvmpipe)
+        if: runner.os == 'Linux'
+        run: |
+          set +e
+          xvfb-run -a build/render/probe/rudra-hdr-probe --api gl --frames 10 --report probe.json
+          code=$?
+          set -e
+          test "$code" = "1"
+          grep -q '"output_path": "SDR"' probe.json
+          grep -q '"verdict": "FAIL"' probe.json
+      - name: GPU composite parity on llvmpipe (Linux, OpenGL)
+        if: runner.os == 'Linux'
+        run: tools/ci_run.sh "GPU parity (GL)" xvfb-run -a build/render/probe/rudra-gpu-parity --api gl
+      - name: The viewer window through its swapchain (Linux, OpenGL)
+        if: runner.os == 'Linux'
+        run: tools/ci_run.sh "Viewer (GL)" xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api gl
+      - name: GPU parity and the viewer window on lavapipe (Linux, Vulkan)
+        # Vulkan has frames in flight, which the OpenGL runs cannot show: a
+        # readback that completes a frame late once made the window check
+        # compare each case with the previous one.
+        if: runner.os == 'Linux'
+        run: |
+          tools/ci_run.sh "GPU parity (Vulkan)" xvfb-run -a build/render/probe/rudra-gpu-parity --api vulkan
+          tools/ci_run.sh "Viewer (Vulkan)" xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api vulkan
+          QT_SCALE_FACTOR=1.5 tools/ci_run.sh "Viewer (Vulkan, 1.5x)" xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api vulkan

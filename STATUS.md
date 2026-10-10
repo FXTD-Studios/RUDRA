@@ -1,6 +1,6 @@
 # RUDRA — Training & Research Status
 
-> **Updated 22 Sep 2026.** The snapshot below the line dates from 22 Aug and is
+> **Updated 7 Oct 2026.** The snapshot below the line dates from 22 Aug and is
 > still accurate for what it covers. Read this section first: the repository
 > holds **five separate lines of work** that share a name, and "is RUDRA
 > finished?" has a different answer for each.
@@ -12,7 +12,466 @@
 > | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio, the delivery path | **measured and written up** |
 > | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **CLOSED.** Exact poses +0.60 JOD, RAFT +0.34, DIS −0.07, against a +0.5 threshold fixed in advance. Nothing a plate can supply clears it; no temporal model trained, and that is the result |
 >
-> | **E. Corpus programme (v4b)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint" | **corpus built and gated; training not started.** Three runs made between 18 and 22 Sep were on the wrong corpus and are quarantined |
+> | **F. Native desktop app** | `native/`, C++20 / Qt 6 / QRhi / LibTorch + ONNX Runtime, no Python at runtime | **Phase 0 closed 23 Sep 2026: GO on Windows**, macOS conditional (below). **Phase 1: steps 1 to 10 of 11 done 24 Sep**, step 11 (CI on three OSes) waiting on its first run. **Phase 2** (the QRhi viewer): done on Linux and Windows but for the backend matrix. **Phase 3** (the Qt UI): steps 1 to 11 done 24 Sep, the exit scripted and passing on Linux; the Windows run and the by-hand pass are open (below). **Phase 4** (video delivery): steps 1 to 11 done 24 Sep, the exit scripted (`NATIVE_PHASE4_EXIT.ps1`) and passing on Linux; the Windows run is open (below) |
+>
+> | **E. Corpus programme (v4b, v4c)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint"; v4c adds the mixed-curve render and the curve head | **CLOSED 7 Oct 2026.** v4b, v4c and v7 (real SDR added, source-curve input) all fail every gate, v7 at 0 of 287 on held-out real frames. Nothing promoted; `sdr2hdr_shadow_v1.pt` stays the optional model. Post-mortem pending: `sweep_val_checkpoints.py`, `bench_by_curve.py` |
+> | **G. Model research** | direct regression, real-SDR-first, one bounded attempt after 1.0 | **opened 7 Oct 2026, blocks nothing** (kill rule in the release definition) |
+>
+> **Release definition (re-scoped 7 Oct 2026; the 24 Sep definition is kept below it).**
+> The learned residual is no longer a release blocker. Four models (v4b, v4c, v7,
+> shadow_v1) across rendered, out-of-generator and real SDR, and none beats the
+> analytic inverse it rides on; v7, trained on 1,830 real pairs, is −4.13 dB on
+> all 287 held-out Meridian frames. The one external comparison (HDRTVDM on
+> HDRTV1K, +14.66 dB) says the residual-on-inverse design is the limit, not the
+> corpus or the label. RUDRA 1.0 ships on the **analytic inverse with the artist
+> in the loop** (curve picker, three-click calibration, live peak/knee/region EV,
+> reference match, invented-pixel map, DoVi/HDR10+ delivery). `shadow_v1` ships
+> as an **optional** model with its measured numbers, never as the default path
+> of a master. The model moves to a research track (line G) that blocks nothing.
+>
+> | # | condition | pass when | status |
+> |---|---|---|---|
+> | R1 | the inverse path, every bench | its own PU21/CVVDP on `aces`, `oog`, `mix`, `real` published as the floor | measured: 49.00 / 9.77, 26.44 / 8.08, 25.54 / 8.11, 21.69 / 6.42 |
+> | R2 | the artist controls (roadmap 3.1 to 3.4) | each control under one frame of latency at 4K, scripted exit passing on Windows | open |
+> | R3 | against the market (roadmap 2.2, 2.3) | the frozen set through every external tool, a table published whatever it says | open |
+> | R4 | the native app's open items (README, "Still open") | macOS inference and HDR output, signing, by-hand workflow on Windows, budgets per backend | open |
+> | R5 | optional model | `shadow_v1` listed with its measured deltas vs the inverse; any model that beats the inverse on `real` with CI excluding zero may join it | shadow_v1 listed |
+>
+> **Line G, model research (opened 7 Oct 2026, blocks nothing).** One bounded
+> attempt, after 1.0: direct regression (SDR in, HDR out, no inverse residual),
+> real-SDR-first (Netflix + HDRTV1K), `--eval-batches 0`, selected on full-val
+> real rows, benched on Meridian and HDRTV1K test against HDRTVDM. Kill rule,
+> written now: stop if the first full-val eval is not above the inverse on real
+> rows. The v7 post-mortem (`sweep_val_checkpoints.py`, `bench_by_curve.py`)
+> closes line E first.
+>
+> **The 24 Sep definition, for the record (all of it failed):**
+>
+> | # | condition | bench | pass when | status |
+> |---|---|---|---|---|
+> | 1 | clean, well-graded SDR | `aces`, paper 429 clean | not worse than the analytic inverse by more than 0.1 dB / 0.02 JOD | FAIL (v4b −8.09 dB, v4c −21.9 dB, v7 −19.2 dB curve given / −24.1 blind; bf16 check closed 25 Sep, fp32 within 0.04 dB) |
+> | 2 | unknown curve + codec | `oog`, `mix` | both metrics above the inverse, CI excluding zero (N3) | FAIL (v4c +1.33 dB but −0.126 JOD; v7 −1.2 dB / −0.82 JOD oog, −2.7 dB / −0.59 JOD mix, −4.1 dB / −0.33 JOD real) |
+> | 3 | degraded input | paper 429 hard | at least v5's +1.43 dB / +0.44 JOD, with row 1 held | not run |
+> | 4 | clipped highlights | `measure_clipping.py --score`, 0/+1/+2 EV | error in stops on clipped pixels below the inverse's, CI excluding zero | not run |
+> | 5 | video | v4b/v4c test clips, clip-mode CVVDP + flicker | clip JOD ≥ per-frame JOD on every test clip (N5) | not run |
+> | 6 | commercial weights | `oog`, `mix` | `rudra-studio` within 0.3 dB / 0.03 JOD of the research model (N7) | not trained |
+> | 7 | against the market | N4 set: external SDR→HDR baselines | a table published whatever it says | not run |
+>
+> Rows 1, 2 and 6 were scored by `training/cp7_verdicts.py`. No model passed row 1 or 2.
+
+> **7 Oct 2026 — v7 (roadmap 1.4, source-curve model on the mixed v4c + Netflix manifest) scored; every N8 gate fails.**
+> 50k steps from scratch, `best.pt` = step 3,000, bench at step 3,000 in bf16. Against the analytic
+> inverse: `aces` −19.21 dB [−20.15, −18.28] / −0.965 JOD with the curve given, −21.64 dB blind;
+> `oog` −1.17 dB / −0.820 JOD (hable given), −1.08 / −0.666 blind, i.e. −2.41 dB under v4c blind;
+> `mix` −2.67 dB / −0.590 JOD with each frame's own curve, −1.88 / −0.459 blind. The true curve
+> helps only on ACES. **Real SDR (Netflix Meridian, 287 held-out frames, blind): −4.13 dB
+> [−4.22, −4.02] / −0.328 JOD, 0 of 287 wins.** The model trained on 1,830 real pairs is worse than
+> the analytic inverse on every real frame it was meant to fix. `reports\logs\cp_results_v7.json`. Two measurement defects found on the way, both fixed:
+> the bench stage resumed on a half-written export tree (aces/v7_unknown scored on 366 of 537
+> frames; the script now resumes on `export_<tree>.json`), and every best.pt from v4 to v7 was
+> selected on 8 × 4 = 32 val records (`--eval-batches 0` now scores the whole split, with gains
+> split real vs rendered). The training curve peaked at step 1,500 and decayed for 48k steps while
+> train loss fell; whether that is overfitting or the 32-record slice is what
+> `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
+>
+> **10 Oct 2026, evening — beta 8 prepared (line F, R5).** An external review (ChatGPT Pro, of `main`
+> 5e827a7 and `native` 161eb2d) found that "masters default to the analytic inverse" was not true of the
+> app: `GradeSnapshot` defaulted to mode all / strength 1 and every frame and master ran `infer_frame`.
+> R5 ("never the default path of a master") was therefore not met. Now the analytic reconstruction is the
+> default: zero fields, default scalars and `kAnalyticConstants` (corpus EV 0), no inference call, no
+> package needed to open, view or master; Reconstruct > Use the model turns the model on (QSettings
+> `model/use`, `Project::use_model`); masters record `rudra:reconstruction` / sidecar `reconstruction`
+> when analytic, and the CLI master honours `"analytic": true`. Known and said: movie exports still run
+> `rudra video` (the model, recovery all, no grade). Reviewed twice (second pass: source panel at the
+> wrong corpus EV, CLI label, pending shots, project changing the user default: all fixed). Linux: core
+> 209/209, app 51/51 (41/41 without OpenCV), master parity PASS. CI actions moved to Node 24.
+>
+> **10 Oct 2026, later — beta 7 prepared (line F).** Beta 6 released (release #10 green, 8 assets), but
+> the native workflow had been red since beta 5 and nobody had read why: the CI re-emits the Python
+> goldens, and the 9 Oct ship-path fixes moved the Python (HLG log10 + ratio-preserving scale, Rec.2020
+> before the shoulder in `deliver`, partial-name publish, Region EV after the anchor, linear masters in
+> Rec.2020) without the C++ port following. Ported all five: `deliver/sequence_encode` + `cli/deliver`,
+> `core/master` + `deliver/master` (grade last; linear converted and tagged `kRec2020Chromaticities`).
+> The viewer had the same anchor bug (the display-pass anchor divided a Region EV push out below the
+> knee): the composite now carries the grade gain in its alpha (composite.frag) / `grade_gain`
+> (CPU), and the measured hold is the ungraded one. Emitters updated (composite stages: anchored,
+> carried, settled, graded; sequence_encode maps the partial path to OUTPUT). The Qt shell job failed
+> on beta 6's own test (`last_log` exists only with still decode): fixed. Linux: core 207/207 with
+> OpenCV against freshly emitted goldens, master parity PASS on ONNX Runtime 1.22 (3 cases), app 50/50.
+>
+> **10 Oct 2026 — beta 6 prepared (line F, R4).** Product items 2 to 5 of the 9 Oct "professional"
+> list. Projects (`engine/project`, `.rudra` JSON v1, atomic, masks as `<name>.rudra.masks.png`,
+> relative paths, validated and clamped on load) with File > Open/Save/Save as, autosave a few seconds
+> after a change, File > Reopen last session (the last run's file kept as previous-session.rudra; one
+> instance owns it, QLockFile), a save prompt before a dirty project is replaced. The Windows package
+> carries the gyan.dev full ffmpeg 7.1.1 (SHA-256 pinned; GPL v3, licence and source note in `ffmpeg\`),
+> put first on PATH by `platform/tools`; the DMG only with `MAC_FFMPEG_DIR` (a static build), so macOS
+> still needs Homebrew's. Every Windows executable now runs in the UTF-8 code page (`cmake/utf8.manifest`),
+> which fixes non-ASCII user and folder names reaching ffmpeg and OpenCV. Daily update check against
+> GitHub releases (betas follow betas), Help > Getting started, User guide (F1, `docs/USER_GUIDE.md`),
+> Open log folder, tooltips. Signing hooks: signtool with `RUDRA_SIGN_PFX`, `WINDOWS_CERT_PFX` in the
+> release workflow; certificates still to buy. Reviewed twice (independent pass: 9 findings, all fixed;
+> re-review: 2 more, fixed). Linux: core 199/199 (206/206 with OpenCV), app 50/50 offscreen; Windows and
+> macOS run in CI. Not done: Dolby Vision / HDR10+ metadata, OFX plug-in, real-time playback (item 6).
+>
+> **9 Oct 2026, 23:45 — beta 5 (line F).** Beta 4 was tagged and published at `9397ae0` (8 assets)
+> before the startup and error-reporting commit (`5f2f6c2`) landed, so that ships as beta 5 rather than
+> by moving a published tag: foreign `QT_*` variables ignored, a rotating log file, failed writes that
+> name their reason. `RUDRA_RELEASE` beta.5; `docs/BETA.md` leads with the changes since beta 4.
+>
+> **9 Oct 2026, 21:30 — beta 4 prepared (line F).** `RUDRA_RELEASE` beta.4; the release workflow
+> exports `sdr2hdr_image_v8` (it still exported shadow_v1, so a tag would have shipped the retired
+> model); `docs/BETA.md` lists what changed since the beta 3 tag (source panel, calibration, reference
+> match, painted masks, anchor live, ProRes 4444 and log, v8, GroupNorm parity, fp16/TensorRT). A bare
+> start follows the default when it moves (`model/followsDefault`; an older beta's own package gives
+> way), `AppModels.*` 10/10 on Linux. PR #29's macOS core job failed `SequenceEncode.LiveEncodesCarryTheirTags`
+> and `DeliverReportIsThePythons`: the 7 Oct goldens were recorded with the 2025 gyan.dev ffmpeg, whose
+> MOV/MP4 colr atom leaves BT.2020/PQ unspecified, and ffmpeg 6.1 (Homebrew, Ubuntu) fills them in. The
+> tests now accept either form for the container atom and require the ProRes frame headers to match; 5/5
+> on Ubuntu with ffmpeg 6.1. Startup and errors (item 1 of the product list): foreign `QT_*` variables
+> ignored by a packaged app (`app/startup.cpp`), a rotating log file, and every failed write names its OS
+> reason and free space (`platform/io_error.cpp`; writers check `close()`, truncated EXRs removed); native
+> 190/190, app 34/34 on Linux (Qt 6.4, no OpenCV/ORT). Ship-path review and fixes:
+> `reports/CODE_REVIEW_SHIP_PATH_2026-10-09.md`. Tag and push from PowerShell:
+> `scripts/release_beta4_2026-10-09.ps1`.
+>
+> **9 Oct 2026, 13:45 — the optional model is v8 (line G, release row R5); shadow_v1 retired.**
+> `checkpoints/sdr2hdr_image_v8.pt` (best.pt, step 48,000) committed with its config and SHA-256;
+> both `models.json` default to it, shadow_v1 kept in the registry as retired, its package moved out
+> of `dist\models`. Gate A on v8 (RTX 4080 SUPER): ONNX vs eager 4.3e-6, the 287 Meridian frames
+> 3.9e-6 (fp16 2.3e-3), every runtime PASS (worst DirectML fp16 8.4e-3), 1080p DirectML 158 ms, CUDA
+> 154 ms. Beta 3 repackaged with v8 (zip sha256 87dfdd2f…). The phase 3 and 4 exit scripts and the
+> package script default to the v8 package. Why: on real SDR v8 is level with the inverse (+0.02 dB,
+> CVVDP CI above zero) and +4.14 dB over shadow_v1 on all 287 frames; it does not pass its own gate
+> (clipped pixels no better, black lifted), so the master path stays the inverse.
+>
+> **9 Oct 2026, 03:30 — ProRes 4444 and log masters in the app's Export sheet (line F).** A 4444 tile
+> beside 422 HQ; on both ProRes tiles an Encoding row: PQ (graded, as before), ACEScct (AP1) or ARRI
+> LogC4 (AWG4). The log files carry the scene-linear master before peak and knee (the ACES EXR's
+> pixels), Rec.2020 to the curve's gamut by Bradford, then the curve; tagged unknown primaries and
+> transfer, the curve and gamut in the sidecar's `log_encoding`, `_acescct`/`_logc4` on the name.
+> Four native-only delivery profiles (`log_delivery_profiles`); the Python's five and their parity
+> tests unchanged. `tests/test_log_encode.cpp` (6): ACEScct 0.18 -> 0.41359, LogC4 0.18 -> 0.27840 and
+> black at 95/1023, the AP1 and AWG4 matrices to 1e-9, the encoder's tags, QC on an untagged file.
+> End to end with ffmpeg 6.1 (Linux): ProRes 4444 LogC4 `ap4h` yuv444p12le, no primaries or transfer
+> tag, QC passed, grey decoded 0.27854 (10-bit step). ffmpeg's prores_ks takes 10-bit input, so 4444
+> is 10-bit in a 12-bit container; the label says ProRes 4444, not 12-bit. Native tests 186/186, app
+> 29/29 (the movie export test runs in the OpenCV build, NATIVE_PHASE3_EXIT).
+>
+> **9 Oct 2026, 01:45 — shadow_v1 on real SDR for the first time (line G, release row R5).** Netflix
+> Meridian, 287 test frames, against the inverse: −4.11 dB [−4.18, −4.04] / −0.006 JOD
+> [−0.008, −0.004], 0/287 wins on PU21; crushed-pixel error 5.58 stops vs the inverse's 1.56. v8 against
+> shadow_v1 on the same frames: +4.14 dB [+4.10, +4.17], 287/287, +0.026 JOD [+0.008, +0.044]. The
+> optional model the app ships loses to the inverse on every real frame. `models.json` notes updated;
+> `scripts\bench_shadow_v1_real_2026_10_09.ps1`, `reports\logs\shadow_v1_real_vs_baseline.json`.
+>
+> **9 Oct 2026, 01:20 — phase 3 gate passed by hand on Windows (line F).** The beta 3 package
+> (`PACKAGE_WINDOWS.ps1 -NoInstaller`, `dist\beta\RUDRA-0.9.0-beta.3-windows-x64`) on the RTX 4080 box
+> and its HDR display, launched with no Python: source, three-click calibration, reference match,
+> painted mask with Region EV, anchors with no control lagging the playhead, a master still and a
+> 240-frame video job. Beta item "workflow by hand on an HDR display" ticked. The gate B build
+> (`build\native_gate_b`) is a viewer test build with no still decode or backend and opens no frames;
+> the by-hand pass runs on the package. Left for 1.0: the Mac items, Apple enrollment, the installer
+> on a clean PC, the tag.
+>
+> **9 Oct 2026, 00:30 — v8 scored (line G): FAIL, the gate holds; v8 stays research, not shipped.** 50k
+> steps, best.pt = step 48,000 (whole-val composite 0.786; clean real val gain −0.12 dB, peak +0.61 at
+> 6k). Against the inverse: **real Meridian +0.023 dB [−0.025, +0.077] / +0.020 JOD [+0.003, +0.036],
+> 38/287** (FAIL on the PU21 CI; the first model with a CVVDP CI above the inverse on real, v7 was
+> −4.13 dB, 0/287); aces −11.20 dB / −0.873 JOD (v4b −8.09, v7 −19.21; on aces the inverse is exact,
+> 49 dB); oog −0.29 / −0.086; mix −0.03 / −0.120. Inside clipped pixels: +0 EV −0.36 stops
+> [−0.42, −0.30] (worse), +1 EV −0.02, +2 EV +0.00 (ties): the region-focused loss did not teach
+> highlight reconstruction. Crushed pixels: 3.96 stops vs the inverse's 1.59 (+2 EV), 4.83 stops worse
+> on real. Diagnosis by luminance band: v8 tracks the inverse to 0.01 stop from 2 to 200 nits; its
+> loss is below 2 nits, where it lifts black (median +5.8 stops over the reference under 0.05 nits on
+> Meridian, the inverse +3.1), and on aces from 200 to 1,000 nits (0.54 stop vs 0.05). Above 200 nits
+> on Meridian it is a stop closer than the inverse (−0.54 vs −1.55). An inference-time shadow pin
+> (the inverse where the inverse is under 1 nit, log ramp to v8 at 4 nits) measured on bench subsets:
+> real +0.20 dB, mix +0.26, oog +0.21, aces −6.9 (from −11.1). Not adopted: its thresholds were found
+> on the test benches. `reports\logs\cp8_results_v8.json`, `v8_verdicts.log`.
+>
+> **8 Oct 2026, 15:00 — v8 tooling in (line G), no GPU time spent.** The gate is written before the run:
+> `training/cp8_verdicts.py` (real Meridian both CIs above the inverse; aces/oog/mix not worse; inside
+> clipped pixels at +0/+1/+2 EV lower error than the inverse, CI above zero). The clip benches:
+> `export_bench_pairs.py --condition exposure` and `training/score_regions.py` (roadmap 4.2 tooling).
+> The narrowed target: `sdr2hdr_loss(region_focus=f)` / `train_sdr2hdr.py --region-focus` (f of the loss
+> on the SDR's clipped/crushed pixels, the rest held to the inverse; 0 is the old loss to the bit).
+> `scripts/run_v8_2026_10_08.ps1` smoke/train/bench on `rudra_mix_v4c_netflix_20261008b`, region focus
+> 0.5, whole-val eval every 2k steps, no curve head or label. `tests/test_v8_bench_2026_10_08.py`.
+>
+> **8 Oct 2026, 14:20 — full-set model check closed with a real fix (line F); v8 data in (line G).** The
+> 287 Meridian frames through every runtime: ONNX fp32 had left eager PyTorch by 5.6e-3 at 1080p (3e-4
+> allowed), unseen on the 300 px golden frames. `nn.GroupNorm` -> ONNX `InstanceNormalization`, whose
+> group statistics ORT sums in one float32 pass; `StagedGroupNorm` in the ONNX graphs reduces them in
+> three stages. Now 8.8e-6 on the 287 frames, golden 2.2e-6 (was 5.8e-5), fp16 2.5e-3; native DirectML
+> 3.5e-6. DirectML pays for the extra ops (1080p 139 -> 207 ms, 4K tiled 1.5 -> 2.1 s; dispatch-bound,
+> fp16 no faster), budgets re-measured. Line G: the Netflix corpus is 5,494 train / 163 val / 287 test
+> real pairs (second pull, every odd frame; `check_realsdr_corpus.py` PASS), the v8 training manifest
+> `rudra_mix_v4c_netflix_20261008b`. Beta items left: the by-hand workflow on an HDR display and the Mac.
+>
+> **7 Oct 2026, 20:05 — roadmap 3.6 closed, masks verified (line F).** Gate A on the RTX 4080 SUPER
+> (fp32, median of 5): LibTorch CUDA 170 ms 1080p / 689 ms 4K (tiled 290 / 900), DirectML 139 ms /
+> 3 535 ms untiled, 1 504 tiled, CPU LibTorch 2.45 s / 9.3 s, ORT 3.1 s / 13.6 s; every 4K row now
+> budgeted (+25 %) and gated. Parity on all four backends 1e-7 to 6e-5. Phase 3 items are all ticked;
+> the phase 3 gate (a colourist by hand on an HDR display) and the beta items that need a Mac remain.
+> The masks commit passed rudra_tests 180/180 and rudra_app_tests 29/29 (19:16); gate B for it pending.
+>
+> **7 Oct 2026, 19:40 — roadmap 3.3 painted masks in (line F), awaiting the Windows run.** One 8-bit
+> mask per Region EV band (first four), painted on the viewer at the preview's size, gating the band's
+> qualifier (`core/masks.cpp`; the brush, bilinear sampling at any frame size, PNG codec in
+> `platform/png8.cpp` with no library). GPU: one RGBA8 texture read by composite.frag and display.frag
+> (the tint), uploaded per stroke. Session: a stroke an undo step; master writes `<name>.masks.png`,
+> sidecar `masks`, provenance `rudra:masks`; CLI `masks_file`. Brush card under the Region EV rows.
+> `tests/test_masks.cpp` (8, green with g++ on the VM); parity cases `masked region EV` and view
+> `painted mask tint`. 3.3 closes with it.
+>
+> **7 Oct 2026, 18:55 — roadmap 3.4 reference match in and verified (line F).** Windows: rudra_tests
+> 172/172 (ReferenceFit 10/10), rudra_app_tests 29/29, rudra-gpu-parity 20/20 cases on D3D12, D3D11,
+> Vulkan and OpenGL, the new `reference hable` row fp32 <= 2.8e-6 abs (the +0.4 to +0.75 stop target
+> raises the magnitudes), fp16 1 ulp, every view row passing. The
+> Reference block in the Source card: load the graded HDR of the frame (EXR by its chromaticities, or
+> 16-bit PQ PNG/TIFF; `engine/reference_image.cpp`) and the baseline is fitted to it as a calibration at
+> every code (`core/reference_fit.cpp`: per-code median of log2 nits, holes interpolated, smoothed,
+> isotonic, residual mean and p95 in stops). Stored as log2 nits per code, independent of the picker, so
+> it rides the same 256-knot path through `baseline_curve_params` and replaces the anchors. In
+> `params()`, the master request, the sidecar and the EXR provenance only when set. New:
+> `tests/test_reference_fit.cpp` (10 tests), a parity case `reference hable`. Phase 3 critical path
+> left: 3.3 painted masks, 3.6 numbers, wiping against the reference (optional).
+>
+> **7 Oct 2026, 17:00 — roadmap 3.3 latency and knee in and verified (line F).** Every live control is one
+> composite + display pass: 4K 1.08 to 1.33 ms wall across D3D12, D3D11, Vulkan and OpenGL on the RTX 4080
+> SUPER, now gated (`native/bench/latency_budgets.json` `control_latency`, `rudra-gpu-parity --budget
+> --machine`). The master's anchor stage is live on the viewer with an Anchor knee slider in Deliver
+> (`core/view.cpp anchor_gain_f`, the fp32 twin of `anchor_to_sdr`, pinned to 2e-4; the hold from the
+> measure). Verified: rudra_tests 162/162, rudra_app_tests 29/29, parity 18/18 with four anchored view
+> rows at <= 1 code. Open in 3.3: the painted masks. Carry source chroma stays master-only.
+>
+> **7 Oct 2026, 12:35 — roadmap 3.1 and 3.2 in and verified (line F).** The Source card: a six-way curve
+> picker (3.1) and three-click calibration (3.2), both expressed as the CurveHead's own per-code log2
+> correction over the ACES inverse (`core/source_curve.cpp`, `core/calibration.cpp`, one knot per 8-bit
+> code; shader knot buffer 9 to 72 vec4), summed with the model's head in `baseline_curve_params`, so
+> the composite, the shader, master, measure and QC carry both with no new path. Unknown and no anchors
+> are bit-identical to every master before. Verified on this box: rudra_tests 159/159, rudra_app_tests
+> 29/29, rudra-gpu-parity 18/18 on D3D12, D3D11, Vulkan and OpenGL (fp32 within 6e-7, fp16 1 ulp on the
+> new rows). Open: the by-hand pass in RUDRA.exe; the source and anchors are per master, not yet per shot
+> on video delivery (5.3).
+>
+> **7 Oct 2026, 11:50 — native tests on Windows, first full run (line F).** `scripts\NATIVE_TESTS.ps1`
+> (new) builds and runs the suites in the gate B build: rudra_tests 154/154 (1 skipped: rudra-native not
+> in that build), rudra_app_tests 29/29, rudra-gpu-parity 16/16 on D3D12, D3D11, Vulkan and OpenGL
+> including roadmap 3.1's source-curve rows. Two ffmpeg-build findings, both fixed: the 2025 gyan build
+> writes no `colr` atom for MP4 unless asked (`+write_colr` now goes on MP4 as well as MOV, in
+> `rudra/delivery/video.py` and `sequence_encode.cpp`), and it cannot put BT.2020/PQ in a MOV's legacy
+> `nclc` atom, the case the oracle already notes and delivers; the golden now records that note and the
+> test compares it. Golden re-emitted on this box (index only; the Linux frame and code oracles kept).
+>
+> **7 Oct 2026, 11:00 — v7 post-mortem, line E closed.** `sweep_val_checkpoints.py` on the full
+> 538-row val (163 real, 375 rendered), every other checkpoint, and `bench_by_curve.py` on `mix`:
+> 1. *Not overfitting.* Full-val composite is flat, +1.44 (2k) to +1.77 (34k) to +1.72 (50k); real-row
+>    hard gain −0.40 at 2k, +0.74 at 34k, +0.51 at 50k. The step-1,500 peak and 48k-step decay were the
+>    32-record slice. `best.pt` (step 3,000) was picked where the real rows were still negative.
+> 2. *The training eval does not predict the bench.* Full val says +1.5 dB over the inverse on every
+>    row kind; the bench says −2 to −24 dB and 0 of 287 on real. 256-px centre crops and log-PSNR on the
+>    mixed manifest's val versus full frames and PU21/CVVDP: selection on the former cannot find a
+>    checkpoint that passes the latter, whichever step. Every run since v4 selected this way.
+> 3. *The real val split is animation.* Cosmos Laundromat is a Blender short; the real test (Meridian)
+>    is live action. Real-row training gains were measured on a cartoon.
+> 4. *Curve input: not miswired, harmful.* `aces` label helps (mix −0.98 dB vs −2.29 blind; aces bench
+>    +2.4 over blind). `hable` −4.58 vs −3.32 blind, `agx` −4.42 vs −3.03: the label makes the filmic
+>    curves 1.3 dB worse on both metrics. Only `clip` (+1.49 blind, v4c +2.94) and `reinhard` (+1.19,
+>    v4c +2.35) are positive for any model: the recipe helps when the SDR is nearly a plain clip and
+>    hurts on the curves it was built for.
+> Evidence: `checkpoints\sdr2hdr_image_v7\val_sweep.jsonl`, `bench_by_curve.py` output in the 7 Oct
+> project note. Optional, research track only: bench step 34,000 once to see how much of the gap is
+> the step-3,000 pick (expected: little; the −4 dB on real has 0 wins).
+>
+> **24 Sep 2026, 22:30 — critical path scored; all four gates that ran fail (line E).**
+> `RUN_CRITICAL_PATH.bat` finished at 14:32: Step 4 re-run on the hold-out
+> manifest (`87a32f…`, 50k steps, best = step 45,500), Step 5 (8k), v4c with
+> `--curve-head` (50k, best = step 25,500), then the three CP7 benches. CP7 had
+> called `paired_gate.py` with **no gate flag**, so every row printed `GATE PASS`
+> (shadow_v1's 0 of 537 on ACES included). Gates now live in
+> `training/cp7_verdicts.py`, re-scored from the same CSVs (no GPU); the old
+> file is kept as `reports/logs/cp_results_2026-09-24_nogates.json`.
+>
+> | gate | question | PU21 Δ [95% CI] | CVVDP Δ [95% CI] | |
+> |---|---|---|---|---|
+> | N1/step4 | v4b beats the analytic inverse on its own ACES render | −8.09 [−8.80, −7.36] | −0.508 [−0.564, −0.456] | **FAIL** |
+> | N1/step5 | the gate head adds anything over v4b | 0.00 | 0.000 | **FAIL** |
+> | N3 | v4c beats the inverse out of generator | +1.33 [+0.80, +1.86] | −0.126 [−0.182, −0.073] | **FAIL** |
+> | N3/clean | v4c within 0.1 dB / 0.02 JOD of v4b on ACES | −13.86 | −1.082 | **FAIL** |
+> | N7 | studio weights within 0.3 dB / 0.03 JOD of v4c | | | not run |
+>
+> - **Step 5 did nothing.** From step 0 no eval beat the init (hard gain fell
+>   from 0.80 to 0.67 dB), so `best.pt` is the step-0 save and its bench rows
+>   are v4b's to the digit.
+> - **v4c cannot see ACES.** It loses on all 537 ACES frames on CVVDP, which is
+>   what the CPU proxy predicted. The fix already named for it is a confidence
+>   output that falls back to the analytic inverse, not dropping the head.
+> - **What training measures and what the bench measures disagree.** v4b's evals
+>   read +1.41 dB clean over the inverse, but on the bench of the same render
+>   it loses 461 of 537 frames. Median frame: baseline 47.3 dB PU21, v4b 38.1.
+>   The two differ in data (32 val crops of 256 px against full test frames),
+>   metric (log1p(16x) PSNR against PU21) and precision: `predict_image` ran
+>   under bf16 autocast while the baseline tree is fp32.
+> - **25 Sep: precision is not the gap.** `scripts\RUN_BENCH_FP32_CHECK.bat`
+>   re-exported the four rows in fp32: aces/v4b -8.121 dB (bf16 -8.088),
+>   aces/v4c -21.950 (-21.948), mix/v4c -0.890 (-0.899), oog/v4c +1.342
+>   (+1.330); JOD moves by 0.003 at most. bf16 stays the export default. That
+>   leaves data and metric. **Open: `scripts\RUN_BENCH_GAP_CHECK.bat`** (no GPU,
+>   minutes) scores the same bench trees with the training metric beside PU21,
+>   and splits the PU21 error and the level bias by reference luminance
+>   (`tools/diagnose_bench_gap.py`). The training metric, PSNR of
+>   log1p(16 x) in 10,000-nit units, barely sees anything under a few hundred
+>   nits: a 10% error at 20 nits moves it 0.003, at 2,000 nits 0.07. If it
+>   says v4b wins on the bench frames while PU21 says it loses, the loss and
+>   `best.pt` selection are rewarding the wrong thing, and they are fixed before
+>   any retrain; if both say it loses, the difference is full frames against
+>   crops.
+>
+> Next, in order, each behind the one before: (1) the fp32 check (done:
+> not precision); (2) the gap check, then the metric or selection fix it
+> points to; (3) the N3 fallback, then retrain v4c (about
+> 6.5 h); (4) Step 7 as written: the 429 paper frames at clean and hard, and
+> `measure_clipping.py --score`; (5) only then Step 6 temporal, promotion, and
+> N7 `rudra-studio`.
+
+> **25 Sep 2026, the master: highlight grain (line F).** A tester found a
+> colour-neutral grain in recovered highlights, peaking where the source sits
+> at 0.95-0.98. It is the analytic baseline, not the model: one 8-bit code is
+> 0.8 nits at mid-grey through `inverse_aces_approx` and 41 to 161 nits between
+> 0.95 and 0.98, so the source's own grain comes out as tens of nits once the
+> reconstruction takes over from the anchor. New stage after the chroma carry,
+> `rudra/grain.py` `settle_highlight_grain`: luminance smoothed where the
+> reconstruction took over and the source is flat (spread under one code;
+> none from three), in linear light, one gain per pixel. Measured on a sunset
+> plate, flat areas, by source luma (`tools/measure_highlight_grain.py`): 0.9-0.95
+> 9.4 -> 0.7 nits, 0.95-0.98 17.0 -> 1.8, 0.98-1.0 27.7 -> 7.2, against the
+> source's own 0.9 / 0.7 / 0.3; frame mean and peak unchanged; textured areas
+> unchanged. Default on in the Studio's master and `rudra-native master`
+> (`settle_grain`), ported with its goldens. CI the same day: every build passes
+> on the three OSes; the core tests' Windows (a file still open when removed,
+> backslash paths in a refusal message, tile weights one ulp from the MSVC
+> wheel's linspace) and macOS (Apple clang fusing multiply-adds, now off
+> project-wide; Homebrew ffmpeg without zscale, now ffmpeg-full) failures are
+> fixed, and each failing test now publishes its own annotation.
+
+> **25 Sep 2026, native app: macOS and the beta (line F).** On a MacBook Pro
+> (Apple silicon, macOS 27) the app builds with `scripts/native_app.sh` and
+> its 36 Qt tests pass, the scripted workflow and a movie's HDR10 export
+> included; the model exports there with TorchScript exact and ONNX at
+> 5.4e-5. What the Mac showed and was fixed: Qt 6.8 linking AGL (gone from
+> the macOS 15+ SDK), OpenGL needing a 4.1 core profile, ONNX Runtime's
+> environment made before a Core ML session and destroyed in order at exit,
+> a detached measurement thread, `/var` being `/private/var`. CI's goldens
+> check failed on every OS on one line (the fit golden recorded OpenCV's
+> version; pip now installs 5.0); fixed, and failing steps now publish
+> their output as annotations. The beta is packaged: 0.9.0-beta.1,
+> `scripts/package_mac.sh` (DMG), `scripts/PACKAGE_WINDOWS.ps1` (ZIP),
+> `release.yml` on a `v*` tag, notes in `docs/BETA.md`. Open before the tag:
+> the probe builds in CI, Gate A on MPS and Core ML, Gate B on Metal EDR,
+> and each package built and opened on its OS.
+>
+> **24 Sep 2026, native app: Phase 4, video delivery (line F).** `rudra video`,
+> `rudra deliver` and `rudra batch run` now exist without Python:
+> `rudra-native video` is convert_video (the same checks and words, decode,
+> predictor with its shadow smoother, mastering, spool, encoder command, QC
+> and report key for key), `rudra-native deliver` is encode_sequence with its
+> tag checks, `rudra-native batch run` runs the same queues, and a queue
+> stopped by either side finishes on the other. The HDR10 and HLG masters are
+> byte-identical to the Python's on LibTorch and ONNX Runtime; ProRes 4444 is
+> within codec noise, because the Python's PQ codes come from numpy's float32
+> power, which is not correctly rounded (one code in 65535, and CPU-dependent).
+> In RUDRA.exe a movie opens and scrubs as a shot and its HDR10, HLG and
+> ProRes exports go through a queue window with Stop and Resume; the app's
+> HDR10 master of a clip is byte-identical to `rudra video`'s. `rudra-native
+> ffmpeg-check` says what the machine's ffmpeg lacks and runs a 16-frame
+> HDR10 export through it, once per build. ffmpeg and ffprobe run as programs,
+> as the Python runs them (x265 stays out of the app). 177 native tests on
+> Linux. Found on the way: x265 3.5 crashes at 48 x 32 with preset slow, in
+> the Python too; two native tests had silently run no cases (a dangling
+> range-for over a temporary), now fixed. Open:
+>
+> - [ ] Windows, scripted, no Python on the PATH:
+>   `.\scripts\NATIVE_PHASE4_EXIT.ps1 -Clip <a movie with audio>` (ffmpeg with
+>   libx265 and zscale on PATH or `-Ffmpeg`)
+> - [ ] Windows, by hand (the checklist the script prints): drop a movie,
+>   scrub, export HDR10 from the sheet and watch the Queue window to Complete,
+>   stop and resume an HLG export, play the master on the HDR display with its
+>   audio, reopen and find the queue as it was
+>
+> **24 Sep 2026, native app: Phase 3, the Qt UI (line F).** RUDRA.exe is the
+> Studio page as a native window: its look generated from `ui/theme.css`, its
+> 33 actions, menus and keys, `params()` and undo byte for byte with the page,
+> its layout, scopes, panels, probe and measurements checked against the page
+> run headless, the Deliver tab's master as a background job (the server's
+> render plan and refusals exactly), a checkpoint manager that finds packages
+> as the server finds checkpoints and switches them mid-session with the
+> grade kept and each package checked against its goldens on first use, a
+> first-run check that shows the HDR card on the display and names its peak,
+> the page's clipboard texts byte for byte, drop to open, Open recent, and
+> settings kept between runs. 138 app and engine tests on Linux.
+>
+> **Revision after the first Windows run (24 Sep).** The window now has the
+> Pro-direction look (the boards on the RUDRA Studio Desktop canvas) instead
+> of a copy of the browser page, with every control, handler and number as
+> before, and it previews at the Studio's 1600 on the long side (it was
+> previewing 2560 x 1440 at full size). The Windows scripted exit had passed
+> every workflow step (240 frames on DirectML, masters byte-identical to the
+> CLI's); its FAIL was the app tests, whose output the script now keeps.
+>
+> **Phase 3 exit.** Scripted: `RUDRA --workflow-check` opens a package and a
+> folder, scrubs every frame, grades and undoes, compares, probes, measures
+> and masters three frames in the real window; `rudra-native master-compare`
+> holds those masters to the CLI master (the path held to the Studio). On
+> Linux, 240 frames on ONNX Runtime CPU: every step passes, every frame
+> delivered as itself, the graded masters byte-identical to the CLI's. Open:
+>
+> - [ ] Windows, scripted, no Python on the PATH:
+>   `.\scripts\NATIVE_PHASE3_EXIT.ps1 -Frames <a 240-frame folder>`
+> - [ ] Windows, by hand on the PA279CRV (the checklist the script prints):
+>   first-run card and peak; switch packages mid-grade; drop, scrub, play;
+>   grade, undo, redo; wipe, flip, layers; probe against the Frame panel;
+>   master the frame and the sequence, copy the delivery metadata; quit and
+>   reopen (window, rails, tab, Render fields, Open recent)
+> - [ ] Mac: the Phase 0 runs still stand in front of it
+>
+> **24 Sep 2026, native app: Phase 1 (line F).** librudra now does, in C++
+> and against the Python it ports: still decode (bit-exact), grade, HDR10/HLG,
+> metadata sidecars, EXR/ACES/OCIO (byte-identical), `rudra-native master`
+> (the Studio master within 1 half-float ulp, no Python), QC (same report
+> text), the batch queue (state byte-identical and resumable from either
+> side) and sequence open. Found on the way: the Python wrote its sidecars,
+> OCIO config and queue state with the platform's line ending, so the same
+> master had different bytes on Windows; they now write LF everywhere. The
+> Phase 1 exit waits on CI green on three OSes and the Mac runs from Phase 0.
+>
+> **23 Sep 2026, native app: Phase 0 go/no-go (line F).** The two questions
+> Phase 0 had to answer (docs/NATIVE_ARCHITECTURE.md section 12), measured on
+> an RTX 4080 SUPER under Windows 11 with an ASUS PA279CRV in HDR:
+>
+> - **Gate A, does C++ compute what Python computes?** Yes, on every Windows
+>   backend: LibTorch CPU 1.2e-7 (bound 1e-5), LibTorch CUDA 1.4e-5 in true
+>   fp32 (TF32 was costing 4e-4 and is now off; `gpu_fp32` bound 5e-5 +
+>   1e-5|ref|), ONNX Runtime CPU 5.8e-5 and DirectML 3.3e-6 (bound 3e-4 +
+>   1e-4|ref|). The composite, master chain to AP0 and every measurement match
+>   the Python stage by stage (35 native tests).
+> - **Gate B, does HDR reach the glass?** Yes: D3D12 scRGB and D3D11 scRGB
+>   carry 203, 1 000 and 2 000 nits exactly, D3D12 HDR10 to within 10-bit PQ
+>   quantisation; Windows reports the output as G2084/P2020. The composite
+>   shader matches `composite.cpp` on D3D12, D3D11, Vulkan and OpenGL (fp16
+>   within 1 half-float ulp).
+> - **Budgets:** composite 0.11 ms at 1080p and 0.51 ms at 4K (budgets 4 and
+>   12 ms); inference 150 to 172 ms at 1080p fp32 untiled.
+>
+> **Decision: GO for Phase 1 on Windows.** macOS is GO on condition of three
+> runs on an Apple Silicon Mac with an XDR panel, none of which needs new code:
+> Gate A on MPS and Core ML, Gate B on Metal EDR, the composite parity on
+> Metal (`scripts/native_gate_a.sh`, `scripts/native_gate_b.sh`). Linux ships SDR-out
+> first; its composite already passes on OpenGL. Still open and not blocking:
+> the 429-frame bench through Gate A (`NATIVE_GATE_A.ps1 -BenchDir`), Tracy,
+> and a reduced-precision inference path. Phase 1 (decode, engine, the viewer
+> in the Qt shell) starts from `native/` on the `native` branch.
 >
 > **22 Sep 2026 — dataset audit (line E).** What was done since 16 Sep, checked:
 >
@@ -197,7 +656,7 @@
 >     FFmpeg 8.0.1. `rudra/video.py`'s QC needs ffprobe ≥ 5
 >     (`frame_side_data`).
 >
-> **The paper ([`paper/main.pdf`](paper/main.pdf)) is about line C.** It is not
+> **The paper (kept out of this repository) is about line C.** It is not
 > the earlier manuscript, which was about line B; what was withdrawn from that
 > one and why is Appendix D of the paper. Line B's
 > completion path is unchanged and is listed below; nothing since 22 Aug has
@@ -497,7 +956,12 @@
 >
 > ---
 >
-> **Licensing (5 Sep 2026).** The code is Apache 2.0. The **weights are not**:
+> **Licensing (24 Sep 2026).** The code is now **non-commercial** too, under the
+> PolyForm Noncommercial License 1.0.0 (`LICENSE`, with the Required Notice in
+> `NOTICE`); commercial use of code or weights needs a licence from FXTD
+> Studios. Copies obtained before 24 Sep keep Apache 2.0.
+>
+> **Licensing (5 Sep 2026).** The code was Apache 2.0. The **weights are not**:
 > HdM-HDR-2014 and HdM-HFR-2017 are **75.6% of the training corpus** and are
 > free for academic use only, with commercial use requiring a separate
 > agreement with HdM Stuttgart. `checkpoints/LICENSE` now licenses the weights
@@ -546,7 +1010,7 @@ lift them. Full is slow on 64×64-latent backbones (decodes at 512×512). Always
 | §7.1 component ablation | ❌ TBD | — | derived from Stage 1→3 runs |
 | §7.2 descriptor channel ablation (L / L+E / L+H / L+xy / full R⁵) | ❌ TBD | — | `research_sdxl.py --phase ablate` |
 | §7.3 λ conditioning-strength sweep (0.0 … 1.25) | ❌ TBD | — | `research_sdxl.py --phase sweep` |
-| §6 results vs baselines (incl. LTX IC-LoRA-HDR) | ❌ TBD | — | `benchmark_hdr.py` + ColorVideoVDP |
+| §6 results vs external baselines | ❌ TBD | — | `benchmark_hdr.py` + ColorVideoVDP |
 | §8 qualitative grids / EV-over-time | ❌ TBD | — | after the above |
 
 ## Completion path
@@ -554,7 +1018,7 @@ lift them. Full is slow on 64×64-latent backbones (decodes at 512×512). Always
 1. **Stage 3 on SDXL** — the paper's intended backbone (U-Net cross-attention; ~5× lighter
    than Flux, fits 16 GB). This is the core contribution. `research_sdxl.py --phase stage3`.
 2. **λ sweep + descriptor ablation** — `--phase sweep` and `--phase ablate` (short runs).
-3. **Benchmark** RUDRA vs LTX IC-LoRA-HDR with ColorVideoVDP (JOD), ΔE2000, EV-error, HRA.
+3. **Benchmark** RUDRA vs external baselines with ColorVideoVDP (JOD), ΔE2000, EV-error, HRA.
 4. **Fill the paper tables** (§6/§7) with the measured values; drop the placeholder numbers.
 5. *(Optional)* Flux port of the conditioning — the paper's §10 generalization experiment.
 

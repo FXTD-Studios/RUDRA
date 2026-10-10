@@ -163,6 +163,22 @@ def out_of_generator_sdr(hdr_np: np.ndarray, crf: int) -> torch.Tensor:
     return torch.from_numpy(coded.astype(np.float32)).permute(2, 0, 1)[None]
 
 
+def exposure_sdr(hdr_np: np.ndarray, ev: float, curve: str) -> torch.Tensor:
+    """The reference re-rendered to 8-bit sRGB with a named curve at ``ev``.
+
+    ``hdr_np`` is in network units. The render is the corpus's own
+    (pipeline/sdr_render.py): curve(scene x 2^ev), sRGB OETF, rounded to 8 bits.
+    With ev = the model's corpus_ev + E and the reference scaled by 2^E, the
+    analytic inverse is exact below the clip and E only moves more of the
+    frame into it. Deterministic."""
+    from pipeline.sdr_render import CURVES, _srgb_oetf
+
+    scene = np.maximum(hdr_np, 0.0) * (NETWORK_PEAK_NITS / DIFFUSE_WHITE_NITS)
+    display = CURVES[curve](scene * (2.0 ** ev))
+    code = np.clip(np.rint(_srgb_oetf(display) * 255.0), 0, 255).astype(np.float32) / 255.0
+    return torch.from_numpy(code).permute(2, 0, 1)[None]
+
+
 def load_model(checkpoint: Path, device: torch.device) -> SDR2HDRNet:
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
     config = payload.get("config", {}) or {}
@@ -182,11 +198,20 @@ def main() -> int:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--split", default="test")
-    parser.add_argument("--condition", choices=("clean", "hard", "out-of-generator"),
+    parser.add_argument("--condition", choices=("clean", "hard", "out-of-generator", "exposure"),
                         default="clean",
                         help="hard applies the eval's seeded camera/codec degradation; "
                              "out-of-generator re-tone-maps the reference with a Hable "
                              "curve and a real H.264 round trip -- SDR the model never saw")
+    parser.add_argument("--exposure-ev", type=float, default=0.0,
+                        help="--condition exposure: the shot made this many stops brighter. The "
+                             "reference is scaled by 2^EV and the SDR re-rendered from it with "
+                             "--exposure-curve at the model's own exposure, so the inverse is exact "
+                             "below the clip and every extra stop moves more of the frame into it "
+                             "(roadmap 4.2: clipped highlights at 0, +1, +2 EV)")
+    parser.add_argument("--exposure-curve", default="aces",
+                        help="--condition exposure: the tone curve of the re-render "
+                             "(pipeline/sdr_render.py CURVES)")
     parser.add_argument("--oog-crf", type=int, default=28,
                         help="H.264 CRF for --condition out-of-generator (default 28)")
     parser.add_argument("--max-side", type=int, default=0,
@@ -231,8 +256,44 @@ def main() -> int:
     parser.add_argument("--preserve-outside", action="store_true", default=True)
     parser.add_argument("--raw", dest="preserve_outside", action="store_false",
                         help="export the unblended prediction")
+    parser.add_argument("--precision", choices=("bf16", "fp32"), default="bf16",
+                        help="CUDA precision of the model's forward pass. bf16 is what "
+                             "every bench before 24 Sep 2026 used; the baseline tree is "
+                             "fp32 either way (see predict_image).")
+    parser.add_argument("--source-curve", default="none",
+                        help="for a model built with source_curve=True: 'none' (do not pass "
+                             "one; the blind estimate), 'unknown' (same, recorded explicitly), "
+                             "'from-manifest' (each row's source_curve, else sdr_curve), or a "
+                             "curve name from rudra.sdr2hdr.SOURCE_CURVES. The 'hard' condition "
+                             "degrades the SDR, so it always runs as unknown.")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
+    from rudra.sdr2hdr import SOURCE_CURVES, source_curve_index
+    if args.source_curve not in ("none", "from-manifest") and args.source_curve not in SOURCE_CURVES:
+        raise SystemExit(f"error: --source-curve {args.source_curve!r}: use none, from-manifest "
+                         f"or one of {SOURCE_CURVES}")
+
+    if args.condition == "exposure":
+        from pipeline.sdr_render import CURVES as _RENDER_CURVES
+        if args.exposure_curve not in _RENDER_CURVES:
+            raise SystemExit(f"error: --exposure-curve {args.exposure_curve!r}: one of {sorted(_RENDER_CURVES)}")
+        if args.source_curve == "from-manifest":
+            raise SystemExit("error: --condition exposure re-renders every frame with --exposure-curve, so "
+                             "the row's own curve is wrong for it; pass that curve (or none)")
+    if args.source_curve == "from-manifest" and args.condition == "out-of-generator":
+        raise SystemExit("error: out-of-generator re-renders every frame with Hable + H.264, so the "
+                         "row's own curve is wrong for it; pass --source-curve hable (or none)")
+
+    def curve_for(record: dict) -> int | None:
+        if args.source_curve == "none" or args.condition == "hard":
+            return None
+        if args.source_curve == "from-manifest":
+            name = record.get("source_curve") or record.get("sdr_curve")
+            if name is None:
+                raise SystemExit(f"error: --source-curve from-manifest but {record.get('asset_id')} "
+                                 f"has neither source_curve nor sdr_curve")
+            return source_curve_index(name) or None
+        return source_curve_index(args.source_curve) or None
 
     records = [r for r in read_jsonl(args.manifest) if r.get("split") == args.split]
     if not records:
@@ -250,6 +311,10 @@ def main() -> int:
     model = load_model(Path(args.checkpoint), device)
     print(f"   split      : {args.split}  ({len(indexed)} of {len(records)} records)")
     print(f"   condition  : {args.condition}")
+    print(f"   curve      : {args.source_curve}"
+          + ("  (hard condition: run as unknown)" if args.condition == "hard"
+             and args.source_curve != "none" else ""))
+    print(f"   precision  : {args.precision}")
     print(f"   device     : {device}")
     announce_storage(f"image/{args.split}", records[0]["hdr_path"])
 
@@ -293,13 +358,18 @@ def main() -> int:
             sdr = degrade_like_eval(sdr[0], index)[None]
         elif args.condition == "out-of-generator":
             sdr = out_of_generator_sdr(reference, args.oog_crf)
+        elif args.condition == "exposure":
+            sdr = exposure_sdr(reference, float(model.corpus_ev) + args.exposure_ev, args.exposure_curve)
+            reference = (reference * (2.0 ** args.exposure_ev)).astype(np.float32)
         sdr = sdr.to(device)
 
         def predict(tile_size: int) -> torch.Tensor:
             return predict_image(model, sdr, preserve_outside=args.preserve_outside,
                                  tile_size=tile_size, overlap=args.tile_overlap,
                                  recovery_mode=args.recovery_mode,
-                                 recovery_strength=args.recovery_strength)
+                                 recovery_strength=args.recovery_strength,
+                                 bf16=args.precision == "bf16",
+                                 source_curve=curve_for(record))
 
         try:
             hdr = predict(args.tile_size)
@@ -345,10 +415,13 @@ def main() -> int:
         "manifest": str(Path(args.manifest).resolve()),
         "split": args.split, "condition": args.condition,
         "oog_crf": args.oog_crf,
+        "exposure_ev": args.exposure_ev if args.condition == "exposure" else None,
+        "exposure_curve": args.exposure_curve if args.condition == "exposure" else None,
         "test_name": args.test_name,
         "preserve_outside": bool(args.preserve_outside),
         "recovery_mode": args.recovery_mode,
         "recovery_strength": args.recovery_strength,
+        "source_curve": "none" if args.condition == "hard" else args.source_curve,
         "frames": written, "skipped": skipped,
         "units": "scene-linear, diffuse white = 1.0",
         "nits_scale_for_bench": DIFFUSE_WHITE_NITS,

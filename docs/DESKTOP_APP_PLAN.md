@@ -1,6 +1,6 @@
 # RUDRA Studio Desktop: native cross-platform plan
 
-> 23 Sep 2026, revision 3. Phase 0 in progress: days 1-2 done (`native/README.md`).
+> 23 Sep 2026, revision 3. Phase 0 closed: GO for Phase 1 on Windows (Gates A and B pass, budgets recorded); macOS conditional on its Mac runs (`STATUS.md`, line F; `native/README.md`).
 > Stack: **Qt 6, QRhi (Metal / Direct3D 12 / Vulkan, OpenGL fallback), C++20,
 > LibTorch + ONNX Runtime**.
 > No Python at runtime. Design: `docs/NATIVE_ARCHITECTURE.md`. Mockup: the
