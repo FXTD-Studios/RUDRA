@@ -74,6 +74,18 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **10 Oct 2026, evening — beta 8 prepared (line F, R5).** An external review (ChatGPT Pro, of `main`
+> 5e827a7 and `native` 161eb2d) found that "masters default to the analytic inverse" was not true of the
+> app: `GradeSnapshot` defaulted to mode all / strength 1 and every frame and master ran `infer_frame`.
+> R5 ("never the default path of a master") was therefore not met. Now the analytic reconstruction is the
+> default: zero fields, default scalars and `kAnalyticConstants` (corpus EV 0), no inference call, no
+> package needed to open, view or master; Reconstruct > Use the model turns the model on (QSettings
+> `model/use`, `Project::use_model`); masters record `rudra:reconstruction` / sidecar `reconstruction`
+> when analytic, and the CLI master honours `"analytic": true`. Known and said: movie exports still run
+> `rudra video` (the model, recovery all, no grade). Reviewed twice (second pass: source panel at the
+> wrong corpus EV, CLI label, pending shots, project changing the user default: all fixed). Linux: core
+> 209/209, app 51/51 (41/41 without OpenCV), master parity PASS. CI actions moved to Node 24.
+>
 > **10 Oct 2026, later — beta 7 prepared (line F).** Beta 6 released (release #10 green, 8 assets), but
 > the native workflow had been red since beta 5 and nobody had read why: the CI re-emits the Python
 > goldens, and the 9 Oct ship-path fixes moved the Python (HLG log10 + ratio-preserving scale, Rec.2020

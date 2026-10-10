@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.24)
 project(RudraNative VERSION 0.9.0 LANGUAGES CXX)
 # The release label after the version: "beta.5" for the fifth public beta,
 # empty for a final release. RUDRA_VERSION_LABEL is what the app shows.
-set(RUDRA_RELEASE "beta.7" CACHE STRING "Pre-release tag appended to the version (empty for a release)")
+set(RUDRA_RELEASE "beta.8" CACHE STRING "Pre-release tag appended to the version (empty for a release)")
 if(RUDRA_RELEASE)
   set(RUDRA_VERSION_LABEL "${PROJECT_VERSION}-${RUDRA_RELEASE}")
 else()

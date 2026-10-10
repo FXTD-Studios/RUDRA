@@ -55,6 +55,13 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
 
 ### Reconstruct
 
+- **Analytic or AI-assisted.** By default RUDRA reconstructs analytically: the
+  inverse of the source curve with your calibration, reference and grade; no
+  model runs and none needs to be installed. **Reconstruct > Use the model
+  (AI-assisted)** adds the model's reconstruction on top; the status bar says
+  which is in use and every master's sidecar records it. Movie exports
+  currently always run the model and ignore the grade (see the release notes).
+
 - **Mode** (1 2 3 4): what the model may change: *All*, *Highlights*,
   *Shadows*, or *Off* (the baseline alone).
 - **Strength** ([ and ]): how much of the model's residual is added.
