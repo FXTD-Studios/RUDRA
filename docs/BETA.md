@@ -1,7 +1,7 @@
-# RUDRA 0.9.0 beta 5
+# RUDRA 0.9.0 beta 6
 
 The desktop RUDRA: SDR footage in, scene-linear HDR out, with the places the
-model reconstructed shown to you. This is the fifth public beta of the native
+model reconstructed shown to you. This is the sixth public beta of the native
 app (C++20, Qt 6.8, no Python at runtime). It is for evaluation and
 non-commercial use (PolyForm Noncommercial 1.0.0, see LICENSE; the model
 weights: LICENSE-weights).
@@ -42,7 +42,32 @@ weights: LICENSE-weights).
 - `rudra-native`, the command line: `diff`, `video`, `deliver`, `batch`,
   `ffmpeg-check`.
 
-## Changes since beta 4
+## Changes since beta 5
+
+- **Projects.** File > Save project (Ctrl+S) keeps the shot, the frame, the
+  model and the whole grade (mode, strength, Region EV, source curve,
+  calibration, reference, painted masks, view peak, Deliver settings) in a
+  `.rudra` file; File > Open project (Ctrl+O), a drop, or on Windows a
+  double-click opens it. Footage moved together with the project is found
+  again; anything missing is named and the rest still opens.
+- **Autosave.** The session is saved a few seconds after each change and on
+  close; File > Reopen last session brings back the one the last run left.
+- **ffmpeg in the Windows package** (the gyan.dev "full" build, GPL v3, in
+  `ffmpeg\` with its licence and source note): movies work without
+  installing anything. `RUDRA_FFMPEG_DIR` picks another build.
+- **Update check.** Once a day RUDRA asks GitHub whether a newer release is
+  out and says so in the status bar; Help > Check for updates asks now.
+  Nothing is downloaded. Off with `RUDRA_NO_UPDATE_CHECK=1`.
+- **Help for a first session:** Help > Getting started (the five steps,
+  shown once after the first-run check), Help > User guide (F1, also in the package
+  as "User guide.md"), Help > Open log folder, and tooltips on every control
+  of the Reconstruct, Grade and Deliver tabs.
+- **Signing hooks:** the Windows build signs RUDRA.exe, rudra-native.exe and
+  the installer when a code-signing certificate is supplied (the release
+  workflow's `WINDOWS_CERT_PFX` secret).
+- Open recent opens a movie as a shot again (it was added as a still).
+
+## Changes in beta 5 (since beta 4)
 
 - **Starts the same on every machine.** Qt settings left in the environment by
   other software (a conda env with PyQt, a Qt SDK) no longer stop RUDRA with
@@ -98,17 +123,18 @@ opens with no warning. A DMG built without the certificate (the build log says
 "ad hoc") makes macOS warn on first open: System Settings > Privacy &
 Security > Open Anyway, or `xattr -dr com.apple.quarantine /Applications/RUDRA.app`.
 
-**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.5-windows-x64-setup.exe`:
+**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.6-windows-x64-setup.exe`:
 it installs for your user by default (no administrator prompt), adds RUDRA to
 the Start menu and can be removed from Settings > Apps. Or take the portable
 ZIP: unzip anywhere and run `RUDRA.exe`. A GPU with DirectX 12 is used when
 there is one; the CPU otherwise.
 
-**Movies, both systems.** RUDRA runs `ffmpeg` and `ffprobe` from the PATH and
-needs a build with `libx265`, `prores_ks` and `zscale`:
-macOS `brew install ffmpeg@6`, with `$(brew --prefix ffmpeg@6)/bin` on PATH; Windows the "full" build from gyan.dev with
-its `bin` folder on the PATH. `rudra-native ffmpeg-check` says whether yours
-has everything. Stills need nothing extra.
+**Movies.** RUDRA needs an ffmpeg with `libx265`, `prores_ks` and `zscale`.
+Windows: the package carries one, nothing to install. macOS: `brew install
+ffmpeg@6`, with `$(brew --prefix ffmpeg@6)/bin` on PATH (the DMG does not carry
+ffmpeg yet). `RUDRA_FFMPEG_DIR` points either at another build;
+`rudra-native ffmpeg-check` says whether one has everything. Stills need
+nothing extra.
 
 ## Known in this beta
 
@@ -118,13 +144,15 @@ has everything. Stills need nothing extra.
 - The model does not yet beat the analytic baseline on every condition of
   the bench (see STATUS.md in the repository); the reconstruction is shown
   where it applied, so you can judge it frame by frame.
-- Windows: not signed with a code-signing certificate yet, so SmartScreen
-  may ask once.
+- Windows: signed only when the release was built with a code-signing
+  certificate (RUDRA.exe > Properties > Digital Signatures shows it); without
+  one SmartScreen may ask once.
+- macOS: ffmpeg is not in the DMG yet (see Install).
 - Linux builds are made from source (`scripts/native_app.sh`); there is no
   Linux package in this beta.
 
 ## Reporting
 
-Issues and results: https://github.com/fxtdstudios/RUDRA/issues. Include the
+Issues and results: https://github.com/FXTD-Studios/RUDRA/issues. Include the
 version (RUDRA.app > Get Info, or RUDRA.exe > Properties > Details), what
 Help > About shows, and for a crash the report macOS or Windows offers.
