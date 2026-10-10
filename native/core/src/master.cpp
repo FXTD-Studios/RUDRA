@@ -299,17 +299,22 @@ MasterPixels render_master_pixels(const NetworkLinearImage& network, const SdrIm
                                   const ModelConstants& model, const MasterParams& params) {
     MasterPixels m;
     m.nits = nits_from_network(network);
-    apply_region_ev(m.nits, params.regions, params.region_softness_stops, double(model.max_hdr) * 10000.0, params.masks.get());
+    // ui/server.py _render_master's order since 9 Oct 2026: the level and
+    // texture stages first, the grade LAST. Graded first, the anchor (which
+    // sets every pixel below its knee to target/actual) divided the grade
+    // straight back out while the sidecar said it was applied.
     if (params.anchor) anchor_to_sdr(m.nits, sdr, params.anchor_knee);
     if (params.carry_chroma) carry_source_chroma(m.nits, sdr, params.chroma_knee);
     if (params.settle_grain) settle_highlight_grain(m.nits, sdr, params.anchor_knee);
+    apply_region_ev(m.nits, params.regions, params.region_softness_stops, double(model.max_hdr) * 10000.0, params.masks.get());
     PlanarBuffer linear = scene_linear(m.nits);
     if (params.container == MasterContainer::Aces2065) {
         m.pixels = convert_primaries(linear, params.source_primaries, Primaries::Ap0);
         m.primaries = Primaries::Ap0;
     } else {
-        m.pixels = std::move(linear);
-        m.primaries = params.source_primaries;
+        // "Scene-linear Rec.2020" is what the container is called, so it is.
+        m.pixels = convert_primaries(linear, params.source_primaries, Primaries::Rec2020);
+        m.primaries = Primaries::Rec2020;
     }
     return m;
 }

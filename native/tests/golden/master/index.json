@@ -43,8 +43,8 @@
       },
       "exr": "case_graded_linear.exr",
       "sidecar": "case_graded_linear.json",
-      "maxcll": 2387,
-      "maxfall": 250
+      "maxcll": 3830,
+      "maxfall": 262
     },
     {
       "name": "plain_highlights",

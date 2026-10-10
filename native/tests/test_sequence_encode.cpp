@@ -122,7 +122,8 @@ TEST(SequenceEncode, CommandsAreThePythons) {
 }
 
 TEST(SequenceEncode, MeasuredLightIsTheReports) {
-    // `deliver` measures MaxCLL and MaxFALL after the shoulder, as the encoder writes it.
+    // `deliver` measures MaxCLL and MaxFALL after Rec.709 -> Rec.2020 and the
+    // shoulder, as the encoder writes it.
     std::vector<FrameStats> stats;
     auto paths = list_linear_frames(kDir / "frames");
     ASSERT_TRUE(paths);
@@ -130,7 +131,7 @@ TEST(SequenceEncode, MeasuredLightIsTheReports) {
     for (std::size_t i = 0; i < paths->size(); ++i) {
         auto f = load_linear_frame((*paths)[i], 203.0);
         ASSERT_TRUE(f);
-        auto m = shoulder_to_peak(*f, 1000.0);
+        auto m = deliver_master_frame(std::move(*f), Primaries::Rec709, 1000.0);
         ASSERT_TRUE(m);
         stats.push_back(analyze_frame(*m, int(i)));
     }
