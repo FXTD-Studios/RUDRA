@@ -70,7 +70,7 @@ jobs:
           echo "$(brew --prefix ffmpeg@6)/bin" >> "$GITHUB_PATH"
       - name: vcpkg binary cache (Windows)
         if: runner.os == 'Windows'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.vcpkg-cache
           key: vcpkg-x64-windows-gtest-json-opencv4-core-jpeg-png-tiff-webp-v1
@@ -157,7 +157,7 @@ jobs:
           export LD_LIBRARY_PATH="$ORT_ROOT/lib:$LD_LIBRARY_PATH"
           tools/ci_run.sh "Latency" build/cli/rudra-native bench dist/models/sdr2hdr_shadow_v1 --size 1920x1080 --iters 1 \
             --budget native/bench/latency_budgets.json --machine gh-ubuntu-24.04 --json latency.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with: { name: latency-gh-ubuntu-24.04, path: latency.json, if-no-files-found: ignore }
 

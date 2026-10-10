@@ -76,7 +76,7 @@ jobs:
         run: |
           security delete-keychain "$RUNNER_TEMP/rudra-signing.keychain-db" 2>/dev/null || true
           rm -f "$RUNNER_TEMP/notary.p8"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: rudra-macos
           path: |
@@ -126,7 +126,7 @@ jobs:
         if: always()
         shell: pwsh
         run: Remove-Item (Join-Path $env:RUNNER_TEMP "rudra-sign.pfx") -ErrorAction SilentlyContinue
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: rudra-windows
           path: |
@@ -142,9 +142,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with: { path: artifacts, merge-multiple: true }
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           prerelease: true
           name: RUDRA ${{ github.ref_name }}
