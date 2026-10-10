@@ -95,6 +95,9 @@ const std::vector<ActionSpec> kActions = {
     {"playback-side-960", "Model at 960 px (faster)", "", "playback:960", O::Native, E::Always, ""},
     {"playback-side-640", "Model at 640 px (fastest)", "", "playback:640", O::Native, E::Always, ""},
     {"playback-realtime", "Keep time (skip frames when behind)", "", "playbackRealtime", O::Native, E::Always, ""},
+    // Temporal consistency (10 Oct 2026): the per-frame values held within a
+    // shot while playing and in movie exports.
+    {"steady-shots", "Hold steady within a shot", "", "steadyShots", O::Native, E::Always, ""},
     {"open-project", "Open project…", "", "", O::Native, E::Always, "Ctrl+O"},
     {"save-project", "Save project", "", "", O::Native, E::Always, "Ctrl+S"},
     {"save-project-as", "Save project as…", "", "", O::Native, E::Always, "Ctrl+Shift+S"},
@@ -113,7 +116,7 @@ const std::vector<MenuSpec> kMenus = {
     {"Edit", {"undo", "redo", "-", "reset-recon", "reset-regions"}},
     {"Clip",
      {"first", "prev", "next", "last", "-", "play", "-", ">While playing", "playback-side-0", "playback-side-960",
-      "playback-side-640", "-", "playback-realtime", "<"}},
+      "playback-side-640", "-", "playback-realtime", "<", "steady-shots"}},
     {"Reconstruct",
      {"use-model", "-", ">Source", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
       "mode-all", "mode-highlights", "mode-shadows", "mode-off", "-", "preserve", "-", "strength-down", "strength-up"}},

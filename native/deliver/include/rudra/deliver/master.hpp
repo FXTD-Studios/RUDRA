@@ -85,8 +85,10 @@ struct GradedMaster {
     NitsFrame nits;               // what is delivered
     bool graded = false;          // Region EV moved something
 };
+// `settle_hold`: the anchor's hold through it (core/master.hpp anchor_to_sdr).
 Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, const FrameScalars& scalars,
-                                  const ModelConstants& model, const MasterRequest& request);
+                                  const ModelConstants& model, const MasterRequest& request,
+                                  const HoldSettle& settle_hold = {});
 
 // One frame, decoded (`source_bits` its depth) and through the network
 // (fields, scalars), to `out` and its .json beside it.

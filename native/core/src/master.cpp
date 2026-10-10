@@ -60,7 +60,7 @@ void apply_region_ev(NitsFrame& nits, std::span<const RegionBand> bands, double 
     }
 }
 
-void anchor_to_sdr(NitsFrame& nits, const SdrImage& sdr, double knee, double softness) {
+void anchor_to_sdr(NitsFrame& nits, const SdrImage& sdr, double knee, double softness, const HoldSettle& settle) {
     assert(nits.height() == sdr.height() && nits.width() == sdr.width());
     assert(knee > 0.0 && knee < 1.0);
     const std::size_t n = nits.plane_size();
@@ -81,7 +81,8 @@ void anchor_to_sdr(NitsFrame& nits, const SdrImage& sdr, double knee, double sof
         code[i] = mx;
         if (mx > knee - softness && mx < knee + softness && actual > 1e-9) band.push_back(want[i]);
     }
-    const double hold = band.size() >= 64 ? median(std::move(band)) : median(want);
+    double hold = band.size() >= 64 ? median(std::move(band)) : median(want);
+    if (settle) hold = settle(hold);
     for (std::size_t i = 0; i < n; ++i) {
         double gain = want[i];
         if (code[i] > knee - softness) {

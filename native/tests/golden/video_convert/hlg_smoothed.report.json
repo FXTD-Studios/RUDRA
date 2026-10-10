@@ -1,6 +1,6 @@
 {
-  "source": "/home/claude/rudra/native/tests/golden/video/clips/bars_709.mp4",
-  "output": "/home/claude/rudra/native/tests/golden/video_convert/hlg_smoothed.mp4",
+  "source": "/tmp/nat/native/tests/golden/video/clips/bars_709.mp4",
+  "output": "/tmp/nat/native/tests/golden/video_convert/hlg_smoothed.mp4",
   "input_contract": {
     "transfer": "rec709",
     "primaries": "rec709",
@@ -18,13 +18,14 @@
   "alpha_mode": null,
   "encoder_input_precision_bits": 10,
   "alpha_preserved": false,
-  "checkpoint": "/home/claude/rudra/checkpoints/sdr2hdr_shadow_v1.pt",
+  "checkpoint": "/tmp/pyrepo/checkpoints/sdr2hdr_shadow_v1.pt",
   "checkpoint_sha256": "6b7f73f0b44a6edc3e117373f7397ae3a8df12cb398ec4815597b6e2ebeb63f9",
   "mastering_peak_nits": 1200.0,
   "mastering_min_nits": null,
   "audio_mode": "copy",
   "shadow_smoothing": 0.5,
   "cut_threshold": 0.15,
+  "temporal_smoothing": 0.25,
   "preserve_outside": true,
   "recovery_mode": "all",
   "tile_size": 32,
@@ -38,42 +39,55 @@
       "index": 0,
       "shadow_weight": 0.6826550960540771,
       "max_cll": 1198.8411865234375,
-      "frame_average": 161.37884521484375
+      "frame_average": 161.37884521484375,
+      "flicker_ev": null
     },
     {
       "index": 1,
       "shadow_weight": 0.6826550960540771,
       "max_cll": 1198.8411865234375,
-      "frame_average": 161.37884521484375
+      "frame_average": 161.37884521484375,
+      "flicker_ev": 0.0
     },
     {
       "index": 2,
       "shadow_weight": 0.6826550960540771,
       "max_cll": 1198.8411865234375,
-      "frame_average": 161.37884521484375
+      "frame_average": 161.37884521484375,
+      "flicker_ev": 0.0
     },
     {
       "index": 3,
       "shadow_weight": 0.6826470494270325,
       "max_cll": 1198.8443603515625,
-      "frame_average": 161.3994903564453
+      "frame_average": 161.3994903564453,
+      "flicker_ev": 4.262133913390809e-05
     },
     {
       "index": 4,
       "shadow_weight": 0.6855447888374329,
       "max_cll": 1199.51513671875,
-      "frame_average": 161.5129852294922
+      "frame_average": 161.5129852294922,
+      "flicker_ev": 0.006371485171839719
     },
     {
       "index": 5,
       "shadow_weight": 0.687311202287674,
       "max_cll": 1199.565185546875,
-      "frame_average": 161.5335235595703
+      "frame_average": 161.5335235595703,
+      "flicker_ev": 0.001888039851287937
     }
   ],
   "warnings": [
     "Scalar shadow smoothing is not validated temporal reconstruction"
   ],
+  "temporal": {
+    "retention": 0.5,
+    "frames_scored": 5,
+    "flicker_ev_mean": 0.0016604292724523128,
+    "flicker_ev_max": 0.006371485171839719,
+    "flicker_ev_max_frame": 4
+  },
   "encode_command": [
     "/usr/bin/ffmpeg",
     "-hide_banner",
@@ -85,11 +99,11 @@
     "-framerate",
     "24000/1001",
     "-i",
-    "/home/claude/rudra/native/tests/golden/video_convert/rudra-video-agr80u0v/%08d.png",
+    "/tmp/nat/native/tests/golden/video_convert/rudra-video-u8a4l4ec/%08d.png",
     "-itsoffset",
     "-0.0",
     "-i",
-    "/home/claude/rudra/native/tests/golden/video/clips/bars_709.mp4",
+    "/tmp/nat/native/tests/golden/video/clips/bars_709.mp4",
     "-map",
     "0:v:0",
     "-map",
@@ -130,7 +144,7 @@
     "disabled",
     "-movflags",
     "+faststart+write_colr",
-    "/home/claude/rudra/native/tests/golden/video_convert/rudra-master-_usjg1v9/hlg_smoothed.mp4"
+    "/tmp/nat/native/tests/golden/video_convert/rudra-master-_wshl_7r/hlg_smoothed.mp4"
   ],
   "qc": {
     "passed": true,
@@ -216,5 +230,5 @@
   },
   "max_cll": 1200,
   "max_fall": 162,
-  "elapsed_seconds": 1.0564977889998772
+  "elapsed_seconds": 0.7441716950002046
 }

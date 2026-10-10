@@ -6,6 +6,7 @@
 // checkpoint is the settings file.
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -106,4 +107,43 @@ TEST(VideoGraded, AnAnalyticQueueNeedsNoPackage) {
     const auto rep = read_json(dir / "out.mp4.json");
     EXPECT_EQ(rep["reconstruction"], "analytic (no model)");
     EXPECT_EQ(rep["grade_file"], fs::weakly_canonical(settings).string());
+}
+
+// Temporal consistency (10 Oct 2026): the anchor's hold is a median and moves
+// with the content near the knee, so a grainy clip pumps frame to frame with
+// it. Held across the shot, the HDR's exposure follows the source's closer:
+// the report's flicker measure (EV the HDR moved beyond the source) drops.
+TEST(VideoGraded, TheShotHoldSteadiesTheAnchor) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    const fs::path dir = fresh("steady");
+    // A second of a moving test pattern with grain, 24 fps, Rec.709.
+    const fs::path clip = dir / "grain.mp4";
+    auto made = run_process({find_executable("ffmpeg")->string(), "-v", "error", "-nostdin", "-f", "lavfi", "-i",
+                             "testsrc2=size=320x180:rate=24:duration=1,noise=alls=12:allf=t,format=yuv420p",
+                             "-c:v", "libx264", "-crf", "18", "-color_primaries", "bt709", "-color_trc", "bt709",
+                             "-colorspace", "bt709", clip.string()});
+    ASSERT_TRUE(made && fs::exists(clip)) << "this ffmpeg cannot make the test clip (libx264)";
+    std::vector<double> flicker;
+    for (double seconds : {0.0, 0.25}) {
+        VideoConvertArgs a;
+        a.input = clip;
+        a.output = dir / (seconds == 0.0 ? "off.mp4" : "held.mp4");
+        a.audio = "none";
+        a.preset = "ultrafast";
+        a.temporal_smoothing = seconds;
+        MasterRequest q;
+        q.analytic = true;
+        q.anchor = true;
+        a.grade = q;
+        auto r = convert_video(a, nullptr, nullptr);
+        ASSERT_TRUE(r) << r.error().message << " " << r.error().detail;
+        const auto rep = read_json(r->sidecar);
+        EXPECT_EQ(rep["temporal_smoothing"].get<double>(), seconds);
+        const auto& t = rep["temporal"];
+        EXPECT_NEAR(t["retention"].get<double>(), seconds == 0.0 ? 0.0 : std::exp(-1.0 / (24.0 * 0.25)), 1e-12);
+        EXPECT_GT(t["frames_scored"].get<int>(), 10);
+        flicker.push_back(t["flicker_ev_mean"].get<double>());
+        std::cout << "[ steady ] " << seconds << " s: flicker " << t.dump() << "\n";
+    }
+    EXPECT_LT(flicker[1], flicker[0] * 0.7) << flicker[0] << " -> " << flicker[1];
 }

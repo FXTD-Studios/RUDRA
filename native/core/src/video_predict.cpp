@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <string>
 
 #include "rudra/core/baseline.hpp"
@@ -9,6 +10,11 @@
 #include "rudra/core/view.hpp"
 
 namespace rudra {
+
+namespace {
+constexpr double kLuma2020[3] = {0.2627, 0.6780, 0.0593};
+constexpr double kLuma709[3] = {0.2126, 0.7152, 0.0722};
+}  // namespace
 
 Result<PlanarBuffer> canonicalize_sdr(const PlanarBuffer& rgb, std::string_view transfer, std::string_view range) {
     if (range != "full" && range != "limited")
@@ -107,7 +113,99 @@ std::pair<double, bool> ShadowSmoother::update(const PlanarBuffer& thumbnail, do
     weight_ = (cut || !has_weight_) ? weight : retention_ * weight_ + (1.0 - retention_) * weight;
     has_weight_ = true;
     previous_ = thumbnail;
+    if (cut) held_.clear();
     return {weight_, cut};
+}
+
+std::vector<double> ShadowSmoother::hold(const std::string& key, const std::vector<double>& value) {
+    auto it = held_.find(key);
+    if (it == held_.end() || it->second.size() != value.size()) return held_[key] = value;
+    std::vector<double>& h = it->second;
+    for (std::size_t i = 0; i < h.size(); ++i) h[i] = retention_ * h[i] + (1.0 - retention_) * value[i];
+    return h;
+}
+
+double retention_for(std::string_view fps, double seconds) {
+    if (!(seconds > 0.0)) return 0.0;
+    const std::string f(fps);
+    const auto slash = f.find('/');
+    double rate = std::strtod(f.c_str(), nullptr);
+    if (slash != std::string::npos) rate /= std::strtod(f.c_str() + slash + 1, nullptr);
+    return std::exp(-1.0 / (rate * seconds));
+}
+
+double exposure_ev(std::span<const double> lum, int h, int w) {
+    // rudra/video.py area_mean: an integral image (cumsum down, then across)
+    // and adaptive average pooling's bins.
+    const int H = kExposureThumbHeight, W = kExposureThumbWidth;
+    std::vector<double> integral(std::size_t(h + 1) * (w + 1), 0.0);
+    auto at = [&](int y, int x) -> double& { return integral[std::size_t(y) * (w + 1) + x]; };
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) at(y + 1, x + 1) = at(y, x + 1) + lum[std::size_t(y) * w + x];
+    for (int y = 1; y <= h; ++y)
+        for (int x = 1; x <= w; ++x) at(y, x) += at(y, x - 1);
+    double sum = 0.0;
+    for (int i = 0; i < H; ++i) {
+        const int y0 = (i * h) / H, y1 = ((i + 1) * h + H - 1) / H;
+        for (int j = 0; j < W; ++j) {
+            const int x0 = (j * w) / W, x1 = ((j + 1) * w + W - 1) / W;
+            const double area = double(y1 - y0) * double(x1 - x0);
+            const double m = (at(y1, x1) - at(y0, x1) - at(y1, x0) + at(y0, x0)) / area;
+            sum += std::log2(std::max(m, 0.0) + 1.0 / 1024.0);
+        }
+    }
+    return sum / double(H * W);
+}
+
+namespace {
+double transfer_to_linear(double x, std::string_view transfer) {
+    x = std::clamp(x, 0.0, 1.0);
+    if (transfer == "srgb") return x <= 0.04045 ? x / 12.92 : std::pow((x + 0.055) / 1.055, 2.4);
+    if (transfer == "rec709") return x < 0.081 ? x / 4.5 : std::pow((x + 0.099) / 1.099, 1.0 / 0.45);
+    if (transfer == "gamma22") return std::pow(x, 2.2);
+    return std::pow(x, 2.4);
+}
+
+// The transfer at every 16-bit code a decoded frame holds (k / 65535 in
+// float32, as rgb_from_frame divides): the same values, a table look-up.
+const std::vector<double>& code_table(std::string_view transfer) {
+    static const auto make = [](std::string_view t) {
+        std::vector<double> lut(65536);
+        for (int k = 0; k < 65536; ++k) lut[std::size_t(k)] = transfer_to_linear(double(float(k) / 65535.0f), t);
+        return lut;
+    };
+    static const std::vector<double> srgb = make("srgb"), rec709 = make("rec709"), g22 = make("gamma22"),
+                                     g24 = make("gamma24");
+    return transfer == "srgb" ? srgb : transfer == "rec709" ? rec709 : transfer == "gamma22" ? g22 : g24;
+}
+}  // namespace
+
+std::vector<double> source_luminance(const PlanarBuffer& rgb, std::string_view transfer, std::string_view primaries) {
+    const double* k = primaries == "rec2020" ? kLuma2020 : kLuma709;
+    const std::vector<double>& lut = code_table(transfer);
+    std::vector<double> out(rgb.plane_size(), 0.0);
+    for (int c = 0; c < 3; ++c) {
+        const float* p = rgb.plane(c);
+        for (std::size_t i = 0; i < out.size(); ++i) {
+            const float x = p[i];
+            const long code = std::lround(static_cast<double>(x) * 65535.0);
+            const double v = code >= 0 && code <= 65535 && float(code) / 65535.0f == x
+                                 ? lut[std::size_t(code)]
+                                 : transfer_to_linear(static_cast<double>(x), transfer);
+            out[i] += v * k[c];
+        }
+    }
+    return out;
+}
+
+std::vector<double> hdr_luminance(const PlanarBuffer& hdr) {
+    std::vector<double> out(hdr.plane_size(), 0.0);
+    for (int c = 0; c < 3; ++c) {
+        const float* p = hdr.plane(c);
+        for (std::size_t i = 0; i < out.size(); ++i) out[i] += static_cast<double>(p[i]) * kLuma2020[c];
+    }
+    for (double& v : out) v *= 100.0;
+    return out;
 }
 
 std::vector<int> video_tile_starts(int length, int size, int overlap) {

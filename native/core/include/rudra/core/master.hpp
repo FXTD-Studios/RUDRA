@@ -13,6 +13,7 @@
 // names the stage that disagreed.
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <span>
 #include <vector>
@@ -73,9 +74,12 @@ NitsFrame nits_from_network(const NetworkLinearImage& network);
 void apply_region_ev(NitsFrame& nits, std::span<const RegionBand> bands, double softness_stops, double ceiling_nits,
                      const MaskSet* masks = nullptr);
 
-// rudra.anchor.anchor_gain / anchor_to_sdr.
+// rudra.anchor.anchor_gain / anchor_to_sdr. `settle`, when set, maps the
+// frame's hold (the median gain at the knee) to the one used: a movie export
+// holds it steady within a shot (video/predictor, 10 Oct 2026).
+using HoldSettle = std::function<double(double)>;
 void anchor_to_sdr(NitsFrame& nits, const SdrImage& sdr, double knee = kAnchorKnee,
-                   double softness = kAnchorSoftness);
+                   double softness = kAnchorSoftness, const HoldSettle& settle = {});
 
 // cv2.GaussianBlur(src, (0,0), sigma, BORDER_REPLICATE) for one float32 plane:
 // OpenCV's kernel size (round(8 sigma + 1) | 1) and its float32 kernel.

@@ -1,5 +1,5 @@
 {
- "oracle": "rudra/video.py convert_video, eager PyTorch 2.14.0+cpu on CPU",
+ "oracle": "rudra/video.py convert_video, eager PyTorch 2.14.1+cu130 on CPU",
  "checkpoint": "sdr2hdr_shadow_v1.pt",
  "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
  "cases": [
@@ -45,7 +45,9 @@
     "--input-range",
     "limited",
     "--audio",
-    "none"
+    "none",
+    "--temporal-smoothing",
+    "0"
    ],
    "report": "prores4444_alpha.report.json",
    "master_sha256": "5147dfaae84794e6a0bc379c167596a4fd70860246dcddfe77eb933597fa3043"

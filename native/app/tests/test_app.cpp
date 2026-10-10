@@ -1253,9 +1253,16 @@ namespace {
 // says which model made it.
 class FakeBackend : public InferenceBackend {
 public:
-    FakeBackend(float level, std::shared_ptr<std::atomic<int>> calls) : level_(level), calls_(std::move(calls)) {}
+    FakeBackend(float level, std::shared_ptr<std::atomic<int>> calls, std::shared_ptr<std::atomic<bool>> pump = {})
+        : level_(level), calls_(std::move(calls)), pump_(std::move(pump)) {}
     BackendInfo info() const override { return {Runtime::OnnxRuntime, Device::Cpu, "fake", "CPUExecutionProvider"}; }
-    Result<FrameScalars> frame_pass(const SdrImage&) override { return FrameScalars{}; }
+    // Pumping: the shadow weight jumps with a marker in the frame's corner (1
+    // where it is bright, 0.25 where it is dark), as a gate can on grain.
+    Result<FrameScalars> frame_pass(const SdrImage& s) override {
+        FrameScalars f;
+        if (pump_ && pump_->load()) f.shadow_weight = s.buffer().plane(0)[0] > 0.5f ? 1.0f : 0.25f;
+        return f;
+    }
     Result<Fields> tile_pass(const SdrImage& tile, const FrameScalars&) override {
         ++*calls_;
         const int h = tile.height(), w = tile.width();
@@ -1265,6 +1272,7 @@ public:
 private:
     float level_;
     std::shared_ptr<std::atomic<int>> calls_;
+    std::shared_ptr<std::atomic<bool>> pump_;
 };
 
 void write_manifest(const std::filesystem::path& dir, const std::string& name) {
@@ -1290,6 +1298,7 @@ struct Models {
     std::map<std::string, std::shared_ptr<std::atomic<int>>> calls;   // tile passes, by package name
     std::map<std::string, int> tests;                                 // self-tests run, by package name
     std::set<std::string> drifting;                                   // these fail their self-test
+    std::shared_ptr<std::atomic<bool>> pump = std::make_shared<std::atomic<bool>>(false);   // FakeBackend
 };
 
 // Three packages (alpha, beta, gamma) in a models.json root; the window opens
@@ -1310,7 +1319,7 @@ std::shared_ptr<Models> fake_models(app::MainWindow& w, const std::string& tag) 
     app::MainWindow::ModelHooks h;
     h.verify_files = false;
     h.open = [m, levels](const ModelManifest& man, std::optional<BackendChoice> c) -> Result<OpenedBackend> {
-        return OpenedBackend{std::make_unique<FakeBackend>(levels.at(man.name), m->calls.at(man.name)),
+        return OpenedBackend{std::make_unique<FakeBackend>(levels.at(man.name), m->calls.at(man.name), m->pump),
                              c.value_or(BackendChoice{Runtime::OnnxRuntime, Device::Cpu})};
     };
     h.test = [m](const ModelManifest& man, InferenceBackend& b) -> Result<SelfTestReport> {
@@ -2509,6 +2518,71 @@ TEST(AppVideo, AnAnalyticMovieExportRunsWithoutAModelAndCarriesTheGrade) {
     EXPECT_EQ(rep["reconstruction"], "analytic (no model)");
     EXPECT_EQ(rep["recovery_mode"], "highlights");
     EXPECT_TRUE(rep["checkpoint"].is_null());
+    // Held steady within a shot (the default), as playback holds it.
+    std::ifstream qf(queue);
+    EXPECT_EQ(json::parse(qf)["jobs"][0]["options"]["temporal-smoothing"], 0.25);
+    EXPECT_DOUBLE_EQ(rep["temporal_smoothing"].get<double>(), 0.25);
+    EXPECT_TRUE(rep.contains("temporal"));
+}
+#endif
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+// Temporal consistency while playing (10 Oct 2026): a shot whose frames hardly
+// change but whose shadow weight jumps frame to frame plays with the weight
+// held, as its export holds it; stopped, the frame shows its own; off, every
+// frame plays with its own.
+TEST(AppPlayback, PlayingHoldsTheShadowWeightAcrossTheShot) {
+    QSettings().clear();
+    const auto dir = fresh_dir("steady-frames");
+    std::filesystem::create_directories(dir);
+    for (int i = 0; i < 12; ++i) {
+        QImage img(64, 48, QImage::Format_RGB888);
+        for (int y = 0; y < 48; ++y)
+            for (int x = 0; x < 64; ++x) {
+                const int v = (x < 10 && y < 10) ? (i % 2 ? 250 : 5) : 60 + 2 * x;   // the marker, then a ramp
+                img.setPixel(x, y, qRgb(v, v, v));
+            }
+        ASSERT_TRUE(img.save(QString::fromStdString((dir / QStringLiteral("f%1.png").arg(i, 3, 10, QChar('0')).toStdString()).string())));
+    }
+    app::MainWindow w(false);
+    auto m = fake_models(w, "steady");
+    m->pump->store(true);
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    w.set_use_model(true);
+    w.set_playback_realtime(false);
+    EXPECT_TRUE(w.steady_shots());
+    EXPECT_TRUE(w.action("steady-shots")->isChecked());
+    w.open_source(QString::fromStdString(dir.string()), true);
+    ASSERT_EQ(w.frame_count(), 12u);
+    ASSERT_TRUE(wait_for([&] { return w.frame_scalars() != nullptr; }));
+    auto play = [&] {
+        std::map<int, float> shown;   // frame -> the weight it was shown with
+        w.run("first");
+        EXPECT_TRUE(wait_for([&] { return w.current_index() == 0 && w.frame_scalars(); }));
+        w.run("play");
+        EXPECT_TRUE(wait_for([&] {
+            if (w.frame_scalars()) shown[int(w.current_index())] = w.frame_scalars()->shadow_weight;
+            return w.playback_stats().shown >= 8;
+        }, 15000));
+        w.run("play");   // stop
+        return shown;
+    };
+    const std::map<int, float> held = play();
+    int between = 0;
+    for (const auto& [i, v] : held)
+        if (i > 1 && v > 0.3f && v < 0.95f) ++between;
+    EXPECT_GE(between, 3) << "held weights while playing";
+    // Stopped: the frame on screen with its own weight.
+    ASSERT_TRUE(wait_for([&] {
+        const float v = w.frame_scalars()->shadow_weight;
+        return v == 1.0f || v == 0.25f;
+    }));
+    // Off: each frame plays with its own, and the setting is kept.
+    w.run("steady-shots");
+    EXPECT_FALSE(w.steady_shots());
+    EXPECT_FALSE(QSettings().value("video/steady").toBool());
+    const std::map<int, float> own = play();
+    for (const auto& [i, v] : own) EXPECT_TRUE(v == 1.0f || v == 0.25f) << i << ": " << v;
 }
 #endif
 

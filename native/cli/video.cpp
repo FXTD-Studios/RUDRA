@@ -81,6 +81,7 @@ int cmd_video(const std::vector<std::string>& args) {
         else if (k == "--tile-overlap") { if (!integer(a.tile_overlap)) return usage_error("invalid --tile-overlap: " + v); }
         else if (k == "--shadow-smoothing") { if (!number(a.shadow_smoothing)) return usage_error("invalid --shadow-smoothing: " + v); }
         else if (k == "--cut-threshold") { if (!number(a.cut_threshold)) return usage_error("invalid --cut-threshold: " + v); }
+        else if (k == "--temporal-smoothing") { if (!number(a.temporal_smoothing)) return usage_error("invalid --temporal-smoothing: " + v); }
         else if (k == "--work-dir") a.work_dir = fs::path(v);
         else if (k == "--runtime") runtime = v;
         else if (k == "--device") device = v;

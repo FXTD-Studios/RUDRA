@@ -84,7 +84,8 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     if (!filters) return filters.error();
     if (encoders->find(profile->encoder) == std::string::npos || filters->find("zscale") == std::string::npos)
         return make_error(ErrorCode::Unsupported, "This FFmpeg build needs " + profile->encoder + " and zscale support");
-    if (!(0 <= a.shadow_smoothing && a.shadow_smoothing < 1) || !(0 < a.cut_threshold && a.cut_threshold <= 1))
+    if (!(0 <= a.shadow_smoothing && a.shadow_smoothing < 1) || !(0 < a.cut_threshold && a.cut_threshold <= 1) ||
+        !(0 <= a.temporal_smoothing && a.temporal_smoothing <= 10))
         return refuse("Invalid smoothing/cut threshold");
     if (a.tile_size < 0 || a.tile_overlap < 0 || (a.tile_size && a.tile_overlap >= a.tile_size))
         return refuse("Invalid tile size/overlap");
@@ -117,7 +118,9 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         return a.grade ? predictor.predict_graded(rgb, transfer, primaries, sm, *a.grade)
                        : predictor.predict(rgb, transfer, primaries, sm);
     };
-    ShadowSmoother smoother(a.shadow_smoothing, a.cut_threshold);
+    const double retention =
+        a.shadow_smoothing != 0.0 ? a.shadow_smoothing : retention_for(video->clock.fps, a.temporal_smoothing);
+    ShadowSmoother smoother(retention, a.cut_threshold);
     const auto started = std::chrono::steady_clock::now();
     auto elapsed = [&] { return std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count(); };
 
@@ -141,6 +144,7 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         {"audio_mode", a.audio},
         {"shadow_smoothing", a.shadow_smoothing},
         {"cut_threshold", a.cut_threshold},
+        {"temporal_smoothing", a.temporal_smoothing},
         {"preserve_outside", a.grade ? a.grade->preserve_outside : true},
         {"recovery_mode", a.grade ? a.grade->recovery_mode : std::string("all")},
         {"tile_size", a.tile_size},
@@ -161,6 +165,8 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     }
     pyjson::List cuts, frames;
     std::vector<VideoFrameLight> lights;
+    std::optional<std::pair<double, double>> previous_exposure;   // (source, HDR) EV
+    std::vector<std::pair<int, double>> scored;
 
     auto spool_dir = StagingDir::create(work_parent, "rudra-video-");
     if (!spool_dir) return spool_dir.error();
@@ -172,13 +178,27 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
             if (hooks.cancel && hooks.cancel->load()) return make_error(ErrorCode::Cancelled, "Cancelled");
             auto frame = (*decoder)->next();
             if (!frame) return frame.error();
-            auto pred = predict(rgb_from_frame(*frame), c.transfer, c.primaries, smoother);
+            const SdrImage rgb = rgb_from_frame(*frame);
+            auto pred = predict(rgb, c.transfer, c.primaries, smoother);
             if (!pred) return pred.error();
+            // The flicker measure: how far the HDR's exposure moved beyond the source's.
+            const std::pair<double, double> exposure{
+                exposure_ev(source_luminance(rgb.buffer(), c.transfer, c.primaries), height, width),
+                exposure_ev(hdr_luminance(pred->hdr.buffer()), height, width)};
+            pyjson::Value flicker;
+            if (!pred->cut && previous_exposure) {
+                const double f = std::fabs((exposure.second - previous_exposure->second) -
+                                           (exposure.first - previous_exposure->first));
+                flicker = f;
+                scored.emplace_back(index, f);
+            }
+            previous_exposure = exposure;
             auto sf = master_video_frame(pred->hdr, index, a.format, a.peak_nits, a.knee_nits,
                                          alpha ? std::span<const std::uint16_t>(frame->data) : std::span<const std::uint16_t>());
             if (!sf) return sf.error();
             frames.push_back(pyjson::Dict{{"index", index}, {"shadow_weight", pred->shadow_weight},
-                                          {"max_cll", sf->light.max_cll}, {"frame_average", sf->light.frame_average}});
+                                          {"max_cll", sf->light.max_cll}, {"frame_average", sf->light.frame_average},
+                                          {"flicker_ev", flicker}});
             lights.push_back(sf->light);
             if (pred->cut) cuts.push_back(index);
             if (spool_space_low(spool, frame_bytes)) return make_error(ErrorCode::IoError, "Working disk is full");
@@ -198,6 +218,22 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     }
     pyjson::set(report, "scene_cuts", cuts);
     pyjson::set(report, "frames", frames);
+    {
+        pyjson::Value mean, peak, peak_frame;
+        if (!scored.empty()) {
+            double sum = 0.0, top = -1.0;
+            int at = 0;
+            for (const auto& [i, f] : scored) {
+                sum += f;
+                if (f > top) top = f, at = i;
+            }
+            mean = sum / double(scored.size()), peak = top, peak_frame = at;
+        }
+        pyjson::set(report, "temporal",
+                    pyjson::Dict{{"retention", retention}, {"frames_scored", int(scored.size())},
+                                 {"flicker_ev_mean", mean}, {"flicker_ev_max", peak},
+                                 {"flicker_ev_max_frame", peak_frame}});
+    }
     const LightCeilings ceil = light_ceilings(lights);
 
     auto staging = StagingDir::create(output.parent_path(), "rudra-master-");

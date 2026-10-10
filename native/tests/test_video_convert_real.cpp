@@ -33,7 +33,8 @@ std::string slurp(const fs::path& p) {
     return ss.str();
 }
 
-// Same keys in the same order, same values; `tol` for floats under "frames".
+// Same keys in the same order, same values; `tol` for floats under "frames"
+// and "temporal" (the flicker measure and the retention, 10 Oct 2026).
 void compare(const ojson& got, const ojson& want, const std::string& path, double tol, int& floats_off) {
     if (want.is_object()) {
         ASSERT_TRUE(got.is_object()) << path;
@@ -51,7 +52,7 @@ void compare(const ojson& got, const ojson& want, const std::string& path, doubl
         for (std::size_t i = 0; i < want.size(); ++i) compare(got[i], want[i], path + "[" + std::to_string(i) + "]", tol, floats_off);
         return;
     }
-    if (want.is_number_float() && path.rfind(".frames[", 0) == 0) {
+    if (want.is_number_float() && (path.rfind(".frames[", 0) == 0 || path.rfind(".temporal.", 0) == 0)) {
         const double w = want.get<double>(), g = got.get<double>();
         EXPECT_LE(std::fabs(g - w), tol * std::max(1.0, std::fabs(w))) << path;
         floats_off += g != w;
@@ -91,6 +92,7 @@ TEST(VideoConvertReal, ReportAndMasterAreThePythons) {
                 else if (k == "--input-range") a.input_range = v;
                 else if (k == "--audio") a.audio = v;
                 else if (k == "--shadow-smoothing") a.shadow_smoothing = std::stod(v);
+                else if (k == "--temporal-smoothing") a.temporal_smoothing = std::stod(v);
                 else if (k == "--peak-nits") a.peak_nits = std::stod(v);
                 else if (k == "--tile-size") a.tile_size = std::stoi(v);
                 else if (k == "--tile-overlap") a.tile_overlap = std::stoi(v);

@@ -2,7 +2,8 @@
 
 The oracle is rudra/video.py convert_video itself, on the shipped checkpoint on
 CPU, with nothing replaced: HDR10 of a clip with audio (copied), HLG with
-shadow smoothing and a colour-bars clip, and ProRes 4444 with alpha. The
+shadow smoothing and a colour-bars clip, and ProRes 4444 with alpha with the
+shot hold off (`--temporal-smoothing 0`; the other two run its default). The
 published masters are kept with their sidecar reports; the native test runs
 `convert_video` on the same clips with the exported package and holds the
 report to these key for key, and the master to this one byte for byte when the
@@ -34,7 +35,7 @@ CASES = {   # name: clip, output name, flags
                                                           "--tile-overlap", "8"]),
     "prores4444_alpha": ("prores4444_alpha.mov", "prores4444_alpha.mov",
                          ["--format", "prores4444", "--alpha-mode", "straight", "--input-range", "limited",
-                          "--audio", "none"]),
+                          "--audio", "none", "--temporal-smoothing", "0"]),
 }
 
 
