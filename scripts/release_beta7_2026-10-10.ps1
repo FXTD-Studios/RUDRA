@@ -25,8 +25,6 @@ function Invoke-Git { & git @args; if ($LASTEXITCODE -ne 0) { Fail "git $args" }
 if (Test-Path .git\index.lock) { Fail ".git\index.lock exists: move it to .git\_stale_locks\ first (AGENTS.md)" }
 if ((git rev-parse --abbrev-ref HEAD) -ne "native") { Fail "not on the native branch" }
 
-$trailer = "`n`nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`nClaude-Session: https://claude.ai/code/session_01NjxFqr14DzbjUjMD8BL4G7"
-
 if ($Tag) {
     if (git tag --list $Version) { Fail "$Version exists already" }
     Invoke-Git tag -a $Version -m "RUDRA $Version (docs/BETA.md)"
@@ -55,7 +53,7 @@ foreach ($c in $commits) {
     $changed = @(git status --porcelain -- $c.paths)
     if ($changed.Count -eq 0) { Write-Host "nothing to commit for: $($c.msg.Substring(0, 50))..."; continue }
     Invoke-Git add -- $c.paths
-    Invoke-Git commit -m ($c.msg + $trailer) -- $c.paths
+    Invoke-Git commit -m $c.msg -- $c.paths
 }
 
 $left = @(git status --porcelain --untracked-files=no)
