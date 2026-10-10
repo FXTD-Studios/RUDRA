@@ -13,43 +13,13 @@
 #include <cstdio>
 #include <memory>
 
-#ifdef _WIN32
-#include <windows.h>
-#elif defined(__APPLE__)
-#include <mach-o/dyld.h>
-#endif
+#include "rudra/platform/tools.hpp"
 
 namespace rudra::app {
 
 namespace fs = std::filesystem;
 
-fs::path executable_dir() {
-#ifdef _WIN32
-    std::wstring buf(MAX_PATH, L'\0');
-    for (;;) {
-        const DWORD n = GetModuleFileNameW(nullptr, buf.data(), DWORD(buf.size()));
-        if (n == 0) return {};
-        if (n < buf.size()) {
-            buf.resize(n);
-            break;
-        }
-        buf.resize(buf.size() * 2);
-    }
-    return fs::path(buf).parent_path();
-#elif defined(__APPLE__)
-    uint32_t size = 0;
-    _NSGetExecutablePath(nullptr, &size);
-    std::string buf(size, '\0');
-    if (_NSGetExecutablePath(buf.data(), &size) != 0) return {};
-    std::error_code ec;
-    const fs::path p = fs::weakly_canonical(fs::path(buf.c_str()), ec);
-    return (ec ? fs::path(buf.c_str()) : p).parent_path();
-#else
-    std::error_code ec;
-    const fs::path p = fs::read_symlink("/proc/self/exe", ec);
-    return ec ? fs::path() : p.parent_path();
-#endif
-}
+fs::path executable_dir() { return rudra::executable_dir(); }
 
 fs::path shipped_platforms_dir(const fs::path& exe_dir) {
     if (exe_dir.empty()) return {};

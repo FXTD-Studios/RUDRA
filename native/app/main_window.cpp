@@ -1,5 +1,6 @@
 #include "main_window.hpp"
 #include "startup.hpp"
+#include "updates.hpp"
 
 #include "rudra/video/ffmpeg_check.hpp"
 
@@ -20,6 +21,12 @@
 #include <QFrame>
 #include <QKeyEvent>
 #include <QClipboard>
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QDesktopServices>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QCloseEvent>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -80,6 +87,10 @@ namespace {
 
 QString qs(std::string_view s) { return QString::fromUtf8(s.data(), qsizetype(s.size())); }
 
+// Paths through UTF-16 both ways: std::string paths are the ANSI code page on Windows.
+std::filesystem::path to_path(const QString& s) { return std::filesystem::path(s.toStdU16String()); }
+QString from_path(const std::filesystem::path& p) { return QString::fromStdU16String(p.u16string()); }
+
 QString describe(const ModelManifest& m) {
     return QStringLiteral("%1  ·  contract %2  ·  residual gate %3  ·  shadow gate %4  ·  curve %5  ·  corpus EV %6")
         .arg(QString::fromStdString(m.name), QString::fromStdString(m.contract), m.has_residual_gate ? "yes" : "no",
@@ -133,6 +144,11 @@ MainWindow::MainWindow(bool with_viewer) {
 #endif
     bind_handlers();
     build_menus();
+    apply_tooltips();
+    // Autosave (set_autosave_path): the trailing edge of the last change.
+    autosave_timer_.setSingleShot(true);
+    connect(&autosave_timer_, &QTimer::timeout, this, [this] { autosave_now(); });
+    pending_["reopen-session"] = "No earlier session was saved.";
     sync_checks();
     sync_ui();
     refresh_enabled();
@@ -236,7 +252,49 @@ void MainWindow::bind_handlers() {
     h["open-package"] = [this] { open_package(); };
     h["models"] = [this] { open_model_manager(); };
     h["first-run"] = [this] { open_first_run(); };
-    h["quit"] = [] { QApplication::quit(); };
+    // Through close(), so unsaved work is asked about and the settings and the autosave are written.
+    h["quit"] = [this] {
+        if (close()) QApplication::quit();
+    };
+    h["open-project"] = [this] {
+        if (!confirm_replace(false)) return;
+        const QString f = QFileDialog::getOpenFileName(this, "Open project", {}, "RUDRA projects (*.rudra)");
+        if (!f.isEmpty() && !open_project(to_path(f)))
+            QMessageBox::warning(this, "RUDRA", problem_);
+    };
+    auto save_as = [this] {
+        QString suggest = from_path(project_path_);
+        if (suggest.isEmpty()) {
+            const QString title = frames_.empty() ? QStringLiteral("untitled") : QFileInfo(shot_title()).completeBaseName();
+            const QString dir = shot_sources_.empty()
+                                    ? QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+                                    : QFileInfo(from_path(shot_sources_.front())).absolutePath();
+            suggest = QDir(dir).filePath((title.isEmpty() ? QStringLiteral("untitled") : title) + ".rudra");
+        }
+        const QString f = QFileDialog::getSaveFileName(this, "Save project", suggest, "RUDRA projects (*.rudra)");
+        if (!f.isEmpty() && !save_project_to(to_path(f)))
+            QMessageBox::warning(this, "RUDRA", problem_);
+    };
+    h["save-project-as"] = [save_as] { save_as(); };
+    h["save-project"] = [this] { save_interactive(); };
+    h["reopen-session"] = [this] {
+        if (reopen_path_.empty() || !confirm_replace(false)) return;
+        if (!open_project(reopen_path_, false) && isVisible()) QMessageBox::warning(this, "RUDRA", problem_);
+    };
+    h["getting-started"] = [this] { show_getting_started(); };
+    h["user-guide"] = [this] {
+        log("user guide: " + user_guide_url());
+        QDesktopServices::openUrl(QUrl(user_guide_url()));
+    };
+    h["check-updates"] = [this] { check_for_updates(true); };
+    h["open-log-folder"] = [this] {
+        const QString f = app_log_path();
+        if (f.isEmpty()) {
+            log("no log file: this run keeps its log in the window only");
+            return;
+        }
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(f).absolutePath()));
+    };
     h["close"] = [this] { close_frames(); };
     h["first"] = [this] { step_to(0); };
     h["prev"] = [this] { step_to(current_ - 1); };
@@ -508,6 +566,7 @@ void MainWindow::show_sheet(const QString& title, const std::vector<std::pair<QS
 }
 
 void MainWindow::session_changed(std::uint32_t what) {
+    if (what & (Session::Grade | Session::Peak | Session::Delivery)) mark_dirty();   // what a project keeps
     if (what & (Session::Grade | Session::Delivery)) schedule_stats();   // Delivery: the anchor knee moves the hold (3.3)
     if (what & (Session::Peak | Session::Delivery)) update_pipe();
     if (what & (Session::Peak | Session::View)) update_compare();
@@ -617,6 +676,8 @@ void MainWindow::use_model(const std::filesystem::path& package, std::optional<B
         log(why);
         if (done) done(false, why);
     };
+    // A model the user asks for replaces a project's model still waiting its turn.
+    if (!from_project_) project_model_.reset();
     if (mastering()) return refuse("A render is running: stop it before switching models.");
     if (loading_model_) return refuse("A model is still loading.");
     auto m = read_manifest(package);
@@ -672,6 +733,7 @@ void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::fun
         set_model_pills();   // the model in use, if any, is still in use
         refresh_enabled();
         if (done) done(false, why);
+        model_settled();
         return;
     }
     if (loaded->report) {
@@ -715,9 +777,19 @@ void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::fun
         pending_source_.reset();
         QTimer::singleShot(0, this, [this, path, folder] { open_source(path, folder); });
     }
+    if (pending_shot_) {
+        auto shot = std::move(*pending_shot_);
+        pending_shot_.reset();
+        QTimer::singleShot(0, this, [this, shot] {
+            restoring_ = true;
+            open_shot(shot.kind, shot.sources, shot.frame);
+            restoring_ = false;
+        });
+    }
     sync_ui();
     refresh_enabled();
     if (done) done(true, {});
+    model_settled();
 }
 
 const Fields* MainWindow::frame_fields() const { return current_frame_ ? &current_frame_->fields : nullptr; }
@@ -788,7 +860,9 @@ void MainWindow::boot() {
 }
 
 void MainWindow::open_source(const QString& preset, bool folder) {
-#if defined(RUDRA_APP_VIEWER) && defined(RUDRA_HAVE_STILL_DECODE)
+// The still decode is all a shot needs (the frames go to the engine); a
+// window without the viewer opens them as well, for the tests.
+#ifdef RUDRA_HAVE_STILL_DECODE
     if (!backend_ && loading_model_ && !preset.isEmpty()) {
         pending_source_ = {preset, folder};   // opened when the model is in
         return;
@@ -822,15 +896,17 @@ void MainWindow::open_source(const QString& preset, bool folder) {
         frames = {std::filesystem::path(path.toStdString())};
     }
     remember_source(path);
+    shot_kind_ = video ? "movie" : QFileInfo(path).isDir() ? "folder" : "files";
+    shot_sources_ = {to_path(QFileInfo(path).absoluteFilePath())};
     shot_video_ = std::move(video);
     start_engine(std::move(frames));
+    mark_dirty();
     if (shot_video_)
         log(QStringLiteral("opened %1: %2 frames at %3 fps").arg(shot_title()).arg(frame_count()).arg(*shot_video_->fps, 0, 'g', 6));
 #else
     (void)preset;
     (void)folder;
-    QMessageBox::information(this, "RUDRA", "This build has no viewer or no still decoder (Qt 6.6 with Shader "
-                                            "Tools, and RUDRA_WITH_OPENCV).");
+    QMessageBox::information(this, "RUDRA", "This build has no still decoder (RUDRA_WITH_OPENCV).");
 #endif
 }
 
@@ -840,6 +916,11 @@ void MainWindow::close_frames() {
     ++engine_gen_;
     frames_.clear();
     shot_video_.reset();
+    if (!shot_kind_.empty()) {
+        shot_kind_.clear();
+        shot_sources_.clear();
+        mark_dirty();
+    }
     current_ = 0;
     frame_info_.clear();
     current_frame_.reset();
@@ -1526,6 +1607,14 @@ void MainWindow::add_files(const std::vector<std::filesystem::path>& files) {
     all.insert(all.end(), files.begin(), files.end());
     log(QStringLiteral("added %1 frame%2").arg(files.size()).arg(files.size() == 1 ? "" : "s"));
     for (const auto& f : files) remember_source(QString::fromStdString(f.string()));
+    // The project's shot: stills are kept by name. A movie stays the shot
+    // (stills added to one are not saved with it); a folder becomes its frames.
+    if (shot_kind_ != "movie") {
+        if (shot_kind_ != "files") shot_sources_ = frames_;
+        shot_kind_ = "files";
+        for (const auto& f : files) shot_sources_.push_back(std::filesystem::absolute(f));
+    }
+    mark_dirty();
     // select(state.frames.length === files.length ? 0 : start)
     start_engine(std::move(all), all.size() == files.size() ? 0 : int(start));
 }
@@ -1538,6 +1627,12 @@ void MainWindow::open_paths(const QStringList& paths) {
             if (QFileInfo(QDir(p).filePath("manifest.json")).isFile()) use_model(p.toStdString(), backend_choice_);
             else open_source(p, true);
             return;   // one folder is one shot, or one model
+        }
+        if (fi.isFile() && fi.suffix().compare("rudra", Qt::CaseInsensitive) == 0) {
+            // A project is a session of its own.
+            if (confirm_replace(false) && !open_project(to_path(p)) && isVisible())
+                QMessageBox::warning(this, "RUDRA", problem_);
+            return;
         }
         if (fi.isFile()) {
             const std::string suf = fi.suffix().toLower().prepend('.').toStdString();
@@ -1612,11 +1707,10 @@ void MainWindow::fill_recent() {
         auto* a = new QAction(QStringLiteral("%1  ·  %2").arg(fi.fileName(), fi.absolutePath()), recent_menu_);
         a->setObjectName(QStringLiteral("recent:%1").arg(i++));
         a->setData(p);
-        a->setEnabled(fi.exists() && backend_ != nullptr);
-        connect(a, &QAction::triggered, this, [this, p] {
-            if (QFileInfo(p).isDir()) open_source(p, true);
-            else add_files({std::filesystem::path(p.toStdString())});
-        });
+        // A project brings its own model; frames need one open.
+        a->setEnabled(fi.exists() && (backend_ != nullptr || fi.suffix().compare("rudra", Qt::CaseInsensitive) == 0));
+        // As a drop: a folder or a movie opens as a shot, a still is added, a project opens.
+        connect(a, &QAction::triggered, this, [this, p] { open_paths({p}); });
         recent_menu_->insertAction(clear, a);
     }
     if (clear) clear->setEnabled(!r.isEmpty());
@@ -1680,7 +1774,12 @@ void MainWindow::restore_settings() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* e) {
+    if (!confirm_replace(true)) {
+        e->ignore();
+        return;
+    }
     save_settings();
+    if (autosave_timer_.isActive()) autosave_now();
     QMainWindow::closeEvent(e);
 }
 
@@ -2042,6 +2141,339 @@ void MainWindow::calibration_picked(double x, double y) {
     source_panel_->set_armed(-1);
     if (slot < 0) return;
     if (const auto code = sdr_code_at(x, y)) source_panel_->set_picked(slot, *code);
+}
+
+// ---------------------------------------------------------------------------
+// Projects, autosave, updates and help (product items 3 to 5, 10 Oct 2026)
+// ---------------------------------------------------------------------------
+
+Project MainWindow::current_project() const {
+    Project p = project_from_session(session_);
+    if (pending_shot_) {   // waiting for its model: still the shot
+        p.source_kind = pending_shot_->kind;
+        p.sources = pending_shot_->sources;
+        p.frame = pending_shot_->frame;
+    } else {
+        p.source_kind = shot_kind_;
+        p.sources = shot_sources_;
+        p.frame = frames_.empty() ? 0 : current_;
+    }
+    if (project_model_) {   // loading, or queued: still the project's model
+        p.package = project_model_->package;
+        p.backend = project_model_->backend;
+    } else {
+        p.package = model_package();
+        p.backend = backend_choice_ ? backend_choice_->key() : std::string();
+    }
+    p.app_version = QCoreApplication::applicationVersion().toStdString();
+    return p;
+}
+
+void MainWindow::mark_dirty() {
+    if (restoring_) return;
+    if (!dirty_) {
+        dirty_ = true;
+        update_title();
+    }
+    if (!autosave_path_.empty()) autosave_timer_.start();
+}
+
+void MainWindow::update_title() {
+    if (project_path_.empty()) {
+        setWindowTitle("RUDRA");
+        setWindowModified(false);
+        return;
+    }
+    // [*] is where Qt puts the unsaved mark (and macOS the dot in the close button).
+    setWindowTitle(from_path(project_path_.filename()) + QStringLiteral("[*] — RUDRA"));
+    setWindowModified(dirty_);
+}
+
+bool MainWindow::save_project_to(const std::filesystem::path& path) {
+    auto r = save_project(path, current_project());
+    if (!r) {
+        problem_ = "The project was not saved: " + qs(r.error().message);
+        log(problem_);
+        return false;
+    }
+    project_path_ = *r;
+    dirty_ = false;
+    update_title();
+    remember_source(from_path(*r));
+    log("saved project " + from_path(*r));
+    return true;
+}
+
+bool MainWindow::autosave_now() {
+    autosave_timer_.stop();
+    if (autosave_path_.empty()) return false;
+    auto r = save_project(autosave_path_, current_project());
+    if (!r) {
+        log("autosave failed: " + qs(r.error().message));
+        return false;
+    }
+    return true;
+}
+
+void MainWindow::set_autosave_path(const std::filesystem::path& file, int delay_ms) {
+    autosave_path_ = file;
+    autosave_timer_.setInterval(delay_ms);
+    reopen_path_.clear();
+    std::error_code ec;
+    if (!file.empty() && std::filesystem::is_regular_file(file, ec)) {
+        // What the last run left: kept aside before this run's first change
+        // writes over it, and offered as File > Reopen last session.
+        const std::filesystem::path prev = file.parent_path() / ("previous-session" + std::string(kProjectSuffix));
+        std::filesystem::rename(file, prev, ec);
+        if (!ec) {
+            const auto masks = project_masks_path(file), prev_masks = project_masks_path(prev);
+            std::filesystem::remove(prev_masks, ec);
+            if (std::filesystem::is_regular_file(masks, ec)) std::filesystem::rename(masks, prev_masks, ec);
+            reopen_path_ = prev;
+        }
+    }
+    if (reopen_path_.empty() && !file.empty()) {
+        const auto prev = file.parent_path() / ("previous-session" + std::string(kProjectSuffix));
+        if (std::filesystem::is_regular_file(prev, ec)) reopen_path_ = prev;
+    }
+    if (reopen_path_.empty()) pending_["reopen-session"] = "No earlier session was saved.";
+    else {
+        pending_.erase("reopen-session");
+        log("the last session was saved: File > Reopen last session opens it");
+    }
+    refresh_enabled();
+}
+
+void MainWindow::open_shot(const std::string& kind, const std::vector<std::filesystem::path>& sources, int frame) {
+    std::vector<std::filesystem::path> present;
+    std::error_code ec;
+    for (const auto& s : sources) {
+        if (std::filesystem::exists(s, ec)) present.push_back(s);
+        else log("the project's footage is missing: " + from_path(s));
+    }
+    if (present.empty()) return;
+    if (!backend_) {
+        // Opened when a model is in (the project's, loading, or one opened next).
+        pending_shot_ = PendingShot{kind, present, frame};
+        if (!loading_model_) log("the shot opens when a model package is open (File > Model packages…)");
+        return;
+    }
+    if (kind == "folder" || kind == "movie") {
+        open_source(from_path(present.front()), kind == "folder");
+    } else {
+        close_frames();
+        add_files(present);
+    }
+    if (frame > 0 && frame < int(frames_.size())) step_to(frame);
+}
+
+bool MainWindow::open_project(const std::filesystem::path& path, bool adopt) {
+    auto p = load_project(path);
+    if (!p) {
+        problem_ = "The project was not opened: " + qs(p.error().message);
+        log(problem_);
+        return false;
+    }
+    // Changes not yet autosaved go there now, so what was on screen stays recoverable.
+    if (autosave_timer_.isActive()) autosave_now();
+    restoring_ = true;
+    for (const auto& note : p->notes) log(QString::fromStdString(note));
+    // The model: the project's when it is another one and still there. A load
+    // already running finishes first; the project's follows it.
+    project_model_.reset();
+    if (!p->package.empty() && p->package != model_package()) {
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(p->package / "manifest.json", ec)) {
+            project_model_ = ProjectModel{p->package, p->backend};
+            use_project_model();
+        } else {
+            log("the project's model package is missing (" + from_path(p->package) + "); " +
+                (backend_ ? QStringLiteral("the model in use stays") : QStringLiteral("open one to see the shot")));
+        }
+    }
+    // The grade, then the shot: a new shot keeps the session's grade.
+    session_.load_state(p->grade, p->peak_ev, p->anchor, p->carry_chroma, p->anchor_knee, p->container);
+    pending_shot_.reset();
+    close_frames();
+    if (!p->source_kind.empty()) open_shot(p->source_kind, p->sources, p->frame);
+    restoring_ = false;
+    project_path_ = adopt ? path : std::filesystem::path();
+    dirty_ = !adopt;   // a reopened session is unsaved work until it is saved as a project
+    update_title();
+    if (adopt) remember_source(from_path(path));
+    log((adopt ? "opened project " : "reopened the last session from ") + from_path(path));
+    if (!autosave_path_.empty() && !adopt) autosave_timer_.start();
+    return true;
+}
+
+QString MainWindow::default_updates_feed() {
+    return QStringLiteral("https://api.github.com/repos/FXTD-Studios/RUDRA/releases?per_page=20");
+}
+
+void MainWindow::check_for_updates(bool interactive, std::function<void(QString)> done) {
+    if (!net_) net_ = new QNetworkAccessManager(this);
+    const QString current = QCoreApplication::applicationVersion();
+    QNetworkRequest req{QUrl(updates_feed_)};
+    req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("RUDRA/") + current);
+    req.setRawHeader("Accept", "application/vnd.github+json");
+    req.setTransferTimeout(15000);
+    QNetworkReply* reply = net_->get(req);
+    QPointer<MainWindow> self(this);
+    connect(reply, &QNetworkReply::finished, this, [self, reply, interactive, done, current] {
+        reply->deleteLater();
+        if (!self) return;
+        QString line, url;
+        bool newer = false;
+        if (reply->error() != QNetworkReply::NoError) {
+            line = "update check failed: " + reply->errorString();
+        } else {
+            const QByteArray body = reply->readAll();
+            const std::string cur = current.toStdString();
+            // A beta follows the betas; a release only releases.
+            const auto latest = newest_release(body.toStdString(), is_prerelease(cur));
+            if (!latest) line = "update check: no release found";
+            else if (cur.empty() || compare_versions(latest->version, cur) > 0) {
+                newer = true;
+                url = QString::fromStdString(latest->url);
+                line = "RUDRA " + QString::fromStdString(latest->version) + " is available (this is " +
+                       (current.isEmpty() ? QStringLiteral("an unversioned build") : current) + "): " + url;
+            } else {
+                line = "RUDRA is up to date (" + current + ")";
+            }
+        }
+        self->update_url_ = url;
+        self->log(line);
+        if (newer) self->statusBar()->showMessage(line);
+        if (interactive) {
+            if (newer) {
+                const auto b = QMessageBox::information(self, "Updates", line, QMessageBox::Open | QMessageBox::Close,
+                                                        QMessageBox::Open);
+                if (b == QMessageBox::Open) QDesktopServices::openUrl(QUrl(url));
+            } else {
+                QMessageBox::information(self, "Updates", line);
+            }
+        }
+        if (done) done(line);
+    });
+}
+
+void MainWindow::maybe_check_for_updates() {
+    if (qEnvironmentVariableIsSet("RUDRA_NO_UPDATE_CHECK")) return;
+    QSettings st;
+    if (!st.value("updates/auto", true).toBool()) return;
+    const QDateTime last = st.value("updates/last").toDateTime();
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    if (last.isValid() && last.secsTo(now) < 24 * 3600) return;
+    st.setValue("updates/last", now);
+    check_for_updates(false);
+}
+
+QString MainWindow::user_guide_url() {
+    return QStringLiteral("https://github.com/FXTD-Studios/RUDRA/blob/native/docs/USER_GUIDE.md");
+}
+
+void MainWindow::show_getting_started() {
+    show_sheet("Getting started",
+               {{"1  Source", "Open a still, a folder of frames or a movie (File, or drop it on the window). "
+                              "Tell RUDRA how the SDR was made: Reconstruct > Source."},
+                {"2  Calibrate", "Optional: pick a few patches of known brightness, or load a graded HDR "
+                                 "reference, so the inverse lands on real nits."},
+                {"3  Reconstruct", "Choose what the model recovers (All, Highlights, Shadows) and its strength. "
+                                   "Hold B to see the analytic baseline; W wipes between them."},
+                {"4  Check", "Raise the view peak, use False colour and the scopes, and Invented to see "
+                             "what RUDRA made up where the SDR clipped."},
+                {"5  Deliver", "Master EXR (ACES 2065-1) for grading, or HDR10, HLG and ProRes for a movie, "
+                               "from the Deliver tab."},
+                {"Save", "File > Save project (Ctrl+S) keeps the shot, the model and the grade; the session is "
+                         "also autosaved."},
+                {"More", "Help > User guide (F1)."}});
+}
+
+void MainWindow::apply_tooltips() {
+    // Only where the control has none of its own.
+    auto tip = [](QWidget* w, const char* text) {
+        if (w && w->toolTip().isEmpty()) w->setToolTip(QString::fromUtf8(text));
+    };
+    tip(mode_seg_, "What the model may change: everything, only highlights, only shadows, or nothing (1 2 3 4)");
+    tip(strength_, "How much of the model's residual is applied on top of the analytic inverse ([ and ])");
+    tip(peak_, "The view peak: how bright the display shows. It changes the view only, never the master");
+    tip(preserve_, "Outside painted masks, keep the analytic inverse untouched");
+    tip(regions_, "Region EV: drag a band up or down to push the brightness of that range of nits");
+    tip(anchor_, "Hold the master's exposure to the SDR's below the knee, so mid-tones match the source");
+    tip(anchor_knee_, "Where the anchor lets go: below it the master follows the SDR, above it the reconstruction");
+    tip(carry_chroma_, "Keep the SDR's colour below the clip, where the source still had it");
+    tip(btn_master_, "Render the master for the frames chosen below (M)");
+    tip(btn_reprocess_, "Run the network again on the frame on screen");
+    tip(findChild<QWidget*>("renderDir"), "Where masters are written");
+    tip(findChild<QWidget*>("renderName"), "The file name; frames get a number after it");
+    tip(findChild<QWidget*>("renderMode"), "Which frames to render: this one, all of them, or a range");
+    tip(findChild<QWidget*>("renderStart"), "The first frame number written");
+    tip(findChild<QWidget*>("calibrate"), "Anchor the inverse to patches of known brightness picked on the frame");
+    tip(findChild<QWidget*>("reference"), "Fit the inverse to a graded HDR version of this frame");
+    tip(findChild<QWidget*>("maskSize"), "Brush size in frame pixels (the mouse wheel over the picture too)");
+    tip(findChild<QWidget*>("maskSoft"), "Brush softness: how much of the radius fades out");
+    tip(findChild<QWidget*>("maskFlow"), "Brush flow: how much each stamp adds or takes away");
+}
+
+void MainWindow::use_project_model() {
+    if (!project_model_ || loading_model_) return;   // model_settled() comes back
+    if (mastering()) {
+        // Not queued behind a render: it could switch models long after,
+        // over a choice made meanwhile.
+        log("a render is running, so the project's model (" + from_path(project_model_->package.filename()) +
+            ") was not loaded; File > Model packages… switches to it");
+        project_model_.reset();
+        return;
+    }
+    const auto want = *project_model_;
+    from_project_ = true;
+    use_model(want.package, BackendChoice::from_key(want.backend), [this, want](bool, const QString&) {
+        // In use, or refused (and logged): either way no longer pending.
+        if (project_model_ && project_model_->package == want.package) project_model_.reset();
+    });
+    from_project_ = false;
+}
+
+void MainWindow::model_settled() {
+    if (!project_model_) return;
+    QTimer::singleShot(0, this, [this] {
+        if (project_model_ && project_model_->package == model_package()) project_model_.reset();
+        else use_project_model();
+    });
+}
+
+bool MainWindow::save_interactive() {
+    if (project_path_.empty()) {
+        run("save-project-as");
+        return !project_path_.empty() && !dirty_;
+    }
+    if (save_project_to(project_path_)) return true;
+    QMessageBox::warning(this, "RUDRA", problem_);
+    return false;
+}
+
+bool MainWindow::confirm_replace(bool closing) {
+    if (!dirty_ || !isVisible()) return true;
+    // Closing an untitled session loses nothing: it is autosaved, and the
+    // next start offers it (File > Reopen last session).
+    if (project_path_.empty() && (closing || (frames_.empty() && !pending_shot_))) return true;
+    const QString name = project_path_.empty() ? QStringLiteral("this session") : from_path(project_path_.filename());
+    const auto b = QMessageBox::question(this, "RUDRA", "Save the changes to " + name + "?",
+                                         QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+                                         QMessageBox::Save);
+    if (b == QMessageBox::Cancel) return false;
+    if (b == QMessageBox::Save) return save_interactive();
+    return true;
+}
+
+void MainWindow::show_getting_started_once() {
+    QSettings st;
+    if (st.value("help/gettingStartedShown", false).toBool()) return;
+    st.setValue("help/gettingStartedShown", true);
+    QPointer<MainWindow> self(this);
+    QTimer::singleShot(600, this, [self] {
+        if (self) self->show_getting_started();
+    });
 }
 
 }  // namespace rudra::app

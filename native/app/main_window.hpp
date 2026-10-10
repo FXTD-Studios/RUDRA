@@ -30,6 +30,7 @@
 #include "rudra/engine/master_job.hpp"
 #include "rudra/engine/measure.hpp"
 #include "rudra/engine/model_catalog.hpp"
+#include "rudra/engine/project.hpp"
 #include "rudra/infer/self_test.hpp"
 #include "rudra/engine/session.hpp"
 #include "rudra/media/sequence.hpp"
@@ -39,6 +40,7 @@ class QAction;
 class QLabel;
 class QLineEdit;
 class QMenu;
+class QNetworkAccessManager;
 class QPlainTextEdit;
 class QPushButton;
 class QSlider;
@@ -205,6 +207,39 @@ public:
     int current_index() const { return current_; }
     std::size_t frame_count() const { return frames_.size(); }
 
+    // Projects (engine/project.hpp): the shot, the model and the grade in a
+    // .rudra file. Open applies the grade, switches to the project's model
+    // when it is another one and opens the shot; what is missing is logged and
+    // the rest still opens. `adopt` makes the file the window's project (Save
+    // writes it); the autosaved session is opened without.
+    Project current_project() const;
+    bool save_project_to(const std::filesystem::path& path);   // false, with the reason logged
+    bool open_project(const std::filesystem::path& path, bool adopt = true);
+    const std::filesystem::path& project_path() const { return project_path_; }
+    bool project_dirty() const { return dirty_; }
+    // Autosave: the session to `file` `delay_ms` after it last changed, and on
+    // close. The file a previous run left becomes the one File > Reopen last
+    // session opens (previous-session.rudra beside it).
+    void set_autosave_path(const std::filesystem::path& file, int delay_ms = 4000);
+    const std::filesystem::path& autosave_path() const { return autosave_path_; }
+    const std::filesystem::path& reopen_path() const { return reopen_path_; }
+    bool autosave_now();
+
+    // Updates: the releases feed (GitHub's API; a file:// URL in the tests),
+    // read without blocking. `interactive` answers in a dialog; otherwise a
+    // newer release is logged and shown in the status bar. `done` gets the line logged.
+    static QString default_updates_feed();
+    void set_updates_feed(const QString& url) { updates_feed_ = url; }
+    void check_for_updates(bool interactive, std::function<void(QString)> done = {});
+    // At start: once a day unless turned off (QSettings updates/auto, or RUDRA_NO_UPDATE_CHECK).
+    void maybe_check_for_updates();
+    QString update_url() const { return update_url_; }   // the newer release's page, empty for none
+
+    // Help: the five steps, the user guide's address.
+    static QString user_guide_url();
+    void show_getting_started();
+    void show_getting_started_once();   // the first time only (QSettings help/gettingStartedShown)
+
     // The page's state: grade, undo, peak, wipe, container (engine/session).
     Session& session() { return session_; }
     const Session& session() const { return session_; }
@@ -225,6 +260,39 @@ protected:
 
 private:
     void build_menus();
+    void apply_tooltips();
+    void mark_dirty();
+    void update_title();
+    // The shot as a project names it: "folder", "movie" or "files", and its paths.
+    std::string shot_kind_;
+    std::vector<std::filesystem::path> shot_sources_;
+    void open_shot(const std::string& kind, const std::vector<std::filesystem::path>& sources, int frame);
+    struct PendingShot {
+        std::string kind;
+        std::vector<std::filesystem::path> sources;
+        int frame = 0;
+    };
+    std::optional<PendingShot> pending_shot_;   // a project's shot, opened when its model is in
+    // The project's model while it is not yet the one in use (loading, or
+    // queued behind another load): what the project still names.
+    struct ProjectModel {
+        std::filesystem::path package;
+        std::string backend;
+    };
+    std::optional<ProjectModel> project_model_;
+    bool from_project_ = false;   // use_model called for project_model_ (any other call replaces it)
+    void use_project_model();
+    void model_settled();   // a load finished either way: a queued project model goes next
+    // Before the session is replaced: false when the user cancels. Asks only
+    // in a window on screen with unsaved work worth asking about.
+    bool confirm_replace(bool closing);
+    bool save_interactive();   // Save, or Save as for an untitled session
+    std::filesystem::path project_path_, autosave_path_, reopen_path_;
+    bool dirty_ = false, restoring_ = false;
+    QString problem_;   // why the last open or save failed, for its dialog
+    QTimer autosave_timer_;
+    QString updates_feed_ = default_updates_feed(), update_url_;
+    QNetworkAccessManager* net_ = nullptr;
     void bind_handlers();
     void show_sheet(const QString& title, const std::vector<std::pair<QString, QString>>& rows);
     void sync_checks();

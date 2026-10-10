@@ -83,10 +83,23 @@ const std::vector<ActionSpec> kActions = {
     {"source-agx", "Source: AgX", "", "source:agx", O::Native, E::Always, ""},
     {"source-camera_log", "Source: camera log", "", "source:camera_log", O::Native, E::Always, ""},
     {"source-clip", "Source: Rec.709, plain clip", "", "source:clip", O::Native, E::Always, ""},
+    // Projects (engine/project.hpp): the shot, the model and the grade in a
+    // .rudra file; the app autosaves the session and can reopen it.
+    {"open-project", "Open project…", "", "", O::Native, E::Always, "Ctrl+O"},
+    {"save-project", "Save project", "", "", O::Native, E::Always, "Ctrl+S"},
+    {"save-project-as", "Save project as…", "", "", O::Native, E::Always, "Ctrl+Shift+S"},
+    {"reopen-session", "Reopen last session", "", "", O::Native, E::Always, ""},
+    // Help for someone new to the app.
+    {"getting-started", "Getting started", "", "", O::Native, E::Always, ""},
+    {"user-guide", "User guide", "", "", O::Native, E::Always, "F1"},
+    {"check-updates", "Check for updates…", "", "", O::Native, E::Always, ""},
+    {"open-log-folder", "Open log folder", "", "", O::Native, E::Always, ""},
 };
 
 const std::vector<MenuSpec> kMenus = {
-    {"File", {"open", "open-folder", ">Open recent", "recent-clear", "<", "open-package", "models", "close", "-", "master", "-", "quit"}},
+    {"File",
+     {"open", "open-folder", ">Open recent", "recent-clear", "<", "open-package", "models", "close", "-", "open-project",
+      "save-project", "save-project-as", "reopen-session", "-", "master", "-", "quit"}},
     {"Edit", {"undo", "redo", "-", "reset-recon", "reset-regions"}},
     {"Clip", {"first", "prev", "next", "last", "-", "play"}},
     {"Reconstruct",
@@ -99,7 +112,8 @@ const std::vector<MenuSpec> kMenus = {
       "guides-title", "guides-centre", "-", "aspect-none", "aspect-2.39", "aspect-1.85", "aspect-16:9", "aspect-4:3",
       "aspect-1:1", "<"}},
     {"Window", {"rail-left", "rail-right", "scopes", "-", "zoom-fit", "zoom-actual"}},
-    {"Help", {"shortcuts", "about", "first-run"}},
+    {"Help",
+     {"getting-started", "user-guide", "-", "shortcuts", "about", "first-run", "-", "check-updates", "open-log-folder"}},
 };
 
 // The keydown handler: the map, then Space, 1 to 4 and W, which it tests on
