@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "rudra/core/baseline.hpp"
 #include "rudra/core/composite.hpp"
 #include "rudra/core/gamut.hpp"
 #include "rudra/core/master.hpp"
@@ -134,6 +135,28 @@ TEST_P(PerFrame, CompositeRegionEvMatchesMasterStage) {
         std::vector<double> want = f64(m.at("stages").at(key)).data;
         for (double& v : want) v /= 10000.0;
         expect_close(out.buffer().span(), want, 2e-4, 1e-6, key);
+    }
+}
+
+// The analytic reconstruction (no model): its fields leave the composite at
+// the corrected baseline, exactly with Preserve and to fp32 without it.
+TEST_P(PerFrame, AnalyticFieldsAreTheBaseline) {
+    const Frame fr = load_frame(frame());
+    const int h = fr.sdr.height(), w = fr.sdr.width();
+    const Fields none = analytic_fields(h, w);
+    for (bool preserve : {true, false}) {
+        CompositeParams p;
+        p.preserve_outside = preserve;
+        const auto out = composite(fr.sdr, none, FrameScalars{}, kAnalyticConstants, p);
+        const auto base = corrected_baseline(fr.sdr, kAnalyticConstants.corpus_ev,
+                                             baseline_curve_params(FrameScalars{}, p, kAnalyticConstants.corpus_ev));
+        const auto a = out.buffer().span(), b = base.buffer().span();
+        ASSERT_EQ(a.size(), b.size());
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            const float want = std::clamp(b[i], 0.0f, kAnalyticConstants.max_hdr);
+            if (preserve) ASSERT_EQ(a[i], b[i]) << i;
+            else ASSERT_NEAR(a[i], want, 2e-6f * std::max(1.0f, want)) << i;
+        }
     }
 }
 

@@ -27,6 +27,11 @@ struct MasterBand {
 // The Studio's master parameters, with its defaults.
 struct MasterRequest {
     std::string checkpoint;                 // recorded, not loaded: the package is the model
+    // The analytic reconstruction: no model ran (the fields were
+    // analytic_fields()). Recorded in the EXR (rudra:reconstruction) and the
+    // sidecar ("reconstruction"); left out of both when a model ran, so
+    // masters made with one read as they did before.
+    bool analytic = false;
     bool preserve_outside = true;
     std::string recovery_mode = "all";      // all, highlights, shadows, off
     double strength = 1.0;

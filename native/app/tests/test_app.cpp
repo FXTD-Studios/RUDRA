@@ -1368,6 +1368,7 @@ TEST(AppModels, SwitchingModelsMidSessionKeepsTheSession) {
     app::MainWindow w(false);
     auto m = fake_models(w, "switch");
     ASSERT_TRUE(use(w, m->root / "alpha"));
+    w.set_use_model(true);   // the model's fields, not the analytic reconstruction's
     w.open_source(QString::fromStdString((std::filesystem::path(RUDRA_GOLDEN_DIR) / "decode").string()));
     ASSERT_GE(w.frame_count(), 10u);
     ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
@@ -2083,6 +2084,7 @@ TEST(AppProject, SaveAndOpenBringTheGradeAndTheModelBack) {
         app::MainWindow w(false);
         auto m = fake_models(w, "project-a");
         ASSERT_TRUE(use(w, m->root / "gamma"));
+        w.set_use_model(true);   // the project runs the model: opening it brings that model back
         EXPECT_EQ(w.windowTitle(), "RUDRA");
         w.run("strength-up");
         w.run("mode-shadows");
@@ -2138,6 +2140,7 @@ TEST(AppProject, TheSessionIsAutosavedAndTheLastOneReopens) {
         app::MainWindow w(false);
         auto m = fake_models(w, "autosave-a");
         ASSERT_TRUE(use(w, m->root / "alpha"));
+        w.set_use_model(true);
         w.set_autosave_path(file, 30);
         EXPECT_TRUE(w.reopen_path().empty());
         EXPECT_FALSE(w.action("reopen-session")->isEnabled());
@@ -2182,6 +2185,7 @@ TEST(AppProject, AProjectOpenedWhileAModelLoadsGetsItsOwnModel) {
         app::MainWindow w(false);
         auto m = fake_models(w, "queued-a");
         ASSERT_TRUE(use(w, m->root / "gamma"));
+        w.set_use_model(true);
         ASSERT_TRUE(w.save_project_to(dir / "g.rudra"));
         saved = w.project_path();
     }
@@ -2335,6 +2339,60 @@ TEST(AppHelp, GettingStartedTheGuideAndTips) {
     }
     for (auto* s : w.findChildren<QSlider*>()) EXPECT_FALSE(s->toolTip().isEmpty()) << s->objectName().toStdString();
 }
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+// The 10 Oct 2026 review: "masters default to the analytic inverse" must be
+// true of the app. By default nothing runs a model: no package is needed to
+// open, view and master, and a loaded one is not called until it is turned on.
+TEST(AppAnalytic, TheDefaultRunsNoModelAndSaysSo) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "analytic");
+    EXPECT_FALSE(w.using_model());
+    EXPECT_FALSE(w.action("use-model")->isChecked());
+    EXPECT_EQ(w.findChild<QLabel*>("reconstructionMode")->text(), "Analytic reconstruction");
+    // No package at all: the shot opens and its fields are the analytic ones.
+    ASSERT_TRUE(w.model_package().empty());
+    w.open_source(QString::fromStdString(decode_dir().string()), true);
+    ASSERT_GE(w.frame_count(), 3u);
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    const Fields* f = w.frame_fields();
+    for (float v : f->residual.span()) ASSERT_EQ(v, 0.0f);
+    for (float v : f->highlight.span()) ASSERT_EQ(v, 0.0f);
+    // A master with no package: written, and its sidecar and EXR say how.
+    const auto root = fresh_dir("analytic-master");
+    std::filesystem::create_directories(root);
+    w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(root.string()));
+    w.findChild<QLineEdit*>("renderName")->setText("plain");
+    w.findChild<QComboBox*>("renderMode")->setCurrentIndex(0);   // the frame on screen
+    EXPECT_TRUE(w.action("master")->isEnabled());
+    w.run("master");
+    ASSERT_TRUE(wait_for([&] { return !w.mastering() && status_of(w).startsWith("Rendered"); })) << status_of(w).toStdString();
+    std::ifstream sc(root / "plain.json");
+    const json sidecar = json::parse(sc);
+    EXPECT_EQ(sidecar["reconstruction"], "analytic (no model)");
+    EXPECT_EQ(sidecar["checkpoint"], "");
+    // A package loaded in the background is not called while analytic.
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    w.run("next");
+    ASSERT_TRUE(wait_for([&] { return w.current_index() == 1 && w.frame_fields() != nullptr; }));
+    QTest::qWait(50);
+    EXPECT_EQ(*m->calls["alpha"], 0);
+    EXPECT_EQ(w.frame_fields()->residual.at(0, 0, 0), 0.0f);
+    // Turned on: the model runs, the frame on screen is composed again, and it is remembered.
+    w.run("use-model");
+    EXPECT_TRUE(w.using_model());
+    EXPECT_TRUE(w.action("use-model")->isChecked());
+    EXPECT_EQ(w.findChild<QLabel*>("reconstructionMode")->text(), "AI-assisted: alpha");
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() && w.frame_fields()->residual.at(0, 0, 0) == 0.1f; }));
+    EXPECT_GE(*m->calls["alpha"], 1);
+    EXPECT_TRUE(QSettings().value("model/use").toBool());
+    EXPECT_TRUE(w.current_project().use_model);
+    w.run("use-model");
+    EXPECT_FALSE(w.using_model());
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() && w.frame_fields()->residual.at(0, 0, 0) == 0.0f; }));
+}
+#endif
 
 int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");

@@ -63,6 +63,7 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
     try {
         const auto j = nlohmann::json::parse(text);
         r.checkpoint = j.value("checkpoint", std::string());
+        r.analytic = j.value("analytic", false);
         r.preserve_outside = j.value("preserve_outside", true);
         r.recovery_mode = j.value("recovery_mode", std::string("all"));
         r.strength = j.value("strength", 1.0);
@@ -112,6 +113,7 @@ std::string master_request_json(const MasterRequest& q) {
         regions.push_back({{"label", b.label}, {"low_nits", b.low_nits}, {"high_nits", b.high_nits}, {"ev", b.ev}});
     j["regions"] = regions;
     if (q.source_curve != "unknown") j["source_curve"] = q.source_curve;
+    if (q.analytic) j["analytic"] = true;
     if (!q.calibration.empty()) {
         auto cal = nlohmann::json::array();
         for (const auto& c : q.calibration) cal.push_back({{"code", c.code}, {"nits", c.nits}});
@@ -200,6 +202,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         {"rudra:sourceSpace", q.source_space},
     };
     if (*source != SourceCurve::Unknown) provenance.emplace_back("rudra:sourceCurve", q.source_curve);
+    if (q.analytic) provenance.emplace_back("rudra:reconstruction", "analytic (no model)");
     if (!cp.reference.empty()) provenance.emplace_back("rudra:reference", cp.reference.file);
     if (cp.masks) provenance.emplace_back("rudra:masks", masks_path.filename().string());
     const bool aces = q.container == "aces";
@@ -248,6 +251,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
          }},
     };
     if (*source != SourceCurve::Unknown) sidecar_dict.emplace_back("source_curve", q.source_curve);
+    if (q.analytic) sidecar_dict.emplace_back("reconstruction", "analytic (no model)");
     if (!cp.calibration.empty()) {
         pyjson::List cal;
         for (const auto& c : cp.calibration)

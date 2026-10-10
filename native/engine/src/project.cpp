@@ -99,7 +99,10 @@ std::string project_json(const Project& p, const fs::path& project_file) {
         {"rudra_project", kProjectVersion},
         {"app_version", p.app_version},
         {"shot", {{"kind", p.source_kind}, {"sources", sources}, {"frame", p.frame}}},
-        {"model", {{"package", p.package.empty() ? json() : path_json(p.package, base)}, {"backend", p.backend}}},
+        {"model",
+         {{"package", p.package.empty() ? json() : path_json(p.package, base)},
+          {"backend", p.backend},
+          {"use", p.use_model}}},
         {"grade",
          {{"mode", p.grade.mode},
           {"strength", p.grade.strength},
@@ -146,6 +149,7 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
         const json& model = j.value("model", json::object());
         if (model.contains("package") && !model["package"].is_null()) p.package = path_from(model["package"], base);
         p.backend = model.value("backend", std::string());
+        p.use_model = model.value("use", false);
         const json& g = j.value("grade", json::object());
         p.grade.mode = g.value("mode", std::string("all"));
         p.grade.strength = g.value("strength", 1.0);

@@ -149,6 +149,11 @@ MainWindow::MainWindow(bool with_viewer) {
     autosave_timer_.setSingleShot(true);
     connect(&autosave_timer_, &QTimer::timeout, this, [this] { autosave_now(); });
     pending_["reopen-session"] = "No earlier session was saved.";
+    use_model_ = QSettings().value("model/use", false).toBool();
+    mode_label_ = new QLabel(this);
+    mode_label_->setObjectName("reconstructionMode");
+    statusBar()->addPermanentWidget(mode_label_);
+    show_mode();
     sync_checks();
     sync_ui();
     refresh_enabled();
@@ -282,6 +287,7 @@ void MainWindow::bind_handlers() {
         if (!open_project(reopen_path_, false) && isVisible()) QMessageBox::warning(this, "RUDRA", problem_);
     };
     h["getting-started"] = [this] { show_getting_started(); };
+    h["use-model"] = [this] { set_use_model(!use_model_); };
     h["user-guide"] = [this] {
         log("user guide: " + user_guide_url());
         QDesktopServices::openUrl(QUrl(user_guide_url()));
@@ -469,7 +475,7 @@ void MainWindow::refresh_enabled() {
             case EnableRule::Always: break;
             case EnableRule::AnyFrames: on = any; break;
             case EnableRule::ManyFrames: on = many; break;
-            case EnableRule::CanMaster: on = (any && backend_ != nullptr) || mastering(); break;
+            case EnableRule::CanMaster: on = (any && !needs_model()) || mastering(); break;
             case EnableRule::CanUndo: on = session_.undo_depth() > 0; break;
             case EnableRule::CanRedo: on = session_.redo_depth() > 0; break;
             case EnableRule::HasMetrics:
@@ -491,6 +497,7 @@ void MainWindow::sync_checks() {
     set("mode-shadows", grade.mode == "shadows");
     set("mode-off", grade.mode == "off");
     set("preserve", grade.preserve);
+    set("use-model", use_model_);
     for (SourceCurve c : all_source_curves())
         set("source-" + std::string(source_curve_id(c)), grade.source == source_curve_id(c));
     set("container-aces", session_.container == "aces");
@@ -768,7 +775,7 @@ void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::fun
     set_model_pills();
     log("model " + describe(m));
     log("device " + device_->text());
-    if (had_frames) start_engine(frames_, current_);
+    if (had_frames) start_engine(frames_, current_);   // the engine was stopped above, whichever reconstruction
     else if (!pending_source_) log("drop frames — the network runs once each, then the grade is local");
     if (pending_source_) {
         // Copies, not a structured binding: the lambda captures them.
@@ -795,6 +802,7 @@ void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::fun
 const Fields* MainWindow::frame_fields() const { return current_frame_ ? &current_frame_->fields : nullptr; }
 
 void MainWindow::set_model_pills() {
+    show_mode();
     const bool on = backend_ != nullptr && manifest_ != nullptr;
     ckpt_->setText(on ? QString::fromStdString(manifest_->name) : QStringLiteral("no model"));
     if (on) {
@@ -863,12 +871,12 @@ void MainWindow::open_source(const QString& preset, bool folder) {
 // The still decode is all a shot needs (the frames go to the engine); a
 // window without the viewer opens them as well, for the tests.
 #ifdef RUDRA_HAVE_STILL_DECODE
-    if (!backend_ && loading_model_ && !preset.isEmpty()) {
+    if (needs_model() && loading_model_ && !preset.isEmpty()) {
         pending_source_ = {preset, folder};   // opened when the model is in
         return;
     }
-    if (!backend_) {
-        log("Open a model package first.");
+    if (needs_model()) {
+        log("Open a model package first, or turn off Reconstruct > Use the model.");
         return;
     }
     QString path = preset;
@@ -944,8 +952,8 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
     play_.stop();
     engine_.reset();   // joins the old worker before the new one starts
     frames_ = std::move(frames);
-    auto* backend = backend_.get();
-    const ModelConstants model{manifest_->log_scale, manifest_->max_hdr, manifest_->corpus_ev};
+    auto* backend = use_model_ ? backend_.get() : nullptr;
+    const ModelConstants model = frame_constants();
     auto files = frames_;
     source_sizes_ = std::make_shared<SourceSizes>();
     source_sizes_->size.assign(files.size(), {0, 0});
@@ -971,7 +979,10 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
             return make_error(ErrorCode::Unsupported, "This build has no still decode (RUDRA_WITH_OPENCV=OFF).");
 #endif
         },
-        [backend, mu = backend_mutex_](const SdrImage& sdr) {
+        [backend, mu = backend_mutex_](const SdrImage& sdr) -> Result<FrameResult> {
+            // The analytic reconstruction runs nothing: no residual, no
+            // recovery masks, no learned curve.
+            if (!backend) return FrameResult{FrameScalars{}, analytic_fields(sdr.height(), sdr.width()), false};
             // One untiled pass, as the Studio's preview; the master job shares the backend.
             std::lock_guard lock(*mu);
             return infer_frame(*backend, sdr, TileConfig{0, 0});
@@ -1076,8 +1087,8 @@ static QString timecode(int frame, double fps) {
 void MainWindow::sync_ui() {
     const auto& g = session_.grade;
     mode_seg_->set_on(QString::fromStdString(g.mode));
-    source_panel_->sync(session_.source_curve(), g.calibration, manifest_ ? manifest_->corpus_ev : kLegacyCorpusEv,
-                        g.reference);
+    // The exposure the frames and masters are composed at (analytic or the package's).
+    source_panel_->sync(session_.source_curve(), g.calibration, frame_constants().corpus_ev, g.reference);
     {
         const QSignalBlocker b1(strength_), b2(peak_);
         strength_->setValue(int(std::lround(g.strength * 20.0)));
@@ -1451,7 +1462,8 @@ void MainWindow::probe_pixel(std::optional<std::pair<double, double>> px, QPoint
 MasterRequest MainWindow::master_request() const {
     // The settings of the moment: params(), the Deliver checks, the container.
     MasterRequest q;
-    q.checkpoint = manifest_ ? manifest_->name : std::string();
+    q.analytic = !use_model_;
+    q.checkpoint = use_model_ && manifest_ ? manifest_->name : std::string();
     q.preserve_outside = session_.grade.preserve;
     q.recovery_mode = session_.grade.mode;
     q.strength = session_.grade.strength;
@@ -1476,7 +1488,7 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
         status->setVisible(!t.isEmpty());
     };
     const bool injected = bool(prepare);
-    if (!injected && (!backend_ || frames_.empty())) return;   // !state.live || !current()
+    if (!injected && (needs_model() || frames_.empty())) return;   // !state.live || !current()
     if (mastering()) return;                                    // state.busy
     auto* dir = findChild<QLineEdit*>("renderDir");
     const QString folder = dir->text().trimmed();
@@ -1505,15 +1517,18 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
         (targets->size() > 1 ? " \u2026 " + QString::fromStdString(targets->back().string()) : QString()));
 
     const MasterRequest q = master_request();
-    const ModelConstants model = manifest_ ? ModelConstants{manifest_->log_scale, manifest_->max_hdr, manifest_->corpus_ev}
-                                           : (current_frame_ ? current_frame_->model : ModelConstants{16.0f, 4.0f, -1.0f});
+    const ModelConstants model = frame_constants();
     if (!prepare) {
 #ifdef RUDRA_HAVE_STILL_DECODE
-        prepare = [sources, backend = backend_.get(), mu = backend_mutex_](std::size_t i) -> Result<MasterFrame> {
+        prepare = [sources, backend = use_model_ ? backend_.get() : nullptr, mu = backend_mutex_](std::size_t i) -> Result<MasterFrame> {
             auto file = ensure_frame_file(sources[i]);
             if (!file) return file.error();
             auto d = decode_sdr_file(*file);
             if (!d) return d.error();
+            if (!backend) {   // the analytic reconstruction: nothing runs
+                const int h = d->rgb.height(), w = d->rgb.width();
+                return MasterFrame{std::move(d->rgb), d->bits, analytic_fields(h, w), FrameScalars{}};
+            }
             std::lock_guard lock(*mu);
             auto fr = infer_frame(*backend, d->rgb, TileConfig{0, 0});   // full resolution, untiled
             if (!fr) return fr.error();
@@ -1598,8 +1613,8 @@ std::string MainWindow::delivery_text() const {
 
 void MainWindow::add_files(const std::vector<std::filesystem::path>& files) {
     if (files.empty()) return;
-    if (!backend_) {
-        log("Open a model package first.");
+    if (needs_model()) {
+        log("Open a model package first, or turn off Reconstruct > Use the model.");
         return;
     }
     auto all = frames_;
@@ -1708,7 +1723,7 @@ void MainWindow::fill_recent() {
         a->setObjectName(QStringLiteral("recent:%1").arg(i++));
         a->setData(p);
         // A project brings its own model; frames need one open.
-        a->setEnabled(fi.exists() && (backend_ != nullptr || fi.suffix().compare("rudra", Qt::CaseInsensitive) == 0));
+        a->setEnabled(fi.exists() && (!needs_model() || fi.suffix().compare("rudra", Qt::CaseInsensitive) == 0));
         // As a drop: a folder or a movie opens as a shot, a still is added, a project opens.
         connect(a, &QAction::triggered, this, [this, p] { open_paths({p}); });
         recent_menu_->insertAction(clear, a);
@@ -1988,9 +2003,14 @@ bool MainWindow::queue_video_export(const QString& format) {
         return false;
     }
     if (!manifest_) {
-        say("Open a model package first.");
+        say("Open a model package first: movie exports run the model (rudra video).");
         return false;
     }
+    // Not yet analytic: the movie converter is `rudra video`, which runs the
+    // package with recovery "all" and none of the grade. Said, not hidden.
+    if (!use_model_)
+        log("note: movie exports run the model package (" + QString::fromStdString(manifest_->name) +
+            ") whatever Reconstruct > Use the model says; EXR masters follow it");
     const QString dir = findChild<QLineEdit*>("renderDir")->text().trimmed();
     if (dir.isEmpty()) {
         say("Choose a render folder first.");
@@ -2165,6 +2185,7 @@ Project MainWindow::current_project() const {
         p.package = model_package();
         p.backend = backend_choice_ ? backend_choice_->key() : std::string();
     }
+    p.use_model = use_model_;
     p.app_version = QCoreApplication::applicationVersion().toStdString();
     return p;
 }
@@ -2252,7 +2273,7 @@ void MainWindow::open_shot(const std::string& kind, const std::vector<std::files
         else log("the project's footage is missing: " + from_path(s));
     }
     if (present.empty()) return;
-    if (!backend_) {
+    if (needs_model()) {
         // Opened when a model is in (the project's, loading, or one opened next).
         pending_shot_ = PendingShot{kind, present, frame};
         if (!loading_model_) log("the shot opens when a model package is open (File > Model packages…)");
@@ -2281,7 +2302,8 @@ bool MainWindow::open_project(const std::filesystem::path& path, bool adopt) {
     // The model: the project's when it is another one and still there. A load
     // already running finishes first; the project's follows it.
     project_model_.reset();
-    if (!p->package.empty() && p->package != model_package()) {
+    // Its model only matters when the project runs one.
+    if (p->use_model && !p->package.empty() && p->package != model_package()) {
         std::error_code ec;
         if (std::filesystem::is_regular_file(p->package / "manifest.json", ec)) {
             project_model_ = ProjectModel{p->package, p->backend};
@@ -2291,6 +2313,9 @@ bool MainWindow::open_project(const std::filesystem::path& path, bool adopt) {
                 (backend_ ? QStringLiteral("the model in use stays") : QStringLiteral("open one to see the shot")));
         }
     }
+    // Before the shot: it decides whether the shot waits for a model. The
+    // project's choice, not this user's default for the next bare start.
+    set_use_model(p->use_model, false);
     // The grade, then the shot: a new shot keeps the session's grade.
     session_.load_state(p->grade, p->peak_ev, p->anchor, p->carry_chroma, p->anchor_knee, p->container);
     pending_shot_.reset();
@@ -2378,8 +2403,9 @@ void MainWindow::show_getting_started() {
                               "Tell RUDRA how the SDR was made: Reconstruct > Source."},
                 {"2  Calibrate", "Optional: pick a few patches of known brightness, or load a graded HDR "
                                  "reference, so the inverse lands on real nits."},
-                {"3  Reconstruct", "Choose what the model recovers (All, Highlights, Shadows) and its strength. "
-                                   "Hold B to see the analytic baseline; W wipes between them."},
+                {"3  Reconstruct", "The analytic inverse by default; Reconstruct > Use the model adds the AI "
+                                   "reconstruction, with what it recovers (All, Highlights, Shadows) and its strength. "
+                                   "Hold B to see the baseline; W wipes between them."},
                 {"4  Check", "Raise the view peak, use False colour and the scopes, and Invented to see "
                              "what RUDRA made up where the SDR clipped."},
                 {"5  Deliver", "Master EXR (ACES 2065-1) for grading, or HDR10, HLG and ProRes for a movie, "
@@ -2474,6 +2500,73 @@ void MainWindow::show_getting_started_once() {
     QTimer::singleShot(600, this, [self] {
         if (self) self->show_getting_started();
     });
+}
+
+// ---- The reconstruction: analytic, or with the model (10 Oct 2026 review) ----
+
+ModelConstants MainWindow::frame_constants() const {
+    if (use_model_ && manifest_) return ModelConstants{manifest_->log_scale, manifest_->max_hdr, manifest_->corpus_ev};
+    return kAnalyticConstants;
+}
+
+void MainWindow::show_mode() {
+    if (!mode_label_) return;
+    if (!use_model_) {
+        mode_label_->setText("Analytic reconstruction");
+        mode_label_->setToolTip("The inverse of the source curve, with your calibration, reference and grade. No model "
+                                "runs, for the view or for a master. Reconstruct > Use the model turns it on.");
+    } else {
+        mode_label_->setText("AI-assisted: " + (manifest_ ? QString::fromStdString(manifest_->name)
+                                                          : (loading_model_ ? QStringLiteral("loading…")
+                                                                            : QStringLiteral("no model package"))));
+        mode_label_->setToolTip("The model's reconstruction on top of the analytic inverse; its name is recorded in "
+                                "every master's sidecar.");
+    }
+}
+
+void MainWindow::set_use_model(bool on, bool remember) {
+    if (on == use_model_) {
+        show_mode();
+        return;
+    }
+    use_model_ = on;
+    if (remember) QSettings().setValue("model/use", on);
+    log(on ? QStringLiteral("reconstruction: the model's (AI-assisted)")
+           : QStringLiteral("reconstruction: analytic, no model runs"));
+    // On with nothing loaded: the package used last, or the catalog's pick.
+    if (on && !backend_ && !loading_model_) {
+        rescan_models();
+        const std::filesystem::path last = QSettings().value("model/package").toString().toStdString();
+        std::error_code ec;
+        if (!last.empty() && std::filesystem::is_regular_file(last / "manifest.json", ec)) use_model(last, backend_choice_);
+        else if (const auto i = catalog_.pick()) use_model(catalog_.entries[*i].package, backend_choice_);
+        else log("no model package found; File > Model packages… adds one");
+    }
+    // The frames on screen are composed again, with or without the network.
+    if (!frames_.empty() && !needs_model()) start_engine(frames_, current_);
+    // Off: a shot that was waiting for a model opens now.
+    if (!needs_model()) {
+        if (pending_source_) {
+            const auto [path, folder] = *pending_source_;
+            pending_source_.reset();
+            QTimer::singleShot(0, this, [this, path = path, folder = folder] { open_source(path, folder); });
+        }
+        if (pending_shot_) {
+            auto shot = std::move(*pending_shot_);
+            pending_shot_.reset();
+            QTimer::singleShot(0, this, [this, shot] {
+                const bool was = restoring_;
+                restoring_ = true;
+                open_shot(shot.kind, shot.sources, shot.frame);
+                restoring_ = was;
+            });
+        }
+    }
+    mark_dirty();
+    show_mode();
+    sync_checks();
+    sync_ui();
+    refresh_enabled();
 }
 
 }  // namespace rudra::app

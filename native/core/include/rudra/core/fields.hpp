@@ -26,4 +26,12 @@ struct Fields {
     PlanarBuffer shadow;      // 1 x h x w, in [0,1]
 };
 
+// The analytic reconstruction (no model): no residual and no recovery masks,
+// so the composite is its analytic baseline (source curve, calibration and
+// reference included) and nothing learned enters it. With the default
+// FrameScalars no learned curve does either.
+inline Fields analytic_fields(int height, int width) {
+    return {PlanarBuffer(3, height, width), PlanarBuffer(1, height, width), PlanarBuffer(1, height, width)};
+}
+
 }  // namespace rudra
