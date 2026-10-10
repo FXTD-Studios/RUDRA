@@ -64,6 +64,12 @@ struct ViewParams {
     double anchor_knee = 0.9;
     double anchor_softness = 0.04;
     double anchor_hold = 1.0;
+    // The composite's Region EV gain per pixel (composite()'s grade_gain), or
+    // null for an ungraded composite. The master grades AFTER the anchor
+    // (since 9 Oct 2026); the anchor's target is scaled by this gain so the
+    // view keeps the grade below the knee instead of dividing it back out.
+    // The composite.frag twin carries it in the target (alpha) channel.
+    const std::vector<float>* grade_gain = nullptr;
     // Roadmap 3.3: the painted mask being edited, tinted over the picture
     // (Image mode): the band's channel of `masks`, in `paint_tint` (an sRGB
     // colour) mixed by kMaskTintMix times the mask. -1 for none.
@@ -107,7 +113,10 @@ inline constexpr std::array<float, 3> kReinterpretedColour{0.25f, 0.78f, 0.86f};
 // the median of the per-pixel gains in the knee band, or of all gains when
 // the band holds fewer than 64 pixels. What anchor_to_sdr computes inside
 // itself; the live view needs it as a number (ViewParams::anchor_hold).
-double anchor_hold(const NetworkLinearImage& model, const SdrImage& sdr, double knee = 0.9, double softness = 0.04);
+// With `grade_gain` (composite()'s), the hold of the ungraded picture, as the
+// master computes it before its grade.
+double anchor_hold(const NetworkLinearImage& model, const SdrImage& sdr, double knee = 0.9, double softness = 0.04,
+                   const std::vector<float>* grade_gain = nullptr);
 
 // The anchor gain of one pixel, fp32 as the display shader computes it:
 // target the SDR's Rec.2020 luma of its linearised codes (diffuse white 1.0),

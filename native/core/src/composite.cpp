@@ -76,7 +76,8 @@ double region_ev_gain(const double rgb_nits[3], std::span<const RegionBand> band
 }
 
 NetworkLinearImage composite(const SdrImage& sdr, const Fields& fields, const FrameScalars& scalars,
-                             const ModelConstants& model, const CompositeParams& params) {
+                             const ModelConstants& model, const CompositeParams& params,
+                             std::vector<float>* grade_gain) {
     const int h = sdr.height(), w = sdr.width();
     assert(fields.residual.channels() == 3 && fields.residual.height() == h && fields.residual.width() == w);
     assert(fields.highlight.height() == h && fields.shadow.height() == h);
@@ -101,6 +102,7 @@ NetworkLinearImage composite(const SdrImage& sdr, const Fields& fields, const Fr
     const float* hl = fields.highlight.plane(0);
     const float* sh = fields.shadow.plane(0);
     PlanarBuffer& o = out.buffer();
+    if (grade_gain) grade_gain->assign(n, 1.0f);
 
     for (std::size_t i = 0; i < n; ++i) {
         const float y = 0.2126f * s.plane(0)[i] + 0.7152f * s.plane(1)[i] + 0.0722f * s.plane(2)[i];
@@ -128,6 +130,7 @@ NetworkLinearImage composite(const SdrImage& sdr, const Fields& fields, const Fr
             float mw[kMaxMaskBands];
             if (masked) params.masks->weights(int(i % std::size_t(w)), int(i / std::size_t(w)), w, h, mw);
             const double g = region_ev_gain(nits, params.regions, params.region_softness_stops, masked ? mw : nullptr);
+            if (grade_gain) (*grade_gain)[i] = static_cast<float>(g);
             for (int c = 0; c < 3; ++c)
                 px[c] = static_cast<float>(std::clamp(nits[c] * g, 0.0, ceiling_nits) / 10000.0);
         }
