@@ -1,6 +1,6 @@
 """Artist grade controls for RUDRA HDR output (torch-free).
 
-The control surface Hyperion refuses to expose and SwitchHDR charges for:
+The artist control surface:
 deterministic, order-documented operations on linear radiance — global
 exposure, per-region EV via soft masks, luminance qualifiers (build a mask
 from a stop range, like a Resolve qualifier), highlight desaturation, and a

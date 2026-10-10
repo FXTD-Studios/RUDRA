@@ -1,0 +1,152 @@
+name: release
+
+# The desktop beta: RUDRA.app in a DMG (macOS, Apple silicon), and for
+# Windows x64 an installer (setup.exe, Inno Setup) and a portable ZIP, each
+# with its SHA-256, attached to a GitHub pre-release when
+# a v* tag is pushed (git tag v0.9.0-beta.6 && git push origin v0.9.0-beta.6).
+# The Windows package carries ffmpeg (PACKAGE_WINDOWS.ps1, pinned by hash).
+# Run by hand (workflow_dispatch), it builds the two and keeps them as
+# workflow artifacts without publishing. The packaging is the scripts'
+# (scripts/package_mac.sh, scripts/PACKAGE_WINDOWS.ps1); the model package is
+# exported here from the shipped checkpoint, as NATIVE_GATE_A does.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS (Apple silicon)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: Tools
+        run: |
+          brew install ninja ffmpeg@6
+          echo "$(brew --prefix ffmpeg@6)/bin" >> "$GITHUB_PATH"
+      - name: The model package
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch onnx onnxruntime numpy opencv-python-headless
+          pip install -e .
+          tools/ci_run.sh "Export" python tools/export_model.py checkpoints/sdr2hdr_image_v8.pt --out dist/models
+      - name: Signing certificate and notary key (when the secrets are set)
+        # docs/MACOS_SIGNING.md. Without MACOS_CERT_P12 the app is signed ad
+        # hoc, as before, and the release still goes out.
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+        run: |
+          if [ -z "$MACOS_CERT_P12" ]; then
+            echo "::warning::No MACOS_CERT_P12 secret: the DMG is signed ad hoc and macOS warns on first open"
+            exit 0
+          fi
+          kc="$RUNNER_TEMP/rudra-signing.keychain-db"
+          kcpw=$(uuidgen)
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpw" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$kc"
+          echo "MAC_SIGN_IDENTITY=$MACOS_SIGN_IDENTITY" >> "$GITHUB_ENV"
+          if [ -n "$MACOS_NOTARY_KEY" ]; then
+            printf '%s' "$MACOS_NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+            echo "MAC_NOTARY_KEY=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+            echo "MAC_NOTARY_KEY_ID=$MACOS_NOTARY_KEY_ID" >> "$GITHUB_ENV"
+            echo "MAC_NOTARY_ISSUER=$MACOS_NOTARY_ISSUER" >> "$GITHUB_ENV"
+          fi
+      - name: Build and package
+        run: PYTHON=python tools/ci_run.sh "Package" scripts/package_mac.sh
+      - name: Remove the signing keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/rudra-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/notary.p8"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: rudra-macos
+          path: |
+            dist/beta/*.dmg
+            dist/beta/*.dmg.sha256
+
+  windows:
+    name: Windows x64
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: The model package
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install onnx onnxruntime numpy opencv-python-headless
+          pip install -e .
+          tools/ci_run.sh "Export" python tools/export_model.py checkpoints/sdr2hdr_image_v8.pt --out dist/models
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+      - name: Code-signing certificate (when the secrets are set)
+        # WINDOWS_CERT_PFX: the .pfx, base64; WINDOWS_CERT_PASSWORD: its password.
+        # Without them the exe and the installer are unsigned, as before, and
+        # SmartScreen warns on first start.
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_CERT_PFX) {
+            Write-Host "::warning::No WINDOWS_CERT_PFX secret: RUDRA.exe and the installer are not signed"
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "rudra-sign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX))
+          "RUDRA_SIGN_PFX=$pfx" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "RUDRA_SIGN_PASSWORD=$env:WINDOWS_CERT_PASSWORD" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Build and package
+        shell: bash
+        run: tools/ci_run.sh "Package" pwsh -NoProfile -File scripts/PACKAGE_WINDOWS.ps1 -Python python -Tests
+      - name: Remove the certificate
+        if: always()
+        shell: pwsh
+        run: Remove-Item (Join-Path $env:RUNNER_TEMP "rudra-sign.pfx") -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@v6
+        with:
+          name: rudra-windows
+          path: |
+            dist/beta/*.zip
+            dist/beta/*.zip.sha256
+            dist/beta/*-setup.exe
+            dist/beta/*-setup.exe.sha256
+
+  publish:
+    name: Pre-release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with: { path: artifacts, merge-multiple: true }
+      - uses: softprops/action-gh-release@v3
+        with:
+          prerelease: true
+          name: RUDRA ${{ github.ref_name }}
+          body_path: docs/BETA.md
+          files: artifacts/*

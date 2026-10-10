@@ -20,6 +20,8 @@ enum class ErrorCode {
     IntegrityError,     // a hash did not match
     BackendError,       // an inference runtime failed
     ParityError,        // a result disagreed with its golden beyond tolerance
+    Busy,               // someone else holds it (a queue already running)
+    Cancelled,          // stopped on request (Ctrl+C, the app's Stop): the Python's KeyboardInterrupt
 };
 
 const char* to_string(ErrorCode code) noexcept;

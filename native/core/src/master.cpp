@@ -1,0 +1,322 @@
+#include "rudra/core/master.hpp"
+
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+
+#include "rudra/core/gamut.hpp"
+
+namespace rudra {
+namespace {
+
+// rudra/anchor.py and rudra/chroma.py use float64 Rec.2020 weights.
+constexpr double kLuma2020[3] = {0.2627, 0.6780, 0.0593};
+constexpr double kDiffuseWhiteNits = 203.0;
+
+double srgb_to_linear_d(double v) noexcept {
+    return v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4);
+}
+
+double smoothstep_ramp(double code, double knee, double softness) noexcept {
+    const double r = std::clamp((code - (knee - softness)) / (2.0 * softness), 0.0, 1.0);
+    return r * r * (3.0 - 2.0 * r);
+}
+
+double finite_or(double v, double fallback) noexcept { return std::isfinite(v) ? v : fallback; }
+
+// np.median: the mean of the two middle values for an even count.
+double median(std::vector<double> v) {
+    assert(!v.empty());
+    const std::size_t mid = v.size() / 2;
+    std::nth_element(v.begin(), v.begin() + static_cast<std::ptrdiff_t>(mid), v.end());
+    const double hi = v[mid];
+    if (v.size() % 2 == 1) return hi;
+    const double lo = *std::max_element(v.begin(), v.begin() + static_cast<std::ptrdiff_t>(mid));
+    return (lo + hi) / 2.0;
+}
+
+}  // namespace
+
+NitsFrame nits_from_network(const NetworkLinearImage& network) {
+    NitsFrame out(network.height(), network.width());
+    const auto in = network.buffer().span();
+    auto o = out.span();
+    for (std::size_t i = 0; i < in.size(); ++i) o[i] = static_cast<double>(in[i]) * 10000.0;
+    return out;
+}
+
+void apply_region_ev(NitsFrame& nits, std::span<const RegionBand> bands, double softness_stops, double ceiling_nits,
+                     const MaskSet* masks) {
+    if (!any_graded(bands)) return;
+    const bool masked = masks && !masks->empty();
+    const std::size_t n = nits.plane_size();
+    const int w = nits.width(), h = nits.height();
+    for (std::size_t i = 0; i < n; ++i) {
+        double px[3] = {nits.plane(0)[i], nits.plane(1)[i], nits.plane(2)[i]};
+        float mw[kMaxMaskBands];
+        if (masked) masks->weights(int(i % std::size_t(w)), int(i / std::size_t(w)), w, h, mw);
+        const double g = region_ev_gain(px, bands, softness_stops, masked ? mw : nullptr);
+        for (int c = 0; c < 3; ++c) nits.plane(c)[i] = std::clamp(px[c] * g, 0.0, ceiling_nits);
+    }
+}
+
+void anchor_to_sdr(NitsFrame& nits, const SdrImage& sdr, double knee, double softness) {
+    assert(nits.height() == sdr.height() && nits.width() == sdr.width());
+    assert(knee > 0.0 && knee < 1.0);
+    const std::size_t n = nits.plane_size();
+    const PlanarBuffer& s = sdr.buffer();
+    constexpr double eps = 1e-4;   // nits
+    std::vector<double> want(n), code(n);
+    std::vector<double> band;
+    for (std::size_t i = 0; i < n; ++i) {
+        double target = 0.0, actual = 0.0, mx = -1.0;
+        for (int c = 0; c < 3; ++c) {
+            const double v = s.plane(c)[i];
+            target += srgb_to_linear_d(v) * kLuma2020[c];
+            actual += nits.plane(c)[i] * kLuma2020[c];
+            mx = std::max(mx, v);
+        }
+        target *= kDiffuseWhiteNits;
+        want[i] = (target + eps) / (actual + eps);
+        code[i] = mx;
+        if (mx > knee - softness && mx < knee + softness && actual > 1e-9) band.push_back(want[i]);
+    }
+    const double hold = band.size() >= 64 ? median(std::move(band)) : median(want);
+    for (std::size_t i = 0; i < n; ++i) {
+        double gain = want[i];
+        if (code[i] > knee - softness) {
+            const double r = smoothstep_ramp(code[i], knee, softness);
+            gain = want[i] * (1.0 - r) + hold * r;
+        }
+        gain = finite_or(gain, 1.0);
+        for (int c = 0; c < 3; ++c) nits.plane(c)[i] *= gain;
+    }
+}
+
+std::vector<float> gaussian_blur_replicate(std::span<const float> plane, int height, int width, double sigma) {
+    // cv::getGaussianKernel(ksize, sigma, CV_32F): taps in float, summed in
+    // double, normalised, stored as float.
+    const int ksize = static_cast<int>(std::lround(sigma * 4.0 * 2.0 + 1.0)) | 1;
+    const int radius = ksize / 2;
+    std::vector<float> k(static_cast<std::size_t>(ksize));
+    const double scale2x = -0.5 / (sigma * sigma);
+    double sum = 0.0;
+    for (int i = 0; i < ksize; ++i) {
+        const double x = i - (ksize - 1) * 0.5;
+        k[static_cast<std::size_t>(i)] = static_cast<float>(std::exp(scale2x * x * x));
+        sum += k[static_cast<std::size_t>(i)];
+    }
+    sum = 1.0 / sum;
+    for (float& t : k) t = static_cast<float>(t * sum);
+
+    auto clampi = [](int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); };
+    std::vector<float> rows(plane.size()), out(plane.size());
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x) {
+            double acc = 0.0;
+            for (int t = -radius; t <= radius; ++t)
+                acc += double(k[static_cast<std::size_t>(t + radius)]) *
+                       plane[static_cast<std::size_t>(y) * width + clampi(x + t, 0, width - 1)];
+            rows[static_cast<std::size_t>(y) * width + x] = static_cast<float>(acc);
+        }
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x) {
+            double acc = 0.0;
+            for (int t = -radius; t <= radius; ++t)
+                acc += double(k[static_cast<std::size_t>(t + radius)]) *
+                       rows[static_cast<std::size_t>(clampi(y + t, 0, height - 1)) * width + x];
+            out[static_cast<std::size_t>(y) * width + x] = static_cast<float>(acc);
+        }
+    return out;
+}
+
+void carry_source_chroma(NitsFrame& nits, const SdrImage& sdr, double knee, double softness, double mask_sigma) {
+    assert(nits.height() == sdr.height() && nits.width() == sdr.width());
+    assert(knee > 0.0 && knee < 1.0);
+    const std::size_t n = nits.plane_size();
+    const PlanarBuffer& s = sdr.buffer();
+    std::vector<float> ramp(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const double code = std::max({double(s.plane(0)[i]), double(s.plane(1)[i]), double(s.plane(2)[i])});
+        ramp[i] = static_cast<float>(smoothstep_ramp(code, knee, softness));
+    }
+    const std::vector<float> blurred = gaussian_blur_replicate(ramp, nits.height(), nits.width(), mask_sigma);
+    constexpr double eps = 1e-6;
+    for (std::size_t i = 0; i < n; ++i) {
+        double source[3], source_luma = 0.0, hdr_luma = 0.0;
+        for (int c = 0; c < 3; ++c) {
+            source[c] = srgb_to_linear_d(s.plane(c)[i]) * kDiffuseWhiteNits;
+            source_luma += source[c] * kLuma2020[c];
+            hdr_luma += nits.plane(c)[i] * kLuma2020[c];
+        }
+        const double k = (hdr_luma + eps) / (source_luma + eps);
+        const double r = blurred[i];
+        // 1.0 - ramp stays float32 in numpy (the ramp is a float32 array).
+        const double keep = static_cast<double>(1.0f - blurred[i]);
+        for (int c = 0; c < 3; ++c) {
+            const double v = source[c] * k * keep + nits.plane(c)[i] * r;
+            nits.plane(c)[i] = finite_or(v, 0.0);
+        }
+    }
+}
+
+namespace {
+
+// OpenCV's BORDER_REFLECT: fedcba|abcdefgh|hgfedcb, the edge pixel repeated.
+int reflect(int i, int n) noexcept {
+    if (n == 1) return 0;
+    while (i < 0 || i >= n) i = i < 0 ? -i - 1 : 2 * n - i - 1;
+    return i;
+}
+
+// cv2.boxFilter(x, -1, (2r+1, 2r+1), normalize=True, BORDER_REFLECT), in double.
+std::vector<double> box_mean_reflect(std::span<const double> plane, int height, int width, int radius) {
+    std::vector<double> rows(plane.size()), out(plane.size());
+    const double inv = 1.0 / double((2 * radius + 1) * (2 * radius + 1));
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x) {
+            double acc = 0.0;
+            for (int t = -radius; t <= radius; ++t) acc += plane[static_cast<std::size_t>(y) * width + reflect(x + t, width)];
+            rows[static_cast<std::size_t>(y) * width + x] = acc;
+        }
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x) {
+            double acc = 0.0;
+            for (int t = -radius; t <= radius; ++t) acc += rows[static_cast<std::size_t>(reflect(y + t, height)) * width + x];
+            out[static_cast<std::size_t>(y) * width + x] = acc * inv;
+        }
+    return out;
+}
+
+constexpr int kFlatnessRadius = 3;                 // a 7x7 window
+constexpr double kFlatCodes = 1.0, kStructureCodes = 3.0;
+constexpr double kGrainLumaFloor = 1e-6;           // nits
+
+double smoothstep01(double x) noexcept {
+    x = std::clamp(x, 0.0, 1.0);
+    return x * x * (3.0 - 2.0 * x);
+}
+
+}  // namespace
+
+std::vector<double> gaussian_blur_reflect(std::span<const double> plane, int height, int width, double sigma) {
+    // cv::getGaussianKernel(ksize, sigma, CV_64F).
+    const int ksize = static_cast<int>(std::lround(sigma * 4.0 * 2.0 + 1.0)) | 1;
+    const int radius = ksize / 2;
+    std::vector<double> k(static_cast<std::size_t>(ksize));
+    const double scale2x = -0.5 / (sigma * sigma);
+    double sum = 0.0;
+    for (int i = 0; i < ksize; ++i) {
+        const double x = i - (ksize - 1) * 0.5;
+        k[static_cast<std::size_t>(i)] = std::exp(scale2x * x * x);
+        sum += k[static_cast<std::size_t>(i)];
+    }
+    sum = 1.0 / sum;
+    for (double& t : k) t *= sum;
+    std::vector<double> rows(plane.size()), out(plane.size());
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x) {
+            double acc = 0.0;
+            for (int t = -radius; t <= radius; ++t)
+                acc += k[static_cast<std::size_t>(t + radius)] * plane[static_cast<std::size_t>(y) * width + reflect(x + t, width)];
+            rows[static_cast<std::size_t>(y) * width + x] = acc;
+        }
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x) {
+            double acc = 0.0;
+            for (int t = -radius; t <= radius; ++t)
+                acc += k[static_cast<std::size_t>(t + radius)] * rows[static_cast<std::size_t>(reflect(y + t, height)) * width + x];
+            out[static_cast<std::size_t>(y) * width + x] = acc;
+        }
+    return out;
+}
+
+std::vector<double> source_flatness(const SdrImage& sdr) {
+    const int h = sdr.height(), w = sdr.width();
+    const std::size_t n = static_cast<std::size_t>(h) * static_cast<std::size_t>(w);
+    const PlanarBuffer& s = sdr.buffer();
+    std::vector<double> spread(n, 0.0);
+    std::vector<double> x(n), xx(n);
+    for (int which = 0; which < 2; ++which) {
+        for (std::size_t i = 0; i < n; ++i) {
+            const double r = s.plane(0)[i], g = s.plane(1)[i], b = s.plane(2)[i];
+            x[i] = which == 0 ? std::max({r, g, b}) : r * kLuma2020[0] + g * kLuma2020[1] + b * kLuma2020[2];
+            xx[i] = x[i] * x[i];
+        }
+        const auto mean = box_mean_reflect(x, h, w, kFlatnessRadius);
+        const auto mean_sq = box_mean_reflect(xx, h, w, kFlatnessRadius);
+        for (std::size_t i = 0; i < n; ++i)
+            spread[i] = std::max(spread[i], std::sqrt(std::max(mean_sq[i] - mean[i] * mean[i], 0.0)));
+    }
+    for (double& v : spread) v = smoothstep01((kStructureCodes - v * 255.0) / (kStructureCodes - kFlatCodes));
+    return spread;
+}
+
+void settle_highlight_grain(NitsFrame& nits, const SdrImage& sdr, double knee, double softness, double sigma) {
+    assert(nits.height() == sdr.height() && nits.width() == sdr.width());
+    assert(knee > 0.0 && knee < 1.0 && sigma > 0.0);
+    const int h = nits.height(), w = nits.width();
+    const std::size_t n = nits.plane_size();
+    const PlanarBuffer& s = sdr.buffer();
+    std::vector<double> ramp(n);
+    bool any = false;
+    for (std::size_t i = 0; i < n; ++i) {
+        const double code = std::max({double(s.plane(0)[i]), double(s.plane(1)[i]), double(s.plane(2)[i])});
+        ramp[i] = smoothstep01((code - (knee - softness)) / (2.0 * softness));
+        any = any || ramp[i] > 0.0;
+    }
+    if (!any) return;
+    const std::vector<double> flat = source_flatness(sdr);
+    any = false;
+    for (std::size_t i = 0; i < n; ++i) any = any || ramp[i] * flat[i] > 0.0;
+    if (!any) return;
+
+    std::vector<double> luma(n), fl(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        luma[i] = std::max(nits.plane(0)[i] * kLuma2020[0] + nits.plane(1)[i] * kLuma2020[1] +
+                               nits.plane(2)[i] * kLuma2020[2], 0.0);
+        fl[i] = flat[i] * luma[i];
+    }
+    const auto num = gaussian_blur_reflect(fl, h, w, sigma);
+    const auto den = gaussian_blur_reflect(flat, h, w, sigma);
+    for (std::size_t i = 0; i < n; ++i) {
+        const double settled = den[i] > 1e-6 ? num[i] / std::max(den[i], 1e-6) : luma[i];
+        const double target = luma[i] + ramp[i] * flat[i] * (settled - luma[i]);
+        const double gain = luma[i] > kGrainLumaFloor ? target / std::max(luma[i], kGrainLumaFloor) : 1.0;
+        for (int c = 0; c < 3; ++c) nits.plane(c)[i] = finite_or(nits.plane(c)[i] * gain, 0.0);
+    }
+}
+
+PlanarBuffer scene_linear(const NitsFrame& nits) {
+    PlanarBuffer out(3, nits.height(), nits.width());
+    const auto in = nits.span();
+    auto o = out.span();
+    for (std::size_t i = 0; i < in.size(); ++i) o[i] = static_cast<float>(in[i] / kDiffuseWhiteNits);
+    return out;
+}
+
+MasterPixels render_master_pixels(const NetworkLinearImage& network, const SdrImage& sdr,
+                                  const ModelConstants& model, const MasterParams& params) {
+    MasterPixels m;
+    m.nits = nits_from_network(network);
+    // ui/server.py _render_master's order since 9 Oct 2026: the level and
+    // texture stages first, the grade LAST. Graded first, the anchor (which
+    // sets every pixel below its knee to target/actual) divided the grade
+    // straight back out while the sidecar said it was applied.
+    if (params.anchor) anchor_to_sdr(m.nits, sdr, params.anchor_knee);
+    if (params.carry_chroma) carry_source_chroma(m.nits, sdr, params.chroma_knee);
+    if (params.settle_grain) settle_highlight_grain(m.nits, sdr, params.anchor_knee);
+    apply_region_ev(m.nits, params.regions, params.region_softness_stops, double(model.max_hdr) * 10000.0, params.masks.get());
+    PlanarBuffer linear = scene_linear(m.nits);
+    if (params.container == MasterContainer::Aces2065) {
+        m.pixels = convert_primaries(linear, params.source_primaries, Primaries::Ap0);
+        m.primaries = Primaries::Ap0;
+    } else {
+        // "Scene-linear Rec.2020" is what the container is called, so it is.
+        m.pixels = convert_primaries(linear, params.source_primaries, Primaries::Rec2020);
+        m.primaries = Primaries::Rec2020;
+    }
+    return m;
+}
+
+}  // namespace rudra

@@ -139,6 +139,7 @@ class Predictor:
         import torch
         import torch.nn.functional as F
         from .sdr2hdr import canonicalize_sdr, srgb_to_linear, linear_to_srgb
+        from .inference import predict_image
         from .delivery.colorspace import rgb_to_rgb_matrix
         with torch.inference_mode():
             x = torch.from_numpy(rgb.copy()).permute(2,0,1)[None].to(self.device)
@@ -149,35 +150,15 @@ class Predictor:
             thumb = F.interpolate(x,size=(36,64),mode='area')[0].cpu().numpy()
             weight = self.model.predict_shadow_weight(x)
             scalar, cut = smoother.update(thumb, float(weight.item()) if weight is not None else 1.0)
-            scale = self.model.predict_residual_scale(x)
-            def forward(tile):
-                return self.model(tile,preserve_outside=True,recovery_mode='all',
-                                  shadow_weight=scalar,residual_scale=scale).hdr
-            h,w = x.shape[-2:]
-            if self.tile_size <= 0 or max(h,w) <= self.tile_size:
-                result = forward(x)
-            else:
-                size, overlap = self.tile_size, self.overlap
-                def starts(length):
-                    if length <= size: return [0]
-                    values = list(range(0,length-size+1,size-overlap))
-                    if values[-1] != length-size: values.append(length-size)
-                    return values
-                result, weights = torch.zeros_like(x), torch.zeros_like(x[:,:1])
-                for y in starts(h):
-                    for left in starts(w):
-                        tile = x[...,y:y+size,left:left+size]
-                        th,tw = tile.shape[-2:]
-                        wy,wx = torch.ones(th,device=x.device),torch.ones(tw,device=x.device)
-                        fy,fx = min(overlap,th//2),min(overlap,tw//2)
-                        if y and fy: wy[:fy]=torch.linspace(.001,1,fy,device=x.device)
-                        if y+th<h and fy: wy[-fy:]=torch.linspace(1,.001,fy,device=x.device)
-                        if left and fx: wx[:fx]=torch.linspace(.001,1,fx,device=x.device)
-                        if left+tw<w and fx: wx[-fx:]=torch.linspace(1,.001,fx,device=x.device)
-                        blend=(wy[:,None]*wx[None,:])[None,None]
-                        result[...,y:y+th,left:left+tw] += forward(tile)*blend
-                        weights[...,y:y+th,left:left+tw] += blend
-                result /= weights.clamp_min(1e-6)
+            # Tiling, feathering and the once-per-frame scale and curve are
+            # rudra.inference.predict_image's, the same code the Studio and the
+            # bench run; this kept its own copy until 9 Oct 2026. fp32 (bf16
+            # off) is what this path always ran, and the smoothed shadow
+            # weight above replaces the per-frame prediction.
+            result = predict_image(self.model, x, preserve_outside=True,
+                                   tile_size=self.tile_size, overlap=self.overlap,
+                                   recovery_mode='all', bf16=False,
+                                   shadow_weight=scalar)
             return result[0].permute(1,2,0).cpu().numpy(), scalar, cut
 
 
@@ -420,7 +401,7 @@ def convert_video(args, progress=None):
                                              system_gamma=1.2+.42*math.log10(args.peak_nits/1000))
             report.update(max_cll=max_cll,max_fall=max_fall,elapsed_seconds=time.monotonic()-started)
             staged_json=Path(staging)/sidecar.name
-            staged_json.write_text(json.dumps(report,indent=2),encoding='utf-8')
+            staged_json.write_text(json.dumps(report,indent=2),encoding='utf-8',newline='\n')
             if output.exists() or sidecar.exists(): raise ValueError('Output appeared during processing; refusing overwrite')
             staged.rename(output)
             staged_json.rename(sidecar)

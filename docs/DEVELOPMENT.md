@@ -28,10 +28,9 @@ ui/               RUDRA Studio: the page, its GPU compositor, the inference
                   of frames or a video by path
 run_studio.bat    One-file launchers: set up on the first run, check and start
 run_studio.sh     on every run after that
-paper/            LaTeX source and the built PDF; build.sh and mkarxiv.sh
 docs/             RESULTS.md, TRAINING.md, TRAINING_STEPS.md (the next run,
                   step by step), RETRAIN_RUNBOOK.md, INTERNALS.md and CORPUS.md;
-                  paper figures, the Studio screenshot, the comparison strips
+                  the Studio screenshot, the comparison strips
                   and make_compare.py, which rebuilds them from a scored bench
 checkpoints/      Every released SDR to HDR model as checkpoints/*.pt, plus
                   models.json, the registry the viewer reads (see its README).

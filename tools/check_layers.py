@@ -3,8 +3,8 @@
 A layer may include only headers from layers below it, and third-party
 headers appear only where the architecture puts them:
 
-    platform < core < {infer, media, render, deliver} < engine < app
-    cli: core, infer, media, deliver (never Qt, never render)
+    platform < core < {infer, media, render, deliver} < video < engine < app
+    cli: core, infer, media, deliver, video (never Qt, never render)
 
     python tools/check_layers.py           # exit 1 and list violations
 """
@@ -16,14 +16,16 @@ from pathlib import Path
 NATIVE = Path(__file__).resolve().parents[1] / "native"
 INCLUDE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.M)
 
-ORDER = {"platform": 0, "core": 1, "infer": 2, "media": 2, "render": 2, "deliver": 2, "engine": 3, "app": 4}
-CLI_ALLOWED = {"platform", "core", "infer", "media", "deliver"}
+ORDER = {"platform": 0, "core": 1, "infer": 2, "media": 2, "render": 2, "deliver": 2, "video": 3, "engine": 4,
+         "app": 5}
+CLI_ALLOWED = {"platform", "core", "infer", "media", "deliver", "video"}
 
 QT = re.compile(r"^(Q[A-Z]\w*|Qt\w*/|rhi/|private/qrhi)")
 TORCH = re.compile(r"^(torch/|ATen/|c10/)")
 ORT = re.compile(r"^onnxruntime")
 GPU = re.compile(r"^(vulkan/|d3d1[12]|dxgi|Metal/|QuartzCore/|GL/|OpenGL/|GLES)")
 LIBAV = re.compile(r"^lib(av|sw)\w*/")
+OPENCV = re.compile(r"^opencv2?/")
 
 
 def layer_of(path: Path) -> str:
@@ -59,6 +61,8 @@ def violations() -> list[str]:
                 out.append(f"{rel}: GPU API header <{inc}> outside render/")
             if LIBAV.match(inc) and layer not in {"media", "deliver"}:
                 out.append(f"{rel}: FFmpeg header <{inc}> outside media/ and deliver/")
+            if OPENCV.match(inc) and not (layer in {"media", "deliver"} and f.parent.name == "src"):
+                out.append(f"{rel}: OpenCV header <{inc}> outside media/src and deliver/src")
     return out
 
 

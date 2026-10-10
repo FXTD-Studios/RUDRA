@@ -36,7 +36,7 @@ from rudra.sdr2hdr import (  # noqa: E402
     temporal_spatial_loss,
 )
 from training.sdr2hdr_dataset import (  # noqa: E402
-    SDRHDRDataset, SDRHDRVideoDataset, corpus_ev_of)
+    SDRHDRDataset, SDRHDRVideoDataset, corpus_ev_of, read_jsonl)
 
 
 def seed_everything(seed: int) -> None:
@@ -90,6 +90,17 @@ def _tone_map(x: torch.Tensor) -> torch.Tensor:
 
 
 @torch.no_grad()
+def _source_of(model: torch.nn.Module, batch: dict, device: torch.device) -> torch.Tensor | None:
+    """The batch's source-curve ids, for a model that takes them; else None.
+
+    A model without the input gets None (= unknown), so manifests that now
+    carry labels change nothing for runs that do not ask for them.
+    """
+    if not getattr(model, "source_curve", False) or "source_curve" not in batch:
+        return None
+    return batch["source_curve"].to(device, non_blocking=True)
+
+
 def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
                    max_batches: int = 8, shadow_chroma_weight: float = 0.15,
                    shadow_smoothness_weight: float = 0.02) -> dict[str, float]:
@@ -110,11 +121,17 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
         # inference to say which kind of SDR arrived.
         "preserved_psnr_log": 0.0,
     }
+    # Per-record log-PSNR of the model and of the analytic inverse, bucketed
+    # by sdr_kind (real grade vs rendered pair). On the mixed manifest the val
+    # slice is ~30% real rows where the inverse is stops wrong, so the pooled
+    # gain_db can read +1.6 dB while the rendered rows alone are worse than the
+    # inverse -- which is what the PU21/CVVDP benches then report. (v7, 7 Oct.)
+    kind_sums = {"real": [0.0, 0.0, 0], "rendered": [0.0, 0.0, 0]}
     count = 0
     for batch in loader:
         sdr, target = batch["sdr"].to(device), batch["hdr"].to(device)
         ceiling = batch["ceiling"].to(device) if "ceiling" in batch else None
-        output = model(sdr)
+        output = model(sdr, source_curve=_source_of(model, batch, device))
         losses = sdr2hdr_loss(
             output, sdr, target, shadow_chroma_weight, shadow_smoothness_weight,
             target_ceiling=ceiling,
@@ -143,16 +160,35 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
         base_mse = F.mse_loss(base_log, target_log).clamp_min(1e-12)
         sums["baseline_log_l1"] += float(F.l1_loss(base_log, target_log))
         sums["baseline_psnr_log"] += float(20.0 * torch.log10(peak) - 10.0 * torch.log10(base_mse))
+        if "real" in batch:
+            per_mse = ((pred_log - target_log) ** 2).flatten(1).mean(1).clamp_min(1e-12)
+            per_base = ((base_log - target_log) ** 2).flatten(1).mean(1).clamp_min(1e-12)
+            per_psnr = 20.0 * torch.log10(peak) - 10.0 * torch.log10(per_mse)
+            per_base_psnr = 20.0 * torch.log10(peak) - 10.0 * torch.log10(per_base)
+            real_flags = batch["real"].to(device).bool()
+            for kind, flag in (("real", real_flags), ("rendered", ~real_flags)):
+                n = int(flag.sum())
+                if n:
+                    kind_sums[kind][0] += float(per_psnr[flag].sum())
+                    kind_sums[kind][1] += float(per_base_psnr[flag].sum())
+                    kind_sums[kind][2] += n
         recovery = torch.maximum(output.highlight_mask, output.shadow_mask)
         preserved = output.baseline + recovery * (output.hdr - output.baseline)
         pres_mse = F.mse_loss(torch.log1p(preserved.clamp_min(0.0) * 16.0),
                               target_log).clamp_min(1e-12)
         sums["preserved_psnr_log"] += float(20.0 * torch.log10(peak) - 10.0 * torch.log10(pres_mse))
         count += 1
-        if count >= max_batches:
+        if max_batches > 0 and count >= max_batches:
             break
     model.train()
     metrics = {key: value / max(count, 1) for key, value in sums.items()}
+    metrics["eval_batches"] = count
+    for kind, (psnr, base, n) in kind_sums.items():
+        metrics[f"{kind}_frames"] = n
+        if n:
+            metrics[f"{kind}_psnr_log"] = psnr / n
+            metrics[f"{kind}_baseline_psnr_log"] = base / n
+            metrics[f"{kind}_gain_db"] = (psnr - base) / n
     # Positive = the network improved on the analytic baseline. Negative means
     # it is actively making the baseline worse, which is the failure the August
     # 2026 run and the 26 Aug clean-SDR eval both showed.
@@ -227,7 +263,7 @@ def evaluate_temporal(image_model: SDR2HDRNet, temporal: TemporalHDRRefiner,
         sums["initial_log_l1"] += float(F.l1_loss(torch.log1p(initial * 16.0), torch.log1p(target * 16.0)))
         sums["initial_temporal"] += float(temporal_consistency_loss(initial, target))
         count += 1
-        if count >= max_batches:
+        if max_batches > 0 and count >= max_batches:
             break
     temporal.train()
     return {key: value / max(count, 1) for key, value in sums.items()}
@@ -268,6 +304,8 @@ def build_loaders(args: argparse.Namespace):
         train = SDRHDRDataset(args.manifest, split="train", augment=True,
                               augmentation_strength=args.augmentation_strength,
                               degradation_probability=args.degradation_probability,
+                              source_curve_dropout=(args.source_curve_dropout
+                                                    if args.source_curve else 0.0),
                               **common)
         val = SDRHDRDataset(args.manifest, split="val", augment=False,
                             augmentation_strength=0.0, max_items=args.max_val_items,
@@ -323,6 +361,31 @@ def build_loaders(args: argparse.Namespace):
     )
 
 
+def check_source_curve_args(args: argparse.Namespace) -> None:
+    """Refuse a --source-curve run that cannot learn anything from the flag."""
+    from rudra.sdr2hdr import SOURCE_CURVES
+
+    if args.mode != "image":
+        raise SystemExit("error: --source-curve is for --mode image")
+    if not args.curve_head:
+        raise SystemExit("error: --source-curve conditions the CurveHead; add --curve-head")
+    if not 0.0 <= args.source_curve_dropout <= 1.0:
+        raise SystemExit("error: --source-curve-dropout must be between 0 and 1")
+    rows = [r for r in read_jsonl(args.manifest) if r.get("split") == "train"]
+    counts = Counter(str(r.get("source_curve", "<none>")) for r in rows)
+    bad = sorted(c for c in counts if c not in SOURCE_CURVES)
+    if bad:
+        raise SystemExit(f"error: {args.manifest} has source_curve labels outside "
+                         f"{SOURCE_CURVES}: {bad}")
+    known = sum(n for c, n in counts.items() if c not in ("unknown", "<none>"))
+    if not known:
+        raise SystemExit(f"error: no train row in {args.manifest} carries a known source_curve; "
+                         f"build it with pipeline/build_source_curve_manifest.py")
+    print("[source-curve] train rows by curve: "
+          + ", ".join(f"{c} {n:,}" for c, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+          + f"; dropout {args.source_curve_dropout:g}, degraded samples train as unknown")
+
+
 def train(args: argparse.Namespace) -> Path:
     seed_everything(args.seed)
     device = torch.device(args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -335,11 +398,14 @@ def train(args: argparse.Namespace) -> Path:
     # assumed: until 16 Sep 2026 this constructor took the class default, the
     # legacy -1 EV, whatever the corpus said.
     corpus_ev = corpus_ev_of(args.manifest)
+    if args.source_curve:
+        check_source_curve_args(args)
     if args.mode == "image":
         model: torch.nn.Module = SDR2HDRNet(
             base_channels=args.base_channels,
             gate_conditioning=args.gate_conditioning,
             curve_head=args.curve_head,
+            source_curve=args.source_curve,
             corpus_ev=corpus_ev).to(device)
     else:
         if not args.image_checkpoint:
@@ -496,13 +562,14 @@ def train(args: argparse.Namespace) -> Path:
         amp = torch.autocast(device_type="cuda", dtype=torch.bfloat16) if device.type == "cuda" else contextlib.nullcontext()
         with amp:
             if args.mode == "image":
-                output = model(sdr)
+                output = model(sdr, source_curve=_source_of(model, batch, device))
                 losses = sdr2hdr_loss(
                     output, sdr, target, args.shadow_chroma_weight,
                     args.shadow_smoothness_weight,
                     target_ceiling=(batch["ceiling"].to(device, non_blocking=True)
                                     if "ceiling" in batch else None),
                     baseline_weight=args.baseline_weight if args.curve_head else 0.0,
+                    region_focus=args.region_focus,
                 )
                 loss = losses["total"]
             else:
@@ -615,6 +682,17 @@ def parse_args() -> argparse.Namespace:
                              "residual. Needed for SDR that did not come through the "
                              "corpus's own ACES render (bench/oog, 23 Sep 2026). Train on a "
                              "--sdr-render mix corpus, or the head has nothing to learn.")
+    parser.add_argument("--source-curve", action="store_true",
+                        help="Feed each row's source curve (manifest 'source_curve', written by "
+                             "pipeline/build_source_curve_manifest.py) to the CurveHead. Needs "
+                             "--curve-head. Degraded samples and real SDR train as 'unknown'.")
+    parser.add_argument("--source-curve-dropout", type=float, default=0.3,
+                        help="With --source-curve: fraction of clean labelled training samples "
+                             "relabelled 'unknown', so the blind path keeps learning "
+                             "(default %(default)s)")
+    parser.add_argument("--region-focus", type=float, default=0.0,
+                        help="v8: share of the loss on the SDR's clipped/crushed pixels, the rest of the "
+                             "frame held to the inverse (rudra/sdr2hdr.py sdr2hdr_loss); 0 = as before")
     parser.add_argument("--baseline-weight", type=float, default=0.25,
                         help="With --curve-head: weight of the direct loss on the corrected "
                              "baseline (default %(default)s)")
@@ -654,7 +732,11 @@ def parse_args() -> argparse.Namespace:
                              "0.1 dB more on degraded. Image mode only; temporal ignores it.")
     parser.add_argument("--val-fraction", type=float, default=0.10)
     parser.add_argument("--eval-every", type=int, default=500)
-    parser.add_argument("--eval-batches", type=int, default=8)
+    parser.add_argument("--eval-batches", type=int, default=8,
+                        help="Batches per eval pass; 0 = the whole val split. The default "
+                             "scores 8 x batch_size records (32 at batch 4), and every "
+                             "best.pt from v4 to v7 was selected on that slice. Use 0 for "
+                             "any run whose best.pt is going to be benched.")
     parser.add_argument("--save-every", type=int, default=2_000)
     parser.add_argument("--log-every", type=int, default=20)
     parser.add_argument("--max-items", type=int)

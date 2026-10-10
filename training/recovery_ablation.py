@@ -82,7 +82,7 @@ def report(out, records):
         '- Selecting a mode from this sample is exploratory; confirm on the remaining validation scenes.',
         '- A mode that helps clean inputs may remove useful recovery on degraded inputs.',
         '- No production defaults, model weights, training settings, or held-out test data were changed.',
-        '- Ruby comparison remains pending; this is an internal ablation only.']
+        '- External comparison remains pending; this is an internal ablation only.']
     (out/'summary.json').write_text(json.dumps(summaries,indent=2),encoding='utf-8')
     (out/'REPORT.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
 

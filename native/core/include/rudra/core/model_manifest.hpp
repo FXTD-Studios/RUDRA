@@ -24,6 +24,7 @@ struct ModelManifest {
     std::string contract;                // "1.0"
     std::string name;
     std::string source_file, source_sha256;
+    std::string exported;                // ISO 8601 UTC, when the package was written ("" if absent)
     float corpus_ev = -1.0f;
     float log_scale = 16.0f;
     float max_hdr = 4.0f;
@@ -31,9 +32,12 @@ struct ModelManifest {
     int curve_params = 1;
     int tile_size = 512, overlap = 64;
     std::filesystem::path torchscript, onnx_frame, onnx_tile, golden;
+    // The half-precision tile graph (roadmap R1, real time); empty when the
+    // package has none (exported before 2 Oct 2026, or over its tolerance).
+    std::filesystem::path onnx_tile_fp16;
     std::map<std::string, std::string> file_sha256;   // relative file -> sha256
     std::vector<std::string> onnx_frame_inputs, onnx_tile_inputs;
-    std::map<std::string, Tolerance> tolerance;       // "torchscript", "onnx"
+    std::map<std::string, Tolerance> tolerance;       // "torchscript", "onnx", "gpu_fp32", "fp16"
 };
 
 // Reads and validates root/manifest.json. Refuses an unknown contract major.

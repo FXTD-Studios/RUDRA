@@ -3,8 +3,9 @@ RUDRA TRAINED WEIGHTS -- NON-COMMERCIAL LICENCE
 
 Copyright 2026 FXTD Studios. All rights reserved.
 
-The CODE in this repository is Apache License 2.0 (see ../LICENSE).
-The WEIGHTS in this directory are NOT. They are licensed as below.
+The CODE in this repository is licensed under the PolyForm Noncommercial
+License 1.0.0 (see ../LICENSE). The WEIGHTS in this directory are licensed
+separately, as below.
 
 
 1. GRANT
@@ -48,6 +49,11 @@ These weights were trained on a mixed corpus:
   Netflix Chimera           CC BY 4.0 -- requires attribution
                             https://opencontent.netflix.com/
 
+  Netflix Open Content      CC BY 4.0 -- requires attribution
+  (sdr2hdr_image_v8 only):  https://opencontent.netflix.com/
+  Nocturne, Sparks, Sol Levante (training), Cosmos Laundromat
+  (checkpoint selection); Meridian held out for test
+
   FXTD Studios footage      proprietary, FXTD's own
 
 The HdM term is the binding one. It is a contract accepted at download, not
@@ -59,8 +65,8 @@ alone could grant.
 
 `pipeline/render_hdri_moves.py` builds training pairs from the CC0 Poly Haven
 panoramas alone. Weights retrained on CC0 material plus FXTD's own footage
-carry no upstream condition, and are intended to be released under Apache 2.0
-as an unrestricted replacement for these. See STATUS.md.
+carry no upstream condition, so FXTD Studios could license them commercially
+without anyone else's agreement. See STATUS.md.
 
 
 4. ATTRIBUTION
@@ -68,6 +74,12 @@ as an unrestricted replacement for these. See STATUS.md.
 Wherever you credit sources, credit:
 
     Netflix Open Content -- Chimera, CC BY 4.0
+    https://opencontent.netflix.com/
+
+and, for sdr2hdr_image_v8:
+
+    Netflix Open Content -- Nocturne, Sparks, Sol Levante,
+    Cosmos Laundromat, CC BY 4.0
     https://opencontent.netflix.com/
 
 For the weights themselves:
@@ -87,8 +99,8 @@ does not depend on anyone's permission.
 --------------------------
 Every .pt file in this directory, and the corresponding weight files
 published at https://huggingface.co/fxtdstudios/RUDRA. The .json files, the
-checksums and README.md in this directory are Apache 2.0 with the rest of
-the repository.
+checksums and README.md in this directory are under the repository's
+licence (PolyForm Noncommercial 1.0.0).
 
 
 7. NO WARRANTY

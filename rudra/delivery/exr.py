@@ -13,6 +13,7 @@ it refuses compressed input with a clear error instead of mis-reading it.
 
 from __future__ import annotations
 
+import os
 import struct
 from pathlib import Path
 
@@ -97,6 +98,21 @@ def write_exr(
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Write beside the target and rename, so a crash or a full disk never
+    # leaves a truncated EXR under the final name.
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        _write_body(tmp, header, height, row_data_size, data_start, chunk_size,
+                    sorted_names, planes)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    return path
+
+
+def _write_body(path, header, height, row_data_size, data_start, chunk_size,
+                sorted_names, planes) -> None:
     with open(path, "wb") as fh:
         fh.write(struct.pack("<ii", _MAGIC, 2))
         fh.write(header)
@@ -106,7 +122,6 @@ def write_exr(
             fh.write(struct.pack("<ii", y, row_data_size))
             for name in sorted_names:
                 fh.write(planes[name][y].tobytes())
-    return path
 
 
 def _read_null_str(buf: bytes, pos: int) -> tuple[str, int]:
@@ -163,6 +178,9 @@ def read_exr(path: str | Path) -> tuple[np.ndarray, dict]:
     width, height = x1 - x0 + 1, y1 - y0 + 1
     pos += 8 * height  # skip offset table
 
+    unsupported = [c for c, t in channels if t not in (_PIXEL_HALF, _PIXEL_FLOAT)]
+    if unsupported:
+        raise ValueError(f"{path}: UINT channels {unsupported} unsupported by this minimal reader")
     names = [c for c, _ in channels]
     dtypes = {c: (np.float16 if t == _PIXEL_HALF else np.float32) for c, t in channels}
     planes = {c: np.empty((height, width), dtype=np.float32) for c in names}

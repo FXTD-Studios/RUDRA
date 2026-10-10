@@ -170,7 +170,10 @@ def _probe(video: Path) -> tuple[int, float]:
 
 def _extract(video: Path, index: int, fps: float, target: Path) -> None:
     """One frame, by seeking rather than decoding everything before it."""
-    when = index / max(fps, 1e-6)
+    # Half a frame BEFORE the frame's own time. -accurate_seek drops every
+    # frame earlier than the seek point, so seeking to exactly index/fps could
+    # land a hair past frame `index` after rounding and return index + 1.
+    when = max(0.0, (index - 0.5) / max(fps, 1e-6))
     partial = target.with_suffix(".tmp.png")
     done = subprocess.run(
         ["ffmpeg", "-v", "error", "-y",

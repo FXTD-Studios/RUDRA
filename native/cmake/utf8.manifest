@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Windows 10 1903 and later: the process's code page is UTF-8, so every
+     narrow string (std::filesystem::path::string(), getenv, OpenCV's file
+     names, the paths handed to ffmpeg) carries any file name, not only those
+     in the system's legacy code page. Linked into every RUDRA executable
+     (cmake/RudraWarnings.cmake, rudra_warnings). -->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+</assembly>

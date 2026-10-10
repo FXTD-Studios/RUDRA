@@ -35,6 +35,11 @@ def corpus_ev_of(manifest_path: str | Path, records: list[dict] | None = None) -
 
     A corpus without sidecars is the legacy corpus and gets -1 EV. A corpus
     whose rows disagree is refused: one model has one baseline.
+
+    Rows with ``sdr_kind == "real"`` (a real SDR grade, e.g. the Netflix
+    Open Content corpus) were never tone-mapped by us, so they carry no
+    exposure and are left out of the vote; the EV belongs to the rendered
+    rows they are mixed with (1 Oct 2026).
     """
     from rudra.sdr2hdr import LEGACY_CORPUS_EV
 
@@ -42,6 +47,8 @@ def corpus_ev_of(manifest_path: str | Path, records: list[dict] | None = None) -
     seen: dict[float, int] = {}
     unknown = 0
     for row in rows:
+        if row.get("sdr_kind") == "real":
+            continue
         value = row.get("tonemap_ev")
         # An image row carries one sidecar; a clip row (video manifest) carries
         # one per frame. Either way the first one that exists speaks for the row.
@@ -283,6 +290,29 @@ def announce_storage(label: str, hdr_path: str | Path) -> HDRStorage | None:
     return storage
 
 
+def effective_source_curve(record: dict, degraded: bool, augment: bool,
+                           dropout: float, rng: random.Random | None = None) -> int:
+    """The source-curve id a sample may truthfully carry (roadmap task 1.4).
+
+    A label is only true while the SDR still has that curve. ``degrade_sdr``
+    re-exposes, re-contrasts and re-gammas the frame, so a degraded sample is
+    "unknown" whatever its row says; so is a real-SDR row (no known curve), a
+    row with no label at all (every corpus before 1 Oct 2026), and -- in
+    training only -- a fraction ``dropout`` of the clean labelled samples, so
+    the blind path the model ships with keeps learning.
+    """
+    from rudra.sdr2hdr import source_curve_index
+
+    if degraded:
+        return 0
+    if record.get("sdr_kind") == "real":
+        return 0
+    index = source_curve_index(record.get("source_curve"))
+    if index and augment and dropout > 0.0 and (rng or random).random() < dropout:
+        return 0
+    return index
+
+
 class SDRHDRDataset(Dataset):
     def __init__(
         self,
@@ -294,6 +324,7 @@ class SDRHDRDataset(Dataset):
         degradation_probability: float = 0.65,
         max_items: int | None = None,
         deterministic_degradation: bool = False,
+        source_curve_dropout: float = 0.0,
     ):
         records = read_jsonl(manifest_path)
         self.records = [r for r in records if r.get("split") == split]
@@ -314,6 +345,9 @@ class SDRHDRDataset(Dataset):
         # for: an SDR whose tone curve, codec and bit depth are unknown. Seeded
         # per record, so the number is reproducible across steps and runs.
         self.deterministic_degradation = bool(deterministic_degradation)
+        self.source_curve_dropout = float(source_curve_dropout)
+        if not 0.0 <= self.source_curve_dropout <= 1.0:
+            raise ValueError("source_curve_dropout must be between 0 and 1")
         if not 0.0 <= self.degradation_probability <= 1.0:
             raise ValueError("degradation_probability must be between 0 and 1")
         self.storage = announce_storage(f"image/{split}", self.records[0]["hdr_path"])
@@ -333,11 +367,14 @@ class SDRHDRDataset(Dataset):
         if self.augment and random.random() < 0.5:
             sdr, hdr = torch.flip(sdr, (-1,)), torch.flip(hdr, (-1,))
         clean_sdr = sdr.clone()
+        degraded = False
         # Keep a substantial clean-input fraction. Otherwise a model trained
         # only on altered tone curves learns to "correct" already valid SDR.
         if self.augment and random.random() < self.degradation_probability:
             sdr = degrade_sdr(sdr, self.augmentation_strength)
+            degraded = self.augmentation_strength > 0
         elif self.deterministic_degradation:
+            degraded = True
             py_state, torch_state = random.getstate(), torch.random.get_rng_state()
             random.seed(24_082_600 + index)
             torch.manual_seed(24_082_600 + index)
@@ -355,6 +392,15 @@ class SDRHDRDataset(Dataset):
                 float(ceiling) / NETWORK_PEAK_NITS if ceiling else float("inf"),
                 dtype=torch.float32),
             "asset_id": str(record["asset_id"]), "scene_id": str(record["scene_id"]),
+            "source_curve": torch.tensor(
+                effective_source_curve(record, degraded, self.augment, self.source_curve_dropout),
+                dtype=torch.long),
+            # 1 for a real SDR grade (sdr_kind "real", e.g. the Netflix trim
+            # pass), 0 for a rendered pair. The evaluator splits its gains on
+            # this: the analytic inverse is near-exact on rendered rows and
+            # stops wrong on real ones, so one pooled gain hides which of the
+            # two the model is actually moving (v7, 7 Oct 2026).
+            "real": torch.tensor(1 if record.get("sdr_kind") == "real" else 0, dtype=torch.long),
         }
 
 
