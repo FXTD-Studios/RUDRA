@@ -60,7 +60,7 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   model runs and none needs to be installed. **Reconstruct > Use the model
   (AI-assisted)** adds the model's reconstruction on top; the status bar says
   which is in use and every master's sidecar records it. Movie exports
-  currently always run the model and ignore the grade (see the release notes).
+  follow it too, with your whole grade.
 
 - **Mode** (1 2 3 4): what the model may change: *All*, *Highlights*,
   *Shadows*, or *Off* (the baseline alone).
@@ -69,6 +69,15 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   them at the baseline.
 - Hold **B** to flip to the baseline; **W** wipes baseline (left) against
   RUDRA (right); drag the image to move the wipe.
+
+### Play
+
+- **Space** plays. With the model on, it runs ahead of the playhead on a
+  smaller copy of each frame (**Clip > While playing**: 960 px, 640 px or full
+  size) and the frame you stop on is reconstructed again at full size.
+- **Keep time** (on by default) skips frames the model has not reached so the
+  clip plays at its own rate; turn it off to see every frame. The status bar
+  shows the rate reached, and the log says it when you stop.
 
 ### Check
 

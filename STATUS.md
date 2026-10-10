@@ -74,6 +74,17 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **10 Oct 2026, night — beta 9 prepared (line F).** Movie exports now carry the app's settings:
+> `deliver/master grade_master()` (split from `write_master`) runs per frame inside `video/convert` when the
+> job names a `grade` settings file (`VideoConvertArgs::grade`, queue option `grade`); analytic jobs need no
+> package (the settings file is the job's checkpoint). Playback with the model: `FrameEngine::set_playing`
+> keeps inference ahead of the playhead, a proxy at 960 px by default (`FrameResult::proxy`,
+> `resize_fields`) refined at full size where it stops; `app/playback` MovieFeeder decodes a movie in order
+> with one ffmpeg; realtime keeps time by skipping. CPU ORT on shadow_v1: 8.85 s at 1080p, 2.11 s at 960x540
+> (4.2x), 1.16 s at 640x360 (7.6x); from 154 ms per 1080p frame on the RTX 4080 that is ~37 ms / ~20 ms,
+> estimated, to measure on the GPU. Reviewed (feeder stall on a skip and a loader held in take() on reset:
+> fixed). Linux: core 214/214, app 55/55 (41/41 without OpenCV), master parity PASS, video real tests 5/5 on ORT.
+>
 > **10 Oct 2026, evening — beta 8 prepared (line F, R5).** An external review (ChatGPT Pro, of `main`
 > 5e827a7 and `native` 161eb2d) found that "masters default to the analytic inverse" was not true of the
 > app: `GradeSnapshot` defaulted to mode all / strength 1 and every frame and master ran `infer_frame`.

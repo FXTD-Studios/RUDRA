@@ -1,7 +1,7 @@
-# RUDRA 0.9.0 beta 8
+# RUDRA 0.9.0 beta 9
 
 The desktop RUDRA: SDR footage in, scene-linear HDR out, with the places the
-model reconstructed shown to you. This is the eighth public beta of the native
+model reconstructed shown to you. This is the ninth public beta of the native
 app (C++20, Qt 6.8, no Python at runtime). It is for evaluation and
 non-commercial use (PolyForm Noncommercial 1.0.0, see LICENSE; the model
 weights: LICENSE-weights).
@@ -42,7 +42,29 @@ weights: LICENSE-weights).
 - `rudra-native`, the command line: `diff`, `video`, `deliver`, `batch`,
   `ffmpeg-check`.
 
-## Changes since beta 7
+## Changes since beta 8
+
+- **Movie exports carry your grade.** HDR10, HLG and ProRes exports now go
+  through the same chain as Master EXR, frame by frame: the reconstruction
+  (analytic, or the model), recovery mode and strength, source curve,
+  calibration or reference, painted masks, anchor, chroma, grain and Region
+  EV. They used to run the model with recovery "all" and none of the grade.
+  The settings travel beside the export as `<file>.settings.json`, and the
+  report says which reconstruction made it. An analytic export needs no model
+  package at all.
+- **Playback with the model.** While playing, the model runs ahead of the
+  playhead on a smaller copy of each frame (Clip > While playing: 960 px by
+  default, 640 px, or full size) and its result is brought back to the frame's
+  size; where you stop, the frame is reconstructed again at full size. A movie
+  is decoded in order by one ffmpeg instead of frame by frame. Clip > While
+  playing > Keep time skips frames the model has not reached, so playback runs
+  at the clip's rate; off, every frame is shown. The status bar shows the rate
+  reached. On the CPU the model is 4.2 times faster at 960 px than at 1080p
+  and 7.6 times at 640 px; from the 154 ms per 1080p frame measured on an RTX
+  4080 that is about 37 ms (27 fps) and 20 ms (50 fps), estimated, not yet
+  measured on the GPU.
+
+## Changes in beta 8 (since beta 7)
 
 - **The analytic reconstruction is the default, and says so.** Until now the
   app ran the model on every frame and every master although these notes
@@ -53,8 +75,6 @@ weights: LICENSE-weights).
   bar says which is in use, and a master's sidecar records it
   (`"reconstruction": "analytic (no model)"`, or the model's name under
   `checkpoint`). The choice is kept between runs and in a project.
-  Movie exports (HDR10, HLG, ProRes) still run the model package, whatever the
-  switch says, and do not yet carry the grade: see Known in this beta.
 
 ## Changes in beta 7 (since beta 6)
 
@@ -158,7 +178,7 @@ opens with no warning. A DMG built without the certificate (the build log says
 "ad hoc") makes macOS warn on first open: System Settings > Privacy &
 Security > Open Anyway, or `xattr -dr com.apple.quarantine /Applications/RUDRA.app`.
 
-**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.8-windows-x64-setup.exe`:
+**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.9-windows-x64-setup.exe`:
 it installs for your user by default (no administrator prompt), adds RUDRA to
 the Start menu and can be removed from Settings > Apps. Or take the portable
 ZIP: unzip anywhere and run `RUDRA.exe`. A GPU with DirectX 12 is used when
@@ -183,15 +203,11 @@ nothing extra.
   certificate (RUDRA.exe > Properties > Digital Signatures shows it); without
   one SmartScreen may ask once.
 - macOS: ffmpeg is not in the DMG yet (see Install).
-- Movie exports run the model package (`rudra video`) with recovery "all"
-  and without the Reconstruct/Grade settings; the analytic switch, the grade
-  and the masks apply to the view and to Master EXR. To deliver a graded
-  movie today, master EXR frames and encode those (`rudra-native deliver`).
-- Real-time playback with the model is not offered: the model takes about
-  150 ms per 1080p frame on an RTX 4080; the controls themselves redraw in
-  about 1 ms at 4K.
-- Linux builds are made from source (`scripts/native_app.sh`); there is no
-  Linux package in this beta.
+- Playback with the model at 24 fps depends on the GPU: the 960 px setting is
+  estimated at about 27 fps on an RTX 4080 and is not yet measured there;
+  slower machines keep time by skipping frames (or choose 640 px).
+- A queue with the app's settings (`grade`) runs in RUDRA; `rudra batch` in
+  Python does not know that option.
 
 ## Reporting
 
