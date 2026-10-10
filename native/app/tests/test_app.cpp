@@ -94,6 +94,11 @@ const json& golden() {
 
 QString qs(std::string_view s) { return QString::fromUtf8(s.data(), qsizetype(s.size())); }
 
+QString last_log(app::MainWindow& w) {
+    const QStringList lines = w.findChild<QPlainTextEdit*>("log")->toPlainText().split('\n', Qt::SkipEmptyParts);
+    return lines.isEmpty() ? QString() : lines.last();
+}
+
 std::string id_of(const QAction* a) {
     const QString n = a->objectName();
     return n.startsWith("act:") ? n.mid(4).toStdString() : std::string();
@@ -234,10 +239,10 @@ TEST(AppActions, EnabledAsThePageEnablesThem) {
     w.refresh_enabled();
     // No frames: refreshMenu turns these off.
     for (const char* id : {"close", "first", "prev", "next", "last", "play", "master", "undo", "redo",
-                           "copy-metrics", "copy-scopes", "copy-delivery", "remeasure"})
+                            "copy-metrics", "copy-scopes", "copy-delivery", "remeasure"})
         EXPECT_FALSE(w.action(id)->isEnabled()) << id;
     for (const char* id : {"open", "mode-all", "preserve", "strength-up", "reset-recon", "container-aces",
-                           "shortcuts", "about", "open-package", "quit"})
+                            "shortcuts", "about", "open-package", "quit"})
         EXPECT_TRUE(w.action(id)->isEnabled()) << id;
     // What waits on a later step says so.
     EXPECT_TRUE(w.action("rail-left")->isEnabled());
@@ -589,7 +594,7 @@ TEST(AppLayout, ShellControlsDoWhatShellJsDoes) {
     find<app::CheckRow>(w, "preserve")->clicked();
     EXPECT_EQ(w.findChild<QLabel*>("preserveHint")->text(), "raw prediction");
     w.run("container-linear");
-    EXPECT_EQ(w.findChild<QLabel*>("containerField")->text().toStdString(), "OpenEXR \u2014 linear Rec.2020");
+    EXPECT_EQ(w.findChild<QLabel*>("containerField")->text().toStdString(), "OpenEXR — linear Rec.2020");
     EXPECT_EQ(w.findChild<QLabel*>("primariesField")->text(), "Rec.2020");
     w.findChild<QPushButton*>("wipeBtn")->click();
     EXPECT_TRUE(w.session().wipe.has_value());
@@ -819,7 +824,7 @@ TEST(AppMeasure, TheFramePanelAndBarsShowTheMeasurement) {
     EXPECT_EQ(w.findChild<QLabel*>("pipeWarn")->text().toStdString(),
               pipe_text("aces", 203.0, m->measured.metrics.maxcll, std::nullopt).warn);
     w.session().peak_input(5.0);
-    EXPECT_EQ(w.findChild<QLabel*>("viewTransform")->text().toStdString(), "exposure + clip \u00b7 6,496 nits");
+    EXPECT_EQ(w.findChild<QLabel*>("viewTransform")->text().toStdString(), "exposure + clip · 6,496 nits");
     EXPECT_FALSE(w.findChild<QLabel*>("pipeWarn")->isVisible());
     w.run("container-linear");
     EXPECT_EQ(w.findChild<QLabel*>("pipeMaster")->text().toStdString(), "linear Rec.2020 EXR, half");
@@ -983,11 +988,11 @@ TEST(AppDeliver, MasterRendersThePlanAndSaysSo) {
     EXPECT_EQ(w.findChild<QPushButton*>("btnMaster")->text(), "Master EXR");
     const QString log = w.findChild<QPlainTextEdit*>("log")->toPlainText();
     const auto first = root / "shot_010.000001.exr", last = root / "shot_010.000003.exr";
-    EXPECT_TRUE(log.contains(QString::fromStdString("Render destination: " + first.string() + " \u2026 " + last.string())));
+    EXPECT_TRUE(log.contains(QString::fromStdString("Render destination: " + first.string() + " … " + last.string())));
     for (int i = 1; i <= 3; ++i) {
         const auto exr = root / ("shot_010.00000" + std::to_string(i) + ".exr");
         EXPECT_TRUE(std::filesystem::exists(exr)) << exr;
-        EXPECT_TRUE(log.contains(QString::fromStdString("Saved " + exr.string() + " \u00b7 20x12"))) << i;
+        EXPECT_TRUE(log.contains(QString::fromStdString("Saved " + exr.string() + " · 20x12"))) << i;
     }
     // Again: refused, nothing replaced.
     w.master(prepare, 3);
@@ -1177,7 +1182,7 @@ TEST(AppScopes, WaveformAndHistogramLookAsThePageDrawsThem) {
         for (const char* part : {"wave", "hist"}) {
             const auto& box = c["drawn"][part]["box"];
             app::ScopePlot plot(part, part == std::string("wave") ? app::ScopePlot::Kind::Waveform
-                                                                  : app::ScopePlot::Kind::Histogram,
+                                                                      : app::ScopePlot::Kind::Histogram,
                                 box[1].get<int>());
             plot.set_data(s, maxcll);
             plot.set_text_shown(false);
@@ -1303,7 +1308,7 @@ std::shared_ptr<Models> fake_models(app::MainWindow& w, const std::string& tag) 
                                                    {"models", {{{"file", "alpha.pt"}, {"kind", "sdr2hdr"}, {"title", "Alpha"}},
                                                                {{"file", "beta.pt"}, {"kind", "sdr2hdr"}, {"title", "Beta"}},
                                                                {{"file", "gamma.pt"}, {"kind", "sdr2hdr"}, {"title", "Gamma"}}}}}
-                                                  .dump();
+                                                   .dump();
     app::MainWindow::ModelHooks h;
     h.verify_files = false;
     h.open = [m, levels](const ModelManifest& man, std::optional<BackendChoice> c) -> Result<OpenedBackend> {
@@ -1461,7 +1466,7 @@ void set_default(const Models& m, const std::string& file) {
                                                   {"models", {{{"file", "alpha.pt"}, {"kind", "sdr2hdr"}, {"title", "Alpha"}},
                                                               {{"file", "beta.pt"}, {"kind", "sdr2hdr"}, {"title", "Beta"}},
                                                               {{"file", "gamma.pt"}, {"kind", "sdr2hdr"}, {"title", "Gamma"}}}}}
-                                                 .dump();
+                                                  .dump();
 }
 QString log_text(app::MainWindow& w) { return w.findChild<QPlainTextEdit*>("log")->toPlainText(); }
 bool booted(app::MainWindow& w) {
@@ -1682,11 +1687,6 @@ void drop(QWidget& target, const QStringList& paths) {
 }
 
 QString png(const char* name) { return QString::fromStdString((decode_dir() / name).string()); }
-
-QString last_log(app::MainWindow& w) {
-    const QStringList lines = w.findChild<QPlainTextEdit*>("log")->toPlainText().split('\n', Qt::SkipEmptyParts);
-    return lines.isEmpty() ? QString() : lines.last();
-}
 
 }  // namespace
 
