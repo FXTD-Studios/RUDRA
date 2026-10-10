@@ -20,9 +20,13 @@
 # is signed ad hoc as before and macOS warns on first open (right-click > Open,
 # or `xattr -dr com.apple.quarantine RUDRA.app`). An identity without
 # notarization fails, since that build would warn too (ALLOW_UNNOTARIZED=1 to
-# keep it for a local test). ffmpeg is not bundled
-# (movies need an ffmpeg with libx265, prores_ks and zscale on the PATH, e.g.
-# `brew install ffmpeg@6` with its bin directory first on PATH); stills need nothing else.
+# keep it for a local test).
+# ffmpeg: MAC_FFMPEG_DIR=<a folder with a static arm64 ffmpeg and ffprobe that
+# have libx265, prores_ks and zscale, and their LICENSE> bundles them in
+# Contents/MacOS/ffmpeg, which the app and the CLI put first on their PATH
+# (platform/tools.hpp), signed with the app. They must link nothing outside
+# the system (a Homebrew ffmpeg does). Without it ffmpeg is not bundled and
+# movies need one on the PATH (`brew install ffmpeg`); stills need nothing else.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ "$(uname -s)-$(uname -m)" = "Darwin-arm64" ] || { echo "package_mac.sh runs on Apple silicon" >&2; exit 2; }
@@ -76,6 +80,27 @@ cp -R dist/models/. "$APP/Contents/Resources/models/"
 find "$APP/Contents/Resources/models" -name "*.safetensors" -delete -o -name "*.config.json" -delete
 cp LICENSE NOTICE "$APP/Contents/Resources/"
 [ -f checkpoints/LICENSE ] && cp checkpoints/LICENSE "$APP/Contents/Resources/LICENSE-weights"
+[ -f docs/USER_GUIDE.md ] && cp docs/USER_GUIDE.md "$APP/Contents/Resources/User guide.md"
+
+FFMPEG_BUNDLED=""
+if [ -n "${MAC_FFMPEG_DIR:-}" ]; then
+  say "ffmpeg into the bundle ($MAC_FFMPEG_DIR)"
+  for t in ffmpeg ffprobe; do [ -x "$MAC_FFMPEG_DIR/$t" ] || fail "MAC_FFMPEG_DIR has no executable $t"; done
+  ls "$MAC_FFMPEG_DIR" | grep -qi '^licen[sc]e' || fail "MAC_FFMPEG_DIR has no LICENSE for the ffmpeg build (GPL: it must travel with it)"
+  mkdir -p "$APP/Contents/MacOS/ffmpeg"
+  cp "$MAC_FFMPEG_DIR/ffmpeg" "$MAC_FFMPEG_DIR/ffprobe" "$APP/Contents/MacOS/ffmpeg/"
+  mkdir -p "$APP/Contents/Resources/ffmpeg-licence"
+  find "$MAC_FFMPEG_DIR" -maxdepth 1 -type f \( -iname 'licen*' -o -iname 'readme*' -o -iname 'source*' \) \
+    -exec cp {} "$APP/Contents/Resources/ffmpeg-licence/" \;
+  for t in ffmpeg ffprobe; do
+    outside=$(otool -L "$APP/Contents/MacOS/ffmpeg/$t" | tail -n +2 | awk '{print $1}' | grep -vE '^/usr/lib/|^/System/' || true)
+    [ -z "$outside" ] || { printf '%s\n' "$outside"; fail "the bundled $t links outside the system (use a static build)"; }
+  done
+  "$APP/Contents/MacOS/ffmpeg/ffmpeg" -hide_banner -h encoder=prores_ks >/dev/null || fail "the bundled ffmpeg does not run"
+  FFMPEG_BUNDLED=1
+else
+  echo "ffmpeg not bundled (MAC_FFMPEG_DIR unset): movies need one on the PATH"
+fi
 
 IDENTITY=${MAC_SIGN_IDENTITY:-}
 notary_args=()
@@ -111,6 +136,10 @@ if [ -n "$IDENTITY" ]; then
   while IFS= read -r -d '' f; do sign "$f"; done < <(find "$APP/Contents" -type f \( -name "*.dylib" -o -name "*.so" \) -print0)
   for fw in "$APP"/Contents/Frameworks/*.framework; do [ -d "$fw" ] && sign "$fw"; done
   sign "$APP/Contents/MacOS/rudra-native"
+  if [ -n "$FFMPEG_BUNDLED" ]; then
+    sign "$APP/Contents/MacOS/ffmpeg/ffmpeg"
+    sign "$APP/Contents/MacOS/ffmpeg/ffprobe"
+  fi
   sign "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
   if [ ${#notary_args[@]} -gt 0 ]; then
@@ -130,7 +159,7 @@ fi
 
 say "Check the bundle runs from where it is"
 # Nothing may still point into the build tree or Homebrew.
-leaks=$(for f in "$APP/Contents/MacOS/"* "$APP/Contents/Frameworks/"*.dylib; do otool -L "$f" | tail -n +2; done |
+leaks=$(for f in "$APP/Contents/MacOS/"* "$APP/Contents/Frameworks/"*.dylib; do [ -f "$f" ] && otool -L "$f" | tail -n +2; done |
         grep -E "$PWD|/opt/homebrew|/usr/local" || true)
 [ -z "$leaks" ] || { printf '%s\n' "$leaks"; fail "the bundle links outside itself"; }
 "$APP/Contents/MacOS/rudra-native" info "$APP/Contents/Resources/models/$(ls "$APP/Contents/Resources/models" | grep -v models.json | head -1)" >/dev/null ||

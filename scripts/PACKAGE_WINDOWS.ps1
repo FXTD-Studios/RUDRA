@@ -9,6 +9,7 @@
       RUDRA.exe, rudra-native.exe, Qt (windeployqt), the MSVC runtime,
       onnxruntime.dll, DirectML.dll, opencv_world*.dll,
       models\   the package(s) from dist\models
+      ffmpeg\   ffmpeg.exe, ffprobe.exe and their LICENSE (gyan.dev "full" build, GPL)
       LICENSE, NOTICE, LICENSE-weights, "Read me first.md"
   dist\beta\RUDRA-<version>-windows-x64.zip, and the installer
   dist\beta\RUDRA-<version>-windows-x64-setup.exe (Inno Setup 6, installed for
@@ -17,9 +18,20 @@
 
   Needs what NATIVE_PHASE3_EXIT.ps1 needs: Visual Studio 2022 or 2026 (or the
   Build Tools) with the C++ tools, a Python for aqtinstall, and a model package
-  (NATIVE_GATE_A.ps1 -Checkpoint checkpoints\sdr2hdr_image_v8.pt exports dist\models\sdr2hdr_image_v8). Movies need an
-  ffmpeg with libx265, prores_ks and zscale on the PATH (the gyan.dev "full"
-  build); it is not bundled.
+  (NATIVE_GATE_A.ps1 -Checkpoint checkpoints\sdr2hdr_image_v8.pt exports dist\models\sdr2hdr_image_v8).
+
+  Movies need an ffmpeg with libx265, prores_ks and zscale. The package
+  carries one (since beta 6): the gyan.dev "full" build of the version below,
+  downloaded once into tmp\native_deps and checked against its pinned SHA-256,
+  in <package>\ffmpeg\, which the app and the CLI put first on their PATH
+  (platform/tools.hpp; RUDRA_FFMPEG_DIR=path makes them use the PATH's own).
+  That build is GPL v3: its LICENSE and README (with where its source is) go
+  beside it, and NOTICE says so. -NoFfmpeg leaves it out.
+
+  Signing (optional): with RUDRA_SIGN_PFX (a .pfx code-signing certificate)
+  and RUDRA_SIGN_PASSWORD set, RUDRA.exe, rudra-native.exe and the installer
+  are signed with signtool and timestamped; without them nothing is signed and
+  Windows SmartScreen warns on first start.
 
 .EXAMPLE
   .\scripts\PACKAGE_WINDOWS.ps1
@@ -37,7 +49,12 @@ param(
     [switch]$SkipBuild,
     [switch]$Tests,
     [switch]$NoInstaller,
-    [switch]$InstallBuildTools
+    [switch]$InstallBuildTools,
+    [switch]$NoFfmpeg,
+    [string]$FfmpegVersion = "7.1.1",
+    # The pinned build's SHA-256 (GyanD/codexffmpeg release asset, checked 10 Oct 2026).
+    # Another -FfmpegVersion needs its own: -FfmpegSha256 <hash>.
+    [string]$FfmpegSha256 = "d760e1b3574402ed18b4865851f87d87e73965a982e6453212df8621fed1c508"
 )
 
 $ErrorActionPreference = "Stop"
@@ -111,6 +128,59 @@ $CvDll = Get-ChildItem (Join-Path $CvBuild "x64") -Recurse -Filter "opencv_world
          Where-Object { $_.Name -notmatch "d\.dll$" } | Select-Object -First 1
 if (-not $CvDll) { Fail "opencv_world DLL not found under $CvBuild" }
 
+# ffmpeg (product item 2): the gyan.dev "full" build, pinned by hash.
+$FfDir = $null
+if (-not $NoFfmpeg) {
+    $FfRoot = Join-Path $Deps "ffmpeg-$FfmpegVersion-full_build"
+    if (-not (Test-Path (Join-Path $FfRoot "bin\ffmpeg.exe"))) {
+        $zip = Join-Path $Deps "ffmpeg-$FfmpegVersion-full_build.zip"
+        $url = "https://github.com/GyanD/codexffmpeg/releases/download/$FfmpegVersion/ffmpeg-$FfmpegVersion-full_build.zip"
+        Write-Host "download $url"
+        Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+        $got = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+        if ($got -ne $FfmpegSha256.ToLower()) {
+            Remove-Item $zip -Force
+            Fail "ffmpeg $FfmpegVersion SHA-256 is $got, expected $FfmpegSha256 (a different file: not packaged)"
+        }
+        Expand-Archive -Path $zip -DestinationPath $Deps -Force
+        Remove-Item $zip
+    }
+    foreach ($f in @("bin\ffmpeg.exe", "bin\ffprobe.exe", "LICENSE")) {
+        if (-not (Test-Path (Join-Path $FfRoot $f))) { Fail "ffmpeg build incomplete: $f missing in $FfRoot" }
+    }
+    $FfDir = $FfRoot
+    Write-Host "ffmpeg $FfmpegVersion (gyan.dev full build) at $FfRoot"
+}
+
+# Signing: signtool from the Windows SDK, with RUDRA_SIGN_PFX / RUDRA_SIGN_PASSWORD.
+function Find-SignTool {
+    $c = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    if ($c) { return $c.Source }
+    $kits = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+    if (Test-Path $kits) {
+        $t = Get-ChildItem $kits -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+             Where-Object { $_.FullName -match "\\x64\\" } | Sort-Object FullName -Descending | Select-Object -First 1
+        if ($t) { return $t.FullName }
+    }
+    return $null
+}
+$Sign = $null
+if ($env:RUDRA_SIGN_PFX) {
+    if (-not (Test-Path $env:RUDRA_SIGN_PFX)) { Fail "RUDRA_SIGN_PFX names no file: $env:RUDRA_SIGN_PFX" }
+    $Sign = Find-SignTool
+    if (-not $Sign) { Fail "RUDRA_SIGN_PFX is set but signtool.exe was not found (Windows SDK)" }
+    Write-Host "signing with $Sign"
+}
+function Invoke-Sign([string[]]$files) {
+    if (-not $Sign) { return }
+    $a = @("sign", "/fd", "SHA256", "/f", $env:RUDRA_SIGN_PFX, "/tr", "http://timestamp.digicert.com", "/td", "SHA256")
+    if ($env:RUDRA_SIGN_PASSWORD) { $a += @("/p", $env:RUDRA_SIGN_PASSWORD) }
+    & $Sign @a @files
+    if ($LASTEXITCODE -ne 0) { Fail "signtool sign" }
+    & $Sign verify /pa @files | Out-Null
+    if ($LASTEXITCODE -ne 0) { Fail "signtool verify" }
+}
+
 # ---------------------------------------------------------------------------
 if (-not $SkipBuild) {
     Say "Configure and build (Visual Studio, Release)"
@@ -163,6 +233,7 @@ if (Test-Path $Out) { Remove-Item $Out -Recurse -Force }
 if (Test-Path $Zip) { Remove-Item $Zip -Force }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 Copy-Item $App, $Cli $Out
+Invoke-Sign @((Join-Path $Out "RUDRA.exe"), (Join-Path $Out "rudra-native.exe"))
 # Qt and its plugins beside the executables.
 & (Join-Path $QtRoot "bin\windeployqt.exe") --release --no-translations (Join-Path $Out "RUDRA.exe")
 if ($LASTEXITCODE -ne 0) { Fail "windeployqt" }
@@ -194,11 +265,33 @@ Get-ChildItem $OutModels -Recurse -Include *.safetensors, *.config.json | Remove
 Copy-Item LICENSE, NOTICE $Out
 if (Test-Path checkpoints\LICENSE) { Copy-Item checkpoints\LICENSE (Join-Path $Out "LICENSE-weights") }
 if (Test-Path docs\BETA.md) { Copy-Item docs\BETA.md (Join-Path $Out "Read me first.md") }
+if (Test-Path docs\USER_GUIDE.md) { Copy-Item docs\USER_GUIDE.md (Join-Path $Out "User guide.md") }
+if ($FfDir) {
+    $OutFf = Join-Path $Out "ffmpeg"
+    New-Item -ItemType Directory -Force -Path $OutFf | Out-Null
+    Copy-Item (Join-Path $FfDir "bin\ffmpeg.exe"), (Join-Path $FfDir "bin\ffprobe.exe") $OutFf
+    Copy-Item (Join-Path $FfDir "LICENSE") (Join-Path $OutFf "LICENSE.txt")
+    if (Test-Path (Join-Path $FfDir "README.txt")) { Copy-Item (Join-Path $FfDir "README.txt") $OutFf }
+    @(
+        "ffmpeg $FfmpegVersion, the gyan.dev ""full"" build (https://www.gyan.dev/ffmpeg/builds/),",
+        "unmodified, from https://github.com/GyanD/codexffmpeg/releases/tag/$FfmpegVersion",
+        "(SHA-256 of the archive: $FfmpegSha256).",
+        "",
+        "It is licensed under the GNU GPL version 3 (LICENSE.txt). RUDRA runs it as a separate",
+        "program and is not linked to it. Its source: https://ffmpeg.org/releases/ and the",
+        "libraries listed in README.txt; FXTD Studios will also provide the corresponding source",
+        "on request (https://github.com/FXTD-Studios/RUDRA/issues) for three years from this release."
+    ) | Set-Content -Encoding utf8 (Join-Path $OutFf "SOURCE.txt")
+}
 
 Say "Check the package runs from where it is"
 $pkg = Get-ChildItem $OutModels -Directory | Where-Object { Test-Path (Join-Path $_.FullName "manifest.json") } | Select-Object -First 1
 & (Join-Path $Out "rudra-native.exe") info $pkg.FullName | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail "rudra-native in the package cannot read its model" }
+if ($FfDir) {
+    & (Join-Path $Out "ffmpeg\ffmpeg.exe") -hide_banner -h encoder=prores_ks | Out-Null
+    if ($LASTEXITCODE -ne 0) { Fail "the packaged ffmpeg does not run" }
+}
 $check = Join-Path $env:TEMP "rudra-theme-check.json"
 $p = Start-Process -FilePath (Join-Path $Out "RUDRA.exe") -ArgumentList @("--theme-check", "`"$check`"") -Wait -PassThru
 if ($p.ExitCode -ne 0) { Fail "RUDRA.exe in the package does not start (exit $($p.ExitCode))" }
@@ -247,6 +340,7 @@ if (-not $NoInstaller) {
     if ($LASTEXITCODE -ne 0) { Fail "ISCC" }
     $Setup = Join-Path (Split-Path $Out) "$Name-setup.exe"
     if (-not (Test-Path $Setup)) { Fail "no installer at $Setup" }
+    Invoke-Sign @($Setup)
     $sh = (Get-FileHash $Setup -Algorithm SHA256).Hash.ToLower()
     "$sh  $Name-setup.exe" | Set-Content -Encoding ascii "$Setup.sha256"
     Write-Host "$sh  $Name-setup.exe"
