@@ -364,6 +364,18 @@ void Session::set_anchor_knee(double knee) {
     notify(Delivery);
 }
 
+void Session::load_state(const GradeSnapshot& g, double peak, bool anchor_on, bool carry, double knee,
+                         std::string_view container_kind) {
+    push_undo();
+    grade = g;
+    peak_ev = peak;
+    anchor = anchor_on;
+    carry_chroma = carry;
+    anchor_knee = std::max(0.5, std::min(0.99, knee));
+    container = container_kind == "linear" ? "linear" : "aces";
+    notify(Grade | Peak | Delivery);
+}
+
 void Session::toggle_carry_chroma() {
     carry_chroma = !carry_chroma;
     notify(Delivery);

@@ -144,6 +144,10 @@ public:
     void toggle_anchor();                        // Deliver: anchor to the source exposure
     void set_anchor_knee(double knee);           // Deliver: the knee, 0.5 to 0.99; not undone (a delivery setting)
     void toggle_carry_chroma();                  // Deliver: carry the source chroma
+    // A saved project's state (engine/project): the grade as one undo step,
+    // then the view peak and the Deliver settings, as if set by hand.
+    void load_state(const GradeSnapshot& g, double peak, bool anchor_on, bool carry, double knee,
+                    std::string_view container_kind);
 
     // A Region EV value: press, move, release (the pointer's x in pixels),
     // and the double click that zeroes it.
