@@ -2,16 +2,26 @@
 
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include <cerrno>
+#include <cstdlib>
 
 #include "rudra/platform/hash.hpp"
 #include "rudra/platform/io_error.hpp"
 #include "rudra/platform/png8.hpp"
 #include "rudra/platform/npy.hpp"
 #include "rudra/platform/process.hpp"
+#include "rudra/platform/tools.hpp"
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 using namespace rudra;
 
@@ -189,3 +199,93 @@ TEST(IoError, AWriterThatFailsSaysWhy) {
     EXPECT_EQ(r.error().message.back(), '.');
     std::filesystem::remove_all(tmp);
 }
+
+// Product item 2: the package's own ffmpeg goes first on the PATH.
+namespace {
+struct KeepEnv {
+    std::string name;
+    std::optional<std::string> old;
+    explicit KeepEnv(std::string n) : name(std::move(n)) {
+        if (const char* v = std::getenv(name.c_str())) old = v;
+    }
+    ~KeepEnv() {
+#ifdef _WIN32
+        _putenv_s(name.c_str(), old ? old->c_str() : "");
+#else
+        if (old) setenv(name.c_str(), old->c_str(), 1);
+        else unsetenv(name.c_str());
+#endif
+    }
+};
+void set_env(const char* name, const std::string& v) {
+#ifdef _WIN32
+    _putenv_s(name, v.c_str());
+#else
+    setenv(name, v.c_str(), 1);
+#endif
+}
+void touch_tools(const std::filesystem::path& d) {
+    std::filesystem::create_directories(d);
+#ifdef _WIN32
+    std::ofstream(d / "ffmpeg.exe") << "";
+    std::ofstream(d / "ffprobe.exe") << "";
+#else
+    std::ofstream(d / "ffmpeg") << "";
+    std::ofstream(d / "ffprobe") << "";
+#endif
+}
+}  // namespace
+
+TEST(Tools, TheExecutablesFolderIsWhereTheTestsRun) {
+    const auto d = rudra::executable_dir();
+    ASSERT_FALSE(d.empty());
+    EXPECT_TRUE(std::filesystem::is_directory(d));
+}
+
+TEST(Tools, APackagesOwnFfmpegGoesFirst) {
+    KeepEnv path("PATH"), chosen("RUDRA_FFMPEG_DIR");
+    set_env("RUDRA_FFMPEG_DIR", "");
+    const auto root = std::filesystem::temp_directory_path() / "rudra-tools-test";
+    std::filesystem::remove_all(root);
+    // No tools: nothing changes.
+    std::filesystem::create_directories(root / "app");
+    const std::string before = std::getenv("PATH") ? std::getenv("PATH") : "";
+    EXPECT_TRUE(rudra::bundled_tools_dir(root / "app").empty());
+    EXPECT_FALSE(rudra::use_bundled_tools(root / "app"));
+    EXPECT_EQ(std::string(std::getenv("PATH") ? std::getenv("PATH") : ""), before);
+    // Half a pair is not a pair.
+    std::filesystem::create_directories(root / "app" / "ffmpeg");
+    std::ofstream(root / "app" / "ffmpeg" / "ffmpeg.exe") << "";
+    std::ofstream(root / "app" / "ffmpeg" / "ffmpeg") << "";
+    EXPECT_TRUE(rudra::bundled_tools_dir(root / "app").empty());
+    // Windows and Linux: <exe>/ffmpeg.
+    touch_tools(root / "app" / "ffmpeg");
+    EXPECT_EQ(rudra::bundled_tools_dir(root / "app"), root / "app" / "ffmpeg");
+    const auto used = rudra::use_bundled_tools(root / "app");
+    ASSERT_TRUE(used);
+    EXPECT_EQ(*used, root / "app" / "ffmpeg");
+    const std::string after = std::getenv("PATH");
+    EXPECT_EQ(after.rfind((root / "app" / "ffmpeg").string(), 0), 0u) << after;
+    // macOS: Contents/Resources/ffmpeg beside Contents/MacOS.
+    touch_tools(root / "RUDRA.app" / "Contents" / "Resources" / "ffmpeg");
+    std::filesystem::create_directories(root / "RUDRA.app" / "Contents" / "MacOS");
+    EXPECT_EQ(rudra::bundled_tools_dir(root / "RUDRA.app" / "Contents" / "MacOS"),
+              root / "RUDRA.app" / "Contents" / "Resources" / "ffmpeg");
+    // RUDRA_FFMPEG_DIR: another folder instead, or "path" for the user's own.
+    touch_tools(root / "mine");
+    set_env("RUDRA_FFMPEG_DIR", (root / "mine").string());
+    EXPECT_EQ(rudra::use_bundled_tools(root / "app"), root / "mine");
+    set_env("RUDRA_FFMPEG_DIR", "path");
+    EXPECT_FALSE(rudra::use_bundled_tools(root / "app"));
+    std::filesystem::remove_all(root);
+}
+
+#ifdef _WIN32
+// cmake/utf8.manifest: the executables run in the UTF-8 code page, so narrow
+// paths carry any letter (Windows 10 1903 and later; the CI runners are).
+TEST(Tools, WindowsRunsTheTestsInTheUtf8CodePage) {
+    EXPECT_EQ(GetACP(), 65001u);
+    const std::filesystem::path p(u8"C:/Users/Jos\u00e9/\u65e5\u672c/ffmpeg.exe");
+    EXPECT_EQ(std::filesystem::path(p.string()), p);   // through a narrow string and back
+}
+#endif

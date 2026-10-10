@@ -54,6 +54,7 @@
 #include "rudra/infer/self_test.hpp"
 #include "rudra/infer/tiler.hpp"
 #include "rudra/platform/npy.hpp"
+#include "rudra/platform/tools.hpp"
 
 #ifdef RUDRA_HAVE_STILL_DECODE
 #include "batch.hpp"
@@ -523,6 +524,9 @@ void usage() {
 }  // namespace
 
 int main(int argc, char** argv) {
+    // A package's own ffmpeg and ffprobe go first on the PATH (platform/tools.hpp);
+    // RUDRA_FFMPEG_DIR=path keeps the user's.
+    rudra::use_bundled_tools(rudra::executable_dir());
     std::vector<std::string> args(argv + 1, argv + argc);
     if (args.empty()) { usage(); return 64; }
     if (args[0] == "version") {
