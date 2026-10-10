@@ -1,12 +1,19 @@
 {
   "_comment": "The registry ui/server.py reads. Without it, discovery falls back to newest-file, which picks whatever was copied last -- including the temporal refiner, which is not an SDR2HDRNet and will not load as one.",
-  "default": "sdr2hdr_shadow_v1.pt",
+  "default": "sdr2hdr_image_v8.pt",
   "models": [
+    {
+      "file": "sdr2hdr_image_v8.pt",
+      "kind": "sdr2hdr",
+      "title": "v8, region focus (optional)",
+      "note": "Optional since 9 Oct 2026 (replaces shadow_v1); the master path is the analytic inverse. Step 48,000 of 50,000, region focus 0.5, 5,494 real Netflix train frames. Measured vs the inverse (paired, 95% CI): real SDR (Meridian, 287) +0.02 dB [-0.03, +0.08] / +0.020 JOD [+0.003, +0.036]; aces -11.2 dB / -0.87 JOD; oog -0.29 dB / -0.09 JOD; mix -0.03 dB / -0.12 JOD. Inside clipped pixels no better than the inverse; lifts black under 2 nits. Over shadow_v1 on real: +4.14 dB, 287/287.",
+      "params": null
+    },
     {
       "file": "sdr2hdr_shadow_v1.pt",
       "kind": "sdr2hdr",
-      "title": "v5 + shadow gate (shipped)",
-      "note": "The model the paper reports. Seed 20260901. Positive on all four measures.",
+      "title": "v5 + shadow gate (retired 9 Oct 2026)",
+      "note": "The model the paper reports, seed 20260901. Optional since 7 Oct 2026: the master path is the analytic inverse. Measured vs the inverse (paired, 95% CI): aces -24.3 dB / -0.64 JOD, oog +0.33 dB [-0.32, +0.98] / +0.03 JOD, mix -1.21 dB / +0.08 JOD; real SDR (Netflix Meridian, 287 frames, 9 Oct 2026) -4.11 dB [-4.18, -4.04] / -0.006 JOD, 0/287 wins, crushed-pixel error 5.6 stops vs 1.6. Not a -1 EV match for 0 EV sources.",
       "params": 1217318
     },
     {

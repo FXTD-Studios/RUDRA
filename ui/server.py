@@ -45,6 +45,7 @@ import base64
 import http.server
 import hashlib
 import io
+import ipaddress
 import json
 import os
 import re
@@ -477,7 +478,7 @@ def scopes(hdr_chw, columns: int = 230, bins: int = 76) -> dict:
 def run_inference(model, image_bytes: bytes, params: dict, args) -> dict:
     import torch
 
-    from training.infer_sdr2hdr import predict_image
+    from rudra.inference import predict_image
 
     started = time.time()
     decoded = decode_sdr(image_bytes)
@@ -543,7 +544,7 @@ def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, byte
     import numpy as np
     import torch
 
-    from training.infer_sdr2hdr import predict_fields
+    from rudra.inference import predict_fields
 
     started = time.time()
     decoded = decode_sdr(image_bytes)
@@ -657,6 +658,31 @@ def master_targets(params):
     return targets
 
 
+def _publish_new(staged: Path, out: Path) -> None:
+    """Move a staged file to ``out``, never replacing an existing file.
+
+    A hard link is atomic and fails if ``out`` exists, so it is tried first.
+    exFAT and FAT32 drives and many SMB/NAS shares -- common render volumes --
+    have no hard links, and every master to them used to fail after the full
+    inference had run (review 9 Oct 2026). There an exclusive create claims
+    the name and the staged file is moved over the placeholder.
+    """
+    try:
+        os.link(staged, out)
+        return
+    except FileExistsError:
+        raise
+    except OSError:
+        pass
+    fd = os.open(out, os.O_CREAT | os.O_EXCL | os.O_WRONLY)   # raises if it exists
+    os.close(fd)
+    try:
+        os.replace(staged, out)
+    except Exception:
+        out.unlink(missing_ok=True)
+        raise
+
+
 def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
     targets = master_targets(params)
     if len(targets) != 1: raise ValueError('Submit one sequence frame per render request')
@@ -666,9 +692,9 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
     with tempfile.TemporaryDirectory(prefix='.rudra-render-', dir=out.parent) as staging:
         staged = Path(staging) / out.name
         result = _render_master(model, image_bytes, params, args, staged)
-        os.link(staged, out)
+        _publish_new(staged, out)
         try:
-            os.link(staged.with_suffix('.json'), out.with_suffix('.json'))
+            _publish_new(staged.with_suffix('.json'), out.with_suffix('.json'))
         except Exception:
             out.unlink()
             raise
@@ -693,7 +719,7 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
     from rudra.delivery.colorspace import REC2020_CHROMATICITIES, convert
     from rudra.delivery.controls import DEFAULT_REGION_BANDS, apply_region_ev
     from rudra.delivery.exr import write_exr
-    from training.infer_sdr2hdr import predict_image
+    from rudra.inference import predict_image
 
     started = time.time()
     decoded = decode_sdr(image_bytes)
@@ -732,15 +758,6 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
     network = hdr[0].cpu().numpy()                      # nits / 10,000
     nits = np.transpose(network, (1, 2, 0)).astype(np.float64) * NETWORK_PEAK_NITS
 
-    # Region EV is a grade, not a preview: the picture that was approved in
-    # the viewer is the picture that has to land in the file.
-    regions = params.get("regions") or list(DEFAULT_REGION_BANDS)
-    softness = float(params.get("region_softness_stops", 1.0))
-    graded = any(float(b.get("ev", 0.0)) for b in regions)
-    if graded:
-        ceiling = float(getattr(model, "max_hdr", 4.0)) * NETWORK_PEAK_NITS
-        nits = np.clip(apply_region_ev(nits, regions, softness), 0.0, ceiling)
-
     # Anchor the level to the source before anything is measured or written.
     # sdr_to_baseline_hdr carries a factor of two -- the -1 EV that
     # prepare_training_data.py applies before the ACES curve -- which is right
@@ -768,6 +785,30 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
         nits = carry_source_chroma(nits, sdr.astype(np.float64),
                                    knee=float(params.get("chroma_knee", 0.99)))
 
+    # Then the grain. Above the anchor's knee the reconstruction stands on a
+    # curve whose slope near white turns the source's one-code grain into tens
+    # of nits: on a sunset plate, flat sky at max channel 0.97-0.99 measured
+    # 18.0 nits of noise against the source's 1.1, and 1.6 once settled; edges
+    # and glints were left as they were (rudra/grain.py). Luminance only.
+    if bool(params.get("settle_grain", True)):
+        from rudra.grain import settle_highlight_grain
+        nits = settle_highlight_grain(nits, sdr.astype(np.float64),
+                                      knee=float(params.get("anchor_knee", 0.9)))
+
+    # Region EV is a grade, not a preview: the picture that was approved in
+    # the viewer is the picture that has to land in the file. It goes LAST,
+    # after the anchor, chroma and grain stages. It used to go first, and the
+    # anchor -- which sets every pixel below its knee to target/actual --
+    # divided the push straight back out, while the EXR and the sidecar both
+    # recorded the grade as applied (review 9 Oct 2026). The anchor is a
+    # level conform; the grade sits on top of it.
+    regions = params.get("regions") or list(DEFAULT_REGION_BANDS)
+    softness = float(params.get("region_softness_stops", 1.0))
+    graded = any(float(b.get("ev", 0.0)) for b in regions)
+    if graded:
+        ceiling = float(getattr(model, "max_hdr", 4.0)) * NETWORK_PEAK_NITS
+        nits = np.clip(apply_region_ev(nits, regions, softness), 0.0, ceiling)
+
     scene_linear = (nits / DIFFUSE_WHITE_NITS).astype(np.float32)
 
     # The network never changes primaries: an sRGB plate comes out in Rec.709
@@ -792,6 +833,7 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
         "rudra:tiled": str(bool(tile_size)),
         "rudra:anchored": str(bool(params.get("anchor", True))),
         "rudra:chromaCarried": str(bool(params.get("carry_chroma", True))),
+        "rudra:grainSettled": str(bool(params.get("settle_grain", True))),
         "rudra:sourceSpace": source_space,
     }
     if container == "aces":
@@ -800,7 +842,13 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
         write_aces_exr(scene_linear, out, source_space=source_space,
                        provenance=provenance)
     else:
-        write_exr(out, scene_linear, half=True, attributes=provenance)
+        # "scene-linear Rec.2020" is what the sidecar and the page call this
+        # container, so make it true: convert from the plate's primaries and
+        # stamp the chromaticities. It used to write source-primary pixels
+        # (Rec.709 by default) with no chromaticities attribute under that
+        # label (review 9 Oct 2026).
+        write_exr(out, convert(scene_linear, source_space, "rec2020"), half=True,
+                  chromaticities=REC2020_CHROMATICITIES, attributes=provenance)
 
     sidecar = out.with_suffix(".json")
     sidecar.write_text(json.dumps({
@@ -817,7 +865,7 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
         "region_ev": regions if graded else None,
         "region_softness_stops": softness if graded else None,
         "tiled": bool(tile_size),
-    }, indent=2), encoding="utf-8")
+    }, indent=2), encoding="utf-8", newline="\n")
 
     return {
         "ok": True,
@@ -840,6 +888,35 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
 # ---------------------------------------------------------------------------
 # http
 # ---------------------------------------------------------------------------
+def host_allowed(host_header: str | None) -> bool:
+    """Is this Host header one the Studio should answer?
+
+    Binding to loopback stops other machines, not other web pages: a page
+    whose domain re-resolves to 127.0.0.1 (DNS rebinding) becomes same-origin
+    with the Studio and could open local footage and read frames back, or
+    write EXRs into any folder (review 9 Oct 2026). Rebinding needs a domain
+    name, so IP literals and ``localhost`` are always fine; any other name
+    must be listed in RUDRA_ALLOWED_HOSTS (comma separated).
+    """
+    if not host_header:
+        return False
+    host = host_header.strip()
+    if host.startswith("["):                         # [::1]:8422
+        host = host[1:host.find("]")] if "]" in host else host[1:]
+    elif host.count(":") == 1:                       # name:port
+        host = host.rsplit(":", 1)[0]
+    host = host.rstrip(".").lower()
+    if host == "localhost":
+        return True
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    extra = os.environ.get("RUDRA_ALLOWED_HOSTS", "")
+    return host in {h.strip().lower() for h in extra.split(",") if h.strip()}
+
+
 def make_handler(args):
     class Handler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
@@ -975,7 +1052,15 @@ def make_handler(args):
                   f"-- {payload['count']} frame(s)")
             return self._json(payload)
 
+        def _refuse_host(self) -> bool:
+            if host_allowed(self.headers.get("Host")):
+                return False
+            self.send_error(403, "unrecognised Host; set RUDRA_ALLOWED_HOSTS")
+            return True
+
         def do_GET(self):
+            if self._refuse_host():
+                return None
             if self.path.startswith("/api/sequence/frame"):
                 return self._sequence_frame()
             if self.path.startswith("/api/checkpoints"):
@@ -1050,7 +1135,17 @@ def make_handler(args):
             self.wfile.write(payload)
 
         def do_POST(self):
+            if self._refuse_host():
+                return None
             if self.path.startswith("/api/sequence/open"):
+                # JSON only. A text/plain body is a "simple" cross-origin
+                # request that skips the CORS preflight this server never
+                # answers; requiring JSON puts the preflight back in the way.
+                ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+                if ctype != "application/json":
+                    return self._json({"ok": False,
+                                       "error": "send the path as application/json"},
+                                      status=415)
                 return self._sequence_open()
             if not self.path.startswith(("/api/infer", "/api/master", "/api/frame")):
                 return self.send_error(404, "no such endpoint")

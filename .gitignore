@@ -66,6 +66,8 @@ training/input.jpg
 !/docs/*.md
 !/STATUS.md
 !/HF_MODEL_CARD.md
+# The native build guide, linked from the root README.
+!/native/README.md
 
 # Run artefacts from the corpus tools. Reports of a measurement, not source,
 # and pilot_clipping.json has already been committed once by accident.
@@ -138,3 +140,17 @@ SCRUB_TRAILERS.txt
 /scripts/RUN_CRITICAL_PATH.bat
 /scripts/RUN_NEXT_STEPS.bat
 /reports/
+
+# Decoder fixtures: small image files the native tests read (tools/emit_decode_golden.py).
+!/native/tests/golden/decode/*
+!/native/tests/golden/delivery/*
+!/native/tests/golden/master/*
+!/native/tests/golden/qc/*
+!/native/tests/golden/queue/*
+!/native/tests/golden/queue/project/*
+
+# The paper and its figures are kept local, out of the published repo (1 Oct 2026).
+/paper/
+/paper_*/
+/research/
+/docs/figures/

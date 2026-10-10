@@ -170,56 +170,6 @@ def test_parameter_counts_match_the_registry(entry):
         f"the tensors say {got}")
 
 
-def test_the_paper_quotes_the_measured_parameter_counts():
-    # v5 and v6 are quoted in the method section; the gate's 21,121 is in the
-    # abstract, the gate section and both READMEs. Read every committed .tex
-    # rather than one named file: the paper was rewritten from two generated
-    # files (_body.tex, _abstract.tex) into per-section sources, and naming
-    # files here means this test breaks on reorganisation instead of on drift,
-    # which is the opposite of what it is for.
-    sources = sorted((REPO / "paper").glob("*.tex"))
-    assert sources, "the committed paper source is gone from paper/"
-    paper = "\n".join(p.read_text(encoding="utf-8") for p in sources)
-    # The LaTeX writes these through siunitx as \num{1196197}; a reader sees
-    # 1,196,197. Compare on digits so either spelling satisfies the assertion,
-    # and strip only separators that sit BETWEEN digits so nothing else joins.
-    digits = re.sub(r"(?<=\d)[,\s](?=\d)", "", paper)
-
-    by_file = {m["file"]: m for m in _registry()["models"]}
-    for name, key in (("sdr2hdr_image_v5.pt", "1,196,197"),
-                      ("sdr2hdr_image_v6.pt", "4,770,117")):
-        assert f"{by_file[name]['params']:,}" == key
-        assert key.replace(",", "") in digits, \
-            f"the paper no longer quotes {key} for {name}"
-
-    # The gate is not a separate model in the registry: it is v5 plus a head,
-    # so its size is the difference the registry already records.
-    gate = by_file["sdr2hdr_shadow_v1.pt"]["params"] - by_file["sdr2hdr_image_v5.pt"]["params"]
-    assert f"{gate:,}" == "21,121", f"the gate head is {gate:,} parameters, not 21,121"
-    assert "21121" in digits, "the paper no longer quotes the gate's size"
-
-
-def test_the_paper_builds_from_committed_sources_alone():
-    """Every file main.tex inputs is committed, and nothing it needs is generated.
-
-    The paper used to be produced from a markdown draft by a converter, and the
-    generated .tex files were committed beside it. A clone that did not have the
-    markdown built a different document from the one the author was editing.
-    There is no generator now, and this asserts there is no dangling input.
-    """
-    paper_dir = REPO / "paper"
-    main = paper_dir / "main.tex"
-    assert main.is_file(), "paper/main.tex is missing"
-    text = main.read_text(encoding="utf-8")
-    for stem in re.findall(r"\\input\{([^}]+)\}", text):
-        name = stem if stem.endswith(".tex") else stem + ".tex"
-        assert (paper_dir / name).is_file(), f"main.tex inputs {name}, which is not committed"
-    for bib in re.findall(r"\\bibliography\{([^}]+)\}", text):
-        assert (paper_dir / f"{bib}.bib").is_file(), f"main.tex cites {bib}.bib, which is not committed"
-    assert not (paper_dir / "mdtotex.py").exists(), \
-        "mdtotex.py is back; the paper has one source and it is the LaTeX"
-
-
 @needs_torch
 def test_the_temporal_refiner_is_not_offered_to_the_viewer():
     # It is not an SDR2HDRNet. The registry marks it so, and the viewer filters
@@ -232,16 +182,3 @@ def test_the_temporal_refiner_is_not_offered_to_the_viewer():
     model = SDR2HDRNet.from_config(payload.get("config", {}))
     with pytest.raises(RuntimeError):
         model.load_state_dict(payload["model"], strict=True)
-
-
-def test_the_research_copy_of_the_paper_is_the_paper():
-    # research/ is what the repo front page points people at. It used to hold
-    # RUDRA_V01.pdf, an early draft, long after that draft stopped being true.
-    # paper/build.sh writes both; this is the check that they stayed the same.
-    built = REPO / "paper" / "main.pdf"
-    mirror = REPO / "research" / "RUDRA_HDR_2026.pdf"
-    assert built.is_file(), "the built paper is missing"
-    assert mirror.is_file(), "research/RUDRA_HDR_2026.pdf is missing"
-    assert built.read_bytes() == mirror.read_bytes(), (
-        "research/RUDRA_HDR_2026.pdf has drifted from paper/main.pdf; "
-        "run bash paper/build.sh")

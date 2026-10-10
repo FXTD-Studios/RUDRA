@@ -1,16 +1,28 @@
 RUDRA
 Copyright 2026 FXTD Studios
 
-This product includes software developed at FXTD Studios
-(https://fxtdstudios.com), licensed under the Apache License, Version 2.0.
+Required Notice: Copyright 2026 FXTD Studios (https://fxtdstudios.com)
+
+------------------------------------------------------------------------
+Code
+------------------------------------------------------------------------
+The code, documentation and tools in this repository are licensed under the
+PolyForm Noncommercial License 1.0.0 (see LICENSE,
+https://polyformproject.org/licenses/noncommercial/1.0.0). Research,
+teaching, evaluation, personal projects and use by noncommercial
+organizations are permitted. Commercial use needs a separate licence from
+FXTD Studios (https://fxtdstudios.com).
+
+Copies of the code obtained before 24 September 2026 were released under the
+Apache License 2.0, and those copies keep that licence.
 
 ------------------------------------------------------------------------
 Trained weights
 ------------------------------------------------------------------------
-The model weights distributed in `checkpoints/` are NON-COMMERCIAL. They
-are NOT covered by the Apache 2.0 grant above, because one of their training
-sources restricts commercial use. See `checkpoints/LICENSE`, and contact
-FXTD Studios for commercial licensing.
+The model weights distributed in `checkpoints/` and at
+https://huggingface.co/fxtdstudios/RUDRA are NON-COMMERCIAL under their own
+terms, because one of their training sources restricts commercial use. See
+`checkpoints/LICENSE`, and contact FXTD Studios for commercial licensing.
 
 ------------------------------------------------------------------------
 Attribution required by the training sources
@@ -25,3 +37,13 @@ HdM-HDR-2014 and HdM-HFR-2017, Hochschule der Medien Stuttgart
     Free for academic and educational use. Commercial use requires a
     separate agreement with HdM.
     https://hdm-stuttgart.de/vmlab/hdm-hdr-2014/
+
+------------------------------------------------------------------------
+FFmpeg (in the Windows package)
+------------------------------------------------------------------------
+The Windows package of the desktop app carries ffmpeg.exe and ffprobe.exe,
+the unmodified gyan.dev "full" build (https://www.gyan.dev/ffmpeg/builds/),
+in its ffmpeg\ folder. That build is licensed under the GNU General Public
+License version 3 (ffmpeg\LICENSE.txt); where its source is: ffmpeg\SOURCE.txt.
+RUDRA runs it as a separate program and is not linked to it, so RUDRA's own
+licence is unchanged.

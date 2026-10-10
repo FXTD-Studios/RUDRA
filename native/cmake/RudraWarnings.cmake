@@ -2,11 +2,26 @@
 function(rudra_warnings target)
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+    # std::getenv is the portable call; MSVC's C4996 wants _dupenv_s.
+    target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
   else()
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wshadow -Wconversion
                                              -Wno-sign-conversion)
+    # No silent fused multiply-adds. The port is held to the Python's and the
+    # browser's numbers, which round every multiply; Apple clang fuses a*b + c
+    # by default on arm64 and moved the viewer's probe readouts in the last
+    # bit (macOS CI, 25 Sep 2026). Where a port wants an FMA it calls std::fma.
+    target_compile_options(${target} PRIVATE -ffp-contract=off)
+  endif()
+  # Every executable runs in the UTF-8 code page on Windows (utf8.manifest):
+  # the paths it hands to ffmpeg, OpenCV and std::filesystem as narrow
+  # strings then carry any letter (a user named José, a folder in Japanese).
+  get_target_property(_rudra_type ${target} TYPE)
+  if(WIN32 AND _rudra_type STREQUAL "EXECUTABLE")
+    target_sources(${target} PRIVATE "${RUDRA_CMAKE_DIR}/utf8.manifest")
   endif()
 endfunction()
+set(RUDRA_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 
 # A first-party library: include/ is its public interface, src/ its private body.
 function(rudra_library target)

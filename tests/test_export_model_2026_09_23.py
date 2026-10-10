@@ -65,6 +65,13 @@ def test_shipped_checkpoint_package_is_complete_and_passes(tmp_path):
     res = np.load(out / "golden" / first["residual"]["file"])
     assert sdr.shape[2] == 3 and res.shape == (1, 3, sdr.shape[0], sdr.shape[1])
     assert golden["stitch"]["tile_size"] == 128
+    # Roadmap R1: the half-precision tile graph ships, within its 1e-2
+    # tolerance (0.0144 stop in the residual), and its hash is recorded.
+    fp16 = manifest["parity"]["fp16"]
+    assert fp16["included"] and (out / "model.tile.fp16.onnx").is_file()
+    assert manifest["files"]["onnx_tile_fp16_sha256"] == em.sha256(out / "model.tile.fp16.onnx")
+    assert max(fp16["max_abs"].values()) <= em.TOLERANCE["fp16"]["atol"]
+    assert fp16["worst_excess_over_tolerance"] < 0.0
 
 
 def test_every_head_exports_and_matches(tmp_path):

@@ -1,0 +1,1469 @@
+{
+ "name": "compare_set_v1",
+ "created": "2026-10-01",
+ "salt": "rudra-compare-v1|",
+ "rule": "ids only, sha256 ranking; see training/freeze_compare_set.py",
+ "inputs": {
+  "v4b_manifest": "G:\\datasets\\corpora\\corpus_v4b\\sdr_hdr_manifest.jsonl",
+  "v4b_video_manifest": "G:\\datasets\\corpora\\corpus_v4b\\video_manifest_9f.jsonl",
+  "netflix_manifest": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\manifest.jsonl"
+ },
+ "inputs_sha256": {
+  "v4b_manifest": "87a32f1614fbec1318ac56507df7836a6593fc8236f3ef3bb30f58115f514998",
+  "v4b_video_manifest": "526b22001cdcfb0f2febe4bf330a6c8926e4f490194b9777901313afa41b74a3",
+  "netflix_manifest": "b812e52c3076f2a9d56b8ee981d2bad13a762dfeb1a4e9fc1129d0f10fe55d35"
+ },
+ "counts": {
+  "still": 60,
+  "clip": 8,
+  "netflix_real_sdr": 40
+ },
+ "items": [
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003444_aviation_museum_hill_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::aviation_museum_hill_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003444_aviation_museum_hill_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003444_aviation_museum_hill_2k_c0.png",
+   "sdr_sha256": "517dd8368510ede3d54e1eb16a231e8eeb87b28cf71993a89d559d9f7799963d",
+   "hdr_sha256": "c7d9e4a468c7df8ab130df0e4951b7584b3c7ea3d3831c5583c8e5ca815819e3"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004314_wooden_studio_12_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::wooden_studio_12_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004314_wooden_studio_12_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004314_wooden_studio_12_2k_c2.png",
+   "sdr_sha256": "e7c4e3f4d8fca7fc087050f82dc95006114bd3983b1c2d391744237dfb6e89ca",
+   "hdr_sha256": "c49a58b761dd6241ea91423844c087822db7cd967e5ff2a1d94b158e182758ed"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004080_shanghai_riverside_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::shanghai_riverside_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004080_shanghai_riverside_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004080_shanghai_riverside_2k_c0.png",
+   "sdr_sha256": "e7e4f7f85a7406d6f8fe95fcd1eaa940a8609d4889b090b7565643c95f1f476a",
+   "hdr_sha256": "18625ad11b662e25f2b33656f555dd6df13de1c075a95d0507eb6e965d9faa64"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003942_piazza_martin_lutero_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::piazza_martin_lutero_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003942_piazza_martin_lutero_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003942_piazza_martin_lutero_2k_c0.png",
+   "sdr_sha256": "fa9fa9f46eaf6e9dfc142912ce71852cb5e136a3d4615e1a6868165a648c6151",
+   "hdr_sha256": "196ca654e712c12d4b9a2a1a42ae530effd64acf6a803fab6032b4bd54a9c65d"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003763_kloofendal_28d_misty_puresky_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::kloofendal_28d_misty_puresky_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003763_kloofendal_28d_misty_puresky_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003763_kloofendal_28d_misty_puresky_2k_c0.png",
+   "sdr_sha256": "50b35f65747023bc5e0a1bfe0f5048205d5e39ac4d41eaa149d257ae9426ed68",
+   "hdr_sha256": "c305825ff44ed9b0549c865e8eeb378295462f58b8032a63857ee1cd08d829ad"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003557_cloud_layers_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::cloud_layers_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003557_cloud_layers_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003557_cloud_layers_2k_c1.png",
+   "sdr_sha256": "79e90a9181b7b18988811d843c45a7dac479192eb881319fdd83c4547db672be",
+   "hdr_sha256": "17137e98f9157e4053bae6dc06e3f8604582d14d2226e7681d9d4c822c246cef"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004035_rogland_sunset_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::rogland_sunset_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004035_rogland_sunset_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004035_rogland_sunset_2k_c1.png",
+   "sdr_sha256": "80f2c7922014310446f9d3b24ddd7dcd5c867dc2fa26870bdeee0400c97a1d6e",
+   "hdr_sha256": "6add741c089efb7b89792e76b5308e3997419a085f0da4d882455e44610b2307"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003532_chinese_garden_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::chinese_garden_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003532_chinese_garden_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003532_chinese_garden_2k_c2.png",
+   "sdr_sha256": "3d80a74c9a754f7854954d03409f1dcc8ba5dd7001522f36b7491f02b478df1e",
+   "hdr_sha256": "acd7c8091251a0d07a2d94053f41628ce75b7d69ff7b790cc7e000aad5effb6b"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003864_mpumalanga_veld_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::mpumalanga_veld_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003864_mpumalanga_veld_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003864_mpumalanga_veld_2k_c2.png",
+   "sdr_sha256": "451c64087a1336825a55df7123c9191234e66cb2a226ee793eb7e689b826ca0b",
+   "hdr_sha256": "382d1edcbabc8a0ea83fda75d886a0893f1067375452170f9c98167265117c46"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003661_forest_grove_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::forest_grove_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003661_forest_grove_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003661_forest_grove_2k_c0.png",
+   "sdr_sha256": "a19d989cbc6903fe8194567a5bc99630adf6c9c4f614aa3c73e1e60dea118463",
+   "hdr_sha256": "637fd80babc1f84d43c49aeb3d86c205a4e1ce74dec5632448f4a71b78d5ea69"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004148_story_studio_02_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::story_studio_02_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004148_story_studio_02_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004148_story_studio_02_2k_c0.png",
+   "sdr_sha256": "90ceef88efc438302c33083a104a17cb5a61e73b4bb9f2ca3b3606a24aefccd8",
+   "hdr_sha256": "cd21b5058d95579af6f9be462a8e5e34cab18880b29fa07fb14b1e1572318441"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003819_lythwood_field_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::lythwood_field_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003819_lythwood_field_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003819_lythwood_field_2k_c0.png",
+   "sdr_sha256": "832ea5ac98b0925ec7c1a7d8a0890cf37fb1af103482bea3cc4bdd05ead64614",
+   "hdr_sha256": "f81cb39246025247e242bdb083f7dfcbb2c8c00511740437ca03bd2bf1d60c73"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003498_brick_factory_01_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::brick_factory_01_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003498_brick_factory_01_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003498_brick_factory_01_2k_c2.png",
+   "sdr_sha256": "94a9f0d185482fccc4d07cee92080909dfe58a9c3d4413343e9aea9f940abec0",
+   "hdr_sha256": "0810825d5476f489ead61085b67cceb1a7baa2366b77981cfe9fe428a480d1b0"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003668_fouriesburg_mountain_midday_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::fouriesburg_mountain_midday_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003668_fouriesburg_mountain_midday_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003668_fouriesburg_mountain_midday_2k_c2.png",
+   "sdr_sha256": "072d2162aa68a4a786781aab541ee8b8fe3d35efd0f0d4b78a2321637cb4633f",
+   "hdr_sha256": "b7e883840ccf8ba9b9f321d0dabc3d5da9eb8585e5d8d0c3d81bc548bf58822a"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004293_wide_street_02_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::wide_street_02_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004293_wide_street_02_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004293_wide_street_02_2k_c0.png",
+   "sdr_sha256": "9288a0b225d49dcc65f48e821ff5914b73d2f046e60ff7ce5c5d992c7c9568a4",
+   "hdr_sha256": "851cae20f133d5f9a3b4a09faa58140bb27e71e7d38b346d8855052d85251e98"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003722_hochsal_field_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::hochsal_field_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003722_hochsal_field_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003722_hochsal_field_2k_c2.png",
+   "sdr_sha256": "540bc64331eee389989aab25fdef4e541d892e421d4930d0c8629b0dc675e4b2",
+   "hdr_sha256": "694a2e7621568e1a439db6c6c7e03812411f4227c04c18910cf839e51ae50ff6"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003972_quarry_01_puresky_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::quarry_01_puresky_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003972_quarry_01_puresky_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003972_quarry_01_puresky_2k_c1.png",
+   "sdr_sha256": "653cc68051f38b93279bccf6981cbdfae2abf2b16fd853af5daf578f48a037bb",
+   "hdr_sha256": "8c5aa828ecdf5e6ad554c9b507f037fd7c525e9b973d7ca9c8981809169d33e8"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003497_borghese_gardens_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::borghese_gardens_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003497_borghese_gardens_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003497_borghese_gardens_2k_c1.png",
+   "sdr_sha256": "15a6248beb6c586a6f76afc4f72a1dfcc4c0667c1447b56524bf3119c2a1230b",
+   "hdr_sha256": "6bb02a12254a7ea5c2755615d4fb964fff518562138fd740c2334ad611297b1c"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003679_georgentor_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::georgentor_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003679_georgentor_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003679_georgentor_2k_c2.png",
+   "sdr_sha256": "eb6ef22981328ede17771b467981d0291366443ef8cef5fc38dc201278f808f3",
+   "hdr_sha256": "fa960b26b6f4d75d17810977874c6a82f86be80a8d9ac7192c0a770eb2021a40"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004287_white_studio_02_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::white_studio_02_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004287_white_studio_02_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004287_white_studio_02_2k_c1.png",
+   "sdr_sha256": "1bcdf0bc25db2aff0c84c55a5193117c5a9c90bdccea757a42c9517202106252",
+   "hdr_sha256": "53f7a1b132502c86c9b2f84a95255b2653222b4ee4b92412a6db8390e14a9ee4"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003596_distribution_board_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::distribution_board_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003596_distribution_board_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003596_distribution_board_2k_c1.png",
+   "sdr_sha256": "f07b1c66e717867a5fcf2a9c60692c520861670bedc71ba409160bcc5e37d965",
+   "hdr_sha256": "4212b7feb2a045f25050b3955e428eb3c826a5a3f4b8b6c132ae2f8466823694"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003709_hansaplatz_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::hansaplatz_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003709_hansaplatz_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003709_hansaplatz_2k_c1.png",
+   "sdr_sha256": "9b5a828f66743cc27df0ecc31470ba490d4e919e490a97dc3faec64ca78d8714",
+   "hdr_sha256": "71ed94a2590c3f17efd26173542e5641aa824e06fce651f635bbd6ca6dbfc131"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003549_citrus_orchard_puresky_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::citrus_orchard_puresky_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003549_citrus_orchard_puresky_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003549_citrus_orchard_puresky_2k_c2.png",
+   "sdr_sha256": "44ceaad7fa1aa83d975db5371c5878aec0b41cb03f5d8dda52dcbc8b7aa75994",
+   "hdr_sha256": "5643ca147f62f9e1160dee6390caa968800b1f5082bf03a217eb8e2d595ca177"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004187_summer_stage_02_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::summer_stage_02_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004187_summer_stage_02_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004187_summer_stage_02_2k_c2.png",
+   "sdr_sha256": "6a35395bb008c1482fc45a732c7233d0bed0dff935dd6a2fc2ed655dec091aa3",
+   "hdr_sha256": "be048c880b5239abf63cefe55604a448f7cb6d642fc1279e65eb816f662f64dc"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004254_vatican_road_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::vatican_road_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004254_vatican_road_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004254_vatican_road_2k_c0.png",
+   "sdr_sha256": "33738f1cfe00db4a6e570f3ea39b96517d52a61ba84350e55d68e7b2421fc025",
+   "hdr_sha256": "109153215cf13558da96b2c26f5d0bac97785bc39c2e2f976c042578b4496dcb"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003441_autumn_park_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::autumn_park_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003441_autumn_park_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003441_autumn_park_2k_c0.png",
+   "sdr_sha256": "4f5cca72246a4f281c723862faaed3674d86256f8c5a9bbf615cfc5dbdd6d817",
+   "hdr_sha256": "8297d5df77756236f183cf265bac5b51529772b8463a666d6c1b11479bd5d662"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003928_pav_studio_02_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::pav_studio_02_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003928_pav_studio_02_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003928_pav_studio_02_2k_c2.png",
+   "sdr_sha256": "593b5aaada167abc7ea0872e1044c2ccc3f304b9e19c777dfd0ff9ad20474242",
+   "hdr_sha256": "4ee017d356e5f788d1c8f3b0bcb2610241ca12e0dd29efbb3aa49ae5323ef8a5"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003476_blaubeuren_hillside_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::blaubeuren_hillside_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003476_blaubeuren_hillside_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003476_blaubeuren_hillside_2k_c1.png",
+   "sdr_sha256": "e34c8b6ea0931c381d17782d84f0eb9cbc38434204a17966dec0624b9bc32c15",
+   "hdr_sha256": "e32daf57855e5e8806d4e8c86ec8a5a0a25fa8f7a97ac6020d6f3fb39cc41bb4"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004271_voortrekker_interior_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::voortrekker_interior_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004271_voortrekker_interior_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004271_voortrekker_interior_2k_c2.png",
+   "sdr_sha256": "1f055ee4a9dedff3eca10b941f95a82f0fdce24a7fc13444fdcc3b902be0c307",
+   "hdr_sha256": "c634b9843dbd72aab2acf81b5bedbe01e6db821e8c1d86daaf91387a543ea2d0"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004210_table_mountain_2_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::table_mountain_2_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004210_table_mountain_2_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004210_table_mountain_2_2k_c0.png",
+   "sdr_sha256": "fa8e18ed2b4ac7dc85c48fa7e8118322d1fa4efc96cba7df817fbad37be30ec6",
+   "hdr_sha256": "8d6903affbdd82fa8da2d2eb88a29ef9f2f4fa42d0a37bb3570314fa8c3d168d"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003607_dresden_station_night_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::dresden_station_night_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003607_dresden_station_night_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003607_dresden_station_night_2k_c1.png",
+   "sdr_sha256": "da22038862241f82ee3d3a100ee5f8cb8b084adc177a3d676d86542630e64978",
+   "hdr_sha256": "62daf438f7fcb72e3c8a0d684529896eabe9464db6aa62cfb31477ffa143e8ab"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003910_overcast_industrial_courtyard_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::overcast_industrial_courtyard_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003910_overcast_industrial_courtyard_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003910_overcast_industrial_courtyard_2k_c1.png",
+   "sdr_sha256": "ac932b65c010920464821f89f1155ced6047e25e35f953d7f575a664aad0af8e",
+   "hdr_sha256": "ccee54544e34d4171d97aa0a0f17491f2023b7a29bf1c4ea7a398a805599fa6d"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003400_abandoned_tank_farm_03_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::abandoned_tank_farm_03_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003400_abandoned_tank_farm_03_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003400_abandoned_tank_farm_03_2k_c0.png",
+   "sdr_sha256": "4cd2b055ad21fec8f15dcf23c046aa98a0308996bdc2cceba719610ecf92415b",
+   "hdr_sha256": "07ebc14593f814bcacba06f2bbd96a40a97b56b62a9cf5f00aac8d5c73f9ca24"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003977_quarry_cloudy_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::quarry_cloudy_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003977_quarry_cloudy_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003977_quarry_cloudy_2k_c0.png",
+   "sdr_sha256": "b4dfcdfce59037030dfac7ba74e1e9d2157056a674f427992bb6127cde4f8499",
+   "hdr_sha256": "27afcfddc5fadd7267f00a82a96485062b6326409d7f239295454db965f8c996"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004335_zwartkops_curve_sunset_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::zwartkops_curve_sunset_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004335_zwartkops_curve_sunset_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004335_zwartkops_curve_sunset_2k_c2.png",
+   "sdr_sha256": "ec998d63571114f0267b8c86d9bb85c5695a915c7914b5358e9545751915cb6b",
+   "hdr_sha256": "3d393508159ed1d00827fd0b2e8e7bf80dcd037ce20364c14714e02eb727eacf"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003694_gray_pier_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::gray_pier_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003694_gray_pier_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003694_gray_pier_2k_c1.png",
+   "sdr_sha256": "76a37555ed496b1f39a2944604ae12779539caabde7aa836d11463f279f20d40",
+   "hdr_sha256": "a0f84283ac2aeadf607aa443f038d518880dc5c073c8a62aa281d8cd2adb8355"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004215_teufelsberg_ground_2_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::teufelsberg_ground_2_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004215_teufelsberg_ground_2_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004215_teufelsberg_ground_2_2k_c0.png",
+   "sdr_sha256": "5e1d558cf4ff5f8ffe715105f300fed9ef43f51f1aaae1e8307befafc43a2a6e",
+   "hdr_sha256": "59df6fbea0120227210b6a0b904631ee9c4e49d902234f6d7a40244169166d37"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003880_neon_photostudio_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::neon_photostudio_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003880_neon_photostudio_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003880_neon_photostudio_2k_c1.png",
+   "sdr_sha256": "22893ad787bcef23dcac8f6a80fd27f6951d788acd2ff1cbadb9d6b12fba0bff",
+   "hdr_sha256": "0799b42774437948e1da437f445ce1ae585bc4d8319401d13101724fbda511ef"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004115_snow_field_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::snow_field_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004115_snow_field_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004115_snow_field_2k_c1.png",
+   "sdr_sha256": "6fecb17a613572e1893cb3d379b287e18b2ed627447ec25f60600135026aa804",
+   "hdr_sha256": "15b3c08654a56bf3c520d110fc3aeba47d9b44f678b4ac766f8f251b542e18aa"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003636_farm_field_puresky_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::farm_field_puresky_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003636_farm_field_puresky_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003636_farm_field_puresky_2k_c2.png",
+   "sdr_sha256": "aa6f20423a1fa43bcc059f18b60390d17c89645b65d6096e6a28383f594e2101",
+   "hdr_sha256": "217bf7b393844dba6ec4218508db37cab105e36d68a7d14983477d7d256d0482"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004104_small_harbor_02_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::small_harbor_02_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004104_small_harbor_02_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004104_small_harbor_02_2k_c1.png",
+   "sdr_sha256": "7e2413fb9c3e8668942e8616c2ceba2649f6bd12b3c9e3c12a5c4f6e51cf4c9d",
+   "hdr_sha256": "ad8719ae8d42127133cd14fe23a232ccc7d3d9673f6c7cf1d1c60f2550e7fb2e"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003481_blocky_photo_studio_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::blocky_photo_studio_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003481_blocky_photo_studio_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003481_blocky_photo_studio_2k_c0.png",
+   "sdr_sha256": "ba68f84421b731040ff19740f842de994d7608bdb748fe499d04119a5a049194",
+   "hdr_sha256": "429e5ba8965c8b7713a24c1d0fc255629810ac33bdfd25be4b93c2af2ca9423b"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003613_dry_orchard_meadow_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::dry_orchard_meadow_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003613_dry_orchard_meadow_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003613_dry_orchard_meadow_2k_c0.png",
+   "sdr_sha256": "b0366f8248407a07f4c328df50e4d0fe0181bb7c9a849f525ba5a56be606c68c",
+   "hdr_sha256": "a66c5cec7d3f8d6ab8c7cba0c621b46a73f8c015ce3a922fcbfa5df326fa2c2e"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004157_studio_kominka_01_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::studio_kominka_01_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004157_studio_kominka_01_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004157_studio_kominka_01_2k_c1.png",
+   "sdr_sha256": "28b8b618c76ecbc67a56b13a5908504a4dfc453b248fdfdd3d4e8217aa15da58",
+   "hdr_sha256": "6c9ccdbcd00ff6285dec94fca6bfc66e555884457fbf1332ea2ed45f0f51d254"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003561_cobblestone_street_night_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::cobblestone_street_night_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003561_cobblestone_street_night_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003561_cobblestone_street_night_2k_c0.png",
+   "sdr_sha256": "8f76c36a2175c8d470be2a366f40ffcba00af7ef9d3a49be1e028ea06d3aac8a",
+   "hdr_sha256": "00f4108555f7a5ec3b62ca3b9cf79c18174e18455443c8c2418c61dd975213c3"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004262_versveldpas_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::versveldpas_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004262_versveldpas_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004262_versveldpas_2k_c2.png",
+   "sdr_sha256": "a8c8d86d25e0fcac4e8fe170256a1f126d422af5faa430cec247dd54692479ab",
+   "hdr_sha256": "7af6e03b5eebdaa046779127d30a9727e777c1a33a23769d48914e0c5bbef1eb"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003566_concrete_tunnel_02_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::concrete_tunnel_02_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003566_concrete_tunnel_02_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003566_concrete_tunnel_02_2k_c1.png",
+   "sdr_sha256": "f9fb9214990944c29ccc676aea518b8167ffaf9591a2825e6e8865fae05172e7",
+   "hdr_sha256": "6ef91a43213941abe3153980cc8824c28faf5b90cd4e1dafb312c87a3c25257b"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003545_circus_arena_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::circus_arena_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003545_circus_arena_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003545_circus_arena_2k_c2.png",
+   "sdr_sha256": "72871a4ae7f5e46cfe058aa9f929cede0e17ca68fb79848d4bf55da983773b60",
+   "hdr_sha256": "3adebb6f82b301317813c7df7f9b443ddb12c65354d66e4825f7f2e8befb58b4"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003823_machine_shop_01_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::machine_shop_01_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003823_machine_shop_01_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003823_machine_shop_01_2k_c0.png",
+   "sdr_sha256": "8f5461d2db0084c488c8de250f5381a9de0fded4162fb23a91bbe2a0973830a2",
+   "hdr_sha256": "1d6cd04136ac32476056ea60b2a92661c2eafda61c954840e5820573e53e8329"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003438_autumn_hilly_field_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::autumn_hilly_field_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003438_autumn_hilly_field_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003438_autumn_hilly_field_2k_c0.png",
+   "sdr_sha256": "5fdfb26d3f8a536ab8aaa7a496272ccda96912d9fcc21003797c749bc548f61a",
+   "hdr_sha256": "ebccacc73df9cc553e35c7042d8cab834d154c81d25d5f2c240a9bbb3af27c3d"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003421_approaching_storm_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::approaching_storm_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003421_approaching_storm_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003421_approaching_storm_2k_c0.png",
+   "sdr_sha256": "52437c06401f472e402e4150098ba76a41df2c3c9f2e38d29ab6b22890afa322",
+   "hdr_sha256": "0bfb2259b4321273742749e2f1485734dc1736ab89f000330e68d4fd75368153"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003724_horn-koppe_snow_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::horn-koppe_snow_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003724_horn-koppe_snow_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003724_horn-koppe_snow_2k_c1.png",
+   "sdr_sha256": "ea7648b9019107a4ab6365bc2edf46f967910c8288ddb0cf134d638085fc804b",
+   "hdr_sha256": "d670000fd48732dc1c767938f22e60a07ceeac2b69e3d9ef4b98badd405c2f35"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003559_cloudy_netted_nursery_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::cloudy_netted_nursery_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003559_cloudy_netted_nursery_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003559_cloudy_netted_nursery_2k_c2.png",
+   "sdr_sha256": "29826edf56fb14199f6b3104eb6525d947ddd480ee58b19a6a89862b7c1277d0",
+   "hdr_sha256": "f113b7d46580877cc99980af2b5e615b6d052e93173dcce9f83c70a3727d9a75"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003543_cinema_hall_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::cinema_hall_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003543_cinema_hall_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003543_cinema_hall_2k_c0.png",
+   "sdr_sha256": "b04572fb4881c0995e8aee29b2ef61ac016db8431bcfea1a00698fc90989c1f6",
+   "hdr_sha256": "eefa018a6e80db21346f0bc6c560ee4bc47e6554154deeea4f99db331834ec80"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003865_mpumalanga_veld_puresky_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::mpumalanga_veld_puresky_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003865_mpumalanga_veld_puresky_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003865_mpumalanga_veld_puresky_2k_c2.png",
+   "sdr_sha256": "45826a5156aedee8f1f87f6fa7d6ab184e55a90714f595b51e14e55bd130b4cb",
+   "hdr_sha256": "24e8889239399d774b8da918160ceecc715933bbe22d4f4909dbbe2979135fd3"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0004211_table_mountain_2_puresky_2k_c2",
+   "scene_id": "E:/source_hdr/PolyHaven::table_mountain_2_puresky_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0004211_table_mountain_2_puresky_2k_c2.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0004211_table_mountain_2_puresky_2k_c2.png",
+   "sdr_sha256": "51fcf39f33d2907ffd1fb3dc42c3d69bdc7b0764588f7c1cfaeaf1c40258d2ef",
+   "hdr_sha256": "cac0c453655d1950dc65696f82ca7d729d98ef2e9a7ecc9241bf693bf1df4593"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003824_machine_shop_02_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::machine_shop_02_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003824_machine_shop_02_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003824_machine_shop_02_2k_c0.png",
+   "sdr_sha256": "12d8c12a601fca19453f45162078ed96c6f1da17c033b6eb6b77a272be760cff",
+   "hdr_sha256": "d3d35acd9e3dc42961552e0f0f3b3c4db2b27bc44529c423f367e7dfb74d9d3b"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003832_medieval_cafe_2k_c1",
+   "scene_id": "E:/source_hdr/PolyHaven::medieval_cafe_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003832_medieval_cafe_2k_c1.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003832_medieval_cafe_2k_c1.png",
+   "sdr_sha256": "86d41055bf33ea8b42e5a7a2acf16525ad8ce3af4743b61e09cb6fdfb916b1fc",
+   "hdr_sha256": "d1f655f23d8d05487ae9b8488e03d2de8fb7f167a83704afe2fbd56bb41b5bf2"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003876_narrow_moonlit_road_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::narrow_moonlit_road_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003876_narrow_moonlit_road_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003876_narrow_moonlit_road_2k_c0.png",
+   "sdr_sha256": "a6bebb4e1ea98e3787be681b205fa548aa8f1d753470d168d077880792ee0d90",
+   "hdr_sha256": "5d8307d9fdc175501cdbcfb37cea571a446e107828380430afa906ea0cafc95a"
+  },
+  {
+   "kind": "still",
+   "source": "corpus_v4b",
+   "asset_id": "0003727_hospital_room_2k_c0",
+   "scene_id": "E:/source_hdr/PolyHaven::hospital_room_2k",
+   "sdr_path": "G:\\corpus_v4b\\sdr\\0003727_hospital_room_2k_c0.png",
+   "hdr_path": "G:\\corpus_v4b\\hdr\\0003727_hospital_room_2k_c0.png",
+   "sdr_sha256": "7179fdea17fe819247c1b332c302a57cf4dbbb6e2ea9982e0d815c7ab81a68de",
+   "hdr_sha256": "76d8c5a5eafc9361052a1b12b44efb71fb8a1acc6a646fe27917f048bbde02dc"
+  },
+  {
+   "kind": "clip",
+   "source": "corpus_v4b_video",
+   "clip_id": "E:/source_hdr/Stuttgart_HDR_2014/carousel_fireworks::carousel_fireworks:94904-95416",
+   "scene_id": "E:/source_hdr/Stuttgart_HDR_2014/carousel_fireworks::carousel_fireworks",
+   "sdr_frames": [
+    "G:\\corpus_v4b\\sdr\\0004695_carousel_fireworks_094904_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004703_carousel_fireworks_094968_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004711_carousel_fireworks_095032_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004719_carousel_fireworks_095096_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004727_carousel_fireworks_095160_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004735_carousel_fireworks_095224_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004743_carousel_fireworks_095288_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004751_carousel_fireworks_095352_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004759_carousel_fireworks_095416_c0.png"
+   ],
+   "hdr_frames": [
+    "G:\\corpus_v4b\\hdr\\0004695_carousel_fireworks_094904_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004703_carousel_fireworks_094968_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004711_carousel_fireworks_095032_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004719_carousel_fireworks_095096_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004727_carousel_fireworks_095160_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004735_carousel_fireworks_095224_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004743_carousel_fireworks_095288_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004751_carousel_fireworks_095352_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004759_carousel_fireworks_095416_c0.png"
+   ],
+   "sdr_sha256": [
+    "4b95bf2f290c61255fa85b592cb15a3aa0aee580a1a85a23a50221a8d07c24f9",
+    "4b6da1ef3d7f9bc51d6b5b570de82e6e9e1398e29a37c6c4a87c4d345fdd16e0",
+    "079b58df01b7ee4163b386015ad33d6bdeede71fcedee91b45360df8162a1cab",
+    "56a8985be50d96c8e24c63d650b0d45db5590a7d1800cf5fe71e716f20f62c29",
+    "783ca0ed043c09a2557f72136850e0483d06b96388948e0a4c6d160c1449703b",
+    "2e56a09bf95c91627912fbaf1ef7841c96a19ab997804d4077303f7ba5501f2c",
+    "7127104d7a5109edc63712fa1e872695a7c8b2e6da89d878c23ff069b3b4dfaf",
+    "a14706adf00359af25da5bf13b985e52be8d61c4d9a13baf91f02903153d88c0",
+    "6ac716df77053ff2a3d0feb18bea9a45a36ea99f2d83c2e25c11ae84db02bee3"
+   ],
+   "hdr_sha256": [
+    "e2f618fc80766aa41de75ee17560aefc443fb6e5cfdd1c3808895305dbe2e61f",
+    "b9f46f188ef484fc50ceee9315f2ee941b91fafe66c037492743434b70b510ec",
+    "6b6a388922ef2c719b07984e9d7db2d50034ea7c465b8be60c6220746df3605b",
+    "5808059a6bc6d1a7926e529942ba09336e31da2e944cb817baa0d1a331736d72",
+    "1f91ff319e5c6b6d95b4e8c089fe57108a940a1573cb469165d89b64890680cd",
+    "01825dbabf0e62ce949f0486a488a8606d39cc4eefbae33f6dfcd7783f64157d",
+    "bf613e69dc58d1dc189b0db949b75044098f49b57e705fd06380bcc5d245333f",
+    "eaab8756df875a5ae01902b7cdd0c4b3e7d8a7269ecfda450ed63c45d550f07d",
+    "b53d78cda324bb8680be44d77356abac96795e6b3cd0680131e491b9b9a2fd58"
+   ]
+  },
+  {
+   "kind": "clip",
+   "source": "corpus_v4b_video",
+   "clip_id": "E:/source_hdr/Stuttgart_HDR_2014/carousel_fireworks::carousel_fireworks:95480-95992",
+   "scene_id": "E:/source_hdr/Stuttgart_HDR_2014/carousel_fireworks::carousel_fireworks",
+   "sdr_frames": [
+    "G:\\corpus_v4b\\sdr\\0004767_carousel_fireworks_095480_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004775_carousel_fireworks_095544_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004783_carousel_fireworks_095608_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004791_carousel_fireworks_095672_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004799_carousel_fireworks_095736_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004807_carousel_fireworks_095800_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004815_carousel_fireworks_095864_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004823_carousel_fireworks_095928_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004831_carousel_fireworks_095992_c0.png"
+   ],
+   "hdr_frames": [
+    "G:\\corpus_v4b\\hdr\\0004767_carousel_fireworks_095480_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004775_carousel_fireworks_095544_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004783_carousel_fireworks_095608_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004791_carousel_fireworks_095672_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004799_carousel_fireworks_095736_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004807_carousel_fireworks_095800_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004815_carousel_fireworks_095864_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004823_carousel_fireworks_095928_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004831_carousel_fireworks_095992_c0.png"
+   ],
+   "sdr_sha256": [
+    "ff4ccd4266502adb19d1d89c9597f13656c7c0022a44a547c4759d09a2709d5a",
+    "e56071c54aadb3e19f36446ebd9246ca2b1c3576702804143dfc8fca8fe876c8",
+    "55c7ae5c683926ad4acf387c5542bcfe8174e839bf0a9100468969739fa39b22",
+    "53bf17b109caa919f2797c74ad1e6499db1e02e9a41e0a90b8a9fc62ab50d59b",
+    "4340682bd7c14fa277104036e5b16a269268cc9c7243262c59bad9576a048107",
+    "eacd57e455ecd36feca0034c1f99a3a0e326af985e4e19fb3857741c92a231a4",
+    "dbc6af1a55b2deeca103adab48f36790155eb67c19f38653f0cb23ab4325789a",
+    "165e6a08a8aee2f052bf32d24f727af2e47881805fa2edc33bb25a6b3cc11a9d",
+    "6be677be5b93884b4b6d9ea3e41f0c23e2f38d7af5c9e018288096ce8595dc45"
+   ],
+   "hdr_sha256": [
+    "beb4af8eddf0cf7cd798975f03a5c1f87b5504021024a49505ebacc3c54ceb95",
+    "90fd93c0dd45521269a839c5e7b0f6b6ed15fcddf3061581aafeeb7964486459",
+    "95ca51246eb7289cf1b5cea8faa3ac9e821a1c53ed8d710cebc4177860c80a60",
+    "b8c2dc5599f7871828321eae561019b1db2007f4056d9a8279e9f5272ccb810c",
+    "56f77e2b3f41b86eafa43ede09c1b4532f8f4a596cae610f4ee0aaa9e381847c",
+    "c844ec175c298ad4a836eac5aff654e00fbb16b3fff67929744b032d4dfd0059",
+    "2fb01ab1e9219786e026ad43a705107d93fdc65859493abf2860e45276884061",
+    "d5bae0489079442876fed2a3c1ab7154999dd285f0af39754351c3cf62173c9e",
+    "68b9182d15f3569b58ad6786b29bba567793858c348f5ddf1e889bde2aee96ab"
+   ]
+  },
+  {
+   "kind": "clip",
+   "source": "corpus_v4b_video",
+   "clip_id": "E:/source_hdr/Stuttgart_HDR_2014/carousel_fireworks::carousel_fireworks:96056-96568",
+   "scene_id": "E:/source_hdr/Stuttgart_HDR_2014/carousel_fireworks::carousel_fireworks",
+   "sdr_frames": [
+    "G:\\corpus_v4b\\sdr\\0004839_carousel_fireworks_096056_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004847_carousel_fireworks_096120_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004855_carousel_fireworks_096184_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004863_carousel_fireworks_096248_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004871_carousel_fireworks_096312_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004879_carousel_fireworks_096376_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004887_carousel_fireworks_096440_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004895_carousel_fireworks_096504_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004903_carousel_fireworks_096568_c0.png"
+   ],
+   "hdr_frames": [
+    "G:\\corpus_v4b\\hdr\\0004839_carousel_fireworks_096056_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004847_carousel_fireworks_096120_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004855_carousel_fireworks_096184_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004863_carousel_fireworks_096248_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004871_carousel_fireworks_096312_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004879_carousel_fireworks_096376_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004887_carousel_fireworks_096440_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004895_carousel_fireworks_096504_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004903_carousel_fireworks_096568_c0.png"
+   ],
+   "sdr_sha256": [
+    "6747ceace0460cf59dc51b536031e485f8fd041c317d0bae4c93722bb3e5ee7e",
+    "b12d53a75eb6351cb7dad7d70bd6cf178c0895aa157dfebdda8e5adeac9b8ca4",
+    "1e74f165a7a368c4b86e7c0647c5f6d671c654d16e984bd4ca1d74291075bec2",
+    "fd0a699ce2285d738d26f8bddd4817a52bd0412c9c0a703d0704fb9c2157abd3",
+    "d9bd7820cd7dd582fde7c8271977b18288126de6448cbf26aa549f787b7bf72b",
+    "41311f4497aa3c86b001a2a37d698c3c7e3107a2a7939a4d142ad1ef8a59c493",
+    "287743fd624f6a3a1f0ad5e3bc4d1225a088e7cea173dc64530e83531e1a939e",
+    "7b84c0612e1547b8b2d0b1fa6f4707e102646e8d83fb5d04e226bdef96c000f5",
+    "68bedfd1928a83953dcf67f49da7e69edefdff16ea5c5a365931c49f2f3ec2c1"
+   ],
+   "hdr_sha256": [
+    "0ec3eb647dd986c6194071ab12f06a05a4016f9e43709c9829f42207b90da3c1",
+    "936b9d1eb3577f38ec840c486be8a521abc652bcb4d599ad5ff354200868e064",
+    "19724932b032758e93cb19d0423f47a4188377748fca17568344d7f71b5e43a9",
+    "c07e4c954d29047b2aeda5e1c9e23340b6dca3401ae0a9582f78a2fb99dae6de",
+    "b69c0c6f4d3ad5361ccd5f133c736390d47d72ea9fdaa6916250b801c21d8ff4",
+    "d02d59de0e60308ed578e1ab9a518baf8ac8c03a248caa0b77e79b4239da31da",
+    "1050a5eabd84cf70175f993576bd8f371eee671e54a2b949be5ba2377dd84c6c",
+    "f637a69b2749da629f5958b791dc05413fc31fb802d01ee3a30815c33c7bb0df",
+    "f04ffb1242583673c785c72c2162223b330a8acdbb7345359a9afe137f45c2fe"
+   ]
+  },
+  {
+   "kind": "clip",
+   "source": "corpus_v4b_video",
+   "clip_id": "E:/source_hdr/Stuttgart_HDR_2014/carousel_fireworks::carousel_fireworks:96632-97144",
+   "scene_id": "E:/source_hdr/Stuttgart_HDR_2014/carousel_fireworks::carousel_fireworks",
+   "sdr_frames": [
+    "G:\\corpus_v4b\\sdr\\0004911_carousel_fireworks_096632_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004919_carousel_fireworks_096696_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004927_carousel_fireworks_096760_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004935_carousel_fireworks_096824_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004943_carousel_fireworks_096888_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004951_carousel_fireworks_096952_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004959_carousel_fireworks_097016_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004967_carousel_fireworks_097080_c0.png",
+    "G:\\corpus_v4b\\sdr\\0004975_carousel_fireworks_097144_c0.png"
+   ],
+   "hdr_frames": [
+    "G:\\corpus_v4b\\hdr\\0004911_carousel_fireworks_096632_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004919_carousel_fireworks_096696_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004927_carousel_fireworks_096760_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004935_carousel_fireworks_096824_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004943_carousel_fireworks_096888_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004951_carousel_fireworks_096952_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004959_carousel_fireworks_097016_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004967_carousel_fireworks_097080_c0.png",
+    "G:\\corpus_v4b\\hdr\\0004975_carousel_fireworks_097144_c0.png"
+   ],
+   "sdr_sha256": [
+    "e10b500a642672165fcba761f33fbc7270aef314d6754fb74a8b2a1d7e94d5f0",
+    "5ac88e70498647ee8dbec3f9bbf72121b08ba962653b0966f6bb345e9eed4370",
+    "8f8269750b3c29353c38c69668ceaeb7fd9ad7bf73ff12cdaa6c1179e5e5426a",
+    "8eab9202123dcafd17d9507d57bf8bf9439ecdf12a637509edd1c4893c29c6f3",
+    "7c968de541ab9d3dac069ef08425a30ef040ccf631d2a7c6c875e85c0f7261d6",
+    "d9710f9968b42a070ba88ea0d7cd1049838bf2aaa9b4459d323a3e9a5ca8de44",
+    "bac8a70f4fa3d70c6fedab84a1d2a60f465e3b1d40ad31e97bea06c4cea1c06d",
+    "3c63d36342d109fbf6b86dd333e399be3adcc6e8e45daa25119a6c8097029a0b",
+    "fe4de79e1dc4c357ae8a7893b1a24383ff52d95532366f5e74339b4e80bd9556"
+   ],
+   "hdr_sha256": [
+    "2938dff49bbd106e71240481ae08e0793122f32547ed6633ae9afb527bdde8e4",
+    "3eca9df4891ba19da2ca63236341073138849cec5fc79f995e7056ac2e6f808e",
+    "6c7522e1d805c76f54a459728a76a7486161be74be19cae32680945b4505dd16",
+    "ce336598b9077f07fa7426e876989847ab86283ae2099e3cfecc8970c8987364",
+    "0a424fc730b5ccacbac0742a2afb6de812a38e494e0d687bf0ae24f1915c6d3d",
+    "fbbc74b8346b38c128a0e18a23cee22e4a821ae3484a2e6a0d2e6157acc3773a",
+    "d828d53beb5ef52fca674be184d3d6d7217d12157aec34d7e8e6ac143f76ca52",
+    "9caef1be424dab57d1c69e047027f99b02ad22a77cb649d9523ba569602640cd",
+    "eaf4ab3255ff547c689bcea754679fb99dbdc499f97edca8df5a0c4b8a5852af"
+   ]
+  },
+  {
+   "kind": "clip",
+   "source": "corpus_v4b_video",
+   "clip_id": "E:/source_hdr/Stuttgart_HDR_2014/fireplace::fireplace:92048-92240",
+   "scene_id": "E:/source_hdr/Stuttgart_HDR_2014/fireplace::fireplace",
+   "sdr_frames": [
+    "G:\\corpus_v4b\\sdr\\0005101_fireplace_092048_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005104_fireplace_092072_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005107_fireplace_092096_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005110_fireplace_092120_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005113_fireplace_092144_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005116_fireplace_092168_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005119_fireplace_092192_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005122_fireplace_092216_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005125_fireplace_092240_c0.png"
+   ],
+   "hdr_frames": [
+    "G:\\corpus_v4b\\hdr\\0005101_fireplace_092048_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005104_fireplace_092072_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005107_fireplace_092096_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005110_fireplace_092120_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005113_fireplace_092144_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005116_fireplace_092168_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005119_fireplace_092192_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005122_fireplace_092216_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005125_fireplace_092240_c0.png"
+   ],
+   "sdr_sha256": [
+    "bf0a74b606b4202bc8dce001ff21e39649f1de672554aab7e85c1623f6170e65",
+    "2b2bbd5936c67c9d1a064e6de9bf09c5bb3a0d04eb9d9741c2c3bd143cbc580a",
+    "8b33dd8c8844fd9c1e2294c8510f42814cb5f742aaa03d2d6507e46487963dbc",
+    "dac47d11e728cdf81b3d9b7587ae8d823c3308b46f6ffc5551a7dd6fce896608",
+    "0c92d8d1d089e6dd55290de7bc50cd7f1088dce98d9b91bc6a05dd6eb72f0c6d",
+    "aad56aa22a871c071493e3d08f5475d3ecb80c1d10054ace33a341e65409f3ae",
+    "207ca71aabf68296185cc12785b7a32441519f1972a6a3f1e76373ef0663d5fa",
+    "3ff85328ddfebc1ef477f9a935c7b2fe2670edfebef07930b1c57eb828216658",
+    "31fc91475462f3cbf3d9a4ef4bf920ad569be3ba92fbe5b79163d986dce435af"
+   ],
+   "hdr_sha256": [
+    "b2c4da2c9f39ece92c0496833b8cd274ef4bd02a4bb6e93febf65fd312da916e",
+    "cfcb07726e73a4d01a3c22af979c2e8107ddee40393be23b6ec4d74a777271c3",
+    "39ed39617c1d9cf2a4760862f66787bc37489e5d38aa09459abca5ffc06ec86d",
+    "179c8c9a247a3b5d940862dfa3086f6fa76ee19b62ac5850af9d22df7f4a7b2b",
+    "a85dae922c74d89bff0218b123ed64aa5a7a44b5a51c415a34cafeb930e72352",
+    "5ab6f5c173885858b2770f1ed42206bf206ba362b3a36901d4ed5cc0a722446a",
+    "be98237ce4e77529804ceb5d1c474ec0e11ae25d660108ead37fc35e9fc95d9f",
+    "a19a4f7eb08357aa825d3c8fe6ab94d3c78e2b2244e38574e166bfc11a2d0caf",
+    "59edba0427a5fb3e29c7c097b4e091a2aa86bea0f405ebc9413ca5c2ee3a2e8c"
+   ]
+  },
+  {
+   "kind": "clip",
+   "source": "corpus_v4b_video",
+   "clip_id": "E:/source_hdr/Stuttgart_HDR_2014/fireplace::fireplace:92264-92456",
+   "scene_id": "E:/source_hdr/Stuttgart_HDR_2014/fireplace::fireplace",
+   "sdr_frames": [
+    "G:\\corpus_v4b\\sdr\\0005128_fireplace_092264_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005131_fireplace_092288_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005134_fireplace_092312_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005137_fireplace_092336_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005140_fireplace_092360_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005143_fireplace_092384_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005146_fireplace_092408_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005149_fireplace_092432_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005152_fireplace_092456_c0.png"
+   ],
+   "hdr_frames": [
+    "G:\\corpus_v4b\\hdr\\0005128_fireplace_092264_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005131_fireplace_092288_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005134_fireplace_092312_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005137_fireplace_092336_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005140_fireplace_092360_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005143_fireplace_092384_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005146_fireplace_092408_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005149_fireplace_092432_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005152_fireplace_092456_c0.png"
+   ],
+   "sdr_sha256": [
+    "8f740a5575752a82e8a329f6232c4a2891bb5cfb47a5c3a34853a276f9b9b493",
+    "4c6091bd50bc98716d642d488da3b434a667e4dbe47621e704666dcd602ec8d4",
+    "7444068ddc4eb0fb8d4a582849db93cff8a9c911aaaca39e7fbc3a07c800e475",
+    "fdf47c4515d546497b7be743a513fb7fbc674029afd5fccc814de5dee0fb27fb",
+    "c2d2b142ee48c71c7a1686a45e611e10383d74ed5cd3e5e5b6df9df024ffa077",
+    "09afc9da131bc5ecab93a2fb3e0e645e33ac8085aafb5622c8192eb96ec92d8b",
+    "476593cb4a78e775636ea6a46ed7b53ea1bb640a33f1685a7aaf3d4d51e90b0c",
+    "87d72a2c15721795892bb95e9dfb93651ff218f7e4695d99651a99d342f5ad01",
+    "42cfb8aa5f54a111e15681f71054f784200d1e2dfada585729f97bc870529ebf"
+   ],
+   "hdr_sha256": [
+    "52c4ea759d5b636404478723699dfd17d79d330af983c8184fe7ae0a0e2232c1",
+    "9bd587d04a03fb3dc34a79776b5663781952fec2bd145e9552b8c93b9130e061",
+    "eab6abd0e2d2377a6f22e5705bdd3101b664a22deb2b7bbb642435298f185f35",
+    "54596f038d0fc625996c0774ccda92bf3be7b024df5048d5fc7962402b88f675",
+    "b2019b3ed3c6b65d2a26b98762f576ba84b9f931abc7c1be8bf57d795ff9f8c8",
+    "fef57e4f3335bade0cf260a7bb5918d3c80d260f9b3e8f455759be5edd8ab9fc",
+    "8cfc0e418ec576dc7dabc28ebc25c1a706f2e82d7168fa8788cb5bcff0c88b94",
+    "7847ac46f72b0c2a46fed771284c835216f1de32659d4ea97e1d0d22e27ffc95",
+    "486f2ce07b7249f19dfa472b7aed01ba812975d1d68a17ad9385d0dd0b9d9f6c"
+   ]
+  },
+  {
+   "kind": "clip",
+   "source": "corpus_v4b_video",
+   "clip_id": "E:/source_hdr/Stuttgart_HDR_2014/fireplace::fireplace:92480-92672",
+   "scene_id": "E:/source_hdr/Stuttgart_HDR_2014/fireplace::fireplace",
+   "sdr_frames": [
+    "G:\\corpus_v4b\\sdr\\0005155_fireplace_092480_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005158_fireplace_092504_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005161_fireplace_092528_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005164_fireplace_092552_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005167_fireplace_092576_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005170_fireplace_092600_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005173_fireplace_092624_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005176_fireplace_092648_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005179_fireplace_092672_c0.png"
+   ],
+   "hdr_frames": [
+    "G:\\corpus_v4b\\hdr\\0005155_fireplace_092480_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005158_fireplace_092504_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005161_fireplace_092528_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005164_fireplace_092552_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005167_fireplace_092576_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005170_fireplace_092600_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005173_fireplace_092624_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005176_fireplace_092648_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005179_fireplace_092672_c0.png"
+   ],
+   "sdr_sha256": [
+    "829773553ca76ab442c86ee6b2f2037431e51365e7875a0aa6cf2360ad5783c1",
+    "3b154c987de07418338b0be90d65e361655317837f6c5205d1178f65d55a65ff",
+    "8bd3b534136319b6fb0ebdbe94db1e94e812283f9147fc418d4b5812f8c85c13",
+    "b30b239ab0531c1f8b693c8ff68af82c1c3f1873ffc6faee1743aab3b4e66be1",
+    "0b83ea5f28134aee185a559ea9937f3295d3f9579a09332058f873f74188ed43",
+    "d8906b45ef36d13ced5ad958ec5bf59b89b605f8838a0f07c0761c50a8853ce7",
+    "b5ae1e89f198185a406608699d13d3db1131a9c5f616d520f920c279e24ba295",
+    "6b9829fd2e72c72e1f19a1e9338d984f3eb9ba933b913173daf715abde1c3a4b",
+    "af12c4eb72317ff0596a3acdfc7a69d02898b151a517c20739aa8726bfb1e543"
+   ],
+   "hdr_sha256": [
+    "c562304c55653669e9836d8fd46d4a5c9bdc7b93b8af6f6254f1862f1c1802d8",
+    "03695c5e04d7cc82ee240972ead0e36595bccc62b885784f9c15da6aceb27fea",
+    "cab81af43032cc78041a9f043b386fcf02d6d50f1aa746cf0fe6dc454676d242",
+    "998ec1ffc768c0cff0bb4728cf3915d95a3a863f19df42e97dd8bc7745f04943",
+    "f9b5b0e44e7a261f36495bd8bb2dcee5b8ad77fd41d1129bda640ac922e981f6",
+    "5cf00e3081dd93306dcef60216ac606e61ed5d1c97b28de4769ef013d477cd6e",
+    "9e0426e7f2853f2fb94f6f46d4cdd9d27b3f721d512198b1539d164c9b8be787",
+    "f0a425fb02d728d7ce85e26eeaa2f462ba57242179d224ef7d18cefc13ac8417",
+    "bfad7c399ddf78a72ede82fa3f35110bfe9238fc743c6f1e510b590c440ed76b"
+   ]
+  },
+  {
+   "kind": "clip",
+   "source": "corpus_v4b_video",
+   "clip_id": "E:/source_hdr/Stuttgart_HDR_2014/fireplace::fireplace:92696-92888",
+   "scene_id": "E:/source_hdr/Stuttgart_HDR_2014/fireplace::fireplace",
+   "sdr_frames": [
+    "G:\\corpus_v4b\\sdr\\0005182_fireplace_092696_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005185_fireplace_092720_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005188_fireplace_092744_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005191_fireplace_092768_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005194_fireplace_092792_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005197_fireplace_092816_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005200_fireplace_092840_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005203_fireplace_092864_c0.png",
+    "G:\\corpus_v4b\\sdr\\0005206_fireplace_092888_c0.png"
+   ],
+   "hdr_frames": [
+    "G:\\corpus_v4b\\hdr\\0005182_fireplace_092696_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005185_fireplace_092720_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005188_fireplace_092744_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005191_fireplace_092768_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005194_fireplace_092792_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005197_fireplace_092816_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005200_fireplace_092840_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005203_fireplace_092864_c0.png",
+    "G:\\corpus_v4b\\hdr\\0005206_fireplace_092888_c0.png"
+   ],
+   "sdr_sha256": [
+    "42934d1062693f61d845d67c5713aa079aff1d1ca13429caa763cd105dd1ba88",
+    "9ca3a9235de5b214c51e5afaabc2b8ceb5d88ae1667f7dab9f1af1d8a9221b4c",
+    "042d0de2e947f86ce91de68c4c7c78e2991428022fbb1e4a522d5288f5856547",
+    "aa029d485658c26183e00c788fe37e2f1eda54c9cb1e2f38441b51b253a2d1a1",
+    "00c6fa2f41e868963c0b234898534097df8baedda176ae99883634f6791d9995",
+    "22a7e70b33eb01c1790906406ee20fdfc0dae242434c3cd17347ca16adebaa78",
+    "db4c33d8cb30506777747ff89e0ca963bcbae2273352b81865b9975578f6bf5d",
+    "4f886c5b9f3fd4125fa5b26fa0d472df693515df9d9204a65468b3c0e069d5e7",
+    "09205933d24acd996aba91abadb514dfa2c51e6821cc928bef43d2f3ed9fae91"
+   ],
+   "hdr_sha256": [
+    "4599f77d0ed10c10ac57ce4a9291bf701a6bbc1a9d9c7c06874a296de253034d",
+    "520d5c404671397130fe68530df78d8ec8afd65a0acd84c443d1f1b7e536585f",
+    "74d8869efbebe7d9a0263b50c494cf7a5321bfb93fa575500ce26290c0167f15",
+    "77d76e1f0de297a6e75826822e2e219bef18389cca828c8b656171fc1f684814",
+    "a811b2f3aff9b37a42d94e70cde38256d31503fe4b535021f89334850d683d0b",
+    "b91e2bb35527c9bffde684e10f1831be5a3cd347aaa28e157ffed01207808be6",
+    "1863a7908704b76071c692e6b2e60f5def87a9c4118c52369a2120aa17b46b41",
+    "61967790235745a512ab988eb7eae648940d302ee65a597af5f32c935ed4d117",
+    "59d6893781b725466cb78d01dcc6fefe63bfce6a6451214d323fb22d79ea6d7b"
+   ]
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_11872-12263_frame00000155",
+   "scene_id": "nf_meridian_11872-12263",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_11872-12263_frame00000155.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_11872-12263_frame00000155.png",
+   "sdr_sha256": "0821804b19439d2dbe3eddff801250dc26b16b851d1aeb6f777610b48ada0d62",
+   "hdr_sha256": "c2c2dbd89d3a5c25fc20460c03b04115a32d7158d91013d575b233a5d2e40428"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_1782-2163_frame00000365",
+   "scene_id": "nf_meridian_1782-2163",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_1782-2163_frame00000365.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_1782-2163_frame00000365.png",
+   "sdr_sha256": "03a135ac4b94eba61c5f91c71269cb94664f80cf556a995964d366f6dbe84837",
+   "hdr_sha256": "12f7f826b9a8b15d4cc56576d17e13b3342ecce69fcbf9379fd472a74e3e7d2b"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_20988-21412_frame00000025",
+   "scene_id": "nf_meridian_20988-21412",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_20988-21412_frame00000025.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_20988-21412_frame00000025.png",
+   "sdr_sha256": "a6bb9563b5540f92d69b74d484b0919fb11d74a1bb21419c720e791afbc61c95",
+   "hdr_sha256": "075dede1676c2d3135ebb7d767e315478f44b619e00047e7e8583207b875d9ee"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_12264-12745_frame00000295",
+   "scene_id": "nf_meridian_12264-12745",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_12264-12745_frame00000295.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_12264-12745_frame00000295.png",
+   "sdr_sha256": "acb6d1c4b00b816b206be6c47ead6ec0d815eec8ea8797e74372efad8b27f01c",
+   "hdr_sha256": "209f7a241314d194af1eb58c5249463aa3bc1f12d03452a45a499a27ef68587e"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_22412-22738_frame00000135",
+   "scene_id": "nf_meridian_22412-22738",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_22412-22738_frame00000135.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_22412-22738_frame00000135.png",
+   "sdr_sha256": "b418fc0a993605c4d3138d1b8ac558d0fb14f191a2652ac776ef64972ccf7a95",
+   "hdr_sha256": "15ee386dab005e55c9a93cd80a934fe3f2b9d7852254378905c1f770f6a25f32"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_15932-16309_frame00000285",
+   "scene_id": "nf_meridian_15932-16309",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_15932-16309_frame00000285.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_15932-16309_frame00000285.png",
+   "sdr_sha256": "92238e57782b0ddb12d35d2b5a59f31d0781cb8649473aa5f403186924167489",
+   "hdr_sha256": "d93840bb46440d1b56bf447c3a97033bc3e2dffebcfa923b59a0b299b5bb507b"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_24058-24550_frame00000395",
+   "scene_id": "nf_meridian_24058-24550",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_24058-24550_frame00000395.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_24058-24550_frame00000395.png",
+   "sdr_sha256": "71e56fd00e888ec002d5ad7d22f44405b783db7596682f204d3392c161b9a274",
+   "hdr_sha256": "c7f9cee0a456d17d576a6ab8962af7ec0bb682c8f6a11b0470bad3727c7f375d"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_11872-12263_frame00000175",
+   "scene_id": "nf_meridian_11872-12263",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_11872-12263_frame00000175.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_11872-12263_frame00000175.png",
+   "sdr_sha256": "808078a5673081fd8357d0045efc8a1992b11b7263c9f7e449fb1dff8c4ae59e",
+   "hdr_sha256": "3c03f7e08f3b489df0e28fcc4f5899d95a8f0bdf9304b4cb006618cf58b76a92"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_1782-2163_frame00000255",
+   "scene_id": "nf_meridian_1782-2163",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_1782-2163_frame00000255.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_1782-2163_frame00000255.png",
+   "sdr_sha256": "2cea869e164115a43d3a9d5f5dac46e5c063d86a83802d0af333e6af83e0b9db",
+   "hdr_sha256": "3465b171c8a09883fe4670ce7341ffb7c9d5fd40b5eae54924abff5ae6d4c55c"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_20988-21412_frame00000295",
+   "scene_id": "nf_meridian_20988-21412",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_20988-21412_frame00000295.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_20988-21412_frame00000295.png",
+   "sdr_sha256": "c0cdce0e38078f4208c5b8ca0d3355496366b69b0efae15b31409fd7e6ea6eac",
+   "hdr_sha256": "4499cc42a9b672f5d4fb9a608639725f6a1016b4a5227e42a3dc220c11cf7681"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_12264-12745_frame00000115",
+   "scene_id": "nf_meridian_12264-12745",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_12264-12745_frame00000115.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_12264-12745_frame00000115.png",
+   "sdr_sha256": "8ab4b1859ac07a2eb68c1963e34baf9eaa5eb187ee812c648f30ff7d0d9fc023",
+   "hdr_sha256": "65c8e9ae2fefb4f12bab7e851b78612c1b502329661662fadc5836e1bc8c4bcd"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_22412-22738_frame00000225",
+   "scene_id": "nf_meridian_22412-22738",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_22412-22738_frame00000225.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_22412-22738_frame00000225.png",
+   "sdr_sha256": "d219bf66878bdcce352422951845b58b675202b33230909cac3119d5021362e7",
+   "hdr_sha256": "4387c27359ed3e8326eda41466ee3f74c90d25a0b6e15ba634550df1cf85ecde"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_15932-16309_frame00000085",
+   "scene_id": "nf_meridian_15932-16309",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_15932-16309_frame00000085.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_15932-16309_frame00000085.png",
+   "sdr_sha256": "8a07aa23b187b971aa4c6ff5d7ef6bb09776945399c6f9c5e54fe75b923e8263",
+   "hdr_sha256": "cd41d81e778bc7f09957a4acbce44b701fc44886e981fee731be9e61fc6a1353"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_24058-24550_frame00000135",
+   "scene_id": "nf_meridian_24058-24550",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_24058-24550_frame00000135.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_24058-24550_frame00000135.png",
+   "sdr_sha256": "a84e449c5cc5711865be41d1bfe078fe0236071839cc71355c0a7370389da806",
+   "hdr_sha256": "be3826903272cfb8c05094abcbbc060d275dbc2f2f084a957f0a804f8e1e9c92"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_11872-12263_frame00000105",
+   "scene_id": "nf_meridian_11872-12263",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_11872-12263_frame00000105.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_11872-12263_frame00000105.png",
+   "sdr_sha256": "fd2b0b95b35af61cd5b8af6e5edc3b86cf9ba9a4df1ac1199d2d456162da0559",
+   "hdr_sha256": "fa63f26dd8bd3ae818a0009672d5ba7acfdaa550f0c4eed60b7ee34e64b93efb"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_1782-2163_frame00000195",
+   "scene_id": "nf_meridian_1782-2163",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_1782-2163_frame00000195.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_1782-2163_frame00000195.png",
+   "sdr_sha256": "77488577c58bb4aa656cf2e4eb6ec94425b754396d418ecdc56839ad0f25cd1b",
+   "hdr_sha256": "f21954c8dc40cc2bb33c2df967c953266335120648335793af8aac7742763e92"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_20988-21412_frame00000335",
+   "scene_id": "nf_meridian_20988-21412",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_20988-21412_frame00000335.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_20988-21412_frame00000335.png",
+   "sdr_sha256": "226243fadb39ac08eb037dd91e0a789a2ec30d70c6d4fa76bac2d07e12724615",
+   "hdr_sha256": "58442fc26c147f622ced13e9d8dd08edf2b7afa0fdc52a3326d3337b4a7200ea"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_12264-12745_frame00000355",
+   "scene_id": "nf_meridian_12264-12745",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_12264-12745_frame00000355.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_12264-12745_frame00000355.png",
+   "sdr_sha256": "c82836977ae975046f55c9a63952b81bd6d280f9c2d9fd1f271295caaaec7728",
+   "hdr_sha256": "e49387178b9a395018ec64ab23e957f847f02d2c3c29f426dfc848165bae723d"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_22412-22738_frame00000315",
+   "scene_id": "nf_meridian_22412-22738",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_22412-22738_frame00000315.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_22412-22738_frame00000315.png",
+   "sdr_sha256": "504c46763ad46c56fd2c0c7ee29201388255cee2f43c438a1f8c234ac2b74ed5",
+   "hdr_sha256": "054316414c38a428d2ff32cb153552640204b86742690fe03a9cec55c56d57f8"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_15932-16309_frame00000265",
+   "scene_id": "nf_meridian_15932-16309",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_15932-16309_frame00000265.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_15932-16309_frame00000265.png",
+   "sdr_sha256": "ebdc32cfe372197f2955298cb1efdb5f283a2542861fd9d571f901e822e33844",
+   "hdr_sha256": "0ee8e9e5917429adc5358d27efb113883c0bb7f164e53c1e1236eb97cea05cfe"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_24058-24550_frame00000445",
+   "scene_id": "nf_meridian_24058-24550",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_24058-24550_frame00000445.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_24058-24550_frame00000445.png",
+   "sdr_sha256": "eef4d36881076282aa97624f18261950a348fb8e4b6648ddde2c7444116ccb7c",
+   "hdr_sha256": "92d9743e5a1c2a6d39a1b99ad8500f8af8e55dc44515cd350d1b87aed066d164"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_11872-12263_frame00000265",
+   "scene_id": "nf_meridian_11872-12263",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_11872-12263_frame00000265.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_11872-12263_frame00000265.png",
+   "sdr_sha256": "73be646daa78a99615833a490e165bc8ec6bae34280b6ad45054eb09115a7ce7",
+   "hdr_sha256": "de0c8557ccf06b8f463c36b818c103219c95f878b7ddd125e860ccda29ac2e61"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_1782-2163_frame00000175",
+   "scene_id": "nf_meridian_1782-2163",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_1782-2163_frame00000175.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_1782-2163_frame00000175.png",
+   "sdr_sha256": "cafca0dbe90d5b5aa109eb29b53be6119c80e03311203cef75cc814153449f44",
+   "hdr_sha256": "5ac4f4e1f458fafeeb2ec36ddc39dcefea4e6d72f0b962d9b34928eb5af94c07"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_20988-21412_frame00000235",
+   "scene_id": "nf_meridian_20988-21412",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_20988-21412_frame00000235.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_20988-21412_frame00000235.png",
+   "sdr_sha256": "5c63c63ef568d903f9516ecddd2877b374e59e202dfdfbc8d9ac69ea2a053f39",
+   "hdr_sha256": "9cbe7e26a4ab81bf5178a9859490b1db03222a854b718f9edecc76a2c9f844b0"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_12264-12745_frame00000375",
+   "scene_id": "nf_meridian_12264-12745",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_12264-12745_frame00000375.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_12264-12745_frame00000375.png",
+   "sdr_sha256": "9713327a8da682183811e390b3f94fb78eee08d4bf9296b49c6e84bb1ec848c9",
+   "hdr_sha256": "d494a67d357c4388dd4d00475da086f9fd5fb1c069d2128224db3cce14019a40"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_22412-22738_frame00000095",
+   "scene_id": "nf_meridian_22412-22738",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_22412-22738_frame00000095.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_22412-22738_frame00000095.png",
+   "sdr_sha256": "62fbf315d6f2a29f07e91087df2e5e68ca2658fec8bd8d279e9a8bc89963d98b",
+   "hdr_sha256": "3832b1f4931a18c72c1dd5b5dc10fbc123a52521d83f78e0a8ea6c0cfe9c103c"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_15932-16309_frame00000305",
+   "scene_id": "nf_meridian_15932-16309",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_15932-16309_frame00000305.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_15932-16309_frame00000305.png",
+   "sdr_sha256": "2518fc49ef290263c8f816314939e54f34dc31702490f03a2bc4ba69b936e3b7",
+   "hdr_sha256": "34e5f2f4395cb5cd0f2a273d8142650cbd18f720198dbc5afbf7b80a5eee2eee"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_24058-24550_frame00000305",
+   "scene_id": "nf_meridian_24058-24550",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_24058-24550_frame00000305.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_24058-24550_frame00000305.png",
+   "sdr_sha256": "e73f23d7d03f9a572ff5e84ff146953c1d01e6cbab06bff13f3f91fba0ea241c",
+   "hdr_sha256": "322e1ebde34830b808a9f1d4e3651c709ede8c471c977e18bbf0c8fad6139f72"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_11872-12263_frame00000315",
+   "scene_id": "nf_meridian_11872-12263",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_11872-12263_frame00000315.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_11872-12263_frame00000315.png",
+   "sdr_sha256": "0915c2ab5b0355fe945702c03564f9d745ba8280dd087539c7fc4715fa3a4125",
+   "hdr_sha256": "9f1145dac1ecb4acd80eb9f700004763bd23682de8146dd9007aa3df81141962"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_1782-2163_frame00000105",
+   "scene_id": "nf_meridian_1782-2163",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_1782-2163_frame00000105.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_1782-2163_frame00000105.png",
+   "sdr_sha256": "c8660c26ba34cd3a047b0166acba862528c1b5a89f8afa587059586f5bd2fa4d",
+   "hdr_sha256": "66fcd11ec7d69386c3a841e3ebce11f0935472a55ea1123ebc2d0fee744a406b"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_20988-21412_frame00000285",
+   "scene_id": "nf_meridian_20988-21412",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_20988-21412_frame00000285.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_20988-21412_frame00000285.png",
+   "sdr_sha256": "3ae3f921c2c86646fb0ddae4ae835b5e4eb35b8fe923eb9401fe6a3f555c45f9",
+   "hdr_sha256": "c82d870b4d8e5c939cfdd17ff2352d1c6ed9edd622efbfd4054890432f424e7b"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_12264-12745_frame00000095",
+   "scene_id": "nf_meridian_12264-12745",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_12264-12745_frame00000095.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_12264-12745_frame00000095.png",
+   "sdr_sha256": "d85a1e61f863bf24639cadb5c887f9ed7d32b5468e97f7eb57a35f1cab041825",
+   "hdr_sha256": "82da4605811431fbe439110aa52645422510824beba472410ab64fe3b62c3284"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_22412-22738_frame00000265",
+   "scene_id": "nf_meridian_22412-22738",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_22412-22738_frame00000265.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_22412-22738_frame00000265.png",
+   "sdr_sha256": "00d073dba0f7dc49b87233f1c63a508b2d86165e83b080050b2b3341250aa957",
+   "hdr_sha256": "e65cb29d9bcf175df19b284b1579724efdf0f0568c428907d06c1fdbcc40c79b"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_15932-16309_frame00000145",
+   "scene_id": "nf_meridian_15932-16309",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_15932-16309_frame00000145.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_15932-16309_frame00000145.png",
+   "sdr_sha256": "9646efa59c298cc10eba6344d12113ff41ff91452916e1e876159aba3aa1d73f",
+   "hdr_sha256": "79f51a219f0b4906f79126b6cd8995347c1067ccc2b91bbde1a121a93eff6592"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_24058-24550_frame00000285",
+   "scene_id": "nf_meridian_24058-24550",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_24058-24550_frame00000285.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_24058-24550_frame00000285.png",
+   "sdr_sha256": "20fbc2f70d7068b45538845bc1c3e96433cde69fb7cdf0ab57d430757fd8aa3e",
+   "hdr_sha256": "368968f3501a5953897fc7d04a28ac734734102ab31219581a8faf71bd872d8a"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_11872-12263_frame00000335",
+   "scene_id": "nf_meridian_11872-12263",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_11872-12263_frame00000335.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_11872-12263_frame00000335.png",
+   "sdr_sha256": "803295951143d4b372cbc29d15af0728ad4fea4862e710813ee8cc4fe42b4594",
+   "hdr_sha256": "f87f48d8521ef378851e87e21a9cdf42403c3666ba06192c44cab9219ae41598"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_1782-2163_frame00000205",
+   "scene_id": "nf_meridian_1782-2163",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_1782-2163_frame00000205.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_1782-2163_frame00000205.png",
+   "sdr_sha256": "1aa76c730e0bdd738175ad7edaed17bc979a14273597b5012c8313f17ea0d84c",
+   "hdr_sha256": "497884f5e3812282c77ddc323f148cca3e193492c08394d937f16f980eabab4b"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_20988-21412_frame00000395",
+   "scene_id": "nf_meridian_20988-21412",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_20988-21412_frame00000395.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_20988-21412_frame00000395.png",
+   "sdr_sha256": "87f8e92e585acee9b219bbe454e988e76eb1d046fe065d4c2eeb3a1d9a583c3a",
+   "hdr_sha256": "f88847dac2d6235d332105b78cfab5ea5f60c1f1c81ff846fad947c3ad2f19ce"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_12264-12745_frame00000025",
+   "scene_id": "nf_meridian_12264-12745",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_12264-12745_frame00000025.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_12264-12745_frame00000025.png",
+   "sdr_sha256": "4fb6ce09b5c27e5782dddf91fd3820c094e590960a2e540d9a3e60904c43c9c3",
+   "hdr_sha256": "38fcc331ebe4878874dab71eebc6d5da40f9e1eb15cce6ca07e25677ea1647e2"
+  },
+  {
+   "kind": "netflix_real_sdr",
+   "source": "rudra_netflix_realsdr",
+   "asset_id": "nf_meridian_22412-22738_frame00000295",
+   "scene_id": "nf_meridian_22412-22738",
+   "title": "Meridian",
+   "sdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\sdr\\nf_meridian_22412-22738_frame00000295.png",
+   "hdr_path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\pairs\\hdr\\nf_meridian_22412-22738_frame00000295.png",
+   "sdr_sha256": "d5e3171efc15267e8d1bc6efb1e433df93d8a644c5856794768e7d8120625b0d",
+   "hdr_sha256": "022b3e0d1b9bb5255ed1588faae22ac0ae9d3dea20f6afbfd1236f2adffece1e"
+  }
+ ],
+ "rerooted": {
+  "date": "2026-10-01",
+  "from": "D:\\A.I\\Devlopments\\rudra\\outputs\\rudra_netflix_realsdr_20261001",
+  "to": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001",
+  "note": "corpus moved D: -> G: after the freeze; selection is by asset id only and files are byte-identical, so only paths changed. inputs_sha256.netflix_manifest is the pre-move (D:-rooted) manifest."
+ }
+}

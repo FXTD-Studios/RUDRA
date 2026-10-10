@@ -1,0 +1,503 @@
+#include "rudra/engine/session.hpp"
+
+#include "rudra/core/js_format.hpp"
+#include "rudra/engine/actions.hpp"
+
+#include <algorithm>
+#include <charconv>
+#include <cmath>
+#include <cstdlib>
+#include <string>
+
+namespace rudra {
+namespace {
+
+constexpr double kPageDiffuseWhite = 203.0;   // DIFFUSE_WHITE in app.js
+constexpr std::size_t kUndoDepth = 60;   // pushUndo keeps the last 60
+
+
+// Math.pow(2, e) for the peak slider's steps. The slider moves in halves, and
+// 2^(n/2) is a power of two times sqrt(2) for odd n: exact, where a library
+// pow may differ from V8's in the last place.
+double pow2(double e) {
+    const double twice = e * 2.0;
+    if (twice == std::floor(twice) && std::abs(twice) < 2048.0) {
+        const long long n = static_cast<long long>(twice);
+        const long long whole = n >= 0 ? n / 2 : -((-n + 1) / 2);
+        const bool half = (n - 2 * whole) != 0;
+        return std::ldexp(half ? std::sqrt(2.0) : 1.0, int(whole));
+    }
+    return std::pow(2.0, e);
+}
+
+void append_string(std::string& out, std::string_view s) {
+    out += '"';
+    for (char c : s) {
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            default: out += c;
+        }
+    }
+    out += '"';
+}
+
+RecoveryMode recovery(std::string_view m) {
+    if (m == "highlights") return RecoveryMode::Highlights;
+    if (m == "shadows") return RecoveryMode::Shadows;
+    if (m == "off") return RecoveryMode::Off;
+    return RecoveryMode::All;
+}
+
+}  // namespace
+
+std::vector<RegionState> default_regions() {
+    return {{"highlights", 400.0, 2000.0, 0.0}, {"speculars", 2000.0, 8000.0, 0.0}, {"shadows", 0.05, 12.0, 0.0}};
+}
+
+Session::Session() { grade.regions = default_regions(); }
+
+double Session::display_nits() const { return kPageDiffuseWhite * pow2(peak_ev); }
+
+std::string Session::params_json() const {
+    std::string o = "{\"strength\":" + js_number(grade.strength) + ",\"display_nits\":" + js_number(display_nits()) +
+                    ",\"recovery_mode\":";
+    append_string(o, grade.mode);
+    o += ",\"preserve_outside\":";
+    o += grade.preserve ? "true" : "false";
+    o += ",\"regions\":[";
+    for (std::size_t i = 0; i < grade.regions.size(); ++i) {
+        const auto& r = grade.regions[i];
+        if (i) o += ',';
+        o += "{\"label\":";
+        append_string(o, r.label);
+        o += ",\"low_nits\":" + js_number(r.low_nits) + ",\"high_nits\":" + js_number(r.high_nits) +
+             ",\"ev\":" + js_number(r.ev) + "}";
+    }
+    o += "],\"region_softness_stops\":1,\"tile_size\":0,\"tile_overlap\":64,\"max_side\":1600";
+    if (grade.source != "unknown") {
+        o += ",\"source_curve\":";
+        append_string(o, grade.source);
+    }
+    const auto cal = calibration_points();
+    if (!cal.empty() && grade.reference.empty()) {
+        o += ",\"calibration\":[";
+        for (std::size_t i = 0; i < cal.size(); ++i) {
+            if (i) o += ',';
+            o += "{\"code\":" + std::to_string(cal[i].code) + ",\"nits\":" + js_number(cal[i].nits) + "}";
+        }
+        o += "]";
+    }
+    if (!grade.reference.empty()) o += ",\"reference\":" + reference_fit_json(grade.reference);
+    if (grade.masks && !grade.masks->empty()) {
+        o += ",\"masks\":[";
+        bool first = true;
+        for (int b : grade.masks->bands()) {
+            if (!first) o += ',';
+            first = false;
+            o += std::to_string(b);
+        }
+        o += "]";
+    }
+    o += "}";
+    return o;
+}
+
+CompositeParams Session::composite_params() const {
+    CompositeParams p;
+    p.mode = recovery(grade.mode);
+    p.strength = float(grade.strength);
+    p.preserve_outside = grade.preserve;
+    for (const auto& r : grade.regions) p.regions.push_back({r.low_nits, r.high_nits, r.ev});
+    p.region_softness_stops = 1.0;
+    p.source = source_curve();
+    p.calibration = grade.reference.empty() ? calibration_points() : std::vector<CalibrationPoint>{};
+    p.reference = grade.reference;
+    if (grade.masks && !grade.masks->empty()) p.masks = grade.masks;
+    return p;
+}
+
+// ---- painted masks (3.3) ---------------------------------------------------
+
+void Session::arm_mask(int band) {
+    const int next = band >= 0 && band < kMaxMaskBands && band < int(grade.regions.size()) ? band : -1;
+    if (next == paint_band_) return;
+    paint_band_ = next;
+    in_stroke_ = false;
+    notify(View);
+}
+
+void Session::set_brush(const Brush& brush) {
+    brush_ = brush;
+    brush_.size_px = std::clamp(brush_.size_px, 2.0, 2000.0);
+    brush_.softness = std::clamp(brush_.softness, 0.0, 1.0);
+    brush_.flow = std::clamp(brush_.flow, 0.01, 1.0);
+    notify(View);
+}
+
+void Session::stroke_begin() {
+    if (paint_band_ < 0 || in_stroke_) return;
+    push_undo();
+    in_stroke_ = true;
+}
+
+void Session::stroke(int width, int height, double x0, double y0, double x1, double y1, bool erase) {
+    if (paint_band_ < 0 || width <= 0 || height <= 0) return;
+    if (!in_stroke_) stroke_begin();
+    auto next = std::make_shared<MaskSet>();
+    if (grade.masks && grade.masks->width == width && grade.masks->height == height) *next = *grade.masks;
+    next->width = width;
+    next->height = height;
+    // Copy on write: the stroke's plane is the only one copied.
+    auto plane = next->planes[std::size_t(paint_band_)] ? std::make_shared<MaskPlane>(*next->planes[std::size_t(paint_band_)])
+                                                         : empty_plane(width, height);
+    Brush b = brush_;
+    b.erase = erase;
+    paint_stroke(*plane, width, height, x0, y0, x1, y1, b);
+    next->planes[std::size_t(paint_band_)] = std::move(plane);
+    grade.masks = std::move(next);
+    notify(Grade);
+}
+
+void Session::stroke_end() { in_stroke_ = false; }
+
+void Session::invert_mask() {
+    if (paint_band_ < 0 || !grade.masks || !grade.masks->has(paint_band_)) return;
+    push_undo();
+    auto next = std::make_shared<MaskSet>(*grade.masks);
+    auto plane = std::make_shared<MaskPlane>(*next->planes[std::size_t(paint_band_)]);
+    invert_plane(*plane);
+    next->planes[std::size_t(paint_band_)] = std::move(plane);
+    grade.masks = std::move(next);
+    notify(Grade);
+}
+
+void Session::clear_mask(int band) {
+    if (!grade.masks || !grade.masks->has(band)) return;
+    push_undo();
+    auto next = std::make_shared<MaskSet>(*grade.masks);
+    next->planes[std::size_t(band)].reset();
+    grade.masks = next->empty() ? nullptr : std::move(next);
+    notify(Grade);
+}
+
+void Session::clear_masks() {
+    if (!grade.masks || grade.masks->empty()) return;
+    push_undo();
+    grade.masks.reset();
+    notify(Grade);
+}
+
+void Session::set_reference(ReferenceFit fit) {
+    if (fit.empty() || fit == grade.reference) return;
+    push_undo();
+    grade.reference = std::move(fit);
+    grade.calibration.clear();
+    notify(Grade);
+}
+
+void Session::clear_reference() {
+    if (grade.reference.empty()) return;
+    push_undo();
+    grade.reference = ReferenceFit{};
+    notify(Grade);
+}
+
+std::vector<CalibrationPoint> Session::calibration_points() const {
+    std::vector<CalibrationPoint> out;
+    for (const auto& c : grade.calibration)
+        if (c.nits > 0.0 && c.code >= 0 && c.code <= 255) out.push_back(c);
+    return out;
+}
+
+void Session::set_calibration(int slot, int code, double nits) {
+    if (slot < 0 || slot >= kMaxCalibrationPoints) return;
+    std::vector<CalibrationPoint> next = grade.calibration;
+    // A slot nobody has clicked yet has code -1: nits typed there are kept but
+    // make no point until a click gives them a code.
+    if (next.size() < std::size_t(kMaxCalibrationPoints)) next.resize(std::size_t(kMaxCalibrationPoints), CalibrationPoint{-1, 0.0});
+    CalibrationPoint& p = next[std::size_t(slot)];
+    if (code >= 0) p.code = std::clamp(code, 0, 255);
+    p.nits = nits > 0.0 ? nits : 0.0;
+    if (next == grade.calibration) return;
+    push_undo();
+    grade.calibration = std::move(next);
+    notify(Grade);
+}
+
+void Session::clear_calibration() {
+    if (calibration_points().empty() && grade.calibration.empty()) return;
+    push_undo();
+    grade.calibration.clear();
+    notify(Grade);
+}
+
+SourceCurve Session::source_curve() const {
+    return parse_source_curve(grade.source).value_or(SourceCurve::Unknown);
+}
+
+void Session::notify(std::uint32_t what) const {
+    if (changed_) changed_(what);
+}
+
+void Session::push_undo() {
+    undo_.push_back(grade);
+    while (undo_.size() > kUndoDepth) undo_.erase(undo_.begin());
+    redo_.clear();
+}
+
+void Session::restore(const GradeSnapshot& s) {
+    grade = s;
+    notify(Grade);
+}
+
+void Session::undo() {
+    if (undo_.empty()) return;   // "nothing to undo"
+    redo_.push_back(grade);
+    GradeSnapshot s = undo_.back();
+    undo_.pop_back();
+    restore(s);
+}
+
+void Session::redo() {
+    if (redo_.empty()) return;
+    undo_.push_back(grade);
+    GradeSnapshot s = redo_.back();
+    redo_.pop_back();
+    restore(s);
+}
+
+void Session::set_mode(std::string_view mode) {
+    if (grade.mode == mode) return;
+    push_undo();
+    grade.mode = std::string(mode);
+    notify(Grade);
+}
+
+void Session::nudge_strength(double delta) {
+    push_undo();
+    grade.strength = std::max(0.0, std::min(2.0, js_round((grade.strength + delta) * 100.0) / 100.0));
+    notify(Grade);
+}
+
+void Session::strength_press() { push_undo(); }
+
+void Session::strength_input(double value) {
+    grade.strength = value;
+    notify(Grade);
+}
+
+void Session::peak_input(double ev) {
+    peak_ev = ev;
+    notify(Peak);
+}
+
+void Session::toggle_preserve() {
+    push_undo();
+    grade.preserve = !grade.preserve;
+    notify(Grade);
+}
+
+void Session::reset_recon() {
+    push_undo();
+    grade.mode = "all";
+    grade.strength = 1.0;
+    grade.preserve = true;
+    notify(Grade);
+}
+
+void Session::reset_regions() {
+    push_undo();
+    grade.regions = default_regions();
+    notify(Grade);
+}
+
+void Session::set_source(std::string_view id) {
+    if (grade.source == id || !parse_source_curve(id)) return;
+    push_undo();
+    grade.source = std::string(id);
+    notify(Grade);
+}
+
+void Session::set_container(std::string_view kind) {
+    container = std::string(kind);
+    notify(Delivery);
+}
+
+void Session::toggle_wipe() {
+    wipe = wipe ? std::nullopt : std::optional<double>(0.5);
+    flip_held = false;
+    notify(Wipe | Flip);
+}
+
+void Session::set_wipe(double x) {
+    wipe = std::max(0.0, std::min(1.0, x));
+    notify(Wipe);
+}
+
+void Session::set_show(std::string_view source) {
+    show = std::string(source);
+    wipe.reset();
+    notify(View | Wipe);
+}
+
+void Session::set_view_layer(int layer) {
+    view_layer = layer;
+    notify(View);
+}
+
+void Session::toggle_changes() {
+    show_changes = !show_changes;
+    notify(View);
+}
+
+void Session::toggle_anchor() {
+    anchor = !anchor;
+    notify(Delivery);
+}
+
+void Session::set_anchor_knee(double knee) {
+    knee = std::max(0.5, std::min(0.99, knee));
+    if (knee == anchor_knee) return;
+    anchor_knee = knee;
+    notify(Delivery);
+}
+
+void Session::load_state(const GradeSnapshot& g, double peak, bool anchor_on, bool carry, double knee,
+                         std::string_view container_kind) {
+    push_undo();
+    grade = g;
+    peak_ev = peak;
+    anchor = anchor_on;
+    carry_chroma = carry;
+    anchor_knee = std::max(0.5, std::min(0.99, knee));
+    container = container_kind == "linear" ? "linear" : "aces";
+    notify(Grade | Peak | Delivery);
+}
+
+void Session::toggle_carry_chroma() {
+    carry_chroma = !carry_chroma;
+    notify(Delivery);
+}
+
+void Session::region_press(int index, double x) {
+    if (index < 0 || index >= int(grade.regions.size())) return;
+    region_sel = index;
+    notify(Grade);   // the row is selected before the drag begins
+    drag_ = index;
+    drag_x0_ = x;
+    drag_ev0_ = grade.regions[std::size_t(index)].ev;
+    drag_moved_ = false;
+    push_undo();
+}
+
+void Session::region_move(double x, bool shift) {
+    if (drag_ < 0) return;
+    const double step = shift ? 0.002 : 0.01;
+    const double value = std::max(-4.0, std::min(4.0, drag_ev0_ + (x - drag_x0_) * step));
+    auto& r = grade.regions[std::size_t(drag_)];
+    if (std::abs(value - r.ev) < 1e-6) return;
+    drag_moved_ = true;
+    r.ev = js_round(value * 100.0) / 100.0;
+    notify(Grade);
+}
+
+void Session::region_release() {
+    // A press that never moved leaves no undo step behind.
+    if (drag_ >= 0 && !drag_moved_ && !undo_.empty()) undo_.pop_back();
+    drag_ = -1;
+}
+
+void Session::region_zero(int index) {
+    if (index < 0 || index >= int(grade.regions.size())) return;
+    push_undo();
+    grade.regions[std::size_t(index)].ev = 0.0;
+    notify(Grade);
+}
+
+void Session::select_region(int index) {
+    if (index < 0 || index >= int(grade.regions.size())) return;
+    region_sel = index;
+    notify(Grade);
+}
+
+bool Session::owns(std::string_view a) {
+    static const std::string_view mine[] = {"mode-all", "mode-highlights", "mode-shadows", "mode-off", "preserve",
+                                            "strength-down", "strength-up", "reset-recon", "reset-regions", "undo",
+                                            "redo", "container-aces", "container-linear", "wipe",
+                                            "rail-left", "rail-right", "scopes"};
+    if (a.size() > 7 && a.substr(0, 7) == "source-" && parse_source_curve(a.substr(7))) return true;
+    return std::find(std::begin(mine), std::end(mine), a) != std::end(mine);
+}
+
+bool Session::run(std::string_view a) {
+    if (a == "mode-all") set_mode("all");
+    else if (a == "mode-highlights") set_mode("highlights");
+    else if (a == "mode-shadows") set_mode("shadows");
+    else if (a == "mode-off") set_mode("off");
+    else if (a == "preserve") toggle_preserve();
+    else if (a == "strength-down") nudge_strength(-0.1);
+    else if (a == "strength-up") nudge_strength(0.1);
+    else if (a == "reset-recon") reset_recon();
+    else if (a == "reset-regions") reset_regions();
+    else if (a == "undo") undo();
+    else if (a == "redo") redo();
+    else if (a == "container-aces") set_container("aces");
+    else if (a == "container-linear") set_container("linear");
+    else if (a == "wipe") toggle_wipe();
+    else if (a.size() > 7 && a.substr(0, 7) == "source-" && parse_source_curve(a.substr(7))) set_source(a.substr(7));
+    else if (a == "rail-left") {
+        rail_left = !rail_left;
+        notify(Window);
+    } else if (a == "rail-right") {
+        rail_right = !rail_right;
+        notify(Window);
+    } else if (a == "scopes") {
+        scopes_open = !scopes_open;
+        notify(Window);
+    } else return false;
+    return true;
+}
+
+std::string Session::key_down(std::string_view k, bool shift, bool modified, bool repeat) {
+    if (modified) return {};
+    if (k == "b" || k == "B") {
+        if (!repeat) {
+            flip_held = true;
+            notify(Flip);
+        }
+        return {};
+    }
+    if (k == "w" || k == "W") {
+        toggle_wipe();
+        return "wipe";
+    }
+    if (wipe && (k == "ArrowLeft" || k == "ArrowRight")) {
+        const double step = shift ? 0.01 : 0.05;
+        wipe = std::max(0.0, std::min(1.0, *wipe + (k == "ArrowRight" ? step : -step)));
+        notify(Wipe);
+        return {};
+    }
+    if (k == "Escape") {
+        if (wipe) {
+            wipe.reset();
+            notify(Wipe);
+            return {};
+        }
+        return "escape";   // the app closes a sheet or a menu
+    }
+    // The page's map, Space and 1 to 4: engine/actions has them.
+    std::string act(action_for_key(k));
+    if (!act.empty()) run(act);
+    return act;
+}
+
+void Session::key_up(std::string_view k) {
+    if ((k == "b" || k == "B") && flip_held) {
+        flip_held = false;
+        notify(Flip);
+    }
+}
+
+}  // namespace rudra

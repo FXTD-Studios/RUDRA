@@ -1,8 +1,8 @@
 """Dynamic HDR metadata analysis for RUDRA output (torch-free).
 
 Generates per-shot Dolby Vision L1 trim analysis and HDR10+ (ST 2094-40
-style) scene statistics directly from RUDRA's linear frames — the step every
-competitor (Runway Ruby, Topaz Hyperion, Beeble SwitchHDR) leaves to a
+style) scene statistics directly from RUDRA's linear frames — the step SDR→HDR
+tools usually leave to a
 separate mastering pass or skips entirely. Static CTA-861.3 MaxCLL/MaxFALL
 are computed here too, on max(R,G,B) as the spec requires (the legacy
 ``training/export_hdr10.py`` computed them on Rec.2020 luminance, which
@@ -245,8 +245,8 @@ def write_all_sidecars(
         "dovi": stem.with_name(stem.name + "_dovi_generate.json"),
         "hdr10plus": stem.with_name(stem.name + "_hdr10plus_scenes.json"),
     }
-    paths["rudra"].write_text(json.dumps(to_rudra_sidecar(stats, shots), indent=2), encoding="utf-8")
+    paths["rudra"].write_text(json.dumps(to_rudra_sidecar(stats, shots), indent=2), encoding="utf-8", newline="\n")
     paths["dovi"].write_text(
-        json.dumps(to_dovi_generate_json(stats, shots, mastering_peak_nits), indent=2), encoding="utf-8")
-    paths["hdr10plus"].write_text(json.dumps(to_hdr10plus_json(stats, shots), indent=2), encoding="utf-8")
+        json.dumps(to_dovi_generate_json(stats, shots, mastering_peak_nits), indent=2), encoding="utf-8", newline="\n")
+    paths["hdr10plus"].write_text(json.dumps(to_hdr10plus_json(stats, shots), indent=2), encoding="utf-8", newline="\n")
     return paths
