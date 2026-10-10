@@ -13,7 +13,15 @@ function(rudra_warnings target)
     # bit (macOS CI, 25 Sep 2026). Where a port wants an FMA it calls std::fma.
     target_compile_options(${target} PRIVATE -ffp-contract=off)
   endif()
+  # Every executable runs in the UTF-8 code page on Windows (utf8.manifest):
+  # the paths it hands to ffmpeg, OpenCV and std::filesystem as narrow
+  # strings then carry any letter (a user named José, a folder in Japanese).
+  get_target_property(_rudra_type ${target} TYPE)
+  if(WIN32 AND _rudra_type STREQUAL "EXECUTABLE")
+    target_sources(${target} PRIVATE "${RUDRA_CMAKE_DIR}/utf8.manifest")
+  endif()
 endfunction()
+set(RUDRA_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 
 # A first-party library: include/ is its public interface, src/ its private body.
 function(rudra_library target)
