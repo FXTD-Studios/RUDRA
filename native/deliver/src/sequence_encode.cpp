@@ -168,6 +168,19 @@ Result<NitsFrame> shoulder_to_peak(const NitsFrame& rgb, double peak) {
     return out;
 }
 
+Result<NitsFrame> deliver_master_frame(NitsFrame f, Primaries source, double peak) {
+    if (source != Primaries::Rec2020) {
+        const Mat3 m = rgb_to_rgb_matrix(source, Primaries::Rec2020);
+        const std::size_t n = f.plane_size();
+        for (std::size_t i = 0; i < n; ++i) {
+            const double v[3] = {f.plane(0)[i], f.plane(1)[i], f.plane(2)[i]};
+            for (std::size_t c = 0; c < 3; ++c)
+                f.plane(int(c))[i] = double(static_cast<float>(m[c][0] * v[0] + m[c][1] * v[1] + m[c][2] * v[2]));
+        }
+    }
+    return shoulder_to_peak(f, peak);
+}
+
 Result<std::vector<std::uint16_t>> encode_sequence_frame(const NitsFrame& in, const SequenceTarget& target, double peak,
                                                          Primaries source, bool shoulder) {
     NitsFrame rgb = in;
@@ -193,17 +206,23 @@ Result<std::vector<std::uint16_t>> encode_sequence_frame(const NitsFrame& in, co
                 out[i * 3 + std::size_t(c)] = static_cast<std::uint16_t>(std::clamp(coded, 0.0f, 1.0f) * 65535.0f + 0.5f);
             }
     } else if (target.transfer == "hlg") {
-        // hlg_inverse_ootf in float64 on luminance, then the OETF.
-        const double gamma = 1.2 + 0.42 * std::log2(std::max(peak, 1e-6) / 1000.0);
+        // video.hlg_code: hlg_inverse_ootf in float64 on luminance, with the
+        // BT.2100 system gamma (log10; this used log2 until 9 Oct 2026, as the
+        // Python did), then scene RGB above 1.0 scaled down together so a
+        // saturated colour keeps its hue, then the OETF.
         const double pk = std::max(peak, 1e-6);
+        const double gamma = 1.2 + 0.42 * std::log10(pk / 1000.0);
         for (std::size_t i = 0; i < n; ++i) {
             double d[3];
             for (int c = 0; c < 3; ++c) d[c] = std::max(rgb.plane(c)[i] / pk, 0.0);
             const double yd = d[0] * 0.2627 + d[1] * 0.6780 + d[2] * 0.0593;
             const double ys = std::pow(std::max(yd, 1e-12), 1.0 / gamma);
             const double ratio = ys / std::max(yd, 1e-12);
+            double s[3];
+            for (int c = 0; c < 3; ++c) s[c] = d[c] * ratio;
+            const double top = std::max(1.0, std::max(s[0], std::max(s[1], s[2])));
             for (int c = 0; c < 3; ++c) {
-                const double coded = hlg_oetf64(d[c] * ratio);
+                const double coded = hlg_oetf64(s[c] / top);
                 out[i * 3 + std::size_t(c)] = static_cast<std::uint16_t>(std::clamp(coded, 0.0, 1.0) * 65535.0 + 0.5);
             }
         }
@@ -386,13 +405,25 @@ Result<fs::path> encode_sequence(const std::function<std::optional<NitsFrame>()>
     if (output.has_parent_path()) fs::create_directories(output.parent_path(), ec);
     const bool prores = spec->suffix == ".mov";
     const bool colr = spec->suffix == ".mov" || spec->suffix == ".mp4";
+    // Encoded under a partial name and published with one rename (video.py,
+    // 9 Oct 2026): a failure part way through leaves nothing at the final
+    // name, rather than a truncated file that looks like a delivery.
+    const fs::path partial = output.parent_path() / ("." + output.stem().string() + ".partial" + spec->suffix);
+    struct DropPartial {
+        const fs::path& p;
+        ~DropPartial() {
+            std::error_code e;
+            fs::remove(p, e);
+        }
+    } drop_partial{partial};
     const auto args = sequence_encode_command(*spec, width, height, o.fps, o.peak_nits, o.maxcll, o.maxfall, o.min_nits,
-                                              output, colr && ffmpeg_supports("muxer", "mov", "write_colr"),
+                                              partial, colr && ffmpeg_supports("muxer", "mov", "write_colr"),
                                               prores && ffmpeg_supports("bsf", "prores_metadata", "color_primaries"));
     const fs::path log = fs::temp_directory_path() / ("rudra-encode-" + std::to_string(std::hash<std::string>{}(output.string())) + ".log");
     auto process = Process::start_writer(args, log);
     if (!process) return process.error();
     int written = 0;
+    bool pipe_closed = false;
     for (;;) {
         auto codes = encode_sequence_frame(*frame, *spec, o.peak_nits, o.source, o.shoulder);
         if (!codes) {
@@ -400,7 +431,10 @@ Result<fs::path> encode_sequence(const std::function<std::optional<NitsFrame>()>
             (*process)->wait();
             return codes.error();
         }
-        if (!(*process)->write(std::span(reinterpret_cast<const std::uint8_t*>(codes->data()), codes->size() * 2))) break;
+        if (!(*process)->write(std::span(reinterpret_cast<const std::uint8_t*>(codes->data()), codes->size() * 2))) {
+            pipe_closed = true;   // ffmpeg stopped reading: its exit code and log say why
+            break;
+        }
         ++written;
         frame = next();
         if (!frame) break;
@@ -429,6 +463,13 @@ Result<fs::path> encode_sequence(const std::function<std::optional<NitsFrame>()>
         for (const auto& s : args) cmd += (cmd.empty() ? "" : " ") + s;
         return encode_error("ffmpeg failed after " + std::to_string(written) + " frame(s): " + tail + "\n  command: " + cmd);
     }
+    if (pipe_closed) {
+        const std::string said = strip(stderr_text);
+        return encode_error("ffmpeg closed its input after " + std::to_string(written) + " frame(s) but reported success: " +
+                            (said.empty() ? std::string("no output") : said));
+    }
+    fs::rename(partial, output, ec);
+    if (ec) return encode_error("the encoded file could not be moved to " + output.string() + ": " + ec.message());
     if (o.verify_tags) {
         std::string note;
         if (auto v = verify_sequence_tags(output, o.target, &note); !v) return v.error();

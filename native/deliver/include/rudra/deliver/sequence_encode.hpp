@@ -38,6 +38,11 @@ Result<ColourTags> expected_tags(const std::string& target);
 // shoulder_to_peak: master_to_peak on nits (float32 inside, as the Python's).
 Result<NitsFrame> shoulder_to_peak(const NitsFrame& rgb_nits, double peak_nits);
 
+// `deliver`'s frame (cli.py _cmd_deliver.mastered): into Rec.2020 first
+// (colorspace.convert: the matrix in double, float32 out), then the roll-off,
+// since the shoulder weighs Rec.2020 luminance (9 Oct 2026).
+Result<NitsFrame> deliver_master_frame(NitsFrame rgb_nits, Primaries source, double peak_nits);
+
 // _encode_frame: one frame in nits to height x width x 3 RGB 16-bit codes.
 Result<std::vector<std::uint16_t>> encode_sequence_frame(const NitsFrame& rgb_nits, const SequenceTarget& target,
                                                          double peak_nits, Primaries source, bool shoulder = true);

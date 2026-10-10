@@ -1,5 +1,6 @@
 #include "deliver.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 
@@ -10,8 +11,9 @@
 namespace rudra {
 namespace fs = std::filesystem;
 
-// rudra/delivery/cli.py _cmd_deliver: MaxCLL and MaxFALL measured from the
-// frames after the roll-off into the peak, then the frames encoded as they are.
+// rudra/delivery/cli.py _cmd_deliver: the frames into Rec.2020 first, then the
+// roll-off into the peak (the shoulder weighs Rec.2020 luminance; 9 Oct 2026),
+// MaxCLL and MaxFALL measured from that, and the frames encoded as they are.
 int cmd_deliver(const std::vector<std::string>& args) {
     auto usage = [](const std::string& m) {
         std::fprintf(stderr, "rudra-native deliver: error: %s\n", m.c_str());
@@ -59,13 +61,15 @@ int cmd_deliver(const std::vector<std::string>& args) {
     for (std::size_t i = 0; i < paths->size(); ++i) {
         auto f = load_linear_frame((*paths)[i], nits_scale);
         if (!f) return fail(f.error());
-        auto m = shoulder_to_peak(*f, o.peak_nits);
+        auto m = deliver_master_frame(std::move(*f), o.source, o.peak_nits);
         if (!m) return fail(m.error());
         stats.push_back(analyze_frame(*m, int(i)));
     }
     const StaticMetadata sm = maxcll_maxfall(stats);
     o.maxcll = sm.maxcll;
     o.maxfall = sm.maxfall;
+    const Primaries source = o.source;
+    o.source = Primaries::Rec2020;   // converted above, before the shoulder
     o.shoulder = false;
     o.note = [](const std::string& n) { std::fprintf(stderr, "%s\n", n.c_str()); };
     std::size_t next_index = 0;
@@ -74,7 +78,7 @@ int cmd_deliver(const std::vector<std::string>& args) {
     auto next = [&]() -> std::optional<NitsFrame> {
         if (next_index >= paths->size()) return std::nullopt;
         auto f = load_linear_frame((*paths)[next_index++], nits_scale);
-        if (f) f = shoulder_to_peak(*f, o.peak_nits);
+        if (f) f = deliver_master_frame(std::move(*f), source, o.peak_nits);
         if (!f) {
             load_error = f.error();
             load_failed = true;
@@ -94,6 +98,9 @@ int cmd_deliver(const std::vector<std::string>& args) {
     };
     auto tags = colour_tags(*out);
     const SequenceTarget* t = find_sequence_target(o.target);
+    // Only ProRes has frame headers: scanning HEVC for 'icpf' can match
+    // compressed data and report tags that do not exist.
+    const bool prores = std::find(t->codec.begin(), t->codec.end(), "prores_ks") != t->codec.end();
     const pyjson::Value report = pyjson::Dict{
         {"file", out->string()},
         {"frames", int(paths->size())},
@@ -103,7 +110,7 @@ int cmd_deliver(const std::vector<std::string>& args) {
         {"maxcll", sm.maxcll},
         {"maxfall", sm.maxfall},
         {"colour_tags", tags ? tags_value(*tags) : pyjson::Value()},
-        {"prores_frame_tags", tags_value(prores_frame_tags(*out))},
+        {"prores_frame_tags", prores ? tags_value(prores_frame_tags(*out)) : pyjson::Value()},
         {"tags_verified", o.verify_tags},
         {"note", t->note},
     };

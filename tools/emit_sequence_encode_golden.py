@@ -87,7 +87,11 @@ def main() -> int:
             video_mod.subprocess.Popen = real_popen
         report = json.loads(out.getvalue())
         produced = Path(report["file"])
-        command = [c if c != str(produced) else "OUTPUT" + produced.suffix for c in seen["command"]]
+        # ffmpeg writes a partial name that is renamed into place (9 Oct 2026);
+        # both stand for the output in the golden.
+        partial = produced.with_name(f".{produced.stem}.partial{produced.suffix}")
+        command = [c if c not in (str(produced), str(partial)) else "OUTPUT" + produced.suffix
+                   for c in seen["command"]]
         report["file"] = "OUTPUT" + produced.suffix
         runs.append({"target": target, "fps": 23.976, "source_space": "rec709", "command": command,
                      "report": report, "report_json": json.dumps(report, indent=2),

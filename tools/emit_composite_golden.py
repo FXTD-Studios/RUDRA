@@ -172,16 +172,21 @@ def main() -> int:
             graded = np.clip(apply_region_ev(nits, GRADED_BANDS, softness), 0.0, ceiling)
             stages[f"region_soft{softness:g}"] = out.f64(
                 f"{name}_region_soft{str(softness).replace('.', 'p')}", chw(graded))
-        graded = np.clip(apply_region_ev(nits, GRADED_BANDS, 1.0), 0.0, ceiling)
-        anchored = anchor_to_sdr(graded, sdr64, knee=0.9)
+        # The region_soft* stages above are the composite's grade (the viewer
+        # applies it to the network's picture). The master grades LAST, after
+        # the anchor, chroma and grain (ui/server.py since 9 Oct 2026): the
+        # anchor used to divide a grade made before it straight back out.
+        anchored = anchor_to_sdr(nits, sdr64, knee=0.9)
         carried = carry_source_chroma(anchored, sdr64, knee=0.99)
         settled = settle_highlight_grain(carried, sdr64, knee=0.9)
-        scene_linear = (settled / DIFFUSE_WHITE_NITS).astype(np.float32)
+        graded = np.clip(apply_region_ev(settled, GRADED_BANDS, 1.0), 0.0, ceiling)
+        scene_linear = (graded / DIFFUSE_WHITE_NITS).astype(np.float32)
         aces = convert(scene_linear, "rec709", "ap0")
         stages.update({
             "anchored": out.f64(f"{name}_anchored", chw(anchored)),
             "carried": out.f64(f"{name}_carried", chw(carried)),
             "settled": out.f64(f"{name}_settled", chw(settled)),
+            "graded": out.f64(f"{name}_graded", chw(graded)),
             "scene_linear": out.f32(f"{name}_scene_linear", chw(scene_linear)),
             "aces_ap0": out.f32(f"{name}_aces_ap0", chw(aces)),
         })
@@ -193,9 +198,9 @@ def main() -> int:
                            "anchor_knee": 0.9, "chroma_knee": 0.99, "source_space": "rec709",
                            "stages": stages}
 
-        stats = dm.analyze_frame(settled, index=0)
+        stats = dm.analyze_frame(graded, index=0)
         maxcll, maxfall = dm.maxcll_maxfall([stats])
-        block["analyze"] = {"input": "settled", "stats": stats_json(stats),
+        block["analyze"] = {"input": "graded", "stats": stats_json(stats),
                             "maxcll": maxcll, "maxfall": maxfall}
         hdr0 = network[("all", 1.0, True)]
         base = np.load(OUT / block["baseline"]["file"])

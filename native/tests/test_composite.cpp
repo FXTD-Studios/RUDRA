@@ -160,7 +160,9 @@ TEST_P(PerFrame, MasterStages) {
         expect_close(nits.span(), f64(st.at(key)).data, 1e-12, 1e-9, key);
     }
 
-    NitsFrame nits = nits_frame(f64(st.at("region_soft1")));
+    // The master grades last (ui/server.py, 9 Oct 2026): the anchor works on
+    // the network's picture, and Region EV on what the grain stage leaves.
+    NitsFrame nits = nits_from_network(network);
     anchor_to_sdr(nits, sdr, m.at("anchor_knee").get<double>());
     expect_close(nits.span(), f64(st.at("anchored")).data, 1e-10, 1e-9, "anchored");
 
@@ -177,6 +179,10 @@ TEST_P(PerFrame, MasterStages) {
     expect_close(nits.span(), f64(st.at("settled")).data, 1e-9, 1e-9, "settled");
 
     nits = nits_frame(f64(st.at("settled")));
+    apply_region_ev(nits, bands(m.at("bands")), m.at("region_softness").get<double>(), ceiling);
+    expect_close(nits.span(), f64(st.at("graded")).data, 1e-12, 1e-9, "graded");
+
+    nits = nits_frame(f64(st.at("graded")));
     const PlanarBuffer lin = scene_linear(nits);
     expect_close(lin.span(), f32(st.at("scene_linear")).data, 0.0, 0.0, "scene_linear");
     const PlanarBuffer ap0 = convert_primaries(lin, Primaries::Rec709, Primaries::Ap0);

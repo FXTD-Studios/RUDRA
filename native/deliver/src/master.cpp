@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include "rudra/core/baseline.hpp"
+#include "rudra/core/gamut.hpp"
 #include "rudra/core/compare.hpp"
 #include "rudra/core/master.hpp"
 #include "rudra/core/measure.hpp"
@@ -166,10 +167,12 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     if (bands.empty()) bands = default_region_bands();
     const bool graded = any_graded(bands);
     NitsFrame nits = nits_from_network(network);
-    apply_region_ev(nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0, cp.masks.get());
+    // The grade goes LAST (core/master.cpp render_master_pixels, ui/server.py
+    // since 9 Oct 2026): before the anchor, the anchor divided it back out.
     if (q.anchor) anchor_to_sdr(nits, sdr, q.anchor_knee);
     if (q.carry_chroma) carry_source_chroma(nits, sdr, q.chroma_knee);
     if (q.settle_grain) settle_highlight_grain(nits, sdr, q.anchor_knee);
+    apply_region_ev(nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0, cp.masks.get());
     const PlanarBuffer linear = scene_linear(nits);
 
     const FrameStats stats = analyze_frame(nits, 0);
@@ -200,7 +203,12 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     if (!cp.reference.empty()) provenance.emplace_back("rudra:reference", cp.reference.file);
     if (cp.masks) provenance.emplace_back("rudra:masks", masks_path.filename().string());
     const bool aces = q.container == "aces";
-    auto w = aces ? write_aces_exr(out, linear, *src, 1.0, provenance) : write_exr(out, linear, true, std::nullopt, provenance);
+    // The linear container is scene-linear Rec.2020, converted from the
+    // plate's primaries and stamped so (it carried the plate's primaries
+    // untagged until 9 Oct 2026, as the Studio did).
+    auto w = aces ? write_aces_exr(out, linear, *src, 1.0, provenance)
+                  : write_exr(out, convert_primaries(linear, *src, Primaries::Rec2020), true, kRec2020Chromaticities,
+                              provenance);
     if (!w) return w.error();
 
     pyjson::List regions_json;
@@ -221,8 +229,6 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         {"peak_nits", py_round1(peak)},
         {"resolution", pyjson::List{sdr.width(), sdr.height()}},
         {"source_bits", source_bits},
-        // The Studio labels its linear container Rec.2020 while writing the
-        // source primaries untouched; kept as is so the two sidecars agree.
         {"container", aces ? "ACES 2065-1 (AP0)" : "scene-linear Rec.2020"},
         {"transfer", "linear"},
         {"diffuse_white_nits", 203.0},
