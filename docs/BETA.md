@@ -1,7 +1,7 @@
-# RUDRA 0.9.0 beta 7
+# RUDRA 0.9.0 beta 8
 
 The desktop RUDRA: SDR footage in, scene-linear HDR out, with the places the
-model reconstructed shown to you. This is the seventh public beta of the native
+model reconstructed shown to you. This is the eighth public beta of the native
 app (C++20, Qt 6.8, no Python at runtime). It is for evaluation and
 non-commercial use (PolyForm Noncommercial 1.0.0, see LICENSE; the model
 weights: LICENSE-weights).
@@ -34,7 +34,7 @@ weights: LICENSE-weights).
   curves); set the clip's input to the curve in Resolve. Its sidecar names
   the curve and gamut.
 - Masters as ACES 2065-1 EXR sequences.
-- The model (optional; masters default to the analytic inverse):
+- The model (optional, off by default: Reconstruct > Use the model):
   `sdr2hdr_image_v8`, level with the inverse on real SDR, run by ONNX
   Runtime (DirectML on Windows GPUs, Core ML on Apple silicon, CPU
   everywhere). Every package is checked against its reference frames the
@@ -42,7 +42,21 @@ weights: LICENSE-weights).
 - `rudra-native`, the command line: `diff`, `video`, `deliver`, `batch`,
   `ffmpeg-check`.
 
-## Changes since beta 6
+## Changes since beta 7
+
+- **The analytic reconstruction is the default, and says so.** Until now the
+  app ran the model on every frame and every master although these notes
+  called it optional. Now the view and Master EXR use the analytic inverse
+  (your source curve, calibration, reference and grade) and run no model at
+  all; RUDRA opens, views and masters with no model package installed.
+  Reconstruct > Use the model (AI-assisted) turns the model on; the status
+  bar says which is in use, and a master's sidecar records it
+  (`"reconstruction": "analytic (no model)"`, or the model's name under
+  `checkpoint`). The choice is kept between runs and in a project.
+  Movie exports (HDR10, HLG, ProRes) still run the model package, whatever the
+  switch says, and do not yet carry the grade: see Known in this beta.
+
+## Changes in beta 7 (since beta 6)
 
 Fixes that bring the native app in line with the 9 Oct review of the
 Studio's master path:
@@ -144,7 +158,7 @@ opens with no warning. A DMG built without the certificate (the build log says
 "ad hoc") makes macOS warn on first open: System Settings > Privacy &
 Security > Open Anyway, or `xattr -dr com.apple.quarantine /Applications/RUDRA.app`.
 
-**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.7-windows-x64-setup.exe`:
+**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.8-windows-x64-setup.exe`:
 it installs for your user by default (no administrator prompt), adds RUDRA to
 the Start menu and can be removed from Settings > Apps. Or take the portable
 ZIP: unzip anywhere and run `RUDRA.exe`. A GPU with DirectX 12 is used when
@@ -169,6 +183,13 @@ nothing extra.
   certificate (RUDRA.exe > Properties > Digital Signatures shows it); without
   one SmartScreen may ask once.
 - macOS: ffmpeg is not in the DMG yet (see Install).
+- Movie exports run the model package (`rudra video`) with recovery "all"
+  and without the Reconstruct/Grade settings; the analytic switch, the grade
+  and the masks apply to the view and to Master EXR. To deliver a graded
+  movie today, master EXR frames and encode those (`rudra-native deliver`).
+- Real-time playback with the model is not offered: the model takes about
+  150 ms per 1080p frame on an RTX 4080; the controls themselves redraw in
+  about 1 ms at 4K.
 - Linux builds are made from source (`scripts/native_app.sh`); there is no
   Linux package in this beta.
 
