@@ -69,6 +69,7 @@ Result<VideoConvertArgs> convert_args_for(const QueueJob& job) {
         else if (k == "tile-overlap") a.tile_overlap = std::atoi(v.c_str());
         else if (k == "shadow-smoothing") a.shadow_smoothing = std::strtod(v.c_str(), &end);
         else if (k == "cut-threshold") a.cut_threshold = std::strtod(v.c_str(), &end);
+        else if (k == "grade") a.grade_file = fs::path(v);
         else return make_error(ErrorCode::InvalidArgument, "Invalid video options in queue", k);
     }
     return a;
@@ -94,6 +95,22 @@ QueueRunner make_video_queue_runner(const VideoQueueOptions& o) {
     return [o, cache](const QueueJob& job, const QueueProgress& progress) -> Result<void> {
         auto args = convert_args_for(job);
         if (!args) return args.error();
+        VideoConvertHooks hooks;
+        hooks.cancel = o.cancel;
+        hooks.print = o.print;
+        hooks.progress = [&](const VideoProgress& p) {
+            progress(pyjson::Dict{{"phase", p.phase}, {"frames_done", p.frames_done}, {"frames_total", p.frames_total}});
+        };
+        if (args->grade_file) {
+            auto g = read_grade_file(*args->grade_file);
+            if (!g) return g.error();
+            args->grade = std::move(*g);
+            if (args->grade->analytic) {   // no model, no package to find
+                auto r = convert_video(*args, nullptr, nullptr, hooks);
+                if (!r) return r.error();
+                return {};
+            }
+        }
         std::string job_device = "cpu";
         for (const auto& [k, v] : job.options)
             if (k == "device") job_device = v;
@@ -118,12 +135,6 @@ QueueRunner make_video_queue_runner(const VideoQueueOptions& o) {
             (*cache)[key] = loaded;
         }
         args->package = loaded->manifest.root;
-        VideoConvertHooks hooks;
-        hooks.cancel = o.cancel;
-        hooks.print = o.print;
-        hooks.progress = [&](const VideoProgress& p) {
-            progress(pyjson::Dict{{"phase", p.phase}, {"frames_done", p.frames_done}, {"frames_total", p.frames_total}});
-        };
         auto r = convert_video(*args, loaded->manifest, *loaded->backend, hooks);
         if (!r) return r.error();
         return {};

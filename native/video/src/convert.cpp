@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <iterator>
 
 #include "rudra/core/hdr10.hpp"
 #include "rudra/core/log_encode.hpp"
@@ -24,6 +25,14 @@ fs::path video_sidecar_path(const fs::path& output) {
     s += ".json";
     return s;
 }
+
+Result<MasterRequest> read_grade_file(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return make_error(ErrorCode::NotFound, "The export's settings file is missing", path.string());
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    return master_request_from_json(text);
+}
+
 
 #ifdef RUDRA_HAVE_STILL_DECODE
 
@@ -46,6 +55,16 @@ fs::path resolved(const fs::path& p) {
 
 Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelManifest& package,
                                          InferenceBackend& backend, const VideoConvertHooks& hooks) {
+    return convert_video(a, &package, &backend, hooks);
+}
+
+Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelManifest* package_ptr,
+                                         InferenceBackend* backend, const VideoConvertHooks& hooks) {
+    const bool analytic = a.grade && a.grade->analytic;
+    if (!analytic && (!package_ptr || !backend))
+        return make_error(ErrorCode::InvalidArgument, "This export runs the model, and no model package is open");
+    static const ModelManifest kNoPackage{};
+    const ModelManifest& package = package_ptr ? *package_ptr : kNoPackage;
     const fs::path source = resolved(a.input), output = resolved(a.output);
     const fs::path sidecar = video_sidecar_path(output);
     const std::string ext = lower(output.extension().string());
@@ -93,6 +112,11 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     if (spool_space_low(work_parent, frame_bytes)) return make_error(ErrorCode::IoError, "Insufficient working disk space");
     VideoPredictor predictor(backend, ModelConstants{package.log_scale, package.max_hdr, package.corpus_ev}, a.tile_size,
                              a.tile_overlap);
+    auto predict = [&](const SdrImage& rgb, const std::string& transfer, const std::string& primaries,
+                       ShadowSmoother& sm) {
+        return a.grade ? predictor.predict_graded(rgb, transfer, primaries, sm, *a.grade)
+                       : predictor.predict(rgb, transfer, primaries, sm);
+    };
     ShadowSmoother smoother(a.shadow_smoothing, a.cut_threshold);
     const auto started = std::chrono::steady_clock::now();
     auto elapsed = [&] { return std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count(); };
@@ -110,15 +134,15 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         {"alpha_mode", alpha && a.alpha_mode ? pyjson::Value(*a.alpha_mode) : pyjson::Value()},
         {"encoder_input_precision_bits", 10},
         {"alpha_preserved", alpha},
-        {"checkpoint", resolved(package.root).string()},
-        {"checkpoint_sha256", package.source_sha256},
+        {"checkpoint", analytic ? pyjson::Value() : pyjson::Value(resolved(package.root).string())},
+        {"checkpoint_sha256", analytic ? pyjson::Value() : pyjson::Value(package.source_sha256)},
         {"mastering_peak_nits", a.peak_nits},
         {"mastering_min_nits", a.format == "hdr10" ? pyjson::Value(a.min_nits) : pyjson::Value()},
         {"audio_mode", a.audio},
         {"shadow_smoothing", a.shadow_smoothing},
         {"cut_threshold", a.cut_threshold},
-        {"preserve_outside", true},
-        {"recovery_mode", "all"},
+        {"preserve_outside", a.grade ? a.grade->preserve_outside : true},
+        {"recovery_mode", a.grade ? a.grade->recovery_mode : std::string("all")},
         {"tile_size", a.tile_size},
         {"tile_overlap", a.tile_overlap},
         {"timestamp_policy", "Video begins at zero; audio retains relative offset, clipped to video interval"},
@@ -127,6 +151,14 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         {"warnings", a.shadow_smoothing != 0.0 ? pyjson::List{"Scalar shadow smoothing is not validated temporal reconstruction"}
                                         : pyjson::List{}},
     };
+    if (a.grade) {
+        // What made the picture: the app's settings, the file they came from.
+        pyjson::set(report, "reconstruction", analytic ? "analytic (no model)" : "model");
+        pyjson::set(report, "grade_file", a.grade_file ? pyjson::Value(resolved(*a.grade_file).string()) : pyjson::Value());
+        pyjson::set(report, "residual_strength", a.grade->strength);
+        pyjson::set(report, "source_curve", a.grade->source_curve);
+        pyjson::set(report, "anchored", a.grade->anchor);
+    }
     pyjson::List cuts, frames;
     std::vector<VideoFrameLight> lights;
 
@@ -140,7 +172,7 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
             if (hooks.cancel && hooks.cancel->load()) return make_error(ErrorCode::Cancelled, "Cancelled");
             auto frame = (*decoder)->next();
             if (!frame) return frame.error();
-            auto pred = predictor.predict(rgb_from_frame(*frame), c.transfer, c.primaries, smoother);
+            auto pred = predict(rgb_from_frame(*frame), c.transfer, c.primaries, smoother);
             if (!pred) return pred.error();
             auto sf = master_video_frame(pred->hdr, index, a.format, a.peak_nits, a.knee_nits,
                                          alpha ? std::span<const std::uint16_t>(frame->data) : std::span<const std::uint16_t>());

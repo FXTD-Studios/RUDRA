@@ -12,6 +12,7 @@
 #include <string>
 
 #include "rudra/core/model_manifest.hpp"
+#include "rudra/deliver/master.hpp"
 #include "rudra/infer/backend.hpp"
 #include "rudra/platform/pyjson.hpp"
 #include "rudra/platform/result.hpp"
@@ -33,6 +34,13 @@ struct VideoConvertArgs {
     int tile_size = 512, tile_overlap = 64;
     double shadow_smoothing = 0.0, cut_threshold = 0.15;
     std::optional<std::filesystem::path> work_dir;
+    // The app's movie export (10 Oct 2026): the settings of the view and of
+    // Master EXR (a master-params JSON, deliver/master.hpp) applied to every
+    // frame through grade_master, instead of `rudra video`'s recovery "all"
+    // and no grade. `grade.analytic`: no model runs, and none is needed.
+    // Unset: the Python's path, unchanged.
+    std::optional<std::filesystem::path> grade_file;
+    std::optional<MasterRequest> grade;
 };
 
 // progress(dict(phase=..., frames_done=..., frames_total=...)).
@@ -58,6 +66,12 @@ std::filesystem::path video_sidecar_path(const std::filesystem::path& output);
 #ifdef RUDRA_HAVE_STILL_DECODE
 Result<VideoConvertResult> convert_video(const VideoConvertArgs& args, const ModelManifest& package,
                                          InferenceBackend& backend, const VideoConvertHooks& hooks = {});
+// The same with the package and backend optional: null for an analytic grade.
+Result<VideoConvertResult> convert_video(const VideoConvertArgs& args, const ModelManifest* package,
+                                         InferenceBackend* backend, const VideoConvertHooks& hooks = {});
 #endif
+
+// A master-params JSON file as a grade (its masks_file read too).
+Result<MasterRequest> read_grade_file(const std::filesystem::path& path);
 
 }  // namespace rudra

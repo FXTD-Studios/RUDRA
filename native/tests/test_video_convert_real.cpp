@@ -218,3 +218,38 @@ TEST(VideoConvertReal, RefusalsComeBeforeAnyWork) {
     }
     fs::remove_all(work);
 }
+
+// The app's movie export with the model on (10 Oct 2026): the master's chain
+// with the app's settings, the model running. Strength 0 with Preserve is the
+// analytic picture whatever the network says; strength 1 is not.
+TEST(VideoConvertReal, AGradedExportRunsTheModelAndTheGrade) {
+    if (!find_executable("ffmpeg") || !find_executable("ffprobe")) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    auto m = read_manifest(RUDRA_TEST_PACKAGE_DIR);
+    ASSERT_TRUE(m);
+    auto backend = make_onnxruntime_backend(*m, Device::Cpu);
+    if (!backend) backend = make_libtorch_backend(*m, Device::Cpu);
+    ASSERT_TRUE(backend);
+    const fs::path work = fs::temp_directory_path() / "rudra-video-graded-model";
+    fs::remove_all(work);
+    fs::create_directories(work);
+    auto run = [&](const std::string& name, MasterRequest q) {
+        VideoConvertArgs a;
+        a.package = RUDRA_TEST_PACKAGE_DIR;
+        a.input = kGolden / "video" / "clips" / "bars_709.mp4";
+        a.output = work / name;
+        a.audio = "none";
+        a.preset = "ultrafast";
+        a.grade = q;
+        auto r = convert_video(a, *m, **backend);
+        EXPECT_TRUE(r) << (r ? std::string() : r.error().message);
+        return r ? ojson::parse(slurp(r->sidecar)) : ojson();
+    };
+    MasterRequest q;
+    const ojson on = run("model.mp4", q);
+    EXPECT_EQ(on["reconstruction"], "model");
+    EXPECT_FALSE(on["checkpoint"].is_null());
+    q.analytic = true;
+    const ojson off = run("analytic.mp4", q);
+    EXPECT_EQ(off["reconstruction"], "analytic (no model)");
+    ASSERT_TRUE(on.contains("frames") && off.contains("frames"));
+}

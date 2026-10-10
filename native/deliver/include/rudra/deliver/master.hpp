@@ -15,6 +15,7 @@
 #include "rudra/core/reference_fit.hpp"
 #include "rudra/core/fields.hpp"
 #include "rudra/core/image.hpp"
+#include "rudra/core/master.hpp"
 #include "rudra/platform/result.hpp"
 
 namespace rudra {
@@ -72,6 +73,20 @@ struct MasterResult {
 Result<MasterRequest> master_request_from_json(const std::string& json_text);
 // And back: what `rudra-native master --params` reads for the same master.
 std::string master_request_json(const MasterRequest& q);
+
+// The master's picture before any file: the request's composite (mode,
+// strength, preserve, source curve, calibration or reference, masks), then
+// the anchor, chroma and grain stages and the grade, in absolute nits in the
+// frame's own primaries. write_master writes it; the graded movie export
+// (video/convert) encodes it.
+struct GradedMaster {
+    CompositeParams params;
+    NetworkLinearImage network;   // the composite, before the stages
+    NitsFrame nits;               // what is delivered
+    bool graded = false;          // Region EV moved something
+};
+Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, const FrameScalars& scalars,
+                                  const ModelConstants& model, const MasterRequest& request);
 
 // One frame, decoded (`source_bits` its depth) and through the network
 // (fields, scalars), to `out` and its .json beside it.

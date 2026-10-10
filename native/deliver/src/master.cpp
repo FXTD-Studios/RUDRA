@@ -125,16 +125,10 @@ std::string master_request_json(const MasterRequest& q) {
     return j.dump();
 }
 
-Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fields& fields,
-                                  const FrameScalars& scalars, const ModelConstants& model, const MasterRequest& q,
-                                  const std::filesystem::path& out) {
-    auto src = primaries_of(q.source_space);
-    if (!src) return src.error();
+Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, const FrameScalars& scalars,
+                                  const ModelConstants& model, const MasterRequest& q) {
     auto mode = mode_of(q.recovery_mode);
     if (!mode) return mode.error();
-    if (q.container != "aces" && q.container != "linear")
-        return make_error(ErrorCode::InvalidArgument, "container must be aces or linear", q.container);
-
     const auto source = parse_source_curve(q.source_curve);
     if (!source) return make_error(ErrorCode::InvalidArgument, "source_curve must be unknown, aces, hable, agx, camera_log, or clip", q.source_curve);
     CompositeParams cp;
@@ -152,29 +146,48 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         cp.reference = q.reference;
         cp.calibration.clear();   // a reference is an anchor at every code
     }
-    // The painted masks (3.3): written beside the master, read by the chain.
-    std::filesystem::path masks_path;
-    if (q.masks && !q.masks->empty()) {
-        cp.masks = q.masks;
-        masks_path = out;
-        masks_path.replace_extension(".masks.png");
-        if (auto w = write_mask_set(masks_path, *q.masks); !w) return w.error();
-    }
-    const NetworkLinearImage network = composite(sdr, fields, scalars, model, cp);
+    if (q.masks && !q.masks->empty()) cp.masks = q.masks;   // painted masks (3.3), read by the chain
+    GradedMaster g;
+    g.network = composite(sdr, fields, scalars, model, cp);
 
     // The master chain, stage by stage (render_master_pixels without the
     // container step: write_aces_exr does that conversion itself).
     std::vector<RegionBand> bands;
     for (const auto& b : q.regions) bands.push_back({b.low_nits, b.high_nits, b.ev});
     if (bands.empty()) bands = default_region_bands();
-    const bool graded = any_graded(bands);
-    NitsFrame nits = nits_from_network(network);
+    g.graded = any_graded(bands);
+    g.nits = nits_from_network(g.network);
     // The grade goes LAST (core/master.cpp render_master_pixels, ui/server.py
     // since 9 Oct 2026): before the anchor, the anchor divided it back out.
-    if (q.anchor) anchor_to_sdr(nits, sdr, q.anchor_knee);
-    if (q.carry_chroma) carry_source_chroma(nits, sdr, q.chroma_knee);
-    if (q.settle_grain) settle_highlight_grain(nits, sdr, q.anchor_knee);
-    apply_region_ev(nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0, cp.masks.get());
+    if (q.anchor) anchor_to_sdr(g.nits, sdr, q.anchor_knee);
+    if (q.carry_chroma) carry_source_chroma(g.nits, sdr, q.chroma_knee);
+    if (q.settle_grain) settle_highlight_grain(g.nits, sdr, q.anchor_knee);
+    apply_region_ev(g.nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0, cp.masks.get());
+    g.params = std::move(cp);
+    return g;
+}
+
+Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fields& fields,
+                                  const FrameScalars& scalars, const ModelConstants& model, const MasterRequest& q,
+                                  const std::filesystem::path& out) {
+    auto src = primaries_of(q.source_space);
+    if (!src) return src.error();
+    if (q.container != "aces" && q.container != "linear")
+        return make_error(ErrorCode::InvalidArgument, "container must be aces or linear", q.container);
+    auto g = grade_master(sdr, fields, scalars, model, q);
+    if (!g) return g.error();
+    const CompositeParams& cp = g->params;
+    const NetworkLinearImage& network = g->network;
+    const NitsFrame& nits = g->nits;
+    const bool graded = g->graded;
+    const auto source = parse_source_curve(q.source_curve);
+    // The painted masks (3.3): written beside the master.
+    std::filesystem::path masks_path;
+    if (cp.masks) {
+        masks_path = out;
+        masks_path.replace_extension(".masks.png");
+        if (auto w = write_mask_set(masks_path, *cp.masks); !w) return w.error();
+    }
     const PlanarBuffer linear = scene_linear(nits);
 
     const FrameStats stats = analyze_frame(nits, 0);

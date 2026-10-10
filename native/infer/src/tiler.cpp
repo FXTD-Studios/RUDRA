@@ -2,33 +2,33 @@
 
 namespace rudra {
 
-Result<FrameResult> infer_frame(InferenceBackend& backend, const SdrImage& frame, const TileConfig& cfg) {
-    auto scalars = backend.frame_pass(frame);
-    if (!scalars) return scalars.error();
-
+Result<Fields> infer_fields(InferenceBackend& backend, const SdrImage& frame, const FrameScalars& scalars,
+                            const TileConfig& cfg, bool* tiled) {
     const auto tiles = plan_tiles(frame.height(), frame.width(), cfg);
-    FrameResult out;
-    out.scalars = *scalars;
-    if (tiles.size() == 1) {
-        auto f = backend.tile_pass(frame, out.scalars);
-        if (!f) return f.error();
-        out.fields = std::move(*f);
-        return out;
-    }
-
+    if (tiled) *tiled = tiles.size() > 1;
+    if (tiles.size() == 1) return backend.tile_pass(frame, scalars);
     Stitcher residual(3, frame.height(), frame.width());
     Stitcher highlight(1, frame.height(), frame.width());
     Stitcher shadow(1, frame.height(), frame.width());
     for (const auto& t : tiles) {
-        auto f = backend.tile_pass(frame.crop(t.y, t.x, t.h, t.w), out.scalars);
+        auto f = backend.tile_pass(frame.crop(t.y, t.x, t.h, t.w), scalars);
         if (!f) return f.error();
         const PlanarBuffer w = tile_weight(t, cfg.overlap, frame.height(), frame.width());
         residual.add(t, f->residual, w);
         highlight.add(t, f->highlight, w);
         shadow.add(t, f->shadow, w);
     }
-    out.fields = Fields{std::move(residual).finish(), std::move(highlight).finish(), std::move(shadow).finish()};
-    out.tiled = true;
+    return Fields{std::move(residual).finish(), std::move(highlight).finish(), std::move(shadow).finish()};
+}
+
+Result<FrameResult> infer_frame(InferenceBackend& backend, const SdrImage& frame, const TileConfig& cfg) {
+    auto scalars = backend.frame_pass(frame);
+    if (!scalars) return scalars.error();
+    FrameResult out;
+    out.scalars = *scalars;
+    auto f = infer_fields(backend, frame, out.scalars, cfg, &out.tiled);
+    if (!f) return f.error();
+    out.fields = std::move(*f);
     return out;
 }
 

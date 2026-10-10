@@ -10,6 +10,7 @@
 #include <string>
 
 #include "rudra/core/composite.hpp"
+#include "rudra/deliver/master.hpp"
 #include "rudra/core/video_predict.hpp"
 #include "rudra/infer/backend.hpp"
 
@@ -25,6 +26,9 @@ struct VideoPrediction {
 class VideoPredictor {
 public:
     VideoPredictor(InferenceBackend& backend, const ModelConstants& model, int tile_size, int overlap)
+        : backend_(&backend), model_(model), tile_size_(tile_size), overlap_(overlap) {}
+    // No backend: only predict_graded with an analytic request runs.
+    VideoPredictor(InferenceBackend* backend, const ModelConstants& model, int tile_size, int overlap)
         : backend_(backend), model_(model), tile_size_(tile_size), overlap_(overlap) {}
 
     // `rgb` is the decoded frame as full-range code values in the clip's
@@ -32,9 +36,23 @@ public:
     Result<VideoPrediction> predict(const SdrImage& rgb, const std::string& transfer, const std::string& primaries,
                                     ShadowSmoother& smoother);
 
+    // The app's movie export: the frame through the EXR master's chain with
+    // the app's settings (deliver/master grade_master): its recovery, source
+    // curve, calibration or reference, masks, anchor, chroma, grain and
+    // Region EV. With `request.analytic` no model runs (kAnalyticConstants,
+    // analytic_fields); otherwise the fields come from the backend, tiled as
+    // the master tiles, with the smoothed shadow weight. hdr is the delivered
+    // picture in the network convention (1.0 = 10 000 nits), Rec.2020.
+    Result<VideoPrediction> predict_graded(const SdrImage& rgb, const std::string& transfer,
+                                           const std::string& primaries, ShadowSmoother& smoother,
+                                           const MasterRequest& request);
+
 private:
     Result<NetworkLinearImage> forward(const SdrImage& tile, const FrameScalars& scalars);
-    InferenceBackend& backend_;
+    // canonicalize_sdr and Rec.2020 code, as predict() starts; and the cut thumbnail.
+    Result<std::pair<SdrImage, PlanarBuffer>> prepare(const SdrImage& rgb, const std::string& transfer,
+                                                      const std::string& primaries) const;
+    InferenceBackend* backend_;
     ModelConstants model_;
     int tile_size_, overlap_;
 };

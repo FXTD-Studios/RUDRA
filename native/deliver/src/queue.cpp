@@ -62,6 +62,10 @@ const std::vector<Opt>& video_options() {
         {"shadow-smoothing", Kind::Float, {}},
         {"cut-threshold", Kind::Float, {}},
         {"work-dir", Kind::Path, {}},
+        // Native only: the app's settings for this export (video/convert.hpp
+        // VideoConvertArgs::grade). With an analytic grade the job's
+        // checkpoint is that file, so it is the job's identity.
+        {"grade", Kind::Path, {}},
     };
     return o;
 }
@@ -256,6 +260,7 @@ Result<std::vector<QueueJob>> load_queue(const fs::path& queue) {
             if (name == "output") q.output = resolve(value);
             else if (name == "checkpoint") { q.checkpoint = resolve(value); have_checkpoint = true; }
             else if (name == "work-dir") q.work_dir = resolve(value);
+            else if (name == "grade") { q.options.emplace_back(name, resolve(value).string()); continue; }
             q.options.emplace_back(name, value);
         }
         if (!have_checkpoint) return make_error(ErrorCode::InvalidArgument, "Invalid video options in queue", "checkpoint is required");

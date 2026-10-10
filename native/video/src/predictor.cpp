@@ -3,17 +3,19 @@
 #include <algorithm>
 #include <tuple>
 
+#include "rudra/infer/tiler.hpp"
+
 namespace rudra {
 
 Result<NetworkLinearImage> VideoPredictor::forward(const SdrImage& tile, const FrameScalars& scalars) {
-    auto fields = backend_.tile_pass(tile, scalars);
+    auto fields = backend_->tile_pass(tile, scalars);
     if (!fields) return fields.error();
     CompositeParams p;   // recovery "all", strength 1, preserve_outside, no grade
     return composite(tile, *fields, scalars, model_, p);
 }
 
-Result<VideoPrediction> VideoPredictor::predict(const SdrImage& rgb, const std::string& transfer,
-                                                const std::string& primaries, ShadowSmoother& smoother) {
+Result<std::pair<SdrImage, PlanarBuffer>> VideoPredictor::prepare(const SdrImage& rgb, const std::string& transfer,
+                                                                   const std::string& primaries) const {
     auto canon = canonicalize_sdr(rgb.buffer(), transfer, "full");   // the decoder already made it full range
     if (!canon) return canon.error();
     PlanarBuffer x = std::move(*canon);
@@ -21,9 +23,56 @@ Result<VideoPrediction> VideoPredictor::predict(const SdrImage& rgb, const std::
         if (primaries != "rec709") return make_error(ErrorCode::InvalidArgument, "Unsupported primaries: " + primaries);
         x = srgb_code_to_rec2020(x, Primaries::Rec709);
     }
-    const PlanarBuffer thumb = area_resize(x, kCutThumbHeight, kCutThumbWidth);
-    const SdrImage frame(std::move(x));
-    auto scalars = backend_.frame_pass(frame);
+    PlanarBuffer thumb = area_resize(x, kCutThumbHeight, kCutThumbWidth);
+    return std::make_pair(SdrImage(std::move(x)), std::move(thumb));
+}
+
+Result<VideoPrediction> VideoPredictor::predict_graded(const SdrImage& rgb, const std::string& transfer,
+                                                       const std::string& primaries, ShadowSmoother& smoother,
+                                                       const MasterRequest& q) {
+    auto prep = prepare(rgb, transfer, primaries);
+    if (!prep) return prep.error();
+    const SdrImage& frame = prep->first;
+    VideoPrediction out;
+    Fields fields;
+    FrameScalars scalars;
+    ModelConstants model = kAnalyticConstants;
+    if (q.analytic) {
+        std::tie(out.shadow_weight, out.cut) = smoother.update(prep->second, 1.0);   // the cuts, for the report
+        out.raw_weight = 1.0;
+        out.shadow_weight = 1.0;
+        fields = analytic_fields(frame.height(), frame.width());
+    } else {
+        if (!backend_) return make_error(ErrorCode::InvalidArgument, "This export runs the model, and no model is open");
+        auto s = backend_->frame_pass(frame);
+        if (!s) return s.error();
+        out.raw_weight = static_cast<double>(s->shadow_weight);
+        std::tie(out.shadow_weight, out.cut) = smoother.update(prep->second, out.raw_weight);
+        scalars = *s;
+        scalars.shadow_weight = static_cast<float>(out.shadow_weight);
+        auto f = infer_fields(*backend_, frame, scalars, TileConfig{tile_size_, overlap_});
+        if (!f) return f.error();
+        fields = std::move(*f);
+        model = model_;
+    }
+    auto g = grade_master(frame, fields, scalars, model, q);
+    if (!g) return g.error();
+    PlanarBuffer hdr(3, frame.height(), frame.width());
+    const auto in = g->nits.span();
+    auto o = hdr.span();
+    for (std::size_t i = 0; i < in.size(); ++i) o[i] = static_cast<float>(in[i] / 10000.0);
+    out.hdr = NetworkLinearImage(std::move(hdr));
+    return out;
+}
+
+Result<VideoPrediction> VideoPredictor::predict(const SdrImage& rgb, const std::string& transfer,
+                                                const std::string& primaries, ShadowSmoother& smoother) {
+    if (!backend_) return make_error(ErrorCode::InvalidArgument, "This export runs the model, and no model is open");
+    auto prep = prepare(rgb, transfer, primaries);
+    if (!prep) return prep.error();
+    const PlanarBuffer& thumb = prep->second;
+    const SdrImage& frame = prep->first;
+    auto scalars = backend_->frame_pass(frame);
     if (!scalars) return scalars.error();
     VideoPrediction out;
     out.raw_weight = static_cast<double>(scalars->shadow_weight);   // 1 when the model has no shadow gate

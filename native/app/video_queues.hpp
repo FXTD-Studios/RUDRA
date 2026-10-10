@@ -64,7 +64,12 @@ private:
 };
 
 // The queue file for one export (batch.py's format), written beside the master.
+// `grade`: the app's settings for the export (a master-params JSON, see
+// video/convert.hpp), named by the job's "grade" option; with an analytic
+// grade it is also the job's checkpoint (no package), else the package's
+// manifest is.
 Result<std::filesystem::path> write_export_queue(const std::filesystem::path& movie, const std::filesystem::path& output,
-                                                 const std::filesystem::path& package_manifest, const std::string& format);
+                                                 const std::filesystem::path& package_manifest, const std::string& format,
+                                                 const std::filesystem::path& grade = {});
 
 }  // namespace rudra::app

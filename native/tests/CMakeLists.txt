@@ -11,7 +11,7 @@ if(RUDRA_BUILD_CLI)   # test_sequence_encode runs `rudra-native deliver`
 endif()   # test_theme reads the generated sheet
 rudra_warnings(rudra_tests)
 if(RUDRA_WITH_OPENCV)
-  target_sources(rudra_tests PRIVATE test_decode.cpp test_video_master.cpp)
+  target_sources(rudra_tests PRIVATE test_decode.cpp test_video_master.cpp test_video_graded.cpp)
 endif()
 
 include(GoogleTest)

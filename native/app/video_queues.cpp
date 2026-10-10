@@ -116,19 +116,21 @@ void VideoQueues::set_entries(std::vector<QueueEntry> e) {
 }
 
 Result<fs::path> write_export_queue(const fs::path& movie, const fs::path& output, const fs::path& manifest,
-                                    const std::string& format) {
+                                    const std::string& format, const fs::path& grade) {
     const fs::path dir = output.parent_path();
     std::error_code ec;
     fs::create_directories(dir, ec);
     const std::string base = output.stem().string() + "." + format;
     fs::path queue = dir / (base + ".queue.json");
     for (int n = 2; fs::exists(queue, ec); ++n) queue = dir / (base + " " + std::to_string(n) + ".queue.json");
+    pyjson::Dict options{{"format", format}};
+    if (!grade.empty()) options.emplace_back("grade", grade.string());
     const pyjson::Value spec = pyjson::Dict{
         {"version", 1},
-        {"defaults", pyjson::Dict{{"checkpoint", manifest.string()}}},
+        {"defaults", pyjson::Dict{{"checkpoint", (manifest.empty() ? grade : manifest).string()}}},
         {"jobs", pyjson::List{pyjson::Dict{{"input", movie.string()},
                                            {"output", output.string()},
-                                           {"options", pyjson::Dict{{"format", format}}}}}}};
+                                           {"options", options}}}}};
     std::ofstream out(queue, std::ios::binary);
     out << pyjson::dumps(spec, 2) << "\n";
     if (!out) return make_error(ErrorCode::IoError, "Could not write the queue", queue.string());
