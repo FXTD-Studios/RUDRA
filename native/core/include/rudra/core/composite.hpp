@@ -83,7 +83,11 @@ double region_ev_gain(const double rgb_nits[3], std::span<const RegionBand> band
 
 // The full composite into the network convention (1.0 = 10 000 nits). With a
 // grade, Region EV is applied and the result clamped to [0, max_hdr].
+// `grade_gain`, when given, receives each pixel's Region EV gain (1 without a
+// grade): the live anchor scales its target by it, so a grade survives the
+// anchor in the view as it does in the master (ViewParams::grade_gain).
 NetworkLinearImage composite(const SdrImage& sdr, const Fields& fields, const FrameScalars& scalars,
-                             const ModelConstants& model, const CompositeParams& params);
+                             const ModelConstants& model, const CompositeParams& params,
+                             std::vector<float>* grade_gain = nullptr);
 
 }  // namespace rudra

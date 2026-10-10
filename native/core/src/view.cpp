@@ -77,7 +77,8 @@ double srgb_to_linear_dbl(double c) noexcept {
 }
 }  // namespace
 
-double anchor_hold(const NetworkLinearImage& model, const SdrImage& sdr, double knee, double softness) {
+double anchor_hold(const NetworkLinearImage& model, const SdrImage& sdr, double knee, double softness,
+                   const std::vector<float>* grade_gain) {
     // anchor_to_sdr's hold, on the composite in network units (x 10 000 = nits).
     const std::size_t n = model.buffer().plane_size();
     const PlanarBuffer& m = model.buffer();
@@ -94,6 +95,7 @@ double anchor_hold(const NetworkLinearImage& model, const SdrImage& sdr, double 
             mx = std::max(mx, v);
         }
         target *= 203.0;
+        if (grade_gain && i < grade_gain->size()) target *= double((*grade_gain)[i]);
         const double g = (target + eps) / (actual + eps);
         want.push_back(g);
         if (mx > knee - softness && mx < knee + softness && actual > 1e-9) band.push_back(g);
@@ -164,9 +166,10 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
             // inverse as it is, on its own or on the wipe's left.
             if (anchoring && &pic == &m) {
                 const std::size_t i = std::size_t(y) * std::size_t(w) + std::size_t(x);
-                const float target = 0.2627f * srgb_to_linear(sdr_buf->plane(0)[i]) +
-                                     0.6780f * srgb_to_linear(sdr_buf->plane(1)[i]) +
-                                     0.0593f * srgb_to_linear(sdr_buf->plane(2)[i]);
+                float target = 0.2627f * srgb_to_linear(sdr_buf->plane(0)[i]) +
+                               0.6780f * srgb_to_linear(sdr_buf->plane(1)[i]) +
+                               0.0593f * srgb_to_linear(sdr_buf->plane(2)[i]);
+                if (p.grade_gain && i < p.grade_gain->size()) target *= (*p.grade_gain)[i];
                 const float gain = anchor_gain_f(target, hr, hg, hb, codes[i], knee, softness, hold);
                 hr *= gain, hg *= gain, hb *= gain;
             }

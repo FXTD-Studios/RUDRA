@@ -117,12 +117,17 @@ void main() {
         if (control.y > 0.5) v = base + recovery * (v - base);
         pred[c] = v;
     }
+    float grade = 1.0;
     if (counts.y > 0.0) {
         vec3 nits = pred * 10000.0;
         vec2 uv = (vec2(p) + 0.5) / frame.xy;
-        pred = clamp(nits * regionGain(nits, uv), vec3(0.0), vec3(model.y * 10000.0)) / 10000.0;
+        grade = regionGain(nits, uv);
+        pred = clamp(nits * grade, vec3(0.0), vec3(model.y * 10000.0)) / 10000.0;
     }
     // a: the SDR's Rec.2020 luma of its linearised codes, the anchor's target
-    // for the display pass (roadmap 3.3). The CPU composite is rgb only.
-    frag = vec4(pred, dot(vec3(srgbToLinear(s.r), srgbToLinear(s.g), srgbToLinear(s.b)), vec3(0.2627, 0.6780, 0.0593)));
+    // for the display pass (roadmap 3.3), times the Region EV gain: the master
+    // grades after its anchor (9 Oct 2026), so the anchor must not divide the
+    // grade back out (core/view.cpp, ViewParams::grade_gain). The CPU
+    // composite is rgb only and hands the gain over separately.
+    frag = vec4(pred, grade * dot(vec3(srgbToLinear(s.r), srgbToLinear(s.g), srgbToLinear(s.b)), vec3(0.2627, 0.6780, 0.0593)));
 }

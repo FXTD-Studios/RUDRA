@@ -53,9 +53,11 @@ FrameMeasure measure_frame(const SdrImage& sdr, const Fields& fields, const Fram
     out.height = sdr.height();
     const std::size_t n = std::size_t(out.width) * std::size_t(out.height);
     out.baseline = baseline ? *baseline : corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, params, model.corpus_ev));
-    out.model = composite(sdr, fields, scalars, model, params);
+    std::vector<float> grade_gain;
+    out.model = composite(sdr, fields, scalars, model, params, &grade_gain);
     out.anchor_knee = anchor_knee;
-    out.anchor_hold = anchor_hold(out.model, sdr, anchor_knee);
+    // The hold of the picture before its grade: the master anchors, then grades.
+    out.anchor_hold = anchor_hold(out.model, sdr, anchor_knee, 0.04, &grade_gain);
     out.highlight.assign(fields.highlight.plane(0), fields.highlight.plane(0) + n);
     out.shadow.assign(fields.shadow.plane(0), fields.shadow.plane(0) + n);
     out.sdr8.resize(n * 3);

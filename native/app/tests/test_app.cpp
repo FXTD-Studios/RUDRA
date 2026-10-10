@@ -2068,6 +2068,12 @@ TEST(AppVideo, TheExportTilesQueueAMovieAndTheQueueWindowFollowsIt) {
 
 // ---- Projects, autosave, updates, help (product items 3 to 5) --------------
 
+// The Log's last line (last_log above is only in builds with still decode).
+QString log_tail(app::MainWindow& w) {
+    const QStringList lines = w.findChild<QPlainTextEdit*>("log")->toPlainText().split('\n', Qt::SkipEmptyParts);
+    return lines.isEmpty() ? QString() : lines.last();
+}
+
 TEST(AppProject, SaveAndOpenBringTheGradeAndTheModelBack) {
     QSettings().clear();
     const auto dir = fresh_dir("project");
@@ -2106,7 +2112,7 @@ TEST(AppProject, SaveAndOpenBringTheGradeAndTheModelBack) {
     ASSERT_TRUE(wait_for([&] { return !w.loading_model() && w.model_package().filename() == "gamma"; }));
     EXPECT_FALSE(w.project_dirty());
     EXPECT_EQ(w.project_path(), saved);
-    EXPECT_TRUE(last_log(w).contains("opened project") || w.findChild<QPlainTextEdit*>("log")->toPlainText().contains(
+    EXPECT_TRUE(log_tail(w).contains("opened project") || w.findChild<QPlainTextEdit*>("log")->toPlainText().contains(
                                                               "opened project"));
     // Undo goes back to the grade before the project.
     w.run("undo");
@@ -2115,7 +2121,7 @@ TEST(AppProject, SaveAndOpenBringTheGradeAndTheModelBack) {
     const std::string now = w.session().params_json();
     std::ofstream(dir / "newer.rudra") << R"({"rudra_project": 99})";
     EXPECT_FALSE(w.open_project(dir / "newer.rudra"));
-    EXPECT_TRUE(last_log(w).contains("newer RUDRA")) << last_log(w).toStdString();
+    EXPECT_TRUE(log_tail(w).contains("newer RUDRA")) << log_tail(w).toStdString();
     EXPECT_EQ(w.session().params_json(), now);
     EXPECT_EQ(w.project_path(), saved);
     // A dropped project opens like File > Open project.

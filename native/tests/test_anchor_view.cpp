@@ -112,3 +112,48 @@ TEST(AnchorView, OffAndBaselineAreUntouched) {
     const auto f = render_view(p.model, b, on, nullptr);
     for (std::size_t i = 0; i < a.span().size(); ++i) ASSERT_EQ(a.span()[i], f.span()[i]) << i;
 }
+
+// Since 9 Oct 2026 the master grades AFTER its anchor (Region EV used to be
+// divided straight back out by it). The view does the same: the anchor's
+// target carries the composite's grade gain, so below the knee a pushed band
+// lands at the SDR's level times the push, and the hold is the ungraded one.
+TEST(AnchorView, AGradeSurvivesTheAnchor) {
+    const auto p = make_pair(32, 64, 11);
+    const std::size_t n = p.model.buffer().plane_size();
+    std::vector<float> gain(n);
+    PlanarBuffer graded_buf = p.model.buffer();
+    for (std::size_t i = 0; i < n; ++i) {
+        gain[i] = (i % 3 == 0) ? 2.0f : (i % 3 == 1 ? 0.5f : 1.0f);   // +1 EV, -1 EV, none
+        for (int c = 0; c < 3; ++c) graded_buf.plane(c)[i] *= gain[i];
+    }
+    const NetworkLinearImage graded(std::move(graded_buf));
+    // The hold of the picture before its grade.
+    EXPECT_NEAR(anchor_hold(graded, p.sdr, 0.9, 0.04, &gain), anchor_hold(p.model, p.sdr, 0.9), 1e-6);
+    const PlanarBuffer& s = p.sdr.buffer();
+    const PlanarBuffer& m = graded.buffer();
+    int checked = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        float target = 0.0f, mx = 0.0f;
+        for (int c = 0; c < 3; ++c) {
+            target += srgb_to_linear(s.plane(c)[i]) * (c == 0 ? 0.2627f : c == 1 ? 0.6780f : 0.0593f);
+            mx = std::max(mx, s.plane(c)[i]);
+        }
+        if (mx >= 0.86f || target < 0.01f) continue;
+        const float g = anchor_gain_f(target * gain[i], m.plane(0)[i], m.plane(1)[i], m.plane(2)[i], mx, 0.9f, 0.04f, 1.0f);
+        const float luma = (0.2627f * m.plane(0)[i] + 0.6780f * m.plane(1)[i] + 0.0593f * m.plane(2)[i]) * g * 10000.0f;
+        EXPECT_NEAR(luma, target * 203.0f * gain[i], target * 203.0f * gain[i] * 1e-3f) << i;
+        ++checked;
+    }
+    EXPECT_GT(checked, 100);
+    // And render_view takes the gain: the pushed view differs from one without it.
+    const NetworkLinearImage b(p.sdr.buffer());
+    auto v = view_params(ViewMode::Image, 4000.0);
+    v.anchor = true;
+    v.anchor_hold = anchor_hold(graded, p.sdr, 0.9, 0.04, &gain);
+    const auto without = render_view(graded, b, v, &p.sdr);
+    v.grade_gain = &gain;
+    const auto with = render_view(graded, b, v, &p.sdr);
+    bool differs = false;
+    for (std::size_t i = 0; i < with.span().size(); ++i) differs = differs || with.span()[i] != without.span()[i];
+    EXPECT_TRUE(differs);
+}
