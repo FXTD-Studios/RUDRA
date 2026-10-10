@@ -1,7 +1,7 @@
-# RUDRA 0.9.0 beta 6
+# RUDRA 0.9.0 beta 7
 
 The desktop RUDRA: SDR footage in, scene-linear HDR out, with the places the
-model reconstructed shown to you. This is the sixth public beta of the native
+model reconstructed shown to you. This is the seventh public beta of the native
 app (C++20, Qt 6.8, no Python at runtime). It is for evaluation and
 non-commercial use (PolyForm Noncommercial 1.0.0, see LICENSE; the model
 weights: LICENSE-weights).
@@ -42,7 +42,28 @@ weights: LICENSE-weights).
 - `rudra-native`, the command line: `diff`, `video`, `deliver`, `batch`,
   `ffmpeg-check`.
 
-## Changes since beta 5
+## Changes since beta 6
+
+Fixes that bring the native app in line with the 9 Oct review of the
+Studio's master path:
+
+- **Region EV lands in the master with Anchor on.** The anchor (on by
+  default) used to divide a Region EV push below its knee straight back out,
+  in the viewer and in the master, while the sidecar said the grade was
+  applied. The master now grades after the anchor, chroma and grain stages,
+  and the viewer shows the same.
+- **The linear EXR container is really Rec.2020.** It carried the plate's
+  primaries (Rec.709 for most footage) under a "scene-linear Rec.2020" label
+  with no chromaticities; it is now converted and tagged.
+- **`rudra-native deliver`, HLG:** the BT.2100 system gamma (log10; it was
+  right at 1,000 nits only) and saturated colours scaled together instead of
+  clipping per channel (no hue shift). Footage in Rec.709 or P3 is converted
+  to Rec.2020 before the roll-off, so MaxCLL/MaxFALL describe what is encoded.
+- **No half-written movies:** `deliver` encodes under a hidden partial name
+  and renames it into place, so a failed encode leaves nothing that looks like
+  a delivery.
+
+## Changes in beta 6 (since beta 5)
 
 - **Projects.** File > Save project (Ctrl+S) keeps the shot, the frame, the
   model and the whole grade (mode, strength, Region EV, source curve,
@@ -123,7 +144,7 @@ opens with no warning. A DMG built without the certificate (the build log says
 "ad hoc") makes macOS warn on first open: System Settings > Privacy &
 Security > Open Anyway, or `xattr -dr com.apple.quarantine /Applications/RUDRA.app`.
 
-**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.6-windows-x64-setup.exe`:
+**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.7-windows-x64-setup.exe`:
 it installs for your user by default (no administrator prompt), adds RUDRA to
 the Start menu and can be removed from Settings > Apps. Or take the portable
 ZIP: unzip anywhere and run `RUDRA.exe`. A GPU with DirectX 12 is used when

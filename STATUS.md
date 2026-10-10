@@ -74,6 +74,19 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **10 Oct 2026, later — beta 7 prepared (line F).** Beta 6 released (release #10 green, 8 assets), but
+> the native workflow had been red since beta 5 and nobody had read why: the CI re-emits the Python
+> goldens, and the 9 Oct ship-path fixes moved the Python (HLG log10 + ratio-preserving scale, Rec.2020
+> before the shoulder in `deliver`, partial-name publish, Region EV after the anchor, linear masters in
+> Rec.2020) without the C++ port following. Ported all five: `deliver/sequence_encode` + `cli/deliver`,
+> `core/master` + `deliver/master` (grade last; linear converted and tagged `kRec2020Chromaticities`).
+> The viewer had the same anchor bug (the display-pass anchor divided a Region EV push out below the
+> knee): the composite now carries the grade gain in its alpha (composite.frag) / `grade_gain`
+> (CPU), and the measured hold is the ungraded one. Emitters updated (composite stages: anchored,
+> carried, settled, graded; sequence_encode maps the partial path to OUTPUT). The Qt shell job failed
+> on beta 6's own test (`last_log` exists only with still decode): fixed. Linux: core 207/207 with
+> OpenCV against freshly emitted goldens, master parity PASS on ONNX Runtime 1.22 (3 cases), app 50/50.
+>
 > **10 Oct 2026 — beta 6 prepared (line F, R4).** Product items 2 to 5 of the 9 Oct "professional"
 > list. Projects (`engine/project`, `.rudra` JSON v1, atomic, masks as `<name>.rudra.masks.png`,
 > relative paths, validated and clamped on load) with File > Open/Save/Save as, autosave a few seconds
