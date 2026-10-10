@@ -34,4 +34,10 @@ inline Fields analytic_fields(int height, int width) {
     return {PlanarBuffer(3, height, width), PlanarBuffer(1, height, width), PlanarBuffer(1, height, width)};
 }
 
+// Bilinear on pixel centres (edges clamped), every channel: a playback
+// proxy's fields, inferred on a smaller copy of the frame, brought to the
+// frame's size.
+PlanarBuffer resize_bilinear(const PlanarBuffer& in, int height, int width);
+Fields resize_fields(const Fields& in, int height, int width);
+
 }  // namespace rudra

@@ -96,6 +96,10 @@ Result<void> VideoDecoder::finish() {
     return {};
 }
 
+void VideoDecoder::interrupt() {
+    if (process_) process_->kill();
+}
+
 void VideoDecoder::close() {
     if (!process_) return;
     if (process_->running()) process_->kill();

@@ -59,6 +59,9 @@ public:
     Result<void> finish();
     // Ends the program now (convert_video's finally).
     void close();
+    // Kills the program from another thread while next() may be reading:
+    // the read then ends and next() reports it. close() still follows.
+    void interrupt();
 
 private:
     VideoDecoder() = default;

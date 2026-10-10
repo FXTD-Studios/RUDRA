@@ -162,3 +162,70 @@ TEST(FrameEngine, AFailedFrameIsReportedNotShownAsAnother) {
     EXPECT_EQ(f.error->message, "frame 7 is not an image");
     EXPECT_EQ(engine.stats().errors, 1u);
 }
+
+// Playback with the model (10 Oct 2026): ticks no longer cancel the frames
+// ahead of the playhead, so inference runs continuously in front of it and the
+// ticks are served from the cache; a proxy frame the playhead stops on is shown
+// at once and inferred again at full size.
+TEST(FrameEngine, PlaybackKeepsInferenceAheadOfThePlayhead) {
+    Fakes fk;
+    fk.infer_time = std::chrono::milliseconds(4);
+    FrameEngine engine(fk.loader(), fk.infer(), {64, 4, 16});
+    Seen seen;
+    engine.on_ready([&](const ReadyFrame& f) { seen.add(f); });
+    engine.set_sequence(120);
+    engine.set_playing(true);
+    engine.show(0);
+    ASSERT_TRUE(wait_for([&] { return engine.stats().inferred >= 17; }));   // the frame and 16 ahead
+    // 12 ticks: every one from the cache, nothing computed twice.
+    const auto before = fk.inferred.load();
+    for (int i = 1; i <= 12; ++i) {
+        engine.show(i);
+        ASSERT_TRUE(wait_for([&] { auto v = seen.all(); return !v.empty() && v.back().index == i; })) << i;
+    }
+    EXPECT_GE(engine.stats().cache_hits, 12u);
+    ASSERT_TRUE(wait_for([&] { return engine.is_cached(12 + 16); }));   // and it kept going
+    EXPECT_LE(fk.inferred.load() - before, 12 + 2);   // the new frames ahead only
+    // Without playback the same ticks cancel what was queued.
+    engine.set_playing(false);
+    for (int i = 60; i < 70; ++i) engine.show(i);
+    EXPECT_GE(engine.stats().cancelled, 1u);
+}
+
+TEST(FrameEngine, AProxyUnderAStoppedPlayheadIsInferredAgainAtFullSize) {
+    Fakes fk;
+    std::atomic<bool> playing{true};
+    std::atomic<int> full{0};
+    FrameInfer infer = [&](const SdrImage& s) -> Result<FrameResult> {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        FrameResult r;
+        const float tag = s.buffer().span()[0];
+        r.fields = Fields{PlanarBuffer(3, 2, 2, tag), PlanarBuffer(1, 2, 2, tag), PlanarBuffer(1, 2, 2, tag)};
+        r.proxy = playing.load();
+        if (!r.proxy) ++full;
+        return r;
+    };
+    FrameEngine engine(fk.loader(), infer, {32, 2, 4});
+    Seen seen;
+    engine.on_ready([&](const ReadyFrame& f) { seen.add(f); });
+    engine.set_sequence(30);
+    engine.set_playing(true);
+    engine.show(5);
+    ASSERT_TRUE(wait_for([&] { return engine.is_cached(9); }));
+    playing = false;
+    engine.set_playing(false);
+    engine.show(7);   // stopped on a proxy
+    ASSERT_TRUE(wait_for([&] {
+        auto v = seen.all();
+        return !v.empty() && v.back().index == 7 && v.back().fields && !v.back().fields->proxy;
+    }));
+    const auto v = seen.all();
+    ASSERT_GE(v.size(), 2u);
+    EXPECT_TRUE(v[v.size() - 2].index == 7 && v[v.size() - 2].fields->proxy);   // the proxy first, at once
+    EXPECT_EQ(full.load(), 1);
+    // Shown again: the full frame, from the cache, not inferred a third time.
+    engine.show(7);
+    ASSERT_TRUE(wait_for([&] { return seen.all().size() == v.size() + 1; }));
+    EXPECT_FALSE(seen.all().back().fields->proxy);
+    EXPECT_EQ(full.load(), 1);
+}

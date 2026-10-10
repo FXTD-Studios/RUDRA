@@ -88,6 +88,13 @@ const std::vector<ActionSpec> kActions = {
     // The reconstruction (the 10 Oct review): the analytic inverse by default,
     // the model only when asked for. Checked: the model runs.
     {"use-model", "Use the model (AI-assisted)", "", "useModel", O::Native, E::Always, ""},
+    // Playback with the model (10 Oct 2026): the size the model runs at
+    // while playing (full where the playhead stops), and whether playback
+    // keeps time by skipping frames the model has not reached.
+    {"playback-side-0", "Model at full size", "", "playback:0", O::Native, E::Always, ""},
+    {"playback-side-960", "Model at 960 px (faster)", "", "playback:960", O::Native, E::Always, ""},
+    {"playback-side-640", "Model at 640 px (fastest)", "", "playback:640", O::Native, E::Always, ""},
+    {"playback-realtime", "Keep time (skip frames when behind)", "", "playbackRealtime", O::Native, E::Always, ""},
     {"open-project", "Open project…", "", "", O::Native, E::Always, "Ctrl+O"},
     {"save-project", "Save project", "", "", O::Native, E::Always, "Ctrl+S"},
     {"save-project-as", "Save project as…", "", "", O::Native, E::Always, "Ctrl+Shift+S"},
@@ -104,7 +111,9 @@ const std::vector<MenuSpec> kMenus = {
      {"open", "open-folder", ">Open recent", "recent-clear", "<", "open-package", "models", "close", "-", "open-project",
       "save-project", "save-project-as", "reopen-session", "-", "master", "-", "quit"}},
     {"Edit", {"undo", "redo", "-", "reset-recon", "reset-regions"}},
-    {"Clip", {"first", "prev", "next", "last", "-", "play"}},
+    {"Clip",
+     {"first", "prev", "next", "last", "-", "play", "-", ">While playing", "playback-side-0", "playback-side-960",
+      "playback-side-640", "-", "playback-realtime", "<"}},
     {"Reconstruct",
      {"use-model", "-", ">Source", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
       "mode-all", "mode-highlights", "mode-shadows", "mode-off", "-", "preserve", "-", "strength-down", "strength-up"}},

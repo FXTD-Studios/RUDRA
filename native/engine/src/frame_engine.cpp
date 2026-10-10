@@ -66,9 +66,35 @@ std::shared_ptr<ReadyFrame> FrameEngine::lookup(int index) {
     return it->second.first;
 }
 
+void FrameEngine::set_playing(bool on) {
+    std::lock_guard lk(mu_);
+    playing_ = on;
+}
+
+bool FrameEngine::playing() const {
+    std::lock_guard lk(mu_);
+    return playing_;
+}
+
+bool FrameEngine::ahead_of_playhead(int index) const {
+    if (!playing_ || wanted_ < 0 || count_ <= 0) return false;
+    const int d = ((index - wanted_) % count_ + count_) % count_;
+    return d >= 1 && d <= std::max(opt_.play_ahead, opt_.read_ahead);
+}
+
+bool FrameEngine::wanted(const Job& job) const {
+    return generation_.is_current(job.generation) || ahead_of_playhead(job.index);
+}
+
 void FrameEngine::insert(std::shared_ptr<ReadyFrame> f) {
     const int index = f->index;
-    if (cache_.count(index)) return;
+    if (auto it = cache_.find(index); it != cache_.end()) {
+        // A full-size frame replaces its proxy; nothing replaces a full one.
+        const bool old_proxy = it->second.first->fields && it->second.first->fields->proxy;
+        const bool new_full = f->fields && !f->fields->proxy;
+        if (old_proxy && new_full) it->second.first = std::move(f);
+        return;
+    }
     lru_.push_front(index);
     cache_.emplace(index, std::make_pair(std::move(f), lru_.begin()));
     // Evict the least recent, never the frame on screen.
@@ -89,10 +115,26 @@ Generation::value_type FrameEngine::show(int index) {
         if (count_ <= 0) return generation_.current();
         index = std::clamp(index, 0, count_ - 1);
         g = generation_.bump();
-        // Cancellation: nothing queued for an older generation will run.
-        stats_.cancelled += queue_.size();
-        queue_.clear();
         wanted_ = index;
+        if (playing_) {
+            // Playback: what is queued ahead of the new playhead stays queued
+            // (it is the next ticks' frames); the rest is cancelled.
+            std::deque<Job> keep;
+            for (Job j : queue_) {
+                if (ahead_of_playhead(j.index) && !j.refine) {
+                    j.generation = g;
+                    j.priority = Priority::ReadAhead;
+                    keep.push_back(j);
+                } else {
+                    ++stats_.cancelled;
+                }
+            }
+            queue_ = std::move(keep);
+        } else {
+            // Cancellation: nothing queued for an older generation will run.
+            stats_.cancelled += queue_.size();
+            queue_.clear();
+        }
         asked_at_ = std::chrono::steady_clock::now();
         ++stats_.shown;
         hit = lookup(index);
@@ -100,13 +142,20 @@ Generation::value_type FrameEngine::show(int index) {
             ++stats_.cache_hits;
             stats_.last_request_to_ready_ms = 0.0;
             cb = ready_cb_;
+            // Stopped on a playback proxy: shown now, and inferred again at full size.
+            if (!playing_ && hit->fields && hit->fields->proxy)
+                queue_.push_front({index, Priority::Interactive, g, true});
         } else {
             queue_.push_back({index, Priority::Interactive, g});
         }
-        // Read ahead, as the Studio's prefetch: the frames after this one, wrapping.
-        for (int k = 1; k <= opt_.read_ahead && k < count_; ++k) {
+        // Read ahead, as the Studio's prefetch: the frames after this one,
+        // wrapping; further while playing. Not twice.
+        const int ahead = playing_ ? std::max(opt_.play_ahead, opt_.read_ahead) : opt_.read_ahead;
+        for (int k = 1; k <= ahead && k < count_; ++k) {
             const int i = (index + k) % count_;
-            if (!cache_.count(i)) queue_.push_back({i, Priority::ReadAhead, g});
+            if (cache_.count(i)) continue;
+            if (std::any_of(queue_.begin(), queue_.end(), [&](const Job& j) { return j.index == i; })) continue;
+            queue_.push_back({i, Priority::ReadAhead, g});
         }
     }
     cv_.notify_all();
@@ -145,11 +194,16 @@ void FrameEngine::run() {
             if (it == queue_.end()) it = queue_.begin();
             job = *it;
             queue_.erase(it);
-            if (!generation_.is_current(job.generation)) {
+            if (!wanted(job)) {
                 ++stats_.cancelled;
                 continue;
             }
-            if (auto cached = lookup(job.index)) {
+            // A playback proxy the stopped playhead asks for is inferred again
+            // at full size (also when it landed after the request was queued).
+            auto cached = lookup(job.index);
+            const bool refine = cached && cached->fields && cached->fields->proxy && !playing_ &&
+                                (job.refine || job.priority == Priority::Interactive);
+            if (cached && !refine) {
                 if (job.priority == Priority::Interactive) {
                     ReadyFrame f = *cached;
                     f.generation = job.generation;
@@ -171,11 +225,13 @@ void FrameEngine::run() {
             f->error = sdr.error();
         } else {
             // A seek while decoding makes a read-ahead frame not worth inferring now.
-            if (job.priority != Priority::Interactive && !generation_.is_current(job.generation)) {
+            bool still = true;
+            {
                 std::lock_guard lk(mu_);
-                ++stats_.cancelled;
-                continue;
+                still = job.priority == Priority::Interactive || wanted(job);
+                if (!still) ++stats_.cancelled;
             }
+            if (!still) continue;
             const auto t1 = std::chrono::steady_clock::now();
             auto fr = infer_(*sdr);
             f->infer_ms = ms_since(t1);
@@ -185,6 +241,7 @@ void FrameEngine::run() {
                 f->fields = std::make_shared<const FrameResult>(std::move(*fr));
             }
         }
+        bool asked = job.priority == Priority::Interactive;
         {
             std::lock_guard lk(mu_);
             if (f->error) ++stats_.errors;
@@ -192,9 +249,10 @@ void FrameEngine::run() {
                 ++stats_.inferred;
                 insert(f);
             }
+            asked = asked || f->index == wanted_;
         }
         // The frame asked for is delivered even when it failed, so the UI can say why.
-        if (job.priority == Priority::Interactive || f->index == wanted_) deliver(*f);
+        if (asked) deliver(*f);
     }
 }
 

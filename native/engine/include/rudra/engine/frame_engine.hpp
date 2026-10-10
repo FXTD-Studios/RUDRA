@@ -38,6 +38,7 @@ using FrameInfer = std::function<Result<FrameResult>(const SdrImage& frame)>;
 struct EngineOptions {
     int cache_frames = 32;   // frames held (decoded SDR and fields), as the Studio's CACHE_FRAMES
     int read_ahead = 12;     // frames queued after the one shown (PREFETCH_AHEAD)
+    int play_ahead = 24;     // while playing: frames kept in flight ahead of the playhead
 };
 
 // A frame ready to show: immutable, shared with the cache.
@@ -78,12 +79,23 @@ public:
     bool is_cached(int index) const;
     EngineStats stats() const;
 
+    // Playback: show() no longer cancels the frames ahead of the playhead, so
+    // inference runs continuously in front of it (play_ahead frames), and a
+    // frame computed ahead is shown from the cache when its tick comes. Off:
+    // a seek cancels as before; a proxy frame (FrameResult::proxy) under the
+    // playhead is shown and then inferred again at full size.
+    void set_playing(bool on);
+    bool playing() const;
+
 private:
     struct Job {
         int index;
         Priority priority;
         Generation::value_type generation;
+        bool refine = false;   // a proxy in the cache, inferred again at full size
     };
+    bool ahead_of_playhead(int index) const;   // under mu_
+    bool wanted(const Job& job) const;          // under mu_
     void run();
     std::shared_ptr<ReadyFrame> lookup(int index);   // under mu_: moves it to the front of the LRU
     void insert(std::shared_ptr<ReadyFrame> f);       // under mu_
@@ -97,6 +109,7 @@ private:
     mutable std::mutex mu_;
     std::condition_variable cv_;
     bool stop_ = false;   // under mu_: the destructor asks the worker to return
+    bool playing_ = false;   // under mu_
     std::deque<Job> queue_;
     int count_ = 0;
     int wanted_ = -1;   // the frame the current generation asked for

@@ -1,6 +1,7 @@
 #include "main_window.hpp"
 #include "startup.hpp"
 #include "updates.hpp"
+#include "playback.hpp"
 
 #include "rudra/video/ffmpeg_check.hpp"
 
@@ -55,6 +56,7 @@
 #include "widgets.hpp"
 
 #include <algorithm>
+#include <fstream>
 #include <cctype>
 #include <array>
 #include <cmath>
@@ -63,6 +65,7 @@
 #include <thread>
 
 #include "rudra/core/baseline.hpp"
+#include "rudra/core/video_predict.hpp"
 #include "rudra/core/reference_fit.hpp"
 #include "rudra/engine/reference_image.hpp"
 #include "rudra/core/copy_texts.hpp"
@@ -83,6 +86,12 @@
 #endif
 
 namespace rudra::app {
+
+struct MainWindow::FeederSlot {
+    std::mutex mu;
+    std::shared_ptr<MovieFeeder> feeder;
+};
+
 namespace {
 
 QString qs(std::string_view s) { return QString::fromUtf8(s.data(), qsizetype(s.size())); }
@@ -168,8 +177,23 @@ MainWindow::MainWindow(bool with_viewer) {
     // Connected once here: Qt::UniqueConnection does not apply to a lambda, so
     // connecting on every Play added a handler each time and playback ran fast.
     play_.setInterval(1000 / 24);
-    connect(&play_, &QTimer::timeout, this, [this] {
-        if (!waiting_) step_to(current_ + 1);
+    connect(&play_, &QTimer::timeout, this, [this] { play_tick(); });
+    feeder_slot_ = std::make_shared<FeederSlot>();
+    {
+        QSettings st;
+        play_state_->side = st.value("playback/side", 960).toInt();
+        realtime_ = st.value("playback/realtime", true).toBool();
+    }
+    // While playing: the rate reached, once a second, in the status bar.
+    play_status_.setInterval(1000);
+    connect(&play_status_, &QTimer::timeout, this, [this] {
+        const int side = play_state_->side.load();
+        statusBar()->showMessage(
+            QStringLiteral("Playing %1 fps of %2").arg(play_shown_window_).arg(play_fps(), 0, 'f', 3) +
+            (use_model_ ? (side > 0 ? QStringLiteral(" \u00b7 model at %1 px").arg(side) : QStringLiteral(" \u00b7 model at full size"))
+                        : QStringLiteral(" \u00b7 analytic")) +
+            (play_skipped_ ? QStringLiteral(" \u00b7 %1 skipped").arg(play_skipped_) : QString()));
+        play_shown_window_ = 0;
     });
 
     // The floating probe box (#probeBox): it follows the cursor over the viewer,
@@ -215,6 +239,11 @@ MainWindow::MainWindow(bool with_viewer) {
 }
 
 MainWindow::~MainWindow() {
+    if (feeder_slot_) {   // its decoder thread first: the engine's loader reads from it
+        std::lock_guard lock(feeder_slot_->mu);
+        if (feeder_slot_->feeder) feeder_slot_->feeder->stop();   // releases a loader waiting in take()
+        feeder_slot_->feeder.reset();
+    }
     queues_->finished = nullptr;
     queues_->stop();      // a running export is left interrupted, as Ctrl+C leaves it
     queues_.reset();
@@ -288,6 +317,10 @@ void MainWindow::bind_handlers() {
     };
     h["getting-started"] = [this] { show_getting_started(); };
     h["use-model"] = [this] { set_use_model(!use_model_); };
+    h["playback-side-0"] = [this] { set_playback_side(0); };
+    h["playback-side-960"] = [this] { set_playback_side(960); };
+    h["playback-side-640"] = [this] { set_playback_side(640); };
+    h["playback-realtime"] = [this] { set_playback_realtime(!realtime_); };
     h["user-guide"] = [this] {
         log("user guide: " + user_guide_url());
         QDesktopServices::openUrl(QUrl(user_guide_url()));
@@ -498,6 +531,10 @@ void MainWindow::sync_checks() {
     set("mode-off", grade.mode == "off");
     set("preserve", grade.preserve);
     set("use-model", use_model_);
+    set("playback-side-0", play_state_->side.load() == 0);
+    set("playback-side-960", play_state_->side.load() == 960);
+    set("playback-side-640", play_state_->side.load() == 640);
+    set("playback-realtime", realtime_);
     for (SourceCurve c : all_source_curves())
         set("source-" + std::string(source_curve_id(c)), grade.source == source_curve_id(c));
     set("container-aces", session_.container == "aces");
@@ -753,7 +790,7 @@ void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::fun
     // The engine's worker uses the backend: it goes first. The session and
     // the frames stay; the frame on screen is asked for again.
     const bool had_frames = !frames_.empty();
-    play_.stop();
+    halt_playback();
     btn_play_->set_glyph(IconButton::Glyph::Play);
     {
         std::lock_guard lock(*backend_mutex_);
@@ -919,7 +956,7 @@ void MainWindow::open_source(const QString& preset, bool folder) {
 }
 
 void MainWindow::close_frames() {
-    play_.stop();
+    halt_playback();
     engine_.reset();
     ++engine_gen_;
     frames_.clear();
@@ -949,7 +986,7 @@ void MainWindow::close_frames() {
 }
 
 void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at) {
-    play_.stop();
+    halt_playback();
     engine_.reset();   // joins the old worker before the new one starts
     frames_ = std::move(frames);
     auto* backend = use_model_ ? backend_.get() : nullptr;
@@ -958,8 +995,16 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
     source_sizes_ = std::make_shared<SourceSizes>();
     source_sizes_->size.assign(files.size(), {0, 0});
     engine_ = std::make_unique<FrameEngine>(
-        [files, sizes = source_sizes_, side = preview_max_side_](int i) -> Result<SdrImage> {
+        [files, sizes = source_sizes_, side = preview_max_side_, slot = feeder_slot_](int i) -> Result<SdrImage> {
 #ifdef RUDRA_HAVE_STILL_DECODE
+            // Playing a movie: the decoder that runs in order (MovieFeeder).
+            std::shared_ptr<MovieFeeder> feeder;
+            {
+                std::lock_guard lock(slot->mu);
+                feeder = slot->feeder;
+            }
+            if (feeder && feeder->covers(i))
+                if (auto img = feeder->take(i)) return std::move(*img);
             auto file = ensure_frame_file(files[std::size_t(i)]);   // a movie's frame is extracted on first use
             if (!file) return file.error();
             auto d = decode_sdr_file(*file);
@@ -979,10 +1024,25 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
             return make_error(ErrorCode::Unsupported, "This build has no still decode (RUDRA_WITH_OPENCV=OFF).");
 #endif
         },
-        [backend, mu = backend_mutex_](const SdrImage& sdr) -> Result<FrameResult> {
+        [backend, mu = backend_mutex_, play = play_state_](const SdrImage& sdr) -> Result<FrameResult> {
             // The analytic reconstruction runs nothing: no residual, no
             // recovery masks, no learned curve.
-            if (!backend) return FrameResult{FrameScalars{}, analytic_fields(sdr.height(), sdr.width()), false};
+            if (!backend) return FrameResult{FrameScalars{}, analytic_fields(sdr.height(), sdr.width()), false, false};
+            // Playing: the model on a smaller copy, its fields brought back to
+            // the frame's size (a proxy, inferred again where the playhead stops).
+            const int side = play->side.load();
+            const int h = sdr.height(), w = sdr.width();
+            if (play->playing.load() && side > 0 && std::max(h, w) > side) {
+                const double k = double(side) / double(std::max(h, w));
+                const int sh = std::max(1, int(std::lround(h * k))), sw = std::max(1, int(std::lround(w * k)));
+                const SdrImage small(area_resize(sdr.buffer(), sh, sw));
+                std::lock_guard lock(*mu);
+                auto fr = infer_frame(*backend, small, TileConfig{0, 0});
+                if (!fr) return fr.error();
+                fr->fields = resize_fields(fr->fields, h, w);
+                fr->proxy = true;
+                return fr;
+            }
             // One untiled pass, as the Studio's preview; the master job shares the backend.
             std::lock_guard lock(*mu);
             return infer_frame(*backend, sdr, TileConfig{0, 0});
@@ -1016,18 +1076,123 @@ void MainWindow::step_to(int i) {
 
 void MainWindow::toggle_play() {
     if (play_.isActive()) {
-        play_.stop();
-        btn_play_->set_glyph(IconButton::Glyph::Play);
+        stop_playback();
         return;
     }
-    if (frames_.size() < 2) return;
+    if (frames_.size() < 2 || !engine_) return;
     btn_play_->set_glyph(IconButton::Glyph::Pause);
+    play_.setInterval(std::max(1, int(std::lround(1000.0 / play_fps()))));
+    play_state_->playing = true;
+    engine_->set_playing(true);
+    play_t0_ = std::chrono::steady_clock::now();
+    play_from_ = current_;
+    play_shown_ = play_skipped_ = play_shown_window_ = 0;
+    start_feeder(current_ + 1);
+    const int side = play_state_->side.load();
+    log(QStringLiteral("playing at %1 fps").arg(play_fps(), 0, 'f', 3) +
+        (use_model_ ? (side > 0 ? QStringLiteral("; the model at %1 px while playing, full size where you stop").arg(side)
+                                : QStringLiteral("; the model at full size"))
+                    : QStringLiteral("; analytic")));
     play_.start();
+    play_status_.start();
+}
+
+double MainWindow::play_fps() const {
+    return shot_video_ && shot_video_->fps ? std::clamp(*shot_video_->fps, 1.0, 120.0) : 24.0;
+}
+
+void MainWindow::start_feeder(int at) {
+    std::lock_guard lock(feeder_slot_->mu);
+    if (feeder_slot_->feeder) feeder_slot_->feeder->stop();
+    feeder_slot_->feeder.reset();
+#ifdef RUDRA_HAVE_STILL_DECODE
+    if (!shot_video_ || at >= int(frames_.size())) return;
+    auto f = MovieFeeder::start(shot_video_->path, play_fps(), at, int(frames_.size()), preview_max_side_);
+    if (f) feeder_slot_->feeder = std::move(*f);
+    else log("playback decodes frame by frame: " + qs(f.error().message));
+#else
+    (void)at;
+#endif
+}
+
+void MainWindow::halt_playback() {
+    const bool was = play_.isActive();
+    play_.stop();
+    play_status_.stop();
+    if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
+    play_state_->playing = false;
+    if (engine_) engine_->set_playing(false);
+    if (feeder_slot_) {
+        std::lock_guard lock(feeder_slot_->mu);
+        if (feeder_slot_->feeder) feeder_slot_->feeder->stop();   // releases a loader waiting in take()
+        feeder_slot_->feeder.reset();
+    }
+    if (was) statusBar()->clearMessage();
+}
+
+void MainWindow::stop_playback() {
+    halt_playback();
+    const auto st = playback_stats();
+    if (st.seconds > 0.0)
+        log(QStringLiteral("played %1 frames in %2 s: %3 fps of %4%5")
+                .arg(st.shown)
+                .arg(st.seconds, 0, 'f', 1)
+                .arg(st.shown / st.seconds, 0, 'f', 1)
+                .arg(play_fps(), 0, 'f', 3)
+                .arg(st.skipped ? QStringLiteral(", %1 skipped to keep time").arg(st.skipped) : QString()));
+    // Where it stopped: the frame again, at full size if it was a playback proxy.
+    step_to(current_);
+}
+
+MainWindow::PlaybackStats MainWindow::playback_stats() const {
+    PlaybackStats s;
+    s.shown = play_shown_;
+    s.skipped = play_skipped_;
+    s.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - play_t0_).count();
+    return s;
+}
+
+void MainWindow::play_tick() {
+    if (waiting_ || frames_.empty()) return;   // the frame asked for is not here yet: held
+    const int n = int(frames_.size());
+    int next = current_ + 1;
+    if (realtime_) {
+        // Keep time: the frame the clock has reached, skipping those the model has not.
+        const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - play_t0_).count();
+        const int due = play_from_ + int(t * play_fps());
+        if (due > next) {
+            play_skipped_ += due - next;
+            next = due;
+        }
+    }
+    if (next >= n) {   // the loop: from the top, the clock and the decoder again
+        next %= n;
+        play_t0_ = std::chrono::steady_clock::now();
+        play_from_ = next;
+        start_feeder(next + 1);
+    }
+    step_to(next);
+}
+
+void MainWindow::set_playback_side(int side) {
+    play_state_->side = std::max(0, side);
+    QSettings().setValue("playback/side", play_state_->side.load());
+    sync_checks();
+}
+
+void MainWindow::set_playback_realtime(bool on) {
+    realtime_ = on;
+    QSettings().setValue("playback/realtime", on);
+    sync_checks();
 }
 
 void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
     if (f.index != current_) return;   // the engine already dropped stale ones; this is the UI's own check
     waiting_ = false;
+    if (play_.isActive()) {
+        ++play_shown_;
+        ++play_shown_window_;
+    }
     const QString name = QString::fromStdString(frame_name(std::size_t(f.index)));
     if (f.error) {
         log(name + ": " + QString::fromStdString(f.error->message));
@@ -1044,6 +1209,7 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
     header.tiled = false;   // the preview is one untiled pass, as the Studio's
     if (!f.from_cache) header.elapsed_s = f.infer_ms / 1000.0;
     else if (current_frame_ && current_frame_->header.elapsed_s) header.elapsed_s = current_frame_->header.elapsed_s;
+    frame_proxy_ = f.fields->proxy;
     present_frame(*f.sdr, f.fields->fields, f.fields->scalars, model, header);
     const auto st = engine_->stats();
     frame_info_ = QStringLiteral("%1  %2/%3  ·  %4")
@@ -1216,8 +1382,11 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
     cur->baseline_source = session_.source_curve();
     cur->baseline_calibration = session_.grade.calibration;
     cur->baseline_reference = session_.grade.reference;
-    cur->baseline = std::make_shared<const NetworkLinearImage>(
-        corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, session_.composite_params(), model.corpus_ev)));
+    // Not while playing: the UI thread has a frame's time, and the measure
+    // builds the baseline on its own thread when this one is missing.
+    if (!play_.isActive())
+        cur->baseline = std::make_shared<const NetworkLinearImage>(corrected_baseline(
+            sdr, model.corpus_ev, baseline_curve_params(scalars, session_.composite_params(), model.corpus_ev)));
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         viewer_->set_frame({sdr, fields, scalars, model});
@@ -1539,7 +1708,7 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
         return;
 #endif
     }
-    play_.stop();   // stopPlay()
+    halt_playback();   // stopPlay()
     btn_master_->setText("Rendering\u2026");
     btn_master_->setToolTip("Click to stop after the frame being written");
     QPointer<MainWindow> self(this);
@@ -2002,15 +2171,10 @@ bool MainWindow::queue_video_export(const QString& format) {
         say("Open a movie to export it to HDR10, HLG or ProRes.");
         return false;
     }
-    if (!manifest_) {
-        say("Open a model package first: movie exports run the model (rudra video).");
+    if (needs_model() || (use_model_ && !manifest_)) {
+        say("Open a model package first, or turn off Reconstruct > Use the model.");
         return false;
     }
-    // Not yet analytic: the movie converter is `rudra video`, which runs the
-    // package with recovery "all" and none of the grade. Said, not hidden.
-    if (!use_model_)
-        log("note: movie exports run the model package (" + QString::fromStdString(manifest_->name) +
-            ") whatever Reconstruct > Use the model says; EXR masters follow it");
     const QString dir = findChild<QLineEdit*>("renderDir")->text().trimmed();
     if (dir.isEmpty()) {
         say("Choose a render folder first.");
@@ -2043,7 +2207,40 @@ bool MainWindow::queue_video_export(const QString& format) {
                                    " and zscale support (" + caps->version + ")"));
         return false;
     }
-    auto queue = write_export_queue(shot_video_->path, output, manifest_->root / "manifest.json", format.toStdString());
+    // The export carries what the view and Master EXR use: the reconstruction
+    // (analytic or the model), recovery, source curve, calibration or
+    // reference, painted masks, anchor and Region EV, in a settings file
+    // beside the queue that the export reads every frame through.
+    // A name of its own: an earlier queue for this output (one that failed,
+    // say) keeps the settings it was made with.
+    std::filesystem::path grade = output, masks = output;
+    grade += ".settings.json";
+    masks += ".masks.png";
+    for (int k = 2; std::filesystem::exists(grade, ec) || std::filesystem::exists(masks, ec); ++k) {
+        grade = output;
+        grade += ".settings " + std::to_string(k) + ".json";
+        masks = output;
+        masks += ".masks " + std::to_string(k) + ".png";
+    }
+    MasterRequest q = master_request();
+    if (q.masks) {
+        if (auto w = write_mask_set(masks, *q.masks); !w) {
+            say(QString::fromStdString(w.error().message));
+            return false;
+        }
+        q.masks_file = masks.string();
+    }
+    {
+        std::ofstream gf(grade, std::ios::binary);
+        gf << master_request_json(q) << "\n";
+        if (!gf) {
+            say("Could not write the export's settings: " + from_path(grade));
+            return false;
+        }
+    }
+    auto queue = write_export_queue(shot_video_->path, output,
+                                    use_model_ ? manifest_->root / "manifest.json" : std::filesystem::path(),
+                                    format.toStdString(), grade);
     if (!queue) {
         say(QString::fromStdString(queue.error().message));
         return false;

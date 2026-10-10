@@ -36,6 +36,9 @@
 #include "rudra/media/sequence.hpp"
 #include "video_queues.hpp"
 
+#include <atomic>
+#include <chrono>
+
 class QAction;
 class QLabel;
 class QLineEdit;
@@ -246,6 +249,22 @@ public:
     // is on, kAnalyticConstants otherwise.
     ModelConstants frame_constants() const;
 
+    // Playback with the model (10 Oct 2026): inference runs ahead of the
+    // playhead (FrameEngine::set_playing), at `side` pixels on the long side
+    // while playing (0: full size) with full size where it stops; a movie is
+    // decoded in order by one ffmpeg (MovieFeeder); `realtime` keeps time by
+    // skipping frames the model has not reached.
+    bool playing() const { return play_.isActive(); }
+    void set_playback_side(int side);
+    int playback_side() const { return play_state_->side.load(); }
+    void set_playback_realtime(bool on);
+    struct PlaybackStats {
+        int shown = 0, skipped = 0;
+        double seconds = 0.0;
+    };
+    PlaybackStats playback_stats() const;
+    bool frame_proxy() const { return frame_proxy_; }   // the frame on screen is a playback proxy
+
     // Help: the five steps, the user guide's address.
     static QString user_guide_url();
     void show_getting_started();
@@ -301,6 +320,23 @@ private:
     std::filesystem::path project_path_, autosave_path_, reopen_path_;
     bool dirty_ = false, restoring_ = false;
     bool use_model_ = false;
+    bool frame_proxy_ = false;
+    struct PlayState {
+        std::atomic<bool> playing{false};
+        std::atomic<int> side{960};
+    };
+    std::shared_ptr<PlayState> play_state_ = std::make_shared<PlayState>();
+    struct FeederSlot;
+    std::shared_ptr<FeederSlot> feeder_slot_;
+    bool realtime_ = true;
+    std::chrono::steady_clock::time_point play_t0_;
+    int play_from_ = 0, play_shown_ = 0, play_skipped_ = 0, play_shown_window_ = 0;
+    QTimer play_status_;
+    void play_tick();
+    double play_fps() const;
+    void start_feeder(int at);
+    void stop_playback();
+    void halt_playback();   // stop without the summary or the refine (a new engine, a close, a render)
     bool needs_model() const { return use_model_ && !backend_; }   // frames wait for a package
     class QLabel* mode_label_ = nullptr;   // the status bar's "Analytic" / "AI-assisted: <model>"
     void show_mode();

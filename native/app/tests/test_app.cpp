@@ -56,6 +56,7 @@
 #include <limits>
 
 #include <fstream>
+#include <sstream>
 #include <optional>
 #include <map>
 #include <set>
@@ -67,6 +68,8 @@
 #include "workflow_check.hpp"
 #include "startup.hpp"
 #include "updates.hpp"
+#include "playback.hpp"
+#include <QElapsedTimer>
 #include "rudra/engine/project.hpp"
 #include <QStatusBar>
 #include "rudra/deliver/master.hpp"
@@ -1974,6 +1977,7 @@ TEST(AppVideo, TheExportTilesQueueAMovieAndTheQueueWindowFollowsIt) {
     app::MainWindow w(false);
     auto m = fake_models(w, "export-movie");
     ASSERT_TRUE(use(w, m->root / "beta"));
+    w.set_use_model(true);   // the model's export: the fakes cannot run it, so it fails below
     const auto out = fresh_dir("export-movie-out");
     std::filesystem::create_directories(out);
     w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(out.string()));
@@ -2029,6 +2033,18 @@ TEST(AppVideo, TheExportTilesQueueAMovieAndTheQueueWindowFollowsIt) {
         EXPECT_EQ(q["version"], 1);
         EXPECT_EQ(std::filesystem::path(q["defaults"]["checkpoint"].get<std::string>()).filename(), "manifest.json");
         EXPECT_EQ(q["jobs"][0]["options"]["format"], "hdr10");
+        // The app's settings travel with the export.
+        const auto settings = std::filesystem::path(q["jobs"][0]["options"]["grade"].get<std::string>());
+        EXPECT_EQ(settings.filename(), "sh010.mp4.settings.json");
+        auto g = master_request_from_json([&] {
+            std::ifstream f(settings);
+            std::stringstream ss;
+            ss << f.rdbuf();
+            return ss.str();
+        }());
+        ASSERT_TRUE(g);
+        EXPECT_FALSE(g->analytic);
+        EXPECT_EQ(g->checkpoint, "beta");
         EXPECT_EQ(std::filesystem::path(q["jobs"][0]["output"].get<std::string>()), out / "sh010.mp4");
         EXPECT_TRUE(rudra::load_queue(queue).ok());   // what the Python and the native runner both read
     }
@@ -2391,6 +2407,108 @@ TEST(AppAnalytic, TheDefaultRunsNoModelAndSaysSo) {
     w.run("use-model");
     EXPECT_FALSE(w.using_model());
     ASSERT_TRUE(wait_for([&] { return w.frame_fields() && w.frame_fields()->residual.at(0, 0, 0) == 0.0f; }));
+}
+#endif
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+// Playback with the model (10 Oct 2026): inference ahead of the playhead, a
+// smaller copy while playing, the stopped frame inferred again at full size;
+// a movie decoded in order by one ffmpeg.
+TEST(AppPlayback, PlaysWithTheModelAndRefinesWhereItStops) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "playback");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    w.set_use_model(true);
+    w.set_playback_side(8);   // every decode frame is larger: all proxies while playing
+    EXPECT_TRUE(w.action("playback-side-960")->isChecked() == false);
+    w.open_source(QString::fromStdString(decode_dir().string()), true);
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    w.run("play");
+    ASSERT_TRUE(w.playing());
+    ASSERT_TRUE(wait_for([&] { return w.frame_proxy(); }));   // what plays is the proxy
+    QTest::qWait(400);
+    w.run("play");   // stop
+    EXPECT_FALSE(w.playing());
+    const auto st = w.playback_stats();
+    EXPECT_GE(st.shown, 3) << "frames shown while playing";
+    EXPECT_TRUE(w.findChild<QPlainTextEdit*>("log")->toPlainText().contains("the model at 8 px while playing"));
+    EXPECT_TRUE(log_tail(w).startsWith("played ")) << log_tail(w).toStdString();
+    // Stopped: the frame on screen is inferred again at full size.
+    ASSERT_TRUE(wait_for([&] { return !w.frame_proxy(); }));
+    // The settings are kept.
+    EXPECT_EQ(QSettings().value("playback/side").toInt(), 8);
+    w.run("playback-side-960");
+    EXPECT_EQ(w.playback_side(), 960);
+    EXPECT_TRUE(w.action("playback-side-960")->isChecked());
+}
+
+TEST(AppPlayback, TheMovieDecoderSkipsAheadWithoutStalling) {
+    if (!rudra::find_executable("ffmpeg") || !rudra::find_executable("ffprobe")) GTEST_SKIP() << "no ffmpeg";
+    const auto clip = std::filesystem::path(RUDRA_GOLDEN_DIR) / "video" / "clips" / "bars_709.mp4";
+    auto seq = open_sequence(clip.string());
+    ASSERT_TRUE(seq);
+    const int n = seq->count();
+    ASSERT_GE(n, 6);
+    // Two frames of room: a skip of four would wait on a full buffer if the
+    // frames behind it were kept.
+    auto f = app::MovieFeeder::start(clip, *seq->fps, 0, n, 0, 2);
+    ASSERT_TRUE(f) << f.error().message;
+    ASSERT_TRUE((*f)->take(0));
+    QElapsedTimer t;
+    t.start();
+    auto img = (*f)->take(5, 3000);
+    ASSERT_TRUE(img);
+    EXPECT_LT(t.elapsed(), 2500);
+    EXPECT_FALSE((*f)->take(2, 10));   // behind: not from here
+    // Stopped: a waiter is released at once.
+    (*f)->stop();
+    EXPECT_FALSE((*f)->take(n - 1, 3000));
+}
+
+TEST(AppPlayback, AMovieIsDecodedInOrderWhilePlaying) {
+    if (!rudra::find_executable("ffmpeg") || !rudra::find_executable("ffprobe")) GTEST_SKIP() << "no ffmpeg";
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "playback-movie");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    const auto clip = std::filesystem::path(RUDRA_GOLDEN_DIR) / "video" / "clips" / "bars_709.mp4";
+    w.open_source(QString::fromStdString(clip.string()));
+    ASSERT_GE(w.frame_count(), 3u);
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    w.set_playback_realtime(false);   // every frame, for the count below
+    w.run("play");
+    ASSERT_TRUE(wait_for([&] { return w.playback_stats().shown >= int(w.frame_count()) - 1; }, 8000));
+    w.run("play");
+    const QString log = w.findChild<QPlainTextEdit*>("log")->toPlainText();
+    EXPECT_FALSE(log.contains("playback decodes frame by frame")) << log.toStdString();
+    EXPECT_TRUE(log.contains("; analytic"));   // the default reconstruction plays too
+}
+#endif
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+// The default export (10 Oct 2026): analytic, with the grade, no package needed.
+TEST(AppVideo, AnAnalyticMovieExportRunsWithoutAModelAndCarriesTheGrade) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    app::MainWindow w(false);
+    ASSERT_FALSE(w.using_model());
+    const auto out = fresh_dir("export-analytic");
+    std::filesystem::create_directories(out);
+    w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(out.string()));
+    w.findChild<QLineEdit*>("renderName")->setText("plain");
+    w.open_source(QString::fromStdString(movie("h264_709.mp4").string()));
+    ASSERT_TRUE(w.shot_is_video());
+    w.run("mode-highlights");
+    ASSERT_TRUE(w.queue_video_export("hlg")) << last_log(w).toStdString();
+    const auto queue = out / "plain.hlg.queue.json";
+    ASSERT_TRUE(wait_for([&] { return !w.video_queues().running() && app::read_queue_state(queue).status == "complete"; }, 60000))
+        << app::read_queue_state(queue).status;
+    std::ifstream in(out / "plain.mp4.json");
+    const json rep = json::parse(in);
+    EXPECT_EQ(rep["reconstruction"], "analytic (no model)");
+    EXPECT_EQ(rep["recovery_mode"], "highlights");
+    EXPECT_TRUE(rep["checkpoint"].is_null());
 }
 #endif
 
