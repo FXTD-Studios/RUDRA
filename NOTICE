@@ -37,3 +37,13 @@ HdM-HDR-2014 and HdM-HFR-2017, Hochschule der Medien Stuttgart
     Free for academic and educational use. Commercial use requires a
     separate agreement with HdM.
     https://hdm-stuttgart.de/vmlab/hdm-hdr-2014/
+
+------------------------------------------------------------------------
+FFmpeg (in the Windows package)
+------------------------------------------------------------------------
+The Windows package of the desktop app carries ffmpeg.exe and ffprobe.exe,
+the unmodified gyan.dev "full" build (https://www.gyan.dev/ffmpeg/builds/),
+in its ffmpeg\ folder. That build is licensed under the GNU General Public
+License version 3 (ffmpeg\LICENSE.txt); where its source is: ffmpeg\SOURCE.txt.
+RUDRA runs it as a separate program and is not linked to it, so RUDRA's own
+licence is unchanged.
