@@ -1,7 +1,7 @@
-# RUDRA 0.9.0 beta 9
+# RUDRA 0.9.0 beta 10
 
 The desktop RUDRA: SDR footage in, scene-linear HDR out, with the places the
-model reconstructed shown to you. This is the ninth public beta of the native
+model reconstructed shown to you. This is the tenth public beta of the native
 app (C++20, Qt 6.8, no Python at runtime). It is for evaluation and
 non-commercial use (PolyForm Noncommercial 1.0.0, see LICENSE; the model
 weights: LICENSE-weights).
@@ -42,7 +42,25 @@ weights: LICENSE-weights).
 - `rudra-native`, the command line: `diff`, `video`, `deliver`, `batch`,
   `ffmpeg-check`.
 
-## Changes since beta 8
+## Changes since beta 9
+
+- **Still areas stop shimmering.** In a movie export, where the source pixel
+  did not change from the frame before, RUDRA holds how much it brightened
+  that pixel (the HDR over the source) across the shot, so codec noise lifted
+  by the expansion and the model's jitter in recovered highlights settle;
+  where anything moved, at a cut, and wherever the source is clipped or
+  crushed, each frame is its own. The source's own change always passes
+  through: only the brightening is held, never the pixel. On a still grainy
+  ramp the worst frame-to-frame shimmer fell to under a fifth.
+  `--static-hold off` turns it off (Clip > Hold steady within a shot off turns
+  off both holds); it costs about 40 ms a 1080p frame on one CPU core.
+- Movie reports add `local_flicker_ev`: the flicker measure taken area by
+  area (a 36 x 64 grid) and averaged, which sees shimmer the frame average
+  hides.
+- The beta 9 notes below describe steady within a shot, which the beta 9
+  build already had; they were written after it was tagged.
+
+## Changes in beta 9 (since beta 8)
 
 - **Movie exports carry your grade.** HDR10, HLG and ProRes exports now go
   through the same chain as Master EXR, frame by frame: the reconstruction
@@ -73,17 +91,7 @@ weights: LICENSE-weights).
   `rudra-native video` and `rudra video` take `--temporal-smoothing SECONDS`
   (0 is off). Every movie report now measures flicker: `flicker_ev` per frame
   and a `temporal` summary, the EV the HDR's average moved from one frame to
-  the next beyond what the source did, and `local_flicker_ev`, the same per
-  area of the frame.
-- **Still areas stop shimmering.** In a movie export, where the source pixel
-  did not change from the frame before, RUDRA holds how much it brightened
-  that pixel (the HDR over the source) the same way, so codec noise lifted by
-  the expansion and the model's jitter in recovered highlights settle; where
-  anything moved, at a cut, and wherever the source is clipped or crushed,
-  each frame is its own. The source's own change always passes through: only
-  the brightening is held, never the pixel. On a still grainy ramp the worst
-  frame-to-frame shimmer fell to under a fifth. `--static-hold off` turns it
-  off; it costs about 40 ms a 1080p frame on one CPU core.
+  the next beyond what the source did.
 
 ## Changes in beta 8 (since beta 7)
 

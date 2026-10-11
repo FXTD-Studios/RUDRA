@@ -74,7 +74,11 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
-> **10 Oct 2026, later — the static hold (beta 9, line F).** Pixel level, still without fetching anything
+> **11 Oct 2026 — beta 10 prepared (line F).** v0.9.0-beta.9 was tagged on bbf6726 (the shot hold) before
+> the static hold (0dbad8f) and the notes (a8ac01a) landed, so they ship as beta 10 (`RUDRA_RELEASE` beta.10,
+> docs/BETA.md "Changes since beta 9"); the beta 9 tag stays where it was published.
+>
+> **10 Oct 2026, later — the static hold (beta 10, line F).** Pixel level, still without fetching anything
 > across frames: `ShadowSmoother.hold_pixels` holds the HDR/source luminance gain per pixel with the shot's
 > retention where the decoded source's luma code is still (3×3 mean |Δ| under 1.5/255 held, over 6/255 its
 > own, smoothstep between), never where the source is clipped (largest code ≥ 0.98) or crushed (≤ 0.02) in
