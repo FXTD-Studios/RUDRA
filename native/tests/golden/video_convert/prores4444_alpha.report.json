@@ -27,6 +27,7 @@
   "cut_threshold": 0.15,
   "temporal_smoothing": 0.0,
   "static_hold": "off",
+  "dynamic_metadata": "on",
   "preserve_outside": true,
   "recovery_mode": "all",
   "tile_size": 512,
@@ -96,6 +97,17 @@
     "local_flicker_ev_mean": 0.0047860366881643645,
     "local_flicker_ev_max": 0.006222949677144127
   },
+  "hdr_metadata": {
+    "shots": 1,
+    "hdr10plus": {
+      "file": "prores4444_alpha.mov_hdr10plus.json",
+      "embedded": false,
+      "reason": "HDR10+ is carried in HEVC only"
+    },
+    "dovi_generate": "prores4444_alpha.mov_dovi_generate.json",
+    "analysis": "prores4444_alpha.mov_hdr_analysis.json",
+    "hdr10plus_scenes": "prores4444_alpha.mov_hdr10plus_scenes.json"
+  },
   "encode_command": [
     "/usr/bin/ffmpeg",
     "-hide_banner",
@@ -107,7 +119,7 @@
     "-framerate",
     "24",
     "-i",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-video-qb04x2hp/%08d.png",
+    "/tmp/nat/native/tests/golden/video_convert/rudra-video-rm76e7u7/%08d.png",
     "-itsoffset",
     "-0.0",
     "-i",
@@ -146,7 +158,7 @@
     "disabled",
     "-movflags",
     "+faststart+write_colr",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-master-b5eoe3sa/prores4444_alpha.mov"
+    "/tmp/nat/native/tests/golden/video_convert/rudra-master-ldngs0u1/prores4444_alpha.mov"
   ],
   "qc": {
     "passed": true,
@@ -223,5 +235,5 @@
   },
   "max_cll": 1000,
   "max_fall": 102,
-  "elapsed_seconds": 0.4812631060003696
+  "elapsed_seconds": 0.5648500329998569
 }

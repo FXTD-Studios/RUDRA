@@ -26,4 +26,17 @@ pyjson::Value to_hdr10plus_json(std::span<const FrameStats> stats, std::span<con
                                 int target_display_nits = 400);
 pyjson::Value to_rudra_sidecar(std::span<const FrameStats> stats, std::span<const Shot> shots);
 
+// Shots from the frames that start one (a movie export's scene_cuts); frame 0
+// always does (metadata.shots_from_cuts).
+std::vector<Shot> shots_from_cuts(std::span<const int> cuts, int frame_count);
+
+// HDR10+ for x265's --dhdr10-info and hdr10plus_tool inject (the "LLC" JSON,
+// x265 dynamicHDR10/metadataFromJson.cpp): one SceneInfo entry per frame
+// holding its shot's statistics; MaxScl, AverageRGB and DistributionValues in
+// 0.1 cd/m2, DistributionIndex in whole percent (metadata.to_hdr10plus_x265_json).
+pyjson::Value to_hdr10plus_x265_json(std::span<const FrameStats> stats, std::span<const Shot> shots);
+
+// dovi_tool's own L1 clamps (CM v4.0) the generate config applies.
+inline constexpr int kL1MinPqMax = 12, kL1MaxPqMin = 2081, kL1MaxPqMax = 4095, kL1AvgPqMinCmv40 = 1229;
+
 }  // namespace rudra

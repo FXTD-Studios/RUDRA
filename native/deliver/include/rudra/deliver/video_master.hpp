@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "rudra/core/image.hpp"
+#include "rudra/core/measure.hpp"
 #include "rudra/platform/result.hpp"
 
 namespace rudra {
@@ -26,15 +27,17 @@ struct SpoolFrame {
     int width = 0, height = 0, channels = 3;
     std::vector<std::uint16_t> packed;   // height x width x channels, BGR(A)
     VideoFrameLight light;
+    std::optional<FrameStats> stats;   // analyze_frame of the mastered nits, when asked for
 };
 
 // `hdr` in the network convention (1.0 = 10 000 nits). `alpha` is the decoded
 // frame (height x width x 4, RGBA) when the source carries alpha; its fourth
 // channel is appended as it was decoded. "Invalid HDR pixels at frame N" and
 // "Invalid PQ pixels at frame N" as the Python says them.
+// `analyze`: also the frame's MaxRGB statistics (the dynamic HDR metadata).
 Result<SpoolFrame> master_video_frame(const NetworkLinearImage& hdr, int index, const std::string& format,
                                       double peak_nits, std::optional<double> knee_nits,
-                                      std::span<const std::uint16_t> alpha = {});
+                                      std::span<const std::uint16_t> alpha = {}, bool analyze = false);
 
 // The encoder's ceilings: math.ceil of the largest MaxCLL and frame average.
 struct LightCeilings {

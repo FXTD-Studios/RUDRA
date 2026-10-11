@@ -1,0 +1,56 @@
+{
+  "JSONInfo": {
+    "Generator": "RUDRA delivery",
+    "Version": "1.0",
+    "Units": "cd/m2"
+  },
+  "SceneInfoSummary": {
+    "SceneFirstFrameIndex": [
+      0
+    ],
+    "SceneFrameNumbers": [
+      6
+    ]
+  },
+  "SceneInfo": [
+    {
+      "SceneId": 0,
+      "SceneFirstFrameIndex": 0,
+      "SceneFrameNumbers": 6,
+      "TargetedSystemDisplayMaximumLuminance": 400,
+      "LuminanceParameters": {
+        "Units": "cd/m2",
+        "AverageMaxRGB": 97.99935164102526,
+        "MaxSCL": [
+          866.37353515625,
+          688.9730834960938,
+          1000.0
+        ],
+        "LuminanceDistributions": {
+          "DistributionIndex": [
+            1.0,
+            5.0,
+            10.0,
+            25.0,
+            50.0,
+            75.0,
+            90.0,
+            95.0,
+            99.98
+          ],
+          "DistributionValues": [
+            21.153876399993898,
+            23.07548656463623,
+            23.10612907409668,
+            24.464635848999023,
+            28.26739501953125,
+            29.20876121520996,
+            286.2803100585937,
+            286.88332824707027,
+            1000.0
+          ]
+        }
+      }
+    }
+  ]
+}

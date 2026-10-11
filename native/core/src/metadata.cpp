@@ -69,6 +69,23 @@ Value l1_per_shot(std::span<const FrameStats> stats, std::span<const Shot> shots
     return out;
 }
 
+namespace {
+std::int64_t as_int(const Value& v) { return std::get<std::int64_t>(v.v); }
+
+// A shot's L1 as dovi_tool reads it, clamped as its generator clamps
+// (metadata._l1_block).
+Value l1_block(const Value& min_pq, const Value& max_pq, const Value& avg_pq) {
+    const std::int64_t mx = std::clamp<std::int64_t>(as_int(max_pq), kL1MaxPqMin, kL1MaxPqMax);
+    return Dict{{"Level1", Dict{{"min_pq", std::clamp<std::int64_t>(as_int(min_pq), 0, kL1MinPqMax)},
+                                {"max_pq", mx},
+                                {"avg_pq", std::clamp<std::int64_t>(as_int(avg_pq), kL1AvgPqMinCmv40, mx - 1)}}}};
+}
+
+std::int64_t tenth_nits(double nits) {   // np.floor(nits * 10 + 0.5), within [0, 100000]
+    return static_cast<std::int64_t>(std::clamp(std::floor(nits * 10.0 + 0.5), 0.0, 100000.0));
+}
+}  // namespace
+
 Value to_dovi_generate_json(std::span<const FrameStats> stats, std::span<const Shot> shots, double peak, double min_nits) {
     const StaticMetadata md = maxcll_maxfall(stats);
     const Value l1 = l1_per_shot(stats, shots);
@@ -82,10 +99,7 @@ Value to_dovi_generate_json(std::span<const FrameStats> stats, std::span<const S
         };
         blocks.push_back(Dict{{"start", get("start")},
                               {"duration", get("duration")},
-                              {"metadata_blocks", List{Dict{{"Level", 1},
-                                                            {"min_pq", get("min_pq")},
-                                                            {"max_pq", get("max_pq")},
-                                                            {"avg_pq", get("avg_pq")}}}}});
+                              {"metadata_blocks", List{l1_block(get("min_pq"), get("max_pq"), get("avg_pq"))}}});
     }
     return Dict{{"cm_version", "V40"},
                 {"profile", "8.1"},
@@ -127,6 +141,51 @@ Value to_hdr10plus_json(std::span<const FrameStats> stats, std::span<const Shot>
                 {"SceneInfoSummary", Dict{{"SceneFirstFrameIndex", std::move(firsts)},
                                           {"SceneFrameNumbers", std::move(counts)}}},
                 {"SceneInfo", std::move(scenes)}};
+}
+
+std::vector<Shot> shots_from_cuts(std::span<const int> cuts, int frame_count) {
+    std::vector<int> starts{0};
+    for (int c : cuts)
+        if (c > 0 && c < frame_count) starts.push_back(c);
+    std::sort(starts.begin(), starts.end());
+    starts.erase(std::unique(starts.begin(), starts.end()), starts.end());
+    std::vector<Shot> shots;
+    for (std::size_t i = 0; i < starts.size(); ++i)
+        shots.emplace_back(starts[i], (i + 1 < starts.size() ? starts[i + 1] : frame_count) - starts[i]);
+    return shots;
+}
+
+Value to_hdr10plus_x265_json(std::span<const FrameStats> stats, std::span<const Shot> shots) {
+    static constexpr int kIndex[] = {1, 5, 10, 25, 50, 75, 90, 95, 99};
+    List frames, firsts, counts;
+    int scene_id = 0;
+    for (const auto& [start, length] : shots) {
+        const auto w = stats.subspan(std::size_t(start), std::size_t(length));
+        List index, values, maxscl;
+        for (int i : kIndex) index.push_back(i);
+        for (std::size_t i = 0; i < kStatPercentiles.size(); ++i)
+            values.push_back(tenth_nits(vmax(gather(w, [i](const FrameStats& s) { return s.percentiles_nits[i]; }))));
+        for (int c = 0; c < 3; ++c)
+            maxscl.push_back(tenth_nits(vmax(gather(w, [c](const FrameStats& s) { return s.maxscl_nits[std::size_t(c)]; }))));
+        const Value luminance = Dict{
+            {"AverageRGB", tenth_nits(np_mean(gather(w, [](const FrameStats& s) { return s.avg_nits; })))},
+            {"LuminanceDistributions", Dict{{"DistributionIndex", std::move(index)}, {"DistributionValues", std::move(values)}}},
+            {"MaxScl", std::move(maxscl)}};
+        for (int k = 0; k < length; ++k)
+            frames.push_back(Dict{{"LuminanceParameters", luminance},
+                                  {"NumberOfWindows", 1},
+                                  {"TargetedSystemDisplayMaximumLuminance", 0},
+                                  {"SceneFrameIndex", k},
+                                  {"SceneId", scene_id},
+                                  {"SequenceFrameIndex", start + k}});
+        ++scene_id;
+        firsts.push_back(start);
+        counts.push_back(length);
+    }
+    return Dict{{"JSONInfo", Dict{{"HDR10plusProfile", "A"}, {"Version", "1.0"}}},
+                {"SceneInfo", std::move(frames)},
+                {"SceneInfoSummary", Dict{{"SceneFirstFrameIndex", std::move(firsts)}, {"SceneFrameNumbers", std::move(counts)}}},
+                {"ToolInfo", Dict{{"Tool", "RUDRA"}, {"Version", "1.0"}}}};
 }
 
 Value to_rudra_sidecar(std::span<const FrameStats> stats, std::span<const Shot> shots) {

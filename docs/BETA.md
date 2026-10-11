@@ -42,7 +42,24 @@ weights: LICENSE-weights).
 - `rudra-native`, the command line: `diff`, `video`, `deliver`, `batch`,
   `ffmpeg-check`.
 
-## Changes since beta 9
+## Changes since beta 10 (for the next beta)
+
+- **Dolby Vision and HDR10+ metadata.** HDR10 and ProRes (PQ) movie exports
+  now write their dynamic HDR metadata per shot (the export's own cuts) beside
+  the master: `<file>_hdr10plus.json` (HDR10+, in the format x265 and
+  hdr10plus_tool read), `<file>_dovi_generate.json` (Dolby Vision L1 and L6,
+  ready for `dovi_tool generate`), `<file>_hdr_analysis.json` (every value in
+  nits and PQ) and `<file>_hdr10plus_scenes.json`. An HDR10 export carries
+  HDR10+ inside the HEVC when the ffmpeg's x265 was built with HDR10+, and the
+  quality check confirms it on the first frame; otherwise the report says so
+  and the file is ready for `hdr10plus_tool inject`. RUDRA writes no Dolby
+  Vision RPU itself: a licensed finishing tool, or `dovi_tool`, makes it from
+  the file. `--dynamic-metadata off` turns it off. The `dovi_generate` file of
+  `rudra-native deliver` and `rudra metadata` now uses dovi_tool's block format
+  (`{"Level1": {...}}`), clamped as dovi_tool clamps; it was not accepted by
+  dovi_tool before.
+
+## Changes in beta 10 (since beta 9)
 
 - **Still areas stop shimmering.** In a movie export, where the source pixel
   did not change from the frame before, RUDRA holds how much it brightened
@@ -222,6 +239,9 @@ nothing extra.
 
 ## Known in this beta
 
+- HDR10+ goes inside an HDR10 file only when the ffmpeg's x265 was built with
+  HDR10+ (the report says which); Dolby Vision ships as metadata files beside
+  the master, not as an RPU in the file.
 - macOS: HDR output on Metal EDR, and inference on Core ML, are being
   measured on hardware; until then, check the first-run card (Help > Check the
   display and the model), which reports the display's real peak.

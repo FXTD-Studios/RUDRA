@@ -20,6 +20,7 @@ import numpy as np
 
 from .hdr10 import master_to_pq
 from .delivery.profiles import PROFILES, encode_master
+from .delivery.metadata import analyze_frame, shots_from_cuts, to_hdr10plus_x265_json, write_all_sidecars
 
 
 def executable(name):
@@ -343,12 +344,64 @@ def mastering_display(peak, minimum):
     return f'G(8500,39850)B(6550,2300)R(35400,14600)WP(15635,16450)L({round(peak*10000)},{round(minimum*10000)})'
 
 
-def encode_command(args, source, clock, spool, output, max_cll, max_fall):
+def dynamic_metadata_paths(output):
+    """The dynamic HDR metadata beside a PQ master (10 Oct 2026), named after the
+    whole output name as the report is (clip.mp4 and clip.mov never share them):
+    <output>_hdr10plus.json (x265 / hdr10plus_tool), <output>_dovi_generate.json
+    (dovi_tool generate), <output>_hdr_analysis.json and <output>_hdr10plus_scenes.json
+    (write_all_sidecars)."""
+    return {key: output.with_name(output.name+suffix) for key, suffix in
+            (('hdr10plus','_hdr10plus.json'),('dovi_generate','_dovi_generate.json'),
+             ('analysis','_hdr_analysis.json'),('hdr10plus_scenes','_hdr10plus_scenes.json'))}
+
+
+def x265_param_path(path):
+    """A path inside -x265-params: ffmpeg splits the options on ':' (Windows drive
+    letters) and reads each value as a token, where backslash escapes, a quote
+    quotes and leading or trailing blanks are dropped; all of those are escaped."""
+    return ''.join('\\'+c if c in '\\:\' \t' else c for c in str(path))
+
+
+_HDR10PLUS_CAPABLE = {}
+
+
+def hdr10plus_capable():
+    """Whether this ffmpeg's x265 writes HDR10+ (built with ENABLE_HDR10_PLUS):
+    one frame encoded with --dhdr10-info, x265's warning looked for."""
+    exe = executable('ffmpeg')
+    if exe not in _HDR10PLUS_CAPABLE:
+        with tempfile.TemporaryDirectory(prefix='rudra-hdr10plus-') as work:
+            probe_json = Path(work)/'probe.json'
+            frame = dict(LuminanceParameters=dict(AverageRGB=1000,LuminanceDistributions=dict(
+                DistributionIndex=[1,5,10,25,50,75,90,95,99],DistributionValues=[0,10,20,50,100,500,1000,2000,5000]),
+                MaxScl=[5000,5000,5000]),NumberOfWindows=1,TargetedSystemDisplayMaximumLuminance=0,
+                SceneFrameIndex=0,SceneId=0,SequenceFrameIndex=0)
+            probe_json.write_text(json.dumps(dict(JSONInfo=dict(HDR10plusProfile='A',Version='1.0'),SceneInfo=[frame])),
+                                  encoding='utf-8')
+            result = subprocess.run([exe,'-hide_banner','-v','info','-nostdin','-f','lavfi','-i',
+                                     'color=c=black:s=64x64:r=24:d=0.05','-frames:v','1','-c:v','libx265',
+                                     '-pix_fmt','yuv420p10le','-x265-params',
+                                     'log-level=warning:dhdr10-info='+x265_param_path(probe_json),'-f','null','-'],
+                                    capture_output=True,text=True,encoding='utf-8',errors='replace')
+            _HDR10PLUS_CAPABLE[exe] = result.returncode == 0 and 'dhdr10-info disabled' not in result.stderr
+    return _HDR10PLUS_CAPABLE[exe]
+
+
+def has_hdr10plus(path):
+    """Whether the master's first frame carries HDR10+ (ST 2094-40) metadata."""
+    data = json.loads(run([executable('ffprobe'),'-v','error','-select_streams','v:0','-read_intervals','%+#1',
+                           '-show_frames','-show_entries','frame=side_data_list','-of','json',str(path)]))
+    return any('2094-40' in side.get('side_data_type','')
+               for frame in data.get('frames',[]) for side in frame.get('side_data_list',[]))
+
+
+def encode_command(args, source, clock, spool, output, max_cll, max_fall, hdr10plus=None):
     profile = PROFILES[args.format]
     transfer = profile['transfer']
     params = ':'.join(['hdr-opt=1','repeat-headers=1','colorprim=bt2020','transfer=smpte2084',
                        'colormatrix=bt2020nc',f'master-display={mastering_display(args.peak_nits,args.min_nits)}',
                        f'max-cll={max_cll},{max_fall}'])
+    if hdr10plus is not None: params += ':dhdr10-info='+x265_param_path(hdr10plus)
     cmd = [executable('ffmpeg'),'-hide_banner','-v','error','-nostdin','-n','-copyts',
            '-framerate',clock['fps'],'-i',str(spool/'%08d.png'),
            '-itsoffset',str(-clock['start']),'-i',str(source),'-map','0:v:0']
@@ -475,7 +528,12 @@ def convert_video(args, progress=None):
     if profile['codec']=='prores' and output.suffix.lower()!='.mov':
         raise ValueError('ProRes delivery requires a .mov output')
     if not source.is_file(): raise FileNotFoundError(source)
-    if source==output or output.exists() or sidecar.exists(): raise ValueError('Refusing to overwrite source/output/sidecar')
+    if args.dynamic_metadata not in ('on','off'): raise ValueError('Invalid dynamic metadata setting')
+    # PQ masters carry dynamic HDR metadata (10 Oct 2026); HLG has none to carry.
+    dynamic = args.dynamic_metadata=='on' and profile['transfer']=='smpte2084'
+    dynamic_paths = dynamic_metadata_paths(output) if dynamic else {}
+    if source==output or output.exists() or sidecar.exists() or any(p.exists() for p in dynamic_paths.values()):
+        raise ValueError('Refusing to overwrite source/output/sidecar')
     encoders = run([executable('ffmpeg'), '-hide_banner', '-encoders'])
     filters = run([executable('ffmpeg'), '-hide_banner', '-filters'])
     if profile['encoder'] not in encoders or 'zscale' not in filters:
@@ -507,6 +565,7 @@ def convert_video(args, progress=None):
     smoother = ShadowSmoother(retention,args.cut_threshold,args.static_hold=='on')
     started=time.monotonic()
     previous_exposure=None
+    stats=[]
     report=dict(source=str(source),output=str(output),input_contract=contract,timing=clock,
                 delivery_format=args.format,alpha_mode=args.alpha_mode if args.preserve_alpha else None,
                 encoder_input_precision_bits=10,alpha_preserved=args.preserve_alpha,
@@ -514,6 +573,7 @@ def convert_video(args, progress=None):
                 mastering_peak_nits=args.peak_nits,mastering_min_nits=args.min_nits if args.format=='hdr10' else None,
                 audio_mode=args.audio,shadow_smoothing=args.shadow_smoothing,cut_threshold=args.cut_threshold,
                 temporal_smoothing=args.temporal_smoothing,static_hold=args.static_hold,
+                dynamic_metadata=args.dynamic_metadata,
                 preserve_outside=True,recovery_mode='all',tile_size=args.tile_size,tile_overlap=args.tile_overlap,
                 timestamp_policy='Video begins at zero; audio retains relative offset, clipped to video interval',
                 scene_cuts=[],frames=[],warnings=['Scalar shadow smoothing is not validated temporal reconstruction'] if args.shadow_smoothing else [])
@@ -544,6 +604,7 @@ def convert_video(args, progress=None):
                     pq,mastered=encode_master(hdr,args.format,args.peak_nits,args.knee_nits)
                     if not np.isfinite(pq).all(): raise RuntimeError(f'Invalid PQ pixels at frame {index}')
                     maxrgb=mastered.max(axis=2)
+                    if dynamic: stats.append(analyze_frame(mastered,index))
                     report['frames'].append(dict(index=index,shadow_weight=weight,max_cll=float(maxrgb.max()),
                                                  frame_average=float(maxrgb.mean()),flicker_ev=flicker,
                                                  local_flicker_ev=local))
@@ -578,7 +639,26 @@ def convert_video(args, progress=None):
         # Stage on the output volume so the final rename is atomic.
         with tempfile.TemporaryDirectory(prefix='rudra-master-',dir=output.parent) as staging:
             staged=Path(staging)/output.name
-            command=encode_command(args,source,clock,spool,staged,max_cll,max_fall)
+            staged_dynamic={key: Path(staging)/p.name for key,p in dynamic_paths.items()}
+            embed=False
+            if dynamic:
+                # Shots are the export's own cuts, so the metadata changes where the hold restarts.
+                shots=shots_from_cuts(report['scene_cuts'],len(stats))
+                write_all_sidecars(stats,staged,args.peak_nits,shots=shots,
+                                   mastering_min_nits=args.min_nits if args.format=='hdr10' else 0.0001)
+                staged_dynamic['hdr10plus'].write_text(json.dumps(to_hdr10plus_x265_json(stats,shots)),
+                                                       encoding='utf-8',newline='\n')
+                embed=args.format=='hdr10' and hdr10plus_capable()
+                reason=None if embed else ('HDR10+ is carried in HEVC only' if args.format!='hdr10' else
+                    "This ffmpeg's x265 was built without HDR10+; inject the file with hdr10plus_tool")
+                report['hdr_metadata']=dict(shots=len(shots),
+                    hdr10plus=dict(file=dynamic_paths['hdr10plus'].name,embedded=embed,reason=reason),
+                    dovi_generate=dynamic_paths['dovi_generate'].name,analysis=dynamic_paths['analysis'].name,
+                    hdr10plus_scenes=dynamic_paths['hdr10plus_scenes'].name)
+            else:
+                report['hdr_metadata']=None
+            command=encode_command(args,source,clock,spool,staged,max_cll,max_fall,
+                                   staged_dynamic['hdr10plus'] if embed else None)
             report['encode_command']=command
             if progress: progress(dict(phase='encoding', frames_done=clock['frames'], frames_total=clock['frames']))
             run(command)
@@ -588,14 +668,21 @@ def convert_video(args, progress=None):
                                       args.format,args.preserve_alpha)
             if args.preserve_alpha:
                 report['qc']['alpha']=check_alpha(staged,spool,clock['frames'],stream['width'],stream['height'])
+            if embed:
+                if not has_hdr10plus(staged): raise RuntimeError('HDR10+ QC failed: the master carries no ST 2094-40 metadata')
+                report['qc']['hdr10plus']=dict(passed=True)
             if args.format=='hlg':
                 report['hlg_reference']=dict(display_peak_nits=args.peak_nits,black_nits=0,
                                              system_gamma=1.2+.42*math.log10(args.peak_nits/1000))
             report.update(max_cll=max_cll,max_fall=max_fall,elapsed_seconds=time.monotonic()-started)
             staged_json=Path(staging)/sidecar.name
             staged_json.write_text(json.dumps(report,indent=2),encoding='utf-8',newline='\n')
-            if output.exists() or sidecar.exists(): raise ValueError('Output appeared during processing; refusing overwrite')
+            if output.exists() or sidecar.exists() or any(p.exists() for p in dynamic_paths.values()):
+                raise ValueError('Output appeared during processing; refusing overwrite')
+            # The master first: a failure after it leaves an output a retry refuses,
+            # never metadata without a master.
             staged.rename(output)
+            for key,p in dynamic_paths.items(): staged_dynamic[key].rename(p)
             staged_json.rename(sidecar)
     print(f'QC passed: {output}\nReport: {sidecar}',flush=True)
     return 0
@@ -624,6 +711,8 @@ def add_arguments(parser):
     parser.add_argument('--cut-threshold',type=float,default=.15)
     parser.add_argument('--temporal-smoothing',type=float,default=.25,
                         help='Hold the per-frame values steady within a shot with this time constant in seconds; 0 turns it off')
+    parser.add_argument('--dynamic-metadata',choices=['on','off'],default='on',
+                        help='PQ masters: Dolby Vision and HDR10+ metadata per shot beside the master, HDR10+ in HDR10 when x265 can')
     parser.add_argument('--static-hold',choices=['on','off'],default='on',
                         help="Where the source pixel is still, hold the HDR's gain over it the same way (off: per frame)")
     parser.add_argument('--work-dir',type=Path,help='Directory for temporary PQ frames; removed after completion or failure')

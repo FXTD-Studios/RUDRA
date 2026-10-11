@@ -27,6 +27,7 @@
   "cut_threshold": 0.15,
   "temporal_smoothing": 0.25,
   "static_hold": "on",
+  "dynamic_metadata": "on",
   "preserve_outside": true,
   "recovery_mode": "all",
   "tile_size": 512,
@@ -96,6 +97,17 @@
     "local_flicker_ev_mean": 0.0024761414341379785,
     "local_flicker_ev_max": 0.00501946601557308
   },
+  "hdr_metadata": {
+    "shots": 1,
+    "hdr10plus": {
+      "file": "hdr10_audio.mp4_hdr10plus.json",
+      "embedded": false,
+      "reason": "This ffmpeg's x265 was built without HDR10+; inject the file with hdr10plus_tool"
+    },
+    "dovi_generate": "hdr10_audio.mp4_dovi_generate.json",
+    "analysis": "hdr10_audio.mp4_hdr_analysis.json",
+    "hdr10plus_scenes": "hdr10_audio.mp4_hdr10plus_scenes.json"
+  },
   "encode_command": [
     "/usr/bin/ffmpeg",
     "-hide_banner",
@@ -107,7 +119,7 @@
     "-framerate",
     "24000/1001",
     "-i",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-video-y_i856as/%08d.png",
+    "/tmp/nat/native/tests/golden/video_convert/rudra-video-hzn4tesr/%08d.png",
     "-itsoffset",
     "-10.0",
     "-i",
@@ -152,7 +164,7 @@
     "disabled",
     "-movflags",
     "+faststart+write_colr",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-master-0d70cp7_/hdr10_audio.mp4"
+    "/tmp/nat/native/tests/golden/video_convert/rudra-master-bd_bu6z1/hdr10_audio.mp4"
   ],
   "qc": {
     "passed": true,
@@ -251,5 +263,5 @@
   },
   "max_cll": 1000,
   "max_fall": 76,
-  "elapsed_seconds": 0.5414669120000326
+  "elapsed_seconds": 0.6446048410000458
 }

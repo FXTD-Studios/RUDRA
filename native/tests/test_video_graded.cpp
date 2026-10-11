@@ -189,3 +189,65 @@ TEST(VideoGraded, TheStaticHoldSteadiesAStillShot) {
     EXPECT_LT(local[2], local[0] * 0.85) << local[0] << " -> " << local[2];
     EXPECT_LT(local[3], local[1] * 0.5) << local[1] << " -> " << local[3];
 }
+
+// Dynamic HDR metadata (10 Oct 2026): an HDR10 export writes the HDR10+, Dolby
+// Vision generate and analysis files beside the master, per shot; with an x265
+// that can write HDR10+ the master carries it (checked by QC), otherwise the
+// report says why and the file is there for hdr10plus_tool. HLG has none.
+TEST(VideoGraded, AnHdr10ExportCarriesItsDynamicMetadata) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    const fs::path dir = fresh("dynamic");
+    const bool capable = hdr10plus_capable(*find_executable("ffmpeg"));
+    for (const char* format : {"hdr10", "hlg"}) {
+        VideoConvertArgs a;
+        a.input = kClip;
+        a.output = dir / (std::string(format) + ".mp4");
+        a.format = format;
+        a.audio = "none";
+        a.preset = "ultrafast";
+        MasterRequest q;
+        q.analytic = true;
+        a.grade = q;
+        auto r = convert_video(a, nullptr, nullptr);
+        ASSERT_TRUE(r) << r.error().message << " " << r.error().detail;
+        const auto rep = read_json(r->sidecar);
+        EXPECT_EQ(rep["dynamic_metadata"], "on");
+        if (std::string(format) == "hlg") {
+            EXPECT_TRUE(rep["hdr_metadata"].is_null());
+            EXPECT_FALSE(fs::exists(dir / "hlg.mp4_hdr10plus.json"));
+            continue;
+        }
+        const auto& hm = rep["hdr_metadata"];
+        EXPECT_GE(hm["shots"].get<int>(), 1);
+        for (const char* name : {"hdr10.mp4_hdr10plus.json", "hdr10.mp4_dovi_generate.json", "hdr10.mp4_hdr_analysis.json",
+                                 "hdr10.mp4_hdr10plus_scenes.json"})
+            EXPECT_TRUE(fs::exists(dir / name)) << name;
+        const auto h10 = read_json(dir / "hdr10.mp4_hdr10plus.json");
+        EXPECT_EQ(h10["SceneInfo"].size(), rep["frames"].size());   // one entry per frame
+        const auto dovi = read_json(dir / "hdr10.mp4_dovi_generate.json");
+        EXPECT_TRUE(dovi["shots"][0]["metadata_blocks"][0].contains("Level1"));
+        EXPECT_EQ(hm["hdr10plus"]["embedded"].get<bool>(), capable);
+        if (capable) {
+            EXPECT_TRUE(rep["qc"]["hdr10plus"]["passed"].get<bool>());
+            const auto& cmd = rep["encode_command"];
+            bool named = false;
+            for (const auto& s : cmd) named = named || s.get<std::string>().find("dhdr10-info=") != std::string::npos;
+            EXPECT_TRUE(named);
+        } else {
+            EXPECT_FALSE(hm["hdr10plus"]["reason"].is_null());
+        }
+        std::cout << "[ dynamic ] HDR10+ " << (capable ? "embedded" : "beside the master") << "\n";
+    }
+    // Metadata already there under an export's names refuses it before any work.
+    std::ofstream(dir / "again.mp4_dovi_generate.json") << "{}";
+    VideoConvertArgs again;
+    again.input = kClip;
+    again.output = dir / "again.mp4";
+    again.format = "hdr10";
+    MasterRequest q;
+    q.analytic = true;
+    again.grade = q;
+    auto refused = convert_video(again, nullptr, nullptr);
+    ASSERT_FALSE(refused);
+    EXPECT_EQ(refused.error().message, "Refusing to overwrite source/output/sidecar");
+}

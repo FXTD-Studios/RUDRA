@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <utility>
+#include <vector>
 #include <string>
 
 #include "rudra/core/model_manifest.hpp"
@@ -41,6 +43,11 @@ struct VideoConvertArgs {
     // "on": where the source pixel is still, the HDR's gain over it held the
     // same way (ShadowSmoother::hold_pixels); "off": per frame.
     std::string static_hold = "on";
+    // "on": a PQ master gets its dynamic HDR metadata per shot beside it
+    // (<name>_hdr10plus.json, _dovi_generate.json, _hdr_analysis.json,
+    // _hdr10plus_scenes.json), and HDR10 carries HDR10+ when this ffmpeg's x265
+    // can write it (video.py --dynamic-metadata, 10 Oct 2026).
+    std::string dynamic_metadata = "on";
     std::optional<std::filesystem::path> work_dir;
     // The app's movie export (10 Oct 2026): the settings of the view and of
     // Master EXR (a master-params JSON, deliver/master.hpp) applied to every
@@ -70,6 +77,15 @@ struct VideoConvertResult {
 
 // sidecar = output + ".json" (output.with_suffix(output.suffix + '.json')).
 std::filesystem::path video_sidecar_path(const std::filesystem::path& output);
+
+// The dynamic HDR metadata beside a PQ master, in the Python's order:
+// hdr10plus, dovi_generate, analysis, hdr10plus_scenes (video.py dynamic_metadata_paths).
+std::vector<std::pair<std::string, std::filesystem::path>> dynamic_metadata_paths(const std::filesystem::path& output);
+
+// Whether this ffmpeg's x265 writes HDR10+ (built with ENABLE_HDR10_PLUS):
+// one frame encoded with --dhdr10-info, x265's warning looked for. Cached per
+// executable (video.py hdr10plus_capable).
+bool hdr10plus_capable(const std::filesystem::path& ffmpeg);
 
 #ifdef RUDRA_HAVE_STILL_DECODE
 Result<VideoConvertResult> convert_video(const VideoConvertArgs& args, const ModelManifest& package,
