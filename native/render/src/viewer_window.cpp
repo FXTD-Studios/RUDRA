@@ -133,7 +133,7 @@ struct ViewerWindow::Impl {
     QRhiSwapChain::Format format = QRhiSwapChain::SDR;
     bool initialized = false, has_swapchain = false;
 
-    QShader vert, composite_frag, display_frag, blit_vert, blit_frag;
+    QShader vert, composite_frag, display_frag, blit_vert, blit_frag, hold_frag;
     std::unique_ptr<QRhiSampler> nearest, trilinear, fetch, linear;
     std::unique_ptr<QRhiBuffer> composite_ubo, view_ubo, blit_ubo;
 
@@ -146,6 +146,24 @@ struct ViewerWindow::Impl {
     std::unique_ptr<QRhiRenderPassDescriptor> model_rp, picture_rp;
     std::unique_ptr<QRhiShaderResourceBindings> composite_srb, display_srb, blit_srb_nearest, blit_srb_trilinear;
     std::unique_ptr<QRhiGraphicsPipeline> composite_pipe, display_pipe, blit_pipe;
+
+    // The static hold while playing (ViewerHold, shaders/hold.frag): made the
+    // first time a held frame is shown, at the frame's size. Holding, the
+    // composite renders into raw_t and the hold pass writes model_t and the
+    // state; the state ping-pongs, hold_rt[k] writing state_t[k] and reading
+    // state_t[1 - k].
+    std::unique_ptr<QRhiBuffer> hold_ubo;
+    std::unique_ptr<QRhiTexture> raw_t, state_t[2];
+    std::unique_ptr<QRhiTextureRenderTarget> raw_rt, hold_rt[2];
+    std::unique_ptr<QRhiRenderPassDescriptor> raw_rp, hold_rp[2];
+    std::unique_ptr<QRhiShaderResourceBindings> hold_srb[2];
+    std::unique_ptr<QRhiGraphicsPipeline> raw_pipe, hold_pipe[2];
+    bool hold_failed = false;     // the resources could not be made: frames show their own composite
+    int hold_last = -1;           // the state texture the last held frame wrote; -1: none to read
+    bool hold_pending = true;     // a new held frame: choose its state textures when it is composited
+    int hold_write = 0;           // this frame's: the state it writes ...
+    bool hold_read = false;       // ... and whether it reads the one before (false: the shot's first frame)
+    long long hold_frame = -1;    // ViewerHold::frame of the frame shown
 
     // What is shown, kept on the host so a lost device is rebuilt from it.
     bool has_frame = false;
@@ -270,6 +288,8 @@ struct ViewerWindow::Impl {
         display_frag = load_shader(":/rudra/shaders/display.frag.qsb");
         blit_vert = load_shader(":/rudra/shaders/blit.vert.qsb");
         blit_frag = load_shader(":/rudra/shaders/blit.frag.qsb");
+        hold_frag = load_shader(":/rudra/shaders/hold.frag.qsb");   // optional: no hold without it
+        hold_failed = !hold_frag.isValid();
         if (!vert.isValid() || !composite_frag.isValid() || !display_frag.isValid() || !blit_vert.isValid() ||
             !blit_frag.isValid())
             return false;
@@ -284,8 +304,9 @@ struct ViewerWindow::Impl {
         composite_ubo.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(detail::CompositeUbo)));
         view_ubo.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(detail::ViewUbo)));
         blit_ubo.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(BlitUbo)));
+        hold_ubo.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(detail::HoldUbo)));
         if (!fetch->create() || !nearest->create() || !trilinear->create() || !linear->create() || !composite_ubo->create() ||
-            !view_ubo->create() || !blit_ubo->create())
+            !view_ubo->create() || !blit_ubo->create() || !hold_ubo->create())
             return false;
 
         sc.reset(rhi->newSwapChain());
@@ -375,7 +396,80 @@ struct ViewerWindow::Impl {
         return blit_pipe->create();
     }
 
+    void release_hold() {
+        raw_pipe.reset();
+        raw_rt.reset();
+        raw_rp.reset();
+        raw_t.reset();
+        for (int k = 0; k < 2; ++k) {
+            hold_pipe[k].reset();
+            hold_srb[k].reset();
+            hold_rt[k].reset();
+            hold_rp[k].reset();
+            state_t[k].reset();
+        }
+        hold_last = -1;
+        hold_pending = true;
+    }
+
+    // The hold's targets at the frame's size, made on first use: three
+    // RGBA32F frames the viewer does not pay for until something plays held.
+    bool ensure_hold() {
+        if (hold_failed) return false;
+        if (hold_pipe[0] && hold_pipe[1] && raw_pipe) return true;
+        release_hold();
+        auto fail = [&] {
+            release_hold();
+            hold_failed = true;   // until the next frame size or device
+            return false;
+        };
+        const QRhiTexture::Flags rt_flags = QRhiTexture::RenderTarget;
+        raw_t.reset(rhi->newTexture(QRhiTexture::RGBA32F, frame_size, 1, rt_flags));
+        if (!raw_t->create()) return fail();
+        for (auto& t : state_t) {
+            t.reset(rhi->newTexture(QRhiTexture::RGBA32F, frame_size, 1, rt_flags));
+            if (!t->create()) return fail();
+        }
+        raw_rt.reset(rhi->newTextureRenderTarget({QRhiColorAttachment(raw_t.get())}));
+        raw_rp.reset(raw_rt->newCompatibleRenderPassDescriptor());
+        raw_rt->setRenderPassDescriptor(raw_rp.get());
+        if (!raw_rt->create()) return fail();
+        raw_pipe.reset(rhi->newGraphicsPipeline());
+        raw_pipe->setShaderStages({{QRhiShaderStage::Vertex, vert}, {QRhiShaderStage::Fragment, composite_frag}});
+        raw_pipe->setVertexInputLayout({});
+        raw_pipe->setShaderResourceBindings(composite_srb.get());
+        raw_pipe->setRenderPassDescriptor(raw_rp.get());
+        if (!raw_pipe->create()) return fail();
+        for (int k = 0; k < 2; ++k) {
+            QRhiTextureRenderTargetDescription desc;
+            desc.setColorAttachments({QRhiColorAttachment(model_t.get()), QRhiColorAttachment(state_t[k].get())});
+            hold_rt[k].reset(rhi->newTextureRenderTarget(desc));
+            hold_rp[k].reset(hold_rt[k]->newCompatibleRenderPassDescriptor());
+            hold_rt[k]->setRenderPassDescriptor(hold_rp[k].get());
+            if (!hold_rt[k]->create()) return fail();
+            hold_srb[k].reset(rhi->newShaderResourceBindings());
+            hold_srb[k]->setBindings({
+                QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::FragmentStage, hold_ubo.get()),
+                QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, raw_t.get(), fetch.get()),
+                QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, in_a.get(), fetch.get()),
+                QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, state_t[1 - k].get(),
+                                                          fetch.get()),
+            });
+            if (!hold_srb[k]->create()) return fail();
+            hold_pipe[k].reset(rhi->newGraphicsPipeline());
+            hold_pipe[k]->setShaderStages({{QRhiShaderStage::Vertex, vert}, {QRhiShaderStage::Fragment, hold_frag}});
+            hold_pipe[k]->setVertexInputLayout({});
+            hold_pipe[k]->setTargetBlends({QRhiGraphicsPipeline::TargetBlend(), QRhiGraphicsPipeline::TargetBlend()});
+            hold_pipe[k]->setShaderResourceBindings(hold_srb[k].get());
+            hold_pipe[k]->setRenderPassDescriptor(hold_rp[k].get());
+            if (!hold_pipe[k]->create()) return fail();
+        }
+        return true;
+    }
+
     bool build_frame_resources(QSize size) {
+        release_hold();
+        hold_failed = !hold_frag.isValid();
         composite_pipe.reset();
         display_pipe.reset();
         blit_pipe.reset();
@@ -526,16 +620,39 @@ struct ViewerWindow::Impl {
                 view_dirty = true;
             }
             if (composite_dirty && !precomposited) {
+                // Playing held (ViewerHold): the composite into raw_t, then the
+                // hold pass into model_t. A new frame picks its state textures
+                // once; drawing the same frame again (a slider moved) reads the
+                // same state, so it re-renders the frame and does not step the hold.
+                const bool holding = frame.hold.on && ensure_hold();
+                if (!holding) hold_last = -1;
+                if (holding && hold_pending) {
+                    hold_write = hold_last < 0 ? 0 : 1 - hold_last;
+                    hold_read = hold_last >= 0 && !frame.hold.reset;
+                    hold_last = hold_write;
+                    hold_pending = false;
+                }
                 const detail::CompositeUbo cu = detail::composite_ubo(frame.scalars, frame.model, composite,
                                                                      frame_size.width(), frame_size.height());
                 u->updateDynamicBuffer(composite_ubo.get(), 0, sizeof(cu), &cu);
-                cb->beginPass(model_rt.get(), Qt::black, {1.0f, 0}, u);
+                cb->beginPass(holding ? raw_rt.get() : model_rt.get(), Qt::black, {1.0f, 0}, u);
                 u = nullptr;
-                cb->setGraphicsPipeline(composite_pipe.get());
+                cb->setGraphicsPipeline(holding ? raw_pipe.get() : composite_pipe.get());
                 cb->setViewport({0, 0, float(frame_size.width()), float(frame_size.height())});
                 cb->setShaderResources(composite_srb.get());
                 cb->draw(3);
                 cb->endPass();
+                if (holding) {
+                    QRhiResourceUpdateBatch* hu = rhi->nextResourceUpdateBatch();
+                    const detail::HoldUbo hb = detail::hold_ubo(frame.hold.strength, !hold_read);
+                    hu->updateDynamicBuffer(hold_ubo.get(), 0, sizeof(hb), &hb);
+                    cb->beginPass(hold_rt[hold_write].get(), Qt::black, {1.0f, 0}, hu);
+                    cb->setGraphicsPipeline(hold_pipe[hold_write].get());
+                    cb->setViewport({0, 0, float(frame_size.width()), float(frame_size.height())});
+                    cb->setShaderResources(hold_srb[hold_write].get());
+                    cb->draw(3);
+                    cb->endPass();
+                }
                 composite_dirty = false;
                 view_dirty = true;
             }
@@ -655,6 +772,8 @@ struct ViewerWindow::Impl {
         grab_cb = nullptr;
         grab_pending = false;
         blit_pipe.reset();
+        release_hold();
+        hold_ubo.reset();
         composite_pipe.reset();
         display_pipe.reset();
         blit_srb_nearest.reset();
@@ -753,6 +872,16 @@ ViewerWindow::~ViewerWindow() {
 
 void ViewerWindow::set_frame(ViewerFrame frame) {
     d_->baseline = corrected_baseline(frame.sdr, frame.model.corpus_ev, baseline_curve_params(frame.scalars, d_->composite, frame.model.corpus_ev));
+    // The static hold: a frame shown unheld drops the state; a new held frame
+    // steps it when it is composited; the same one again does not.
+    if (!frame.hold.on) {
+        d_->hold_last = -1;
+        d_->hold_frame = -1;
+        d_->hold_pending = true;
+    } else if (frame.hold.frame != d_->hold_frame || frame.hold.frame < 0) {
+        d_->hold_frame = frame.hold.frame;
+        d_->hold_pending = true;
+    }
     d_->frame = std::move(frame);
     d_->precomposited = false;
     d_->has_frame = true;
@@ -761,6 +890,9 @@ void ViewerWindow::set_frame(ViewerFrame frame) {
 }
 
 void ViewerWindow::set_composited(NetworkLinearImage model, NetworkLinearImage baseline) {
+    d_->hold_last = -1;   // a card or a master: nothing held across it
+    d_->hold_frame = -1;
+    d_->hold_pending = true;
     d_->precomposite = std::move(model);
     d_->baseline = std::move(baseline);
     d_->precomposited = true;

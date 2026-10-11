@@ -1246,9 +1246,13 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
     FrameScalars scalars = f.fields->scalars;
     const float own = scalars.shadow_weight;
     // Playing: the shadow weight held across the shot, as the export holds it.
-    if (play_.isActive())
+    // And the static hold: the viewer holds still pixels' gain across the shot.
+    PlaybackHold::PixelStep pixel;
+    if (play_.isActive()) {
         scalars.shadow_weight = static_cast<float>(play_hold_.weight(f.index, *f.sdr, scalars.shadow_weight));
-    present_frame(*f.sdr, f.fields->fields, scalars, model, header, own);
+        pixel = play_hold_.pixel_step();
+    }
+    present_frame(*f.sdr, f.fields->fields, scalars, model, header, own, pixel);
     const auto st = engine_->stats();
     frame_info_ = QStringLiteral("%1  %2/%3  ·  %4")
                       .arg(name)
@@ -1415,7 +1419,8 @@ void MainWindow::clear_scopes() {
 }
 
 void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars, ModelConstants model,
-                               FrameHeader header, std::optional<float> own_shadow_weight) {
+                               FrameHeader header, std::optional<float> own_shadow_weight,
+                               [[maybe_unused]] PlaybackHold::PixelStep pixel) {
     auto cur = std::make_shared<Current>();
     cur->baseline_source = session_.source_curve();
     cur->baseline_calibration = session_.grade.calibration;
@@ -1427,7 +1432,12 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
             sdr, model.corpus_ev, baseline_curve_params(scalars, session_.composite_params(), model.corpus_ev)));
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
-        viewer_->set_frame({sdr, fields, scalars, model});
+        ViewerHold hold;
+        hold.on = pixel.on;
+        hold.strength = pixel.strength;
+        hold.reset = pixel.reset;
+        hold.frame = current_;
+        viewer_->set_frame({sdr, fields, scalars, model, hold});
         viewer_->set_composite(session_.composite_params());
     }
 #endif
@@ -1438,6 +1448,7 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
     cur->header = std::move(header);
     cur->index = current_;
     cur->own_shadow_weight = own_shadow_weight.value_or(cur->scalars.shadow_weight);
+    cur->hold_shot = play_hold_.shot();
     current_frame_ = std::move(cur);
     note_frame_in_strip(current_);
     run_stats();   // adopt(): computeStats at once for a new frame
@@ -1471,11 +1482,11 @@ void MainWindow::run_stats() {
     stats_worker_ = std::thread([self, frame, params, gen, cached, knee] {
         auto m = std::make_shared<const FrameMeasure>(
             measure_frame(frame->sdr, frame->fields, frame->scalars, frame->model, params, cached, knee));
-        const int index = frame->index;
-        QMetaObject::invokeMethod(qApp, [self, m, gen, index] {
+        const int index = frame->index, shot = frame->hold_shot;
+        QMetaObject::invokeMethod(qApp, [self, m, gen, index, shot] {
             if (!self) return;
             self->stats_running_ = false;
-            if (gen == self->stats_gen_) self->apply_measure(m, index);
+            if (gen == self->stats_gen_) self->apply_measure(m, index, shot);
             if (self->stats_again_) {
                 self->stats_again_ = false;
                 self->run_stats();
@@ -1494,7 +1505,7 @@ void MainWindow::measure_now() {
         f.baseline_source == params.source && f.baseline_calibration == params.calibration &&
                 f.baseline_reference == params.reference
             ? f.baseline.get() : nullptr,
-        session_.anchor_knee)), play_.isActive() ? f.index : -1);
+        session_.anchor_knee)), play_.isActive() ? f.index : -1, f.hold_shot);
 }
 
 void MainWindow::fill_rows(QWidget* ms, const std::vector<MetricRow>& rows) {
@@ -1525,11 +1536,11 @@ void MainWindow::fill_rows(QWidget* ms, const std::vector<MetricRow>& rows) {
     }
 }
 
-void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m, int index) {
+void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m, int index, int hold_shot) {
     measure_ = std::move(m);
     const auto& f = *measure_;
     // Playing: the anchor's hold held across the shot, as the export holds it.
-    shown_hold_ = index >= 0 && play_.isActive() ? play_hold_.anchor(index, f.anchor_hold) : f.anchor_hold;
+    shown_hold_ = index >= 0 && play_.isActive() ? play_hold_.anchor(index, f.anchor_hold, hold_shot) : f.anchor_hold;
 #ifdef RUDRA_APP_VIEWER
     if (viewer_ && session_.anchor) {
         auto v = viewer_->view();

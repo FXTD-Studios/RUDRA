@@ -66,24 +66,24 @@
       "shadow_weight": 0.6826470494270325,
       "max_cll": 1198.8443603515625,
       "frame_average": 161.40306091308594,
-      "flicker_ev": 1.602412071033399e-05,
-      "local_flicker_ev": 0.0002417379968007832
+      "flicker_ev": 3.3218531238166094e-05,
+      "local_flicker_ev": 0.00021917259152441496
     },
     {
       "index": 4,
       "shadow_weight": 0.6855447888374329,
       "max_cll": 1199.51513671875,
       "frame_average": 161.5167694091797,
-      "flicker_ev": 0.006144272727765077,
-      "local_flicker_ev": 0.019112595416870277
+      "flicker_ev": 0.006703724552099999,
+      "local_flicker_ev": 0.018315432498066157
     },
     {
       "index": 5,
       "shadow_weight": 0.687311202287674,
       "max_cll": 1199.565185546875,
       "frame_average": 161.53724670410156,
-      "flicker_ev": 0.002014227709555949,
-      "local_flicker_ev": 0.005196437771078854
+      "flicker_ev": 0.0012637492385281224,
+      "local_flicker_ev": 0.004685455548915955
     }
   ],
   "warnings": [
@@ -93,11 +93,11 @@
     "retention": 0.5,
     "static_hold": "on",
     "frames_scored": 5,
-    "flicker_ev_mean": 0.001634904911606272,
-    "flicker_ev_max": 0.006144272727765077,
+    "flicker_ev_mean": 0.0016001384643732574,
+    "flicker_ev_max": 0.006703724552099999,
     "flicker_ev_max_frame": 4,
-    "local_flicker_ev_mean": 0.004910154236949983,
-    "local_flicker_ev_max": 0.019112595416870277
+    "local_flicker_ev_mean": 0.004644012127701306,
+    "local_flicker_ev_max": 0.018315432498066157
   },
   "hdr_metadata": null,
   "encode_command": [
@@ -111,7 +111,7 @@
     "-framerate",
     "24000/1001",
     "-i",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-video-py35k8br/%08d.png",
+    "/tmp/nat/native/tests/golden/video_convert/rudra-video-xxnsgxd8/%08d.png",
     "-itsoffset",
     "-0.0",
     "-i",
@@ -156,7 +156,7 @@
     "disabled",
     "-movflags",
     "+faststart+write_colr",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-master-41p4l_7l/hlg_smoothed.mp4"
+    "/tmp/nat/native/tests/golden/video_convert/rudra-master-squrpz9l/hlg_smoothed.mp4"
   ],
   "qc": {
     "passed": true,
@@ -242,5 +242,5 @@
   },
   "max_cll": 1200,
   "max_fall": 162,
-  "elapsed_seconds": 0.8928843710000365
+  "elapsed_seconds": 0.950586555999962
 }

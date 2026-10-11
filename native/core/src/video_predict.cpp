@@ -118,6 +118,7 @@ std::pair<double, bool> ShadowSmoother::update(const PlanarBuffer& thumbnail, do
         pixel_luma_.clear();
         pixel_peak_.clear();
         pixel_gain_.clear();
+        pixel_yh_.clear();
     }
     return {weight_, cut};
 }
@@ -130,55 +131,84 @@ std::vector<double> ShadowSmoother::hold(const std::string& key, const std::vect
     return h;
 }
 
-PlanarBuffer ShadowSmoother::hold_pixels(std::vector<double> luma, std::vector<double> peak,
-                                         const std::vector<double>& linear, const PlanarBuffer& hdr) {
-    if (!static_hold_ || retention_ == 0.0) return hdr;
-    const int h = hdr.height(), w = hdr.width();
-    const std::size_t n = hdr.plane_size();
-    std::vector<double> gain(n);
-    std::vector<char> negative(n);
-    const float *h0 = hdr.plane(0), *h1 = hdr.plane(1), *h2 = hdr.plane(2);
-    for (std::size_t i = 0; i < n; ++i) {
-        const double yh = double(h0[i]) * kLuma2020[0] + double(h1[i]) * kLuma2020[1] + double(h2[i]) * kLuma2020[2];
-        gain[i] = (yh + kStaticHdrFloor) / (linear[i] + kStaticSdrFloor);
-        negative[i] = yh < 0.0;
-    }
-    if (pixel_luma_.size() != n) {   // a shot's first frame
-        pixel_luma_ = std::move(luma);
-        pixel_peak_ = std::move(peak);
-        pixel_gain_ = std::move(gain);
-        return hdr;
-    }
-    // |luma - previous|, its 3x3 mean with the edges repeated (np.pad
-    // mode='edge'), summed in the Python's order.
-    std::vector<double> diff(n);
-    for (std::size_t i = 0; i < n; ++i) diff[i] = std::fabs(luma[i] - pixel_luma_[i]);
-    PlanarBuffer out(3, h, w);
-    float *o0 = out.plane(0), *o1 = out.plane(1), *o2 = out.plane(2);
+namespace {
+// The 3x3 mean with the edges repeated (np.pad mode='edge'), summed row of the
+// kernel by row as video.py mean3x3 sums.
+std::vector<double> mean3x3(const std::vector<double>& plane, int h, int w) {
+    std::vector<double> out(plane.size());
     for (int y = 0; y < h; ++y) {
-        const double* rows[3] = {diff.data() + std::size_t(std::max(y - 1, 0)) * w, diff.data() + std::size_t(y) * w,
-                                 diff.data() + std::size_t(std::min(y + 1, h - 1)) * w};
+        const double* rows[3] = {plane.data() + std::size_t(std::max(y - 1, 0)) * w, plane.data() + std::size_t(y) * w,
+                                 plane.data() + std::size_t(std::min(y + 1, h - 1)) * w};
         for (int x = 0; x < w; ++x) {
             const int xs[3] = {std::max(x - 1, 0), x, std::min(x + 1, w - 1)};
             double sum = 0.0;
             for (const double* row : rows)
                 for (int xi : xs) sum = sum + row[xi];
-            const double blurred = sum / 9.0;
-            const double t = std::clamp((blurred - kStaticStill) / (kStaticMoved - kStaticStill), 0.0, 1.0);
-            const std::size_t i = std::size_t(y) * w + x;
-            const bool skip = std::max(peak[i], pixel_peak_[i]) >= kStaticClipped ||
-                              std::min(peak[i], pixel_peak_[i]) <= kStaticCrushed || negative[i];
-            const double hold = skip ? 0.0 : retention_ * (1.0 - t * t * (3.0 - 2.0 * t));
-            const double held = hold * pixel_gain_[i] + (1.0 - hold) * gain[i];
-            pixel_gain_[i] = held;
-            const double f = held / gain[i];
-            o0[i] = static_cast<float>(double(h0[i]) * f);
-            o1[i] = static_cast<float>(double(h1[i]) * f);
-            o2[i] = static_cast<float>(double(h2[i]) * f);
+            out[std::size_t(y) * w + x] = sum / 9.0;
         }
+    }
+    return out;
+}
+
+double smooth_release(double t) { return 1.0 - t * t * (3.0 - 2.0 * t); }
+}  // namespace
+
+PlanarBuffer ShadowSmoother::hold_pixels(std::vector<double> luma, std::vector<double> peak,
+                                         const std::vector<double>& linear, const PlanarBuffer& hdr) {
+    if (!static_hold_ || retention_ == 0.0) return hdr;
+    const int h = hdr.height(), w = hdr.width();
+    const std::size_t n = hdr.plane_size();
+    std::vector<double> gain(n), yh(n);
+    const float *h0 = hdr.plane(0), *h1 = hdr.plane(1), *h2 = hdr.plane(2);
+    for (std::size_t i = 0; i < n; ++i) {
+        yh[i] = double(h0[i]) * kLuma2020[0] + double(h1[i]) * kLuma2020[1] + double(h2[i]) * kLuma2020[2];
+        gain[i] = (yh[i] + kStaticHdrFloor) / (linear[i] + kStaticSdrFloor);
+    }
+    if (pixel_luma_.size() != n) {   // a shot's first frame
+        pixel_luma_ = std::move(luma);
+        pixel_peak_ = std::move(peak);
+        pixel_gain_ = std::move(gain);
+        pixel_yh_ = std::move(yh);
+        return hdr;
+    }
+    // The source's change, and inside highlights clipped in both frames the
+    // HDR's own change (video.py hold_pixels, 11 Oct 2026).
+    std::vector<double> diff(n);
+    for (std::size_t i = 0; i < n; ++i) diff[i] = std::fabs(luma[i] - pixel_luma_[i]);
+    const std::vector<double> moved = mean3x3(diff, h, w);
+    bool any_both_clipped = false;
+    for (std::size_t i = 0; i < n && !any_both_clipped; ++i)
+        any_both_clipped = std::min(peak[i], pixel_peak_[i]) >= kStaticClipped;
+    std::vector<double> hdr_moved;
+    if (any_both_clipped) {
+        for (std::size_t i = 0; i < n; ++i)
+            diff[i] = std::fabs(std::log2(std::max(yh[i], 0.0) + kStaticHdrFloor) -
+                                std::log2(std::max(pixel_yh_[i], 0.0) + kStaticHdrFloor));
+        hdr_moved = mean3x3(diff, h, w);
+    }
+    PlanarBuffer out(3, h, w);
+    float *o0 = out.plane(0), *o1 = out.plane(1), *o2 = out.plane(2);
+    for (std::size_t i = 0; i < n; ++i) {
+        const double t = std::clamp((moved[i] - kStaticStill) / (kStaticMoved - kStaticStill), 0.0, 1.0);
+        double hold = retention_ * smooth_release(t);
+        const bool both_clipped = std::min(peak[i], pixel_peak_[i]) >= kStaticClipped;
+        if (both_clipped) {
+            const double th = std::clamp((hdr_moved[i] - kStaticHdrStill) / (kStaticHdrMoved - kStaticHdrStill), 0.0, 1.0);
+            hold = retention_ * smooth_release(th);
+        }
+        if ((std::max(peak[i], pixel_peak_[i]) >= kStaticClipped && !both_clipped) ||
+            std::min(peak[i], pixel_peak_[i]) <= kStaticCrushed || yh[i] < 0.0)
+            hold = 0.0;
+        const double held = hold * pixel_gain_[i] + (1.0 - hold) * gain[i];
+        pixel_gain_[i] = held;
+        const double f = held / gain[i];
+        o0[i] = static_cast<float>(double(h0[i]) * f);
+        o1[i] = static_cast<float>(double(h1[i]) * f);
+        o2[i] = static_cast<float>(double(h2[i]) * f);
     }
     pixel_luma_ = std::move(luma);
     pixel_peak_ = std::move(peak);
+    pixel_yh_ = std::move(yh);
     return out;
 }
 

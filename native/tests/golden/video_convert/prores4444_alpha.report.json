@@ -119,7 +119,7 @@
     "-framerate",
     "24",
     "-i",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-video-rm76e7u7/%08d.png",
+    "/tmp/nat/native/tests/golden/video_convert/rudra-video-d2lqls7e/%08d.png",
     "-itsoffset",
     "-0.0",
     "-i",
@@ -158,7 +158,7 @@
     "disabled",
     "-movflags",
     "+faststart+write_colr",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-master-ldngs0u1/prores4444_alpha.mov"
+    "/tmp/nat/native/tests/golden/video_convert/rudra-master-rk0vhutt/prores4444_alpha.mov"
   ],
   "qc": {
     "passed": true,
@@ -235,5 +235,5 @@
   },
   "max_cll": 1000,
   "max_fall": 102,
-  "elapsed_seconds": 0.5648500329998569
+  "elapsed_seconds": 0.5334094449999611
 }

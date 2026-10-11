@@ -24,15 +24,28 @@ public:
     // The shadow weight to show for frame `index`, whose SDR is `sdr` and whose
     // own weight is `weight`. Called once per frame shown, in playback order.
     double weight(int index, const SdrImage& sdr, double weight);
-    // The anchor hold to show for frame `index`, whose own is `hold` (its
-    // measure may arrive after later frames were shown).
-    double anchor(int index, double hold);
+    // The anchor hold to show for frame `index` of shot `shot` (shot() when
+    // that frame was shown), whose own is `hold`. Its measure may arrive after
+    // later frames were shown; one from another shot, or from before playback
+    // looped back to the start, is the frame's own and holds nothing.
+    double anchor(int index, double hold, int shot);
+    // The static hold (the viewer's hold pass, ViewerHold) for the frame last
+    // passed to weight(): off with no retention; the shot's first frame starts
+    // it; a later one holds with retention^(frames since the one before).
+    struct PixelStep {
+        bool on = false;
+        double strength = 0.0;
+        bool reset = true;
+    };
+    PixelStep pixel_step() const;
     double retention() const noexcept { return retention_; }
     int shot_start() const noexcept { return shot_start_; }
+    int shot() const noexcept { return shot_; }   // counts every start of a shot, loops included
 
 private:
     double retention_ = 0.0, cut_threshold_ = 0.15;
-    int last_ = -1, shot_start_ = -1, anchor_last_ = -1;
+    int last_ = -1, shot_start_ = -1, anchor_last_ = -1, shot_ = 0;
+    int gap_ = 0;   // frames between the last two weight() calls in the shot; 0: it started the shot
     PlanarBuffer thumb_;
     double weight_ = 1.0, log_hold_ = 0.0;
 };
