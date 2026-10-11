@@ -54,7 +54,9 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
                   tile_size: int, overlap: int, recovery_mode: str = "all",
                   recovery_strength: float = 1.0, bf16: bool = True,
                   source_curve: int | None = None,
-                  shadow_weight: float | torch.Tensor | None = None) -> torch.Tensor:
+                  shadow_weight: float | torch.Tensor | None = None,
+                  residual_scale: torch.Tensor | None = None,
+                  curve_params: torch.Tensor | None = None) -> torch.Tensor:
     """Memory-bounded image inference with overlap feathering.
 
     ``source_curve``: an id from rudra.sdr2hdr.SOURCE_CURVES for a model built
@@ -68,6 +70,11 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
     ``shadow_weight``: the per-frame shadow weight to use instead of the one
     the model predicts from this frame. `rudra video` passes its temporally
     smoothed value here; None (the default) predicts it, as before.
+
+    ``residual_scale`` and ``curve_params``: the same for the frame's residual
+    scale and curve, which `rudra video` holds steady across a shot (10 Oct
+    2026). None predicts them from this frame. Only meaningful for a model
+    with that head; a model without one ignores them.
     """
     if sdr.shape[0] != 1:
         raise ValueError("predict_image expects one image at a time")
@@ -76,14 +83,18 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
     # computed once here and handed to every tile. Left to itself each tile
     # would predict from its own window and a patch of sky inside a dim
     # interior would reconstruct as if the whole frame were a sunset.
-    scale = model.predict_residual_scale(sdr) if hasattr(model, "predict_residual_scale") else None
+    scale = residual_scale if residual_scale is not None else (
+        model.predict_residual_scale(sdr) if hasattr(model, "predict_residual_scale") else None)
     if shadow_weight is None and hasattr(model, "predict_shadow_weight"):
         shadow_weight = model.predict_shadow_weight(sdr)
     # Same reason for the curve: one tone-curve estimate per FRAME, or every
     # tile would invert its own guess and the seams would show.
     source = None if not source_curve else torch.tensor([int(source_curve)], device=sdr.device)
-    curve = (model.predict_curve(sdr, source) if source is not None else model.predict_curve(sdr)) \
-        if hasattr(model, "predict_curve") else None
+    if curve_params is not None:
+        curve = curve_params
+    else:
+        curve = (model.predict_curve(sdr, source) if source is not None else model.predict_curve(sdr)) \
+            if hasattr(model, "predict_curve") else None
     if source is not None and curve is None:
         raise ValueError("a source curve was given but this model has no CurveHead")
     if tile_size <= 0 or (height <= tile_size and width <= tile_size):

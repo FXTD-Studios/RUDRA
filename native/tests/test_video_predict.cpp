@@ -4,6 +4,7 @@
 // tools/emit_video_predict_golden.py. The network run is test_video_predict_real.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -150,4 +151,59 @@ TEST(VideoMaster, Float32MeanIsNumpys) {
         EXPECT_EQ(static_cast<double>(np_mean(std::span<const float>(a))), m["mean"].get<double>()) << n;
         EXPECT_EQ(static_cast<double>(*std::max_element(a.begin(), a.end())), m["max"].get<double>()) << n;
     }
+}
+
+// The static hold (10 Oct 2026): where the source is still the HDR's gain over
+// it is held with the shot's retention; where it moved, or at a cut, or off,
+// the frame is its own, bit for bit.
+TEST(VideoPredict, TheStaticHoldHoldsTheGainWhereTheSourceIsStill) {
+    const int h = 16, w = 16;
+    const std::vector<double> luma(std::size_t(h) * w, 0.8), linear(std::size_t(h) * w, 0.6), peak(std::size_t(h) * w, 0.85);
+    const PlanarBuffer thumb(3, kCutThumbHeight, kCutThumbWidth, 0.5f);
+    const PlanarBuffer hdr1(3, h, w, 0.10f), hdr2(3, h, w, 0.20f);
+    auto same = [](const PlanarBuffer& a, const PlanarBuffer& b) {
+        return std::equal(a.span().begin(), a.span().end(), b.span().begin());
+    };
+    const double r = 0.5;
+    for (auto [retention, on] : {std::pair{r, false}, std::pair{0.0, true}}) {   // off, or retention 0
+        ShadowSmoother s(retention, 0.15, on);
+        s.update(thumb, 1.0);
+        s.hold_pixels(luma, peak, linear, hdr1);
+        s.update(thumb, 1.0);
+        EXPECT_TRUE(same(s.hold_pixels(luma, peak, linear, hdr2), hdr2));
+    }
+    ShadowSmoother s(r, 0.15, true);
+    s.update(thumb, 1.0);
+    EXPECT_TRUE(same(s.hold_pixels(luma, peak, linear, hdr1), hdr1));   // a shot's first frame
+    // The next frame: the same source, the HDR twice as bright. Still pixels
+    // move half way (r = 0.5) in gain; a block that moved is its own.
+    std::vector<double> moved = luma;
+    for (int y = 4; y < 12; ++y)
+        for (int x = 4; x < 12; ++x) moved[std::size_t(y) * w + x] = 0.6;
+    // A pixel clipped in the source is never held, nor one whose HDR is negative.
+    std::vector<double> clipped = peak;
+    clipped[std::size_t(14) * w + 1] = 1.0;
+    PlanarBuffer hdr2n = hdr2;
+    for (int c = 0; c < 3; ++c) hdr2n.plane(c)[std::size_t(1) * w + 14] = -0.01f;
+    s.update(thumb, 1.0);
+    const PlanarBuffer o = s.hold_pixels(moved, clipped, linear, hdr2n);
+    EXPECT_NEAR(o.plane(0)[0], 0.15f, 1e-6f);
+    EXPECT_EQ(o.plane(1)[8 * w + 8], 0.20f);
+    EXPECT_EQ(o.plane(2)[14 * w + 1], 0.20f);
+    EXPECT_EQ(o.plane(0)[1 * w + 14], -0.01f);
+    s.update(PlanarBuffer(3, kCutThumbHeight, kCutThumbWidth, 0.9f), 1.0);   // a cut: its own again
+    EXPECT_TRUE(same(s.hold_pixels(moved, peak, linear, hdr1), hdr1));
+}
+
+TEST(VideoPredict, ExposureCellsAverageToTheExposure) {
+    std::vector<double> lum(72 * 128);
+    for (std::size_t i = 0; i < lum.size(); ++i) lum[i] = 0.01 + double(i % 97) / 50.0;
+    const auto cells = exposure_cells(lum, 72, 128);
+    ASSERT_EQ(cells.size(), std::size_t(kExposureThumbHeight * kExposureThumbWidth));
+    double sum = 0.0;
+    for (double v : cells) sum += v;
+    EXPECT_EQ(exposure_ev(lum, 72, 128), sum / double(cells.size()));
+    std::vector<double> twice(lum);
+    for (double& v : twice) v *= 2.0;
+    EXPECT_NEAR(exposure_ev(twice, 72, 128) - exposure_ev(lum, 72, 128), 1.0, 1e-2);
 }

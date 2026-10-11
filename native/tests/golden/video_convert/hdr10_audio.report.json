@@ -1,6 +1,6 @@
 {
-  "source": "/home/claude/rudra/native/tests/golden/video/clips/h264_709_audio.mp4",
-  "output": "/home/claude/rudra/native/tests/golden/video_convert/hdr10_audio.mp4",
+  "source": "/tmp/nat/native/tests/golden/video/clips/h264_709_audio.mp4",
+  "output": "/tmp/nat/native/tests/golden/video_convert/hdr10_audio.mp4",
   "input_contract": {
     "transfer": "rec709",
     "primaries": "rec709",
@@ -18,13 +18,15 @@
   "alpha_mode": null,
   "encoder_input_precision_bits": 10,
   "alpha_preserved": false,
-  "checkpoint": "/home/claude/rudra/checkpoints/sdr2hdr_shadow_v1.pt",
+  "checkpoint": "/tmp/pyrepo/checkpoints/sdr2hdr_shadow_v1.pt",
   "checkpoint_sha256": "6b7f73f0b44a6edc3e117373f7397ae3a8df12cb398ec4815597b6e2ebeb63f9",
   "mastering_peak_nits": 1000,
   "mastering_min_nits": 0.005,
   "audio_mode": "copy",
   "shadow_smoothing": 0,
   "cut_threshold": 0.15,
+  "temporal_smoothing": 0.25,
+  "static_hold": "on",
   "preserve_outside": true,
   "recovery_mode": "all",
   "tile_size": 512,
@@ -38,40 +40,62 @@
       "index": 0,
       "shadow_weight": 0.9671653509140015,
       "max_cll": 1000.0,
-      "frame_average": 75.85606384277344
+      "frame_average": 75.85606384277344,
+      "flicker_ev": null,
+      "local_flicker_ev": null
     },
     {
       "index": 1,
       "shadow_weight": 0.9671653509140015,
       "max_cll": 1000.0,
-      "frame_average": 75.85606384277344
+      "frame_average": 75.85606384277344,
+      "flicker_ev": 0.0,
+      "local_flicker_ev": 0.0
     },
     {
       "index": 2,
-      "shadow_weight": 0.9671626687049866,
+      "shadow_weight": 0.9671649387675247,
       "max_cll": 1000.0,
-      "frame_average": 75.85568237304688
+      "frame_average": 75.85613250732422,
+      "flicker_ev": 4.978229555252511e-06,
+      "local_flicker_ev": 3.889780694658107e-05
     },
     {
       "index": 3,
-      "shadow_weight": 0.9646223783493042,
+      "shadow_weight": 0.9667742506024939,
       "max_cll": 1000.0,
-      "frame_average": 74.44222259521484
+      "frame_average": 74.40513610839844,
+      "flicker_ev": 0.0016350929062678432,
+      "local_flicker_ev": 0.003808303494636988
     },
     {
       "index": 4,
-      "shadow_weight": 0.9670526385307312,
+      "shadow_weight": 0.9668170275088244,
       "max_cll": 1000.0,
-      "frame_average": 73.3223876953125
+      "frame_average": 73.25214385986328,
+      "flicker_ev": 0.0015099575601285053,
+      "local_flicker_ev": 0.00501946601557308
     },
     {
       "index": 5,
-      "shadow_weight": 0.967578113079071,
+      "shadow_weight": 0.966933975418003,
       "max_cll": 1000.0,
-      "frame_average": 73.59165954589844
+      "frame_average": 73.51927185058594,
+      "flicker_ev": 0.0001235837159168085,
+      "local_flicker_ev": 0.0035140398535332437
     }
   ],
   "warnings": [],
+  "temporal": {
+    "retention": 0.8463406563591698,
+    "static_hold": "on",
+    "frames_scored": 5,
+    "flicker_ev_mean": 0.000654722482373682,
+    "flicker_ev_max": 0.0016350929062678432,
+    "flicker_ev_max_frame": 3,
+    "local_flicker_ev_mean": 0.0024761414341379785,
+    "local_flicker_ev_max": 0.00501946601557308
+  },
   "encode_command": [
     "/usr/bin/ffmpeg",
     "-hide_banner",
@@ -83,11 +107,11 @@
     "-framerate",
     "24000/1001",
     "-i",
-    "/home/claude/rudra/native/tests/golden/video_convert/rudra-video-nlnqv3jk/%08d.png",
+    "/tmp/nat/native/tests/golden/video_convert/rudra-video-y_i856as/%08d.png",
     "-itsoffset",
     "-10.0",
     "-i",
-    "/home/claude/rudra/native/tests/golden/video/clips/h264_709_audio.mp4",
+    "/tmp/nat/native/tests/golden/video/clips/h264_709_audio.mp4",
     "-map",
     "0:v:0",
     "-map",
@@ -128,7 +152,7 @@
     "disabled",
     "-movflags",
     "+faststart+write_colr",
-    "/home/claude/rudra/native/tests/golden/video_convert/rudra-master-4b3hro20/hdr10_audio.mp4"
+    "/tmp/nat/native/tests/golden/video_convert/rudra-master-0d70cp7_/hdr10_audio.mp4"
   ],
   "qc": {
     "passed": true,
@@ -166,7 +190,7 @@
       "start_time": "0.000000",
       "duration_ts": 6006,
       "duration": "0.250250",
-      "bit_rate": "113518",
+      "bit_rate": "113902",
       "nb_frames": "6",
       "extradata_size": 2530,
       "disposition": {
@@ -227,5 +251,5 @@
   },
   "max_cll": 1000,
   "max_fall": 76,
-  "elapsed_seconds": 0.6956390669993198
+  "elapsed_seconds": 0.5414669120000326
 }

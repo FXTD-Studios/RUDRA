@@ -183,6 +183,7 @@ MainWindow::MainWindow(bool with_viewer) {
         QSettings st;
         play_state_->side = st.value("playback/side", 960).toInt();
         realtime_ = st.value("playback/realtime", true).toBool();
+        steady_ = st.value("video/steady", true).toBool();
     }
     // While playing: the rate reached, once a second, in the status bar.
     play_status_.setInterval(1000);
@@ -321,6 +322,7 @@ void MainWindow::bind_handlers() {
     h["playback-side-960"] = [this] { set_playback_side(960); };
     h["playback-side-640"] = [this] { set_playback_side(640); };
     h["playback-realtime"] = [this] { set_playback_realtime(!realtime_); };
+    h["steady-shots"] = [this] { set_steady_shots(!steady_); };
     h["user-guide"] = [this] {
         log("user guide: " + user_guide_url());
         QDesktopServices::openUrl(QUrl(user_guide_url()));
@@ -535,6 +537,7 @@ void MainWindow::sync_checks() {
     set("playback-side-960", play_state_->side.load() == 960);
     set("playback-side-640", play_state_->side.load() == 640);
     set("playback-realtime", realtime_);
+    set("steady-shots", steady_);
     for (SourceCurve c : all_source_curves())
         set("source-" + std::string(source_curve_id(c)), grade.source == source_curve_id(c));
     set("container-aces", session_.container == "aces");
@@ -625,7 +628,7 @@ void MainWindow::session_changed(std::uint32_t what) {
             // measure after a knee move lands; the per-pixel part is current).
             v.anchor = session_.anchor;
             v.anchor_knee = session_.anchor_knee;
-            v.anchor_hold = measure_ ? measure_->anchor_hold : 1.0;
+            v.anchor_hold = measure_ ? shown_hold_ : 1.0;
             v.wipe = session_.wipe ? *session_.wipe : -1.0;
             v.mode = session_.view_layer == 1   ? ViewMode::FalseColour
                      : session_.view_layer == 2 ? ViewMode::Difference
@@ -837,6 +840,7 @@ void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::fun
 }
 
 const Fields* MainWindow::frame_fields() const { return current_frame_ ? &current_frame_->fields : nullptr; }
+const FrameScalars* MainWindow::frame_scalars() const { return current_frame_ ? &current_frame_->scalars : nullptr; }
 
 void MainWindow::set_model_pills() {
     show_mode();
@@ -986,6 +990,7 @@ void MainWindow::close_frames() {
 }
 
 void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at) {
+    play_hold_.reset();   // another model or shot: nothing of the last one is held
     halt_playback();
     engine_.reset();   // joins the old worker before the new one starts
     frames_ = std::move(frames);
@@ -1087,6 +1092,7 @@ void MainWindow::toggle_play() {
     play_t0_ = std::chrono::steady_clock::now();
     play_from_ = current_;
     play_shown_ = play_skipped_ = play_shown_window_ = 0;
+    play_hold_.configure(play_fps(), steady_ ? kShotHoldSeconds : 0.0);
     start_feeder(current_ + 1);
     const int side = play_state_->side.load();
     log(QStringLiteral("playing at %1 fps").arg(play_fps(), 0, 'f', 3) +
@@ -1127,7 +1133,25 @@ void MainWindow::halt_playback() {
         if (feeder_slot_->feeder) feeder_slot_->feeder->stop();   // releases a loader waiting in take()
         feeder_slot_->feeder.reset();
     }
-    if (was) statusBar()->clearMessage();
+    if (was) {
+        statusBar()->clearMessage();
+        show_own_values();
+    }
+}
+
+void MainWindow::show_own_values() {
+    // Stopped: the frame on screen with its own shadow weight and anchor hold,
+    // not the ones held while playing (a stop that does not step to the frame,
+    // as a master render's, would otherwise keep them).
+    shown_hold_ = measure_ ? measure_->anchor_hold : 1.0;
+    if (!current_frame_ || current_frame_->scalars.shadow_weight == current_frame_->own_shadow_weight) return;
+    auto cur = std::make_shared<Current>(*current_frame_);
+    cur->scalars.shadow_weight = cur->own_shadow_weight;
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) viewer_->set_frame({cur->sdr, cur->fields, cur->scalars, cur->model});
+#endif
+    current_frame_ = std::move(cur);
+    run_stats();
 }
 
 void MainWindow::stop_playback() {
@@ -1186,6 +1210,15 @@ void MainWindow::set_playback_realtime(bool on) {
     sync_checks();
 }
 
+void MainWindow::set_steady_shots(bool on) {
+    steady_ = on;
+    QSettings().setValue("video/steady", on);
+    if (play_.isActive()) play_hold_.configure(play_fps(), on ? kShotHoldSeconds : 0.0);
+    log(on ? QStringLiteral("held steady within a shot while playing and in movie exports")
+           : QStringLiteral("each frame's own values while playing and in movie exports"));
+    sync_checks();
+}
+
 void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
     if (f.index != current_) return;   // the engine already dropped stale ones; this is the UI's own check
     waiting_ = false;
@@ -1210,7 +1243,12 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
     if (!f.from_cache) header.elapsed_s = f.infer_ms / 1000.0;
     else if (current_frame_ && current_frame_->header.elapsed_s) header.elapsed_s = current_frame_->header.elapsed_s;
     frame_proxy_ = f.fields->proxy;
-    present_frame(*f.sdr, f.fields->fields, f.fields->scalars, model, header);
+    FrameScalars scalars = f.fields->scalars;
+    const float own = scalars.shadow_weight;
+    // Playing: the shadow weight held across the shot, as the export holds it.
+    if (play_.isActive())
+        scalars.shadow_weight = static_cast<float>(play_hold_.weight(f.index, *f.sdr, scalars.shadow_weight));
+    present_frame(*f.sdr, f.fields->fields, scalars, model, header, own);
     const auto st = engine_->stats();
     frame_info_ = QStringLiteral("%1  %2/%3  ·  %4")
                       .arg(name)
@@ -1377,7 +1415,7 @@ void MainWindow::clear_scopes() {
 }
 
 void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars, ModelConstants model,
-                               FrameHeader header) {
+                               FrameHeader header, std::optional<float> own_shadow_weight) {
     auto cur = std::make_shared<Current>();
     cur->baseline_source = session_.source_curve();
     cur->baseline_calibration = session_.grade.calibration;
@@ -1398,6 +1436,8 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
     cur->scalars = std::move(scalars);
     cur->model = model;
     cur->header = std::move(header);
+    cur->index = current_;
+    cur->own_shadow_weight = own_shadow_weight.value_or(cur->scalars.shadow_weight);
     current_frame_ = std::move(cur);
     note_frame_in_strip(current_);
     run_stats();   // adopt(): computeStats at once for a new frame
@@ -1431,10 +1471,11 @@ void MainWindow::run_stats() {
     stats_worker_ = std::thread([self, frame, params, gen, cached, knee] {
         auto m = std::make_shared<const FrameMeasure>(
             measure_frame(frame->sdr, frame->fields, frame->scalars, frame->model, params, cached, knee));
-        QMetaObject::invokeMethod(qApp, [self, m, gen] {
+        const int index = frame->index;
+        QMetaObject::invokeMethod(qApp, [self, m, gen, index] {
             if (!self) return;
             self->stats_running_ = false;
-            if (gen == self->stats_gen_) self->apply_measure(m);
+            if (gen == self->stats_gen_) self->apply_measure(m, index);
             if (self->stats_again_) {
                 self->stats_again_ = false;
                 self->run_stats();
@@ -1453,7 +1494,7 @@ void MainWindow::measure_now() {
         f.baseline_source == params.source && f.baseline_calibration == params.calibration &&
                 f.baseline_reference == params.reference
             ? f.baseline.get() : nullptr,
-        session_.anchor_knee)));
+        session_.anchor_knee)), play_.isActive() ? f.index : -1);
 }
 
 void MainWindow::fill_rows(QWidget* ms, const std::vector<MetricRow>& rows) {
@@ -1484,16 +1525,18 @@ void MainWindow::fill_rows(QWidget* ms, const std::vector<MetricRow>& rows) {
     }
 }
 
-void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m) {
+void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m, int index) {
     measure_ = std::move(m);
     const auto& f = *measure_;
+    // Playing: the anchor's hold held across the shot, as the export holds it.
+    shown_hold_ = index >= 0 && play_.isActive() ? play_hold_.anchor(index, f.anchor_hold) : f.anchor_hold;
 #ifdef RUDRA_APP_VIEWER
     if (viewer_ && session_.anchor) {
         auto v = viewer_->view();
-        if (v.anchor_hold != f.anchor_hold || v.anchor_knee != f.anchor_knee) {
+        if (v.anchor_hold != shown_hold_ || v.anchor_knee != f.anchor_knee) {
             v.anchor = true;
             v.anchor_knee = f.anchor_knee;
-            v.anchor_hold = f.anchor_hold;
+            v.anchor_hold = shown_hold_;
             viewer_->set_view(v);
         }
     }
@@ -2240,7 +2283,7 @@ bool MainWindow::queue_video_export(const QString& format) {
     }
     auto queue = write_export_queue(shot_video_->path, output,
                                     use_model_ ? manifest_->root / "manifest.json" : std::filesystem::path(),
-                                    format.toStdString(), grade);
+                                    format.toStdString(), grade, steady_ ? kShotHoldSeconds : 0.0);
     if (!queue) {
         say(QString::fromStdString(queue.error().message));
         return false;

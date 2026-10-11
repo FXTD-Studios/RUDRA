@@ -33,6 +33,14 @@ struct VideoConvertArgs {
     std::string preset = "medium";
     int tile_size = 512, tile_overlap = 64;
     double shadow_smoothing = 0.0, cut_threshold = 0.15;
+    // Seconds: the per-frame values (shadow weight, residual scale, curve, the
+    // anchor's hold) held steady within a shot with this time constant
+    // (10 Oct 2026); 0 turns it off. shadow_smoothing, when set, is the
+    // retention instead, as before.
+    double temporal_smoothing = 0.25;
+    // "on": where the source pixel is still, the HDR's gain over it held the
+    // same way (ShadowSmoother::hold_pixels); "off": per frame.
+    std::string static_hold = "on";
     std::optional<std::filesystem::path> work_dir;
     // The app's movie export (10 Oct 2026): the settings of the view and of
     // Master EXR (a master-params JSON, deliver/master.hpp) applied to every

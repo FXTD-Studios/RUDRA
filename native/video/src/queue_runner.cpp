@@ -69,6 +69,8 @@ Result<VideoConvertArgs> convert_args_for(const QueueJob& job) {
         else if (k == "tile-overlap") a.tile_overlap = std::atoi(v.c_str());
         else if (k == "shadow-smoothing") a.shadow_smoothing = std::strtod(v.c_str(), &end);
         else if (k == "cut-threshold") a.cut_threshold = std::strtod(v.c_str(), &end);
+        else if (k == "temporal-smoothing") a.temporal_smoothing = std::strtod(v.c_str(), &end);
+        else if (k == "static-hold") a.static_hold = v;
         else if (k == "grade") a.grade_file = fs::path(v);
         else return make_error(ErrorCode::InvalidArgument, "Invalid video options in queue", k);
     }
