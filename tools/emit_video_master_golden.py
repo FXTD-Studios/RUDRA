@@ -92,7 +92,10 @@ def run(name: str, clip: str, suffix: str, flags: list[str]) -> dict:
     real = video.Predictor, video.encode_command
     with tempfile.TemporaryDirectory() as tmp:
         args = parser.parse_args([str(CLIPS / clip), "--output", str(Path(tmp) / ("out" + suffix)),
-                                  "--checkpoint", str(CLIPS / clip), *flags])
+                                  "--checkpoint", str(CLIPS / clip), *flags,
+                                  # The recorded HDR goes to the master as it is: the static hold
+                                  # (10 Oct 2026) would change it, and this golden is the mastering.
+                                  "--static-hold", "off"])
         video.Predictor, video.encode_command = Predictor, encode_command
         try:
             video.convert_video(args)
