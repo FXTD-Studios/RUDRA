@@ -171,8 +171,9 @@ public:
     // A frame to show and measure (the engine's, or a test's): the viewer
     // gets it now, the measurements follow on their own thread.
     // `own_shadow_weight`: the frame's own when `scalars` carries a held one (playing).
+    // `pixel`: the static hold's step for the viewer (playing held; off otherwise).
     void present_frame(SdrImage sdr, Fields fields, FrameScalars scalars, ModelConstants model, FrameHeader header,
-                       std::optional<float> own_shadow_weight = std::nullopt);
+                       std::optional<float> own_shadow_weight = std::nullopt, PlaybackHold::PixelStep pixel = {});
     // Measure the frame on screen now, on this thread (the tests).
     void measure_now();
     const FrameMeasure* measurement() const { return measure_.get(); }
@@ -395,7 +396,7 @@ private:
     void schedule_stats();
     void run_stats();
     // `index`: the frame it measured (-1: the one on screen, not held).
-    void apply_measure(std::shared_ptr<const FrameMeasure> m, int index = -1);
+    void apply_measure(std::shared_ptr<const FrameMeasure> m, int index = -1, int hold_shot = -1);
     void show_own_values();
     void update_pipe();
     // The compare line under the Compare bar: what RUDRA changed and how much
@@ -453,6 +454,7 @@ private:
         FrameHeader header;
         int index = -1;   // the frame's index in the shot
         float own_shadow_weight = 1.0f;   // before the playback hold
+        int hold_shot = -1;               // PlaybackHold::shot() when it was shown
     };
     std::shared_ptr<const Current> current_frame_;
     std::shared_ptr<const FrameMeasure> measure_;

@@ -47,6 +47,18 @@ struct ViewUbo {
 };
 static_assert(sizeof(ViewUbo) == 44 * sizeof(float));
 
+// The Hold block of shaders/hold.frag (the static hold while playing).
+struct HoldUbo {
+    float hold[4];   // x retention^frames since the previous one shown, y 1: the shot's first frame
+};
+
+inline HoldUbo hold_ubo(double strength, bool reset) {
+    HoldUbo u{};
+    u.hold[0] = float(std::clamp(strength, 0.0, 1.0));
+    u.hold[1] = reset ? 1.0f : 0.0f;
+    return u;
+}
+
 // The Reduce block of shaders/reduce.frag.
 struct ReduceUbo {
     float sizes[4];

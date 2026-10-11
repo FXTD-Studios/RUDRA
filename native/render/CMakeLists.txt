@@ -17,7 +17,7 @@ if(RUDRA_BUILD_RENDER)
     PREFIX "/rudra/shaders"
     BASE shaders
     GLSL "300es,330"   # texelFetch and float render targets: no GLSL ES 1.0
-    FILES shaders/fullscreen.vert shaders/composite.frag shaders/display.frag shaders/reduce.frag
+    FILES shaders/fullscreen.vert shaders/composite.frag shaders/display.frag shaders/reduce.frag shaders/hold.frag
           shaders/blit.vert shaders/blit.frag)
 endif()
 

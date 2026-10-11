@@ -25,7 +25,11 @@ bool one_of(const std::string& v, const std::set<std::string>& choices) { return
 
 int cmd_video(const std::vector<std::string>& args) {
     // video.py add_arguments, with the package in the checkpoint's place.
-    if (args.size() < 2) return usage_error("usage: rudra-native video <package> <input> --output <file> [options]");
+    // --grade <settings.json> (native only, 11 Oct 2026): the app's movie export
+    // from the command line, the master's chain with those settings; an
+    // analytic one needs no package ("-" in its place).
+    if (args.size() < 2)
+        return usage_error("usage: rudra-native video <package|-> <input> --output <file> [--grade <settings.json>] [options]");
     VideoConvertArgs a;
     a.package = args[0];
     a.input = args[1];
@@ -90,6 +94,7 @@ int cmd_video(const std::vector<std::string>& args) {
             a.static_hold = v;
         }
         else if (k == "--work-dir") a.work_dir = fs::path(v);
+        else if (k == "--grade") a.grade_file = fs::path(v);
         else if (k == "--runtime") runtime = v;
         else if (k == "--device") device = v;
         else return usage_error("unrecognized argument: " + k);
@@ -101,6 +106,22 @@ int cmd_video(const std::vector<std::string>& args) {
         if (!e.detail.empty()) std::fprintf(stderr, "  %s\n", e.detail.c_str());
         return 2;
     };
+    VideoConvertHooks hooks;
+    hooks.print = [](const std::string& line) {
+        std::printf("%s\n", line.c_str());
+        std::fflush(stdout);
+    };
+    if (a.grade_file) {
+        auto g = read_grade_file(*a.grade_file);
+        if (!g) return fail(g.error());
+        a.grade = *g;
+        if (g->analytic) {   // no model runs, none is opened
+            auto r = convert_video(a, nullptr, nullptr, hooks);
+            if (!r) return fail(r.error());
+            return 0;
+        }
+    }
+    if (a.package == "-") return usage_error("this export runs the model: give its package");
     auto m = read_manifest(a.package);
     if (!m) return fail(m.error());
     const auto dev = device_from_string(device);
@@ -114,11 +135,6 @@ int cmd_video(const std::vector<std::string>& args) {
         if (!b) b = make_onnxruntime_backend(*m, *dev);
     }
     if (!b) return fail(b.error());
-    VideoConvertHooks hooks;
-    hooks.print = [](const std::string& line) {
-        std::printf("%s\n", line.c_str());
-        std::fflush(stdout);
-    };
     auto r = convert_video(a, *m, **b, hooks);
     if (!r) return fail(r.error());
     return 0;

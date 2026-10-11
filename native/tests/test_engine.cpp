@@ -259,7 +259,7 @@ TEST(PlaybackHold, HoldsTheWeightAcrossTheShotAndResetsAtACut) {
     h.configure(24.0, 0.0);                                                    // off
     h.weight(0, flat_sdr(0.5f), 1.0);
     EXPECT_DOUBLE_EQ(h.weight(1, flat_sdr(0.5f), 0.2), 0.2);
-    EXPECT_EQ(h.anchor(1, 3.3), 3.3);                                         // exactly its own
+    EXPECT_EQ(h.anchor(1, 3.3, h.shot()), 3.3);                                         // exactly its own
 }
 
 TEST(PlaybackHold, HoldsTheAnchorInStops) {
@@ -269,11 +269,61 @@ TEST(PlaybackHold, HoldsTheAnchorInStops) {
     h.weight(0, flat_sdr(0.5f), 1.0);
     h.weight(1, flat_sdr(0.5f), 1.0);
     h.weight(2, flat_sdr(0.5f), 1.0);
-    EXPECT_DOUBLE_EQ(h.anchor(0, 2.0), 2.0);
-    EXPECT_NEAR(h.anchor(2, 8.0), std::exp2(r * r * 1.0 + (1.0 - r * r) * 3.0), 1e-12);   // log2: 1 -> 3
-    EXPECT_NEAR(h.anchor(2, 1.0), std::exp2(r * r * 1.0 + (1.0 - r * r) * 3.0), 1e-12);   // measured again
+    const int first = h.shot();
+    EXPECT_DOUBLE_EQ(h.anchor(0, 2.0, first), 2.0);
+    EXPECT_NEAR(h.anchor(2, 8.0, first), std::exp2(r * r * 1.0 + (1.0 - r * r) * 3.0), 1e-12);   // log2: 1 -> 3
+    EXPECT_NEAR(h.anchor(2, 1.0, first), std::exp2(r * r * 1.0 + (1.0 - r * r) * 3.0), 1e-12);   // measured again
     h.weight(3, flat_sdr(0.9f), 1.0);                                                       // a cut at 3
-    EXPECT_DOUBLE_EQ(h.anchor(2, 5.0), 5.0);    // a late measure from the shot before: its own, nothing held
-    EXPECT_DOUBLE_EQ(h.anchor(3, 4.0), 4.0);    // the new shot starts at its own
-    EXPECT_DOUBLE_EQ(h.anchor(4, 0.0), 0.0);    // no hold to hold
+    EXPECT_NE(h.shot(), first);
+    EXPECT_DOUBLE_EQ(h.anchor(2, 5.0, first), 5.0);      // a late measure from the shot before: its own, nothing held
+    EXPECT_DOUBLE_EQ(h.anchor(3, 4.0, h.shot()), 4.0);   // the new shot starts at its own
+    EXPECT_DOUBLE_EQ(h.anchor(4, 0.0, h.shot()), 0.0);   // no hold to hold
+}
+
+// Playback loops back to the start: a measure from the last frames of the pass
+// before arrives after frame 0 was shown again. It is the frame's own and does
+// not leak into the new pass (10 Oct 2026: it was blended in for one measure).
+TEST(PlaybackHold, ALateMeasureFromBeforeALoopHoldsNothing) {
+    PlaybackHold h;
+    h.configure(24.0, kShotHoldSeconds);
+    for (int i = 0; i < 6; ++i) h.weight(i, flat_sdr(0.5f), 1.0);
+    const int before = h.shot();
+    EXPECT_DOUBLE_EQ(h.anchor(3, 2.0, before), 2.0);
+    h.weight(0, flat_sdr(0.5f), 1.0);   // looped: the same picture, a new pass
+    EXPECT_NE(h.shot(), before);
+    EXPECT_DOUBLE_EQ(h.anchor(5, 64.0, before), 64.0);    // late, from the pass before
+    EXPECT_DOUBLE_EQ(h.anchor(0, 4.0, h.shot()), 4.0);    // the new pass starts at its own, not near 64
+    EXPECT_NEAR(h.anchor(1, 4.0, h.shot()), 4.0, 1e-12);
+}
+
+// The static hold while playing (11 Oct 2026): the viewer's hold pass steps
+// with the shot as weight() sees it -- the shot's first frame starts it, a
+// later one holds with retention^(frames since the one before), a cut or a
+// step back starts again; off, nothing is held.
+TEST(PlaybackHold, StepsTheStaticHoldWithTheShot) {
+    PlaybackHold h;
+    h.configure(24.0, kShotHoldSeconds);
+    const double r = std::exp(-1.0 / 6.0);
+    EXPECT_FALSE(h.pixel_step().on);   // nothing shown yet
+    h.weight(0, flat_sdr(0.5f), 1.0);
+    auto s = h.pixel_step();
+    EXPECT_TRUE(s.on && s.reset);
+    h.weight(1, flat_sdr(0.5f), 1.0);
+    s = h.pixel_step();
+    EXPECT_TRUE(s.on && !s.reset);
+    EXPECT_DOUBLE_EQ(s.strength, r);
+    h.weight(1, flat_sdr(0.5f), 1.0);   // the same frame again: the same step
+    EXPECT_DOUBLE_EQ(h.pixel_step().strength, r);
+    h.weight(4, flat_sdr(0.5f), 1.0);   // two frames skipped
+    EXPECT_DOUBLE_EQ(h.pixel_step().strength, r * r * r);
+    h.weight(5, flat_sdr(0.9f), 1.0);   // a cut
+    EXPECT_TRUE(h.pixel_step().reset);
+    h.weight(6, flat_sdr(0.9f), 1.0);
+    EXPECT_FALSE(h.pixel_step().reset);
+    h.weight(2, flat_sdr(0.9f), 1.0);   // back to the start
+    EXPECT_TRUE(h.pixel_step().reset);
+    h.configure(24.0, 0.0);              // off
+    h.weight(0, flat_sdr(0.5f), 1.0);
+    h.weight(1, flat_sdr(0.5f), 1.0);
+    EXPECT_FALSE(h.pixel_step().on);
 }

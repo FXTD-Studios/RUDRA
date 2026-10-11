@@ -48,6 +48,17 @@ struct ViewerStatus {
     bool grab_pending = false;       // its readback is in flight
 };
 
+// The static hold while playing (11 Oct 2026; ShadowSmoother::hold_pixels,
+// shaders/hold.frag): where the source is still from the frame shown before,
+// the HDR's gain over it is held, so a still part of a shot plays as the
+// export holds it. engine/PlaybackHold says when (PlaybackHold::pixel_step).
+struct ViewerHold {
+    bool on = false;          // off: the frame's own composite, and the state is dropped
+    double strength = 0.0;    // retention^frames since the previous frame shown
+    bool reset = true;        // the shot's first frame: its own, and the state starts again
+    long long frame = -1;     // which frame: the same one again re-renders it, it does not step the hold
+};
+
 // One frame on the GPU: the SDR the network saw, its fields, and the
 // per-frame scalars. The baseline is computed from them once per frame.
 struct ViewerFrame {
@@ -55,6 +66,7 @@ struct ViewerFrame {
     Fields fields;
     FrameScalars scalars;
     ModelConstants model;
+    ViewerHold hold{};
 };
 
 class ViewerWindow : public QWindow {
