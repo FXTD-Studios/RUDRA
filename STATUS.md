@@ -74,6 +74,19 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **11 Oct 2026, later — Dolby Vision and HDR10+ metadata in movie exports (line F, item 6).** PQ exports
+> (HDR10, ProRes PQ) analyse every mastered frame (`analyze_frame`, MaxRGB) and write per shot of the
+> export's own cuts (`shots_from_cuts`): `<output>_hdr10plus.json` (x265's LLC JSON: one SceneInfo per
+> frame, 0.1 cd/m2, DistributionIndex 1..99), `<output>_dovi_generate.json` (dovi_tool generate: L1 now
+> `{"Level1": ...}` with its CM v4.0 clamps, L6 from the mastering display and MaxCLL/FALL), the analysis and
+> the HDR10+ scenes file. HDR10 embeds HDR10+ via `-x265-params dhdr10-info` when a one-frame probe shows the
+> ffmpeg's x265 has ENABLE_HDR10_PLUS; QC then requires ST 2094-40 on frame 1. Ubuntu's x265 does not, so CI
+> runs the sidecar path; the embedded path was run here against an x265 3.5 built with HDR10+. Validated with
+> third-party tools: hdr10plus_tool extract gives back our values, hdr10plus_tool inject accepts the file,
+> dovi_tool generate accepts the config (the old `{"Level": 1}` blocks were not accepted). Python and native
+> in parity (goldens re-emitted: delivery, video_convert, video_queue). Reviewed: x265-params escaping (quote,
+> blank, colon, backslash), names per output (clip.mp4 and clip.mov), publish order, probe caching.
+>
 > **11 Oct 2026 — beta 10 prepared (line F).** v0.9.0-beta.9 was tagged on bbf6726 (the shot hold) before
 > the static hold (0dbad8f) and the notes (a8ac01a) landed, so they ship as beta 10 (`RUDRA_RELEASE` beta.10,
 > docs/BETA.md "Changes since beta 9"); the beta 9 tag stays where it was published.

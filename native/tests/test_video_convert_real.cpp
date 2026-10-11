@@ -60,6 +60,34 @@ void compare(const ojson& got, const ojson& want, const std::string& path, doubl
     }
     EXPECT_EQ(got, want) << path;
 }
+// The dynamic HDR metadata files (10 Oct 2026): the same structure; numbers
+// within `tol` of the Python's, integers (PQ codes, 0.1 nits) within one step
+// of rounding as well.
+void compare_numbers(const ojson& got, const ojson& want, const std::string& path, double tol) {
+    if (want.is_object() || want.is_array()) {
+        ASSERT_EQ(got.type(), want.type()) << path;
+        ASSERT_EQ(got.size(), want.size()) << path;
+        if (want.is_object()) {
+            std::vector<std::string> gk, wk;
+            for (auto it = got.begin(); it != got.end(); ++it) gk.push_back(it.key());
+            for (auto it = want.begin(); it != want.end(); ++it) wk.push_back(it.key());
+            EXPECT_EQ(gk, wk) << path;   // the Python's key order
+            for (auto it = want.begin(); it != want.end(); ++it) {
+                ASSERT_TRUE(got.contains(it.key())) << path << "." << it.key();
+                compare_numbers(got[it.key()], it.value(), path + "." + it.key(), tol);
+            }
+        } else {
+            for (std::size_t i = 0; i < want.size(); ++i) compare_numbers(got[i], want[i], path + "[" + std::to_string(i) + "]", tol);
+        }
+        return;
+    }
+    if (want.is_number()) {
+        const double w = want.get<double>(), g = got.get<double>();
+        EXPECT_LE(std::fabs(g - w), tol * std::max(1.0, std::fabs(w)) + (want.is_number_integer() ? 1.0 : 0.0)) << path;
+        return;
+    }
+    EXPECT_EQ(got, want) << path;
+}
 }  // namespace
 
 TEST(VideoConvertReal, ReportAndMasterAreThePythons) {
@@ -94,6 +122,7 @@ TEST(VideoConvertReal, ReportAndMasterAreThePythons) {
                 else if (k == "--shadow-smoothing") a.shadow_smoothing = std::stod(v);
                 else if (k == "--temporal-smoothing") a.temporal_smoothing = std::stod(v);
                 else if (k == "--static-hold") a.static_hold = v;
+                else if (k == "--dynamic-metadata") a.dynamic_metadata = v;
                 else if (k == "--peak-nits") a.peak_nits = std::stod(v);
                 else if (k == "--tile-size") a.tile_size = std::stoi(v);
                 else if (k == "--tile-overlap") a.tile_overlap = std::stoi(v);
@@ -132,8 +161,35 @@ TEST(VideoConvertReal, ReportAndMasterAreThePythons) {
                 }
             }
             got["encode_command"].back() = want["encode_command"].back();   // the output's own name
+            // An ffmpeg whose x265 writes HDR10+ embeds it where the recording one
+            // could not: what follows from that is compared on its own.
+            if (want["hdr_metadata"].is_object() &&
+                got["hdr_metadata"]["hdr10plus"]["embedded"] != want["hdr_metadata"]["hdr10plus"]["embedded"]) {
+                EXPECT_TRUE(got["hdr_metadata"]["hdr10plus"]["embedded"].get<bool>());
+                EXPECT_TRUE(got["qc"]["hdr10plus"]["passed"].get<bool>());
+                got["hdr_metadata"]["hdr10plus"] = want["hdr_metadata"]["hdr10plus"];
+                got["qc"].erase("hdr10plus");
+                for (auto* j : {&got, &want}) (*j)["qc"].erase("hdr_side_data");
+                for (std::size_t i = 0; i < got["encode_command"].size(); ++i) {
+                    auto s = got["encode_command"][i].get<std::string>();
+                    if (const auto at = s.find(":dhdr10-info="); at != std::string::npos)
+                        got["encode_command"][i] = s.substr(0, at);
+                }
+            }
             int floats_off = 0;
             compare(got, want, "", tol.atol + tol.rtol, floats_off);
+            if (!want["hdr_metadata"].is_null()) {
+                const auto& hm = want["hdr_metadata"];
+                for (const char* k : {"dovi_generate", "analysis", "hdr10plus_scenes"}) {
+                    const auto name = hm[k].get<std::string>();
+                    ASSERT_TRUE(fs::exists(r->output.parent_path() / name)) << name;
+                    compare_numbers(ojson::parse(slurp(r->output.parent_path() / name)),
+                                    ojson::parse(slurp(kGolden / "video_convert" / name)), name, tol.atol + tol.rtol);
+                }
+                const auto h10 = hm["hdr10plus"]["file"].get<std::string>();
+                compare_numbers(ojson::parse(slurp(r->output.parent_path() / h10)),
+                                ojson::parse(slurp(kGolden / "video_convert" / h10)), h10, tol.atol + tol.rtol);
+            }
             std::cout << "[ video ] " << to_string(rt) << " " << c["name"].get<std::string>() << ": master "
                       << (same_master ? "byte-identical" : "differs") << ", " << floats_off << " per-frame floats not bit-equal\n";
             // HLG's codes are float64 and exact, so its master is the Python's byte for byte.

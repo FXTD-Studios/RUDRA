@@ -132,7 +132,8 @@ def test_sidecars_written_and_consistent(tmp_path):
     dovi = json.loads(paths["dovi"].read_text())
     assert dovi["profile"] == "8.1" and dovi["length"] == 4
     assert dovi["level6"]["max_content_light_level"] == 830
-    assert all(0 <= s["metadata_blocks"][0]["max_pq"] <= 4095 for s in dovi["shots"])
+    # dovi_tool's block shape (10 Oct 2026), clamped as its generator clamps.
+    assert all(2081 <= s["metadata_blocks"][0]["Level1"]["max_pq"] <= 4095 for s in dovi["shots"])
     hdr10p = json.loads(paths["hdr10plus"].read_text())
     assert hdr10p["SceneInfo"][0]["LuminanceParameters"]["MaxSCL"][0] == pytest.approx(830.0)
     sidecar = json.loads(paths["rudra"].read_text())

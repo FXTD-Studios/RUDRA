@@ -35,7 +35,7 @@ from ..hdr10 import pq_oetf
 __all__ = [
     "FrameStats", "analyze_frame", "detect_shots", "maxcll_maxfall",
     "l1_per_shot", "to_dovi_generate_json", "to_hdr10plus_json",
-    "to_rudra_sidecar", "write_all_sidecars",
+    "to_rudra_sidecar", "write_all_sidecars", "shots_from_cuts", "to_hdr10plus_x265_json",
 ]
 
 _PERCENTILES = (1.0, 5.0, 10.0, 25.0, 50.0, 75.0, 90.0, 95.0, 99.98)
@@ -129,6 +129,22 @@ def l1_per_shot(stats: list[FrameStats], shots: list[tuple[int, int]]) -> list[d
     return out
 
 
+# dovi_tool's own generator clamps L1 to these (dolby_vision ExtMetadataBlockLevel1,
+# CM v4.0): min at most 12, max at least 2081 (100 nits), avg at least 1229 and
+# below max. The analysis sidecar keeps the measured values.
+L1_MIN_PQ_MAX, L1_MAX_PQ_MIN, L1_MAX_PQ_MAX, L1_AVG_PQ_MIN_CMV40 = 12, 2081, 4095, 1229
+
+
+def _l1_block(shot: dict) -> dict:
+    """A shot's L1 as dovi_tool reads it: {"Level1": {min_pq, max_pq, avg_pq}}."""
+    max_pq = min(max(shot["max_pq"], L1_MAX_PQ_MIN), L1_MAX_PQ_MAX)
+    return {"Level1": {
+        "min_pq": min(max(shot["min_pq"], 0), L1_MIN_PQ_MAX),
+        "max_pq": max_pq,
+        "avg_pq": min(max(shot["avg_pq"], L1_AVG_PQ_MIN_CMV40), max_pq - 1),
+    }}
+
+
 def to_dovi_generate_json(
     stats: list[FrameStats],
     shots: list[tuple[int, int]] | None = None,
@@ -152,12 +168,7 @@ def to_dovi_generate_json(
             {
                 "start": shot["start"],
                 "duration": shot["duration"],
-                "metadata_blocks": [{
-                    "Level": 1,
-                    "min_pq": shot["min_pq"],
-                    "max_pq": shot["max_pq"],
-                    "avg_pq": shot["avg_pq"],
-                }],
+                "metadata_blocks": [_l1_block(shot)],
             }
             for shot in l1_per_shot(stats, shots)
         ],
@@ -206,6 +217,58 @@ def to_hdr10plus_json(
     }
 
 
+def shots_from_cuts(cuts: list[int], frame_count: int) -> list[tuple[int, int]]:
+    """[(start, length), ...] from the frame indices that start a shot (a
+    movie export's scene_cuts); frame 0 always starts one."""
+    starts = sorted({0, *(c for c in cuts if 0 < c < frame_count)})
+    return [(s, (starts[i + 1] if i + 1 < len(starts) else frame_count) - s) for i, s in enumerate(starts)]
+
+
+# HDR10+ for x265's --dhdr10-info and hdr10plus_tool inject (the "LLC" JSON,
+# x265 source/dynamicHDR10/metadataFromJson.cpp): one SceneInfo entry per
+# frame, holding its shot's statistics so they never change mid-shot; MaxScl,
+# AverageRGB and DistributionValues in 0.1 cd/m2 (ST 2094-40: 0.00001 of
+# 10,000), DistributionIndex in whole percent (the 99.98th is 99).
+HDR10PLUS_INDEX = (1, 5, 10, 25, 50, 75, 90, 95, 99)
+
+
+def _tenth_nits(nits: float) -> int:
+    return int(min(max(np.floor(float(nits) * 10.0 + 0.5), 0), 100000))   # half up, as C++ rounds
+
+
+def to_hdr10plus_x265_json(stats: list[FrameStats], shots: list[tuple[int, int]] | None = None) -> dict:
+    """Per-frame HDR10+ (profile A, one window, no targeted display) for x265."""
+    shots = shots or detect_shots(stats)
+    frames = []
+    for scene_id, (start, length) in enumerate(shots):
+        window = stats[start:start + length]
+        luminance = {
+            "AverageRGB": _tenth_nits(np.mean([s.avg_nits for s in window])),
+            "LuminanceDistributions": {
+                "DistributionIndex": list(HDR10PLUS_INDEX),
+                "DistributionValues": [_tenth_nits(max(s.percentiles_nits[i] for s in window))
+                                       for i in range(len(_PERCENTILES))],
+            },
+            "MaxScl": [_tenth_nits(max(s.maxscl_nits[c] for s in window)) for c in range(3)],
+        }
+        for k in range(length):
+            frames.append({
+                "LuminanceParameters": luminance,
+                "NumberOfWindows": 1,
+                "TargetedSystemDisplayMaximumLuminance": 0,
+                "SceneFrameIndex": k,
+                "SceneId": scene_id,
+                "SequenceFrameIndex": start + k,
+            })
+    return {
+        "JSONInfo": {"HDR10plusProfile": "A", "Version": "1.0"},
+        "SceneInfo": frames,
+        "SceneInfoSummary": {"SceneFirstFrameIndex": [s for s, _ in shots],
+                             "SceneFrameNumbers": [n for _, n in shots]},
+        "ToolInfo": {"Tool": "RUDRA", "Version": "1.0"},
+    }
+
+
 def to_rudra_sidecar(stats: list[FrameStats], shots: list[tuple[int, int]] | None = None) -> dict:
     """Canonical self-describing sidecar: everything in nits AND 12-bit PQ."""
     shots = shots or detect_shots(stats)
@@ -235,11 +298,14 @@ def write_all_sidecars(
     output_stem: str | Path,
     mastering_peak_nits: float = 1000.0,
     shot_threshold: float = 0.35,
+    shots: list[tuple[int, int]] | None = None,
+    mastering_min_nits: float = 0.0001,
 ) -> dict[str, Path]:
-    """Write the three sidecars next to ``output_stem`` and return their paths."""
+    """Write the three sidecars next to ``output_stem`` and return their paths.
+    ``shots``: the shots to use (a movie export's cuts); else detected."""
     stem = Path(output_stem)
     stem.parent.mkdir(parents=True, exist_ok=True)
-    shots = detect_shots(stats, threshold=shot_threshold)
+    shots = shots if shots is not None else detect_shots(stats, threshold=shot_threshold)
     paths = {
         "rudra": stem.with_name(stem.name + "_hdr_analysis.json"),
         "dovi": stem.with_name(stem.name + "_dovi_generate.json"),
@@ -247,6 +313,6 @@ def write_all_sidecars(
     }
     paths["rudra"].write_text(json.dumps(to_rudra_sidecar(stats, shots), indent=2), encoding="utf-8", newline="\n")
     paths["dovi"].write_text(
-        json.dumps(to_dovi_generate_json(stats, shots, mastering_peak_nits), indent=2), encoding="utf-8", newline="\n")
+        json.dumps(to_dovi_generate_json(stats, shots, mastering_peak_nits, mastering_min_nits), indent=2), encoding="utf-8", newline="\n")
     paths["hdr10plus"].write_text(json.dumps(to_hdr10plus_json(stats, shots), indent=2), encoding="utf-8", newline="\n")
     return paths

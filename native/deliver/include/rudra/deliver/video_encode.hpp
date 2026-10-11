@@ -5,6 +5,7 @@
 // output and renamed into place, never replacing anything.
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -22,7 +23,15 @@ struct VideoEncodeRequest {
     double peak_nits = 1000.0;
     double min_nits = 0.005;
     bool alpha = false;             // args.preserve_alpha
+    // HDR10+ (10 Oct 2026): x265's --dhdr10-info file, for HDR10 when this
+    // ffmpeg's x265 can write it (video.py encode_command hdr10plus=).
+    std::optional<std::filesystem::path> hdr10plus;
 };
+
+// A path inside -x265-params: ffmpeg splits the options on ':' and reads each
+// value as a token where a backslash escapes, a quote quotes and blanks at
+// either end are dropped; all of those are escaped (video.py x265_param_path).
+std::string x265_param_path(const std::filesystem::path& path);
 
 // x265's master-display string, luminances in 0.0001-nit units (round half even).
 std::string mastering_display(double peak_nits, double min_nits);

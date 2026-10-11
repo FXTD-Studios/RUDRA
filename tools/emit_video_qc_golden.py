@@ -91,9 +91,10 @@ def convert(name: str, clip: str, out_name: str, flags: list[str]) -> dict:
     output = OUT / "masters" / out_name
     for p in (output, output.with_suffix(output.suffix + ".json")):
         p.unlink(missing_ok=True)
-    # The stand-in HDR goes to the master as it is (no static hold, 10 Oct 2026): this golden is the QC.
+    # The stand-in HDR goes to the master as it is (no static hold, no dynamic metadata files,
+    # 10 Oct 2026): this golden is the QC.
     args = parser.parse_args([str(CLIPS / clip), "--output", str(output), "--checkpoint", str(CLIPS / clip), *flags,
-                              "--static-hold", "off"])
+                              "--static-hold", "off", "--dynamic-metadata", "off"])
     real = video.Predictor
     video.Predictor = Predictor
     try:

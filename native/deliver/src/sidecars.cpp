@@ -30,14 +30,15 @@ Result<void> write_text_file(const std::filesystem::path& path, const std::strin
 }
 
 Result<SidecarPaths> write_all_sidecars(std::span<const FrameStats> stats, const std::filesystem::path& stem,
-                                        double peak, double threshold) {
+                                        double peak, double threshold, std::span<const Shot> given,
+                                        double min_nits) {
     if (stats.empty()) return make_error(ErrorCode::InvalidArgument, "no frames analyzed");
-    const auto shots = detect_shots(stats, threshold);
+    const std::vector<Shot> shots = given.empty() ? detect_shots(stats, threshold) : std::vector<Shot>(given.begin(), given.end());
     const auto base = stem.filename().string();
     SidecarPaths p{stem.parent_path() / (base + "_hdr_analysis.json"), stem.parent_path() / (base + "_dovi_generate.json"),
                    stem.parent_path() / (base + "_hdr10plus_scenes.json")};
     if (auto r = write_text_file(p.rudra, pyjson::dumps(to_rudra_sidecar(stats, shots), 2)); !r) return r.error();
-    if (auto r = write_text_file(p.dovi, pyjson::dumps(to_dovi_generate_json(stats, shots, peak), 2)); !r) return r.error();
+    if (auto r = write_text_file(p.dovi, pyjson::dumps(to_dovi_generate_json(stats, shots, peak, min_nits), 2)); !r) return r.error();
     if (auto r = write_text_file(p.hdr10plus, pyjson::dumps(to_hdr10plus_json(stats, shots), 2)); !r) return r.error();
     return p;
 }

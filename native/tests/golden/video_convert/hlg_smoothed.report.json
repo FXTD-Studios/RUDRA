@@ -27,6 +27,7 @@
   "cut_threshold": 0.15,
   "temporal_smoothing": 0.25,
   "static_hold": "on",
+  "dynamic_metadata": "on",
   "preserve_outside": true,
   "recovery_mode": "all",
   "tile_size": 32,
@@ -98,6 +99,7 @@
     "local_flicker_ev_mean": 0.004910154236949983,
     "local_flicker_ev_max": 0.019112595416870277
   },
+  "hdr_metadata": null,
   "encode_command": [
     "/usr/bin/ffmpeg",
     "-hide_banner",
@@ -109,7 +111,7 @@
     "-framerate",
     "24000/1001",
     "-i",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-video-nwc3fzzs/%08d.png",
+    "/tmp/nat/native/tests/golden/video_convert/rudra-video-py35k8br/%08d.png",
     "-itsoffset",
     "-0.0",
     "-i",
@@ -154,7 +156,7 @@
     "disabled",
     "-movflags",
     "+faststart+write_colr",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-master-agcc4d8b/hlg_smoothed.mp4"
+    "/tmp/nat/native/tests/golden/video_convert/rudra-master-41p4l_7l/hlg_smoothed.mp4"
   ],
   "qc": {
     "passed": true,
@@ -240,5 +242,5 @@
   },
   "max_cll": 1200,
   "max_fall": 162,
-  "elapsed_seconds": 0.7934395149995908
+  "elapsed_seconds": 0.8928843710000365
 }

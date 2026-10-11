@@ -6,9 +6,14 @@
 #include <cstdio>
 #include <fstream>
 #include <iterator>
+#include <mutex>
+#include <map>
 
 #include "rudra/core/hdr10.hpp"
 #include "rudra/core/log_encode.hpp"
+#include "rudra/platform/process.hpp"
+#include "rudra/deliver/sidecars.hpp"
+#include "rudra/core/metadata.hpp"
 #include "rudra/deliver/video_encode.hpp"
 #include "rudra/deliver/video_master.hpp"
 #include "rudra/media/png16.hpp"
@@ -53,6 +58,54 @@ fs::path resolved(const fs::path& p) {
 
 }  // namespace
 
+std::vector<std::pair<std::string, fs::path>> dynamic_metadata_paths(const fs::path& output) {
+    // Named after the whole output name, as the report is: clip.mp4 and clip.mov never share them.
+    const std::string base = output.filename().string();
+    const fs::path dir = output.parent_path();
+    return {{"hdr10plus", dir / (base + "_hdr10plus.json")},
+            {"dovi_generate", dir / (base + "_dovi_generate.json")},
+            {"analysis", dir / (base + "_hdr_analysis.json")},
+            {"hdr10plus_scenes", dir / (base + "_hdr10plus_scenes.json")}};
+}
+
+bool hdr10plus_capable(const fs::path& ffmpeg) {
+    static std::mutex mu;
+    static std::map<std::string, bool> cache;
+    std::lock_guard lock(mu);
+    if (auto it = cache.find(ffmpeg.string()); it != cache.end()) return it->second;
+    bool capable = false;
+    auto work = StagingDir::create(fs::temp_directory_path(), "rudra-hdr10plus-");
+    if (!work) return false;   // not cached: the next export asks again
+    {
+        const fs::path probe = work->path() / "probe.json";
+        std::ofstream(probe, std::ios::binary)
+            << R"({"JSONInfo": {"HDR10plusProfile": "A", "Version": "1.0"}, "SceneInfo": [{"LuminanceParameters": )"
+               R"({"AverageRGB": 1000, "LuminanceDistributions": {"DistributionIndex": [1, 5, 10, 25, 50, 75, 90, 95, 99], )"
+               R"("DistributionValues": [0, 10, 20, 50, 100, 500, 1000, 2000, 5000]}, "MaxScl": [5000, 5000, 5000]}, )"
+               R"("NumberOfWindows": 1, "TargetedSystemDisplayMaximumLuminance": 0, "SceneFrameIndex": 0, "SceneId": 0, )"
+               R"("SequenceFrameIndex": 0}]})";
+        auto r = run_process({ffmpeg.string(), "-hide_banner", "-v", "info", "-nostdin", "-f", "lavfi", "-i",
+                              "color=c=black:s=64x64:r=24:d=0.05", "-frames:v", "1", "-c:v", "libx265", "-pix_fmt",
+                              "yuv420p10le", "-x265-params", "log-level=warning:dhdr10-info=" + x265_param_path(probe),
+                              "-f", "null", "-"});
+        capable = r && r->exit_code == 0 && r->err.find("dhdr10-info disabled") == std::string::npos;
+    }
+    cache[ffmpeg.string()] = capable;
+    return capable;
+}
+
+namespace {
+// Whether the master's first frame carries HDR10+ (ST 2094-40) metadata (video.py has_hdr10plus).
+Result<bool> has_hdr10plus(const fs::path& path) {
+    auto ffprobe = require_executable("ffprobe");
+    if (!ffprobe) return ffprobe.error();
+    auto out = run_tool({ffprobe->string(), "-v", "error", "-select_streams", "v:0", "-read_intervals", "%+#1",
+                         "-show_frames", "-show_entries", "frame=side_data_list", "-of", "json", path.string()});
+    if (!out) return out.error();
+    return out->find("2094-40") != std::string::npos;
+}
+}  // namespace
+
 Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelManifest& package,
                                          InferenceBackend& backend, const VideoConvertHooks& hooks) {
     return convert_video(a, &package, &backend, hooks);
@@ -74,7 +127,17 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     if (profile->codec == "prores" && ext != ".mov") return refuse("ProRes delivery requires a .mov output");
     std::error_code ec;
     if (!fs::is_regular_file(source, ec)) return make_error(ErrorCode::NotFound, source.string());
-    if (source == output || fs::exists(output, ec) || fs::exists(sidecar, ec))
+    if (a.dynamic_metadata != "on" && a.dynamic_metadata != "off") return refuse("Invalid dynamic metadata setting");
+    // PQ masters carry dynamic HDR metadata (10 Oct 2026); HLG and log masters have none to carry.
+    const bool dynamic = a.dynamic_metadata == "on" && profile->transfer == "smpte2084" && profile->log.empty();
+    const auto dynamic_paths = dynamic ? dynamic_metadata_paths(output) : decltype(dynamic_metadata_paths(output)){};
+    const auto any_dynamic_exists = [&] {
+        std::error_code e;
+        for (const auto& [k, p] : dynamic_paths)
+            if (fs::exists(p, e)) return true;
+        return false;
+    };
+    if (source == output || fs::exists(output, ec) || fs::exists(sidecar, ec) || any_dynamic_exists())
         return refuse("Refusing to overwrite source/output/sidecar");
     auto ffmpeg = require_executable("ffmpeg");
     if (!ffmpeg) return ffmpeg.error();
@@ -146,6 +209,7 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         {"cut_threshold", a.cut_threshold},
         {"temporal_smoothing", a.temporal_smoothing},
         {"static_hold", a.static_hold},
+        {"dynamic_metadata", a.dynamic_metadata},
         {"preserve_outside", a.grade ? a.grade->preserve_outside : true},
         {"recovery_mode", a.grade ? a.grade->recovery_mode : std::string("all")},
         {"tile_size", a.tile_size},
@@ -168,6 +232,7 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     std::vector<VideoFrameLight> lights;
     std::optional<std::pair<std::vector<double>, std::vector<double>>> previous_exposure;   // (source, HDR) cells, EV
     std::vector<std::pair<int, double>> scored;
+    std::vector<FrameStats> stats;   // the dynamic HDR metadata's, per frame
     std::vector<double> local_scored;
 
     auto spool_dir = StagingDir::create(work_parent, "rudra-video-");
@@ -213,8 +278,10 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
             }
             previous_exposure = std::move(exposure);
             auto sf = master_video_frame(pred->hdr, index, a.format, a.peak_nits, a.knee_nits,
-                                         alpha ? std::span<const std::uint16_t>(frame->data) : std::span<const std::uint16_t>());
+                                         alpha ? std::span<const std::uint16_t>(frame->data) : std::span<const std::uint16_t>(),
+                                         dynamic);
             if (!sf) return sf.error();
+            if (sf->stats) stats.push_back(*sf->stats);
             frames.push_back(pyjson::Dict{{"index", index}, {"shadow_weight", pred->shadow_weight},
                                           {"max_cll", sf->light.max_cll}, {"frame_average", sf->light.frame_average},
                                           {"flicker_ev", flicker}, {"local_flicker_ev", local}});
@@ -265,6 +332,35 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     VideoEncodeRequest er;
     er.format = a.format, er.preset = a.preset, er.crf = a.crf, er.audio = a.audio;
     er.peak_nits = a.peak_nits, er.min_nits = a.min_nits, er.alpha = alpha;
+    // The dynamic HDR metadata, per shot of the export's own cuts (so it changes
+    // where the hold restarts), written beside the staged master.
+    std::vector<std::pair<fs::path, fs::path>> staged_dynamic;   // (staged, published)
+    bool embed = false;
+    if (dynamic) {
+        std::vector<int> cut_frames;
+        for (const auto& cut : cuts) cut_frames.push_back(int(std::get<std::int64_t>(cut.v)));
+        const std::vector<Shot> shots = shots_from_cuts(cut_frames, int(stats.size()));
+        auto written = write_all_sidecars(stats, staged, a.peak_nits, 0.35, shots, a.format == "hdr10" ? a.min_nits : 0.0001);
+        if (!written) return written.error();
+        const fs::path h10 = staging->path() / dynamic_paths[0].second.filename();
+        if (auto w = write_text_file(h10, pyjson::dumps(to_hdr10plus_x265_json(stats, shots))); !w) return w.error();
+        for (const auto& [k, p] : dynamic_paths) staged_dynamic.emplace_back(staging->path() / p.filename(), p);
+        embed = a.format == "hdr10" && hdr10plus_capable(*ffmpeg);
+        if (embed) er.hdr10plus = h10;
+        pyjson::Value reason;
+        if (!embed)
+            reason = a.format != "hdr10" ? "HDR10+ is carried in HEVC only"
+                                         : "This ffmpeg's x265 was built without HDR10+; inject the file with hdr10plus_tool";
+        pyjson::set(report, "hdr_metadata",
+                    pyjson::Dict{{"shots", int(shots.size())},
+                                 {"hdr10plus", pyjson::Dict{{"file", dynamic_paths[0].second.filename().string()},
+                                                            {"embedded", embed}, {"reason", reason}}},
+                                 {"dovi_generate", dynamic_paths[1].second.filename().string()},
+                                 {"analysis", dynamic_paths[2].second.filename().string()},
+                                 {"hdr10plus_scenes", dynamic_paths[3].second.filename().string()}});
+    } else {
+        pyjson::set(report, "hdr_metadata", pyjson::Value());
+    }
     auto command = encode_command(ffmpeg->string(), er, clk, spool, source, staged, ceil.max_cll, ceil.max_fall);
     if (!command) return command.error();
     pyjson::List cmd;
@@ -282,6 +378,13 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         auto al = run_alpha_check(staged, spool, total, width, height);
         if (!al) return al.error();
         pyjson::set(*std::get<std::shared_ptr<pyjson::Dict>>(qc->v), "alpha", *al);
+    }
+    if (embed) {
+        auto present = has_hdr10plus(staged);
+        if (!present) return present.error();
+        if (!*present)
+            return make_error(ErrorCode::IoError, "HDR10+ QC failed: the master carries no ST 2094-40 metadata");
+        pyjson::set(*std::get<std::shared_ptr<pyjson::Dict>>(qc->v), "hdr10plus", pyjson::Dict{{"passed", true}});
     }
     pyjson::set(report, "qc", *qc);
     if (auto curve = log_curve_from_name(profile->log))
@@ -305,7 +408,24 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         out << pyjson::dumps(rep, 2);
         if (!out) return make_error(ErrorCode::IoError, "Could not write the report", staged_json.string());
     }
-    if (auto p = publish_video(staged, staged_json, output, sidecar); !p) return p.error();
+    if (staged_dynamic.empty()) {
+        if (auto p = publish_video(staged, staged_json, output, sidecar); !p) return p.error();
+    } else {
+        // Every name checked before anything is published; the master first, so
+        // a failure after it leaves an output a retry refuses, never metadata
+        // without a master; the report last (video.py's order).
+        std::error_code e;
+        if (fs::exists(output, e) || fs::exists(sidecar, e) || any_dynamic_exists())
+            return make_error(ErrorCode::InvalidArgument, "Output appeared during processing; refusing overwrite");
+        fs::rename(staged, output, e);
+        if (e) return make_error(ErrorCode::IoError, "Could not publish the master", e.message());
+        for (const auto& [from, to] : staged_dynamic) {
+            fs::rename(from, to, e);
+            if (e) return make_error(ErrorCode::IoError, "Could not publish the HDR metadata", e.message());
+        }
+        fs::rename(staged_json, sidecar, e);
+        if (e) return make_error(ErrorCode::IoError, "Could not publish the sidecar", e.message());
+    }
     if (hooks.print) hooks.print("QC passed: " + output.string() + "\nReport: " + sidecar.string());
     return VideoConvertResult{output, sidecar, rep};
 }
