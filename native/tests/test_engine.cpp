@@ -104,16 +104,20 @@ TEST(FrameEngine, ScrubbingAFolderNeverShowsAStaleFrame) {
     fk.infer_time = std::chrono::milliseconds(3);
     FrameEngine engine(fk.loader(), fk.infer(), {32, 12});
     Seen seen;
-    std::atomic<int> asked{-1};
+    // `pending` is set before show(i) and `asked` once it returned: a frame
+    // delivered while show(i) is being called may be either, and after it
+    // returned nothing older may arrive (FrameEngine::deliver_mu_).
+    std::atomic<int> pending{-1}, asked{-1};
     std::atomic<int> wrong{0};
     engine.on_ready([&](const ReadyFrame& f) {
-        if (f.index != asked.load()) ++wrong;   // delivered for a request that is no longer current
+        if (f.index != asked.load() && f.index != pending.load()) ++wrong;   // a request no longer current
         seen.add(f);
     });
     engine.set_sequence(240);
     for (int i = 0; i < 240; ++i) {
-        asked = i;
+        pending = i;
         engine.show(i);
+        asked = i;
         std::this_thread::sleep_for(std::chrono::microseconds(700));   // faster than inference
     }
     ASSERT_TRUE(wait_for([&] { auto v = seen.all(); return !v.empty() && v.back().index == 239; }));
