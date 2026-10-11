@@ -82,7 +82,10 @@ int cmd_video(const std::vector<std::string>& args) {
         else if (k == "--shadow-smoothing") { if (!number(a.shadow_smoothing)) return usage_error("invalid --shadow-smoothing: " + v); }
         else if (k == "--cut-threshold") { if (!number(a.cut_threshold)) return usage_error("invalid --cut-threshold: " + v); }
         else if (k == "--temporal-smoothing") { if (!number(a.temporal_smoothing)) return usage_error("invalid --temporal-smoothing: " + v); }
-        else if (k == "--static-hold") {
+        else if (k == "--dynamic-metadata") {
+            if (!one_of(v, {"on", "off"})) return usage_error("invalid --dynamic-metadata: " + v);
+            a.dynamic_metadata = v;
+        } else if (k == "--static-hold") {
             if (!one_of(v, {"on", "off"})) return usage_error("invalid --static-hold: " + v);
             a.static_hold = v;
         }

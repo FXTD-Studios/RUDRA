@@ -7,6 +7,7 @@
 #include <span>
 
 #include "rudra/core/measure.hpp"
+#include "rudra/core/metadata.hpp"
 #include "rudra/platform/result.hpp"
 
 namespace rudra {
@@ -15,8 +16,10 @@ struct SidecarPaths {
     std::filesystem::path rudra, dovi, hdr10plus;
 };
 
+// `shots`: the shots to use (a movie export's cuts); empty: detected.
 Result<SidecarPaths> write_all_sidecars(std::span<const FrameStats> stats, const std::filesystem::path& output_stem,
-                                        double mastering_peak_nits = 1000.0, double shot_threshold = 0.35);
+                                        double mastering_peak_nits = 1000.0, double shot_threshold = 0.35,
+                                        std::span<const Shot> shots = {}, double mastering_min_nits = 0.0001);
 
 // Writes text exactly (UTF-8, no newline translation).
 Result<void> write_text_file(const std::filesystem::path& path, const std::string& text);

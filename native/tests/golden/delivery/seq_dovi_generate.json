@@ -14,10 +14,11 @@
       "duration": 5,
       "metadata_blocks": [
         {
-          "Level": 1,
-          "min_pq": 212,
-          "max_pq": 4095,
-          "avg_pq": 2995
+          "Level1": {
+            "min_pq": 12,
+            "max_pq": 4095,
+            "avg_pq": 2995
+          }
         }
       ]
     },
@@ -26,10 +27,11 @@
       "duration": 4,
       "metadata_blocks": [
         {
-          "Level": 1,
-          "min_pq": 524,
-          "max_pq": 4095,
-          "avg_pq": 4095
+          "Level1": {
+            "min_pq": 12,
+            "max_pq": 4095,
+            "avg_pq": 4094
+          }
         }
       ]
     },
@@ -38,10 +40,11 @@
       "duration": 3,
       "metadata_blocks": [
         {
-          "Level": 1,
-          "min_pq": 29,
-          "max_pq": 3329,
-          "avg_pq": 1212
+          "Level1": {
+            "min_pq": 12,
+            "max_pq": 3329,
+            "avg_pq": 1229
+          }
         }
       ]
     }

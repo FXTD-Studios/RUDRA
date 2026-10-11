@@ -11,7 +11,7 @@ namespace rudra {
 
 Result<SpoolFrame> master_video_frame(const NetworkLinearImage& hdr, int index, const std::string& format,
                                       double peak_nits, std::optional<double> knee_nits,
-                                      std::span<const std::uint16_t> alpha) {
+                                      std::span<const std::uint16_t> alpha, bool analyze) {
     const auto px = hdr.buffer().span();
     if (std::any_of(px.begin(), px.end(), [](float v) { return !std::isfinite(v) || v < 0.0f; }))
         return make_error(ErrorCode::InvalidArgument, "Invalid HDR pixels at frame " + std::to_string(index));
@@ -35,6 +35,12 @@ Result<SpoolFrame> master_video_frame(const NetworkLinearImage& hdr, int index, 
         maxrgb[i] = std::max({mastered.plane(0)[i], mastered.plane(1)[i], mastered.plane(2)[i]});
     out.light.max_cll = static_cast<double>(*std::max_element(maxrgb.begin(), maxrgb.end()));
     out.light.frame_average = static_cast<double>(np_mean(std::span<const float>(maxrgb)));
+    if (analyze) {   // analyze_frame(mastered, index): float32 nits read as float64
+        NitsFrame nits(h, w);
+        for (int ch = 0; ch < 3; ++ch)
+            for (std::size_t i = 0; i < n; ++i) nits.plane(ch)[i] = static_cast<double>(mastered.plane(ch)[i]);
+        out.stats = analyze_frame(nits, index);
+    }
 
     out.packed.resize(n * static_cast<std::size_t>(out.channels));
     const std::size_t c = static_cast<std::size_t>(out.channels);

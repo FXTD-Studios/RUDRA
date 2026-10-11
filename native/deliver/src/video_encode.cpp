@@ -27,6 +27,15 @@ std::string mastering_display(double peak_nits, double min_nits) {
            "," + std::to_string(py_round(min_nits * 10000)) + ")";
 }
 
+std::string x265_param_path(const std::filesystem::path& path) {
+    std::string out;
+    for (char c : path.string()) {
+        if (c == '\\' || c == ':' || c == '\'' || c == ' ' || c == '\t') out += '\\';
+        out += c;
+    }
+    return out;
+}
+
 Result<std::vector<std::string>> encode_command(const std::string& ffmpeg, const VideoEncodeRequest& r,
                                                 const VideoClock& clock, const fs::path& spool, const fs::path& source,
                                                 const fs::path& output, int max_cll, int max_fall) {
@@ -42,6 +51,7 @@ Result<std::vector<std::string>> encode_command(const std::string& ffmpeg, const
     std::string params = "hdr-opt=1:repeat-headers=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:"
                          "master-display=" + mastering_display(r.peak_nits, r.min_nits) +
                          ":max-cll=" + std::to_string(max_cll) + "," + std::to_string(max_fall);
+    if (r.hdr10plus) params += ":dhdr10-info=" + x265_param_path(*r.hdr10plus);
     std::vector<std::string> cmd = {ffmpeg, "-hide_banner", "-v", "error", "-nostdin", "-n", "-copyts",
                                     "-framerate", clock.fps, "-i", (spool / "%08d.png").string(),
                                     "-itsoffset", pyjson::repr(-clock.start), "-i", source.string(),

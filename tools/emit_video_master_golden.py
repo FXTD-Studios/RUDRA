@@ -76,9 +76,9 @@ def run(name: str, clip: str, suffix: str, flags: list[str]) -> dict:
             calls["n"] += 1
             return hdr, 1.0, calls["n"] == 1
 
-    def encode_command(args, source, clock, spool, output, max_cll, max_fall):
+    def encode_command(args, source, clock, spool, output, max_cll, max_fall, hdr10plus=None):
         captured["max_cll"], captured["max_fall"] = max_cll, max_fall
-        command = real[1](args, source, clock, spool, output, max_cll, max_fall)
+        command = real[1](args, source, clock, spool, output, max_cll, max_fall, hdr10plus)
         portable = {str(Path(spool) / "%08d.png"): "SPOOL/%08d.png", str(source): clip, str(output): "OUTPUT" + suffix}
         captured["command"] = ["ffmpeg", *[portable.get(c, c) for c in command[1:]]]
         captured["clock"] = clock
@@ -95,7 +95,7 @@ def run(name: str, clip: str, suffix: str, flags: list[str]) -> dict:
                                   "--checkpoint", str(CLIPS / clip), *flags,
                                   # The recorded HDR goes to the master as it is: the static hold
                                   # (10 Oct 2026) would change it, and this golden is the mastering.
-                                  "--static-hold", "off"])
+                                  "--static-hold", "off", "--dynamic-metadata", "off"])
         video.Predictor, video.encode_command = Predictor, encode_command
         try:
             video.convert_video(args)

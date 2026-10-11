@@ -1,6 +1,6 @@
 {
-  "source": "/tmp/tmpew3eqo4w/stopped/h264_709_audio.mp4",
-  "output": "/tmp/tmpew3eqo4w/stopped/out/a_hdr10.mp4",
+  "source": "/tmp/tmp1470zvnl/stopped/h264_709_audio.mp4",
+  "output": "/tmp/tmp1470zvnl/stopped/out/a_hdr10.mp4",
   "input_contract": {
     "transfer": "rec709",
     "primaries": "rec709",
@@ -18,7 +18,7 @@
   "alpha_mode": null,
   "encoder_input_precision_bits": 10,
   "alpha_preserved": false,
-  "checkpoint": "/tmp/tmpew3eqo4w/stopped/sdr2hdr_shadow_v1.pt",
+  "checkpoint": "/tmp/tmp1470zvnl/stopped/sdr2hdr_shadow_v1.pt",
   "checkpoint_sha256": "6b7f73f0b44a6edc3e117373f7397ae3a8df12cb398ec4815597b6e2ebeb63f9",
   "mastering_peak_nits": 1000,
   "mastering_min_nits": 0.005,
@@ -27,6 +27,7 @@
   "cut_threshold": 0.15,
   "temporal_smoothing": 0.25,
   "static_hold": "on",
+  "dynamic_metadata": "on",
   "preserve_outside": true,
   "recovery_mode": "all",
   "tile_size": 512,
@@ -57,32 +58,32 @@
       "shadow_weight": 0.9671649387675247,
       "max_cll": 1000.0,
       "frame_average": 75.85613250732422,
-      "flicker_ev": 4.9781364439560605e-06,
-      "local_flicker_ev": 3.889760531555103e-05
+      "flicker_ev": 4.978229555252511e-06,
+      "local_flicker_ev": 3.889780694658107e-05
     },
     {
       "index": 3,
       "shadow_weight": 0.9667742506024939,
       "max_cll": 1000.0,
       "frame_average": 74.40513610839844,
-      "flicker_ev": 0.0016350925239052572,
-      "local_flicker_ev": 0.0038083024904135843
+      "flicker_ev": 0.0016350929062678432,
+      "local_flicker_ev": 0.003808303494636988
     },
     {
       "index": 4,
       "shadow_weight": 0.9668170275088244,
       "max_cll": 1000.0,
       "frame_average": 73.25214385986328,
-      "flicker_ev": 0.0015099601605510493,
-      "local_flicker_ev": 0.005019467521982095
+      "flicker_ev": 0.0015099575601285053,
+      "local_flicker_ev": 0.00501946601557308
     },
     {
       "index": 5,
       "shadow_weight": 0.966933975418003,
       "max_cll": 1000.0,
       "frame_average": 73.51927185058594,
-      "flicker_ev": 0.00012358229431086443,
-      "local_flicker_ev": 0.0035140413501158455
+      "flicker_ev": 0.0001235837159168085,
+      "local_flicker_ev": 0.0035140398535332437
     }
   ],
   "warnings": [],
@@ -90,11 +91,22 @@
     "retention": 0.8463406563591698,
     "static_hold": "on",
     "frames_scored": 5,
-    "flicker_ev_mean": 0.0006547226230422254,
-    "flicker_ev_max": 0.0016350925239052572,
+    "flicker_ev_mean": 0.000654722482373682,
+    "flicker_ev_max": 0.0016350929062678432,
     "flicker_ev_max_frame": 3,
-    "local_flicker_ev_mean": 0.002476141793565415,
-    "local_flicker_ev_max": 0.005019467521982095
+    "local_flicker_ev_mean": 0.0024761414341379785,
+    "local_flicker_ev_max": 0.00501946601557308
+  },
+  "hdr_metadata": {
+    "shots": 1,
+    "hdr10plus": {
+      "file": "a_hdr10.mp4_hdr10plus.json",
+      "embedded": false,
+      "reason": "This ffmpeg's x265 was built without HDR10+; inject the file with hdr10plus_tool"
+    },
+    "dovi_generate": "a_hdr10.mp4_dovi_generate.json",
+    "analysis": "a_hdr10.mp4_hdr_analysis.json",
+    "hdr10plus_scenes": "a_hdr10.mp4_hdr10plus_scenes.json"
   },
   "encode_command": [
     "/usr/bin/ffmpeg",
@@ -107,11 +119,11 @@
     "-framerate",
     "24000/1001",
     "-i",
-    "/tmp/tmpew3eqo4w/stopped/out/rudra-video-6unk3y1o/%08d.png",
+    "/tmp/tmp1470zvnl/stopped/out/rudra-video-cto3xodk/%08d.png",
     "-itsoffset",
     "-10.0",
     "-i",
-    "/tmp/tmpew3eqo4w/stopped/h264_709_audio.mp4",
+    "/tmp/tmp1470zvnl/stopped/h264_709_audio.mp4",
     "-map",
     "0:v:0",
     "-map",
@@ -152,7 +164,7 @@
     "disabled",
     "-movflags",
     "+faststart+write_colr",
-    "/tmp/tmpew3eqo4w/stopped/out/rudra-master-95ghmctu/a_hdr10.mp4"
+    "/tmp/tmp1470zvnl/stopped/out/rudra-master-oqxstns_/a_hdr10.mp4"
   ],
   "qc": {
     "passed": true,
@@ -251,5 +263,5 @@
   },
   "max_cll": 1000,
   "max_fall": 76,
-  "elapsed_seconds": 0.4800956519993633
+  "elapsed_seconds": 0.5241022130001056
 }
