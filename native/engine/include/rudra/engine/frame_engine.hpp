@@ -107,6 +107,11 @@ private:
     Generation generation_;
 
     mutable std::mutex mu_;
+    // Held while a frame is checked and handed to the callback, and by show()
+    // while it moves the request on: once show(i) returns, no frame of an
+    // older request can still be on its way out (taken before mu_; recursive
+    // because the callback may call show()).
+    std::recursive_mutex deliver_mu_;
     std::condition_variable cv_;
     bool stop_ = false;   // under mu_: the destructor asks the worker to return
     bool playing_ = false;   // under mu_

@@ -107,6 +107,7 @@ void FrameEngine::insert(std::shared_ptr<ReadyFrame> f) {
 }
 
 Generation::value_type FrameEngine::show(int index) {
+    std::lock_guard dl(deliver_mu_);   // a delivery under way finishes before the request moves on
     std::shared_ptr<ReadyFrame> hit;
     Generation::value_type g;
     std::function<void(const ReadyFrame&)> cb;
@@ -169,6 +170,7 @@ Generation::value_type FrameEngine::show(int index) {
 }
 
 void FrameEngine::deliver(const ReadyFrame& f) {
+    std::lock_guard dl(deliver_mu_);   // checked and handed over with no show() between them
     std::function<void(const ReadyFrame&)> cb;
     {
         std::lock_guard lk(mu_);
