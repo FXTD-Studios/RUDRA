@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "rudra/core/composite.hpp"
 #include "rudra/core/fields.hpp"
@@ -63,6 +64,14 @@ public:
     // The exact reduction ladder (docs/view.spec.md section 4) over a
     // composite target: peak and fp32 sum of max(R, G, B), network units.
     virtual Result<Reductions> reduce(const NetworkLinearImage& image) = 0;
+    // The static hold while playing (shaders/hold.frag) over a run of frames
+    // of one shot, as the viewer plays them: the first frame starts the
+    // state, each later one is held with `retention` (one frame apart).
+    // `hdr[i]`: frame i's composite, 3 x h x w network units; `sdr[i]` its
+    // SDR. Returns the held frames, read back from RGBA32F: the parity path
+    // for core ShadowSmoother::hold_pixels.
+    virtual Result<std::vector<PlanarBuffer>> hold_sequence(const std::vector<SdrImage>& sdr,
+                                                            const std::vector<PlanarBuffer>& hdr, double retention) = 0;
     virtual Result<PlanarBuffer> view_values(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
                                              const ViewParams& params, GpuPrecision precision,
                                              const SdrImage* sdr = nullptr) = 0;

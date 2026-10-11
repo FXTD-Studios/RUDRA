@@ -15,6 +15,7 @@ void PlaybackHold::configure(double fps, double seconds, double cut_threshold) {
 
 void PlaybackHold::reset() {
     last_ = shot_start_ = anchor_last_ = -1;
+    gap_ = 0;
     ++shot_;
     thumb_ = PlanarBuffer();
     weight_ = 1.0;
@@ -36,14 +37,25 @@ double PlaybackHold::weight(int index, const SdrImage& sdr, double w) {
         weight_ = w;
         shot_start_ = index;
         anchor_last_ = -1;
+        gap_ = 0;
         ++shot_;
     } else {
+        gap_ = index - last_;
         const double r = std::pow(retention_, index - last_);
         weight_ = r * weight_ + (1.0 - r) * w;
     }
     last_ = index;
     thumb_ = std::move(t);
     return weight_;
+}
+
+PlaybackHold::PixelStep PlaybackHold::pixel_step() const {
+    PixelStep s;
+    if (retention_ == 0.0 || last_ < 0) return s;
+    s.on = true;
+    s.reset = gap_ <= 0;
+    s.strength = s.reset ? retention_ : std::pow(retention_, gap_);
+    return s;
 }
 
 double PlaybackHold::anchor(int index, double hold, int shot) {

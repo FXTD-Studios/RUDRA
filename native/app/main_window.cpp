@@ -1246,9 +1246,13 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
     FrameScalars scalars = f.fields->scalars;
     const float own = scalars.shadow_weight;
     // Playing: the shadow weight held across the shot, as the export holds it.
-    if (play_.isActive())
+    // And the static hold: the viewer holds still pixels' gain across the shot.
+    PlaybackHold::PixelStep pixel;
+    if (play_.isActive()) {
         scalars.shadow_weight = static_cast<float>(play_hold_.weight(f.index, *f.sdr, scalars.shadow_weight));
-    present_frame(*f.sdr, f.fields->fields, scalars, model, header, own);
+        pixel = play_hold_.pixel_step();
+    }
+    present_frame(*f.sdr, f.fields->fields, scalars, model, header, own, pixel);
     const auto st = engine_->stats();
     frame_info_ = QStringLiteral("%1  %2/%3  ·  %4")
                       .arg(name)
@@ -1415,7 +1419,8 @@ void MainWindow::clear_scopes() {
 }
 
 void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars, ModelConstants model,
-                               FrameHeader header, std::optional<float> own_shadow_weight) {
+                               FrameHeader header, std::optional<float> own_shadow_weight,
+                               [[maybe_unused]] PlaybackHold::PixelStep pixel) {
     auto cur = std::make_shared<Current>();
     cur->baseline_source = session_.source_curve();
     cur->baseline_calibration = session_.grade.calibration;
@@ -1427,7 +1432,12 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
             sdr, model.corpus_ev, baseline_curve_params(scalars, session_.composite_params(), model.corpus_ev)));
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
-        viewer_->set_frame({sdr, fields, scalars, model});
+        ViewerHold hold;
+        hold.on = pixel.on;
+        hold.strength = pixel.strength;
+        hold.reset = pixel.reset;
+        hold.frame = current_;
+        viewer_->set_frame({sdr, fields, scalars, model, hold});
         viewer_->set_composite(session_.composite_params());
     }
 #endif

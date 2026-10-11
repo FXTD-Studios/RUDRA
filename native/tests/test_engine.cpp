@@ -295,3 +295,35 @@ TEST(PlaybackHold, ALateMeasureFromBeforeALoopHoldsNothing) {
     EXPECT_DOUBLE_EQ(h.anchor(0, 4.0, h.shot()), 4.0);    // the new pass starts at its own, not near 64
     EXPECT_NEAR(h.anchor(1, 4.0, h.shot()), 4.0, 1e-12);
 }
+
+// The static hold while playing (11 Oct 2026): the viewer's hold pass steps
+// with the shot as weight() sees it -- the shot's first frame starts it, a
+// later one holds with retention^(frames since the one before), a cut or a
+// step back starts again; off, nothing is held.
+TEST(PlaybackHold, StepsTheStaticHoldWithTheShot) {
+    PlaybackHold h;
+    h.configure(24.0, kShotHoldSeconds);
+    const double r = std::exp(-1.0 / 6.0);
+    EXPECT_FALSE(h.pixel_step().on);   // nothing shown yet
+    h.weight(0, flat_sdr(0.5f), 1.0);
+    auto s = h.pixel_step();
+    EXPECT_TRUE(s.on && s.reset);
+    h.weight(1, flat_sdr(0.5f), 1.0);
+    s = h.pixel_step();
+    EXPECT_TRUE(s.on && !s.reset);
+    EXPECT_DOUBLE_EQ(s.strength, r);
+    h.weight(1, flat_sdr(0.5f), 1.0);   // the same frame again: the same step
+    EXPECT_DOUBLE_EQ(h.pixel_step().strength, r);
+    h.weight(4, flat_sdr(0.5f), 1.0);   // two frames skipped
+    EXPECT_DOUBLE_EQ(h.pixel_step().strength, r * r * r);
+    h.weight(5, flat_sdr(0.9f), 1.0);   // a cut
+    EXPECT_TRUE(h.pixel_step().reset);
+    h.weight(6, flat_sdr(0.9f), 1.0);
+    EXPECT_FALSE(h.pixel_step().reset);
+    h.weight(2, flat_sdr(0.9f), 1.0);   // back to the start
+    EXPECT_TRUE(h.pixel_step().reset);
+    h.configure(24.0, 0.0);              // off
+    h.weight(0, flat_sdr(0.5f), 1.0);
+    h.weight(1, flat_sdr(0.5f), 1.0);
+    EXPECT_FALSE(h.pixel_step().on);
+}

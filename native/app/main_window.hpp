@@ -171,8 +171,9 @@ public:
     // A frame to show and measure (the engine's, or a test's): the viewer
     // gets it now, the measurements follow on their own thread.
     // `own_shadow_weight`: the frame's own when `scalars` carries a held one (playing).
+    // `pixel`: the static hold's step for the viewer (playing held; off otherwise).
     void present_frame(SdrImage sdr, Fields fields, FrameScalars scalars, ModelConstants model, FrameHeader header,
-                       std::optional<float> own_shadow_weight = std::nullopt);
+                       std::optional<float> own_shadow_weight = std::nullopt, PlaybackHold::PixelStep pixel = {});
     // Measure the frame on screen now, on this thread (the tests).
     void measure_now();
     const FrameMeasure* measurement() const { return measure_.get(); }

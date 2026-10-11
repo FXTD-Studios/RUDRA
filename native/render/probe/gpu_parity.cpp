@@ -16,6 +16,10 @@
 // Then the display pass (docs/view.spec.md section 2, Phase 2 step 4): seven
 // views of each frame's default composite and its baseline, into an RGBA8
 // target, held to core/view.cpp within 1 code.
+//
+// Then the static hold while playing (shaders/hold.frag, 11 Oct 2026): a
+// short shot (probe/hold_sequence.hpp) held on the GPU, frame by frame,
+// against ShadowSmoother::hold_pixels, within the composite's fp32 bound.
 // Exit 0 when every case passes.
 
 #include <QCommandLineParser>
@@ -45,6 +49,7 @@
 #include "rudra/core/view.hpp"
 #include "rudra/platform/npy.hpp"
 #include "rudra/render/gpu_composite.hpp"
+#include "hold_sequence.hpp"
 
 using namespace rudra;
 namespace fs = std::filesystem;
@@ -461,6 +466,39 @@ int main(int argc, char** argv) {
                                 {"sum_rel", r.sum_rel}, {"pass", r.ok()}});
     }
     out << "  bound: peak exact; sum 1e-6 relative\n";
+
+    // The static hold while playing (11 Oct 2026): hold.frag over a short shot
+    // against ShadowSmoother::hold_pixels, frame by frame.
+    out << "Static hold (hold.frag), against core ShadowSmoother::hold_pixels\n";
+    QJsonArray jhold;
+    {
+        const hold_case::Shot shot = hold_case::make_shot();
+        const std::vector<PlanarBuffer> want = hold_case::reference(shot);
+        auto got = (*gpu)->hold_sequence(shot.sdr, shot.hdr, hold_case::kRetention);
+        if (!got) {
+            out << "rudra-gpu-parity: " << QString::fromStdString(got.error().message) << "\n";
+            return 2;
+        }
+        bool hold_ok = true;
+        for (std::size_t f = 0; f < want.size(); ++f) {
+            double worst_rel = 0.0, worst_abs = 0.0;
+            bool ok = true;
+            for (int c = 0; c < 3; ++c)
+                for (std::size_t i = 0; i < want[f].plane_size(); ++i) {
+                    const double g = (*got)[f].plane(c)[i], w = want[f].plane(c)[i];
+                    const double d = std::abs(g - w);
+                    worst_abs = std::max(worst_abs, d);
+                    worst_rel = std::max(worst_rel, d / std::max(std::abs(w), 1e-30));
+                    if (!(d <= kAtol + kRtol * std::abs(w))) ok = false;
+                }
+            hold_ok = hold_ok && ok;
+            out << QString("  frame %1  max rel %2  max |d| %3  %4\n").arg(f).arg(worst_rel, 0, 'e', 2)
+                       .arg(worst_abs, 0, 'e', 2).arg(ok ? "pass" : "FAIL");
+            jhold.append(QJsonObject{{"frame", int(f)}, {"max_rel", worst_rel}, {"max_abs", worst_abs}, {"pass", ok}});
+        }
+        all = all && hold_ok;
+        out << "  bound: " << kAtol << " + " << kRtol << " |ref|, network units\n";
+    }
     out << "  => " << (all ? "PASS" : "FAIL") << "\n";
 
     QJsonArray jbench;
@@ -528,7 +566,7 @@ int main(int argc, char** argv) {
         if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
             f.write(QJsonDocument(QJsonObject{{"backend", QString::fromStdString(info.backend)},
                                               {"device", QString::fromStdString(info.device)},
-                                              {"api", a}, {"pass", all}, {"cases", jrows}, {"views", jviews}, {"hdr", jhdr}, {"reduce", jred}, {"bench", jbench}})
+                                              {"api", a}, {"pass", all}, {"cases", jrows}, {"views", jviews}, {"hdr", jhdr}, {"reduce", jred}, {"hold", jhold}, {"bench", jbench}})
                         .toJson());
     }
     return all ? 0 : 1;
