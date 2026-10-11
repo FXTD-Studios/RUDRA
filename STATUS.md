@@ -53,7 +53,7 @@
 > | 2 | unknown curve + codec | `oog`, `mix` | both metrics above the inverse, CI excluding zero (N3) | FAIL (v4c +1.33 dB but −0.126 JOD; v7 −1.2 dB / −0.82 JOD oog, −2.7 dB / −0.59 JOD mix, −4.1 dB / −0.33 JOD real) |
 > | 3 | degraded input | paper 429 hard | at least v5's +1.43 dB / +0.44 JOD, with row 1 held | not run |
 > | 4 | clipped highlights | `measure_clipping.py --score`, 0/+1/+2 EV | error in stops on clipped pixels below the inverse's, CI excluding zero | not run |
-> | 5 | video | v4b/v4c test clips, clip-mode CVVDP + flicker | clip JOD ≥ per-frame JOD on every test clip (N5) | not run |
+> | 5 | video | v4b/v4c test clips, clip-mode CVVDP + flicker | clip JOD ≥ per-frame JOD on every test clip (N5) | flicker measured on 5 real clips, 11 Oct (docs/TEMPORAL_RESULTS.md): the holds cut the model's fire flicker 72-80 %; CVVDP not run |
 > | 6 | commercial weights | `oog`, `mix` | `rudra-studio` within 0.3 dB / 0.03 JOD of the research model (N7) | not trained |
 > | 7 | against the market | N4 set: external SDR→HDR baselines | a table published whatever it says | not run |
 >
@@ -73,6 +73,23 @@
 > split real vs rendered). The training curve peaked at step 1,500 and decayed for 48k steps while
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
+>
+> **11 Oct 2026, evening — temporal follow-ups (line F).** (1) Clipped highlights: where the source is clipped
+> (largest code >= 0.98) in both frames, `hold_pixels` now holds the gain by the HDR's own change (3x3 mean of
+> |dlog2 Y|: held under 0.05 EV, its own over 0.25 EV); clipped in one frame only stays its own. Python and
+> native in parity; video_convert/video_queue goldens re-emitted. (2) `PlaybackHold::shot()` counts every shot
+> start (loops included) and a measure carries the shot it was shown in, so a late anchor measure from before a
+> loop or a cut holds nothing. (3) `tools/measure_temporal.py`: clips x {each frame, shot hold, shot + static}
+> -> temporal.json/md. On the test clips: still grainy pattern local flicker -65 %, h264_709 -70 %, heavy-grain
+> moving pattern -4 % (moves exceed the still threshold). No real consecutive footage is on this machine, so
+> real footage then measured (docs/TEMPORAL_RESULTS.md): five 2 s clips of HdM HFR 2017 and Netflix Chimera
+> (`tools/make_temporal_clips.py`, SDR by Hable tone map), `rudra-native video` with shadow_v1 and analytic
+> (`--grade`, new: an export settings file on the command line, "-" for no package). With the model the fire
+> clips flicker 0.03 / 0.05 EV a frame beyond the source (worst 0.11 / 0.19 EV); both holds take that to
+> 0.006 / 0.013 (worst 0.024 / 0.054), local -64 % / -47 %. Analytic flickers ~10x less to begin with. Still
+> hillside -29 % (model) / -63 % (analytic) local; freeway -3 to -5 % (everything moves). STATUS row 5 is
+> measured with RUDRA's flicker measures, not yet clip-mode CVVDP. (4) Static hold in playback: not done; it
+> needs a GPU pass (render/, Qt 6.8) that cannot be built here.
 >
 > **11 Oct 2026, later — Dolby Vision and HDR10+ metadata in movie exports (line F, item 6).** PQ exports
 > (HDR10, ProRes PQ) analyse every mastered frame (`analyze_frame`, MaxRGB) and write per shot of the

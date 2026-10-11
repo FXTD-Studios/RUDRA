@@ -59,6 +59,20 @@ weights: LICENSE-weights).
   (`{"Level1": {...}}`), clamped as dovi_tool clamps; it was not accepted by
   dovi_tool before.
 
+- **Steadier highlights.** Inside highlights the source has clipped (in this
+  frame and the one before) the static hold now follows the HDR's own change:
+  a few hundredths of an EV of model jitter settles, while a light that moves
+  (a quarter of an EV or more) is each frame's own, so it leaves no trail.
+  Before, nothing was held there.
+- Playback no longer blends a late anchor measurement from before a loop or
+  a cut into the frames after it.
+- Measured on real footage (docs/TEMPORAL_RESULTS.md): with the model, a
+  campfire flickered 0.03 to 0.05 EV a frame beyond the source (a visible
+  0.19 EV at worst); with the holds, 0.006 to 0.013 EV. `rudra-native video`
+  takes `--grade <settings.json>` (the app's export settings; `-` in place of
+  the package for an analytic one), and `tools/measure_temporal.py` and
+  `tools/make_temporal_clips.py` repeat the measurement.
+
 ## Changes in beta 10 (since beta 9)
 
 - **Still areas stop shimmering.** In a movie export, where the source pixel
