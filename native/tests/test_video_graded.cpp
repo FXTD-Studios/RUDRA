@@ -147,3 +147,45 @@ TEST(VideoGraded, TheShotHoldSteadiesTheAnchor) {
     }
     EXPECT_LT(flicker[1], flicker[0] * 0.7) << flicker[0] << " -> " << flicker[1];
 }
+
+// The static hold (10 Oct 2026): on a still shot with grain, the HDR's gain
+// over the source is held where the source is still, so the frame-to-frame
+// change the expansion adds (the local flicker) drops; off, every frame is its
+// own.
+TEST(VideoGraded, TheStaticHoldSteadiesAStillShot) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    const fs::path dir = fresh("static");
+    const std::string ffmpeg = find_executable("ffmpeg")->string();
+    const fs::path still = dir / "still.png", clip = dir / "still.mp4";
+    // A grey ramp (nothing clipped or crushed: those are never held) with
+    // grain, a second of it at 24 fps.
+    auto png = run_process({ffmpeg, "-v", "error", "-nostdin", "-f", "lavfi", "-i",
+                            "nullsrc=size=320x180,format=gray,geq=lum='40+200*X/W'", "-frames:v", "1", still.string()});
+    auto made = run_process({ffmpeg, "-v", "error", "-nostdin", "-loop", "1", "-i", still.string(), "-vf",
+                             "fps=24,format=yuv420p,noise=alls=3:allf=t", "-t", "1", "-c:v", "libx264", "-crf", "23",
+                             "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", clip.string()});
+    ASSERT_TRUE(png && made && fs::exists(clip)) << "this ffmpeg cannot make the test clip (libx264)";
+    std::vector<double> local;
+    for (const char* mode : {"off", "on"}) {
+        VideoConvertArgs a;
+        a.input = clip;
+        a.output = dir / (std::string(mode) + ".mp4");
+        a.audio = "none";
+        a.preset = "ultrafast";
+        a.static_hold = mode;
+        MasterRequest q;
+        q.analytic = true;
+        a.grade = q;
+        auto r = convert_video(a, nullptr, nullptr);
+        ASSERT_TRUE(r) << r.error().message << " " << r.error().detail;
+        const auto rep = read_json(r->sidecar);
+        EXPECT_EQ(rep["static_hold"], mode);
+        EXPECT_EQ(rep["temporal"]["static_hold"], mode);
+        local.push_back(rep["temporal"]["local_flicker_ev_mean"].get<double>());
+        local.push_back(rep["temporal"]["local_flicker_ev_max"].get<double>());
+        std::cout << "[ static ] " << mode << ": " << rep["temporal"].dump() << "\n";
+    }
+    // (off mean, off max, on mean, on max): the worst frame most of all.
+    EXPECT_LT(local[2], local[0] * 0.85) << local[0] << " -> " << local[2];
+    EXPECT_LT(local[3], local[1] * 0.5) << local[1] << " -> " << local[3];
+}

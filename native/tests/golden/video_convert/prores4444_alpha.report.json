@@ -26,6 +26,7 @@
   "shadow_smoothing": 0,
   "cut_threshold": 0.15,
   "temporal_smoothing": 0.0,
+  "static_hold": "off",
   "preserve_outside": true,
   "recovery_mode": "all",
   "tile_size": 512,
@@ -40,51 +41,60 @@
       "shadow_weight": 0.9756649136543274,
       "max_cll": 1000.0,
       "frame_average": 101.56781768798828,
-      "flicker_ev": null
+      "flicker_ev": null,
+      "local_flicker_ev": null
     },
     {
       "index": 1,
       "shadow_weight": 0.9761208891868591,
       "max_cll": 1000.0,
       "frame_average": 100.19852447509766,
-      "flicker_ev": 0.0020257803344310155
+      "flicker_ev": 0.0020257803344310155,
+      "local_flicker_ev": 0.00530513693907921
     },
     {
       "index": 2,
       "shadow_weight": 0.9756186008453369,
       "max_cll": 1000.0,
       "frame_average": 98.6509017944336,
-      "flicker_ev": 0.0033323667254290257
+      "flicker_ev": 0.0033323667254290257,
+      "local_flicker_ev": 0.006222949677144127
     },
     {
       "index": 3,
       "shadow_weight": 0.9754350781440735,
       "max_cll": 1000.0,
       "frame_average": 97.07294464111328,
-      "flicker_ev": 0.0030097835331144296
+      "flicker_ev": 0.0030097835331144296,
+      "local_flicker_ev": 0.005293079928282129
     },
     {
       "index": 4,
       "shadow_weight": 0.975482165813446,
       "max_cll": 1000.0,
       "frame_average": 95.25843048095703,
-      "flicker_ev": 0.0035593902623678453
+      "flicker_ev": 0.0035593902623678453,
+      "local_flicker_ev": 0.0054322631116474635
     },
     {
       "index": 5,
       "shadow_weight": 0.9755287766456604,
       "max_cll": 1000.0,
       "frame_average": 95.24749755859375,
-      "flicker_ev": 0.0004496045066790799
+      "flicker_ev": 0.0004496045066790799,
+      "local_flicker_ev": 0.0016767537846688932
     }
   ],
   "warnings": [],
   "temporal": {
     "retention": 0.0,
+    "static_hold": "off",
     "frames_scored": 5,
     "flicker_ev_mean": 0.0024753850724042793,
     "flicker_ev_max": 0.0035593902623678453,
-    "flicker_ev_max_frame": 4
+    "flicker_ev_max_frame": 4,
+    "local_flicker_ev_mean": 0.0047860366881643645,
+    "local_flicker_ev_max": 0.006222949677144127
   },
   "encode_command": [
     "/usr/bin/ffmpeg",
@@ -97,7 +107,7 @@
     "-framerate",
     "24",
     "-i",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-video-nbw5zgsb/%08d.png",
+    "/tmp/nat/native/tests/golden/video_convert/rudra-video-qb04x2hp/%08d.png",
     "-itsoffset",
     "-0.0",
     "-i",
@@ -136,7 +146,7 @@
     "disabled",
     "-movflags",
     "+faststart+write_colr",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-master-t1awe0m0/prores4444_alpha.mov"
+    "/tmp/nat/native/tests/golden/video_convert/rudra-master-b5eoe3sa/prores4444_alpha.mov"
   ],
   "qc": {
     "passed": true,
@@ -213,5 +223,5 @@
   },
   "max_cll": 1000,
   "max_fall": 102,
-  "elapsed_seconds": 0.4910055069999544
+  "elapsed_seconds": 0.4812631060003696
 }

@@ -12,7 +12,7 @@
     "hdr10"
    ],
    "report": "hdr10_audio.report.json",
-   "master_sha256": "39e707473859f32938d8a3c91213bc3560d8fa59822fa056b110c1fdf2ce8739"
+   "master_sha256": "0d50614999605b9a96a0b60796c57d97f754703c4538aec1a8602aed22f76687"
   },
   {
    "name": "hlg_smoothed",
@@ -31,7 +31,7 @@
     "8"
    ],
    "report": "hlg_smoothed.report.json",
-   "master_sha256": "0984ba94521601c5cdc1b4ac65a544da5fb147ac1b59ff84aebceefaa23b8342"
+   "master_sha256": "08aa6a01e775c767156fa0a3303846fe1056fe832369609e3fd0a1ec20ea2d08"
   },
   {
    "name": "prores4444_alpha",
@@ -47,7 +47,9 @@
     "--audio",
     "none",
     "--temporal-smoothing",
-    "0"
+    "0",
+    "--static-hold",
+    "off"
    ],
    "report": "prores4444_alpha.report.json",
    "master_sha256": "5147dfaae84794e6a0bc379c167596a4fd70860246dcddfe77eb933597fa3043"

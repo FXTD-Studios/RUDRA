@@ -85,7 +85,7 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     if (encoders->find(profile->encoder) == std::string::npos || filters->find("zscale") == std::string::npos)
         return make_error(ErrorCode::Unsupported, "This FFmpeg build needs " + profile->encoder + " and zscale support");
     if (!(0 <= a.shadow_smoothing && a.shadow_smoothing < 1) || !(0 < a.cut_threshold && a.cut_threshold <= 1) ||
-        !(0 <= a.temporal_smoothing && a.temporal_smoothing <= 10))
+        !(0 <= a.temporal_smoothing && a.temporal_smoothing <= 10) || (a.static_hold != "on" && a.static_hold != "off"))
         return refuse("Invalid smoothing/cut threshold");
     if (a.tile_size < 0 || a.tile_overlap < 0 || (a.tile_size && a.tile_overlap >= a.tile_size))
         return refuse("Invalid tile size/overlap");
@@ -120,7 +120,7 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     };
     const double retention =
         a.shadow_smoothing != 0.0 ? a.shadow_smoothing : retention_for(video->clock.fps, a.temporal_smoothing);
-    ShadowSmoother smoother(retention, a.cut_threshold);
+    ShadowSmoother smoother(retention, a.cut_threshold, a.static_hold == "on");
     const auto started = std::chrono::steady_clock::now();
     auto elapsed = [&] { return std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count(); };
 
@@ -145,6 +145,7 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         {"shadow_smoothing", a.shadow_smoothing},
         {"cut_threshold", a.cut_threshold},
         {"temporal_smoothing", a.temporal_smoothing},
+        {"static_hold", a.static_hold},
         {"preserve_outside", a.grade ? a.grade->preserve_outside : true},
         {"recovery_mode", a.grade ? a.grade->recovery_mode : std::string("all")},
         {"tile_size", a.tile_size},
@@ -165,8 +166,9 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     }
     pyjson::List cuts, frames;
     std::vector<VideoFrameLight> lights;
-    std::optional<std::pair<double, double>> previous_exposure;   // (source, HDR) EV
+    std::optional<std::pair<std::vector<double>, std::vector<double>>> previous_exposure;   // (source, HDR) cells, EV
     std::vector<std::pair<int, double>> scored;
+    std::vector<double> local_scored;
 
     auto spool_dir = StagingDir::create(work_parent, "rudra-video-");
     if (!spool_dir) return spool_dir.error();
@@ -182,23 +184,40 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
             auto pred = predict(rgb, c.transfer, c.primaries, smoother);
             if (!pred) return pred.error();
             // The flicker measure: how far the HDR's exposure moved beyond the source's.
-            const std::pair<double, double> exposure{
-                exposure_ev(source_luminance(rgb.buffer(), c.transfer, c.primaries), height, width),
-                exposure_ev(hdr_luminance(pred->hdr.buffer()), height, width)};
-            pyjson::Value flicker;
-            if (!pred->cut && previous_exposure) {
-                const double f = std::fabs((exposure.second - previous_exposure->second) -
-                                           (exposure.first - previous_exposure->first));
-                flicker = f;
-                scored.emplace_back(index, f);
+            // The static hold (ShadowSmoother::hold_pixels), then the measure.
+            const std::vector<double> linear = source_luminance(rgb.buffer(), c.transfer, c.primaries);
+            if (smoother.static_hold()) {
+                auto [luma, peak] = source_code_luma(rgb.buffer(), c.primaries);
+                pred->hdr = NetworkLinearImage(
+                    smoother.hold_pixels(std::move(luma), std::move(peak), linear, pred->hdr.buffer()));
             }
-            previous_exposure = exposure;
+            std::pair<std::vector<double>, std::vector<double>> exposure{
+                exposure_cells(linear, height, width), exposure_cells(hdr_luminance(pred->hdr.buffer()), height, width)};
+            pyjson::Value flicker, local;
+            if (!pred->cut && previous_exposure) {
+                auto mean = [](const std::vector<double>& v) {
+                    double s = 0.0;
+                    for (double x : v) s += x;
+                    return s / double(v.size());
+                };
+                const double f = std::fabs((mean(exposure.second) - mean(previous_exposure->second)) -
+                                           (mean(exposure.first) - mean(previous_exposure->first)));
+                std::vector<double> d(exposure.first.size());
+                for (std::size_t k = 0; k < d.size(); ++k)
+                    d[k] = std::fabs((exposure.second[k] - previous_exposure->second[k]) -
+                                     (exposure.first[k] - previous_exposure->first[k]));
+                flicker = f;
+                local = mean(d);
+                scored.emplace_back(index, f);
+                local_scored.push_back(mean(d));
+            }
+            previous_exposure = std::move(exposure);
             auto sf = master_video_frame(pred->hdr, index, a.format, a.peak_nits, a.knee_nits,
                                          alpha ? std::span<const std::uint16_t>(frame->data) : std::span<const std::uint16_t>());
             if (!sf) return sf.error();
             frames.push_back(pyjson::Dict{{"index", index}, {"shadow_weight", pred->shadow_weight},
                                           {"max_cll", sf->light.max_cll}, {"frame_average", sf->light.frame_average},
-                                          {"flicker_ev", flicker}});
+                                          {"flicker_ev", flicker}, {"local_flicker_ev", local}});
             lights.push_back(sf->light);
             if (pred->cut) cuts.push_back(index);
             if (spool_space_low(spool, frame_bytes)) return make_error(ErrorCode::IoError, "Working disk is full");
@@ -219,7 +238,7 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     pyjson::set(report, "scene_cuts", cuts);
     pyjson::set(report, "frames", frames);
     {
-        pyjson::Value mean, peak, peak_frame;
+        pyjson::Value mean, peak, peak_frame, local_mean, local_peak;
         if (!scored.empty()) {
             double sum = 0.0, top = -1.0;
             int at = 0;
@@ -228,11 +247,15 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
                 if (f > top) top = f, at = i;
             }
             mean = sum / double(scored.size()), peak = top, peak_frame = at;
+            double lsum = 0.0, ltop = -1.0;
+            for (double f : local_scored) lsum += f, ltop = std::max(ltop, f);
+            local_mean = lsum / double(local_scored.size()), local_peak = ltop;
         }
         pyjson::set(report, "temporal",
-                    pyjson::Dict{{"retention", retention}, {"frames_scored", int(scored.size())},
-                                 {"flicker_ev_mean", mean}, {"flicker_ev_max", peak},
-                                 {"flicker_ev_max_frame", peak_frame}});
+                    pyjson::Dict{{"retention", retention}, {"static_hold", a.static_hold},
+                                 {"frames_scored", int(scored.size())}, {"flicker_ev_mean", mean},
+                                 {"flicker_ev_max", peak}, {"flicker_ev_max_frame", peak_frame},
+                                 {"local_flicker_ev_mean", local_mean}, {"local_flicker_ev_max", local_peak}});
     }
     const LightCeilings ceil = light_ceilings(lights);
 

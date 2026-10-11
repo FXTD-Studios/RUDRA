@@ -118,10 +118,12 @@ class ShadowSmoother:
     weight; `hold` smooths any other per-frame value (the residual scale, the
     curve) with the same retention, reset at the same cuts. Call `update`
     first for each frame."""
-    def __init__(self, retention=0.0, cut_threshold=0.15):
+    def __init__(self, retention=0.0, cut_threshold=0.15, static_hold=False):
         self.retention, self.cut_threshold = retention, cut_threshold
         self.previous = self.weight = None
         self.held = {}
+        self.static_hold = static_hold
+        self.pixels = None   # hold_pixels' state: (code luma, held gain)
 
     def update(self, thumbnail, weight):
         cut = self.previous is None or float(np.mean(np.abs(thumbnail-self.previous))) >= self.cut_threshold
@@ -129,6 +131,7 @@ class ShadowSmoother:
         self.previous = thumbnail.copy()
         if cut:
             self.held = {}
+            self.pixels = None
         return self.weight, cut
 
     def hold(self, key, value):
@@ -137,6 +140,60 @@ class ShadowSmoother:
         held = value if previous is None else self.retention*previous+(1-self.retention)*value
         self.held[key] = held
         return held
+
+
+    def hold_pixels(self, luma, peak, linear, hdr):
+        """The static hold (10 Oct 2026): where the source pixel did not change
+        from the frame before, the HDR's gain over the source (luminance ratio)
+        is held like the weight, so codec noise lifted by the expansion and the
+        model's jitter in recovered highlights stop shimmering; where it moved,
+        or at a cut, the frame is its own. The source's own change passes
+        through: only the gain is held, never the pixel.
+
+        A pixel clipped or crushed in the source (its largest code at or over
+        STATIC_CLIPPED, or at or under STATIC_CRUSHED, in this frame or the one
+        before) is never held: the source cannot say whether something moved
+        inside a blown highlight, and a held gain there would trail it.
+
+        `luma`: the decoded frame's luma code and `peak` its largest code per
+        pixel (source_code_luma); `linear`: its linear luminance
+        (source_luminance); `hdr`: (h, w, 3) network units. A pixel whose HDR
+        is negative is left as it is (the caller refuses it). Returns the HDR
+        held."""
+        if not self.static_hold or self.retention == 0:
+            return hdr
+        k = LUMA['rec2020']
+        h64 = hdr.astype(np.float64)
+        yh = h64[..., 0]*k[0]+h64[..., 1]*k[1]+h64[..., 2]*k[2]
+        gain = (yh+STATIC_HDR_FLOOR)/(linear+STATIC_SDR_FLOOR)
+        if self.pixels is None:
+            self.pixels = (luma, peak, gain)
+            return hdr
+        previous, previous_peak, held = self.pixels
+        diff = np.pad(np.abs(luma-previous), 1, mode='edge')
+        h, w = luma.shape
+        blurred = np.zeros((h, w))
+        for dy in range(3):
+            for dx in range(3):
+                blurred += diff[dy:dy+h, dx:dx+w]
+        del diff
+        blurred /= 9.0
+        t = np.clip((blurred-STATIC_STILL)/(STATIC_MOVED-STATIC_STILL), 0.0, 1.0)
+        hold = self.retention*(1.0-t*t*(3.0-2.0*t))
+        hold[(np.maximum(peak, previous_peak) >= STATIC_CLIPPED) | (np.minimum(peak, previous_peak) <= STATIC_CRUSHED)
+             | (yh < 0)] = 0.0
+        held = hold*held+(1.0-hold)*gain
+        self.pixels = (luma, peak, held)
+        h64 *= (held/gain)[..., None]
+        return h64.astype(np.float32)
+
+
+# The static hold's thresholds: the source's luma code change (3x3 mean) under
+# which a pixel is still, over which it moved (8-bit codec noise is ~1-2 codes),
+# and the floors of the gain's ratio (SDR linear, HDR network units = 0.01 nit).
+STATIC_STILL, STATIC_MOVED = 1.5/255, 6.0/255
+STATIC_SDR_FLOOR, STATIC_HDR_FLOOR = 1e-4, 1e-6
+STATIC_CLIPPED, STATIC_CRUSHED = 0.98, 0.02
 
 
 def retention_for(fps, seconds):
@@ -168,9 +225,14 @@ def area_mean(plane, height=EXPOSURE_THUMB[0], width=EXPOSURE_THUMB[1]):
     return out
 
 
+def exposure_cells(luminance):
+    """log2 of each cell of the thumbnail's luminance (1.0 = diffuse white)."""
+    return np.log2(np.maximum(area_mean(luminance), 0.0)+EXPOSURE_FLOOR)
+
+
 def exposure_ev(luminance):
     """Mean log2 of the thumbnail's luminance (1.0 = diffuse white)."""
-    return float(np.mean(np.log2(np.maximum(area_mean(luminance), 0.0)+EXPOSURE_FLOOR)))
+    return float(np.mean(exposure_cells(luminance)))
 
 
 def transfer_to_linear(x, transfer):
@@ -201,6 +263,14 @@ def source_luminance(rgb, contract):
         _CODE_TABLES[transfer][code]
     k = LUMA['rec2020' if contract['primaries'] == 'rec2020' else 'rec709']
     return linear[..., 0]*k[0]+linear[..., 1]*k[1]+linear[..., 2]*k[2]
+
+
+def source_code_luma(rgb, contract):
+    """The decoded frame's luma and largest channel in code values (the static
+    hold's still/moved and clipped tests)."""
+    x = rgb.astype(np.float64)
+    k = LUMA['rec2020' if contract['primaries'] == 'rec2020' else 'rec709']
+    return x[..., 0]*k[0]+x[..., 1]*k[1]+x[..., 2]*k[2], x.max(axis=2)
 
 
 def hdr_luminance(hdr):
@@ -410,7 +480,8 @@ def convert_video(args, progress=None):
     filters = run([executable('ffmpeg'), '-hide_banner', '-filters'])
     if profile['encoder'] not in encoders or 'zscale' not in filters:
         raise RuntimeError(f"This FFmpeg build needs {profile['encoder']} and zscale support")
-    if not 0 <= args.shadow_smoothing < 1 or not 0 < args.cut_threshold <= 1 or not 0 <= args.temporal_smoothing <= 10:
+    if not 0 <= args.shadow_smoothing < 1 or not 0 < args.cut_threshold <= 1 or not 0 <= args.temporal_smoothing <= 10 \
+            or args.static_hold not in ('on', 'off'):
         raise ValueError('Invalid smoothing/cut threshold')
     if args.tile_size < 0 or args.tile_overlap < 0 or (args.tile_size and args.tile_overlap >= args.tile_size): raise ValueError('Invalid tile size/overlap')
     if not 0 <= args.crf <= 51 or not 0 <= args.min_nits < args.peak_nits: raise ValueError('Invalid mastering/encoding settings')
@@ -433,7 +504,7 @@ def convert_video(args, progress=None):
     # Held within a shot (10 Oct 2026): --shadow-smoothing, when given, is the
     # retention as before; otherwise --temporal-smoothing seconds sets it.
     retention = args.shadow_smoothing or retention_for(clock['fps'], args.temporal_smoothing)
-    smoother = ShadowSmoother(retention,args.cut_threshold)
+    smoother = ShadowSmoother(retention,args.cut_threshold,args.static_hold=='on')
     started=time.monotonic()
     previous_exposure=None
     report=dict(source=str(source),output=str(output),input_contract=contract,timing=clock,
@@ -442,7 +513,7 @@ def convert_video(args, progress=None):
                 checkpoint=str(args.checkpoint.resolve()),checkpoint_sha256=hashlib.sha256(args.checkpoint.read_bytes()).hexdigest(),
                 mastering_peak_nits=args.peak_nits,mastering_min_nits=args.min_nits if args.format=='hdr10' else None,
                 audio_mode=args.audio,shadow_smoothing=args.shadow_smoothing,cut_threshold=args.cut_threshold,
-                temporal_smoothing=args.temporal_smoothing,
+                temporal_smoothing=args.temporal_smoothing,static_hold=args.static_hold,
                 preserve_outside=True,recovery_mode='all',tile_size=args.tile_size,tile_overlap=args.tile_overlap,
                 timestamp_policy='Video begins at zero; audio retains relative offset, clipped to video interval',
                 scene_cuts=[],frames=[],warnings=['Scalar shadow smoothing is not validated temporal reconstruction'] if args.shadow_smoothing else [])
@@ -461,15 +532,21 @@ def convert_video(args, progress=None):
                     rgb=decoded[...,:3].astype(np.float32)/65535
                     hdr,weight,cut=predictor.predict(rgb,contract,smoother)
                     if not np.isfinite(hdr).all() or np.any(hdr<0): raise RuntimeError(f'Invalid HDR pixels at frame {index}')
-                    exposure=(exposure_ev(source_luminance(rgb,contract)),exposure_ev(hdr_luminance(hdr)))
-                    flicker=None if cut or previous_exposure is None else \
-                        abs((exposure[1]-previous_exposure[1])-(exposure[0]-previous_exposure[0]))
+                    linear=source_luminance(rgb,contract)
+                    hdr=smoother.hold_pixels(*source_code_luma(rgb,contract),linear,hdr)
+                    exposure=(exposure_cells(linear),exposure_cells(hdr_luminance(hdr)))
+                    flicker=local=None
+                    if not cut and previous_exposure is not None:
+                        flicker=abs((float(np.mean(exposure[1]))-float(np.mean(previous_exposure[1])))
+                                    -(float(np.mean(exposure[0]))-float(np.mean(previous_exposure[0]))))
+                        local=float(np.mean(np.abs((exposure[1]-previous_exposure[1])-(exposure[0]-previous_exposure[0]))))
                     previous_exposure=exposure
                     pq,mastered=encode_master(hdr,args.format,args.peak_nits,args.knee_nits)
                     if not np.isfinite(pq).all(): raise RuntimeError(f'Invalid PQ pixels at frame {index}')
                     maxrgb=mastered.max(axis=2)
                     report['frames'].append(dict(index=index,shadow_weight=weight,max_cll=float(maxrgb.max()),
-                                                 frame_average=float(maxrgb.mean()),flicker_ev=flicker))
+                                                 frame_average=float(maxrgb.mean()),flicker_ev=flicker,
+                                                 local_flicker_ev=local))
                     if cut: report['scene_cuts'].append(index)
                     if shutil.disk_usage(spool).free < frame_bytes*2+64*1024**2: raise RuntimeError('Working disk is full')
                     packed=(np.clip(pq,0,1)*65535+.5).astype(np.uint16)
@@ -488,11 +565,14 @@ def convert_video(args, progress=None):
                 process.wait()
         scored=[f['flicker_ev'] for f in report['frames'] if f['flicker_ev'] is not None]
         peak=max(scored) if scored else None
-        report['temporal']=dict(retention=retention,frames_scored=len(scored),
+        local=[f['local_flicker_ev'] for f in report['frames'] if f['local_flicker_ev'] is not None]
+        report['temporal']=dict(retention=retention,static_hold=args.static_hold,frames_scored=len(scored),
                                 flicker_ev_mean=sum(scored)/len(scored) if scored else None,
                                 flicker_ev_max=peak,
                                 flicker_ev_max_frame=next(f['index'] for f in report['frames']
-                                                          if f['flicker_ev']==peak) if scored else None)
+                                                          if f['flicker_ev']==peak) if scored else None,
+                                local_flicker_ev_mean=sum(local)/len(local) if local else None,
+                                local_flicker_ev_max=max(local) if local else None)
         max_cll=math.ceil(max(f['max_cll'] for f in report['frames']))
         max_fall=math.ceil(max(f['frame_average'] for f in report['frames']))
         # Stage on the output volume so the final rename is atomic.
@@ -544,6 +624,8 @@ def add_arguments(parser):
     parser.add_argument('--cut-threshold',type=float,default=.15)
     parser.add_argument('--temporal-smoothing',type=float,default=.25,
                         help='Hold the per-frame values steady within a shot with this time constant in seconds; 0 turns it off')
+    parser.add_argument('--static-hold',choices=['on','off'],default='on',
+                        help="Where the source pixel is still, hold the HDR's gain over it the same way (off: per frame)")
     parser.add_argument('--work-dir',type=Path,help='Directory for temporary PQ frames; removed after completion or failure')
 
 

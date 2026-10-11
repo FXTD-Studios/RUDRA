@@ -93,6 +93,7 @@ TEST(VideoConvertReal, ReportAndMasterAreThePythons) {
                 else if (k == "--audio") a.audio = v;
                 else if (k == "--shadow-smoothing") a.shadow_smoothing = std::stod(v);
                 else if (k == "--temporal-smoothing") a.temporal_smoothing = std::stod(v);
+                else if (k == "--static-hold") a.static_hold = v;
                 else if (k == "--peak-nits") a.peak_nits = std::stod(v);
                 else if (k == "--tile-size") a.tile_size = std::stoi(v);
                 else if (k == "--tile-overlap") a.tile_overlap = std::stoi(v);

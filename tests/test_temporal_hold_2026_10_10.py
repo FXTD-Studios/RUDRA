@@ -108,3 +108,66 @@ def test_the_report_measures_flicker_and_the_hold_reduces_it(tmp_path, monkeypat
     assert off['temporal']['flicker_ev_mean'] == pytest.approx(math.log2(1.5), rel=.05)
     assert held['temporal']['flicker_ev_mean'] < off['temporal']['flicker_ev_mean']*.3
     assert held['warnings'] == []
+
+
+def test_static_hold_holds_the_gain_where_the_source_is_still():
+    luma, linear, peak = np.full((16, 16), .8), np.full((16, 16), .6), np.full((16, 16), .85)
+    hdr1, hdr2 = np.full((16, 16, 3), .1, np.float32), np.full((16, 16, 3), .2, np.float32)
+    thumb = np.zeros((3, 36, 64))
+    for smoother in (video.ShadowSmoother(.5, .15, False), video.ShadowSmoother(0, .15, True)):
+        smoother.update(thumb, 1.0)
+        smoother.hold_pixels(luma, peak, linear, hdr1)
+        smoother.update(thumb, 1.0)
+        assert np.array_equal(smoother.hold_pixels(luma, peak, linear, hdr2), hdr2)   # off, or retention 0
+    smoother = video.ShadowSmoother(.5, .15, True)
+    smoother.update(thumb, 1.0)
+    assert np.array_equal(smoother.hold_pixels(luma, peak, linear, hdr1), hdr1)       # a shot's first frame
+    moved = luma.copy()
+    moved[4:12, 4:12] = .6
+    clipped = peak.copy()
+    clipped[14, 1] = 1.0                                                         # clipped in the source
+    hdr2n = hdr2.copy()
+    hdr2n[1, 14] = -.01                                                          # a negative HDR pixel
+    smoother.update(thumb, 1.0)
+    out = smoother.hold_pixels(moved, clipped, linear, hdr2n)
+    assert out[0, 0, 0] == pytest.approx(.15, abs=1e-6)                          # still: half way in gain
+    assert out[8, 8, 1] == np.float32(.2)                                        # moved: its own
+    assert out[14, 1, 2] == np.float32(.2)                                       # clipped: never held
+    assert out[1, 14, 0] == np.float32(-.01)                                     # negative: left for the caller
+    smoother.update(np.ones_like(thumb), 1.0)                                    # a cut
+    assert np.array_equal(smoother.hold_pixels(moved, peak, linear, hdr1), hdr1)
+
+
+class NoisyPredictor:
+    """The source's linear light times a gain that jitters per pixel and frame,
+    as an expansion lifting codec noise does."""
+    def __init__(self, *_):
+        self.rng = np.random.default_rng(3)
+
+    def predict(self, rgb, contract, smoother):
+        code = rgb.transpose(2, 0, 1).astype(np.float32)
+        weight, cut = smoother.update(code[:, ::4, ::4], 1.0)
+        lin = np.where(rgb <= 0.04045, rgb/12.92, ((rgb+0.055)/1.055)**2.4).astype(np.float32)
+        return lin*.01*(1.0+.3*self.rng.random(rgb.shape[:2], np.float32))[..., None], weight, cut
+
+
+def test_the_static_hold_lowers_the_local_flicker_of_a_still_shot(tmp_path, monkeypatch, media_tools):
+    source = tmp_path/'one.mp4'
+    video.run([video.executable('ffmpeg'), '-v', 'error', '-nostdin', '-n', '-f', 'lavfi', '-i',
+               'testsrc2=size=96x64:rate=24:duration=0.5', '-vf', 'select=eq(n\\,0),loop=11:1:0,setpts=N/24/TB',
+               '-c:v', 'libx264', '-qp', '0', '-color_range', 'tv', '-x264-params',
+               'colorprim=bt709:transfer=bt709:colormatrix=bt709', '-r', '24', str(source)])
+    monkeypatch.setattr(video, 'Predictor', NoisyPredictor)
+    reports = {}
+    for mode in ('off', 'on'):
+        parser = argparse.ArgumentParser()
+        video.add_arguments(parser)
+        target = tmp_path/f'{mode}.mp4'
+        args = parser.parse_args([str(source), '--output', str(target), '--checkpoint', 'checkpoints/sdr2hdr_shadow_v1.pt',
+                                  '--preset', 'ultrafast', '--audio', 'none', '--static-hold', mode])
+        args.input_transfer = args.input_primaries = 'rec709'
+        assert video.convert_video(args) == 0
+        reports[mode] = json.loads(target.with_suffix('.mp4.json').read_text())
+    assert reports['on']['static_hold'] == 'on' and reports['on']['temporal']['static_hold'] == 'on'
+    off, on = (reports[m]['temporal']['local_flicker_ev_mean'] for m in ('off', 'on'))
+    assert on < off*.5, (off, on)

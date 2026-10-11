@@ -113,7 +113,12 @@ std::pair<double, bool> ShadowSmoother::update(const PlanarBuffer& thumbnail, do
     weight_ = (cut || !has_weight_) ? weight : retention_ * weight_ + (1.0 - retention_) * weight;
     has_weight_ = true;
     previous_ = thumbnail;
-    if (cut) held_.clear();
+    if (cut) {
+        held_.clear();
+        pixel_luma_.clear();
+        pixel_peak_.clear();
+        pixel_gain_.clear();
+    }
     return {weight_, cut};
 }
 
@@ -123,6 +128,58 @@ std::vector<double> ShadowSmoother::hold(const std::string& key, const std::vect
     std::vector<double>& h = it->second;
     for (std::size_t i = 0; i < h.size(); ++i) h[i] = retention_ * h[i] + (1.0 - retention_) * value[i];
     return h;
+}
+
+PlanarBuffer ShadowSmoother::hold_pixels(std::vector<double> luma, std::vector<double> peak,
+                                         const std::vector<double>& linear, const PlanarBuffer& hdr) {
+    if (!static_hold_ || retention_ == 0.0) return hdr;
+    const int h = hdr.height(), w = hdr.width();
+    const std::size_t n = hdr.plane_size();
+    std::vector<double> gain(n);
+    std::vector<char> negative(n);
+    const float *h0 = hdr.plane(0), *h1 = hdr.plane(1), *h2 = hdr.plane(2);
+    for (std::size_t i = 0; i < n; ++i) {
+        const double yh = double(h0[i]) * kLuma2020[0] + double(h1[i]) * kLuma2020[1] + double(h2[i]) * kLuma2020[2];
+        gain[i] = (yh + kStaticHdrFloor) / (linear[i] + kStaticSdrFloor);
+        negative[i] = yh < 0.0;
+    }
+    if (pixel_luma_.size() != n) {   // a shot's first frame
+        pixel_luma_ = std::move(luma);
+        pixel_peak_ = std::move(peak);
+        pixel_gain_ = std::move(gain);
+        return hdr;
+    }
+    // |luma - previous|, its 3x3 mean with the edges repeated (np.pad
+    // mode='edge'), summed in the Python's order.
+    std::vector<double> diff(n);
+    for (std::size_t i = 0; i < n; ++i) diff[i] = std::fabs(luma[i] - pixel_luma_[i]);
+    PlanarBuffer out(3, h, w);
+    float *o0 = out.plane(0), *o1 = out.plane(1), *o2 = out.plane(2);
+    for (int y = 0; y < h; ++y) {
+        const double* rows[3] = {diff.data() + std::size_t(std::max(y - 1, 0)) * w, diff.data() + std::size_t(y) * w,
+                                 diff.data() + std::size_t(std::min(y + 1, h - 1)) * w};
+        for (int x = 0; x < w; ++x) {
+            const int xs[3] = {std::max(x - 1, 0), x, std::min(x + 1, w - 1)};
+            double sum = 0.0;
+            for (const double* row : rows)
+                for (int xi : xs) sum = sum + row[xi];
+            const double blurred = sum / 9.0;
+            const double t = std::clamp((blurred - kStaticStill) / (kStaticMoved - kStaticStill), 0.0, 1.0);
+            const std::size_t i = std::size_t(y) * w + x;
+            const bool skip = std::max(peak[i], pixel_peak_[i]) >= kStaticClipped ||
+                              std::min(peak[i], pixel_peak_[i]) <= kStaticCrushed || negative[i];
+            const double hold = skip ? 0.0 : retention_ * (1.0 - t * t * (3.0 - 2.0 * t));
+            const double held = hold * pixel_gain_[i] + (1.0 - hold) * gain[i];
+            pixel_gain_[i] = held;
+            const double f = held / gain[i];
+            o0[i] = static_cast<float>(double(h0[i]) * f);
+            o1[i] = static_cast<float>(double(h1[i]) * f);
+            o2[i] = static_cast<float>(double(h2[i]) * f);
+        }
+    }
+    pixel_luma_ = std::move(luma);
+    pixel_peak_ = std::move(peak);
+    return out;
 }
 
 double retention_for(std::string_view fps, double seconds) {
@@ -135,6 +192,13 @@ double retention_for(std::string_view fps, double seconds) {
 }
 
 double exposure_ev(std::span<const double> lum, int h, int w) {
+    const std::vector<double> cells = exposure_cells(lum, h, w);
+    double sum = 0.0;
+    for (double v : cells) sum += v;
+    return sum / double(cells.size());
+}
+
+std::vector<double> exposure_cells(std::span<const double> lum, int h, int w) {
     // rudra/video.py area_mean: an integral image (cumsum down, then across)
     // and adaptive average pooling's bins.
     const int H = kExposureThumbHeight, W = kExposureThumbWidth;
@@ -144,17 +208,18 @@ double exposure_ev(std::span<const double> lum, int h, int w) {
         for (int x = 0; x < w; ++x) at(y + 1, x + 1) = at(y, x + 1) + lum[std::size_t(y) * w + x];
     for (int y = 1; y <= h; ++y)
         for (int x = 1; x <= w; ++x) at(y, x) += at(y, x - 1);
-    double sum = 0.0;
+    std::vector<double> cells;
+    cells.reserve(std::size_t(H) * W);
     for (int i = 0; i < H; ++i) {
         const int y0 = (i * h) / H, y1 = ((i + 1) * h + H - 1) / H;
         for (int j = 0; j < W; ++j) {
             const int x0 = (j * w) / W, x1 = ((j + 1) * w + W - 1) / W;
             const double area = double(y1 - y0) * double(x1 - x0);
             const double m = (at(y1, x1) - at(y0, x1) - at(y1, x0) + at(y0, x0)) / area;
-            sum += std::log2(std::max(m, 0.0) + 1.0 / 1024.0);
+            cells.push_back(std::log2(std::max(m, 0.0) + 1.0 / 1024.0));
         }
     }
-    return sum / double(H * W);
+    return cells;
 }
 
 namespace {
@@ -196,6 +261,17 @@ std::vector<double> source_luminance(const PlanarBuffer& rgb, std::string_view t
         }
     }
     return out;
+}
+
+std::pair<std::vector<double>, std::vector<double>> source_code_luma(const PlanarBuffer& rgb, std::string_view primaries) {
+    const double* k = primaries == "rec2020" ? kLuma2020 : kLuma709;
+    std::vector<double> luma(rgb.plane_size()), peak(rgb.plane_size());
+    const float *r = rgb.plane(0), *g = rgb.plane(1), *b = rgb.plane(2);
+    for (std::size_t i = 0; i < luma.size(); ++i) {
+        luma[i] = double(r[i]) * k[0] + double(g[i]) * k[1] + double(b[i]) * k[2];
+        peak[i] = std::max({double(r[i]), double(g[i]), double(b[i])});
+    }
+    return {std::move(luma), std::move(peak)};
 }
 
 std::vector<double> hdr_luminance(const PlanarBuffer& hdr) {
