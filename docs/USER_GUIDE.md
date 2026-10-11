@@ -113,6 +113,12 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   sheet's Queue button shows it).
 - **Anchor to source exposure** keeps mid-tones where the SDR had them; the
   **Anchor knee** says where that lets go.
+- HDR10 and ProRes (PQ) exports write their **Dolby Vision and HDR10+
+  metadata** per shot beside the file: `<file>_hdr10plus.json`,
+  `<file>_dovi_generate.json` (for `dovi_tool generate` or your finishing
+  tool), `<file>_hdr_analysis.json` and `<file>_hdr10plus_scenes.json`. HDR10
+  carries HDR10+ inside the file when the ffmpeg's x265 can write it; the
+  report (`hdr_metadata`) says whether it did and, if not, why.
 - A movie's report (`<file>.json`) measures flicker: `flicker_ev` for each
   frame and `temporal.flicker_ev_mean` / `flicker_ev_max` for the clip, the
   EV the HDR's average moved from one frame to the next beyond what the
