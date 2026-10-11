@@ -151,10 +151,14 @@ class ShadowSmoother:
         or at a cut, the frame is its own. The source's own change passes
         through: only the gain is held, never the pixel.
 
-        A pixel clipped or crushed in the source (its largest code at or over
-        STATIC_CLIPPED, or at or under STATIC_CRUSHED, in this frame or the one
-        before) is never held: the source cannot say whether something moved
-        inside a blown highlight, and a held gain there would trail it.
+        Where the source is clipped (its largest code at or over STATIC_CLIPPED)
+        in this frame and the one before, it cannot say whether anything moved,
+        so the HDR's own change decides instead (11 Oct 2026): under
+        STATIC_HDR_STILL EV (3x3 mean of |dlog2|) the gain is held, which settles
+        the model's jitter in recovered highlights; over STATIC_HDR_MOVED it is
+        the frame's own, so a light moving inside a blown sky does not trail.
+        A pixel that clipped in only one of the two frames changed, and is its
+        own; a crushed one (at or under STATIC_CRUSHED) is never held.
 
         `luma`: the decoded frame's luma code and `peak` its largest code per
         pixel (source_code_luma); `linear`: its linear luminance
@@ -168,23 +172,20 @@ class ShadowSmoother:
         yh = h64[..., 0]*k[0]+h64[..., 1]*k[1]+h64[..., 2]*k[2]
         gain = (yh+STATIC_HDR_FLOOR)/(linear+STATIC_SDR_FLOOR)
         if self.pixels is None:
-            self.pixels = (luma, peak, gain)
+            self.pixels = (luma, peak, gain, yh)
             return hdr
-        previous, previous_peak, held = self.pixels
-        diff = np.pad(np.abs(luma-previous), 1, mode='edge')
-        h, w = luma.shape
-        blurred = np.zeros((h, w))
-        for dy in range(3):
-            for dx in range(3):
-                blurred += diff[dy:dy+h, dx:dx+w]
-        del diff
-        blurred /= 9.0
-        t = np.clip((blurred-STATIC_STILL)/(STATIC_MOVED-STATIC_STILL), 0.0, 1.0)
+        previous, previous_peak, held, previous_yh = self.pixels
+        t = np.clip((mean3x3(np.abs(luma-previous))-STATIC_STILL)/(STATIC_MOVED-STATIC_STILL), 0.0, 1.0)
         hold = self.retention*(1.0-t*t*(3.0-2.0*t))
-        hold[(np.maximum(peak, previous_peak) >= STATIC_CLIPPED) | (np.minimum(peak, previous_peak) <= STATIC_CRUSHED)
-             | (yh < 0)] = 0.0
+        both_clipped = np.minimum(peak, previous_peak) >= STATIC_CLIPPED
+        if both_clipped.any():
+            change = np.abs(np.log2(np.maximum(yh, 0.0)+STATIC_HDR_FLOOR)-np.log2(np.maximum(previous_yh, 0.0)+STATIC_HDR_FLOOR))
+            th = np.clip((mean3x3(change)-STATIC_HDR_STILL)/(STATIC_HDR_MOVED-STATIC_HDR_STILL), 0.0, 1.0)
+            hold = np.where(both_clipped, self.retention*(1.0-th*th*(3.0-2.0*th)), hold)
+        hold[((np.maximum(peak, previous_peak) >= STATIC_CLIPPED) & ~both_clipped)
+             | (np.minimum(peak, previous_peak) <= STATIC_CRUSHED) | (yh < 0)] = 0.0
         held = hold*held+(1.0-hold)*gain
-        self.pixels = (luma, peak, held)
+        self.pixels = (luma, peak, held, yh)
         h64 *= (held/gain)[..., None]
         return h64.astype(np.float32)
 
@@ -195,6 +196,20 @@ class ShadowSmoother:
 STATIC_STILL, STATIC_MOVED = 1.5/255, 6.0/255
 STATIC_SDR_FLOOR, STATIC_HDR_FLOOR = 1e-4, 1e-6
 STATIC_CLIPPED, STATIC_CRUSHED = 0.98, 0.02
+# Inside clipped highlights: the HDR's own change (EV, 3x3 mean) under which it holds, over which it is its own.
+STATIC_HDR_STILL, STATIC_HDR_MOVED = 0.05, 0.25
+
+
+def mean3x3(plane):
+    """The 3x3 mean of a float64 plane with its edges repeated, summed row of
+    the kernel by row (the native port sums in this order)."""
+    padded = np.pad(plane, 1, mode='edge')
+    h, w = plane.shape
+    out = np.zeros((h, w))
+    for dy in range(3):
+        for dx in range(3):
+            out += padded[dy:dy+h, dx:dx+w]
+    return out/9.0
 
 
 def retention_for(fps, seconds):

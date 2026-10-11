@@ -195,6 +195,25 @@ TEST(VideoPredict, TheStaticHoldHoldsTheGainWhereTheSourceIsStill) {
     EXPECT_TRUE(same(s.hold_pixels(moved, peak, linear, hdr1), hdr1));
 }
 
+// Inside clipped highlights the HDR's own change decides (11 Oct 2026): a few
+// hundredths of an EV of model jitter is held, a stop of change is its own.
+TEST(VideoPredict, InsideClippedHighlightsTheHdrsOwnChangeDecides) {
+    const int h = 16, w = 16;
+    const std::size_t n = std::size_t(h) * w;
+    const std::vector<double> luma(n, 0.99), linear(n, 0.9), peak(n, 1.0);
+    const PlanarBuffer thumb(3, kCutThumbHeight, kCutThumbWidth, 0.0f);
+    const PlanarBuffer base(3, h, w, 0.2f);
+    ShadowSmoother s(0.5, 0.15, true);
+    s.update(thumb, 1.0);
+    s.hold_pixels(luma, peak, linear, base);
+    s.update(thumb, 1.0);
+    const PlanarBuffer jitter(3, h, w, static_cast<float>(0.2f * std::exp2(0.02)));
+    EXPECT_NEAR(s.hold_pixels(luma, peak, linear, jitter).plane(0)[8 * w + 8], 0.2 * (1.0 + std::exp2(0.02)) / 2.0, 1e-6);
+    s.update(thumb, 1.0);
+    const PlanarBuffer moved(3, h, w, 0.4f);
+    EXPECT_EQ(s.hold_pixels(luma, peak, linear, moved).plane(0)[8 * w + 8], 0.4f);
+}
+
 TEST(VideoPredict, ExposureCellsAverageToTheExposure) {
     std::vector<double> lum(72 * 128);
     for (std::size_t i = 0; i < lum.size(); ++i) lum[i] = 0.01 + double(i % 97) / 50.0;

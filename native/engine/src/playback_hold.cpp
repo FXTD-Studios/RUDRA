@@ -15,6 +15,7 @@ void PlaybackHold::configure(double fps, double seconds, double cut_threshold) {
 
 void PlaybackHold::reset() {
     last_ = shot_start_ = anchor_last_ = -1;
+    ++shot_;
     thumb_ = PlanarBuffer();
     weight_ = 1.0;
     log_hold_ = 0.0;
@@ -34,6 +35,8 @@ double PlaybackHold::weight(int index, const SdrImage& sdr, double w) {
     if (cut) {
         weight_ = w;
         shot_start_ = index;
+        anchor_last_ = -1;
+        ++shot_;
     } else {
         const double r = std::pow(retention_, index - last_);
         weight_ = r * weight_ + (1.0 - r) * w;
@@ -43,10 +46,12 @@ double PlaybackHold::weight(int index, const SdrImage& sdr, double w) {
     return weight_;
 }
 
-double PlaybackHold::anchor(int index, double hold) {
-    if (retention_ == 0.0 || !(hold > 0.0) || !std::isfinite(hold) || index < shot_start_) return hold;   // a measure from before the cut
+double PlaybackHold::anchor(int index, double hold, int shot) {
+    // Off, nothing to hold, or a late measure from another shot (a cut, or the
+    // pass before playback looped back to the start): the frame's own.
+    if (retention_ == 0.0 || !(hold > 0.0) || !std::isfinite(hold) || shot != shot_) return hold;
     if (index == anchor_last_) return std::exp2(log_hold_);
-    if (anchor_last_ < 0 || anchor_last_ < shot_start_ || index < anchor_last_) {
+    if (anchor_last_ < 0 || index < anchor_last_) {
         log_hold_ = std::log2(hold);
     } else {
         const double r = std::pow(retention_, index - anchor_last_);

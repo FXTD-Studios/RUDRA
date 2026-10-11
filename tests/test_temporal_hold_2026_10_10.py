@@ -171,3 +171,22 @@ def test_the_static_hold_lowers_the_local_flicker_of_a_still_shot(tmp_path, monk
     assert reports['on']['static_hold'] == 'on' and reports['on']['temporal']['static_hold'] == 'on'
     off, on = (reports[m]['temporal']['local_flicker_ev_mean'] for m in ('off', 'on'))
     assert on < off*.5, (off, on)
+
+
+def test_inside_clipped_highlights_the_hdrs_own_change_decides():
+    """11 Oct 2026: the source shows nothing inside a blown highlight, so the
+    HDR's own change does. Model jitter of a few hundredths of an EV is held;
+    a light that moves (a large change) is the frame's own and leaves no trail."""
+    luma, linear = np.full((16, 16), .99), np.full((16, 16), .9)
+    peak = np.ones((16, 16))
+    base = np.full((16, 16, 3), .2, np.float32)
+    smoother = video.ShadowSmoother(.5, .15, True)
+    smoother.update(np.zeros((3, 36, 64)), 1.0)
+    smoother.hold_pixels(luma, peak, linear, base)
+    smoother.update(np.zeros((3, 36, 64)), 1.0)
+    jitter = (base*2**0.02).astype(np.float32)        # 0.02 EV: held half way (r = .5)
+    out = smoother.hold_pixels(luma, peak, linear, jitter)
+    assert out[8, 8, 0] == pytest.approx(.2*(1+2**0.02)/2, rel=1e-6)
+    smoother.update(np.zeros((3, 36, 64)), 1.0)
+    moved = (base*2.0).astype(np.float32)              # a whole stop: its own
+    assert smoother.hold_pixels(luma, peak, linear, moved)[8, 8, 0] == np.float32(.4)

@@ -395,7 +395,7 @@ private:
     void schedule_stats();
     void run_stats();
     // `index`: the frame it measured (-1: the one on screen, not held).
-    void apply_measure(std::shared_ptr<const FrameMeasure> m, int index = -1);
+    void apply_measure(std::shared_ptr<const FrameMeasure> m, int index = -1, int hold_shot = -1);
     void show_own_values();
     void update_pipe();
     // The compare line under the Compare bar: what RUDRA changed and how much
@@ -453,6 +453,7 @@ private:
         FrameHeader header;
         int index = -1;   // the frame's index in the shot
         float own_shadow_weight = 1.0f;   // before the playback hold
+        int hold_shot = -1;               // PlaybackHold::shot() when it was shown
     };
     std::shared_ptr<const Current> current_frame_;
     std::shared_ptr<const FrameMeasure> measure_;

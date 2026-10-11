@@ -58,32 +58,32 @@
       "shadow_weight": 0.9671649387675247,
       "max_cll": 1000.0,
       "frame_average": 75.85613250732422,
-      "flicker_ev": 4.978229555252511e-06,
-      "local_flicker_ev": 3.889780694658107e-05
+      "flicker_ev": 4.93593808004178e-06,
+      "local_flicker_ev": 3.884827807949381e-05
     },
     {
       "index": 3,
       "shadow_weight": 0.9667742506024939,
       "max_cll": 1000.0,
-      "frame_average": 74.40513610839844,
-      "flicker_ev": 0.0016350929062678432,
-      "local_flicker_ev": 0.003808303494636988
+      "frame_average": 74.52436065673828,
+      "flicker_ev": 0.0008244803163282022,
+      "local_flicker_ev": 0.0028726058309752594
     },
     {
       "index": 4,
       "shadow_weight": 0.9668170275088244,
       "max_cll": 1000.0,
-      "frame_average": 73.25214385986328,
-      "flicker_ev": 0.0015099575601285053,
-      "local_flicker_ev": 0.00501946601557308
+      "frame_average": 73.39469146728516,
+      "flicker_ev": 0.0013679517986502354,
+      "local_flicker_ev": 0.004427351631778554
     },
     {
       "index": 5,
       "shadow_weight": 0.966933975418003,
       "max_cll": 1000.0,
-      "frame_average": 73.51927185058594,
-      "flicker_ev": 0.0001235837159168085,
-      "local_flicker_ev": 0.0035140398535332437
+      "frame_average": 73.57319641113281,
+      "flicker_ev": 0.00013761925053046298,
+      "local_flicker_ev": 0.0034827658566424996
     }
   ],
   "warnings": [],
@@ -91,11 +91,11 @@
     "retention": 0.8463406563591698,
     "static_hold": "on",
     "frames_scored": 5,
-    "flicker_ev_mean": 0.000654722482373682,
-    "flicker_ev_max": 0.0016350929062678432,
-    "flicker_ev_max_frame": 3,
-    "local_flicker_ev_mean": 0.0024761414341379785,
-    "local_flicker_ev_max": 0.00501946601557308
+    "flicker_ev_mean": 0.0004669974607177885,
+    "flicker_ev_max": 0.0013679517986502354,
+    "flicker_ev_max_frame": 4,
+    "local_flicker_ev_mean": 0.0021643143194951613,
+    "local_flicker_ev_max": 0.004427351631778554
   },
   "hdr_metadata": {
     "shots": 1,
@@ -119,7 +119,7 @@
     "-framerate",
     "24000/1001",
     "-i",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-video-hzn4tesr/%08d.png",
+    "/tmp/nat/native/tests/golden/video_convert/rudra-video-qz8mxsqk/%08d.png",
     "-itsoffset",
     "-10.0",
     "-i",
@@ -164,7 +164,7 @@
     "disabled",
     "-movflags",
     "+faststart+write_colr",
-    "/tmp/nat/native/tests/golden/video_convert/rudra-master-bd_bu6z1/hdr10_audio.mp4"
+    "/tmp/nat/native/tests/golden/video_convert/rudra-master-yvksv_qz/hdr10_audio.mp4"
   ],
   "qc": {
     "passed": true,
@@ -202,7 +202,7 @@
       "start_time": "0.000000",
       "duration_ts": 6006,
       "duration": "0.250250",
-      "bit_rate": "113902",
+      "bit_rate": "114061",
       "nb_frames": "6",
       "extradata_size": 2530,
       "disposition": {
@@ -263,5 +263,5 @@
   },
   "max_cll": 1000,
   "max_fall": 76,
-  "elapsed_seconds": 0.6446048410000458
+  "elapsed_seconds": 0.7022976610001024
 }

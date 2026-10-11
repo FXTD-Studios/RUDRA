@@ -48,9 +48,10 @@ public:
     // The static hold (rudra/video.py ShadowSmoother.hold_pixels): where the
     // source pixel is still from the frame before, the HDR's gain over it
     // (luminance ratio) is held with the same retention; where it moved, or
-    // at a cut, the frame is its own. A pixel clipped or crushed in the source
-    // (its largest code >= kStaticClipped or <= kStaticCrushed, this frame or
-    // the one before) is never held, nor one whose HDR is negative. `luma`,
+    // at a cut, the frame is its own. Where the source is clipped in both
+    // frames (largest code >= kStaticClipped) the HDR's own change decides; a
+    // pixel clipped in one frame only, a crushed one (<= kStaticCrushed) and
+    // one whose HDR is negative are never held. `luma`,
     // `peak`: the decoded frame's luma and largest code (source_code_luma);
     // `linear`: its luminance (source_luminance); `hdr`: 3 x h x w network
     // units. Off (or retention 0): `hdr` unchanged.
@@ -67,7 +68,7 @@ private:
     double weight_ = 0.0;
     std::map<std::string, std::vector<double>> held_;
     bool static_hold_ = false;
-    std::vector<double> pixel_luma_, pixel_peak_, pixel_gain_;   // hold_pixels' state; empty: none
+    std::vector<double> pixel_luma_, pixel_peak_, pixel_gain_, pixel_yh_;   // hold_pixels' state; empty: none
 };
 
 // hold_pixels' thresholds: the source's luma code change (3x3 mean) under
@@ -75,6 +76,9 @@ private:
 inline constexpr double kStaticStill = 1.5 / 255.0, kStaticMoved = 6.0 / 255.0;
 inline constexpr double kStaticSdrFloor = 1e-4, kStaticHdrFloor = 1e-6;
 inline constexpr double kStaticClipped = 0.98, kStaticCrushed = 0.02;
+// Inside highlights clipped in both frames the HDR's own change decides (EV,
+// 3x3 mean of |dlog2|): held under kStaticHdrStill, its own over kStaticHdrMoved.
+inline constexpr double kStaticHdrStill = 0.05, kStaticHdrMoved = 0.25;
 
 // exp(-1/(fps*seconds)), the retention of a hold with that time constant; 0
 // for 0 seconds. `fps` as ffprobe gives it ("24", "30000/1001").
