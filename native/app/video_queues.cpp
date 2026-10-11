@@ -116,7 +116,8 @@ void VideoQueues::set_entries(std::vector<QueueEntry> e) {
 }
 
 Result<fs::path> write_export_queue(const fs::path& movie, const fs::path& output, const fs::path& manifest,
-                                    const std::string& format, const fs::path& grade) {
+                                    const std::string& format, const fs::path& grade,
+                                    std::optional<double> temporal_smoothing) {
     const fs::path dir = output.parent_path();
     std::error_code ec;
     fs::create_directories(dir, ec);
@@ -125,6 +126,7 @@ Result<fs::path> write_export_queue(const fs::path& movie, const fs::path& outpu
     for (int n = 2; fs::exists(queue, ec); ++n) queue = dir / (base + " " + std::to_string(n) + ".queue.json");
     pyjson::Dict options{{"format", format}};
     if (!grade.empty()) options.emplace_back("grade", grade.string());
+    if (temporal_smoothing) options.emplace_back("temporal-smoothing", *temporal_smoothing);
     const pyjson::Value spec = pyjson::Dict{
         {"version", 1},
         {"defaults", pyjson::Dict{{"checkpoint", (manifest.empty() ? grade : manifest).string()}}},

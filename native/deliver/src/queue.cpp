@@ -61,6 +61,8 @@ const std::vector<Opt>& video_options() {
         {"tile-overlap", Kind::Int, {}},
         {"shadow-smoothing", Kind::Float, {}},
         {"cut-threshold", Kind::Float, {}},
+        {"temporal-smoothing", Kind::Float, {}},
+        {"static-hold", Kind::Str, {"on", "off"}},
         {"work-dir", Kind::Path, {}},
         // Native only: the app's settings for this export (video/convert.hpp
         // VideoConvertArgs::grade). With an analytic grade the job's

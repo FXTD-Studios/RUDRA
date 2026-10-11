@@ -112,16 +112,172 @@ def decoder_filter(contract, alpha=False):
 
 
 class ShadowSmoother:
-    """Optional scalar gate smoothing. Resets at hard cuts; never blends pixels."""
-    def __init__(self, retention=0.0, cut_threshold=0.15):
+    """Scalar smoothing within a shot. Resets at hard cuts; never blends pixels.
+
+    `update` decides whether this frame starts a shot and smooths the shadow
+    weight; `hold` smooths any other per-frame value (the residual scale, the
+    curve) with the same retention, reset at the same cuts. Call `update`
+    first for each frame."""
+    def __init__(self, retention=0.0, cut_threshold=0.15, static_hold=False):
         self.retention, self.cut_threshold = retention, cut_threshold
         self.previous = self.weight = None
+        self.held = {}
+        self.static_hold = static_hold
+        self.pixels = None   # hold_pixels' state: (code luma, held gain)
 
     def update(self, thumbnail, weight):
         cut = self.previous is None or float(np.mean(np.abs(thumbnail-self.previous))) >= self.cut_threshold
         self.weight = weight if cut or self.weight is None else self.retention*self.weight+(1-self.retention)*weight
         self.previous = thumbnail.copy()
+        if cut:
+            self.held = {}
+            self.pixels = None
         return self.weight, cut
+
+    def hold(self, key, value):
+        """`value` (a float, or a float64 array) held across the shot like the weight."""
+        previous = self.held.get(key)
+        held = value if previous is None else self.retention*previous+(1-self.retention)*value
+        self.held[key] = held
+        return held
+
+
+    def hold_pixels(self, luma, peak, linear, hdr):
+        """The static hold (10 Oct 2026): where the source pixel did not change
+        from the frame before, the HDR's gain over the source (luminance ratio)
+        is held like the weight, so codec noise lifted by the expansion and the
+        model's jitter in recovered highlights stop shimmering; where it moved,
+        or at a cut, the frame is its own. The source's own change passes
+        through: only the gain is held, never the pixel.
+
+        A pixel clipped or crushed in the source (its largest code at or over
+        STATIC_CLIPPED, or at or under STATIC_CRUSHED, in this frame or the one
+        before) is never held: the source cannot say whether something moved
+        inside a blown highlight, and a held gain there would trail it.
+
+        `luma`: the decoded frame's luma code and `peak` its largest code per
+        pixel (source_code_luma); `linear`: its linear luminance
+        (source_luminance); `hdr`: (h, w, 3) network units. A pixel whose HDR
+        is negative is left as it is (the caller refuses it). Returns the HDR
+        held."""
+        if not self.static_hold or self.retention == 0:
+            return hdr
+        k = LUMA['rec2020']
+        h64 = hdr.astype(np.float64)
+        yh = h64[..., 0]*k[0]+h64[..., 1]*k[1]+h64[..., 2]*k[2]
+        gain = (yh+STATIC_HDR_FLOOR)/(linear+STATIC_SDR_FLOOR)
+        if self.pixels is None:
+            self.pixels = (luma, peak, gain)
+            return hdr
+        previous, previous_peak, held = self.pixels
+        diff = np.pad(np.abs(luma-previous), 1, mode='edge')
+        h, w = luma.shape
+        blurred = np.zeros((h, w))
+        for dy in range(3):
+            for dx in range(3):
+                blurred += diff[dy:dy+h, dx:dx+w]
+        del diff
+        blurred /= 9.0
+        t = np.clip((blurred-STATIC_STILL)/(STATIC_MOVED-STATIC_STILL), 0.0, 1.0)
+        hold = self.retention*(1.0-t*t*(3.0-2.0*t))
+        hold[(np.maximum(peak, previous_peak) >= STATIC_CLIPPED) | (np.minimum(peak, previous_peak) <= STATIC_CRUSHED)
+             | (yh < 0)] = 0.0
+        held = hold*held+(1.0-hold)*gain
+        self.pixels = (luma, peak, held)
+        h64 *= (held/gain)[..., None]
+        return h64.astype(np.float32)
+
+
+# The static hold's thresholds: the source's luma code change (3x3 mean) under
+# which a pixel is still, over which it moved (8-bit codec noise is ~1-2 codes),
+# and the floors of the gain's ratio (SDR linear, HDR network units = 0.01 nit).
+STATIC_STILL, STATIC_MOVED = 1.5/255, 6.0/255
+STATIC_SDR_FLOOR, STATIC_HDR_FLOOR = 1e-4, 1e-6
+STATIC_CLIPPED, STATIC_CRUSHED = 0.98, 0.02
+
+
+def retention_for(fps, seconds):
+    """The per-frame retention of a hold with time constant `seconds` at `fps`:
+    exp(-1/(fps*seconds)); 0 (no smoothing) for 0 seconds."""
+    return math.exp(-1.0/(float(Fraction(fps))*seconds)) if seconds > 0 else 0.0
+
+
+# The flicker measure (10 Oct 2026): how far the HDR's average exposure moved
+# from one frame to the next beyond what the source's did, in EV, on a 36x64
+# area thumbnail of the luminance; frames that start a shot are not scored.
+EXPOSURE_THUMB = (36, 64)
+EXPOSURE_FLOOR = 2.0**-10   # relative to diffuse white
+LUMA = dict(rec709=(0.2126, 0.7152, 0.0722), rec2020=(0.2627, 0.6780, 0.0593))
+
+
+def area_mean(plane, height=EXPOSURE_THUMB[0], width=EXPOSURE_THUMB[1]):
+    """F.interpolate(mode='area') of one float64 plane: adaptive average pooling."""
+    h, w = plane.shape
+    integral = np.zeros((h+1, w+1))
+    integral[1:, 1:] = plane.cumsum(0).cumsum(1)
+    out = np.empty((height, width))
+    for i in range(height):
+        y0, y1 = (i*h)//height, -((-(i+1)*h)//height)
+        for j in range(width):
+            x0, x1 = (j*w)//width, -((-(j+1)*w)//width)
+            area = (y1-y0)*(x1-x0)
+            out[i, j] = (integral[y1, x1]-integral[y0, x1]-integral[y1, x0]+integral[y0, x0])/area
+    return out
+
+
+def exposure_cells(luminance):
+    """log2 of each cell of the thumbnail's luminance (1.0 = diffuse white)."""
+    return np.log2(np.maximum(area_mean(luminance), 0.0)+EXPOSURE_FLOOR)
+
+
+def exposure_ev(luminance):
+    """Mean log2 of the thumbnail's luminance (1.0 = diffuse white)."""
+    return float(np.mean(exposure_cells(luminance)))
+
+
+def transfer_to_linear(x, transfer):
+    x = np.clip(x, 0.0, 1.0)
+    if transfer == 'srgb':
+        return np.where(x <= 0.04045, x/12.92, ((x+0.055)/1.055)**2.4)
+    if transfer == 'rec709':
+        return np.where(x < 0.081, x/4.5, ((x+0.099)/1.099)**(1.0/0.45))
+    return x**(2.2 if transfer == 'gamma22' else 2.4)
+
+
+_CODE_TABLES = {}
+
+
+def source_luminance(rgb, contract):
+    """The decoded frame's linear luminance (full-range code in the clip's transfer).
+
+    A decoded frame holds k/65535 in float32, so the transfer is looked up at
+    those codes -- the same values as computing it, without a power per pixel."""
+    transfer = contract['transfer']
+    if transfer not in _CODE_TABLES:
+        _CODE_TABLES[transfer] = transfer_to_linear((np.arange(65536, dtype=np.float32)/65535).astype(np.float64), transfer)
+    x = np.asarray(rgb, dtype=np.float32)
+    code = np.rint(x.astype(np.float64)*65535).astype(np.int64)
+    exact = (code >= 0) & (code <= 65535) & ((np.clip(code, 0, 65535).astype(np.float32)/65535) == x)
+    linear = np.where(exact, _CODE_TABLES[transfer][np.clip(code, 0, 65535)],
+                      transfer_to_linear(x.astype(np.float64), transfer)) if not exact.all() else \
+        _CODE_TABLES[transfer][code]
+    k = LUMA['rec2020' if contract['primaries'] == 'rec2020' else 'rec709']
+    return linear[..., 0]*k[0]+linear[..., 1]*k[1]+linear[..., 2]*k[2]
+
+
+def source_code_luma(rgb, contract):
+    """The decoded frame's luma and largest channel in code values (the static
+    hold's still/moved and clipped tests)."""
+    x = rgb.astype(np.float64)
+    k = LUMA['rec2020' if contract['primaries'] == 'rec2020' else 'rec709']
+    return x[..., 0]*k[0]+x[..., 1]*k[1]+x[..., 2]*k[2], x.max(axis=2)
+
+
+def hdr_luminance(hdr):
+    """The HDR frame's luminance relative to diffuse white (network units, 1.0 = 10 000 nits)."""
+    x = hdr.astype(np.float64)
+    k = LUMA['rec2020']
+    return (x[..., 0]*k[0]+x[..., 1]*k[1]+x[..., 2]*k[2])*100.0
 
 
 class Predictor:
@@ -150,6 +306,15 @@ class Predictor:
             thumb = F.interpolate(x,size=(36,64),mode='area')[0].cpu().numpy()
             weight = self.model.predict_shadow_weight(x)
             scalar, cut = smoother.update(thumb, float(weight.item()) if weight is not None else 1.0)
+            # The other per-frame values are held across the shot as the
+            # weight is (10 Oct 2026), for a model that has those heads.
+            scale = self.model.predict_residual_scale(x) if hasattr(self.model, 'predict_residual_scale') else None
+            if scale is not None:
+                scale = torch.full_like(scale, smoother.hold('residual_scale', float(scale.item())))
+            curve = self.model.predict_curve(x) if hasattr(self.model, 'predict_curve') else None
+            if curve is not None:
+                curve = torch.as_tensor(smoother.hold('curve', curve.double().cpu().numpy()),
+                                        dtype=curve.dtype, device=curve.device)
             # Tiling, feathering and the once-per-frame scale and curve are
             # rudra.inference.predict_image's, the same code the Studio and the
             # bench run; this kept its own copy until 9 Oct 2026. fp32 (bf16
@@ -158,7 +323,7 @@ class Predictor:
             result = predict_image(self.model, x, preserve_outside=True,
                                    tile_size=self.tile_size, overlap=self.overlap,
                                    recovery_mode='all', bf16=False,
-                                   shadow_weight=scalar)
+                                   shadow_weight=scalar, residual_scale=scale, curve_params=curve)
             return result[0].permute(1,2,0).cpu().numpy(), scalar, cut
 
 
@@ -315,7 +480,9 @@ def convert_video(args, progress=None):
     filters = run([executable('ffmpeg'), '-hide_banner', '-filters'])
     if profile['encoder'] not in encoders or 'zscale' not in filters:
         raise RuntimeError(f"This FFmpeg build needs {profile['encoder']} and zscale support")
-    if not 0 <= args.shadow_smoothing < 1 or not 0 < args.cut_threshold <= 1: raise ValueError('Invalid smoothing/cut threshold')
+    if not 0 <= args.shadow_smoothing < 1 or not 0 < args.cut_threshold <= 1 or not 0 <= args.temporal_smoothing <= 10 \
+            or args.static_hold not in ('on', 'off'):
+        raise ValueError('Invalid smoothing/cut threshold')
     if args.tile_size < 0 or args.tile_overlap < 0 or (args.tile_size and args.tile_overlap >= args.tile_size): raise ValueError('Invalid tile size/overlap')
     if not 0 <= args.crf <= 51 or not 0 <= args.min_nits < args.peak_nits: raise ValueError('Invalid mastering/encoding settings')
     master_to_pq(np.zeros((1,1,3),np.float32),args.peak_nits,args.knee_nits)
@@ -334,14 +501,19 @@ def convert_video(args, progress=None):
     frame_bytes=stream['width']*stream['height']*channels*2
     if shutil.disk_usage(work_parent).free < frame_bytes*2+64*1024**2: raise RuntimeError('Insufficient working disk space')
     predictor = Predictor(args.checkpoint,args.device,args.tile_size,args.tile_overlap)
-    smoother = ShadowSmoother(args.shadow_smoothing,args.cut_threshold)
+    # Held within a shot (10 Oct 2026): --shadow-smoothing, when given, is the
+    # retention as before; otherwise --temporal-smoothing seconds sets it.
+    retention = args.shadow_smoothing or retention_for(clock['fps'], args.temporal_smoothing)
+    smoother = ShadowSmoother(retention,args.cut_threshold,args.static_hold=='on')
     started=time.monotonic()
+    previous_exposure=None
     report=dict(source=str(source),output=str(output),input_contract=contract,timing=clock,
                 delivery_format=args.format,alpha_mode=args.alpha_mode if args.preserve_alpha else None,
                 encoder_input_precision_bits=10,alpha_preserved=args.preserve_alpha,
                 checkpoint=str(args.checkpoint.resolve()),checkpoint_sha256=hashlib.sha256(args.checkpoint.read_bytes()).hexdigest(),
                 mastering_peak_nits=args.peak_nits,mastering_min_nits=args.min_nits if args.format=='hdr10' else None,
                 audio_mode=args.audio,shadow_smoothing=args.shadow_smoothing,cut_threshold=args.cut_threshold,
+                temporal_smoothing=args.temporal_smoothing,static_hold=args.static_hold,
                 preserve_outside=True,recovery_mode='all',tile_size=args.tile_size,tile_overlap=args.tile_overlap,
                 timestamp_policy='Video begins at zero; audio retains relative offset, clipped to video interval',
                 scene_cuts=[],frames=[],warnings=['Scalar shadow smoothing is not validated temporal reconstruction'] if args.shadow_smoothing else [])
@@ -360,11 +532,21 @@ def convert_video(args, progress=None):
                     rgb=decoded[...,:3].astype(np.float32)/65535
                     hdr,weight,cut=predictor.predict(rgb,contract,smoother)
                     if not np.isfinite(hdr).all() or np.any(hdr<0): raise RuntimeError(f'Invalid HDR pixels at frame {index}')
+                    linear=source_luminance(rgb,contract)
+                    hdr=smoother.hold_pixels(*source_code_luma(rgb,contract),linear,hdr)
+                    exposure=(exposure_cells(linear),exposure_cells(hdr_luminance(hdr)))
+                    flicker=local=None
+                    if not cut and previous_exposure is not None:
+                        flicker=abs((float(np.mean(exposure[1]))-float(np.mean(previous_exposure[1])))
+                                    -(float(np.mean(exposure[0]))-float(np.mean(previous_exposure[0]))))
+                        local=float(np.mean(np.abs((exposure[1]-previous_exposure[1])-(exposure[0]-previous_exposure[0]))))
+                    previous_exposure=exposure
                     pq,mastered=encode_master(hdr,args.format,args.peak_nits,args.knee_nits)
                     if not np.isfinite(pq).all(): raise RuntimeError(f'Invalid PQ pixels at frame {index}')
                     maxrgb=mastered.max(axis=2)
                     report['frames'].append(dict(index=index,shadow_weight=weight,max_cll=float(maxrgb.max()),
-                                                 frame_average=float(maxrgb.mean())))
+                                                 frame_average=float(maxrgb.mean()),flicker_ev=flicker,
+                                                 local_flicker_ev=local))
                     if cut: report['scene_cuts'].append(index)
                     if shutil.disk_usage(spool).free < frame_bytes*2+64*1024**2: raise RuntimeError('Working disk is full')
                     packed=(np.clip(pq,0,1)*65535+.5).astype(np.uint16)
@@ -381,6 +563,16 @@ def convert_video(args, progress=None):
                 process.stdout.close()
                 if process.poll() is None: process.kill()
                 process.wait()
+        scored=[f['flicker_ev'] for f in report['frames'] if f['flicker_ev'] is not None]
+        peak=max(scored) if scored else None
+        local=[f['local_flicker_ev'] for f in report['frames'] if f['local_flicker_ev'] is not None]
+        report['temporal']=dict(retention=retention,static_hold=args.static_hold,frames_scored=len(scored),
+                                flicker_ev_mean=sum(scored)/len(scored) if scored else None,
+                                flicker_ev_max=peak,
+                                flicker_ev_max_frame=next(f['index'] for f in report['frames']
+                                                          if f['flicker_ev']==peak) if scored else None,
+                                local_flicker_ev_mean=sum(local)/len(local) if local else None,
+                                local_flicker_ev_max=max(local) if local else None)
         max_cll=math.ceil(max(f['max_cll'] for f in report['frames']))
         max_fall=math.ceil(max(f['frame_average'] for f in report['frames']))
         # Stage on the output volume so the final rename is atomic.
@@ -430,6 +622,10 @@ def add_arguments(parser):
     parser.add_argument('--tile-overlap',type=int,default=64)
     parser.add_argument('--shadow-smoothing',type=float,default=0,help='Previous shadow-weight retention, [0,1); opt-in and reset at cuts')
     parser.add_argument('--cut-threshold',type=float,default=.15)
+    parser.add_argument('--temporal-smoothing',type=float,default=.25,
+                        help='Hold the per-frame values steady within a shot with this time constant in seconds; 0 turns it off')
+    parser.add_argument('--static-hold',choices=['on','off'],default='on',
+                        help="Where the source pixel is still, hold the HDR's gain over it the same way (off: per frame)")
     parser.add_argument('--work-dir',type=Path,help='Directory for temporary PQ frames; removed after completion or failure')
 
 

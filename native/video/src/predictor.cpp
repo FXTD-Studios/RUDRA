@@ -1,11 +1,26 @@
 #include "rudra/video/predictor.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <tuple>
 
 #include "rudra/infer/tiler.hpp"
 
 namespace rudra {
+
+namespace {
+// The frame's residual scale and curve held across the shot as the shadow
+// weight is (rudra/video.py Predictor.predict, 10 Oct 2026). A model without
+// those heads gives constants, and a constant holds at itself.
+void hold_frame_values(FrameScalars& s, ShadowSmoother& smoother) {
+    s.residual_scale = static_cast<float>(smoother.hold("residual_scale", static_cast<double>(s.residual_scale)));
+    if (!s.curve_params.empty()) {
+        const std::vector<double> held =
+            smoother.hold("curve", std::vector<double>(s.curve_params.begin(), s.curve_params.end()));
+        for (std::size_t i = 0; i < held.size(); ++i) s.curve_params[i] = static_cast<float>(held[i]);
+    }
+}
+}  // namespace
 
 Result<NetworkLinearImage> VideoPredictor::forward(const SdrImage& tile, const FrameScalars& scalars) {
     auto fields = backend_->tile_pass(tile, scalars);
@@ -50,12 +65,19 @@ Result<VideoPrediction> VideoPredictor::predict_graded(const SdrImage& rgb, cons
         std::tie(out.shadow_weight, out.cut) = smoother.update(prep->second, out.raw_weight);
         scalars = *s;
         scalars.shadow_weight = static_cast<float>(out.shadow_weight);
+        hold_frame_values(scalars, smoother);
         auto f = infer_fields(*backend_, frame, scalars, TileConfig{tile_size_, overlap_});
         if (!f) return f.error();
         fields = std::move(*f);
         model = model_;
     }
-    auto g = grade_master(frame, fields, scalars, model, q);
+    // The anchor's hold, the one whole-frame number of the grade, held across
+    // the shot in log2 (10 Oct 2026): it is a median and moves with content.
+    auto settle = [&smoother](double hold) {
+        if (!(hold > 0.0) || !std::isfinite(hold) || smoother.retention() == 0.0) return hold;   // off: exactly its own
+        return std::exp2(smoother.hold("anchor_hold", std::log2(hold)));
+    };
+    auto g = grade_master(frame, fields, scalars, model, q, settle);
     if (!g) return g.error();
     PlanarBuffer hdr(3, frame.height(), frame.width());
     const auto in = g->nits.span();
@@ -79,6 +101,7 @@ Result<VideoPrediction> VideoPredictor::predict(const SdrImage& rgb, const std::
     std::tie(out.shadow_weight, out.cut) = smoother.update(thumb, out.raw_weight);
     FrameScalars use = *scalars;
     use.shadow_weight = static_cast<float>(out.shadow_weight);
+    hold_frame_values(use, smoother);
 
     const int h = frame.height(), w = frame.width();
     if (tile_size_ <= 0 || std::max(h, w) <= tile_size_) {

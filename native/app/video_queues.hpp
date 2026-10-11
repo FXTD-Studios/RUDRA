@@ -67,9 +67,11 @@ private:
 // `grade`: the app's settings for the export (a master-params JSON, see
 // video/convert.hpp), named by the job's "grade" option; with an analytic
 // grade it is also the job's checkpoint (no package), else the package's
-// manifest is.
+// manifest is. `temporal_smoothing`: the job's "temporal-smoothing" option
+// (seconds; 0 holds nothing; unset leaves the runner's default).
 Result<std::filesystem::path> write_export_queue(const std::filesystem::path& movie, const std::filesystem::path& output,
                                                  const std::filesystem::path& package_manifest, const std::string& format,
-                                                 const std::filesystem::path& grade = {});
+                                                 const std::filesystem::path& grade = {},
+                                                 std::optional<double> temporal_smoothing = {});
 
 }  // namespace rudra::app

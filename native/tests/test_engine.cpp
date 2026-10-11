@@ -24,12 +24,14 @@ TEST(OutputScale, EachSwapchainGetsItsOwnUnit) {
 // ---- the frame path (Phase 2 step 10) ----------------------------------------
 
 #include <atomic>
+#include <cmath>
 #include <chrono>
 #include <mutex>
 #include <thread>
 #include <vector>
 
 #include "rudra/engine/frame_engine.hpp"
+#include "rudra/engine/playback_hold.hpp"
 
 namespace {
 
@@ -228,4 +230,46 @@ TEST(FrameEngine, AProxyUnderAStoppedPlayheadIsInferredAgainAtFullSize) {
     ASSERT_TRUE(wait_for([&] { return seen.all().size() == v.size() + 1; }));
     EXPECT_FALSE(seen.all().back().fields->proxy);
     EXPECT_EQ(full.load(), 1);
+}
+
+// Temporal consistency while playing (10 Oct 2026): the shadow weight and the
+// anchor's hold are held across the shot as an export holds them; skipped
+// frames count as elapsed, a cut or a step back starts from the frame's own.
+namespace {
+SdrImage flat_sdr(float v) { return SdrImage(PlanarBuffer(3, 18, 32, v)); }
+}  // namespace
+
+TEST(PlaybackHold, HoldsTheWeightAcrossTheShotAndResetsAtACut) {
+    PlaybackHold h;
+    h.configure(24.0, kShotHoldSeconds);
+    const double r = std::exp(-1.0 / 6.0);
+    EXPECT_DOUBLE_EQ(h.retention(), r);
+    EXPECT_DOUBLE_EQ(h.weight(0, flat_sdr(0.5f), 1.0), 1.0);                 // a shot starts at its own
+    EXPECT_DOUBLE_EQ(h.weight(1, flat_sdr(0.5f), 0.0), r);                   // r*1 + (1-r)*0
+    EXPECT_DOUBLE_EQ(h.weight(1, flat_sdr(0.5f), 0.7), r);                   // the same frame again
+    EXPECT_DOUBLE_EQ(h.weight(4, flat_sdr(0.5f), 0.0), r * r * r * r);      // two frames skipped: r^3
+    EXPECT_EQ(h.shot_start(), 0);
+    EXPECT_DOUBLE_EQ(h.weight(5, flat_sdr(0.9f), 0.3), 0.3);                 // a cut
+    EXPECT_EQ(h.shot_start(), 5);
+    EXPECT_DOUBLE_EQ(h.weight(2, flat_sdr(0.9f), 0.6), 0.6);                 // back to the start
+    h.configure(24.0, 0.0);                                                    // off
+    h.weight(0, flat_sdr(0.5f), 1.0);
+    EXPECT_DOUBLE_EQ(h.weight(1, flat_sdr(0.5f), 0.2), 0.2);
+    EXPECT_EQ(h.anchor(1, 3.3), 3.3);                                         // exactly its own
+}
+
+TEST(PlaybackHold, HoldsTheAnchorInStops) {
+    PlaybackHold h;
+    h.configure(24.0, kShotHoldSeconds);
+    const double r = std::exp(-1.0 / 6.0);
+    h.weight(0, flat_sdr(0.5f), 1.0);
+    h.weight(1, flat_sdr(0.5f), 1.0);
+    h.weight(2, flat_sdr(0.5f), 1.0);
+    EXPECT_DOUBLE_EQ(h.anchor(0, 2.0), 2.0);
+    EXPECT_NEAR(h.anchor(2, 8.0), std::exp2(r * r * 1.0 + (1.0 - r * r) * 3.0), 1e-12);   // log2: 1 -> 3
+    EXPECT_NEAR(h.anchor(2, 1.0), std::exp2(r * r * 1.0 + (1.0 - r * r) * 3.0), 1e-12);   // measured again
+    h.weight(3, flat_sdr(0.9f), 1.0);                                                       // a cut at 3
+    EXPECT_DOUBLE_EQ(h.anchor(2, 5.0), 5.0);    // a late measure from the shot before: its own, nothing held
+    EXPECT_DOUBLE_EQ(h.anchor(3, 4.0), 4.0);    // the new shot starts at its own
+    EXPECT_DOUBLE_EQ(h.anchor(4, 0.0), 0.0);    // no hold to hold
 }

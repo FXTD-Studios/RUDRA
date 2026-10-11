@@ -78,6 +78,16 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
 - **Keep time** (on by default) skips frames the model has not reached so the
   clip plays at its own rate; turn it off to see every frame. The status bar
   shows the rate reached, and the log says it when you stop.
+- **Clip > Hold steady within a shot** (on by default) keeps the values RUDRA
+  works out for a whole frame (the model's shadow weight, and the anchor's
+  hold) steady across a shot, so the picture does not pump with grain or
+  busy content; they start again at each cut. Movie exports do the same, so
+  what plays is what exports. A stopped frame shows its own values, as Master
+  EXR does.
+- Movie exports also hold still areas steady: where the source pixel did not
+  change, how much RUDRA brightened it is held, so grain lifted by the
+  expansion stops shimmering (anything that moves, and clipped highlights,
+  are left to each frame). Playback does not do this yet.
 
 ### Check
 
@@ -103,6 +113,12 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   sheet's Queue button shows it).
 - **Anchor to source exposure** keeps mid-tones where the SDR had them; the
   **Anchor knee** says where that lets go.
+- A movie's report (`<file>.json`) measures flicker: `flicker_ev` for each
+  frame and `temporal.flicker_ev_mean` / `flicker_ev_max` for the clip, the
+  EV the HDR's average moved from one frame to the next beyond what the
+  source did (not scored at a cut), and `local_flicker_ev`, the same measured
+  area by area (a 36 × 64 grid) and averaged. A few thousandths are below what you can
+  see; from about 0.02 EV (1.4 %) a steady shot can visibly pump.
 
 ## 3. Projects and autosave
 

@@ -30,6 +30,7 @@
 #include "rudra/engine/master_job.hpp"
 #include "rudra/engine/measure.hpp"
 #include "rudra/engine/model_catalog.hpp"
+#include "rudra/engine/playback_hold.hpp"
 #include "rudra/engine/project.hpp"
 #include "rudra/infer/self_test.hpp"
 #include "rudra/engine/session.hpp"
@@ -169,7 +170,9 @@ public:
 
     // A frame to show and measure (the engine's, or a test's): the viewer
     // gets it now, the measurements follow on their own thread.
-    void present_frame(SdrImage sdr, Fields fields, FrameScalars scalars, ModelConstants model, FrameHeader header);
+    // `own_shadow_weight`: the frame's own when `scalars` carries a held one (playing).
+    void present_frame(SdrImage sdr, Fields fields, FrameScalars scalars, ModelConstants model, FrameHeader header,
+                       std::optional<float> own_shadow_weight = std::nullopt);
     // Measure the frame on screen now, on this thread (the tests).
     void measure_now();
     const FrameMeasure* measurement() const { return measure_.get(); }
@@ -207,6 +210,7 @@ public:
     int preview_max_side() const { return preview_max_side_; }
     // The frame on screen (the tests): its fields and which frame it is.
     const Fields* frame_fields() const;
+    const FrameScalars* frame_scalars() const;   // as shown (held while playing)
     int current_index() const { return current_; }
     std::size_t frame_count() const { return frames_.size(); }
 
@@ -258,6 +262,12 @@ public:
     void set_playback_side(int side);
     int playback_side() const { return play_state_->side.load(); }
     void set_playback_realtime(bool on);
+    // Temporal consistency (10 Oct 2026): hold the shadow weight and the
+    // anchor's hold steady within a shot while playing, and in movie exports
+    // (--temporal-smoothing); on by default (QSettings video/steady).
+    void set_steady_shots(bool on);
+    bool steady_shots() const { return steady_; }
+    double shown_anchor_hold() const { return shown_hold_; }   // the hold the viewer was given
     struct PlaybackStats {
         int shown = 0, skipped = 0;
         double seconds = 0.0;
@@ -329,6 +339,9 @@ private:
     struct FeederSlot;
     std::shared_ptr<FeederSlot> feeder_slot_;
     bool realtime_ = true;
+    bool steady_ = true;
+    PlaybackHold play_hold_;
+    double shown_hold_ = 1.0;
     std::chrono::steady_clock::time_point play_t0_;
     int play_from_ = 0, play_shown_ = 0, play_skipped_ = 0, play_shown_window_ = 0;
     QTimer play_status_;
@@ -381,7 +394,9 @@ private:
     void show_status();
     void schedule_stats();
     void run_stats();
-    void apply_measure(std::shared_ptr<const FrameMeasure> m);
+    // `index`: the frame it measured (-1: the one on screen, not held).
+    void apply_measure(std::shared_ptr<const FrameMeasure> m, int index = -1);
+    void show_own_values();
     void update_pipe();
     // The compare line under the Compare bar: what RUDRA changed and how much
     // of it the view peak shows (core/readouts compare_text).
@@ -436,6 +451,8 @@ private:
         std::vector<CalibrationPoint> baseline_calibration;    // and the anchors (3.2)
         ReferenceFit baseline_reference;                        // and the reference (3.4)
         FrameHeader header;
+        int index = -1;   // the frame's index in the shot
+        float own_shadow_weight = 1.0f;   // before the playback hold
     };
     std::shared_ptr<const Current> current_frame_;
     std::shared_ptr<const FrameMeasure> measure_;
