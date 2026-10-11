@@ -427,7 +427,14 @@ on by default) also holds, per pixel, the HDR's gain over the source where the
 decoded source is still (3x3 mean luma change under 1.5/255; its own over
 6/255), never where it is clipped (largest code >= 0.98) or crushed (<= 0.02),
 so only the brightening is held and the source's own change passes through.
-Playback does not run it yet.
+Playback runs it on the GPU (11 Oct 2026): `shaders/hold.frag`, after the
+composite and before the display pass, writes the held picture and its state
+(luma code, largest code, held gain, HDR luminance) to two RGBA32F targets,
+the state ping-ponging between frames; `PlaybackHold::pixel_step` gives it
+retention^frames and the shot's starts (`ViewerHold`). Its targets are made
+the first time a held frame is shown. `rudra-gpu-parity` holds it to
+`ShadowSmoother::hold_pixels` on a shot built to reach every branch
+(`probe/hold_sequence.hpp`).
 
 ### 6.6 Performance budgets (set in Phase 0, recorded here)
 

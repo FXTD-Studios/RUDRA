@@ -66,6 +66,12 @@ weights: LICENSE-weights).
   Before, nothing was held there.
 - Playback no longer blends a late anchor measurement from before a loop or
   a cut into the frames after it.
+- **Still areas play steady too.** With Clip > Hold steady within a shot,
+  playback now runs the static hold that movie exports run (on the GPU, after
+  the composite): where the source did not change from the frame before, how
+  much RUDRA brightened it is held across the shot, so a still shot no longer
+  shimmers more while playing than in its export. It starts again at each cut,
+  on a step back and when playback loops; a stopped frame shows its own.
 - Measured on real footage (docs/TEMPORAL_RESULTS.md): with the model, a
   campfire flickered 0.03 to 0.05 EV a frame beyond the source (a visible
   0.19 EV at worst); with the holds, 0.006 to 0.013 EV. `rudra-native video`
@@ -271,10 +277,8 @@ nothing extra.
   slower machines keep time by skipping frames (or choose 640 px).
 - A queue with the app's settings (`grade`) runs in RUDRA; `rudra batch` in
   Python does not know that option.
-- The static hold is in movie exports, not yet in playback: a still shot can
-  shimmer a little more while playing than in its export. Inside clipped
-  highlights, where the source cannot show motion, nothing is held, so the
-  model's own jitter there remains.
+- While playing, the scopes and the Compare readout measure each frame
+  before the static hold (the picture shows it held); stopped, they agree.
 
 ## Reporting
 

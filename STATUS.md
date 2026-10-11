@@ -74,6 +74,17 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **11 Oct 2026, night — the static hold in playback (line F).** `shaders/hold.frag` runs
+> `ShadowSmoother::hold_pixels` in the viewer after the composite: MRT into the model target and a state
+> target (luma code, largest code, held gain, HDR Y), the state ping-ponging; a re-render of the same frame
+> (a slider) reads the same state, so it does not step the hold. `PlaybackHold::pixel_step` gives
+> retention^gap and the shot's starts (cut, step back, loop); stopped or with steady shots off, the frame's own.
+> Three RGBA32F frame targets, made on first use. `GpuCompositor::hold_sequence` + `rudra-gpu-parity` hold it
+> to the C++ reference on `probe/hold_sequence.hpp` (still, panning, clipped with small and large HDR change,
+> crushed, clipped in alternate frames). The shader was checked here only by qsb and by a CPU transliteration
+> (3.7e-7 relative to `hold_pixels`); Qt 6.8 builds and runs it in Gate B. Scopes while playing measure before
+> the hold.
+>
 > **11 Oct 2026, evening — temporal follow-ups (line F).** (1) Clipped highlights: where the source is clipped
 > (largest code >= 0.98) in both frames, `hold_pixels` now holds the gain by the HDR's own change (3x3 mean of
 > |dlog2 Y|: held under 0.05 EV, its own over 0.25 EV); clipped in one frame only stays its own. Python and

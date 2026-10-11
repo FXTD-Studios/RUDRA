@@ -86,8 +86,8 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   EXR does.
 - Movie exports also hold still areas steady: where the source pixel did not
   change, how much RUDRA brightened it is held, so grain lifted by the
-  expansion stops shimmering (anything that moves, and clipped highlights,
-  are left to each frame). Playback does not do this yet.
+  expansion stops shimmering (anything that moves is left to each frame).
+  Playback does the same while Hold steady within a shot is on.
 
 ### Check
 
