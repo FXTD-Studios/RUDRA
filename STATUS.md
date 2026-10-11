@@ -74,6 +74,34 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **10 Oct 2026, later — the static hold (beta 9, line F).** Pixel level, still without fetching anything
+> across frames: `ShadowSmoother.hold_pixels` holds the HDR/source luminance gain per pixel with the shot's
+> retention where the decoded source's luma code is still (3×3 mean |Δ| under 1.5/255 held, over 6/255 its
+> own, smoothstep between), never where the source is clipped (largest code ≥ 0.98) or crushed (≤ 0.02) in
+> this frame or the last, nor a negative HDR pixel; output = HDR × held/gain, so the source's own change passes
+> through. Applied in `convert_video`'s loop (Python and native, `--static-hold on|off`, default on, a no-op
+> at retention 0), before the measures; reports gain `static_hold`, per-frame `local_flicker_ev` (mean over the
+> 36×64 cells of |ΔEV(HDR) − ΔEV(source)|) and its mean and max. Goldens re-emitted (hdr10 and hlg masters
+> change, still byte-identical to the Python on ORT; prores runs it off). On a still grainy ramp, analytic:
+> local flicker mean 1.9e-4 → 1.3e-4 EV, worst frame 1.9e-3 → 3.3e-4; with the model, PQ temporal std p99
+> −37 %. 40 ms per 1080p frame on one core. Not in playback yet. Reviewed: negative pixels, 4K copies,
+> trails inside clipped highlights (now excluded). Linux: core 220/220, ORT 229/229, app 56/56, Python 30/30.
+>
+> **10 Oct 2026, late — temporal consistency for video (beta 9, line F).** Scope chosen with the user:
+> shot-stable scalars and a flicker measure, no pixel blending (line D's verdict stands: estimated flow
+> does not carry the information, so nothing is fetched across frames). `ShadowSmoother` gained `hold()`:
+> the residual scale and curve (models with those heads) and, in graded exports, the anchor's hold (log2)
+> are held with the shadow weight's retention and reset at the same cuts; `--temporal-smoothing SECONDS`
+> (default 0.25, retention exp(-1/(fps·s)); `--shadow-smoothing`, when given, still sets the retention) in
+> `rudra video` and `rudra-native video`, queue option `temporal-smoothing`. Every movie report gains
+> `temporal_smoothing`, per-frame `flicker_ev` and a `temporal` summary: |ΔEV(HDR) − ΔEV(source)| on a
+> 36×64 area thumbnail of the luminance, cuts not scored. The app holds the shadow weight and the anchor's
+> hold while playing (`engine/playback_hold`, skipped frames as elapsed); stopped shows the frame's own
+> values; Clip > Hold steady within a shot (QSettings `video/steady`) sets playback and the export's option.
+> Goldens re-emitted (video_convert, video_queue; prores case runs `--temporal-smoothing 0`), masters
+> unchanged. On a grainy moving test pattern the analytic anchored export's flicker fell 0.0044 → 0.0014 EV
+> mean. Linux: core 217/217, ORT build 226/226, app 56/56, Python video tests 28/28.
+>
 > **10 Oct 2026, night — beta 9 prepared (line F).** Movie exports now carry the app's settings:
 > `deliver/master grade_master()` (split from `write_master`) runs per frame inside `video/convert` when the
 > job names a `grade` settings file (`VideoConvertArgs::grade`, queue option `grade`); analytic jobs need no

@@ -410,10 +410,24 @@ computed inside the model too, for the tile pass; C++ ports it separately in
 
 ### 6.5 Temporal
 
-Frames are independent; the v02 temporal line is closed. The only temporal
-state is the optional scalar shadow-gate smoothing with cut reset, ported from
-`rudra.video`, and it lives in `DeliverActor` and the viewer's playback path
-only when enabled.
+Frames are independent in their pixels; the v02 temporal line is closed and
+nothing is fetched across frames. What is temporal is the handful of
+whole-frame values: the shadow weight, residual scale and curve, and the
+anchor's hold are held within a shot (`ShadowSmoother::hold`, reset at the
+cut detector's cuts) with a time constant of `--temporal-smoothing` seconds,
+0.25 by default (10 Oct 2026), in `rudra video`, `rudra-native video` and the
+app's movie exports; while playing, `engine/playback_hold` holds the shadow
+weight and the anchor's hold the same way, frames skipped to keep time
+counting as elapsed. A stopped frame and Master EXR use the frame's own
+values. Every movie report measures flicker: `flicker_ev` per frame and a
+`temporal` summary, |ΔEV(HDR) − ΔEV(source)| on a 36×64 area thumbnail of the
+luminance, cuts not scored, and `local_flicker_ev`, the same cell by cell.
+In movie exports the static hold (`ShadowSmoother::hold_pixels`, `--static-hold`,
+on by default) also holds, per pixel, the HDR's gain over the source where the
+decoded source is still (3x3 mean luma change under 1.5/255; its own over
+6/255), never where it is clipped (largest code >= 0.98) or crushed (<= 0.02),
+so only the brightening is held and the source's own change passes through.
+Playback does not run it yet.
 
 ### 6.6 Performance budgets (set in Phase 0, recorded here)
 

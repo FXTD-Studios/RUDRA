@@ -63,6 +63,27 @@ weights: LICENSE-weights).
   and 7.6 times at 640 px; from the 154 ms per 1080p frame measured on an RTX
   4080 that is about 37 ms (27 fps) and 20 ms (50 fps), estimated, not yet
   measured on the GPU.
+- **Steady within a shot.** The few values RUDRA works out for a whole frame
+  (the model's shadow weight, residual scale and curve, and the anchor's hold)
+  are now held steady across a shot instead of following each frame, so a
+  grainy or busy clip no longer pumps in brightness. They follow the picture
+  with a quarter-second time constant and start again at every cut. Movie
+  exports and playback do it; a stopped frame and Master EXR show the frame's
+  own values. Clip > Hold steady within a shot turns it off;
+  `rudra-native video` and `rudra video` take `--temporal-smoothing SECONDS`
+  (0 is off). Every movie report now measures flicker: `flicker_ev` per frame
+  and a `temporal` summary, the EV the HDR's average moved from one frame to
+  the next beyond what the source did, and `local_flicker_ev`, the same per
+  area of the frame.
+- **Still areas stop shimmering.** In a movie export, where the source pixel
+  did not change from the frame before, RUDRA holds how much it brightened
+  that pixel (the HDR over the source) the same way, so codec noise lifted by
+  the expansion and the model's jitter in recovered highlights settle; where
+  anything moved, at a cut, and wherever the source is clipped or crushed,
+  each frame is its own. The source's own change always passes through: only
+  the brightening is held, never the pixel. On a still grainy ramp the worst
+  frame-to-frame shimmer fell to under a fifth. `--static-hold off` turns it
+  off; it costs about 40 ms a 1080p frame on one CPU core.
 
 ## Changes in beta 8 (since beta 7)
 
@@ -208,6 +229,10 @@ nothing extra.
   slower machines keep time by skipping frames (or choose 640 px).
 - A queue with the app's settings (`grade`) runs in RUDRA; `rudra batch` in
   Python does not know that option.
+- The static hold is in movie exports, not yet in playback: a still shot can
+  shimmer a little more while playing than in its export. Inside clipped
+  highlights, where the source cannot show motion, nothing is held, so the
+  model's own jitter there remains.
 
 ## Reporting
 
