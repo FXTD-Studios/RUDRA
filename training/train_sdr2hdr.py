@@ -101,6 +101,13 @@ def _source_of(model: torch.nn.Module, batch: dict, device: torch.device) -> tor
     return batch["source_curve"].to(device, non_blocking=True)
 
 
+def _picker_of(model: torch.nn.Module, batch: dict, device: torch.device) -> dict:
+    """{"baseline_curve": ids} for a v10 model (baseline_source), else {}."""
+    if not getattr(model, "baseline_source", False) or "baseline_curve" not in batch:
+        return {}
+    return {"baseline_curve": batch["baseline_curve"].to(device, non_blocking=True)}
+
+
 def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
                    max_batches: int = 8, shadow_chroma_weight: float = 0.15,
                    shadow_smoothness_weight: float = 0.02) -> dict[str, float]:
@@ -131,7 +138,7 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
     for batch in loader:
         sdr, target = batch["sdr"].to(device), batch["hdr"].to(device)
         ceiling = batch["ceiling"].to(device) if "ceiling" in batch else None
-        output = model(sdr, source_curve=_source_of(model, batch, device))
+        output = model(sdr, source_curve=_source_of(model, batch, device), **_picker_of(model, batch, device))
         losses = sdr2hdr_loss(
             output, sdr, target, shadow_chroma_weight, shadow_smoothness_weight,
             target_ceiling=ceiling,
@@ -308,6 +315,7 @@ def build_loaders(args: argparse.Namespace):
                                                     if args.source_curve else 0.0),
                               exposure_push=args.exposure_push,
                               exposure_push_max_ev=args.exposure_push_max_ev,
+                              baseline_dropout=args.baseline_dropout,
                               **common)
         val = SDRHDRDataset(args.manifest, split="val", augment=False,
                             augmentation_strength=0.0, max_items=args.max_val_items,
@@ -405,12 +413,26 @@ def train(args: argparse.Namespace) -> Path:
                          f"{args.manifest} is at {corpus_ev:+.2f} EV")
     if args.source_curve:
         check_source_curve_args(args)
+    bench_val = None
+    if args.best_metric == "bench_gain" or args.bench_val_frames > 0:
+        if args.mode != "image":
+            raise SystemExit("--best-metric bench_gain / --bench-val-frames are for --mode image")
+        if abs(float(corpus_ev)) > 1e-6:
+            raise SystemExit("the bench validation re-renders at +E EV and needs a 0 EV corpus")
+        from training.bench_val import BenchVal
+        n = args.bench_val_frames if args.bench_val_frames > 0 else 48
+        bench_val = BenchVal.from_manifest(args.manifest, "val", real_frames=n, rendered_frames=n,
+                                           max_side=args.bench_val_max_side,
+                                           push_evs=tuple(float(e) for e in args.bench_val_push.split(",") if e))
+        print(f"[bench-val] {len(bench_val.records)} val frames at long side {args.bench_val_max_side}, "
+              f"push {args.bench_val_push} EV; selection {args.best_metric}")
     if args.mode == "image":
         model: torch.nn.Module = SDR2HDRNet(
             base_channels=args.base_channels,
             gate_conditioning=args.gate_conditioning,
             curve_head=args.curve_head,
             source_curve=args.source_curve,
+            baseline_source=args.baseline_source,
             corpus_ev=corpus_ev).to(device)
     else:
         if not args.image_checkpoint:
@@ -527,6 +549,11 @@ def train(args: argparse.Namespace) -> Path:
             merged.update({f"hard_{k}": v for k, v in hard.items()})
             if args.best_eval == "hard":
                 chosen = hard
+        if bench_val is not None:
+            merged.update(bench_val.evaluate(model, device))
+        if args.best_metric == "bench_gain":
+            # v10: what the gates score (training/bench_val.py). Negated: lower wins.
+            return merged, -merged["bench_gain"]
         if args.best_metric in ("composite_gain", "preserved_composite_gain") and val_hard_loader is not None:
             # Reward the gain on degraded SDR, subtract any HARM done to clean
             # SDR, and count a clean gain as worth nothing -- clean input is a
@@ -567,7 +594,8 @@ def train(args: argparse.Namespace) -> Path:
         amp = torch.autocast(device_type="cuda", dtype=torch.bfloat16) if device.type == "cuda" else contextlib.nullcontext()
         with amp:
             if args.mode == "image":
-                output = model(sdr, source_curve=_source_of(model, batch, device))
+                output = model(sdr, source_curve=_source_of(model, batch, device),
+                               **_picker_of(model, batch, device))
                 losses = sdr2hdr_loss(
                     output, sdr, target, args.shadow_chroma_weight,
                     args.shadow_smoothness_weight,
@@ -575,6 +603,7 @@ def train(args: argparse.Namespace) -> Path:
                                     if "ceiling" in batch else None),
                     baseline_weight=args.baseline_weight if args.curve_head else 0.0,
                     region_focus=args.region_focus,
+                    crushed_hold=args.crushed_hold,
                 )
                 loss = losses["total"]
             else:
@@ -704,6 +733,22 @@ def parse_args() -> argparse.Namespace:
                              "and its target scaled by 2^E, so clipped highlights are common; needs a 0 EV corpus. "
                              "0 = as before")
     parser.add_argument("--exposure-push-max-ev", type=float, default=2.0)
+    parser.add_argument("--baseline-source", action="store_true",
+                        help="v10 (13 Oct 2026): the residual rides on the Source picker's curve "
+                             "(rudra/source_baseline.py; BT.1886 for real SDR, the app's default) instead "
+                             "of the ACES inverse; each sample's curve from effective_baseline_curve")
+    parser.add_argument("--baseline-dropout", type=float, default=0.5,
+                        help="with --baseline-source: share of rendered samples on BT.1886 (the artist who "
+                             "never opens the picker) instead of their own curve")
+    parser.add_argument("--crushed-hold", type=float, default=0.0,
+                        help="v10: weight of the penalty on changing crushed pixels (max code <= 2/255); "
+                             "0 = as before")
+    parser.add_argument("--bench-val-frames", type=int, default=0,
+                        help="v10: real and rendered val frames (each) for the full-frame bench validation "
+                             "(training/bench_val.py); 0 = off unless --best-metric bench_gain (then 48)")
+    parser.add_argument("--bench-val-max-side", type=int, default=960)
+    parser.add_argument("--bench-val-push", default="1,2",
+                        help="EVs the real val frames are re-rendered at for the clip row")
     parser.add_argument("--baseline-weight", type=float, default=0.25,
                         help="With --curve-head: weight of the direct loss on the corrected "
                              "baseline (default %(default)s)")
@@ -734,7 +779,8 @@ def parse_args() -> argparse.Namespace:
                              "and promised +1.80 dB where the benchmark measured +1.43. "
                              "Pass 1 to restore the old single-eval behaviour.")
     parser.add_argument("--best-metric",
-                        choices=("composite_gain", "preserved_composite_gain", "loss", "log_l1"), default="composite_gain",
+                        choices=("composite_gain", "preserved_composite_gain", "loss", "log_l1", "bench_gain"),
+                        default="composite_gain",
                         help="composite_gain = hard_gain_db + min(0, clean_gain_db): the "
                              "improvement on degraded SDR, less any damage done to clean "
                              "SDR. 'loss' selects on the raw objective, which falls "
