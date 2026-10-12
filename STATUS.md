@@ -74,6 +74,21 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **13 Oct 2026, late night — the anchor follows the Source picker; the clip fill ships on (line F, R3).**
+> The master's anchor (on by default) put every pixel below its knee on the sRGB reading of its code at
+> 203 nits whatever the picker said: an anchored BT.1886 master was the sRGB one below the knee, and the
+> calibration and the reference were undone there (R3 scored the unanchored inverse, so the shipped master
+> was not the scored one). `core/composite anchor_target_knots`: per 8-bit code, log2 of the picker's curve
+> with its calibration or reference (0 EV, no CurveHead) over the sRGB reading; empty for unknown/aces with
+> neither, so every golden is unchanged. Taken by `anchor_to_sdr` (master), `anchor_hold` and `render_view`
+> (the view and the measure), and composite.frag (`anchor[64]`, `frame.w`; the UBO grows by 1 KB).
+> Tests: `tests/test_anchor_target.cpp` (5: BT.1886 is its own display reading, the anchored analytic master
+> equals the unanchored one below the knee for bt1886/hable/clip, a calibrated code keeps 60 nits, the view's
+> hold is 1); parity view case "anchored BT.1886 1000". Linux: core 249/249, ORT 260/260, app build 305/305;
+> qsb bakes all three shaders; render/ needs the Windows build (Gate B). Clip fill decision: ships on at
+> glow 0.5, the held-out optimum of its one knob over +0..+2 EV (0.412 stops vs 0.578 flat, 0.568 no dome);
+> the +0 EV and fireworks losses are release notes and roadmap 4.2 (docs/RELEASE_V1.md).
+>
 > **13 Oct 2026, night — v9 at step 20,000 on the clip benches (line G; roadmap 4.2).** `best.pt` was
 > selected on an unpushed val split and stayed at step 0 (v8's weights: same crushed rows to the digit), so
 > `step_0020000.pt` was benched as `v9s20` (`run_v9_2026_10_12.ps1 -Stage bench -Checkpoint ... -ClipOnly`).

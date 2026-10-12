@@ -44,6 +44,15 @@ weights: LICENSE-weights).
 
 ## Changes since beta 10 (for the next beta)
 
+- **The anchor follows the Source.** With Anchor on (the default), the master
+  kept mid-tones on the SDR read as an sRGB display at 203 nits, whatever the
+  Source picker, calibration or reference said, so below the anchor knee a
+  BT.1886 master came out as an sRGB one and a calibrated grey went back to
+  where it was. The anchor now reads the SDR through the picked curve with its
+  calibration or reference: BT.1886 masters are what was scored on real SDR,
+  and a calibrated point keeps its nits. On the viewer too. Unknown and ACES
+  with no calibration are unchanged, bit for bit.
+
 - **Exposure.** Reconstruct has an Exposure slider, -3 to +3 stops: the whole
   master brighter or darker, live on the viewer, in the master, movie exports
   and projects. It is part of the grade: after the anchor (so mid-tones keep
@@ -299,6 +308,13 @@ nothing extra.
   slower machines keep time by skipping frames (or choose 640 px).
 - While playing, the scopes and the Compare readout measure each frame
   before the static hold (the picture shows it held); stopped, they agree.
+- Fill clipped highlights (on by default) gives a blown highlight a roll-off
+  above the clip. Where the real highlight was only just above the clip it
+  can overshoot (about a quarter of a stop on average), and it is visibly
+  wrong on fireworks and other small bright sparks; lower Reconstruct's
+  Strength, set the region's peak, or turn the fill off for those shots.
+- The comparison against commercial tools (Resolve, Topaz, RTX Video HDR) is
+  not published yet; the open-source one is (docs/RESULTS.md).
 
 ## Reporting
 

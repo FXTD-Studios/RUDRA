@@ -57,6 +57,22 @@ hurts the rendered clip frames (-3.09 dB, -0.22 JOD, 0.36 stops worse where clip
 on the four fireworks clips (-4.9 to -7.7 dB each; `bench/compare_v1/*/carousel_fireworks_*`). Look at those
 frames before 1.0 ships with it on, and score it over BT.1886 (it was measured over the ACES inverse).
 
+**Decided 13 Oct 2026: the clip fill ships on, unchanged (glow 0.5).** Its one knob was picked on
+scenes 1-3 and, on the held-out scenes 4-7, the mean error inside clipped pixels over +0, +1 and +2 EV
+is 0.412 stops against 0.578 for the flat inverse and 0.568 with no dome; glow 1 ties it (0.414). The
++0 EV loss (truth ~0.2 stop above the ceiling, any dome overshoots) cannot be told from one frame: v9,
+trained for it, beat the fill there (+0.116 stops) and lost at +1 and +2 EV. Over BT.1886 the fill is the
+same log2 residual on another baseline, and real Meridian SDR clips on 3e-5 % of pixels, so the R3 rows do
+not move. The artist has Strength (scales the fill), Reconstruct > Fill clipped highlights (off) and a
+peak per region. The fireworks loss goes in the notes; after 1.0, roadmap 4.2.
+
+**Fixed 13 Oct 2026: the anchor follows the Source picker.** The master's anchor (on by default) targeted
+the sRGB reading at 203 nits whatever the picker said, so every anchored BT.1886 master was the sRGB one
+below the knee, and calibration and reference were undone there; R3 scored the unanchored inverse. The
+target is now the picker's curve with its calibration or reference (`anchor_target_knots`), in the
+master, the view and composite.frag; unknown and aces with neither are unchanged bit for bit
+(tests/test_anchor_target.cpp, a parity view case).
+
 ## The steps, in order
 
 1. **Push this work** (`.\scripts\release_v1_prep_2026-10-12.ps1`) and check

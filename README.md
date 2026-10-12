@@ -475,8 +475,6 @@ R1 to R5 are in [`STATUS.md`](STATUS.md); the steps to 1.0 in
 
 ### To 1.0
 
-- [ ] Push the current work and see the native checks green (Gate B's GPU
-  parity on GL and Vulkan included)
 - [ ] R2 re-run on the release candidate on the RTX machine (Gate B, the
   phase 3 exit), with Hold steady checked for shimmer and the model's
   playback fps at 960 px measured
@@ -484,11 +482,6 @@ R1 to R5 are in [`STATUS.md`](STATUS.md); the steps to 1.0 in
   Video, RTX Video HDR, a hardware converter's LUT, each through
   `training/compare_market.py import`, then `score`, published in
   [`docs/RESULTS.md`](docs/RESULTS.md) whatever it says
-- [ ] The master's anchor follows the source curve (its target is the sRGB
-  code's light at 203 nits whatever the picker says)
-- [ ] The clip fill scored over BT.1886, and its loss at +0 EV and on the
-  fireworks clips (−3.09 dB on the v4b clip frames) fixed or the default
-  revisited before 1.0
 - [ ] R4: the Mac pass, signing and the clean-PC install (Desktop app, above)
 - [ ] Release candidates (`scripts/release_v1_rc.ps1`, `v1.0.0-rc.N`), then 1.0
 
@@ -523,9 +516,10 @@ RTX 4080 SUPER takes 150 to 207 ms.
 - [ ] 4.1 Rebuild on mask: an optional local inpaint pass that runs only inside
   a clipped mask the artist approves, sized for 8 to 16 GB, its pixels marked
   in the invented-pixel map and the sidecar
-- [ ] 4.2 Clipped highlights at 0, +1 and +2 EV with a model and with rebuild
-  (the tooling and the clip fill's numbers are in; v9, trained for this, is
-  prepared and not run, and must beat the clip fill)
+- [ ] 4.2 Clipped highlights at 0, +1 and +2 EV with a model and with rebuild:
+  a model that beats the clip fill at every EV (v9 beat it at +0 EV and lost
+  at +1 and +2; its checkpoint selection runs without the exposure push), and
+  the fill's own losses at +0 EV and on the fireworks clips
 - [ ] 4.3 Shot keyframes: grade and source parameters stored per shot,
   keyframed and reset at cuts, scored with clip-mode CVVDP and flicker
 - [ ] 4.4 `rudra-studio` commercial weights: the recipe without HdM data,
