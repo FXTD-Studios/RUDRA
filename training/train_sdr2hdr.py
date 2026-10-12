@@ -306,6 +306,8 @@ def build_loaders(args: argparse.Namespace):
                               degradation_probability=args.degradation_probability,
                               source_curve_dropout=(args.source_curve_dropout
                                                     if args.source_curve else 0.0),
+                              exposure_push=args.exposure_push,
+                              exposure_push_max_ev=args.exposure_push_max_ev,
                               **common)
         val = SDRHDRDataset(args.manifest, split="val", augment=False,
                             augmentation_strength=0.0, max_items=args.max_val_items,
@@ -398,6 +400,9 @@ def train(args: argparse.Namespace) -> Path:
     # assumed: until 16 Sep 2026 this constructor took the class default, the
     # legacy -1 EV, whatever the corpus said.
     corpus_ev = corpus_ev_of(args.manifest)
+    if getattr(args, "exposure_push", 0.0) > 0.0 and abs(float(corpus_ev)) > 1e-6:
+        raise SystemExit(f"--exposure-push re-renders at the corpus exposure + E and needs a 0 EV corpus; "
+                         f"{args.manifest} is at {corpus_ev:+.2f} EV")
     if args.source_curve:
         check_source_curve_args(args)
     if args.mode == "image":
@@ -693,6 +698,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--region-focus", type=float, default=0.0,
                         help="v8: share of the loss on the SDR's clipped/crushed pixels, the rest of the "
                              "frame held to the inverse (rudra/sdr2hdr.py sdr2hdr_loss); 0 = as before")
+    parser.add_argument("--exposure-push", type=float, default=0.0,
+                        help="v9 (12 Oct 2026): probability a training sample is re-rendered from its HDR at "
+                             "+E EV (E uniform in [0, --exposure-push-max-ev]) with the clip benches' ACES render "
+                             "and its target scaled by 2^E, so clipped highlights are common; needs a 0 EV corpus. "
+                             "0 = as before")
+    parser.add_argument("--exposure-push-max-ev", type=float, default=2.0)
     parser.add_argument("--baseline-weight", type=float, default=0.25,
                         help="With --curve-head: weight of the direct loss on the corrected "
                              "baseline (default %(default)s)")

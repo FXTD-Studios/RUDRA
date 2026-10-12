@@ -56,7 +56,7 @@ Result<VideoPrediction> VideoPredictor::predict_graded(const SdrImage& rgb, cons
         std::tie(out.shadow_weight, out.cut) = smoother.update(prep->second, 1.0);   // the cuts, for the report
         out.raw_weight = 1.0;
         out.shadow_weight = 1.0;
-        fields = analytic_fields(frame.height(), frame.width());
+        fields = analytic_fields_for(frame, q);   // with the clip fill unless the request turns it off
     } else {
         if (!backend_) return make_error(ErrorCode::InvalidArgument, "This export runs the model, and no model is open");
         auto s = backend_->frame_pass(frame);

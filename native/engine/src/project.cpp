@@ -95,6 +95,8 @@ std::string project_json(const Project& p, const fs::path& project_file) {
         regions.push_back({{"label", r.label}, {"low_nits", r.low_nits}, {"high_nits", r.high_nits}, {"ev", r.ev}});
     json calibration = json::array();
     for (const auto& c : p.grade.calibration) calibration.push_back({{"code", c.code}, {"nits", c.nits}});
+    json clip_peaks = json::array();
+    for (const auto& c : p.grade.clip_peaks) clip_peaks.push_back({{"x", c.x}, {"y", c.y}, {"nits", c.nits}});
     json j = {
         {"rudra_project", kProjectVersion},
         {"app_version", p.app_version},
@@ -113,7 +115,9 @@ std::string project_json(const Project& p, const fs::path& project_file) {
           {"reference", p.grade.reference.empty() ? json() : reference_json(p.grade.reference)},
           {"masks", p.grade.masks && !p.grade.masks->empty()
                         ? json(utf8(project_masks_path(project_file).filename()))
-                        : json()}}},
+                        : json()},
+          {"clip_fill", p.grade.clip_fill},
+          {"clip_peaks", clip_peaks}}},
         {"view", {{"peak_ev", p.peak_ev}}},
         {"deliver",
          {{"anchor", p.anchor}, {"anchor_knee", p.anchor_knee}, {"carry_chroma", p.carry_chroma}, {"container", p.container}}},
@@ -165,6 +169,9 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
             p.grade.calibration.push_back({c.value("code", 0), c.value("nits", 0.0)});
         if (g.contains("reference") && !g["reference"].is_null()) p.grade.reference = reference_from(g["reference"]);
         if (g.contains("masks") && g["masks"].is_string()) p.masks_file = g["masks"].get<std::string>();
+        p.grade.clip_fill = g.value("clip_fill", true);   // projects before 12 Oct 2026: on, the default
+        for (const auto& c : g.value("clip_peaks", json::array()))
+            p.grade.clip_peaks.push_back({c.value("x", 0.5), c.value("y", 0.5), c.value("nits", 0.0)});
         const json& view = j.value("view", json::object());
         p.peak_ev = view.value("peak_ev", 0.0);
         const json& d = j.value("deliver", json::object());
@@ -193,6 +200,13 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
     p.peak_ev = std::clamp(finite_or(p.peak_ev, 0.0), -1.0, 5.0);
     p.anchor_knee = std::clamp(finite_or(p.anchor_knee, 0.9), 0.5, 0.99);
     for (auto& r : p.grade.regions) r.ev = std::clamp(finite_or(r.ev, 0.0), -4.0, 4.0);
+    if (p.grade.clip_peaks.size() > 64) return damaged("the clipped peaks");
+    for (auto& c : p.grade.clip_peaks) {
+        if (!std::isfinite(c.x) || !std::isfinite(c.y) || !std::isfinite(c.nits)) return damaged("a clipped peak");
+        c.x = std::clamp(c.x, 0.0, 1.0);
+        c.y = std::clamp(c.y, 0.0, 1.0);
+        c.nits = std::clamp(c.nits, 0.0, 10000.0);
+    }
     if (p.container != "aces" && p.container != "linear") return damaged("container " + p.container);
     if (!p.grade.reference.empty() &&
         (p.grade.reference.target_log2_nits.size() != 256 || p.grade.reference.samples_per_code.size() != 256))

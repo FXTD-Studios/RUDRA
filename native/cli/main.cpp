@@ -58,6 +58,7 @@
 
 #ifdef RUDRA_HAVE_STILL_DECODE
 #include "batch.hpp"
+#include "bench_clip_fill.hpp"
 #include "master.hpp"
 #include "video.hpp"
 #endif
@@ -518,7 +519,8 @@ void usage() {
                  "       rudra-native deliver <frames> --output <stem> [--target hdr10|hlg|prores422hq|prores4444] [--fps N]\n"
                  "                            [--peak-nits N] [--min-nits N] [--source-space rec709|rec2020|p3d65] [--nits-scale N] [--no-verify-tags]\n"
                  "       rudra-native ffmpeg-check [--ffmpeg PATH] [--ffprobe PATH] [--force] [--no-self-test]\n"
-                 "       rudra-native bench-scopes [--iters N]\n");
+                 "       rudra-native bench-scopes [--iters N]\n"
+                 "       rudra-native bench-clip-fill <bench> [--corpus-ev EV] [--tree NAME] [--glow K] [--force]\n");
 }
 
 }  // namespace
@@ -544,6 +546,7 @@ int main(int argc, char** argv) {
 #ifdef RUDRA_HAVE_STILL_DECODE
     if (args[0] == "batch") return cmd_batch(std::vector<std::string>(args.begin() + 1, args.end()));
     if (args[0] == "video") return cmd_video(std::vector<std::string>(args.begin() + 1, args.end()));
+    if (args[0] == "bench-clip-fill") return cmd_bench_clip_fill(std::vector<std::string>(args.begin() + 1, args.end()));
 #endif
     const fs::path pkg = args[1];
     if (args[0] == "info") return cmd_info(pkg);

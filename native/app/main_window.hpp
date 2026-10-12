@@ -184,6 +184,12 @@ public:
     // picture reads the SDR code there (a 5x5 mean of R, G and B) into it.
     void arm_calibration(int slot);
     void calibration_picked(double x, double y);
+    // The clip fill (12 Oct 2026): arm a peak so the next click on the
+    // picture picks a clipped region and asks for its nits; the options the
+    // frame engine was started with, to start it again when they change.
+    void arm_clip_peak(bool on);
+    void clip_peak_picked(double x, double y);
+    ClipFillOptions session_clip_options() const;
     // Reference (3.4): asks for the graded HDR of the current frame (or takes
     // `path`), fits it and hands the fit to the session; the message of a
     // refused file goes to the Source card's line. False when refused.
@@ -331,6 +337,8 @@ private:
     std::filesystem::path project_path_, autosave_path_, reopen_path_;
     bool dirty_ = false, restoring_ = false;
     bool use_model_ = false;
+    bool clip_pick_armed_ = false;
+    ClipFillOptions engine_clip_;   // what start_engine gave the frames
     bool frame_proxy_ = false;
     struct PlayState {
         std::atomic<bool> playing{false};

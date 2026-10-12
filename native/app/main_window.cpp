@@ -9,6 +9,7 @@
 #include <QApplication>
 #include <QDialog>
 #include <QFileDialog>
+#include <QInputDialog>
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -65,6 +66,8 @@
 #include <thread>
 
 #include "rudra/core/baseline.hpp"
+#include "rudra/core/clip_fill.hpp"
+#include "rudra/deliver/master.hpp"
 #include "rudra/core/video_predict.hpp"
 #include "rudra/core/reference_fit.hpp"
 #include "rudra/engine/reference_image.hpp"
@@ -212,7 +215,10 @@ MainWindow::MainWindow(bool with_viewer) {
     if (viewer_) {
         viewer_->on_drop([this](const QStringList& paths) { open_paths(paths); });
         // Calibrate (3.2): the armed anchor takes the next click on the picture.
-        viewer_->on_pick([this](double x, double y) { calibration_picked(x, y); });
+        viewer_->on_pick([this](double x, double y) {
+            if (clip_pick_armed_) clip_peak_picked(x, y);
+            else calibration_picked(x, y);
+        });
         // Painted masks (3.3): strokes while a band is armed, the wheel sizes the brush.
         viewer_->on_paint([this](double x0, double y0, double x1, double y1, bool erase) { paint_stroke(x0, y0, x1, y1, erase); });
         viewer_->on_paint_end([this] { session_.stroke_end(); });
@@ -318,6 +324,9 @@ void MainWindow::bind_handlers() {
     };
     h["getting-started"] = [this] { show_getting_started(); };
     h["use-model"] = [this] { set_use_model(!use_model_); };
+    h["clip-fill"] = [this] { session_.toggle_clip_fill(); };
+    h["clip-peak"] = [this] { arm_clip_peak(!clip_pick_armed_); };
+    h["clip-peaks-clear"] = [this] { session_.clear_clip_peaks(); };
     h["playback-side-0"] = [this] { set_playback_side(0); };
     h["playback-side-960"] = [this] { set_playback_side(960); };
     h["playback-side-640"] = [this] { set_playback_side(640); };
@@ -533,6 +542,7 @@ void MainWindow::sync_checks() {
     set("mode-off", grade.mode == "off");
     set("preserve", grade.preserve);
     set("use-model", use_model_);
+    set("clip-fill", session_.grade.clip_fill);
     set("playback-side-0", play_state_->side.load() == 0);
     set("playback-side-960", play_state_->side.load() == 960);
     set("playback-side-640", play_state_->side.load() == 640);
@@ -614,6 +624,17 @@ void MainWindow::show_sheet(const QString& title, const std::vector<std::pair<QS
 
 void MainWindow::session_changed(std::uint32_t what) {
     if (what & (Session::Grade | Session::Peak | Session::Delivery)) mark_dirty();   // what a project keeps
+    // The clip fill is in the fields, not the composite: a change (or its
+    // undo) composes the frames again. With the model it does nothing.
+    if ((what & Session::Grade) && !use_model_ && !frames_.empty()) {
+        const ClipFillOptions now = session_clip_options();
+        const bool same = now.enabled == engine_clip_.enabled && now.overrides.size() == engine_clip_.overrides.size() &&
+                          std::equal(now.overrides.begin(), now.overrides.end(), engine_clip_.overrides.begin(),
+                                     [](const ClipOverride& a, const ClipOverride& b) {
+                                         return a.x == b.x && a.y == b.y && a.nits == b.nits;
+                                     });
+        if (!same) start_engine(frames_, current_);
+    }
     if (what & (Session::Grade | Session::Delivery)) schedule_stats();   // Delivery: the anchor knee moves the hold (3.3)
     if (what & (Session::Peak | Session::Delivery)) update_pipe();
     if (what & (Session::Peak | Session::View)) update_compare();
@@ -996,6 +1017,7 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
     frames_ = std::move(frames);
     auto* backend = use_model_ ? backend_.get() : nullptr;
     const ModelConstants model = frame_constants();
+    engine_clip_ = session_clip_options();
     auto files = frames_;
     source_sizes_ = std::make_shared<SourceSizes>();
     source_sizes_->size.assign(files.size(), {0, 0});
@@ -1029,10 +1051,13 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
             return make_error(ErrorCode::Unsupported, "This build has no still decode (RUDRA_WITH_OPENCV=OFF).");
 #endif
         },
-        [backend, mu = backend_mutex_, play = play_state_](const SdrImage& sdr) -> Result<FrameResult> {
-            // The analytic reconstruction runs nothing: no residual, no
-            // recovery masks, no learned curve.
-            if (!backend) return FrameResult{FrameScalars{}, analytic_fields(sdr.height(), sdr.width()), false, false};
+        [backend, mu = backend_mutex_, play = play_state_, clip = engine_clip_](const SdrImage& sdr) -> Result<FrameResult> {
+            // The analytic reconstruction runs no network: its fields are the
+            // clip fill's (core/clip_fill.hpp), or none when that is off.
+            if (!backend)
+                return FrameResult{FrameScalars{}, clip.enabled ? clip_fill_fields(sdr, kAnalyticConstants, clip)
+                                                                : analytic_fields(sdr.height(), sdr.width()),
+                                   false, false};
             // Playing: the model on a smaller copy, its fields brought back to
             // the frame's size (a proxy, inferred again where the playhead stops).
             const int side = play->side.load();
@@ -1687,6 +1712,8 @@ MasterRequest MainWindow::master_request() const {
     MasterRequest q;
     q.analytic = !use_model_;
     q.checkpoint = use_model_ && manifest_ ? manifest_->name : std::string();
+    q.clip_fill = session_.grade.clip_fill;
+    q.clip_peaks = session_.grade.clip_peaks;
     q.preserve_outside = session_.grade.preserve;
     q.recovery_mode = session_.grade.mode;
     q.strength = session_.grade.strength;
@@ -1743,14 +1770,14 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     const ModelConstants model = frame_constants();
     if (!prepare) {
 #ifdef RUDRA_HAVE_STILL_DECODE
-        prepare = [sources, backend = use_model_ ? backend_.get() : nullptr, mu = backend_mutex_](std::size_t i) -> Result<MasterFrame> {
+        prepare = [sources, backend = use_model_ ? backend_.get() : nullptr, mu = backend_mutex_, q](std::size_t i) -> Result<MasterFrame> {
             auto file = ensure_frame_file(sources[i]);
             if (!file) return file.error();
             auto d = decode_sdr_file(*file);
             if (!d) return d.error();
-            if (!backend) {   // the analytic reconstruction: nothing runs
-                const int h = d->rgb.height(), w = d->rgb.width();
-                return MasterFrame{std::move(d->rgb), d->bits, analytic_fields(h, w), FrameScalars{}};
+            if (!backend) {   // the analytic reconstruction: no network, the clip fill unless it is off
+                Fields fields = analytic_fields_for(d->rgb, q);
+                return MasterFrame{std::move(d->rgb), d->bits, std::move(fields), FrameScalars{}};
             }
             std::lock_guard lock(*mu);
             auto fr = infer_frame(*backend, d->rgb, TileConfig{0, 0});   // full resolution, untiled
@@ -2405,6 +2432,49 @@ void MainWindow::paint_stroke(double x0, double y0, double x1, double y1, bool e
     if (!current_frame_ || session_.painted_band() < 0) return;
     const SdrImage& sdr = current_frame_->sdr;
     session_.stroke(sdr.width(), sdr.height(), x0, y0, x1, y1, erase);
+}
+
+// ---- the clip fill (12 Oct 2026) -------------------------------------------
+
+ClipFillOptions MainWindow::session_clip_options() const {
+    ClipFillOptions o;
+    o.enabled = session_.grade.clip_fill;
+    o.overrides = session_.grade.clip_peaks;
+    return o;
+}
+
+void MainWindow::arm_clip_peak(bool on) {
+    on = on && current_frame_ && !use_model_;
+    if (on) {
+        arm_mask(-1);          // one pointer mode at a time
+        arm_calibration(-1);
+        log("click a clipped region (a lamp, the sun, a blown sky) to set its peak");
+    }
+    clip_pick_armed_ = on;
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) viewer_->set_pick_mode(on);
+#endif
+}
+
+void MainWindow::clip_peak_picked(double x, double y) {
+    arm_clip_peak(false);
+    if (!current_frame_) return;
+    const SdrImage& sdr = current_frame_->sdr;
+    const int w = sdr.width(), h = sdr.height();
+    const int cx = std::clamp(int(std::floor(x)), 0, w - 1), cy = std::clamp(int(std::floor(y)), 0, h - 1);
+    const std::size_t i = std::size_t(cy) * std::size_t(w) + std::size_t(cx);
+    const auto& b = sdr.buffer();
+    const float top = std::max({b.plane(0)[i], b.plane(1)[i], b.plane(2)[i]});
+    if (top < 0.97f) {
+        log("that point is not clipped: pick inside a region at white");
+        return;
+    }
+    bool ok = false;
+    const double nits = QInputDialog::getDouble(this, "Clipped peak",
+                                                "Peak of this clipped region, in nits (0 removes a peak set here):",
+                                                2000.0, 0.0, 10000.0, 0, &ok);
+    if (!ok) return;
+    session_.set_clip_peak((cx + 0.5) / w, (cy + 0.5) / h, nits);
 }
 
 void MainWindow::calibration_picked(double x, double y) {

@@ -52,6 +52,19 @@ double py_round(double x, int n) {
     return std::strtod(b, nullptr);
 }
 
+// How the analytic master filled where the SDR clipped, as the EXR and the
+// sidecar record it.
+std::string clip_fill_text(const MasterRequest& q) {
+    if (!q.clip_fill) return "off (clipped values left at the inverse's ceiling)";
+    std::string t = "on (core/clip_fill: partial channels, smooth fill, dome)";
+    for (const auto& c : q.clip_peaks) {
+        char b[96];
+        std::snprintf(b, sizeof b, "; peak %.0f nits at (%.3f, %.3f)", c.nits, c.x, c.y);
+        t += b;
+    }
+    return t;
+}
+
 pyjson::Value band_json(const MasterBand& b) {
     return pyjson::Dict{{"label", b.label}, {"low_nits", b.low_nits}, {"high_nits", b.high_nits}, {"ev", b.ev}};
 }
@@ -94,6 +107,10 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
             for (const auto& b : j.at("regions"))
                 r.regions.push_back({b.value("label", std::string()), b.at("low_nits").get<double>(),
                                      b.at("high_nits").get<double>(), b.value("ev", 0.0)});
+        r.clip_fill = j.value("clip_fill", true);
+        if (j.contains("clip_peaks"))
+            for (const auto& c : j.at("clip_peaks"))
+                r.clip_peaks.push_back({c.at("x").get<double>(), c.at("y").get<double>(), c.at("nits").get<double>()});
     } catch (const std::exception& e) {
         return make_error(ErrorCode::ParseError, "The master parameters are not valid JSON.", e.what());
     }
@@ -122,7 +139,25 @@ std::string master_request_json(const MasterRequest& q) {
     if (!q.reference.empty())
         j["reference"] = nlohmann::json::parse(reference_fit_json(q.reference));
     if (!q.masks_file.empty()) j["masks_file"] = q.masks_file;
+    if (!q.clip_fill) j["clip_fill"] = false;
+    if (!q.clip_peaks.empty()) {
+        auto peaks = nlohmann::json::array();
+        for (const auto& c : q.clip_peaks) peaks.push_back({{"x", c.x}, {"y", c.y}, {"nits", c.nits}});
+        j["clip_peaks"] = peaks;
+    }
     return j.dump();
+}
+
+ClipFillOptions clip_fill_options(const MasterRequest& q) {
+    ClipFillOptions o;
+    o.enabled = q.clip_fill;
+    o.overrides = q.clip_peaks;
+    return o;
+}
+
+Fields analytic_fields_for(const SdrImage& sdr, const MasterRequest& q, ClipFill* detail) {
+    if (!q.clip_fill) return analytic_fields(sdr.height(), sdr.width());
+    return clip_fill_fields(sdr, kAnalyticConstants, clip_fill_options(q), detail);
 }
 
 Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, const FrameScalars& scalars,
@@ -216,6 +251,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     };
     if (*source != SourceCurve::Unknown) provenance.emplace_back("rudra:sourceCurve", q.source_curve);
     if (q.analytic) provenance.emplace_back("rudra:reconstruction", "analytic (no model)");
+    if (q.analytic) provenance.emplace_back("rudra:clipFill", clip_fill_text(q));
     if (!cp.reference.empty()) provenance.emplace_back("rudra:reference", cp.reference.file);
     if (cp.masks) provenance.emplace_back("rudra:masks", masks_path.filename().string());
     const bool aces = q.container == "aces";
@@ -265,6 +301,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     };
     if (*source != SourceCurve::Unknown) sidecar_dict.emplace_back("source_curve", q.source_curve);
     if (q.analytic) sidecar_dict.emplace_back("reconstruction", "analytic (no model)");
+    if (q.analytic) sidecar_dict.emplace_back("clip_fill", clip_fill_text(q));
     if (!cp.calibration.empty()) {
         pyjson::List cal;
         for (const auto& c : cp.calibration)

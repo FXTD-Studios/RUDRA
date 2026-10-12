@@ -17,6 +17,7 @@
 #include <string_view>
 #include <vector>
 
+#include "rudra/core/clip_fill.hpp"
 #include "rudra/core/composite.hpp"
 #include "rudra/core/js_format.hpp"
 
@@ -49,6 +50,11 @@ struct GradeSnapshot {
     // step (planes are shared, a stroke copies the one it paints). Left out
     // of params() when none; the data travels as a file with the master.
     std::shared_ptr<const MaskSet> masks;
+    // 12 Oct 2026: the clip fill in the analytic reconstruction
+    // (core/clip_fill.hpp) and the peaks the artist set on clipped regions.
+    // Undone with the grade; not in params() (the Studio has neither).
+    bool clip_fill = true;
+    std::vector<ClipOverride> clip_peaks;
 };
 
 // The page's defaultRegions(): highlights 400 to 2 000, speculars 2 000 to
@@ -144,6 +150,12 @@ public:
     void toggle_anchor();                        // Deliver: anchor to the source exposure
     void set_anchor_knee(double knee);           // Deliver: the knee, 0.5 to 0.99; not undone (a delivery setting)
     void toggle_carry_chroma();                  // Deliver: carry the source chroma
+    // The clip fill (12 Oct 2026), each an undo step: on or off; a peak in
+    // nits for the clipped region at a normalised point (a click within 2% of
+    // an earlier peak replaces it); every peak cleared.
+    void toggle_clip_fill();
+    void set_clip_peak(double x, double y, double nits);
+    void clear_clip_peaks();
     // A saved project's state (engine/project): the grade as one undo step,
     // then the view peak and the Deliver settings, as if set by hand.
     void load_state(const GradeSnapshot& g, double peak, bool anchor_on, bool carry, double knee,

@@ -88,6 +88,12 @@ const std::vector<ActionSpec> kActions = {
     // The reconstruction (the 10 Oct review): the analytic inverse by default,
     // the model only when asked for. Checked: the model runs.
     {"use-model", "Use the model (AI-assisted)", "", "useModel", O::Native, E::Always, ""},
+    // The clip fill (12 Oct 2026, core/clip_fill.hpp): what the analytic
+    // reconstruction puts where the SDR clipped, and the artist's peak for a
+    // clipped region (armed, then a click on the picture asks for its nits).
+    {"clip-fill", "Fill clipped highlights", "", "clipFill", O::Native, E::Always, ""},
+    {"clip-peak", "Set the peak of a clipped region…", "", "", O::Native, E::AnyFrames, ""},
+    {"clip-peaks-clear", "Clear clipped peaks", "", "", O::Native, E::AnyFrames, ""},
     // Playback with the model (10 Oct 2026): the size the model runs at
     // while playing (full where the playhead stops), and whether playback
     // keeps time by skipping frames the model has not reached.
@@ -118,7 +124,7 @@ const std::vector<MenuSpec> kMenus = {
      {"first", "prev", "next", "last", "-", "play", "-", ">While playing", "playback-side-0", "playback-side-960",
       "playback-side-640", "-", "playback-realtime", "<", "steady-shots"}},
     {"Reconstruct",
-     {"use-model", "-", ">Source", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
+     {"use-model", "-", "clip-fill", "clip-peak", "clip-peaks-clear", "-", ">Source", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
       "mode-all", "mode-highlights", "mode-shadows", "mode-off", "-", "preserve", "-", "strength-down", "strength-up"}},
     {"Measure", {"copy-metrics", "copy-scopes", "-", "remeasure"}},
     {"Deliver", {"master", "-", "container-aces", "container-linear", "-", "copy-delivery"}},

@@ -381,6 +381,33 @@ void Session::toggle_carry_chroma() {
     notify(Delivery);
 }
 
+void Session::toggle_clip_fill() {
+    push_undo();
+    grade.clip_fill = !grade.clip_fill;
+    notify(Grade);
+}
+
+void Session::set_clip_peak(double x, double y, double nits) {
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(nits)) return;
+    x = std::clamp(x, 0.0, 1.0);
+    y = std::clamp(y, 0.0, 1.0);
+    nits = std::clamp(nits, 0.0, 10000.0);
+    push_undo();
+    auto& peaks = grade.clip_peaks;
+    peaks.erase(std::remove_if(peaks.begin(), peaks.end(),
+                               [&](const ClipOverride& c) { return std::hypot(c.x - x, c.y - y) < 0.02; }),
+                peaks.end());
+    if (nits > 0.0) peaks.push_back({x, y, nits});
+    notify(Grade);
+}
+
+void Session::clear_clip_peaks() {
+    if (grade.clip_peaks.empty()) return;
+    push_undo();
+    grade.clip_peaks.clear();
+    notify(Grade);
+}
+
 void Session::region_press(int index, double x) {
     if (index < 0 || index >= int(grade.regions.size())) return;
     region_sel = index;
