@@ -33,7 +33,7 @@ if ($Tag) {
     if (git tag --list $version) { Fail "$version exists already" }
     $cmake = [System.IO.File]::ReadAllText((Join-Path (Get-Location) "native\CMakeLists.txt"))
     if ($cmake -notmatch 'project\(RudraNative VERSION 1\.0\.0 ' -or $cmake -notmatch ('set\(RUDRA_RELEASE "' + [regex]::Escape($label) + '"')) {
-        Fail "native/CMakeLists.txt is not at $version: run this script without -Tag first"
+        Fail "native/CMakeLists.txt is not at ${version}: run this script without -Tag first"
     }
     if ((git status --porcelain --untracked-files=no -- native/CMakeLists.txt)) { Fail "the version change is not committed" }
     Invoke-Git fetch origin native
