@@ -285,7 +285,7 @@ public:
     // Help: the five steps, the user guide's address.
     static QString user_guide_url();
     void show_getting_started();
-    void show_getting_started_once();   // the first time only (QSettings help/gettingStartedShown)
+    void show_getting_started_once();   // once per edition of the steps (QSettings help/gettingStarted)
 
     // The page's state: grade, undo, peak, wipe, container (engine/session).
     Session& session() { return session_; }

@@ -2728,21 +2728,25 @@ QString MainWindow::user_guide_url() {
 }
 
 void MainWindow::show_getting_started() {
+    // RUDRA 1.0 (13 Oct 2026): the analytic reconstruction with the artist in
+    // the loop; the model is optional and off by default.
     show_sheet("Getting started",
                {{"1  Source", "Open a still, a folder of frames or a movie (File, or drop it on the window). "
-                              "Tell RUDRA how the SDR was made: Reconstruct > Source."},
-                {"2  Calibrate", "Optional: pick a few patches of known brightness, or load a graded HDR "
-                                 "reference, so the inverse lands on real nits."},
-                {"3  Reconstruct", "The analytic inverse by default; Reconstruct > Use the model adds the AI "
-                                   "reconstruction, with what it recovers (All, Highlights, Shadows) and its strength. "
-                                   "Hold B to see the baseline; W wipes between them."},
-                {"4  Check", "Raise the view peak, use False colour and the scopes, and Invented to see "
-                             "what RUDRA made up where the SDR clipped."},
-                {"5  Deliver", "Master EXR (ACES 2065-1) for grading, or HDR10, HLG and ProRes for a movie, "
-                               "from the Deliver tab."},
-                {"Save", "File > Save project (Ctrl+S) keeps the shot, the model and the grade; the session is "
-                         "also autosaved."},
-                {"More", "Help > User guide (F1)."}});
+                              "Reconstruct > Source says how the SDR was made: BT.1886 (the default) for camera, "
+                              "phone and broadcast video; ACES, filmic or AgX for CG and games made with that curve."},
+                {"2  Calibrate", "Optional: pick up to three patches of known brightness, or load a graded HDR "
+                                 "reference of the frame, so the inverse lands on real nits. The anchor follows them."},
+                {"3  Reconstruct", "Exposure moves the whole master in stops. Fill clipped highlights rebuilds what "
+                                   "the SDR blew out; set a region's peak, or lower Strength where it overshoots. "
+                                   "Reconstruct > Use the model (optional) adds the AI reconstruction."},
+                {"4  Check", "Hold B for the baseline, W to wipe. Raise the view peak, use False colour and the "
+                             "scopes, and Invented to see what RUDRA made up where the SDR clipped."},
+                {"5  Deliver", "Master EXR (ACES 2065-1), or HDR10, HLG and ProRes for a movie with HDR10+ and "
+                               "Dolby Vision metadata beside it, from the Deliver tab. Clip > Hold steady keeps "
+                               "a shot from shimmering."},
+                {"Save", "File > Save project (Ctrl+S) keeps the shot, the source, the grade and the model; the "
+                         "session is also autosaved."},
+                {"More", "Help > User guide (F1); Help > Getting started shows this again."}});
 }
 
 void MainWindow::apply_tooltips() {
@@ -2826,8 +2830,10 @@ bool MainWindow::confirm_replace(bool closing) {
 
 void MainWindow::show_getting_started_once() {
     QSettings st;
-    if (st.value("help/gettingStartedShown", false).toBool()) return;
-    st.setValue("help/gettingStartedShown", true);
+    // Once per edition of the steps: "2" is RUDRA 1.0's (Source, exposure, the
+    // clip fill), so a beta user sees the new ones once too.
+    if (st.value("help/gettingStarted", 0).toInt() >= 2) return;
+    st.setValue("help/gettingStarted", 2);
     QPointer<MainWindow> self(this);
     QTimer::singleShot(600, this, [self] {
         if (self) self->show_getting_started();

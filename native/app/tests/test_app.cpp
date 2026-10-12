@@ -2368,6 +2368,10 @@ TEST(AppHelp, GettingStartedTheGuideAndTips) {
     for (auto* l : w.sheet()->findChildren<QLabel*>())
         if (l->property("role").toString() == "value") keys << l->text();
     EXPECT_EQ(keys.mid(0, 5), (QStringList{"1  Source", "2  Calibrate", "3  Reconstruct", "4  Check", "5  Deliver"}));
+    // Once per edition of the steps: a beta user (who saw the old ones) sees RUDRA 1.0's once.
+    QSettings().setValue("help/gettingStartedShown", true);
+    w.show_getting_started_once();
+    EXPECT_EQ(QSettings().value("help/gettingStarted").toInt(), 2);
     EXPECT_TRUE(app::MainWindow::user_guide_url().endsWith("docs/USER_GUIDE.md"));
     EXPECT_EQ(w.action("user-guide")->shortcut(), QKeySequence(Qt::Key_F1));
     EXPECT_EQ(w.action("save-project")->shortcut(), QKeySequence(QKeySequence::Save));
