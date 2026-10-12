@@ -329,6 +329,31 @@ def effective_source_curve(record: dict, degraded: bool, augment: bool,
     return index
 
 
+def effective_baseline_curve(record: dict, degraded: bool, pushed: bool, augment: bool,
+                             dropout: float, rng: random.Random | None = None) -> int:
+    """The Source picker entry a sample's baseline uses (v10, 13 Oct 2026).
+
+    v10 learns its residual over the app's baseline, which is the curve the
+    artist picks (rudra/source_baseline.py), BT.1886 unless they pick another.
+    So: real SDR (video) and degraded samples ride on BT.1886, the default and
+    the answer for video (R3); a rendered sample on its own curve when the
+    picker has it (a re-rendered exposure push is ACES), else on BT.1886; and in
+    training a fraction ``dropout`` of those on BT.1886 anyway -- the artist who
+    never opens the picker -- so the model learns that case too.
+    """
+    from rudra.source_baseline import BASELINE_CURVES, DEFAULT_BASELINE, baseline_curve_index
+
+    default = baseline_curve_index(DEFAULT_BASELINE)
+    if record.get("sdr_kind") == "real" or degraded:
+        return default
+    true = "aces" if pushed else (record.get("source_curve") or record.get("sdr_curve"))
+    if true not in BASELINE_CURVES or true == "unknown":
+        return default
+    if augment and dropout > 0.0 and (rng or random).random() < dropout:
+        return default
+    return baseline_curve_index(true)
+
+
 class SDRHDRDataset(Dataset):
     def __init__(
         self,
@@ -343,6 +368,7 @@ class SDRHDRDataset(Dataset):
         source_curve_dropout: float = 0.0,
         exposure_push: float = 0.0,
         exposure_push_max_ev: float = 2.0,
+        baseline_dropout: float = 0.0,
     ):
         records = read_jsonl(manifest_path)
         self.records = [r for r in records if r.get("split") == split]
@@ -374,6 +400,9 @@ class SDRHDRDataset(Dataset):
         # moves more of the frame into it.
         self.exposure_push = float(exposure_push)
         self.exposure_push_max_ev = float(exposure_push_max_ev)
+        self.baseline_dropout = float(baseline_dropout)
+        if not 0.0 <= self.baseline_dropout <= 1.0:
+            raise ValueError("baseline_dropout must be between 0 and 1")
         if not 0.0 <= self.exposure_push <= 1.0:
             raise ValueError("exposure_push must be between 0 and 1")
         if not 0.0 <= self.source_curve_dropout <= 1.0:
@@ -431,6 +460,11 @@ class SDRHDRDataset(Dataset):
             "asset_id": str(record["asset_id"]), "scene_id": str(record["scene_id"]),
             "source_curve": torch.tensor(
                 effective_source_curve(record, degraded or pushed, self.augment, self.source_curve_dropout),
+                dtype=torch.long),
+            # v10: the picker entry the baseline uses (effective_baseline_curve);
+            # read only by a model built with baseline_source.
+            "baseline_curve": torch.tensor(
+                effective_baseline_curve(record, degraded, pushed, self.augment, self.baseline_dropout),
                 dtype=torch.long),
             # 1 for a real SDR grade (sdr_kind "real", e.g. the Netflix trim
             # pass), 0 for a rendered pair. The evaluator splits its gains on

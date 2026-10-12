@@ -56,8 +56,14 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
                   source_curve: int | None = None,
                   shadow_weight: float | torch.Tensor | None = None,
                   residual_scale: torch.Tensor | None = None,
-                  curve_params: torch.Tensor | None = None) -> torch.Tensor:
+                  curve_params: torch.Tensor | None = None,
+                  baseline_curve: int | None = None) -> torch.Tensor:
     """Memory-bounded image inference with overlap feathering.
+
+    ``baseline_curve``: for a model built with ``baseline_source`` (v10), the
+    Source picker's curve (an index into rudra.source_baseline.BASELINE_CURVES)
+    the residual rides on; None is the app's default, BT.1886. A model trained
+    over the ACES inverse takes only None.
 
     ``source_curve``: an id from rudra.sdr2hdr.SOURCE_CURVES for a model built
     with ``source_curve=True``; None or 0 is unknown (the blind estimate).
@@ -97,6 +103,7 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
             if hasattr(model, "predict_curve") else None
     if source is not None and curve is None:
         raise ValueError("a source curve was given but this model has no CurveHead")
+    extra = {} if baseline_curve is None else {"baseline_curve": torch.tensor([int(baseline_curve)], device=sdr.device)}
     if tile_size <= 0 or (height <= tile_size and width <= tile_size):
         amp = torch.autocast("cuda", dtype=torch.bfloat16) if (sdr.is_cuda and bf16) else contextlib.nullcontext()
         with amp:
@@ -104,7 +111,7 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
                          recovery_mode=recovery_mode,
                          residual_strength=recovery_strength,
                          residual_scale=scale, shadow_weight=shadow_weight,
-                         curve_params=curve).hdr.float()
+                         curve_params=curve, **extra).hdr.float()
     if overlap < 0 or overlap >= tile_size:
         raise ValueError("tile overlap must be >= 0 and smaller than tile size")
     result = torch.zeros((1, 3, height, width), device=sdr.device, dtype=torch.float32)
@@ -118,7 +125,7 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
                                    recovery_mode=recovery_mode,
                                    residual_strength=recovery_strength,
                                    residual_scale=scale, shadow_weight=shadow_weight,
-                         curve_params=curve).hdr.float()
+                         curve_params=curve, **extra).hdr.float()
             weight = _tile_weight(tile.shape[-2], tile.shape[-1], overlap, y, x,
                                   height, width, sdr.device)
             result[..., y:y + tile.shape[-2], x:x + tile.shape[-1]] += prediction * weight
