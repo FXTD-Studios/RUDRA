@@ -144,7 +144,7 @@ Full tables, the failure analysis, and how to recompute every number:
 
 **Desktop app (no Python).** From
 [Releases](https://github.com/FXTD-Studios/RUDRA/releases), the latest
-pre-release (beta 10 now; `v1.0.0-rc.N` candidates, then 1.0, follow): for Windows x64 `RUDRA-<version>-windows-x64-setup.exe`, which
+pre-release (`v1.0.0-rc.1` now, then 1.0): for Windows x64 `RUDRA-<version>-windows-x64-setup.exe`, which
 installs for your user (no administrator prompt) with the model and the Visual
 C++ runtime included, or the portable ZIP beside it; for Apple silicon
 `RUDRA-<version>-macos-arm64.dmg`. Details: [`docs/BETA.md`](docs/BETA.md).
@@ -163,7 +163,27 @@ pip install -e .
 
 ## Quick start
 
-Open the Studio. It loads the shipped checkpoint and opens a browser tab:
+**Desktop app.** Install it and start RUDRA. The first start opens **Welcome
+to RUDRA**: it checks your display (HDR or not, and its real peak) and,
+optionally, the model on your GPU or CPU; the model is not needed. Then
+**Getting started** shows the five steps once (Help > Getting started any
+time):
+
+1. **Source**: open a still, a folder of frames or a movie; Reconstruct >
+   Source says how the SDR was made (BT.1886, the default, for camera and
+   broadcast video; ACES, filmic or AgX for CG and games).
+2. **Calibrate** (optional): patches of known brightness, or a graded HDR
+   reference.
+3. **Reconstruct**: exposure in stops, Fill clipped highlights (on), the
+   model if you want it (off by default).
+4. **Check**: B for the baseline, W to wipe, the view peak, False colour,
+   the scopes, the Invented layer.
+5. **Deliver**: ACES EXR masters, or HDR10, HLG and ProRes movies with their
+   HDR10+ and Dolby Vision metadata.
+
+The whole guide: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) (F1 in the app).
+
+**Browser Studio (Python).** It loads the shipped checkpoint and opens a browser tab: It loads the shipped checkpoint and opens a browser tab:
 
 ```bash
 python ui/server.py

@@ -44,6 +44,11 @@ weights: LICENSE-weights).
 
 ## Changes since beta 10 (for the next beta)
 
+- **Getting started, for 1.0.** The welcome says the model is optional, and
+  the five steps now cover the Source picker (BT.1886 by default), exposure,
+  Fill clipped highlights, the HDR10+ and Dolby Vision metadata and Hold
+  steady. They show once more after updating, then from Help > Getting started.
+
 - **The anchor follows the Source.** With Anchor on (the default), the master
   kept mid-tones on the SDR read as an sRGB display at 203 nits, whatever the
   Source picker, calibration or reference said, so below the anchor knee a

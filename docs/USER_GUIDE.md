@@ -3,11 +3,13 @@
 RUDRA turns SDR footage (stills, frame sequences, movies) into scene-linear
 HDR: an ACES 2065-1 EXR master for grading, or HDR10, HLG and ProRes movies
 for delivery. It always starts from an analytic inverse of the SDR's tone
-curve (the *baseline*) and can add a learned model's reconstruction on top,
-and it shows you where it made something up.
+curve (the *baseline*), fills what the SDR clipped, and can add a learned
+model's reconstruction on top (optional, off by default), and it shows you
+where it made something up.
 
-This guide is for the desktop app (0.9.0 beta 6 and later). Help > Getting
-started shows the short version inside the app; F1 opens this page.
+This guide is for the desktop app, RUDRA 1.0 and its release candidates.
+Help > Getting started shows the short version inside the app; F1 opens this
+page.
 
 ## 1. Install
 
@@ -19,8 +21,14 @@ started shows the short version inside the app; F1 opens this page.
   `zscale` on the PATH (`brew install ffmpeg`) unless the DMG says it carries
   one.
 
-The first start checks the display (its real peak brightness) and the model
-on your GPU or CPU. Help > Check the display and the model runs it again.
+**The first start.** *Welcome to RUDRA* checks the display (HDR or SDR, and
+its real peak brightness, shown on an HDR test card) and, if a model package
+is installed, loads and tests it on the backend you pick (**Load and test**).
+The model is optional: **Continue** or **Start on CPU** both get you to work,
+and nothing runs a model until Reconstruct > Use the model is on. Then
+*Getting started* shows the five steps below, once (and once again after an
+update that changes them). Help > Check the display and the model runs the
+check again; Help > Getting started shows the steps.
 
 ## 2. The five steps
 
@@ -83,6 +91,9 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   clipped region…** then a click on the region asks for its peak in nits
   (0 removes it); **Clear clipped peaks** removes them all. Strength scales
   the fill, *Off* removes it. With the model on, the model fills instead.
+  Where a highlight was only just above the clip the fill can overshoot (by
+  about a quarter of a stop), and small bright sparks such as fireworks look
+  wrong: lower Strength, set the peak, or turn the fill off for those shots.
 - **Mode** (1 2 3 4): what the model may change: *All*, *Highlights*,
   *Shadows*, or *Off* (the baseline alone).
 - **Strength** ([ and ]): how much of the model's residual is added.
