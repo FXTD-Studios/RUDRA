@@ -108,6 +108,9 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
                 r.regions.push_back({b.value("label", std::string()), b.at("low_nits").get<double>(),
                                      b.at("high_nits").get<double>(), b.value("ev", 0.0)});
         r.clip_fill = j.value("clip_fill", true);
+        r.exposure_ev = j.value("exposure_ev", 0.0);
+        if (!std::isfinite(r.exposure_ev) || std::fabs(r.exposure_ev) > 8.0)
+            return make_error(ErrorCode::InvalidArgument, "exposure_ev must be within -8 and +8 stops", std::to_string(r.exposure_ev));
         if (j.contains("clip_peaks"))
             for (const auto& c : j.at("clip_peaks"))
                 r.clip_peaks.push_back({c.at("x").get<double>(), c.at("y").get<double>(), c.at("nits").get<double>()});
@@ -130,6 +133,7 @@ std::string master_request_json(const MasterRequest& q) {
         regions.push_back({{"label", b.label}, {"low_nits", b.low_nits}, {"high_nits", b.high_nits}, {"ev", b.ev}});
     j["regions"] = regions;
     if (q.source_curve != "unknown") j["source_curve"] = q.source_curve;
+    if (q.exposure_ev != 0.0) j["exposure_ev"] = q.exposure_ev;
     if (q.analytic) j["analytic"] = true;
     if (!q.calibration.empty()) {
         auto cal = nlohmann::json::array();
@@ -165,7 +169,7 @@ Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, con
     auto mode = mode_of(q.recovery_mode);
     if (!mode) return mode.error();
     const auto source = parse_source_curve(q.source_curve);
-    if (!source) return make_error(ErrorCode::InvalidArgument, "source_curve must be unknown, aces, hable, agx, camera_log, or clip", q.source_curve);
+    if (!source) return make_error(ErrorCode::InvalidArgument, "source_curve must be unknown, bt1886, aces, hable, agx, camera_log, or clip", q.source_curve);
     CompositeParams cp;
     cp.mode = *mode;
     cp.strength = static_cast<float>(q.strength);
@@ -197,7 +201,7 @@ Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, con
     if (q.anchor) anchor_to_sdr(g.nits, sdr, q.anchor_knee, kAnchorSoftness, settle_hold);
     if (q.carry_chroma) carry_source_chroma(g.nits, sdr, q.chroma_knee);
     if (q.settle_grain) settle_highlight_grain(g.nits, sdr, q.anchor_knee);
-    apply_region_ev(g.nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0, cp.masks.get());
+    apply_region_ev(g.nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0, cp.masks.get(), q.exposure_ev);
     g.params = std::move(cp);
     return g;
 }
@@ -250,6 +254,11 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         {"rudra:sourceSpace", q.source_space},
     };
     if (*source != SourceCurve::Unknown) provenance.emplace_back("rudra:sourceCurve", q.source_curve);
+    if (q.exposure_ev != 0.0) {
+        char b[32];
+        std::snprintf(b, sizeof b, "%+.2f", q.exposure_ev);
+        provenance.emplace_back("rudra:exposureEV", b);
+    }
     if (q.analytic) provenance.emplace_back("rudra:reconstruction", "analytic (no model)");
     if (q.analytic) provenance.emplace_back("rudra:clipFill", clip_fill_text(q));
     if (!cp.reference.empty()) provenance.emplace_back("rudra:reference", cp.reference.file);
@@ -300,6 +309,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
          }},
     };
     if (*source != SourceCurve::Unknown) sidecar_dict.emplace_back("source_curve", q.source_curve);
+    if (q.exposure_ev != 0.0) sidecar_dict.emplace_back("exposure_ev", q.exposure_ev);
     if (q.analytic) sidecar_dict.emplace_back("reconstruction", "analytic (no model)");
     if (q.analytic) sidecar_dict.emplace_back("clip_fill", clip_fill_text(q));
     if (!cp.calibration.empty()) {

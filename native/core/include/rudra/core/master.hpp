@@ -63,6 +63,7 @@ struct MasterParams {
     Primaries source_primaries = Primaries::Rec709;
     MasterContainer container = MasterContainer::Aces2065;
     std::shared_ptr<const MaskSet> masks;   // the painted masks (3.3), or null
+    double exposure_ev = 0.0;               // the master exposure in stops, with the grade (13 Oct 2026)
 };
 
 // network * 10 000, widened.
@@ -70,9 +71,11 @@ NitsFrame nits_from_network(const NetworkLinearImage& network);
 
 // apply_region_ev, then np.clip(0, ceiling). A no-op without a grade. With
 // `masks` (masks.hpp, painted at the preview's size), each band's term is
-// weighted by its mask sampled at this frame's size.
+// weighted by its mask sampled at this frame's size. `exposure_ev` (13 Oct
+// 2026): the master exposure, applied first (the bands read the exposed nits),
+// as composite() applies CompositeParams::exposure_ev.
 void apply_region_ev(NitsFrame& nits, std::span<const RegionBand> bands, double softness_stops, double ceiling_nits,
-                     const MaskSet* masks = nullptr);
+                     const MaskSet* masks = nullptr, double exposure_ev = 0.0);
 
 // rudra.anchor.anchor_gain / anchor_to_sdr. `settle`, when set, maps the
 // frame's hold (the median gain at the knee) to the one used: a movie export

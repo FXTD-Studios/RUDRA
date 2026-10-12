@@ -65,7 +65,14 @@ struct CompositeParams {
     // Roadmap 3.3: painted masks gating the bands' qualifiers (masks.hpp);
     // null or empty for none.
     std::shared_ptr<const MaskSet> masks;
+    // 13 Oct 2026: the master exposure, in stops. Part of the grade: the whole
+    // picture times 2^exposure_ev before the Region EV bands read it (they see
+    // the exposed nits), clipped at the model's ceiling. 0: no change, bit for bit.
+    double exposure_ev = 0.0;
 };
+
+// 2^ev, the grade's exposure gain (1 at 0 EV).
+double exposure_gain(double ev) noexcept;
 
 // The curve params corrected_baseline takes for a frame under these settings:
 // the model's CurveHead output plus the source curve (source_curve.hpp) plus

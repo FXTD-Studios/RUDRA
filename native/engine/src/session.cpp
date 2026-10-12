@@ -80,6 +80,7 @@ std::string Session::params_json() const {
         o += ",\"source_curve\":";
         append_string(o, grade.source);
     }
+    if (grade.exposure_ev != 0.0) o += ",\"exposure_ev\":" + js_number(grade.exposure_ev);
     const auto cal = calibration_points();
     if (!cal.empty() && grade.reference.empty()) {
         o += ",\"calibration\":[";
@@ -115,6 +116,7 @@ CompositeParams Session::composite_params() const {
     p.calibration = grade.reference.empty() ? calibration_points() : std::vector<CalibrationPoint>{};
     p.reference = grade.reference;
     if (grade.masks && !grade.masks->empty()) p.masks = grade.masks;
+    p.exposure_ev = grade.exposure_ev;
     return p;
 }
 
@@ -288,6 +290,24 @@ void Session::strength_input(double value) {
     notify(Grade);
 }
 
+void Session::exposure_press() { push_undo(); }
+
+void Session::exposure_input(double ev) {
+    grade.exposure_ev = std::isfinite(ev) ? std::clamp(ev, kExposureMin, kExposureMax) : 0.0;
+    notify(Grade);
+}
+
+void Session::nudge_exposure(double delta) {
+    push_undo();
+    exposure_input(js_round((grade.exposure_ev + delta) * 3.0) / 3.0);   // in thirds of a stop
+}
+
+void Session::reset_exposure() {
+    if (grade.exposure_ev == 0.0) return;
+    push_undo();
+    exposure_input(0.0);
+}
+
 void Session::peak_input(double ev) {
     peak_ev = ev;
     notify(Peak);
@@ -304,6 +324,7 @@ void Session::reset_recon() {
     grade.mode = "all";
     grade.strength = 1.0;
     grade.preserve = true;
+    grade.exposure_ev = 0.0;
     notify(Grade);
 }
 
@@ -452,6 +473,7 @@ void Session::select_region(int index) {
 bool Session::owns(std::string_view a) {
     static const std::string_view mine[] = {"mode-all", "mode-highlights", "mode-shadows", "mode-off", "preserve",
                                             "strength-down", "strength-up", "reset-recon", "reset-regions", "undo",
+                                            "exposure-down", "exposure-up", "exposure-reset",
                                             "redo", "container-aces", "container-linear", "wipe",
                                             "rail-left", "rail-right", "scopes"};
     if (a.size() > 7 && a.substr(0, 7) == "source-" && parse_source_curve(a.substr(7))) return true;
@@ -467,6 +489,9 @@ bool Session::run(std::string_view a) {
     else if (a == "strength-down") nudge_strength(-0.1);
     else if (a == "strength-up") nudge_strength(0.1);
     else if (a == "reset-recon") reset_recon();
+    else if (a == "exposure-down") nudge_exposure(-1.0 / 3.0);
+    else if (a == "exposure-up") nudge_exposure(1.0 / 3.0);
+    else if (a == "exposure-reset") reset_exposure();
     else if (a == "reset-regions") reset_regions();
     else if (a == "undo") undo();
     else if (a == "redo") redo();

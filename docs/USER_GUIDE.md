@@ -32,14 +32,19 @@ on your GPU or CPU. Help > Check the display and the model runs it again.
   the same.
 - **Reconstruct > Source** says how the SDR was made. This matters more than
   anything else: the baseline is the inverse of that curve.
-  - *Unknown (ACES inverse)*: the safe default for graded or broadcast SDR.
+  - *BT.1886* (the default): SDR as a display shows it, each code to the
+    power 2.4, white at 203 nits. Right for graded and broadcast video, and
+    the best measured on real SDR by far (docs/RESULTS.md). On a still read
+    as sRGB the mid-tones come out about a third of a stop darker.
+  - *Unknown (ACES inverse)*: RUDRA's default before 13 Oct 2026; projects
+    saved with it keep it.
   - *ACES*, *filmic (Hable)*, *AgX*: CG renders and games with those tone mappers.
   - *Camera log*: a log clip viewed through a LUT you know.
   - *Rec.709, plain clip*: video that was simply clipped at white.
 
 **Generated video** (text-to-video and image-to-video tools, renders from
 game engines, upscaler output): these are 8-bit SDR with clipped highlights
-and no real camera curve. Start with *Source: unknown*; if the picture has a
+and no real camera curve. Start with the default, *Source: BT.1886*; if the picture has a
 filmic shoulder (soft roll-off into white), try *filmic (Hable)* or *AgX* and
 keep the one whose baseline looks most natural at a high view peak. Leave the
 model's strength low (or mode *Highlights*): generated frames change from
@@ -61,6 +66,12 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   (AI-assisted)** adds the model's reconstruction on top; the status bar says
   which is in use and every master's sidecar records it. Movie exports
   follow it too, with your whole grade.
+
+- **Exposure.** The slider at the top of the Reconstruct card moves the whole
+  master brighter or darker, -3 to +3 stops, live on the viewer. It is part of
+  your grade: it survives the anchor (mid-tones keep the offset), the Region
+  EV bands see the exposed picture, and masters, movie exports and projects
+  carry it. Ctrl+Shift+Up / Down: a third of a stop; double-click: back to 0.
 
 - **Clipped highlights.** Where the SDR clipped (a blown sky, a lamp, the
   sun), the inverse alone leaves a flat ceiling. **Reconstruct > Fill clipped

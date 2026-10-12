@@ -500,8 +500,10 @@ void MainWindow::build_menus() {
                 {"act:reset-regions", "grade"},  {"act:container-aces", "deliver"}, {"act:container-linear", "deliver"},
                 {"act:copy-delivery", "deliver"}, {"act:mode-all", "rec"},         {"act:mode-highlights", "rec"},
                 {"act:mode-shadows", "rec"},      {"act:mode-off", "rec"},         {"act:preserve", "rec"},
-                {"act:source-unknown", "rec"},    {"act:source-aces", "rec"},     {"act:source-hable", "rec"},
+                {"act:source-unknown", "rec"},    {"act:source-bt1886", "rec"},   {"act:source-aces", "rec"},
+                {"act:source-hable", "rec"},
                 {"act:source-agx", "rec"},        {"act:source-camera_log", "rec"}, {"act:source-clip", "rec"},
+                {"act:exposure-up", "rec"},      {"act:exposure-down", "rec"},  {"act:exposure-reset", "rec"},
                 {"act:strength-up", "rec"},       {"act:strength-down", "rec"},    {"act:reset-recon", "rec"}};
             const auto it = tab_for.find(a->objectName());
             if (it != tab_for.end()) show_tab(it->second);
@@ -1323,11 +1325,13 @@ void MainWindow::sync_ui() {
     // The exposure the frames and masters are composed at (analytic or the package's).
     source_panel_->sync(session_.source_curve(), g.calibration, frame_constants().corpus_ev, g.reference);
     {
-        const QSignalBlocker b1(strength_), b2(peak_);
+        const QSignalBlocker b1(strength_), b2(peak_), b3(exposure_);
+        exposure_->setValue(int(std::lround(g.exposure_ev * 20.0)));
         strength_->setValue(int(std::lround(g.strength * 20.0)));
         peak_->setValue(int(std::lround(session_.peak_ev * 2.0)));
     }
     strength_val_->setText(QString::number(g.strength, 'f', 2));
+    exposure_val_->setText((g.exposure_ev > 0.0 ? QStringLiteral("+") : QString()) + QString::number(g.exposure_ev, 'f', 2));
     peak_val_->setText(QLocale(QLocale::English).toString(qlonglong(std::floor(session_.display_nits() + 0.5))));
     preserve_->set_on(g.preserve);
     preserve_->set_hint(g.preserve ? "do-no-harm" : "raw prediction");
@@ -1717,6 +1721,7 @@ MasterRequest MainWindow::master_request() const {
     q.preserve_outside = session_.grade.preserve;
     q.recovery_mode = session_.grade.mode;
     q.strength = session_.grade.strength;
+    q.exposure_ev = session_.grade.exposure_ev;
     for (const auto& r : session_.grade.regions) q.regions.push_back({r.label, r.low_nits, r.high_nits, r.ev});
     q.anchor = session_.anchor;
     q.anchor_knee = session_.anchor_knee;
@@ -2193,6 +2198,10 @@ void MainWindow::update_badges() {
 }
 
 bool MainWindow::eventFilter(QObject* o, QEvent* e) {
+    if (o == exposure_ && e->type() == QEvent::MouseButtonDblClick) {   // the exposure back to 0
+        session_.reset_exposure();
+        return true;
+    }
     if (e->type() == QEvent::MouseButtonRelease) {
         const QString p = o->property("open").toString();
         if (!p.isEmpty()) {
@@ -2743,6 +2752,8 @@ void MainWindow::apply_tooltips() {
     };
     tip(mode_seg_, "What the model may change: everything, only highlights, only shadows, or nothing (1 2 3 4)");
     tip(strength_, "How much of the model's residual is applied on top of the analytic inverse ([ and ])");
+    tip(exposure_, "The whole master brighter or darker, in stops, before the Region EV bands; in the master, "
+                   "movie exports and projects (Ctrl+Shift+Up / Down by a third of a stop, double-click for 0)");
     tip(peak_, "The view peak: how bright the display shows. It changes the view only, never the master");
     tip(preserve_, "Outside painted masks, keep the analytic inverse untouched");
     tip(regions_, "Region EV: drag a band up or down to push the brightness of that range of nits");

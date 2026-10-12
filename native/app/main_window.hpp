@@ -431,7 +431,8 @@ private:
     Seg *view_mode_ = nullptr, *view_layer_ = nullptr, *zoom_seg_ = nullptr, *mode_seg_ = nullptr, *tabs_ = nullptr,
         *ws_ = nullptr;
     CheckRow *preserve_ = nullptr, *anchor_ = nullptr, *carry_chroma_ = nullptr;
-    QSlider *strength_ = nullptr, *peak_ = nullptr;
+    QSlider *strength_ = nullptr, *peak_ = nullptr, *exposure_ = nullptr;
+    QLabel* exposure_val_ = nullptr;
     QLabel *strength_val_ = nullptr, *peak_val_ = nullptr, *shot_count_ = nullptr, *frames_empty_ = nullptr,
            *tc_ = nullptr, *src_info_ = nullptr, *zoom_val_ = nullptr, *container_field_ = nullptr,
            *primaries_field_ = nullptr, *ckpt_ = nullptr, *device_ = nullptr, *lamp_ = nullptr,

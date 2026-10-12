@@ -30,7 +30,7 @@ struct CompositeUbo {
     float counts[4];
     float curve[288];   // 72 vec4: exposure + up to 287 knots (source_curve.hpp needs 1 + 256)
     float bands[32];
-    float frame[4];     // x width, y height (3.3: the masks sample by normalised position)
+    float frame[4];     // x width, y height (3.3: the masks sample by normalised position), z exposure gain
 };
 static_assert(sizeof(CompositeUbo) == (3 * 4 + 288 + 32 + 4) * sizeof(float));
 static_assert(288 >= 1 + kSourceCurveKnots);
@@ -101,6 +101,7 @@ inline CompositeUbo composite_ubo(const FrameScalars& scalars, const ModelConsta
     u.counts[2] = masked ? 1.0f : 0.0f;
     u.frame[0] = float(std::max(frame_width, 1));
     u.frame[1] = float(std::max(frame_height, 1));
+    u.frame[2] = float(exposure_gain(params.exposure_ev));   // 1: no exposure (13 Oct 2026)
     return u;
 }
 

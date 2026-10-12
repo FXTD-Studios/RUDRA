@@ -71,6 +71,9 @@ TEST(Session, EveryScriptStepMatchesThePage) {
     ASSERT_GE(golden()["scripts"].size(), 6u);
     for (const auto& [name, steps] : golden()["scripts"].items()) {
         Session s;
+        // The page has no source picker: it is the ACES inverse, "unknown"
+        // (the app starts on BT.1886 since 13 Oct 2026).
+        s.grade.source = "unknown";
         int i = 0;
         for (const auto& st : steps) {
             play(s, st["op"]);

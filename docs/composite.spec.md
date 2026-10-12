@@ -45,12 +45,21 @@ Per pixel, per channel `k`, in float32:
    [0, 0.995]; `curve` is the piecewise-linear CurveHead correction in log2
    (native/core baseline.cpp, rudra/sdr2hdr.py).
    **Source curve (roadmap 3.1, a user control).** When the artist names the
-   curve that made the SDR (`aces`, `hable`, `agx`, `camera_log`, `clip`), `c`
+   curve that made the SDR (`bt1886`, `aces`, `hable`, `agx`, `camera_log`, `clip`), `c`
    becomes the model's head plus `log2(inv_source / invACES)` sampled at every
    8-bit code (K = 256), summed in log2 (native/core source_curve.cpp
    `effective_curve_params`). The forward curves are pipeline/sdr_render.py's;
-   the inverses are numeric. `unknown` leaves `c` as the model's, bit for bit.
+   the inverses are numeric. `bt1886` is the display decode instead (13 Oct
+   2026): `inv(y) = oetf709(y)^2.4`, the BT.709 video's code to the power 2.4,
+   white at 1.0; the app's sessions start on it. `unknown` leaves `c` as the
+   model's, bit for bit, and is what a request that names no curve gets.
    The masks and the residual do not depend on it.
+   **Exposure (13 Oct 2026, a user control).** `exposure_ev` multiplies the
+   prediction by `2^exposure_ev` at the grade step (step 3), before the Region
+   EV bands, which read the exposed nits; the grade gain the view's anchor
+   scales its target by includes it, and the master applies it after the
+   anchor (`apply_region_ev`). In the shader: `frame.z` = `2^exposure_ev`.
+   0 changes nothing, bit for bit.
    **Calibration (roadmap 3.2, a user control).** Up to three anchors
    `(code, nits)` add a second log2 correction over the source curve's
    inverse at the model's exposure: `log2(nits / source_nits(code))` at each

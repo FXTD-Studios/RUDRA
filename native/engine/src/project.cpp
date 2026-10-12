@@ -117,7 +117,8 @@ std::string project_json(const Project& p, const fs::path& project_file) {
                         ? json(utf8(project_masks_path(project_file).filename()))
                         : json()},
           {"clip_fill", p.grade.clip_fill},
-          {"clip_peaks", clip_peaks}}},
+          {"clip_peaks", clip_peaks},
+          {"exposure_ev", p.grade.exposure_ev}}},
         {"view", {{"peak_ev", p.peak_ev}}},
         {"deliver",
          {{"anchor", p.anchor}, {"anchor_knee", p.anchor_knee}, {"carry_chroma", p.carry_chroma}, {"container", p.container}}},
@@ -170,6 +171,7 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
         if (g.contains("reference") && !g["reference"].is_null()) p.grade.reference = reference_from(g["reference"]);
         if (g.contains("masks") && g["masks"].is_string()) p.masks_file = g["masks"].get<std::string>();
         p.grade.clip_fill = g.value("clip_fill", true);   // projects before 12 Oct 2026: on, the default
+        p.grade.exposure_ev = g.value("exposure_ev", 0.0);   // projects before 13 Oct 2026: none
         for (const auto& c : g.value("clip_peaks", json::array()))
             p.grade.clip_peaks.push_back({c.value("x", 0.5), c.value("y", 0.5), c.value("nits", 0.0)});
         const json& view = j.value("view", json::object());
@@ -197,6 +199,7 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
     // The ranges the controls have; a hand-edited value outside them is pulled in.
     auto finite_or = [](double v, double fallback) { return std::isfinite(v) ? v : fallback; };
     p.grade.strength = std::clamp(finite_or(p.grade.strength, 1.0), 0.0, 2.0);
+    p.grade.exposure_ev = std::clamp(finite_or(p.grade.exposure_ev, 0.0), kExposureMin, kExposureMax);
     p.peak_ev = std::clamp(finite_or(p.peak_ev, 0.0), -1.0, 5.0);
     p.anchor_knee = std::clamp(finite_or(p.anchor_knee, 0.9), 0.5, 0.99);
     for (auto& r : p.grade.regions) r.ev = std::clamp(finite_or(r.ev, 0.0), -4.0, 4.0);

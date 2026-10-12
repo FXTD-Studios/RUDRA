@@ -172,10 +172,22 @@ int main(int argc, char** argv) {
             graded.regions.push_back({b.at("low_nits").get<double>(), b.at("high_nits").get<double>(), b.at("ev").get<double>()});
         cases.emplace_back(name + " region EV", graded);
         python.emplace_back();
+        // 13 Oct 2026: the master exposure, alone and before the bands (frame.z in the shader).
+        {
+            CompositeParams e;
+            e.exposure_ev = 1.25;
+            e.source = SourceCurve::Bt1886;
+            cases.emplace_back(name + " exposure +1.25", e);
+            python.emplace_back();
+            CompositeParams ge = graded;
+            ge.exposure_ev = -0.75;
+            cases.emplace_back(name + " exposure -0.75 region EV", ge);
+            python.emplace_back();
+        }
         // Roadmap 3.1: the source curve rides the CurveHead's path with one knot
         // per code; the shader's 72-vec4 buffer and curveLog2 must read it as
-        // the CPU does. Two curves, one of them on top of the frame's own head.
-        for (SourceCurve s : {SourceCurve::Hable, SourceCurve::CameraLog}) {
+        // the CPU does. Three curves, on top of the frame's own head.
+        for (SourceCurve s : {SourceCurve::Hable, SourceCurve::CameraLog, SourceCurve::Bt1886}) {   // BT.1886: the default since 13 Oct 2026
             CompositeParams p;
             p.source = s;
             cases.emplace_back(name + " source " + std::string(source_curve_id(s)), p);

@@ -43,6 +43,8 @@ std::vector<float> baseline_curve_params(const FrameScalars& scalars, const Comp
     return merged;
 }
 
+double exposure_gain(double ev) noexcept { return std::isfinite(ev) ? std::exp2(ev) : 1.0; }
+
 bool any_graded(std::span<const RegionBand> bands) noexcept {
     return std::any_of(bands.begin(), bands.end(), [](const RegionBand& b) { return b.ev != 0.0; });
 }
@@ -90,8 +92,10 @@ NetworkLinearImage composite(const SdrImage& sdr, const Fields& fields, const Fr
 
     const float log_scale = model.log_scale;
     const float log_ceiling = std::log1p(model.max_hdr * log_scale);
-    const bool graded = any_graded(params.regions);
-    const bool masked = graded && params.masks && !params.masks->empty();
+    const bool banded = any_graded(params.regions);
+    const double exposure = exposure_gain(params.exposure_ev);
+    const bool graded = banded || exposure != 1.0;
+    const bool masked = banded && params.masks && !params.masks->empty();
     const double ceiling_nits = static_cast<double>(model.max_hdr) * 10000.0;
 
     NetworkLinearImage out(h, w);
@@ -126,10 +130,13 @@ NetworkLinearImage composite(const SdrImage& sdr, const Fields& fields, const Fr
             px[c] = pred;
         }
         if (graded) {
-            double nits[3] = {px[0] * 10000.0, px[1] * 10000.0, px[2] * 10000.0};
+            // The exposure first; the bands read the exposed nits (13 Oct 2026).
+            double nits[3] = {px[0] * 10000.0 * exposure, px[1] * 10000.0 * exposure, px[2] * 10000.0 * exposure};
             float mw[kMaxMaskBands];
             if (masked) params.masks->weights(int(i % std::size_t(w)), int(i / std::size_t(w)), w, h, mw);
-            const double g = region_ev_gain(nits, params.regions, params.region_softness_stops, masked ? mw : nullptr);
+            const double band = banded ? region_ev_gain(nits, params.regions, params.region_softness_stops, masked ? mw : nullptr) : 1.0;
+            const double g = band * exposure;
+            for (int c = 0; c < 3; ++c) nits[c] /= exposure;
             if (grade_gain) (*grade_gain)[i] = static_cast<float>(g);
             for (int c = 0; c < 3; ++c)
                 px[c] = static_cast<float>(std::clamp(nits[c] * g, 0.0, ceiling_nits) / 10000.0);

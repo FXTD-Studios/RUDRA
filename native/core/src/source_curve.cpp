@@ -9,8 +9,10 @@
 namespace rudra {
 namespace {
 
-constexpr std::array<SourceCurve, 6> kAll = {SourceCurve::Unknown, SourceCurve::Aces,    SourceCurve::Hable,
-                                             SourceCurve::Agx,     SourceCurve::CameraLog, SourceCurve::Clip};
+// The picker's order: BT.1886, the app's default since 13 Oct 2026, beside Unknown.
+constexpr std::array<SourceCurve, 7> kAll = {SourceCurve::Unknown, SourceCurve::Bt1886,    SourceCurve::Aces,
+                                             SourceCurve::Hable,   SourceCurve::Agx,       SourceCurve::CameraLog,
+                                             SourceCurve::Clip};
 
 // pipeline/sdr_render.py, float32 as numpy runs it; the constants are its.
 float forward_aces(float x) noexcept {
@@ -45,6 +47,15 @@ float forward_camera_log(float x) noexcept {
 }
 
 float forward_clip(float x) noexcept { return std::clamp(x, 0.0f, 1.0f); }
+
+// BT.1886 at zero black, 100 % = diffuse white: scene = code^2.4, `code` the
+// BT.709 code of the video. RUDRA reads BT.709 video through the inverse of
+// the BT.709 OETF (canonicalize_sdr "rec709"), so the light it holds is
+// that inverse; the BT.709 OETF of it is the code again.
+float bt709_oetf(float x) noexcept { return x < 0.018f ? 4.5f * x : 1.099f * std::pow(x, 0.45f) - 0.099f; }
+float bt709_inverse_oetf(float v) noexcept { return v < 0.081f ? v / 4.5f : std::pow((v + 0.099f) / 1.099f, 1.0f / 0.45f); }
+float forward_bt1886(float x) noexcept { return bt709_inverse_oetf(std::pow(std::clamp(x, 0.0f, 1.0f), 1.0f / 2.4f)); }
+float inverse_bt1886(float display) noexcept { return std::pow(bt709_oetf(std::clamp(display, 0.0f, 0.995f)), 2.4f); }
 
 // A dense monotone table of (display, scene) over 22 stops of exposure, read
 // by bisection and linear interpolation. Every curve above is non-decreasing.
@@ -107,6 +118,7 @@ std::string_view source_curve_id(SourceCurve c) noexcept {
         case SourceCurve::Agx: return "agx";
         case SourceCurve::CameraLog: return "camera_log";
         case SourceCurve::Clip: return "clip";
+        case SourceCurve::Bt1886: return "bt1886";
         default: return "unknown";
     }
 }
@@ -126,6 +138,7 @@ std::string_view source_curve_label(SourceCurve c) noexcept {
         case SourceCurve::Agx: return "AgX";
         case SourceCurve::CameraLog: return "Camera log";
         case SourceCurve::Clip: return "Rec.709";
+        case SourceCurve::Bt1886: return "BT.1886";
         default: return "Unknown";
     }
 }
@@ -137,7 +150,8 @@ std::string_view source_curve_detail(SourceCurve c) noexcept {
         case SourceCurve::Agx: return "sigmoid";
         case SourceCurve::CameraLog: return "log to 709";
         case SourceCurve::Clip: return "plain clip";
-        default: return "ACES default";
+        case SourceCurve::Bt1886: return "display 2.4";
+        default: return "ACES, as before";
     }
 }
 
@@ -147,6 +161,7 @@ float source_curve_forward(SourceCurve c, float x) noexcept {
         case SourceCurve::Agx: return forward_agx(x);
         case SourceCurve::CameraLog: return forward_camera_log(x);
         case SourceCurve::Clip: return forward_clip(x);
+        case SourceCurve::Bt1886: return forward_bt1886(x);
         default: return forward_aces(x);
     }
 }
@@ -155,6 +170,7 @@ float source_curve_inverse(SourceCurve c, float display) noexcept {
     switch (c) {
         case SourceCurve::Unknown:
         case SourceCurve::Aces: return inverse_aces_approx(display);
+        case SourceCurve::Bt1886: return inverse_bt1886(display);
         default: return table(c).at(display);
     }
 }
@@ -162,12 +178,14 @@ float source_curve_inverse(SourceCurve c, float display) noexcept {
 std::span<const float> source_curve_params(SourceCurve c) {
     static const std::vector<float> none;
     static const std::vector<float> hable = build_params(SourceCurve::Hable), agx = build_params(SourceCurve::Agx),
-                                    camera = build_params(SourceCurve::CameraLog), clip = build_params(SourceCurve::Clip);
+                                    camera = build_params(SourceCurve::CameraLog), clip = build_params(SourceCurve::Clip),
+                                    bt1886 = build_params(SourceCurve::Bt1886);
     switch (c) {
         case SourceCurve::Hable: return hable;
         case SourceCurve::Agx: return agx;
         case SourceCurve::CameraLog: return camera;
         case SourceCurve::Clip: return clip;
+        case SourceCurve::Bt1886: return bt1886;
         default: return none;
     }
 }

@@ -67,6 +67,10 @@ struct MasterRequest {
     // the model's own residual is what fills there.
     bool clip_fill = true;
     std::vector<ClipOverride> clip_peaks;
+    // 13 Oct 2026: the master exposure in stops, with the grade (after the
+    // anchor, before the Region EV bands). In the JSON and the sidecar only
+    // when not 0, so every master before reads the same.
+    double exposure_ev = 0.0;
 };
 
 // The fill's options for this request (the defaults, with its peaks).

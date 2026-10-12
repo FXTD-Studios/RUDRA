@@ -15,7 +15,7 @@ layout(std140, binding = 0) uniform Composite {
     vec4 curve[72]; // curve params, packed four to a vec4: [0] exposure, [1..] knots. Up to 287
                     // knots: the CurveHead's 8, or the source curve's one per 8-bit code (3.1)
     vec4 bands[8];  // x log2(low nits), y log2(high nits), z ev, w the band's mask channel (0..3) or -1
-    vec4 frame;     // x width, y height of the frame (the masks sample by normalised position)
+    vec4 frame;     // x width, y height of the frame (the masks sample by normalised position), z the exposure gain 2^ev (13 Oct 2026)
 };
 
 layout(binding = 1) uniform sampler2D sdrShadow;   // rgb SDR code values, a shadow mask
@@ -118,10 +118,11 @@ void main() {
         pred[c] = v;
     }
     float grade = 1.0;
-    if (counts.y > 0.0) {
+    if (counts.y > 0.0 || frame.z != 1.0) {
+        // The exposure first; the bands read the exposed nits (core/composite.cpp).
         vec3 nits = pred * 10000.0;
         vec2 uv = (vec2(p) + 0.5) / frame.xy;
-        grade = regionGain(nits, uv);
+        grade = (counts.y > 0.0 ? regionGain(nits * frame.z, uv) : 1.0) * frame.z;
         pred = clamp(nits * grade, vec3(0.0), vec3(model.y * 10000.0)) / 10000.0;
     }
     // a: the SDR's Rec.2020 luma of its linearised codes, the anchor's target

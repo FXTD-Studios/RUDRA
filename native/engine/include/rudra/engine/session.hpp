@@ -28,6 +28,12 @@ struct RegionState {
     double low_nits = 0.0, high_nits = 0.0, ev = 0.0;
 };
 
+// The master exposure's range in stops (13 Oct 2026).
+inline constexpr double kExposureMin = -3.0, kExposureMax = 3.0;
+
+// The source curve a new session starts on (13 Oct 2026).
+inline constexpr std::string_view kDefaultSource = "bt1886";
+
 // The part of the state undo takes back (snapshot()).
 struct GradeSnapshot {
     std::string mode = "all";
@@ -36,8 +42,11 @@ struct GradeSnapshot {
     std::vector<RegionState> regions;
     // Roadmap 3.1: the curve the artist says made the SDR (source_curve.hpp
     // ids). Undone with the grade; "unknown" is the ACES inverse and is left
-    // out of params() so every golden before 3.1 reads the same.
-    std::string source = "unknown";
+    // out of params() so every golden before 3.1 reads the same. A session
+    // starts on BT.1886, the display decode (13 Oct 2026: it measured best on
+    // real SDR, release row R3); a project or request that names none is
+    // "unknown", as it was written.
+    std::string source = std::string(kDefaultSource);
     // Roadmap 3.2: the artist's anchors over that curve, by slot (black, grey,
     // highlight); a slot with nits 0 is empty. Undone with the grade; left out
     // of params() when every slot is empty.
@@ -55,6 +64,10 @@ struct GradeSnapshot {
     // Undone with the grade; not in params() (the Studio has neither).
     bool clip_fill = true;
     std::vector<ClipOverride> clip_peaks;
+    // 13 Oct 2026: the master exposure in stops (CompositeParams::exposure_ev,
+    // MasterRequest::exposure_ev), -3 to +3. Undone with the grade; in
+    // params() only when not 0 (the page has none).
+    double exposure_ev = 0.0;
 };
 
 // The page's defaultRegions(): highlights 400 to 2 000, speculars 2 000 to
@@ -107,6 +120,12 @@ public:
     void nudge_strength(double delta);           // nudgeStrength
     void strength_press();                       // the slider's pointerdown: pushUndo
     void strength_input(double value);           // its input event
+    // The master exposure (13 Oct 2026): a slider as strength's (press pushes
+    // the undo entry, input moves it), nudges of a third of a stop, a reset.
+    void exposure_press();
+    void exposure_input(double ev);
+    void nudge_exposure(double delta);
+    void reset_exposure();
     void peak_input(double peak_ev);             // the peak slider: not undone
     void toggle_preserve();                      // the Preserve check
     void reset_recon();
