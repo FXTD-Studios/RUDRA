@@ -326,6 +326,9 @@ rudra batch status queue.json
 rudra batch run queue.json --retry-failed
 ```
 
+- A job whose options carry `grade` (the export settings file the app's queues
+  name) runs through `rudra-native video`, the native app's command line, found
+  on PATH or through `RUDRA_NATIVE`; the rest of the job is as above.
 - Jobs run sequentially. Progress and errors are saved atomically in
   `queue.json.state.json`; a process lock prevents two runners using the same queue.
 - Repeating `run` verifies the SHA-256 hashes of completed video/report pairs,
