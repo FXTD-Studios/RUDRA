@@ -1,6 +1,7 @@
 #include "rudra/core/view.hpp"
 
 #include "rudra/core/compare.hpp"
+#include "rudra/core/composite.hpp"
 #include "rudra/core/gamut.hpp"
 #include "rudra/core/hdr10.hpp"
 
@@ -78,7 +79,7 @@ double srgb_to_linear_dbl(double c) noexcept {
 }  // namespace
 
 double anchor_hold(const NetworkLinearImage& model, const SdrImage& sdr, double knee, double softness,
-                   const std::vector<float>* grade_gain) {
+                   const std::vector<float>* grade_gain, std::span<const float> target_knots) {
     // anchor_to_sdr's hold, on the composite in network units (x 10 000 = nits).
     const std::size_t n = model.buffer().plane_size();
     const PlanarBuffer& m = model.buffer();
@@ -90,7 +91,9 @@ double anchor_hold(const NetworkLinearImage& model, const SdrImage& sdr, double 
         double target = 0.0, actual = 0.0, mx = -1.0;
         for (int c = 0; c < 3; ++c) {
             const double v = s.plane(c)[i];
-            target += srgb_to_linear_dbl(v) * luma[c];
+            double light = srgb_to_linear_dbl(v);
+            if (!target_knots.empty()) light *= std::exp2(double(anchor_target_log2(float(v), target_knots)));
+            target += light * luma[c];
             actual += double(m.plane(c)[i]) * 10000.0 * luma[c];
             mx = std::max(mx, v);
         }
@@ -166,9 +169,13 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
             // inverse as it is, on its own or on the wipe's left.
             if (anchoring && &pic == &m) {
                 const std::size_t i = std::size_t(y) * std::size_t(w) + std::size_t(x);
-                float target = 0.2627f * srgb_to_linear(sdr_buf->plane(0)[i]) +
-                               0.6780f * srgb_to_linear(sdr_buf->plane(1)[i]) +
-                               0.0593f * srgb_to_linear(sdr_buf->plane(2)[i]);
+                float target = 0.0f;
+                for (int k = 0; k < 3; ++k) {
+                    const float v = sdr_buf->plane(k)[i];
+                    float light = srgb_to_linear(v);
+                    if (!p.anchor_knots.empty()) light *= std::exp2(anchor_target_log2(v, p.anchor_knots));
+                    target += kRec2020Luma[std::size_t(k)] * light;
+                }
                 if (p.grade_gain && i < p.grade_gain->size()) target *= (*p.grade_gain)[i];
                 const float gain = anchor_gain_f(target, hr, hg, hb, codes[i], knee, softness, hold);
                 hr *= gain, hg *= gain, hb *= gain;

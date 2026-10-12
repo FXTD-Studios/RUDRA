@@ -17,6 +17,7 @@
 #include <string_view>
 #include <vector>
 
+#include "rudra/core/clip_fill.hpp"
 #include "rudra/core/composite.hpp"
 #include "rudra/core/js_format.hpp"
 
@@ -27,6 +28,12 @@ struct RegionState {
     double low_nits = 0.0, high_nits = 0.0, ev = 0.0;
 };
 
+// The master exposure's range in stops (13 Oct 2026).
+inline constexpr double kExposureMin = -3.0, kExposureMax = 3.0;
+
+// The source curve a new session starts on (13 Oct 2026).
+inline constexpr std::string_view kDefaultSource = "bt1886";
+
 // The part of the state undo takes back (snapshot()).
 struct GradeSnapshot {
     std::string mode = "all";
@@ -35,8 +42,11 @@ struct GradeSnapshot {
     std::vector<RegionState> regions;
     // Roadmap 3.1: the curve the artist says made the SDR (source_curve.hpp
     // ids). Undone with the grade; "unknown" is the ACES inverse and is left
-    // out of params() so every golden before 3.1 reads the same.
-    std::string source = "unknown";
+    // out of params() so every golden before 3.1 reads the same. A session
+    // starts on BT.1886, the display decode (13 Oct 2026: it measured best on
+    // real SDR, release row R3); a project or request that names none is
+    // "unknown", as it was written.
+    std::string source = std::string(kDefaultSource);
     // Roadmap 3.2: the artist's anchors over that curve, by slot (black, grey,
     // highlight); a slot with nits 0 is empty. Undone with the grade; left out
     // of params() when every slot is empty.
@@ -49,6 +59,15 @@ struct GradeSnapshot {
     // step (planes are shared, a stroke copies the one it paints). Left out
     // of params() when none; the data travels as a file with the master.
     std::shared_ptr<const MaskSet> masks;
+    // 12 Oct 2026: the clip fill in the analytic reconstruction
+    // (core/clip_fill.hpp) and the peaks the artist set on clipped regions.
+    // Undone with the grade; not in params() (the Studio has neither).
+    bool clip_fill = true;
+    std::vector<ClipOverride> clip_peaks;
+    // 13 Oct 2026: the master exposure in stops (CompositeParams::exposure_ev,
+    // MasterRequest::exposure_ev), -3 to +3. Undone with the grade; in
+    // params() only when not 0 (the page has none).
+    double exposure_ev = 0.0;
 };
 
 // The page's defaultRegions(): highlights 400 to 2 000, speculars 2 000 to
@@ -101,6 +120,12 @@ public:
     void nudge_strength(double delta);           // nudgeStrength
     void strength_press();                       // the slider's pointerdown: pushUndo
     void strength_input(double value);           // its input event
+    // The master exposure (13 Oct 2026): a slider as strength's (press pushes
+    // the undo entry, input moves it), nudges of a third of a stop, a reset.
+    void exposure_press();
+    void exposure_input(double ev);
+    void nudge_exposure(double delta);
+    void reset_exposure();
     void peak_input(double peak_ev);             // the peak slider: not undone
     void toggle_preserve();                      // the Preserve check
     void reset_recon();
@@ -144,6 +169,12 @@ public:
     void toggle_anchor();                        // Deliver: anchor to the source exposure
     void set_anchor_knee(double knee);           // Deliver: the knee, 0.5 to 0.99; not undone (a delivery setting)
     void toggle_carry_chroma();                  // Deliver: carry the source chroma
+    // The clip fill (12 Oct 2026), each an undo step: on or off; a peak in
+    // nits for the clipped region at a normalised point (a click within 2% of
+    // an earlier peak replaces it); every peak cleared.
+    void toggle_clip_fill();
+    void set_clip_peak(double x, double y, double nits);
+    void clear_clip_peaks();
     // A saved project's state (engine/project): the grade as one undo step,
     // then the view peak and the Deliver settings, as if set by hand.
     void load_state(const GradeSnapshot& g, double peak, bool anchor_on, bool carry, double knee,

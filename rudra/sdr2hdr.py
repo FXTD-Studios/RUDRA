@@ -439,11 +439,22 @@ class SDR2HDRNet(nn.Module):
                  gate_conditioning: bool = False,
                  shadow_conditioning: bool = False,
                  curve_head: bool = False,
-                 source_curve: bool = False):
+                 source_curve: bool = False,
+                 baseline_source: bool = False):
         super().__init__()
         if source_curve and not curve_head:
             raise ValueError("source_curve conditions the CurveHead; it needs curve_head=True")
         self.source_curve = bool(source_curve)
+        # v10 (13 Oct 2026): the baseline is the Source picker's curve
+        # (rudra/source_baseline.py, native core/source_curve.cpp), chosen per
+        # sample by ``baseline_curve``; None is the app's default, BT.1886.
+        # Off: the ACES inverse, as every checkpoint before it. No parameters
+        # either way: the knots are a non-persistent buffer, so the state dict
+        # of a v9 checkpoint loads into a v10 model strict.
+        self.baseline_source = bool(baseline_source)
+        if self.baseline_source:
+            from rudra.source_baseline import knots_table
+            self.register_buffer("baseline_knots", knots_table(), persistent=False)
         c = base_channels
         # Off by default so every checkpoint written before 29 Aug 2026 still
         # loads with strict=True: when it is off no parameters are created and
@@ -494,6 +505,7 @@ class SDR2HDRNet(nn.Module):
             "shadow_conditioning": bool(config.get("shadow_conditioning", False)),
             "curve_head": bool(config.get("curve_head", False)),
             "source_curve": bool(config.get("source_curve", False)),
+            "baseline_source": bool(config.get("baseline_source", False)),
         }
         for key in ("log_scale", "max_hdr", "corpus_ev"):
             if config.get(key) is not None:
@@ -501,8 +513,25 @@ class SDR2HDRNet(nn.Module):
         kwargs.update(overrides)
         return cls(**kwargs)
 
+    def picker_baseline(self, sdr: torch.Tensor, baseline_curve: torch.Tensor | int | None = None) -> torch.Tensor:
+        """The baseline with no model: the ACES inverse, or with ``baseline_source``
+        the picked curve's inverse (``baseline_curve`` ids into
+        rudra.source_baseline.BASELINE_CURVES; None = BT.1886, the app default)."""
+        analytic = sdr_to_baseline_hdr(sdr, self.corpus_ev)
+        if not self.baseline_source:
+            if baseline_curve is not None and bool((torch.as_tensor(baseline_curve) != 0).any()):
+                raise ValueError("this model was trained over the ACES inverse (baseline_source off); "
+                                 "it takes no baseline curve")
+            return analytic
+        from rudra.source_baseline import DEFAULT_BASELINE, baseline_curve_index, correction_log2
+        if baseline_curve is None:
+            baseline_curve = baseline_curve_index(DEFAULT_BASELINE)
+        ids = torch.as_tensor(baseline_curve, device=sdr.device).long().reshape(-1)
+        return analytic * torch.exp2(correction_log2(sdr, ids, self.baseline_knots))
+
     def baseline_hdr(self, sdr: torch.Tensor, params: torch.Tensor | None = None,
-                     source_curve: torch.Tensor | None = None
+                     source_curve: torch.Tensor | None = None,
+                     baseline_curve: torch.Tensor | int | None = None,
                      ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """(baseline, analytic_baseline, curve_params) for this SDR.
 
@@ -511,7 +540,7 @@ class SDR2HDRNet(nn.Module):
         correction is estimated from the whole frame (or taken from ``params``,
         which is how tiled inference keeps one curve across every tile).
         """
-        analytic = sdr_to_baseline_hdr(sdr, self.corpus_ev)
+        analytic = self.picker_baseline(sdr, baseline_curve)
         if self.curve is None:
             if source_curve is not None and bool((torch.as_tensor(source_curve) != 0).any()):
                 raise ValueError("this model has no CurveHead, so it cannot use a source curve")
@@ -606,11 +635,12 @@ class SDR2HDRNet(nn.Module):
         shadow_weight: float | torch.Tensor | None = None,
         curve_params: torch.Tensor | None = None,
         source_curve: torch.Tensor | None = None,
+        baseline_curve: torch.Tensor | int | None = None,
     ) -> SDR2HDROutput:
         if sdr.ndim != 4 or sdr.shape[1] != 3:
             raise ValueError(f"Expected SDR tensor (B,3,H,W), got {tuple(sdr.shape)}")
         sdr = sdr.float().clamp(0.0, 1.0)
-        baseline, analytic, curve_params = self.baseline_hdr(sdr, curve_params, source_curve)
+        baseline, analytic, curve_params = self.baseline_hdr(sdr, curve_params, source_curve, baseline_curve)
         e1, e2, m = self.encode(sdr, baseline)
         u2 = F.interpolate(m, size=e2.shape[-2:], mode="bilinear", align_corners=False)
         u2 = self.dec2(self.up2(torch.cat((u2, e2), dim=1)))
@@ -814,6 +844,7 @@ def sdr2hdr_loss(
     target_ceiling: torch.Tensor | None = None,
     baseline_weight: float = 0.0,
     region_focus: float = 0.0,
+    crushed_hold: float = 0.0,
 ) -> dict[str, torch.Tensor]:
     """Stable HDR recovery objective in log-radiance and masked regions.
 
@@ -825,6 +856,12 @@ def sdr2hdr_loss(
     tone fit is the artist's in 1.0 (source curve, calibration, reference
     match), so outside those pixels the network is held to the inverse.
     0 leaves every term and weight as it was.
+
+    ``crushed_hold`` w > 0 (v10, 13 Oct 2026) adds w x the mean |log change| the
+    model makes to the baseline inside crushed pixels (max code <= 2/255,
+    dilated 1 px): a crushed black carries no detail to recover, and v8 and v9
+    were 1.6 to 2.4 stops worse than the inverse there (0 of 287 frames better).
+    0 leaves everything as it was.
 
     ``baseline_weight`` > 0 adds a direct term on ``output.baseline`` -- the
     curve-corrected baseline when the model has a CurveHead. Without it the
@@ -894,6 +931,13 @@ def sdr2hdr_loss(
         outside_hard = (output.log_residual.abs() * (1.0 - destroyed)).sum() / ((1.0 - destroyed).sum() * 3.0 + 1e-6)
         f = float(min(max(region_focus, 0.0), 1.0))
         total = (1.0 - f) * total + f * (region_term + 2.0 * outside_hard)
+    crushed_term = torch.zeros((), device=total.device, dtype=total.dtype)
+    if crushed_hold > 0:
+        top = sdr.clamp(0.0, 1.0).amax(dim=1, keepdim=True)
+        crushed = F.max_pool2d((top <= 2.0 / 255.0).to(error.dtype), kernel_size=3, stride=1, padding=1)
+        change = (pred_log - torch.log1p(output.baseline.clamp_min(0.0) * scale)).abs()
+        crushed_term = (change * crushed).sum() / (crushed.sum() * 3.0 + 1e-6)
+        total = total + float(crushed_hold) * crushed_term
     baseline_term = torch.zeros((), device=total.device, dtype=total.dtype)
     if baseline_weight > 0 and output.curve_params is not None:
         baseline_error, _, _, _ = censored_log_error(output.baseline, target, target_ceiling, scale)
@@ -908,6 +952,7 @@ def sdr2hdr_loss(
         "censored_fraction": censored_fraction,
         "curve_baseline": baseline_term,
         "region": region_term, "outside_hard": outside_hard, "region_fraction": region_fraction,
+        "crushed_change": crushed_term,
     }
 
 

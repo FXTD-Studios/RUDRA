@@ -52,6 +52,19 @@ double py_round(double x, int n) {
     return std::strtod(b, nullptr);
 }
 
+// How the analytic master filled where the SDR clipped, as the EXR and the
+// sidecar record it.
+std::string clip_fill_text(const MasterRequest& q) {
+    if (!q.clip_fill) return "off (clipped values left at the inverse's ceiling)";
+    std::string t = "on (core/clip_fill: partial channels, smooth fill, dome)";
+    for (const auto& c : q.clip_peaks) {
+        char b[96];
+        std::snprintf(b, sizeof b, "; peak %.0f nits at (%.3f, %.3f)", c.nits, c.x, c.y);
+        t += b;
+    }
+    return t;
+}
+
 pyjson::Value band_json(const MasterBand& b) {
     return pyjson::Dict{{"label", b.label}, {"low_nits", b.low_nits}, {"high_nits", b.high_nits}, {"ev", b.ev}};
 }
@@ -94,6 +107,13 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
             for (const auto& b : j.at("regions"))
                 r.regions.push_back({b.value("label", std::string()), b.at("low_nits").get<double>(),
                                      b.at("high_nits").get<double>(), b.value("ev", 0.0)});
+        r.clip_fill = j.value("clip_fill", true);
+        r.exposure_ev = j.value("exposure_ev", 0.0);
+        if (!std::isfinite(r.exposure_ev) || std::fabs(r.exposure_ev) > 8.0)
+            return make_error(ErrorCode::InvalidArgument, "exposure_ev must be within -8 and +8 stops", std::to_string(r.exposure_ev));
+        if (j.contains("clip_peaks"))
+            for (const auto& c : j.at("clip_peaks"))
+                r.clip_peaks.push_back({c.at("x").get<double>(), c.at("y").get<double>(), c.at("nits").get<double>()});
     } catch (const std::exception& e) {
         return make_error(ErrorCode::ParseError, "The master parameters are not valid JSON.", e.what());
     }
@@ -113,6 +133,7 @@ std::string master_request_json(const MasterRequest& q) {
         regions.push_back({{"label", b.label}, {"low_nits", b.low_nits}, {"high_nits", b.high_nits}, {"ev", b.ev}});
     j["regions"] = regions;
     if (q.source_curve != "unknown") j["source_curve"] = q.source_curve;
+    if (q.exposure_ev != 0.0) j["exposure_ev"] = q.exposure_ev;
     if (q.analytic) j["analytic"] = true;
     if (!q.calibration.empty()) {
         auto cal = nlohmann::json::array();
@@ -122,7 +143,25 @@ std::string master_request_json(const MasterRequest& q) {
     if (!q.reference.empty())
         j["reference"] = nlohmann::json::parse(reference_fit_json(q.reference));
     if (!q.masks_file.empty()) j["masks_file"] = q.masks_file;
+    if (!q.clip_fill) j["clip_fill"] = false;
+    if (!q.clip_peaks.empty()) {
+        auto peaks = nlohmann::json::array();
+        for (const auto& c : q.clip_peaks) peaks.push_back({{"x", c.x}, {"y", c.y}, {"nits", c.nits}});
+        j["clip_peaks"] = peaks;
+    }
     return j.dump();
+}
+
+ClipFillOptions clip_fill_options(const MasterRequest& q) {
+    ClipFillOptions o;
+    o.enabled = q.clip_fill;
+    o.overrides = q.clip_peaks;
+    return o;
+}
+
+Fields analytic_fields_for(const SdrImage& sdr, const MasterRequest& q, ClipFill* detail) {
+    if (!q.clip_fill) return analytic_fields(sdr.height(), sdr.width());
+    return clip_fill_fields(sdr, kAnalyticConstants, clip_fill_options(q), detail);
 }
 
 Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, const FrameScalars& scalars,
@@ -130,7 +169,7 @@ Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, con
     auto mode = mode_of(q.recovery_mode);
     if (!mode) return mode.error();
     const auto source = parse_source_curve(q.source_curve);
-    if (!source) return make_error(ErrorCode::InvalidArgument, "source_curve must be unknown, aces, hable, agx, camera_log, or clip", q.source_curve);
+    if (!source) return make_error(ErrorCode::InvalidArgument, "source_curve must be unknown, bt1886, aces, hable, agx, camera_log, or clip", q.source_curve);
     CompositeParams cp;
     cp.mode = *mode;
     cp.strength = static_cast<float>(q.strength);
@@ -159,10 +198,11 @@ Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, con
     g.nits = nits_from_network(g.network);
     // The grade goes LAST (core/master.cpp render_master_pixels, ui/server.py
     // since 9 Oct 2026): before the anchor, the anchor divided it back out.
-    if (q.anchor) anchor_to_sdr(g.nits, sdr, q.anchor_knee, kAnchorSoftness, settle_hold);
+    // The anchor follows the Source picker, its calibration and reference (13 Oct 2026).
+    if (q.anchor) anchor_to_sdr(g.nits, sdr, q.anchor_knee, kAnchorSoftness, settle_hold, anchor_target_knots(cp));
     if (q.carry_chroma) carry_source_chroma(g.nits, sdr, q.chroma_knee);
     if (q.settle_grain) settle_highlight_grain(g.nits, sdr, q.anchor_knee);
-    apply_region_ev(g.nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0, cp.masks.get());
+    apply_region_ev(g.nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0, cp.masks.get(), q.exposure_ev);
     g.params = std::move(cp);
     return g;
 }
@@ -215,7 +255,13 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         {"rudra:sourceSpace", q.source_space},
     };
     if (*source != SourceCurve::Unknown) provenance.emplace_back("rudra:sourceCurve", q.source_curve);
+    if (q.exposure_ev != 0.0) {
+        char b[32];
+        std::snprintf(b, sizeof b, "%+.2f", q.exposure_ev);
+        provenance.emplace_back("rudra:exposureEV", b);
+    }
     if (q.analytic) provenance.emplace_back("rudra:reconstruction", "analytic (no model)");
+    if (q.analytic) provenance.emplace_back("rudra:clipFill", clip_fill_text(q));
     if (!cp.reference.empty()) provenance.emplace_back("rudra:reference", cp.reference.file);
     if (cp.masks) provenance.emplace_back("rudra:masks", masks_path.filename().string());
     const bool aces = q.container == "aces";
@@ -264,7 +310,9 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
          }},
     };
     if (*source != SourceCurve::Unknown) sidecar_dict.emplace_back("source_curve", q.source_curve);
+    if (q.exposure_ev != 0.0) sidecar_dict.emplace_back("exposure_ev", q.exposure_ev);
     if (q.analytic) sidecar_dict.emplace_back("reconstruction", "analytic (no model)");
+    if (q.analytic) sidecar_dict.emplace_back("clip_fill", clip_fill_text(q));
     if (!cp.calibration.empty()) {
         pyjson::List cal;
         for (const auto& c : cp.calibration)

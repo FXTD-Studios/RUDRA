@@ -184,6 +184,12 @@ public:
     // picture reads the SDR code there (a 5x5 mean of R, G and B) into it.
     void arm_calibration(int slot);
     void calibration_picked(double x, double y);
+    // The clip fill (12 Oct 2026): arm a peak so the next click on the
+    // picture picks a clipped region and asks for its nits; the options the
+    // frame engine was started with, to start it again when they change.
+    void arm_clip_peak(bool on);
+    void clip_peak_picked(double x, double y);
+    ClipFillOptions session_clip_options() const;
     // Reference (3.4): asks for the graded HDR of the current frame (or takes
     // `path`), fits it and hands the fit to the session; the message of a
     // refused file goes to the Source card's line. False when refused.
@@ -279,7 +285,7 @@ public:
     // Help: the five steps, the user guide's address.
     static QString user_guide_url();
     void show_getting_started();
-    void show_getting_started_once();   // the first time only (QSettings help/gettingStartedShown)
+    void show_getting_started_once();   // once per edition of the steps (QSettings help/gettingStarted)
 
     // The page's state: grade, undo, peak, wipe, container (engine/session).
     Session& session() { return session_; }
@@ -331,6 +337,8 @@ private:
     std::filesystem::path project_path_, autosave_path_, reopen_path_;
     bool dirty_ = false, restoring_ = false;
     bool use_model_ = false;
+    bool clip_pick_armed_ = false;
+    ClipFillOptions engine_clip_;   // what start_engine gave the frames
     bool frame_proxy_ = false;
     struct PlayState {
         std::atomic<bool> playing{false};
@@ -423,7 +431,8 @@ private:
     Seg *view_mode_ = nullptr, *view_layer_ = nullptr, *zoom_seg_ = nullptr, *mode_seg_ = nullptr, *tabs_ = nullptr,
         *ws_ = nullptr;
     CheckRow *preserve_ = nullptr, *anchor_ = nullptr, *carry_chroma_ = nullptr;
-    QSlider *strength_ = nullptr, *peak_ = nullptr;
+    QSlider *strength_ = nullptr, *peak_ = nullptr, *exposure_ = nullptr;
+    QLabel* exposure_val_ = nullptr;
     QLabel *strength_val_ = nullptr, *peak_val_ = nullptr, *shot_count_ = nullptr, *frames_empty_ = nullptr,
            *tc_ = nullptr, *src_info_ = nullptr, *zoom_val_ = nullptr, *container_field_ = nullptr,
            *primaries_field_ = nullptr, *ckpt_ = nullptr, *device_ = nullptr, *lamp_ = nullptr,

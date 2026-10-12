@@ -590,7 +590,7 @@ private:
         const int w = model.width(), h = model.height();
         if (baseline.width() != w || baseline.height() != h)
             return make_error(ErrorCode::InvalidArgument, "The two composite targets differ in size.");
-        const std::vector<float> a = detail::model_rgba(model.buffer(), sdr), b = detail::baseline_rgba(baseline.buffer(), sdr);
+        const std::vector<float> a = detail::model_rgba(model.buffer(), sdr, params.anchor_knots), b = detail::baseline_rgba(baseline.buffer(), sdr);
         const std::vector<std::uint8_t> mask_bytes = detail::view_masks_rgba8(params, w, h);
         std::unique_ptr<QRhiTexture> ta(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
         std::unique_ptr<QRhiTexture> tb(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));

@@ -27,6 +27,9 @@ constexpr Pin kPins[] = {
     {SourceCurve::Agx, 0.18f, 0.24004444f},    {SourceCurve::Agx, 1.0f, 0.68272805f},   {SourceCurve::Agx, 4.0f, 0.91022730f},
     {SourceCurve::CameraLog, 0.18f, 0.18946457f}, {SourceCurve::CameraLog, 1.0f, 0.57168305f}, {SourceCurve::CameraLog, 4.0f, 0.83722943f},
     {SourceCurve::Clip, 0.18f, 0.18f},         {SourceCurve::Clip, 1.0f, 1.0f},         {SourceCurve::Clip, 4.0f, 1.0f},
+    // Not the pipeline's: BT.1886 is the display decode run backwards, the
+    // inverse BT.709 OETF of x^(1/2.4) (13 Oct 2026).
+    {SourceCurve::Bt1886, 0.18f, 0.24952626f}, {SourceCurve::Bt1886, 1.0f, 1.0f},       {SourceCurve::Bt1886, 4.0f, 1.0f},
 };
 
 }  // namespace
@@ -34,7 +37,8 @@ constexpr Pin kPins[] = {
 TEST(SourceCurve, IdsRoundTrip) {
     for (SourceCurve c : all_source_curves()) EXPECT_EQ(parse_source_curve(source_curve_id(c)), c);
     EXPECT_FALSE(parse_source_curve("narkowicz"));
-    EXPECT_EQ(all_source_curves().size(), 6u);
+    EXPECT_EQ(all_source_curves().size(), 7u);
+    EXPECT_EQ(source_curve_id(SourceCurve::Bt1886), "bt1886");
 }
 
 TEST(SourceCurve, ForwardMatchesThePipeline) {
@@ -111,8 +115,10 @@ TEST(SourceCurve, CompositeUnknownIsBitIdentical) {
 TEST(SourceCurve, SessionOwnsTheChoice) {
     Session s;
     const std::string before = s.params_json();
-    EXPECT_EQ(before.find("source_curve"), std::string::npos);
-    EXPECT_EQ(s.composite_params().source, SourceCurve::Unknown);
+    // A session starts on BT.1886 (13 Oct 2026), and says so in params().
+    EXPECT_EQ(s.grade.source, "bt1886");
+    EXPECT_NE(before.find("\"source_curve\":\"bt1886\""), std::string::npos);
+    EXPECT_EQ(s.composite_params().source, SourceCurve::Bt1886);
     EXPECT_TRUE(Session::owns("source-hable"));
     EXPECT_FALSE(Session::owns("source-narkowicz"));
     EXPECT_TRUE(s.run("source-hable"));
@@ -125,10 +131,14 @@ TEST(SourceCurve, SessionOwnsTheChoice) {
     s.set_source("not-a-curve");
     EXPECT_EQ(s.grade.source, "hable");
     s.undo();
-    EXPECT_EQ(s.grade.source, "unknown");
+    EXPECT_EQ(s.grade.source, "bt1886");
     EXPECT_EQ(s.params_json(), before);
     s.redo();
     EXPECT_EQ(s.grade.source, "hable");
+    // "unknown" is still the ACES inverse, left out of params() as before 3.1.
+    s.set_source("unknown");
+    EXPECT_EQ(s.composite_params().source, SourceCurve::Unknown);
+    EXPECT_EQ(s.params_json().find("source_curve"), std::string::npos);
 }
 
 // ---- Roadmap 3.2: three-click calibration --------------------------------
@@ -234,4 +244,21 @@ TEST(Calibration, SessionOwnsTheAnchors) {
     s.clear_calibration();
     s.clear_calibration();            // already clear: no undo entry
     EXPECT_EQ(s.undo_depth(), 6u);
+}
+
+// 13 Oct 2026: BT.1886 is the display's decode of a BT.709 video -- a code's
+// scene light is code^2.4, 100 % at diffuse white -- of the light RUDRA reads
+// from that code (the inverse BT.709 OETF, canonicalize_sdr "rec709"), and its
+// knots carry it through the composite's per-code correction over the ACES inverse.
+TEST(SourceCurve, Bt1886IsTheDisplayDecode) {
+    const auto inverse_oetf = [](float v) { return v < 0.081f ? v / 4.5f : std::pow((v + 0.099f) / 1.099f, 1.0f / 0.45f); };
+    for (int code = 1; code < 254; ++code) {
+        const float c = float(code) / 255.0f;
+        EXPECT_NEAR(source_curve_inverse(SourceCurve::Bt1886, inverse_oetf(c)), std::pow(c, 2.4f),
+                    std::max(std::pow(c, 2.4f) * 2e-5f, 1e-7f)) << code;
+    }
+    const auto p = source_curve_params(SourceCurve::Bt1886);
+    ASSERT_EQ(p.size(), std::size_t(1 + kSourceCurveKnots));
+    const float d = srgb_to_linear(118.0f / 255.0f);   // the knots are at sRGB codes of that light
+    EXPECT_NEAR(inverse_aces_approx(d) * std::exp2(p[1 + 118]), source_curve_inverse(SourceCurve::Bt1886, d), 2e-4f);
 }

@@ -266,6 +266,14 @@ def main() -> int:
                              "'from-manifest' (each row's source_curve, else sdr_curve), or a "
                              "curve name from rudra.sdr2hdr.SOURCE_CURVES. The 'hard' condition "
                              "degrades the SDR, so it always runs as unknown.")
+    parser.add_argument("--baseline-curve", default="none",
+                        help="v10 (a model built with baseline_source): the Source picker entry the residual "
+                             "rides on, from rudra.source_baseline.BASELINE_CURVES (bt1886 = the app default); "
+                             "'none' for a model trained over the ACES inverse")
+    parser.add_argument("--picker-baseline", default=None,
+                        help="also write the tree baseline_<curve>: the analytic baseline with that Source "
+                             "picker entry (no model), the reference a v10 model is gated against; kept "
+                             "across exports (--only-test writes it too when it is missing)")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
     from rudra.sdr2hdr import SOURCE_CURVES, source_curve_index
@@ -309,6 +317,17 @@ def main() -> int:
     print("   export bench pairs")
     print("=" * 66)
     model = load_model(Path(args.checkpoint), device)
+    from rudra.source_baseline import BASELINE_CURVES, baseline_curve_index, correction_log2, knots_table
+    for name in (args.baseline_curve, args.picker_baseline):
+        if name not in (None, "none") and name not in BASELINE_CURVES:
+            raise SystemExit(f"error: {name!r} is not a Source picker entry {BASELINE_CURVES}")
+    if args.baseline_curve != "none" and not getattr(model, "baseline_source", False):
+        raise SystemExit("error: --baseline-curve needs a model trained with --baseline-source (v10)")
+    baseline_curve = None if args.baseline_curve == "none" else baseline_curve_index(args.baseline_curve)
+    if getattr(model, "baseline_source", False) and baseline_curve is None:
+        baseline_curve = baseline_curve_index("bt1886")
+        print("   baseline   : bt1886 (the app default; this model rides on the picker's curve)")
+    picker_tree = f"baseline_{args.picker_baseline}" if args.picker_baseline else None
     print(f"   split      : {args.split}  ({len(indexed)} of {len(records)} records)")
     print(f"   condition  : {args.condition}")
     print(f"   curve      : {args.source_curve}"
@@ -327,6 +346,8 @@ def main() -> int:
         trees.append("baseline")
     if args.write_sdr:
         trees.append("sdr")
+    if picker_tree:
+        trees.append(picker_tree)
     for tree in trees:
         (out / tree).mkdir(parents=True, exist_ok=True)
 
@@ -369,7 +390,7 @@ def main() -> int:
                                  recovery_mode=args.recovery_mode,
                                  recovery_strength=args.recovery_strength,
                                  bf16=args.precision == "bf16",
-                                 source_curve=curve_for(record))
+                                 source_curve=curve_for(record), baseline_curve=baseline_curve)
 
         try:
             hdr = predict(args.tile_size)
@@ -396,6 +417,14 @@ def main() -> int:
             path = out / "baseline" / scene / f"{asset}.exr"
             path.parent.mkdir(parents=True, exist_ok=True)
             write_exr(path, to_scene_linear(base), half=True)
+        if picker_tree:
+            path = out / picker_tree / scene / f"{asset}.exr"
+            if not path.exists():
+                ids = torch.tensor([baseline_curve_index(args.picker_baseline)], device=sdr.device)
+                picked = sdr_to_baseline_hdr(sdr.float(), model.corpus_ev) * torch.exp2(
+                    correction_log2(sdr.float(), ids, knots_table(sdr.device)))
+                path.parent.mkdir(parents=True, exist_ok=True)
+                write_exr(path, to_scene_linear(picked[0].permute(1, 2, 0).float().cpu().numpy()), half=True)
         if args.write_sdr:
             # 8-bit sRGB PNG, exactly the pixels the network saw. cv2 wants BGR.
             eight = (sdr[0].permute(1, 2, 0).float().cpu().numpy() * 255.0 + 0.5)
@@ -422,6 +451,8 @@ def main() -> int:
         "recovery_mode": args.recovery_mode,
         "recovery_strength": args.recovery_strength,
         "source_curve": "none" if args.condition == "hard" else args.source_curve,
+        "baseline_curve": BASELINE_CURVES[baseline_curve] if baseline_curve is not None else "aces inverse",
+        "picker_baseline_tree": picker_tree,
         "frames": written, "skipped": skipped,
         "units": "scene-linear, diffuse white = 1.0",
         "nits_scale_for_bench": DIFFUSE_WHITE_NITS,

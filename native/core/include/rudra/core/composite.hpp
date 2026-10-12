@@ -65,7 +65,14 @@ struct CompositeParams {
     // Roadmap 3.3: painted masks gating the bands' qualifiers (masks.hpp);
     // null or empty for none.
     std::shared_ptr<const MaskSet> masks;
+    // 13 Oct 2026: the master exposure, in stops. Part of the grade: the whole
+    // picture times 2^exposure_ev before the Region EV bands read it (they see
+    // the exposed nits), clipped at the model's ceiling. 0: no change, bit for bit.
+    double exposure_ev = 0.0;
 };
+
+// 2^ev, the grade's exposure gain (1 at 0 EV).
+double exposure_gain(double ev) noexcept;
 
 // The curve params corrected_baseline takes for a frame under these settings:
 // the model's CurveHead output plus the source curve (source_curve.hpp) plus
@@ -75,6 +82,20 @@ struct CompositeParams {
 // measure, the viewer and its probes) goes through this, so they agree on
 // what the baseline is.
 std::vector<float> baseline_curve_params(const FrameScalars& scalars, const CompositeParams& params, float corpus_ev);
+
+// The anchor's target (roadmap 3.3; 13 Oct 2026, so the anchor follows the
+// Source picker). Below its knee the master's anchor puts each pixel back on
+// the light of its SDR code; that light was the sRGB display reading at
+// diffuse white whatever the picker said, which undid BT.1886 (the default),
+// the calibration and the reference in every anchored master. Now, per 8-bit
+// code, log2 of the light the picker's curve with its calibration or
+// reference gives that code (diffuse white 1.0, at 0 EV, without the model's
+// CurveHead) over the sRGB reading. Empty for unknown and aces with no
+// calibration or reference: the sRGB reading as before, every master unchanged.
+std::vector<float> anchor_target_knots(const CompositeParams& params);
+// log2 of the anchor target's factor over the sRGB reading at `code` (0..1),
+// linear between the knots; 0 for empty knots. fp32 as composite.frag.
+float anchor_target_log2(float code, std::span<const float> knots) noexcept;
 
 // qualifier_mask for one pixel's Rec.2020 luminance in nits. float32 result,
 // exactly as the Python casts it before the gain sums it.

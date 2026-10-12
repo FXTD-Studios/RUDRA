@@ -324,7 +324,7 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
     const bool in_use = !w_->model_package().empty();
     model_ = label(in_use ? q(w_->model_package().filename().string()) + "  ·  in use"
                    : pick ? q(c.entries[*pick].label()) + "  ·  " + q(c.entries[*pick].package.filename().string())
-                          : QString("No model package found. Add one in File > Model packages… later."),
+                          : QString("No model package found. None is needed; add one in File > Model packages… later."),
                    "frModel", "step-sub", right);
     body->addWidget(model_);
     model_status_ = label(pick ? "Verified against its hash, then its golden frames run once on the backend you choose; "
@@ -340,7 +340,8 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
 
     auto* end = new QHBoxLayout;
     end->setSpacing(10);
-    end->addWidget(label("You can start on the CPU and switch later.", {}, "step-sub", right));
+    end->addWidget(label("The model is optional: RUDRA reconstructs without it. Start on the CPU and switch later.", {},
+                         "step-sub", right));
     end->addStretch(1);
     auto* cpu = button("Start on CPU", "frStartCpu", right);
     auto* start_btn = button("Continue", "frStart", right);

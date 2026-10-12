@@ -233,6 +233,56 @@ reports mean and spread everywhere.
 
 ---
 
+## Against the market (release row R3, 12 and 13 Oct 2026)
+
+Two sets of real SDR video with their graded HDR, and the rendered frames of the frozen comparison set:
+
+- **Meridian** (Netflix, CC BY 4.0): 40 frames of `configs/compare_set_v1.json`, the SDR the Dolby Vision
+  trim pass made, at 1920 x 1080.
+- **HDRTV1K test** (YouTube SDR to HDR10, 117 frames): downscaled in light from 3840 x 2160 to 1280 x 720
+  for this run (`training/compare_market.py pairs`).
+- **v4b** (60 stills, 8 nine-frame clips): SDR rendered from HDR with the ACES curve, so the ACES inverse
+  is exact on it by construction. It says how each method treats a known curve, not how it treats real SDR.
+
+Scored as release row R1 was (PU21-PSNR, CVVDP; the scorer reproduces R1's Meridian numbers to the digit),
+each method paired frame by frame against RUDRA's old default, the ACES inverse, with a bootstrap 95 %
+interval. Every interval below excludes zero unless marked n.s.
+
+| method | Meridian PU21 dB (vs ACES inverse) | Meridian CVVDP JOD | HDRTV1K PU21 dB | HDRTV1K CVVDP JOD |
+|---|---|---|---|---|
+| **RUDRA, Source = BT.1886** (the default since 13 Oct) | **35.61 (+13.96)** | **8.722 (+2.28)** | **26.19 (+4.16)** | **8.471 (+2.11)** |
+| ITU-R BT.2408 direct mapping (BT.1886, 100 % = 203 cd/m2) | 35.89 (+14.24) | 8.737 (+2.29) | 26.34 (+4.31) | 8.405 (+2.04) |
+| RUDRA, Source = Rec.709 (plain clip) | 23.35 (+1.70) | 7.770 (+1.33) | 22.92 (+0.89) | 6.951 (+0.59) |
+| RUDRA + model v8 (optional) | 21.70 (+0.04, n.s.) | 6.454 (+0.01, n.s.) | | |
+| RUDRA, ACES inverse (the default before 13 Oct) | 21.65 | 6.443 | 22.03 | 6.361 |
+| HDRTVDM (Guo et al., CVPR 2023; YouTube-trained) | 20.50 (-1.15, n.s.) | 5.065 (-1.38) | | |
+
+**On real SDR the old default was wrong.** The ACES inverse expands an SDR frame as if a film curve had
+rolled its highlights off, and real SDR video was not made that way: it was graded on a BT.1886 display. Read
+the way that display shows it, code^2.4 with white at 203 cd/m2, RUDRA lands within 0.3 dB and 0.07 JOD of
+the broadcast mapping (BT.2408) and 14 dB / 2.3 JOD (Meridian) and 4.2 dB / 2.1 JOD (HDRTV1K) above the ACES
+inverse. That is the app's default since 13 Oct 2026 (Reconstruct > Source > BT.1886). The BT.1886 entry
+undoes RUDRA's own reading of BT.709 video (the inverse BT.709 OETF), so it is exact for video; taken on the
+sRGB code instead (`rudra_bt1886_srgb`, measured, not shipped) it gives up 8 dB on Meridian.
+
+On the rendered v4b frames the ACES inverse wins everything (54.4 dB on the stills, 9.87 JOD) and BT.1886
+loses heavily (24.8 dB): that SDR was made with the ACES curve, and the picker's ACES and filmic entries are
+there for it (CG renders, games). Inside clipped pixels the inverse is the most accurate (0.51 stops) and the
+display mappings the least (2.7 stops), because they do not expand highlights; that is what the clip fill and
+the model are for. The model changes nothing measurable on real SDR. HDRTVDM is below RUDRA's old default on
+Meridian too (the HDRTV1K run does not include it: it was trained on that set).
+
+The clip fill (default since 12 Oct, core/clip_fill) changes nothing on Meridian, which clips too little to
+score, and splits the rendered frames: on the stills it gains +0.53 dB [+0.23, +0.84] and is 0.14 stops more
+accurate inside clipped pixels; on the clip frames it loses 3.09 dB [-4.25, -2.03] and 0.22 JOD and is 0.36
+stops less accurate there, all of it on the four fireworks clips (-4.9 to -7.7 dB each; the four fireplace
+clips are unchanged). It was measured over the ACES inverse; over BT.1886 it has not been measured yet.
+
+Not in this table yet: the commercial tools (Resolve, Topaz, NVIDIA RTX Video HDR and others), which are run by
+hand on `bench/compare_v1/input709` and imported (`compare_market.py import`), and HDRTVDM's other two
+weights. HDRTVDM ran in fp32 on a CPU (the authors run fp16 on a GPU; outputs within 80 of 65535 codes).
+Per-part tables: `reports/compare_v1/compare.md`, `reports/hdrtv1k_720p/compare.md`.
+
 ## Reproducing the numbers
 
 The write-up of the SDR to HDR model is kept out of this repository. Every

@@ -587,6 +587,16 @@ QWidget* MainWindow::build_right_rail() {
     // The page's range inputs, in their own steps: strength 0 to 2 by 0.05,
     // peak -1 to 5 by 0.5. A step n reads back as n / 20 (n / 2): the double
     // the page's parseFloat of the same value gives.
+    // 13 Oct 2026: the master exposure, -3 to +3 stops by 0.05 (n / 20), live
+    // like strength: one undo entry per drag, double-click resets.
+    slider("Exposure", "exposureVal", "EV", "exposure", -60, 60, exposure_val_, exposure_);
+    connect(exposure_, &QSlider::sliderPressed, this, [this] { session_.exposure_press(); });
+    connect(exposure_, &QSlider::valueChanged, this, [this](int n) {
+        if (std::lround(session_.grade.exposure_ev * 20.0) == n) return;   // sync_ui, not a move
+        if (!exposure_->isSliderDown()) session_.exposure_press();          // a key or a click on the track
+        session_.exposure_input(n / 20.0);
+    });
+    exposure_->installEventFilter(this);   // double-click: back to 0 (MainWindow::eventFilter)
     slider("Residual strength", "strengthVal", "\u00d7", "strength", 0, 40, strength_val_, strength_);
     slider("Display peak", "peakVal", "nits", "peak", -2, 10, peak_val_, peak_);
     connect(strength_, &QSlider::sliderPressed, this, [this] { session_.strength_press(); });

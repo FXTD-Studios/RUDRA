@@ -1,4 +1,4 @@
-# Temporal consistency on real footage (11 Oct 2026)
+# Temporal consistency on real footage (11 and 12 Oct 2026)
 
 STATUS row 5 asks whether RUDRA's video is steadier than its frames. This is the
 first run on real camera footage, with RUDRA's own measures (not yet clip-mode
@@ -91,11 +91,54 @@ and static holds together (the defaults).
 - Nothing got noticeably worse: the largest increase anywhere is 0.0002 EV (the
   global worst frame on the still hillside, model); the local measures only fell.
 
+## 12 Oct 2026: the optional model v8, and ColorVideoVDP
+
+### v8 (sdr2hdr_image_v8, ONNX Runtime, CPU)
+
+| clip | config | flicker mean | max | local mean | local change |
+|---|---|---:|---:|---:|---:|
+| chimera_a | each frame | 0.00048 | 0.00174 | 0.00608 |  |
+| chimera_a | shot + static hold | 0.00035 | 0.00104 | 0.00399 | -34 % |
+| chimera_b | each frame | 0.01181 | 0.03290 | 0.09276 |  |
+| chimera_b | shot + static hold | 0.01146 | 0.03082 | 0.08918 | -4 % |
+| hdm_bar_01 | each frame | 0.00114 | 0.00312 | 0.00462 |  |
+| hdm_bar_01 | shot + static hold | 0.00095 | 0.00264 | 0.00347 | -25 % |
+| hdm_fire_01 | each frame | 0.01078 | 0.02725 | 0.03025 |  |
+| hdm_fire_01 | shot + static hold | 0.00530 | 0.01739 | 0.02283 | -25 % |
+| hdm_fire_02 | each frame | 0.02187 | 0.07303 | 0.08599 |  |
+| hdm_fire_02 | shot + static hold | 0.01542 | 0.05569 | 0.07281 | -15 % |
+
+v8 flickers a third to a half as much as shadow_v1 on the fire (0.011 and 0.022 EV a frame, against 0.032
+and 0.048), and the static hold takes local flicker down by 15 to 34 %. The shot hold alone changes
+nothing with v8 (identical to each frame its own): v8 has no per-frame shadow weight, scale or curve to hold.
+Full table: `reports/temporal_v8_20261012/temporal.md`.
+
+### ColorVideoVDP against the clips' HDR masters (analytic, the default)
+
+`tools/make_temporal_clips.py --reference` writes each clip's HDR master at the clip's size (16-bit PQ,
+BT.2020), and `tools/measure_temporal.py --reference` scores every export against it with ColorVideoVDP
+twice: as a clip (its temporal model sees flicker) and frame by frame (it cannot).
+
+| clip | each frame: clip JOD | per frame | shot hold: clip | shot + static: clip | per frame |
+|---|---:|---:|---:|---:|---:|
+| chimera_a | 4.640 | 6.742 | 4.640 | 4.640 | 6.743 |
+| chimera_b | 5.603 | 7.202 | 5.900 | **5.941** | 7.238 |
+| hdm_bar_01 | 4.468 | 6.679 | 4.468 | 4.465 | 6.677 |
+| hdm_fire_01 | 6.955 | 8.179 | 6.957 | 6.957 | 8.180 |
+| hdm_fire_02 | 6.770 | 8.368 | 6.770 | 6.771 | 8.370 |
+
+STATUS row 5's condition is clip JOD with the holds at least that of each frame its own, on every clip.
+Analytic: met on four clips and level on the fifth (hdm_bar_01, -0.003 JOD, far inside the metric's noise).
+The one clip whose whole-frame exposure moved (the freeway, where the anchor's hold acts) gains +0.34 JOD as a
+clip; elsewhere analytic flicker was already below what the metric resolves. Clip JODs sit 1.2 to 2.2 below
+the per-frame ones on every row, held or not, so that gap is how the clip metric scores this footage, not flicker
+the holds could take out. The same measure with v8 is
+`reports/temporal_cvvdp_v8_20261012` when it has run.
+
 ## Still to do
 
-- Clip-mode ColorVideoVDP (STATUS row 5's metric) on the same clips, and longer
-  clips with a colourist's SDR (the v4b/v4c test clips step 24 frames at a time,
-  one frame a second, so they cannot show flicker).
+- Longer clips with a colourist's SDR (the v4b/v4c test clips step 24 frames at a
+  time, one frame a second, so they cannot show flicker).
 - The same on the GPU runtimes (DirectML/CUDA), which may differ in jitter.
 
 Reproduce:
@@ -103,3 +146,6 @@ Reproduce:
     python tools/make_temporal_clips.py G:/datasets/sources --out G:/datasets/corpora/temporal_clips_20261011
     python tools/measure_temporal.py G:/datasets/corpora/temporal_clips_20261011 --native <rudra-native> --package <sdr2hdr_shadow_v1>
     python tools/measure_temporal.py G:/datasets/corpora/temporal_clips_20261011 --native <rudra-native> --analytic
+    # with ColorVideoVDP against the masters (12 Oct):
+    python tools/make_temporal_clips.py G:/datasets/sources --out G:/datasets/corpora/temporal_clips_20261011 --reference --no-clips
+    python tools/measure_temporal.py G:/datasets/corpora/temporal_clips_20261011 --native <rudra-native> --analytic --reference G:/datasets/corpora/temporal_clips_20261011
