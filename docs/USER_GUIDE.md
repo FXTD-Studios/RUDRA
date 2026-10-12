@@ -62,6 +62,16 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   which is in use and every master's sidecar records it. Movie exports
   follow it too, with your whole grade.
 
+- **Clipped highlights.** Where the SDR clipped (a blown sky, a lamp, the
+  sun), the inverse alone leaves a flat ceiling. **Reconstruct > Fill clipped
+  highlights** (on by default) puts something sensible there with no model:
+  a channel that clipped while the others did not is rebuilt from them, a
+  blown sky gets a smooth fill from its edge, and a lamp or the sun a peak
+  and a falloff from the glow around it. Nothing is made up as texture, and
+  the *Invented* layer still shows every value it set. **Set the peak of a
+  clipped region…** then a click on the region asks for its peak in nits
+  (0 removes it); **Clear clipped peaks** removes them all. Strength scales
+  the fill, *Off* removes it. With the model on, the model fills instead.
 - **Mode** (1 2 3 4): what the model may change: *All*, *Highlights*,
   *Shadows*, or *Off* (the baseline alone).
 - **Strength** ([ and ]): how much of the model's residual is added.
@@ -155,8 +165,11 @@ start it with the environment variable `RUDRA_NO_UPDATE_CHECK=1`.
 `rudra-native` (beside `RUDRA.exe`, or `RUDRA.app/Contents/MacOS/`) runs the
 same pipeline without the window: `video` (a movie in, HDR10/HLG/ProRes
 out), `deliver`, `batch` (a queue file), `diff`, `info`, `bench` and
-`ffmpeg-check` (is this ffmpeg complete?). Run `rudra-native` alone for
-the commands and their options.
+`ffmpeg-check` (is this ffmpeg complete?), and `bench-clip-fill` (the
+clipped-highlight fill as a bench tree). Run `rudra-native` alone for the
+commands and their options. In a `--params` or `--grade` settings file,
+`"clip_fill": false` turns the fill off and `"clip_peaks": [{"x": 0.5,
+"y": 0.3, "nits": 2500}]` sets peaks (x and y across the frame, 0 to 1).
 
 The packaged ffmpeg is used first. To use your own instead, set
 `RUDRA_FFMPEG_DIR` to its folder, or `RUDRA_FFMPEG_DIR=path` for the one on

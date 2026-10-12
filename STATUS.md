@@ -1,6 +1,6 @@
 # RUDRA — Training & Research Status
 
-> **Updated 7 Oct 2026.** The snapshot below the line dates from 22 Aug and is
+> **Updated 12 Oct 2026** (the newest entries are dated; the table is from 7 Oct). The snapshot below the line dates from 22 Aug and is
 > still accurate for what it covers. Read this section first: the repository
 > holds **five separate lines of work** that share a name, and "is RUDRA
 > finished?" has a different answer for each.
@@ -73,6 +73,39 @@
 > split real vs rendered). The training curve peaked at step 1,500 and decayed for 48k steps while
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
+>
+> **12 Oct 2026 — the clip fill: clipped highlights in the analytic reconstruction (lines F and G).**
+> `core/clip_fill.{hpp,cpp}`: where the SDR clipped, the inverse left one flat ceiling (every code at or
+> above 0.995, ~1,276 nits at 0 EV). Now, from the SDR alone: (1) a channel that clipped while the others
+> did not is estimated from them and the chroma of the clean pixels around it (a smooth push-pull fill),
+> never below its ceiling; (2) a fully clipped region gets log2 luminance filled from its edge plus a
+> dome whose slope at the edge is half the glow's outside it (`glow_scale` 0.5), capped at +1.5 EV for a
+> region over 0.5 % of the frame and at 4,000 nits for a smaller one, hue from the edge; (3) a peak in
+> nits per region from the artist (`ClipOverride`). It reaches the composite as Fields (a residual and a
+> highlight mask of 1 where it changes anything), so the CPU composite, the GPU shader, masters and movie
+> exports take it unchanged; no shader edit. `analytic_fields_for(sdr, MasterRequest)` is what every
+> analytic path calls; `MasterRequest::clip_fill` (default on) and `clip_peaks` in the JSON, the EXR
+> (`rudra:clipFill`) and the sidecar (`clip_fill`); `GradeSnapshot::clip_fill/clip_peaks` undone with the
+> grade and kept in projects; Reconstruct > Fill clipped highlights / Set the peak of a clipped region… /
+> Clear clipped peaks. `rudra-native bench-clip-fill <bench>` writes it as a bench tree.
+> **Measured inside clipped pixels** (cp8_clip_ev0/1/2, 287 Meridian frames, `score_regions.py`'s
+> measure; error in stops, lower is better; glow_scale picked on scenes 1–3, reported on 4–7):
+> | | +0 EV | +1 EV | +2 EV |
+> |---|---|---|---|
+> | flat inverse, scenes 1–3 / 4–7 | 0.172 / 0.131 | 0.628 / 0.583 | 0.790 / 1.019 |
+> | clip fill (default), scenes 1–3 / 4–7 | 0.598 / 0.217 | 0.274 / 0.321 | 0.435 / 0.698 |
+> | v8 (all scenes, 9 Oct) | worse than the inverse by 0.36 | ties | ties |
+> The fill halves the error at +1 and +2 EV and **loses at +0 EV** (truth there is only ~0.2 stop above
+> the ceiling; any dome overshoots). No dome at all ties at +0 and gains little elsewhere (0.57/0.99 at
+> +1/+2). Real Meridian SDR does not clip (3e-5 % of pixels), so the fill is for over-exposed and
+> consumer/generated SDR. Cost: ~1.3 s for a 4K frame with 27 % clipped on 2 cores (fill only near the
+> clip, multithreaded); frames that do not reach code 0.97 cost one pass. Tests: `ClipFill.*` (8),
+> core suites otherwise unchanged. Not done: the Studio and the Python `rudra` CLI have no fill; movie
+> frames are Rec.2020 codes when the fill runs, so a channel clipped in 709 reads as partly clipped.
+> **v9 prepared, not run** (line G): `--exposure-push` re-renders half the samples at +0..+2 EV
+> (the benches' own render, target x 2^E) so clipped pixels are common at 0 EV;
+> `scripts/run_v9_2026_10_12.ps1` (fine-tune from v8, 20k steps); its clip rows must beat the CLIP FILL,
+> `cp8_verdicts.py --clip-against clipfill`. `tests/test_v9_clip_2026_10_12.py`.
 >
 > **11 Oct 2026, night — the static hold in playback (line F).** `shaders/hold.frag` runs
 > `ShadowSmoother::hold_pixels` in the viewer after the composite: MRT into the model target and a state

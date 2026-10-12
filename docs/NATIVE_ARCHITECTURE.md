@@ -398,6 +398,17 @@ computed inside the model too, for the tile pass; C++ ports it separately in
     config the Python writes (`rudra aces --ocio`) so Resolve and Nuke read the
     same thing.
 
+**Clipped highlights (12 Oct 2026).** The analytic reconstruction's fields are not
+always zero: `core/clip_fill` (`clip_fill_fields`, through
+`deliver::analytic_fields_for`) fills where the SDR clipped — a clipped channel
+from its surviving ones, a fully clipped region by a smooth log2-luminance fill
+from its edge plus a dome from the glow outside it, or the artist's peak in nits —
+and hands the composite a residual (log1p domain, divided by the default gate so
+mode All at strength 1 lands on the fill) with a highlight mask of 1 where it
+changes anything. The fill reads the whole frame (regions, distances), so it runs
+on the CPU with the fields, once per frame and per change of its settings, never
+per slider; the shader is unchanged and GPU parity holds by construction.
+
 ### 6.4 Scopes and analysis
 
 - Waveform, RGB histogram, vectorscope: QRhi compute shaders with atomic bins
