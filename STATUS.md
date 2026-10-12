@@ -74,6 +74,21 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **13 Oct 2026, night — v9 at step 20,000 on the clip benches (line G; roadmap 4.2).** `best.pt` was
+> selected on an unpushed val split and stayed at step 0 (v8's weights: same crushed rows to the digit), so
+> `step_0020000.pt` was benched as `v9s20` (`run_v9_2026_10_12.ps1 -Stage bench -Checkpoint ... -ClipOnly`).
+> Inside clipped pixels, 287 Meridian frames, error in stops, positive = candidate better, 95 % CI:
+> | | +0 EV | +1 EV | +2 EV |
+> |---|---|---|---|
+> | clip fill vs the flat inverse | -0.258 [-0.293, -0.222] | **+0.307** [+0.286, +0.326] | **+0.338** [+0.305, +0.366] |
+> | v9s20 vs the clip fill (the gate) | **+0.116** [+0.052, +0.175] PASS | -0.054 [-0.112, -0.002] FAIL | -0.066 [-0.125, -0.011] FAIL |
+> | v8 vs the flat inverse (9 Oct) | -0.359 | -0.015 | +0.002 |
+> The exposure push taught the model the clip (about +0.25 stop over the flat inverse at +1/+2, where v8
+> tied), but not past the analytic fill, and at +0 EV it is still below the flat inverse (~-0.14). Crushed
+> pixels: 1.59 to 1.63 stops worse than the inverse, 0/287 wins (v8 1.75 to 2.38). **v9 fails the gate on
+> the clip rows alone**, so real/aces/oog/mix were not benched; the clip fill stays the default and v8 the
+> optional model. Open for 1.0: the fill's +0 EV overshoot (v9 shows a smaller dome is better there).
+>
 > **13 Oct 2026, later — interactive exposure (line F).** A master exposure in stops (-3 to +3):
 > `CompositeParams::exposure_ev` / `MasterRequest::exposure_ev` / `GradeSnapshot::exposure_ev`. Part of the
 > grade: the composite multiplies by 2^ev before the Region EV bands (which read the exposed nits) and the
