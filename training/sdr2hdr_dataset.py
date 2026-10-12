@@ -488,8 +488,6 @@ class SDRHDRVideoDataset(Dataset):
                 augmented.append(degrade_sdr(frame))
             sdr = torch.stack(augmented)
         ceiling = record.get("ceiling_nits")
-        if ceiling and pushed:
-            ceiling = float(ceiling) * ceiling_scale
         return {"sdr": sdr, "hdr": hdr.clamp_min(0.0),
                 "ceiling": torch.tensor(
                     float(ceiling) / NETWORK_PEAK_NITS if ceiling else float("inf"),
