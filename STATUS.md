@@ -32,10 +32,10 @@
 > | # | condition | pass when | status |
 > |---|---|---|---|
 > | R1 | the inverse path, every bench | its own PU21/CVVDP on `aces`, `oog`, `mix`, `real` published as the floor | measured: 49.00 / 9.77, 26.44 / 8.08, 25.54 / 8.11, 21.69 / 6.42 |
-> | R2 | the artist controls (roadmap 3.1 to 3.4) | each control under one frame of latency at 4K, scripted exit passing on Windows | open |
-> | R3 | against the market (roadmap 2.2, 2.3) | the frozen set through every external tool, a table published whatever it says | open |
+> | R2 | the artist controls (roadmap 3.1 to 3.4) | each control under one frame of latency at 4K, scripted exit passing on Windows | met: 1.08-1.33 ms at 4K on four backends, gated (7 Oct); phase 3 exit and the by-hand pass (9 Oct); re-run on the release candidate |
+> | R3 | against the market (roadmap 2.2, 2.3) | the frozen set through every external tool, a table published whatever it says | open-source half in (12-13 Oct, docs/RESULTS.md): on real SDR (Meridian, HDRTV1K) Source = BT.1886, now the default, is +14.0 / +4.2 dB and +2.3 / +2.1 JOD over the ACES inverse and level with BT.2408; v8 level with the inverse, HDRTVDM below; the commercial tools are run by hand (docs/RELEASE_V1.md) |
 > | R4 | the native app's open items (README, "Still open") | macOS inference and HDR output, signing, by-hand workflow on Windows, budgets per backend | open |
-> | R5 | optional model | `shadow_v1` listed with its measured deltas vs the inverse; any model that beats the inverse on `real` with CI excluding zero may join it | shadow_v1 listed |
+> | R5 | optional model | the optional model listed with its measured deltas vs the inverse; any model that beats the inverse on `real` with CI excluding zero may join it | `sdr2hdr_image_v8` listed (9 Oct; shadow_v1 retired) |
 >
 > **Line G, model research (opened 7 Oct 2026, blocks nothing).** One bounded
 > attempt, after 1.0: direct regression (SDR in, HDR out, no inverse residual),
@@ -53,7 +53,7 @@
 > | 2 | unknown curve + codec | `oog`, `mix` | both metrics above the inverse, CI excluding zero (N3) | FAIL (v4c +1.33 dB but −0.126 JOD; v7 −1.2 dB / −0.82 JOD oog, −2.7 dB / −0.59 JOD mix, −4.1 dB / −0.33 JOD real) |
 > | 3 | degraded input | paper 429 hard | at least v5's +1.43 dB / +0.44 JOD, with row 1 held | not run |
 > | 4 | clipped highlights | `measure_clipping.py --score`, 0/+1/+2 EV | error in stops on clipped pixels below the inverse's, CI excluding zero | not run |
-> | 5 | video | v4b/v4c test clips, clip-mode CVVDP + flicker | clip JOD ≥ per-frame JOD on every test clip (N5) | flicker measured on 5 real clips, 11 Oct (docs/TEMPORAL_RESULTS.md): the holds cut the model's fire flicker 72-80 %; CVVDP not run |
+> | 5 | video | v4b/v4c test clips, clip-mode CVVDP + flicker | clip JOD ≥ per-frame JOD on every test clip (N5) | flicker measured on 5 real clips, 11 Oct (docs/TEMPORAL_RESULTS.md): the holds cut the model's fire flicker 72-80 %; clip-mode CVVDP against the masters, analytic (12 Oct): held >= each frame on 4 clips, level on the 5th (-0.003 JOD); v8 flickers a third to a half as much as shadow_v1 |
 > | 6 | commercial weights | `oog`, `mix` | `rudra-studio` within 0.3 dB / 0.03 JOD of the research model (N7) | not trained |
 > | 7 | against the market | N4 set: external SDR→HDR baselines | a table published whatever it says | not run |
 >
@@ -73,6 +73,45 @@
 > split real vs rendered). The training curve peaked at step 1,500 and decayed for 48k steps while
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
+>
+> **13 Oct 2026, later — interactive exposure (line F).** A master exposure in stops (-3 to +3):
+> `CompositeParams::exposure_ev` / `MasterRequest::exposure_ev` / `GradeSnapshot::exposure_ev`. Part of the
+> grade: the composite multiplies by 2^ev before the Region EV bands (which read the exposed nits) and the
+> grade gain includes it, so the view's anchor scales its target and keeps the offset; the master applies it
+> in `apply_region_ev` after the anchor; the shader reads `frame.z`. 0 is bit for bit (every golden
+> unchanged). Reconstruct card slider (0.05 EV steps, one undo entry per drag, double-click resets),
+> Reconstruct > Exposure up / down a third of a stop (Ctrl+Shift+Up / Down), reset (Ctrl+Shift+0), Reset
+> reconstruction clears it; projects (`exposure_ev`, older projects 0), request JSON and sidecar
+> (`exposure_ev`, only when set), EXR `rudra:exposureEV`. Tests: `tests/test_exposure.cpp` (7), the app's
+> controls test, two `rudra-gpu-parity` cases. Core 244/244, ORT 253/253, app 56/56.
+>
+> **13 Oct 2026 — BT.1886 is the default source (line F; release row R3).** The R3 run showed the ACES
+> inverse far below plain BT.2408 placement on real SDR, so the Source picker gained BT.1886
+> (`core/source_curve`, `SourceCurve::Bt1886`, id `bt1886`): inverse `oetf709(y)^2.4`, the BT.709 video's
+> code to the power 2.4, white at 1.0 (203 nits), exact for RUDRA's reading of BT.709 video (the inverse
+> OETF); the knots ride the existing 256-knot path (composite, shader, master, parity: a new
+> `rudra-gpu-parity` case). `GradeSnapshot::source` starts on `kDefaultSource` = `bt1886`; projects and
+> requests that name none stay `unknown` (the ACES inverse), so saved projects, CLI requests and goldens
+> reproduce; the page-parity tests set `unknown` (the page has no picker). Menu: Reconstruct > Source >
+> BT.1886. Scored as R1: Meridian 35.61 dB / 8.722 JOD (+13.96 / +2.28 over the ACES inverse; BT.2408 on
+> the true BT.709 codes +14.24 / +2.29), HDRTV1K test at 720p (`compare_market.py pairs`, 117 frames) +4.16
+> / +2.11 (BT.2408 +4.31 / +2.04). The same curve on the sRGB code was measured and not shipped (-8 dB on
+> Meridian). The v4b rendered frames still favour the ACES inverse by construction. The 12 Oct Meridian
+> rows for BT.2408 and HDRTVDM were re-run on the true BT.709 codes (the external input was sRGB-coded):
+> BT.2408 +5.96 -> +14.24 dB, HDRTVDM -0.41 -> -1.38 JOD. Not measured yet: the clip fill over BT.1886.
+> Also: AppAnalytic.TheDefaultRunsNoModelAndSaysSo turns the clip fill off (since c4a6ecf the analytic
+> fields fill clipped pixels, so they are not all zero). Tests: core 237/237, ORT 246/246, app 56/56.
+>
+> **12 Oct 2026 — toward 1.0 (line F; docs/RELEASE_V1.md).** R3's open-source half
+> (`training/compare_market.py`, the frozen set through RUDRA, BT.2408, HDRTVDM; scored as R1, the
+> scorer reproducing R1's Meridian baseline to the digit): on real SDR the default ACES inverse is
+> below the plain BT.2408 mapping by 5.96 dB / 2.04 JOD and below Source = Rec.709 by 1.70 / 1.33, so
+> the default for SDR of unknown curve is a decision before 1.0 (the rendered v4b frames favour the
+> inverse by construction). The clip fill, scored the same way: Meridian unchanged, v4b stills +0.53 dB and
+> 0.14 stops better inside clipped pixels, v4b clip frames -3.09 dB / -0.22 JOD and 0.36 stops worse there. HDR10+ is in the shipped
+> encoders (gyan.dev 7.1.1 full; Homebrew's 10-bit x265). `rudra batch` runs the app's `grade` jobs
+> through rudra-native. Clip-mode CVVDP on the real clips (row 5). The release workflow publishes
+> v1.0.0 as a release; `scripts/release_v1_rc.ps1` makes each candidate.
 >
 > **12 Oct 2026 — the clip fill: clipped highlights in the analytic reconstruction (lines F and G).**
 > `core/clip_fill.{hpp,cpp}`: where the SDR clipped, the inverse left one flat ceiling (every code at or
