@@ -26,7 +26,10 @@
 # has nothing to add there.
 param([ValidateSet("smoke", "train", "bench")][string]$Stage = "smoke", [int]$Steps = 20000,
       [double]$RegionFocus = 0.5, [double]$ExposurePush = 0.5, [double]$PushMaxEv = 2.0,
-      [switch]$FromScratch, [string]$Name = "v9", [string]$Cli = "")
+      [switch]$FromScratch, [string]$Name = "v9", [string]$Cli = "",
+      # Bench a given checkpoint instead of $Out\best.pt (13 Oct 2026: best.pt is selected on
+      # an unpushed val split, so it stayed at step 0 = v8's weights), and/or only the clip benches.
+      [string]$Checkpoint = "", [switch]$ClipOnly)
 $ErrorActionPreference = "Continue"
 $Repo = "D:\A.I\Devlopments\rudra"
 Set-Location -LiteralPath $Repo
@@ -112,8 +115,9 @@ if ($Stage -eq "train") {
 
 if ($Stage -eq "bench") {
     Stage "BENCH  $Name on real / aces / oog / mix, and inside the clip at +0, +1, +2 EV"
-    $ckpt = Join-Path $Out "best.pt"
+    $ckpt = if ($Checkpoint) { $Checkpoint } else { Join-Path $Out "best.pt" }
     if (-not (Test-Path $ckpt)) { Fail "no $ckpt; run -Stage train first" }
+    Write-Host "benching $ckpt as tree '$Name'" -ForegroundColor Yellow
     $freeGB = [math]::Round((Get-PSDrive -Name ($Repo.Substring(0, 1))).Free / 1GB, 1)
     if ($freeGB -lt 15) { Fail "only $freeGB GB free on $($Repo.Substring(0, 2)); need 15 GB (four model trees and three clip benches)" }
     # name -> manifest, condition, extra export args
@@ -126,7 +130,8 @@ if ($Stage -eq "bench") {
         "cp8_clip_ev1" = @{ manifest = $Netflix; condition = "exposure"; extra = @("--exposure-ev", "1", "--exposure-curve", "aces") }
         "cp8_clip_ev2" = @{ manifest = $Netflix; condition = "exposure"; extra = @("--exposure-ev", "2", "--exposure-curve", "aces") }
     }
-    foreach ($b in $benches.Keys) {
+    foreach ($b in @($benches.Keys)) {
+        if ($ClipOnly -and -not $b.StartsWith("cp8_clip")) { continue }
         $root = Join-Path $Repo "bench\$b"; $res = Join-Path $root "results"
         New-Item -ItemType Directory -Path $res -Force | Out-Null
         $clip = $b.StartsWith("cp8_clip")
