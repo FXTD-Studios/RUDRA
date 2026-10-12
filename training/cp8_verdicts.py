@@ -52,9 +52,9 @@ def _whole(root: Path, bench: str, cand: str):
     return compare(load(a), load(b))
 
 
-def _region(root: Path, bench_dir: str, cand: str, metric: str):
+def _region(root: Path, bench_dir: str, cand: str, metric: str, against: str = "baseline"):
     a = root / bench_dir / "results" / f"{cand}.regions.csv"
-    b = root / bench_dir / "results" / "baseline.regions.csv"
+    b = root / bench_dir / "results" / f"{against}.regions.csv"
     if not (a.is_file() and b.is_file()):
         return None
     m = (metric,)
@@ -62,7 +62,7 @@ def _region(root: Path, bench_dir: str, cand: str, metric: str):
     return compare(load(b, m), load(a, m), metrics=m)
 
 
-def score(root: Path, cand: str) -> dict:
+def score(root: Path, cand: str, clip_against: str = "baseline") -> dict:
     gates, reports = {}, {}
 
     def gate(name, question, r, ok_fn, metrics):
@@ -77,8 +77,8 @@ def score(root: Path, cand: str) -> dict:
         gate(f"G8/{bench}", f"{cand} is not worse than the inverse on the {bench} bench (CIs reach zero)",
              _whole(root, bench, cand), _ok_not_worse, METRICS)
     for ev in CLIP_EVS:
-        gate(f"G8/clip/ev{ev}", f"{cand} beats the inverse inside clipped pixels at +{ev} EV (lower error, CI above zero)",
-             _region(root, f"cp8_clip_ev{ev}", cand, "clipped_err_stops"), _ok_positive, ("clipped_err_stops",))
+        gate(f"G8/clip/ev{ev}", f"{cand} beats the {clip_against} tree inside clipped pixels at +{ev} EV (lower error, CI above zero)",
+             _region(root, f"cp8_clip_ev{ev}", cand, "clipped_err_stops", clip_against), _ok_positive, ("clipped_err_stops",))
         r = _region(root, f"cp8_clip_ev{ev}", cand, "crushed_err_stops")
         if r is not None:
             reports[f"crushed/ev{ev}"] = r
@@ -106,11 +106,15 @@ def main(argv=None) -> int:
     ap.add_argument("--candidate", default="v8")
     ap.add_argument("--out", type=Path, default=REPO / "reports" / "logs" / "cp8_results.json")
     ap.add_argument("--strict", action="store_true")
+    ap.add_argument("--clip-against", default="baseline",
+                    help="the tree the clip rows must beat: baseline (the flat inverse, the v8 gate) or "
+                         "clipfill (the analytic clip fill, rudra-native bench-clip-fill; the v9 gate, 12 Oct 2026)")
     args = ap.parse_args(argv)
-    s = score(args.bench_root, args.candidate)
+    s = score(args.bench_root, args.candidate, args.clip_against)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(s, indent=2), encoding="utf-8")
-    print(f"v8 gate, candidate {args.candidate} (region rows: inverse error minus candidate error, positive = candidate better)")
+    print(f"v8 gate, candidate {args.candidate}, clip rows against {args.clip_against} "
+          f"(region rows: reference error minus candidate error, positive = candidate better)")
     for name, g in s["gates"].items():
         print(f"  {g['status']:<8} {name:<14} {g['question']}")
         if g["status"] != "not run":

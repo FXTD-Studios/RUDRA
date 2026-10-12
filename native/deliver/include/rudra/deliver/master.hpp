@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "rudra/core/clip_fill.hpp"
 #include "rudra/core/composite.hpp"
 #include "rudra/core/reference_fit.hpp"
 #include "rudra/core/fields.hpp"
@@ -60,7 +61,25 @@ struct MasterRequest {
     // <name>.masks.png and named in the sidecar. Null for none.
     std::shared_ptr<const MaskSet> masks;
     std::string masks_file;   // where the JSON pointed, or where write_master wrote them
+    // 12 Oct 2026: the clip fill (core/clip_fill.hpp) in the analytic
+    // reconstruction, and the peaks set on clipped regions. On by default;
+    // in the JSON only when off or with peaks. With a model it does nothing:
+    // the model's own residual is what fills there.
+    bool clip_fill = true;
+    std::vector<ClipOverride> clip_peaks;
+    // 13 Oct 2026: the master exposure in stops, with the grade (after the
+    // anchor, before the Region EV bands). In the JSON and the sidecar only
+    // when not 0, so every master before reads the same.
+    double exposure_ev = 0.0;
 };
+
+// The fill's options for this request (the defaults, with its peaks).
+ClipFillOptions clip_fill_options(const MasterRequest& q);
+
+// The fields of the analytic reconstruction for this request: the clip fill's
+// when it is on (clip_fill_fields at kAnalyticConstants), analytic_fields when
+// it is off. What every analytic path (master, movie, the app's view) uses.
+Fields analytic_fields_for(const SdrImage& sdr, const MasterRequest& q, ClipFill* detail = nullptr);
 
 struct MasterResult {
     int maxcll = 0, maxfall = 0;

@@ -607,7 +607,19 @@ TEST(AppLayout, ShellControlsDoWhatShellJsDoes) {
     w.run("undo");
     w.run("undo");
     EXPECT_EQ(w.findChild<QLabel*>("strengthVal")->text(), "1.00");
-    EXPECT_EQ(w.findChild<QLabel*>("preserveHint")->text(), "do-no-harm");
+    EXPECT_EQ(w.findChild<QLabel*>("preserveHint")->text(), "do-no-harm");    // The master exposure (13 Oct 2026): the slider, its label, the master request, the menu, double-click for 0.
+    auto* exposure = w.findChild<QSlider*>("exposure");
+    ASSERT_NE(exposure, nullptr);
+    exposure->setValue(20);
+    EXPECT_DOUBLE_EQ(w.session().grade.exposure_ev, 1.0);
+    EXPECT_EQ(w.findChild<QLabel*>("exposureVal")->text(), "+1.00");
+    EXPECT_DOUBLE_EQ(w.master_request().exposure_ev, 1.0);
+    w.run("exposure-down");
+    EXPECT_NEAR(w.session().grade.exposure_ev, 2.0 / 3.0, 1e-12);
+    EXPECT_EQ(exposure->value(), 13);
+    QTest::mouseDClick(exposure, Qt::LeftButton);
+    EXPECT_EQ(w.session().grade.exposure_ev, 0.0);
+    EXPECT_EQ(exposure->value(), 0);
 }
 
 // ---- step 6: the panels driven as the page's are, against its golden -------
@@ -698,6 +710,9 @@ TEST(AppPanels, EveryGestureOnTheWidgetsGivesThePagesState) {
         w.activateWindow();
         ASSERT_TRUE(QTest::qWaitForWindowActive(&w));
         w.show_tab("grade");   // the Region EV rows must be laid out to be pressed
+        // The page has no source picker: it is the ACES inverse, "unknown"
+        // (the app starts on BT.1886 since 13 Oct 2026).
+        w.session().grade.source = "unknown";
         QApplication::processEvents();
         int i = 0;
         for (const auto& st : steps) {
@@ -2353,6 +2368,10 @@ TEST(AppHelp, GettingStartedTheGuideAndTips) {
     for (auto* l : w.sheet()->findChildren<QLabel*>())
         if (l->property("role").toString() == "value") keys << l->text();
     EXPECT_EQ(keys.mid(0, 5), (QStringList{"1  Source", "2  Calibrate", "3  Reconstruct", "4  Check", "5  Deliver"}));
+    // Once per edition of the steps: a beta user (who saw the old ones) sees RUDRA 1.0's once.
+    QSettings().setValue("help/gettingStartedShown", true);
+    w.show_getting_started_once();
+    EXPECT_EQ(QSettings().value("help/gettingStarted").toInt(), 2);
     EXPECT_TRUE(app::MainWindow::user_guide_url().endsWith("docs/USER_GUIDE.md"));
     EXPECT_EQ(w.action("user-guide")->shortcut(), QKeySequence(Qt::Key_F1));
     EXPECT_EQ(w.action("save-project")->shortcut(), QKeySequence(QKeySequence::Save));
@@ -2376,8 +2395,11 @@ TEST(AppAnalytic, TheDefaultRunsNoModelAndSaysSo) {
     EXPECT_FALSE(w.using_model());
     EXPECT_FALSE(w.action("use-model")->isChecked());
     EXPECT_EQ(w.findChild<QLabel*>("reconstructionMode")->text(), "Analytic reconstruction");
-    // No package at all: the shot opens and its fields are the analytic ones.
+    // No package at all: the shot opens and its fields are the analytic ones
+    // (with the clip fill off: since 12 Oct 2026 it fills clipped pixels
+    // through the fields, and these test frames clip).
     ASSERT_TRUE(w.model_package().empty());
+    w.session().grade.clip_fill = false;
     w.open_source(QString::fromStdString(decode_dir().string()), true);
     ASSERT_GE(w.frame_count(), 3u);
     ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));

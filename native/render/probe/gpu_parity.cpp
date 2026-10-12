@@ -172,10 +172,22 @@ int main(int argc, char** argv) {
             graded.regions.push_back({b.at("low_nits").get<double>(), b.at("high_nits").get<double>(), b.at("ev").get<double>()});
         cases.emplace_back(name + " region EV", graded);
         python.emplace_back();
+        // 13 Oct 2026: the master exposure, alone and before the bands (frame.z in the shader).
+        {
+            CompositeParams e;
+            e.exposure_ev = 1.25;
+            e.source = SourceCurve::Bt1886;
+            cases.emplace_back(name + " exposure +1.25", e);
+            python.emplace_back();
+            CompositeParams ge = graded;
+            ge.exposure_ev = -0.75;
+            cases.emplace_back(name + " exposure -0.75 region EV", ge);
+            python.emplace_back();
+        }
         // Roadmap 3.1: the source curve rides the CurveHead's path with one knot
         // per code; the shader's 72-vec4 buffer and curveLog2 must read it as
-        // the CPU does. Two curves, one of them on top of the frame's own head.
-        for (SourceCurve s : {SourceCurve::Hable, SourceCurve::CameraLog}) {
+        // the CPU does. Three curves, on top of the frame's own head.
+        for (SourceCurve s : {SourceCurve::Hable, SourceCurve::CameraLog, SourceCurve::Bt1886}) {   // BT.1886: the default since 13 Oct 2026
             CompositeParams p;
             p.source = s;
             cases.emplace_back(name + " source " + std::string(source_curve_id(s)), p);
@@ -291,6 +303,15 @@ int main(int argc, char** argv) {
             w.anchor_knee = 0.8;
             w.anchor_hold = anchor_hold(m, sdr, 0.8);
             frame_views.emplace_back("anchored wipe knee 0.8", w);
+            // 13 Oct 2026: the anchor's target follows the Source picker (BT.1886, the default).
+            auto k = view_params(ViewMode::Image, 1000.0);
+            k.anchor = true;
+            k.anchor_knee = 0.9;
+            CompositeParams bt;
+            bt.source = SourceCurve::Bt1886;
+            k.anchor_knots = anchor_target_knots(bt);
+            k.anchor_hold = anchor_hold(m, sdr, 0.9, 0.04, nullptr, k.anchor_knots);
+            frame_views.emplace_back("anchored BT.1886 1000", k);
             // Roadmap 3.3: the mask being painted, tinted over the picture.
             auto t = view_params(ViewMode::Image, 1000.0);
             t.paint_band = 0;

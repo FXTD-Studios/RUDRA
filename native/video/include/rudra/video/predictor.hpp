@@ -40,7 +40,7 @@ public:
     // the app's settings (deliver/master grade_master): its recovery, source
     // curve, calibration or reference, masks, anchor, chroma, grain and
     // Region EV. With `request.analytic` no model runs (kAnalyticConstants,
-    // analytic_fields); otherwise the fields come from the backend, tiled as
+    // analytic_fields_for: the clip fill unless the request turns it off); otherwise the fields come from the backend, tiled as
     // the master tiles, with the smoothed shadow weight. hdr is the delivered
     // picture in the network convention (1.0 = 10 000 nits), Rec.2020.
     Result<VideoPrediction> predict_graded(const SdrImage& rgb, const std::string& transfer,

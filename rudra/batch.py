@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -68,6 +70,40 @@ def locked(path):
             else: fcntl.flock(stream, fcntl.LOCK_UN)
 
 
+def native_cli():
+    """rudra-native, which runs a job with the app's settings (`grade`): RUDRA_NATIVE, else PATH."""
+    explicit = os.environ.get('RUDRA_NATIVE')
+    if explicit:
+        return Path(explicit)
+    found = shutil.which('rudra-native')
+    return Path(found) if found else None
+
+
+def native_command(args, grade, options):
+    """The `rudra-native video` command for a job carrying the app's settings.
+
+    The app's queues name the export settings file as `grade`, and as the
+    checkpoint either the model package's manifest.json or, for an analytic
+    export, the settings file itself (rudra-native video: `-` for no package).
+    """
+    exe = native_cli()
+    if exe is None:
+        raise RuntimeError('This job carries the app\'s settings (grade): it runs with rudra-native, which was '
+                           'not found. Set RUDRA_NATIVE to it, or run the queue in RUDRA')
+    analytic = json.loads(Path(grade).read_text(encoding='utf-8')).get('analytic', False)
+    checkpoint = Path(args.checkpoint)
+    package = '-' if analytic else str(checkpoint.parent if checkpoint.name == 'manifest.json' else checkpoint)
+    command = [str(exe), 'video', package, str(args.input), '--output', str(args.output), '--grade', str(grade)]
+    for key, value in options.items():
+        if key in ('checkpoint', 'grade'):
+            continue
+        name = '--' + key.replace('_', '-')
+        if key in ('work_dir', 'work-dir'):
+            value = Path(args.work_dir)
+        command.extend([name, str(value)])
+    return command
+
+
 def load_jobs(path):
     spec = json.loads(path.read_text(encoding='utf-8'))
     if spec.get('version') != 1 or not spec.get('jobs'):
@@ -80,6 +116,9 @@ def load_jobs(path):
         options.update(job.get('options', {}))
         if 'input' in options or 'output' in options:
             raise ValueError('Set input/output on the job, not in options')
+        # `grade` (the app's export settings, 10 Oct 2026) is rudra-native's: the
+        # job keeps its options for that command and Python checks the rest.
+        grade = options.pop('grade', None)
         tokens = [job['input'], '--output', job['output']]
         for key, value in options.items():
             tokens.extend(['--' + key.replace('_', '-'), str(value)])
@@ -91,6 +130,8 @@ def load_jobs(path):
             value = getattr(args, key)
             if value is not None:
                 setattr(args, key, (path.parent / value).resolve())
+        args.grade = (path.parent / grade).resolve() if grade else None
+        args.native_options = options if grade else None
         jobs.append(args)
     reserved = {path, Path(str(path)+'.state.json'), Path(str(path)+'.lock')}
     sources = {p for a in jobs for p in (a.input, a.checkpoint)}
@@ -153,7 +194,14 @@ def run_queue(path, retry_failed=False):
                         print(f'warning: could not save queue progress: {exc}',
                               file=sys.stderr, flush=True)
 
-                video.convert_video(args, progress=progress)
+                if args.grade is not None:
+                    command = native_command(args, args.grade, args.native_options)
+                    progress(dict(phase='rudra-native'))
+                    completed = subprocess.run(command)
+                    if completed.returncode != 0:
+                        raise RuntimeError(f'rudra-native failed (exit {completed.returncode})')
+                else:
+                    video.convert_video(args, progress=progress)
                 report = json.loads(sidecar.read_text(encoding='utf-8'))
                 if report.get('qc', {}).get('passed') is not True:
                     raise RuntimeError('Export report does not confirm passing QC')

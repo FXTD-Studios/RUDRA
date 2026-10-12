@@ -1,6 +1,6 @@
 # RUDRA — Training & Research Status
 
-> **Updated 7 Oct 2026.** The snapshot below the line dates from 22 Aug and is
+> **Updated 12 Oct 2026** (the newest entries are dated; the table is from 7 Oct). The snapshot below the line dates from 22 Aug and is
 > still accurate for what it covers. Read this section first: the repository
 > holds **five separate lines of work** that share a name, and "is RUDRA
 > finished?" has a different answer for each.
@@ -32,10 +32,10 @@
 > | # | condition | pass when | status |
 > |---|---|---|---|
 > | R1 | the inverse path, every bench | its own PU21/CVVDP on `aces`, `oog`, `mix`, `real` published as the floor | measured: 49.00 / 9.77, 26.44 / 8.08, 25.54 / 8.11, 21.69 / 6.42 |
-> | R2 | the artist controls (roadmap 3.1 to 3.4) | each control under one frame of latency at 4K, scripted exit passing on Windows | open |
-> | R3 | against the market (roadmap 2.2, 2.3) | the frozen set through every external tool, a table published whatever it says | open |
+> | R2 | the artist controls (roadmap 3.1 to 3.4) | each control under one frame of latency at 4K, scripted exit passing on Windows | met: 1.08-1.33 ms at 4K on four backends, gated (7 Oct); phase 3 exit and the by-hand pass (9 Oct); re-run on the release candidate |
+> | R3 | against the market (roadmap 2.2, 2.3) | the frozen set through every external tool, a table published whatever it says | open-source half in (12-13 Oct, docs/RESULTS.md): on real SDR (Meridian, HDRTV1K) Source = BT.1886, now the default, is +14.0 / +4.2 dB and +2.3 / +2.1 JOD over the ACES inverse and level with BT.2408; v8 level with the inverse, HDRTVDM below; the commercial tools are run by hand (docs/RELEASE_V1.md) |
 > | R4 | the native app's open items (README, "Still open") | macOS inference and HDR output, signing, by-hand workflow on Windows, budgets per backend | open |
-> | R5 | optional model | `shadow_v1` listed with its measured deltas vs the inverse; any model that beats the inverse on `real` with CI excluding zero may join it | shadow_v1 listed |
+> | R5 | optional model | the optional model listed with its measured deltas vs the inverse; any model that beats the inverse on `real` with CI excluding zero may join it | `sdr2hdr_image_v8` listed (9 Oct; shadow_v1 retired) |
 >
 > **Line G, model research (opened 7 Oct 2026, blocks nothing).** One bounded
 > attempt, after 1.0: direct regression (SDR in, HDR out, no inverse residual),
@@ -53,7 +53,7 @@
 > | 2 | unknown curve + codec | `oog`, `mix` | both metrics above the inverse, CI excluding zero (N3) | FAIL (v4c +1.33 dB but −0.126 JOD; v7 −1.2 dB / −0.82 JOD oog, −2.7 dB / −0.59 JOD mix, −4.1 dB / −0.33 JOD real) |
 > | 3 | degraded input | paper 429 hard | at least v5's +1.43 dB / +0.44 JOD, with row 1 held | not run |
 > | 4 | clipped highlights | `measure_clipping.py --score`, 0/+1/+2 EV | error in stops on clipped pixels below the inverse's, CI excluding zero | not run |
-> | 5 | video | v4b/v4c test clips, clip-mode CVVDP + flicker | clip JOD ≥ per-frame JOD on every test clip (N5) | flicker measured on 5 real clips, 11 Oct (docs/TEMPORAL_RESULTS.md): the holds cut the model's fire flicker 72-80 %; CVVDP not run |
+> | 5 | video | v4b/v4c test clips, clip-mode CVVDP + flicker | clip JOD ≥ per-frame JOD on every test clip (N5) | flicker measured on 5 real clips, 11 Oct (docs/TEMPORAL_RESULTS.md): the holds cut the model's fire flicker 72-80 %; clip-mode CVVDP against the masters, analytic (12 Oct): held >= each frame on 4 clips, level on the 5th (-0.003 JOD); v8 flickers a third to a half as much as shadow_v1 |
 > | 6 | commercial weights | `oog`, `mix` | `rudra-studio` within 0.3 dB / 0.03 JOD of the research model (N7) | not trained |
 > | 7 | against the market | N4 set: external SDR→HDR baselines | a table published whatever it says | not run |
 >
@@ -73,6 +73,125 @@
 > split real vs rendered). The training curve peaked at step 1,500 and decayed for 48k steps while
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
+>
+> **13 Oct 2026 — v10 prepared, not run (line G; docs/MODEL_PLAN_V10.md).** What v4 to v9 got wrong, fixed in
+> the training: (1) the residual rode on the ACES inverse, while on real SDR the BT.1886 inverse alone is +14 dB
+> over it (R3) and is 1.0's default: `--baseline-source` puts it on the Source picker's curve
+> (`rudra/source_baseline.py`, the app's 256 knots, held to native to 1e-5; BT.1886 for real and degraded samples,
+> a rendered sample's own curve, half of those on BT.1886 anyway, the exposure push on ACES); (2) crushed blacks:
+> `--crushed-hold` charges any change there; (3) the real val was an animation: `pipeline/build_v10_manifest.py`
+> holds out live-action shots of Nocturne and Sparks, Cosmos Laundromat to train; (4) best.pt was chosen on crops
+> in log-PSNR: `--best-metric bench_gain` (`training/bench_val.py`) scores full frames as the gate does (PU21 on
+> real and rendered val, the clipped error at +1/+2 EV, the crushed error) against the picker's baseline. Gate
+> written first, `training/cp10_verdicts.py`: real above the BT.1886 baseline (PU21 and CVVDP CIs above zero),
+> aces/oog/mix not worse, clip rows above the CLIP FILL at +0/+1/+2 EV, crushed not worse anywhere.
+> `export_bench_pairs.py --baseline-curve / --picker-baseline` writes the trees. `scripts/run_v10_2026_10_13.ps1`
+> (smoke, train 20k from v9 step 20,000, bench; -ClipOnly first). Tests: `tests/test_v10_2026_10_13.py` (8),
+> and an end-to-end CPU run on a synthetic corpus (manifest, 30 steps with bench selection, export with the
+> picker tree, region scoring). If v10 passes, the app needs the tile graph to take the picker's knots and a
+> re-run of inference on a picker change (docs/MODEL_PLAN_V10.md).
+>
+> **13 Oct 2026, late night — the anchor follows the Source picker; the clip fill ships on (line F, R3).**
+> The master's anchor (on by default) put every pixel below its knee on the sRGB reading of its code at
+> 203 nits whatever the picker said: an anchored BT.1886 master was the sRGB one below the knee, and the
+> calibration and the reference were undone there (R3 scored the unanchored inverse, so the shipped master
+> was not the scored one). `core/composite anchor_target_knots`: per 8-bit code, log2 of the picker's curve
+> with its calibration or reference (0 EV, no CurveHead) over the sRGB reading; empty for unknown/aces with
+> neither, so every golden is unchanged. Taken by `anchor_to_sdr` (master), `anchor_hold` and `render_view`
+> (the view and the measure), and composite.frag (`anchor[64]`, `frame.w`; the UBO grows by 1 KB).
+> Tests: `tests/test_anchor_target.cpp` (5: BT.1886 is its own display reading, the anchored analytic master
+> equals the unanchored one below the knee for bt1886/hable/clip, a calibrated code keeps 60 nits, the view's
+> hold is 1); parity view case "anchored BT.1886 1000". Linux: core 249/249, ORT 260/260, app build 305/305;
+> qsb bakes all three shaders; render/ needs the Windows build (Gate B). Clip fill decision: ships on at
+> glow 0.5, the held-out optimum of its one knob over +0..+2 EV (0.412 stops vs 0.578 flat, 0.568 no dome);
+> the +0 EV and fireworks losses are release notes and roadmap 4.2 (docs/RELEASE_V1.md).
+>
+> **13 Oct 2026, night — v9 at step 20,000 on the clip benches (line G; roadmap 4.2).** `best.pt` was
+> selected on an unpushed val split and stayed at step 0 (v8's weights: same crushed rows to the digit), so
+> `step_0020000.pt` was benched as `v9s20` (`run_v9_2026_10_12.ps1 -Stage bench -Checkpoint ... -ClipOnly`).
+> Inside clipped pixels, 287 Meridian frames, error in stops, positive = candidate better, 95 % CI:
+> | | +0 EV | +1 EV | +2 EV |
+> |---|---|---|---|
+> | clip fill vs the flat inverse | -0.258 [-0.293, -0.222] | **+0.307** [+0.286, +0.326] | **+0.338** [+0.305, +0.366] |
+> | v9s20 vs the clip fill (the gate) | **+0.116** [+0.052, +0.175] PASS | -0.054 [-0.112, -0.002] FAIL | -0.066 [-0.125, -0.011] FAIL |
+> | v8 vs the flat inverse (9 Oct) | -0.359 | -0.015 | +0.002 |
+> The exposure push taught the model the clip (about +0.25 stop over the flat inverse at +1/+2, where v8
+> tied), but not past the analytic fill, and at +0 EV it is still below the flat inverse (~-0.14). Crushed
+> pixels: 1.59 to 1.63 stops worse than the inverse, 0/287 wins (v8 1.75 to 2.38). **v9 fails the gate on
+> the clip rows alone**, so real/aces/oog/mix were not benched; the clip fill stays the default and v8 the
+> optional model. Open for 1.0: the fill's +0 EV overshoot (v9 shows a smaller dome is better there).
+>
+> **13 Oct 2026, later — interactive exposure (line F).** A master exposure in stops (-3 to +3):
+> `CompositeParams::exposure_ev` / `MasterRequest::exposure_ev` / `GradeSnapshot::exposure_ev`. Part of the
+> grade: the composite multiplies by 2^ev before the Region EV bands (which read the exposed nits) and the
+> grade gain includes it, so the view's anchor scales its target and keeps the offset; the master applies it
+> in `apply_region_ev` after the anchor; the shader reads `frame.z`. 0 is bit for bit (every golden
+> unchanged). Reconstruct card slider (0.05 EV steps, one undo entry per drag, double-click resets),
+> Reconstruct > Exposure up / down a third of a stop (Ctrl+Shift+Up / Down), reset (Ctrl+Shift+0), Reset
+> reconstruction clears it; projects (`exposure_ev`, older projects 0), request JSON and sidecar
+> (`exposure_ev`, only when set), EXR `rudra:exposureEV`. Tests: `tests/test_exposure.cpp` (7), the app's
+> controls test, two `rudra-gpu-parity` cases. Core 244/244, ORT 253/253, app 56/56.
+>
+> **13 Oct 2026 — BT.1886 is the default source (line F; release row R3).** The R3 run showed the ACES
+> inverse far below plain BT.2408 placement on real SDR, so the Source picker gained BT.1886
+> (`core/source_curve`, `SourceCurve::Bt1886`, id `bt1886`): inverse `oetf709(y)^2.4`, the BT.709 video's
+> code to the power 2.4, white at 1.0 (203 nits), exact for RUDRA's reading of BT.709 video (the inverse
+> OETF); the knots ride the existing 256-knot path (composite, shader, master, parity: a new
+> `rudra-gpu-parity` case). `GradeSnapshot::source` starts on `kDefaultSource` = `bt1886`; projects and
+> requests that name none stay `unknown` (the ACES inverse), so saved projects, CLI requests and goldens
+> reproduce; the page-parity tests set `unknown` (the page has no picker). Menu: Reconstruct > Source >
+> BT.1886. Scored as R1: Meridian 35.61 dB / 8.722 JOD (+13.96 / +2.28 over the ACES inverse; BT.2408 on
+> the true BT.709 codes +14.24 / +2.29), HDRTV1K test at 720p (`compare_market.py pairs`, 117 frames) +4.16
+> / +2.11 (BT.2408 +4.31 / +2.04). The same curve on the sRGB code was measured and not shipped (-8 dB on
+> Meridian). The v4b rendered frames still favour the ACES inverse by construction. The 12 Oct Meridian
+> rows for BT.2408 and HDRTVDM were re-run on the true BT.709 codes (the external input was sRGB-coded):
+> BT.2408 +5.96 -> +14.24 dB, HDRTVDM -0.41 -> -1.38 JOD. Not measured yet: the clip fill over BT.1886.
+> Also: AppAnalytic.TheDefaultRunsNoModelAndSaysSo turns the clip fill off (since c4a6ecf the analytic
+> fields fill clipped pixels, so they are not all zero). Tests: core 237/237, ORT 246/246, app 56/56.
+>
+> **12 Oct 2026 — toward 1.0 (line F; docs/RELEASE_V1.md).** R3's open-source half
+> (`training/compare_market.py`, the frozen set through RUDRA, BT.2408, HDRTVDM; scored as R1, the
+> scorer reproducing R1's Meridian baseline to the digit): on real SDR the default ACES inverse is
+> below the plain BT.2408 mapping by 5.96 dB / 2.04 JOD and below Source = Rec.709 by 1.70 / 1.33, so
+> the default for SDR of unknown curve is a decision before 1.0 (the rendered v4b frames favour the
+> inverse by construction). The clip fill, scored the same way: Meridian unchanged, v4b stills +0.53 dB and
+> 0.14 stops better inside clipped pixels, v4b clip frames -3.09 dB / -0.22 JOD and 0.36 stops worse there. HDR10+ is in the shipped
+> encoders (gyan.dev 7.1.1 full; Homebrew's 10-bit x265). `rudra batch` runs the app's `grade` jobs
+> through rudra-native. Clip-mode CVVDP on the real clips (row 5). The release workflow publishes
+> v1.0.0 as a release; `scripts/release_v1_rc.ps1` makes each candidate.
+>
+> **12 Oct 2026 — the clip fill: clipped highlights in the analytic reconstruction (lines F and G).**
+> `core/clip_fill.{hpp,cpp}`: where the SDR clipped, the inverse left one flat ceiling (every code at or
+> above 0.995, ~1,276 nits at 0 EV). Now, from the SDR alone: (1) a channel that clipped while the others
+> did not is estimated from them and the chroma of the clean pixels around it (a smooth push-pull fill),
+> never below its ceiling; (2) a fully clipped region gets log2 luminance filled from its edge plus a
+> dome whose slope at the edge is half the glow's outside it (`glow_scale` 0.5), capped at +1.5 EV for a
+> region over 0.5 % of the frame and at 4,000 nits for a smaller one, hue from the edge; (3) a peak in
+> nits per region from the artist (`ClipOverride`). It reaches the composite as Fields (a residual and a
+> highlight mask of 1 where it changes anything), so the CPU composite, the GPU shader, masters and movie
+> exports take it unchanged; no shader edit. `analytic_fields_for(sdr, MasterRequest)` is what every
+> analytic path calls; `MasterRequest::clip_fill` (default on) and `clip_peaks` in the JSON, the EXR
+> (`rudra:clipFill`) and the sidecar (`clip_fill`); `GradeSnapshot::clip_fill/clip_peaks` undone with the
+> grade and kept in projects; Reconstruct > Fill clipped highlights / Set the peak of a clipped region… /
+> Clear clipped peaks. `rudra-native bench-clip-fill <bench>` writes it as a bench tree.
+> **Measured inside clipped pixels** (cp8_clip_ev0/1/2, 287 Meridian frames, `score_regions.py`'s
+> measure; error in stops, lower is better; glow_scale picked on scenes 1–3, reported on 4–7):
+> | | +0 EV | +1 EV | +2 EV |
+> |---|---|---|---|
+> | flat inverse, scenes 1–3 / 4–7 | 0.172 / 0.131 | 0.628 / 0.583 | 0.790 / 1.019 |
+> | clip fill (default), scenes 1–3 / 4–7 | 0.598 / 0.217 | 0.274 / 0.321 | 0.435 / 0.698 |
+> | v8 (all scenes, 9 Oct) | worse than the inverse by 0.36 | ties | ties |
+> The fill halves the error at +1 and +2 EV and **loses at +0 EV** (truth there is only ~0.2 stop above
+> the ceiling; any dome overshoots). No dome at all ties at +0 and gains little elsewhere (0.57/0.99 at
+> +1/+2). Real Meridian SDR does not clip (3e-5 % of pixels), so the fill is for over-exposed and
+> consumer/generated SDR. Cost: ~1.3 s for a 4K frame with 27 % clipped on 2 cores (fill only near the
+> clip, multithreaded); frames that do not reach code 0.97 cost one pass. Tests: `ClipFill.*` (8),
+> core suites otherwise unchanged. Not done: the Studio and the Python `rudra` CLI have no fill; movie
+> frames are Rec.2020 codes when the fill runs, so a channel clipped in 709 reads as partly clipped.
+> **v9 prepared, not run** (line G): `--exposure-push` re-renders half the samples at +0..+2 EV
+> (the benches' own render, target x 2^E) so clipped pixels are common at 0 EV;
+> `scripts/run_v9_2026_10_12.ps1` (fine-tune from v8, 20k steps); its clip rows must beat the CLIP FILL,
+> `cp8_verdicts.py --clip-against clipfill`. `tests/test_v9_clip_2026_10_12.py`.
 >
 > **11 Oct 2026, night — the static hold in playback (line F).** `shaders/hold.frag` runs
 > `ShadowSmoother::hold_pixels` in the viewer after the composite: MRT into the model target and a state

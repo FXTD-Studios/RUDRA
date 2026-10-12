@@ -16,8 +16,7 @@ Result<MasterResult> render_master(const ModelManifest& pkg, InferenceBackend& b
     if (q.analytic) {
         MasterRequest qa = q;
         qa.checkpoint.clear();
-        const int h = decoded->rgb.height(), w = decoded->rgb.width();
-        return write_master(decoded->rgb, decoded->bits, analytic_fields(h, w), FrameScalars{}, kAnalyticConstants, qa,
+        return write_master(decoded->rgb, decoded->bits, analytic_fields_for(decoded->rgb, qa), FrameScalars{}, kAnalyticConstants, qa,
                             out);
     }
     auto fr = infer_frame(backend, decoded->rgb, TileConfig{0, 0});

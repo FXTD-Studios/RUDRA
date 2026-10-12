@@ -44,6 +44,37 @@ weights: LICENSE-weights).
 
 ## Changes since beta 10 (for the next beta)
 
+- **Getting started, for 1.0.** The welcome says the model is optional, and
+  the five steps now cover the Source picker (BT.1886 by default), exposure,
+  Fill clipped highlights, the HDR10+ and Dolby Vision metadata and Hold
+  steady. They show once more after updating, then from Help > Getting started.
+
+- **The anchor follows the Source.** With Anchor on (the default), the master
+  kept mid-tones on the SDR read as an sRGB display at 203 nits, whatever the
+  Source picker, calibration or reference said, so below the anchor knee a
+  BT.1886 master came out as an sRGB one and a calibrated grey went back to
+  where it was. The anchor now reads the SDR through the picked curve with its
+  calibration or reference: BT.1886 masters are what was scored on real SDR,
+  and a calibrated point keeps its nits. On the viewer too. Unknown and ACES
+  with no calibration are unchanged, bit for bit.
+
+- **Exposure.** Reconstruct has an Exposure slider, -3 to +3 stops: the whole
+  master brighter or darker, live on the viewer, in the master, movie exports
+  and projects. It is part of the grade: after the anchor (so mid-tones keep
+  the offset), before the Region EV bands (which see the exposed nits).
+  Ctrl+Shift+Up / Down move it by a third of a stop, double-click sets it
+  back to 0; it is undone like any other control.
+
+- **A new default for SDR: BT.1886.** Reconstruct > Source has a BT.1886 entry,
+  the SDR read the way a display shows it (each BT.709 code to the power 2.4,
+  white at 203 nits), and new sessions start on it. On real SDR video with its
+  graded HDR it scored far above the old default, the ACES inverse: +14 dB and
+  +2.3 JOD on Netflix's Meridian, +4.2 dB and +2.1 JOD on HDRTV1K (docs/RESULTS.md).
+  CG renders and games made with a known tone curve still want ACES, filmic
+  or AgX in the picker. Projects saved before keep the curve they were saved
+  with, and the command line keeps the ACES inverse unless a request names
+  `"source_curve": "bt1886"`.
+
 - **Dolby Vision and HDR10+ metadata.** HDR10 and ProRes (PQ) movie exports
   now write their dynamic HDR metadata per shot (the export's own cuts) beside
   the master: `<file>_hdr10plus.json` (HDR10+, in the format x265 and
@@ -66,6 +97,9 @@ weights: LICENSE-weights).
   Before, nothing was held there.
 - Playback no longer blends a late anchor measurement from before a loop or
   a cut into the frames after it.
+- `rudra batch` (Python) runs the queues RUDRA writes: a job with the app's
+  settings (`grade`) is handed to `rudra-native video` (found on PATH, or set
+  `RUDRA_NATIVE`), and its report is checked as any other job's.
 - **Still areas play steady too.** With Clip > Hold steady within a shot,
   playback now runs the static hold that movie exports run (on the GPU, after
   the composite): where the source did not change from the frame before, how
@@ -260,8 +294,10 @@ nothing extra.
 ## Known in this beta
 
 - HDR10+ goes inside an HDR10 file only when the ffmpeg's x265 was built with
-  HDR10+ (the report says which); Dolby Vision ships as metadata files beside
-  the master, not as an RPU in the file.
+  HDR10+ (the report says which). The ffmpeg the Windows package carries
+  (gyan.dev 7.1.1 full) and Homebrew's x265 (10-bit) are; another build may
+  not be. Dolby Vision ships as metadata files beside the master, not as an
+  RPU in the file.
 - macOS: HDR output on Metal EDR, and inference on Core ML, are being
   measured on hardware; until then, check the first-run card (Help > Check the
   display and the model), which reports the display's real peak.
@@ -275,10 +311,15 @@ nothing extra.
 - Playback with the model at 24 fps depends on the GPU: the 960 px setting is
   estimated at about 27 fps on an RTX 4080 and is not yet measured there;
   slower machines keep time by skipping frames (or choose 640 px).
-- A queue with the app's settings (`grade`) runs in RUDRA; `rudra batch` in
-  Python does not know that option.
 - While playing, the scopes and the Compare readout measure each frame
   before the static hold (the picture shows it held); stopped, they agree.
+- Fill clipped highlights (on by default) gives a blown highlight a roll-off
+  above the clip. Where the real highlight was only just above the clip it
+  can overshoot (about a quarter of a stop on average), and it is visibly
+  wrong on fireworks and other small bright sparks; lower Reconstruct's
+  Strength, set the region's peak, or turn the fill off for those shots.
+- The comparison against commercial tools (Resolve, Topaz, RTX Video HDR) is
+  not published yet; the open-source one is (docs/RESULTS.md).
 
 ## Reporting
 

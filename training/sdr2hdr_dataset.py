@@ -270,6 +270,22 @@ def degrade_sdr(sdr: torch.Tensor, strength: float = 1.0) -> torch.Tensor:
     return x.clamp(0.0, 1.0)
 
 
+def exposure_push(hdr: torch.Tensor, ev: float) -> tuple[torch.Tensor, torch.Tensor, float]:
+    """(sdr, hdr x 2^ev, ev): ``hdr`` (network units, CHW) re-rendered at +ev
+    with the clip benches' own render (pipeline/sdr_render.py ACES, sRGB OETF,
+    8 bits), its target pushed by the same 2^ev and held at the network's
+    ceiling. At a 0 EV corpus the analytic inverse of the SDR is the target
+    wherever it did not clip."""
+    from pipeline.sdr_render import CURVES, _srgb_oetf
+
+    scale = 2.0 ** float(ev)
+    pushed = (hdr.clamp_min(0.0) * scale).clamp_max(DEFAULT_TARGET_CEILING)
+    scene = pushed.permute(1, 2, 0).cpu().numpy().astype(np.float64) * (NETWORK_PEAK_NITS / 203.0)
+    display = CURVES["aces"](scene)
+    code = np.clip(np.rint(_srgb_oetf(display) * 255.0), 0, 255).astype(np.float32) / 255.0
+    return torch.from_numpy(code).permute(2, 0, 1).contiguous().to(hdr.dtype), pushed, float(ev)
+
+
 def _to_tensor(image: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(image).permute(2, 0, 1).contiguous()
 
@@ -313,6 +329,31 @@ def effective_source_curve(record: dict, degraded: bool, augment: bool,
     return index
 
 
+def effective_baseline_curve(record: dict, degraded: bool, pushed: bool, augment: bool,
+                             dropout: float, rng: random.Random | None = None) -> int:
+    """The Source picker entry a sample's baseline uses (v10, 13 Oct 2026).
+
+    v10 learns its residual over the app's baseline, which is the curve the
+    artist picks (rudra/source_baseline.py), BT.1886 unless they pick another.
+    So: real SDR (video) and degraded samples ride on BT.1886, the default and
+    the answer for video (R3); a rendered sample on its own curve when the
+    picker has it (a re-rendered exposure push is ACES), else on BT.1886; and in
+    training a fraction ``dropout`` of those on BT.1886 anyway -- the artist who
+    never opens the picker -- so the model learns that case too.
+    """
+    from rudra.source_baseline import BASELINE_CURVES, DEFAULT_BASELINE, baseline_curve_index
+
+    default = baseline_curve_index(DEFAULT_BASELINE)
+    if record.get("sdr_kind") == "real" or degraded:
+        return default
+    true = "aces" if pushed else (record.get("source_curve") or record.get("sdr_curve"))
+    if true not in BASELINE_CURVES or true == "unknown":
+        return default
+    if augment and dropout > 0.0 and (rng or random).random() < dropout:
+        return default
+    return baseline_curve_index(true)
+
+
 class SDRHDRDataset(Dataset):
     def __init__(
         self,
@@ -325,6 +366,9 @@ class SDRHDRDataset(Dataset):
         max_items: int | None = None,
         deterministic_degradation: bool = False,
         source_curve_dropout: float = 0.0,
+        exposure_push: float = 0.0,
+        exposure_push_max_ev: float = 2.0,
+        baseline_dropout: float = 0.0,
     ):
         records = read_jsonl(manifest_path)
         self.records = [r for r in records if r.get("split") == split]
@@ -346,6 +390,21 @@ class SDRHDRDataset(Dataset):
         # per record, so the number is reproducible across steps and runs.
         self.deterministic_degradation = bool(deterministic_degradation)
         self.source_curve_dropout = float(source_curve_dropout)
+        # 12 Oct 2026 (v9, claude/TASK_CLIPPED_HIGHLIGHTS.md): the corpus at
+        # 0 EV barely clips (v8: median clipped fraction ~0 %), so the model
+        # never learned what is above a blown highlight. With this probability
+        # a training sample is re-rendered from its own HDR at +E EV, E uniform
+        # in [0, exposure_push_max_ev], exactly as the clip benches are
+        # (export_bench_pairs.exposure_sdr: ACES, sRGB, 8 bits) and its target
+        # scaled by 2^E: the inverse stays exact below the clip and E only
+        # moves more of the frame into it.
+        self.exposure_push = float(exposure_push)
+        self.exposure_push_max_ev = float(exposure_push_max_ev)
+        self.baseline_dropout = float(baseline_dropout)
+        if not 0.0 <= self.baseline_dropout <= 1.0:
+            raise ValueError("baseline_dropout must be between 0 and 1")
+        if not 0.0 <= self.exposure_push <= 1.0:
+            raise ValueError("exposure_push must be between 0 and 1")
         if not 0.0 <= self.source_curve_dropout <= 1.0:
             raise ValueError("source_curve_dropout must be between 0 and 1")
         if not 0.0 <= self.degradation_probability <= 1.0:
@@ -366,6 +425,11 @@ class SDRHDRDataset(Dataset):
         hdr = _resize_crop(hdr, params, self.crop_size)
         if self.augment and random.random() < 0.5:
             sdr, hdr = torch.flip(sdr, (-1,)), torch.flip(hdr, (-1,))
+        pushed = False
+        ceiling_scale = 1.0
+        if self.augment and self.exposure_push > 0.0 and random.random() < self.exposure_push:
+            sdr, hdr, ev = exposure_push(hdr, random.uniform(0.0, self.exposure_push_max_ev))
+            pushed, ceiling_scale = True, 2.0 ** ev
         clean_sdr = sdr.clone()
         degraded = False
         # Keep a substantial clean-input fraction. Otherwise a model trained
@@ -386,6 +450,8 @@ class SDRHDRDataset(Dataset):
         # The source's delivery ceiling, in the same units as the target. inf
         # means "scene-referred, nothing is censored" -- see sdr2hdr_loss.
         ceiling = record.get("ceiling_nits")
+        if ceiling and pushed:
+            ceiling = float(ceiling) * ceiling_scale
         return {
             "sdr": sdr, "clean_sdr": clean_sdr, "hdr": hdr.clamp_min(0.0),
             "ceiling": torch.tensor(
@@ -393,7 +459,12 @@ class SDRHDRDataset(Dataset):
                 dtype=torch.float32),
             "asset_id": str(record["asset_id"]), "scene_id": str(record["scene_id"]),
             "source_curve": torch.tensor(
-                effective_source_curve(record, degraded, self.augment, self.source_curve_dropout),
+                effective_source_curve(record, degraded or pushed, self.augment, self.source_curve_dropout),
+                dtype=torch.long),
+            # v10: the picker entry the baseline uses (effective_baseline_curve);
+            # read only by a model built with baseline_source.
+            "baseline_curve": torch.tensor(
+                effective_baseline_curve(record, degraded, pushed, self.augment, self.baseline_dropout),
                 dtype=torch.long),
             # 1 for a real SDR grade (sdr_kind "real", e.g. the Netflix trim
             # pass), 0 for a rendered pair. The evaluator splits its gains on

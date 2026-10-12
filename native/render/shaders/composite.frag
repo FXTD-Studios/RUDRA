@@ -15,7 +15,9 @@ layout(std140, binding = 0) uniform Composite {
     vec4 curve[72]; // curve params, packed four to a vec4: [0] exposure, [1..] knots. Up to 287
                     // knots: the CurveHead's 8, or the source curve's one per 8-bit code (3.1)
     vec4 bands[8];  // x log2(low nits), y log2(high nits), z ev, w the band's mask channel (0..3) or -1
-    vec4 frame;     // x width, y height of the frame (the masks sample by normalised position)
+    vec4 frame;     // x width, y height of the frame (the masks sample by normalised position), z the exposure gain 2^ev (13 Oct 2026),
+                    // w 1 when the anchor's target has knots
+    vec4 anchor[64];   // the anchor's target over the sRGB reading, log2, one per 8-bit code (core anchor_target_knots)
 };
 
 layout(binding = 1) uniform sampler2D sdrShadow;   // rgb SDR code values, a shadow mask
@@ -54,6 +56,20 @@ float curveLog2(float code) {
 float baselineOf(float code) {
     float b = inverseAces(srgbToLinear(code)) * model.z;
     return counts.x >= 2.0 ? b * exp2(curveLog2(code)) : b;
+}
+
+// The anchor's target light of one code (diffuse white 1.0): the sRGB
+// reading, times the Source picker's factor when it has one (13 Oct 2026;
+// core/src/composite.cpp anchor_target_log2).
+float anchorLight(float code) {
+    float l = srgbToLinear(code);
+    if (frame.w < 0.5) return l;
+    float pos = clamp(code, 0.0, 1.0) * 255.0;
+    int lo = min(int(floor(pos)), 254);
+    float frac = pos - float(lo);
+    float v0 = anchor[lo >> 2][lo & 3];
+    float v1 = anchor[(lo + 1) >> 2][(lo + 1) & 3];
+    return l * exp2(v0 + (v1 - v0) * frac);
 }
 
 // log1p / expm1 without the cancellation of log(1 + x) near zero (Kahan).
@@ -118,16 +134,17 @@ void main() {
         pred[c] = v;
     }
     float grade = 1.0;
-    if (counts.y > 0.0) {
+    if (counts.y > 0.0 || frame.z != 1.0) {
+        // The exposure first; the bands read the exposed nits (core/composite.cpp).
         vec3 nits = pred * 10000.0;
         vec2 uv = (vec2(p) + 0.5) / frame.xy;
-        grade = regionGain(nits, uv);
+        grade = (counts.y > 0.0 ? regionGain(nits * frame.z, uv) : 1.0) * frame.z;
         pred = clamp(nits * grade, vec3(0.0), vec3(model.y * 10000.0)) / 10000.0;
     }
-    // a: the SDR's Rec.2020 luma of its linearised codes, the anchor's target
+    // a: the SDR's Rec.2020 luma of its linearised codes (anchorLight), the anchor's target
     // for the display pass (roadmap 3.3), times the Region EV gain: the master
     // grades after its anchor (9 Oct 2026), so the anchor must not divide the
     // grade back out (core/view.cpp, ViewParams::grade_gain). The CPU
     // composite is rgb only and hands the gain over separately.
-    frag = vec4(pred, grade * dot(vec3(srgbToLinear(s.r), srgbToLinear(s.g), srgbToLinear(s.b)), vec3(0.2627, 0.6780, 0.0593)));
+    frag = vec4(pred, grade * dot(vec3(anchorLight(s.r), anchorLight(s.g), anchorLight(s.b)), vec3(0.2627, 0.6780, 0.0593)));
 }

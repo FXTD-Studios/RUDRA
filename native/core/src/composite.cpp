@@ -43,6 +43,41 @@ std::vector<float> baseline_curve_params(const FrameScalars& scalars, const Comp
     return merged;
 }
 
+std::vector<float> anchor_target_knots(const CompositeParams& params) {
+    const bool plain = (params.source == SourceCurve::Unknown || params.source == SourceCurve::Aces) &&
+                       params.calibration.empty() && params.reference.empty();
+    if (plain) return {};
+    PlanarBuffer ramp(3, 1, kSourceCurveKnots);
+    for (int k = 0; k < kSourceCurveKnots; ++k)
+        for (int c = 0; c < 3; ++c) ramp.at(c, 0, k) = float(k) / float(kSourceCurveKnots - 1);
+    CompositeParams curve_only;
+    curve_only.source = params.source;
+    curve_only.calibration = params.calibration;
+    curve_only.reference = params.reference;
+    const NetworkLinearImage base =
+        corrected_baseline(SdrImage(std::move(ramp)), 0.0f, baseline_curve_params(FrameScalars{}, curve_only, 0.0f));
+    std::vector<float> knots(std::size_t(kSourceCurveKnots), 0.0f);
+    for (int k = 1; k < kSourceCurveKnots; ++k) {
+        const double want = double(base.buffer().at(1, 0, k)) * (10000.0 / 203.0);
+        const double have = double(srgb_to_linear(float(k) / float(kSourceCurveKnots - 1)));
+        knots[std::size_t(k)] = (want > 0.0 && have > 0.0) ? float(std::log2(want / have)) : 0.0f;
+    }
+    knots[0] = knots[1];   // 0/0 at black: the code-1 ratio, flat into black
+    return knots;
+}
+
+float anchor_target_log2(float code, std::span<const float> knots) noexcept {
+    if (knots.size() < 2) return 0.0f;
+    const int n = int(knots.size());
+    const float pos = std::clamp(code, 0.0f, 1.0f) * float(n - 1);
+    const int lo = std::min(int(std::floor(pos)), n - 2);
+    const float frac = pos - float(lo);
+    const float v0 = knots[std::size_t(lo)], v1 = knots[std::size_t(lo + 1)];
+    return v0 + (v1 - v0) * frac;
+}
+
+double exposure_gain(double ev) noexcept { return std::isfinite(ev) ? std::exp2(ev) : 1.0; }
+
 bool any_graded(std::span<const RegionBand> bands) noexcept {
     return std::any_of(bands.begin(), bands.end(), [](const RegionBand& b) { return b.ev != 0.0; });
 }
@@ -90,8 +125,10 @@ NetworkLinearImage composite(const SdrImage& sdr, const Fields& fields, const Fr
 
     const float log_scale = model.log_scale;
     const float log_ceiling = std::log1p(model.max_hdr * log_scale);
-    const bool graded = any_graded(params.regions);
-    const bool masked = graded && params.masks && !params.masks->empty();
+    const bool banded = any_graded(params.regions);
+    const double exposure = exposure_gain(params.exposure_ev);
+    const bool graded = banded || exposure != 1.0;
+    const bool masked = banded && params.masks && !params.masks->empty();
     const double ceiling_nits = static_cast<double>(model.max_hdr) * 10000.0;
 
     NetworkLinearImage out(h, w);
@@ -126,10 +163,13 @@ NetworkLinearImage composite(const SdrImage& sdr, const Fields& fields, const Fr
             px[c] = pred;
         }
         if (graded) {
-            double nits[3] = {px[0] * 10000.0, px[1] * 10000.0, px[2] * 10000.0};
+            // The exposure first; the bands read the exposed nits (13 Oct 2026).
+            double nits[3] = {px[0] * 10000.0 * exposure, px[1] * 10000.0 * exposure, px[2] * 10000.0 * exposure};
             float mw[kMaxMaskBands];
             if (masked) params.masks->weights(int(i % std::size_t(w)), int(i / std::size_t(w)), w, h, mw);
-            const double g = region_ev_gain(nits, params.regions, params.region_softness_stops, masked ? mw : nullptr);
+            const double band = banded ? region_ev_gain(nits, params.regions, params.region_softness_stops, masked ? mw : nullptr) : 1.0;
+            const double g = band * exposure;
+            for (int c = 0; c < 3; ++c) nits[c] /= exposure;
             if (grade_gain) (*grade_gain)[i] = static_cast<float>(g);
             for (int c = 0; c < 3; ++c)
                 px[c] = static_cast<float>(std::clamp(nits[c] * g, 0.0, ceiling_nits) / 10000.0);

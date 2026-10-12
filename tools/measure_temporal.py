@@ -17,6 +17,12 @@ per cell of a 36 x 64 grid), mean and worst frame, and the change against
 
 CLIPS are files or folders (every .mp4 .mov .mkv .mxf in them). Writes
 <out>/temporal.json and <out>/temporal.md (default out: reports/temporal_<date>).
+
+--reference DIR (12 Oct 2026, STATUS row 5) also scores each master against the
+clip's HDR (DIR/<clip>_ref/*.png, 16-bit PQ BT.2020, as
+tools/make_temporal_clips.py --reference writes them) with ColorVideoVDP twice:
+as a clip (its temporal model sees flicker) and frame by frame (it cannot). The
+row 5 condition is clip JOD with the holds >= clip JOD of each frame its own.
 """
 from __future__ import annotations
 
@@ -70,13 +76,52 @@ def measure(args, clip: Path, work: Path) -> list[dict]:
             raise SystemExit(f"{clip.name} ({name}) failed:\n{run.stderr[-3000:]}")
         report = json.loads(Path(str(output) + ".json").read_text(encoding="utf-8"))
         t = report["temporal"]
-        rows.append({"clip": clip.name, "config": name, "frames": len(report["frames"]),
+        jods = cvvdp_scores(output, args.reference / f"{clip.stem}_ref", report) if args.reference else {}
+        rows.append({**jods, "clip": clip.name, "config": name, "frames": len(report["frames"]),
                      "shots": len(report["scene_cuts"]), "retention": t["retention"],
                      "flicker_ev_mean": t["flicker_ev_mean"], "flicker_ev_max": t["flicker_ev_max"],
                      "local_flicker_ev_mean": t["local_flicker_ev_mean"], "local_flicker_ev_max": t["local_flicker_ev_max"],
                      "seconds": round(time.monotonic() - started, 2)})
         output.unlink(missing_ok=True)
     return rows
+
+
+def pq_to_nits(code):
+    import numpy as np
+    m1, m2, c1, c2, c3 = 0.1593017578125, 78.84375, 0.8359375, 18.8515625, 18.6875
+    p = np.power(np.clip(code, 0.0, 1.0), 1.0 / m2)
+    return 10000.0 * np.power(np.maximum(p - c1, 0.0) / (c2 - c3 * p), 1.0 / m1)
+
+
+def cvvdp_scores(master: Path, ref_dir: Path, report: dict) -> dict:
+    """ColorVideoVDP of the HDR10 master against the clip's HDR: as a clip and per frame."""
+    import cv2
+    import numpy as np
+    import torch
+    repo = str(Path(__file__).resolve().parents[1])
+    if repo not in sys.path:
+        sys.path.insert(0, repo)
+    from rudra.hdrvdp import hdr_vdp3_clip_jod, hdr_vdp3_jod
+    refs = sorted(ref_dir.glob("*.png"))
+    if not refs:
+        raise SystemExit(f"no reference frames in {ref_dir} (tools/make_temporal_clips.py --reference)")
+    ref = np.stack([cv2.imread(str(f), cv2.IMREAD_UNCHANGED)[..., ::-1] for f in refs]).astype(np.float64) / 65535.0
+    n, h, w = ref.shape[:3]
+    # The master's PQ codes as full-range RGB in BT.2020 (the master's own primaries and transfer).
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(master), "-vf",
+                          "zscale=min=2020_ncl:rin=limited:tin=smpte2084:pin=2020:m=gbr:r=full:t=smpte2084:p=2020,format=gbrp16le,format=rgb48le", "-f", "rawvideo", "-"],
+                         capture_output=True, check=True).stdout
+    test = np.frombuffer(raw, dtype="<u2").reshape(-1, h, w, 3).astype(np.float64) / 65535.0
+    n = min(n, test.shape[0])
+    white = 203.0
+    to_t = lambda a: torch.from_numpy((pq_to_nits(a[:n]) / white).astype(np.float32)).permute(0, 3, 1, 2)
+    t, r = to_t(test), to_t(ref)
+    from fractions import Fraction
+    fps = float(Fraction(str(report.get("timing", {}).get("fps") or "24")))
+    clip, backend = hdr_vdp3_clip_jod(t, r, frames_per_second=fps, diffuse_white_nits=white)
+    frames = [hdr_vdp3_jod(t[i:i + 1], r[i:i + 1], diffuse_white_nits=white)[0] for i in range(n)]
+    return {"cvvdp_clip_jod": float(clip), "cvvdp_frame_jod": float(np.mean(frames)), "cvvdp_backend": backend,
+            "cvvdp_fps": fps}
 
 
 def change(value, against):
@@ -87,11 +132,13 @@ def change(value, against):
 
 
 def markdown(rows: list[dict], how: str) -> str:
+    jod = any("cvvdp_clip_jod" in r for r in rows)
     lines = [f"# Temporal consistency on footage ({datetime.date.today().isoformat()})", "",
              f"Run with {how}. Flicker in EV beyond the source's own change; local is per 36 x 64 cell. "
              "Change is against each frame its own.", "",
-             "| clip | frames | shots | config | flicker mean | max | local mean | max | local change | s |",
-             "|---|---:|---:|---|---:|---:|---:|---:|---:|---:|"]
+             "| clip | frames | shots | config | flicker mean | max | local mean | max | local change | s |"
+             + (" CVVDP clip | per frame |" if jod else ""),
+             "|---|---:|---:|---|---:|---:|---:|---:|---:|---:|" + ("---:|---:|" if jod else "")]
     fmt = lambda v: "n/a" if v is None else f"{v:.5f}"
     own = {}
     for r in rows:
@@ -101,7 +148,9 @@ def markdown(rows: list[dict], how: str) -> str:
         lines.append(f"| {r['clip']} | {r['frames']} | {r['shots']} | {r['config']} | {fmt(r['flicker_ev_mean'])} | "
                      f"{fmt(r['flicker_ev_max'])} | {fmt(r['local_flicker_ev_mean'])} | {fmt(r['local_flicker_ev_max'])} | "
                      f"{change(r['local_flicker_ev_mean'], base.get('local_flicker_ev_mean')) if r is not base else ''} | "
-                     f"{r['seconds']} |")
+                     f"{r['seconds']} |"
+                     + (f" {r.get('cvvdp_clip_jod', float('nan')):.3f} | {r.get('cvvdp_frame_jod', float('nan')):.3f} |"
+                        if jod else ""))
     return "\n".join(lines) + "\n"
 
 
@@ -114,6 +163,7 @@ def main(argv=None) -> int:
     p.add_argument("--analytic", action="store_true", help="--native only: the analytic reconstruction (no model)")
     p.add_argument("--grade", type=Path, help="--native only: an export settings file (the app's <file>.settings.json)")
     p.add_argument("--out", type=Path, default=Path("reports") / f"temporal_{datetime.date.today():%Y-%m-%d}")
+    p.add_argument("--reference", type=Path, help="score each master with CVVDP against <DIR>/<clip>_ref/*.png")
     p.add_argument("--extra", default="", help='more flags for every run, quoted: --extra "--peak-nits 2000"')
     args = p.parse_args(argv)
     args.extra = args.extra.split()
