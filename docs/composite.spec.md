@@ -123,8 +123,16 @@ What `ui/server.py _render_master` writes, in this order:
 1. `n = network * 10000` (float64).
 2. Region EV (section 3), then `clip(n, 0, M * 10000)`, only when graded.
 3. Anchor to the SDR (default on, knee 0.9, softness 0.04), rudra/anchor.py:
-   * `target = 203 * sum_k srgb_to_linear(s_k) w'_k`, `actual = sum_k n_k w'_k`,
-     `w' = (0.2627, 0.6780, 0.0593)` in float64.
+   * `target = 203 * sum_k L(s_k) w'_k`, `actual = sum_k n_k w'_k`,
+     `w' = (0.2627, 0.6780, 0.0593)` in float64. `L(s) = srgb_to_linear(s)`
+     for Source unknown or aces with no calibration or reference (rudra/anchor.py,
+     every master before 13 Oct 2026); otherwise (13 Oct 2026, the anchor
+     follows the Source picker) `L(s) = srgb_to_linear(s) * 2^a(s)`, `a` the
+     256 knots of `anchor_target_knots` (core/composite.cpp: log2 of the
+     picker's curve with its calibration or reference at 0 EV, without the
+     model's CurveHead, over the sRGB reading), linear between knots, fp32.
+     The view (`anchor_hold`, `render_view`) and composite.frag (`anchor[64]`,
+     `frame.w`) take the same target.
    * `want = (target + 1e-4) / (actual + 1e-4)`; `code = max_k s_k`.
    * `hold = median(want over the band)` when the band
      `knee - soft < code < knee + soft and actual > 1e-9` holds at least 64

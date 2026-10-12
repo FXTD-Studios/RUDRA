@@ -43,6 +43,39 @@ std::vector<float> baseline_curve_params(const FrameScalars& scalars, const Comp
     return merged;
 }
 
+std::vector<float> anchor_target_knots(const CompositeParams& params) {
+    const bool plain = (params.source == SourceCurve::Unknown || params.source == SourceCurve::Aces) &&
+                       params.calibration.empty() && params.reference.empty();
+    if (plain) return {};
+    PlanarBuffer ramp(3, 1, kSourceCurveKnots);
+    for (int k = 0; k < kSourceCurveKnots; ++k)
+        for (int c = 0; c < 3; ++c) ramp.at(c, 0, k) = float(k) / float(kSourceCurveKnots - 1);
+    CompositeParams curve_only;
+    curve_only.source = params.source;
+    curve_only.calibration = params.calibration;
+    curve_only.reference = params.reference;
+    const NetworkLinearImage base =
+        corrected_baseline(SdrImage(std::move(ramp)), 0.0f, baseline_curve_params(FrameScalars{}, curve_only, 0.0f));
+    std::vector<float> knots(std::size_t(kSourceCurveKnots), 0.0f);
+    for (int k = 1; k < kSourceCurveKnots; ++k) {
+        const double want = double(base.buffer().at(1, 0, k)) * (10000.0 / 203.0);
+        const double have = double(srgb_to_linear(float(k) / float(kSourceCurveKnots - 1)));
+        knots[std::size_t(k)] = (want > 0.0 && have > 0.0) ? float(std::log2(want / have)) : 0.0f;
+    }
+    knots[0] = knots[1];   // 0/0 at black: the code-1 ratio, flat into black
+    return knots;
+}
+
+float anchor_target_log2(float code, std::span<const float> knots) noexcept {
+    if (knots.size() < 2) return 0.0f;
+    const int n = int(knots.size());
+    const float pos = std::clamp(code, 0.0f, 1.0f) * float(n - 1);
+    const int lo = std::min(int(std::floor(pos)), n - 2);
+    const float frac = pos - float(lo);
+    const float v0 = knots[std::size_t(lo)], v1 = knots[std::size_t(lo + 1)];
+    return v0 + (v1 - v0) * frac;
+}
+
 double exposure_gain(double ev) noexcept { return std::isfinite(ev) ? std::exp2(ev) : 1.0; }
 
 bool any_graded(std::span<const RegionBand> bands) noexcept {

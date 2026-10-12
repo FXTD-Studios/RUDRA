@@ -82,7 +82,8 @@ void apply_region_ev(NitsFrame& nits, std::span<const RegionBand> bands, double 
 // holds it steady within a shot (video/predictor, 10 Oct 2026).
 using HoldSettle = std::function<double(double)>;
 void anchor_to_sdr(NitsFrame& nits, const SdrImage& sdr, double knee = kAnchorKnee,
-                   double softness = kAnchorSoftness, const HoldSettle& settle = {});
+                   double softness = kAnchorSoftness, const HoldSettle& settle = {},
+                   std::span<const float> target_knots = {});   // composite.hpp anchor_target_knots
 
 // cv2.GaussianBlur(src, (0,0), sigma, BORDER_REPLICATE) for one float32 plane:
 // OpenCV's kernel size (round(8 sigma + 1) | 1) and its float32 kernel.

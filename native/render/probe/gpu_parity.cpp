@@ -303,6 +303,15 @@ int main(int argc, char** argv) {
             w.anchor_knee = 0.8;
             w.anchor_hold = anchor_hold(m, sdr, 0.8);
             frame_views.emplace_back("anchored wipe knee 0.8", w);
+            // 13 Oct 2026: the anchor's target follows the Source picker (BT.1886, the default).
+            auto k = view_params(ViewMode::Image, 1000.0);
+            k.anchor = true;
+            k.anchor_knee = 0.9;
+            CompositeParams bt;
+            bt.source = SourceCurve::Bt1886;
+            k.anchor_knots = anchor_target_knots(bt);
+            k.anchor_hold = anchor_hold(m, sdr, 0.9, 0.04, nullptr, k.anchor_knots);
+            frame_views.emplace_back("anchored BT.1886 1000", k);
             // Roadmap 3.3: the mask being painted, tinted over the picture.
             auto t = view_params(ViewMode::Image, 1000.0);
             t.paint_band = 0;

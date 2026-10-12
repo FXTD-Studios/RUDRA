@@ -7,6 +7,7 @@
 #include <array>
 #include <memory>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "rudra/core/color.hpp"
@@ -70,6 +71,10 @@ struct ViewParams {
     // view keeps the grade below the knee instead of dividing it back out.
     // The composite.frag twin carries it in the target (alpha) channel.
     const std::vector<float>* grade_gain = nullptr;
+    // The anchor's target over the sRGB reading (composite.hpp
+    // anchor_target_knots, 13 Oct 2026); empty for the sRGB reading. The
+    // composite.frag twin carries it in the target channel too.
+    std::vector<float> anchor_knots;
     // Roadmap 3.3: the painted mask being edited, tinted over the picture
     // (Image mode): the band's channel of `masks`, in `paint_tint` (an sRGB
     // colour) mixed by kMaskTintMix times the mask. -1 for none.
@@ -116,7 +121,7 @@ inline constexpr std::array<float, 3> kReinterpretedColour{0.25f, 0.78f, 0.86f};
 // With `grade_gain` (composite()'s), the hold of the ungraded picture, as the
 // master computes it before its grade.
 double anchor_hold(const NetworkLinearImage& model, const SdrImage& sdr, double knee = 0.9, double softness = 0.04,
-                   const std::vector<float>* grade_gain = nullptr);
+                   const std::vector<float>* grade_gain = nullptr, std::span<const float> target_knots = {});
 
 // The anchor gain of one pixel, fp32 as the display shader computes it:
 // target the SDR's Rec.2020 luma of its linearised codes (diffuse white 1.0),

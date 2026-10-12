@@ -30,9 +30,11 @@ struct CompositeUbo {
     float counts[4];
     float curve[288];   // 72 vec4: exposure + up to 287 knots (source_curve.hpp needs 1 + 256)
     float bands[32];
-    float frame[4];     // x width, y height (3.3: the masks sample by normalised position), z exposure gain
+    float frame[4];     // x width, y height (3.3: the masks sample by normalised position), z exposure gain,
+                        // w 1 when the anchor's target has knots (13 Oct 2026)
+    float anchor[256];  // 64 vec4: anchor_target_knots, one per 8-bit code
 };
-static_assert(sizeof(CompositeUbo) == (3 * 4 + 288 + 32 + 4) * sizeof(float));
+static_assert(sizeof(CompositeUbo) == (3 * 4 + 288 + 32 + 4 + 256) * sizeof(float));
 static_assert(288 >= 1 + kSourceCurveKnots);
 
 // The View block of shaders/display.frag.
@@ -102,6 +104,10 @@ inline CompositeUbo composite_ubo(const FrameScalars& scalars, const ModelConsta
     u.frame[0] = float(std::max(frame_width, 1));
     u.frame[1] = float(std::max(frame_height, 1));
     u.frame[2] = float(exposure_gain(params.exposure_ev));   // 1: no exposure (13 Oct 2026)
+    // The anchor's target follows the Source picker (13 Oct 2026); none: the sRGB reading.
+    const std::vector<float> knots = anchor_target_knots(params);
+    u.frame[3] = knots.size() == 256 ? 1.0f : 0.0f;
+    if (knots.size() == 256) std::copy(knots.begin(), knots.end(), u.anchor);
     return u;
 }
 
@@ -200,14 +206,27 @@ inline std::vector<float> rgba_of(const PlanarBuffer& rgb) {
 // The model target as the composite shader writes it: rgb, alpha the SDR's
 // Rec.2020 luma of its linearised codes (the anchor's target, roadmap 3.3);
 // alpha 1 without an SDR.
-inline std::vector<float> model_rgba(const PlanarBuffer& rgb, const SdrImage* sdr) {
+inline std::vector<float> model_rgba(const PlanarBuffer& rgb, const SdrImage* sdr,
+                                     std::span<const float> anchor_knots = {}) {
     std::vector<float> out = rgba_of(rgb);
     if (!sdr) return out;
     const PlanarBuffer& s = sdr->buffer();
     const std::size_t n = rgb.plane_size();
-    for (std::size_t i = 0; i < n; ++i)
-        out[i * 4 + 3] = 0.2627f * srgb_to_linear(s.plane(0)[i]) + 0.6780f * srgb_to_linear(s.plane(1)[i]) +
-                         0.0593f * srgb_to_linear(s.plane(2)[i]);
+    if (anchor_knots.empty()) {
+        for (std::size_t i = 0; i < n; ++i)
+            out[i * 4 + 3] = 0.2627f * srgb_to_linear(s.plane(0)[i]) + 0.6780f * srgb_to_linear(s.plane(1)[i]) +
+                             0.0593f * srgb_to_linear(s.plane(2)[i]);
+        return out;
+    }
+    // The anchor's target follows the Source picker (13 Oct 2026): render_view's light.
+    for (std::size_t i = 0; i < n; ++i) {
+        float t = 0.0f;
+        for (int k = 0; k < 3; ++k) {
+            const float v = s.plane(k)[i];
+            t += kRec2020Luma[std::size_t(k)] * (srgb_to_linear(v) * std::exp2(anchor_target_log2(v, anchor_knots)));
+        }
+        out[i * 4 + 3] = t;
+    }
     return out;
 }
 

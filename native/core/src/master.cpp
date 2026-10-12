@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 
+#include "rudra/core/composite.hpp"
 #include "rudra/core/gamut.hpp"
 
 namespace rudra {
@@ -63,7 +64,8 @@ void apply_region_ev(NitsFrame& nits, std::span<const RegionBand> bands, double 
     }
 }
 
-void anchor_to_sdr(NitsFrame& nits, const SdrImage& sdr, double knee, double softness, const HoldSettle& settle) {
+void anchor_to_sdr(NitsFrame& nits, const SdrImage& sdr, double knee, double softness, const HoldSettle& settle,
+                   std::span<const float> target_knots) {
     assert(nits.height() == sdr.height() && nits.width() == sdr.width());
     assert(knee > 0.0 && knee < 1.0);
     const std::size_t n = nits.plane_size();
@@ -75,7 +77,9 @@ void anchor_to_sdr(NitsFrame& nits, const SdrImage& sdr, double knee, double sof
         double target = 0.0, actual = 0.0, mx = -1.0;
         for (int c = 0; c < 3; ++c) {
             const double v = s.plane(c)[i];
-            target += srgb_to_linear_d(v) * kLuma2020[c];
+            double light = srgb_to_linear_d(v);
+            if (!target_knots.empty()) light *= std::exp2(double(anchor_target_log2(float(v), target_knots)));
+            target += light * kLuma2020[c];
             actual += nits.plane(c)[i] * kLuma2020[c];
             mx = std::max(mx, v);
         }

@@ -198,7 +198,8 @@ Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, con
     g.nits = nits_from_network(g.network);
     // The grade goes LAST (core/master.cpp render_master_pixels, ui/server.py
     // since 9 Oct 2026): before the anchor, the anchor divided it back out.
-    if (q.anchor) anchor_to_sdr(g.nits, sdr, q.anchor_knee, kAnchorSoftness, settle_hold);
+    // The anchor follows the Source picker, its calibration and reference (13 Oct 2026).
+    if (q.anchor) anchor_to_sdr(g.nits, sdr, q.anchor_knee, kAnchorSoftness, settle_hold, anchor_target_knots(cp));
     if (q.carry_chroma) carry_source_chroma(g.nits, sdr, q.chroma_knee);
     if (q.settle_grain) settle_highlight_grain(g.nits, sdr, q.anchor_knee);
     apply_region_ev(g.nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0, cp.masks.get(), q.exposure_ev);

@@ -132,8 +132,10 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   **ProRes 4444** (graded PQ, or scene-referred ACEScct / ARRI LogC4) with
   the audio. Exports run in a queue you can stop and resume (the export
   sheet's Queue button shows it).
-- **Anchor to source exposure** keeps mid-tones where the SDR had them; the
-  **Anchor knee** says where that lets go.
+- **Anchor to source exposure** keeps mid-tones where the SDR had them, read
+  through the Source you picked (BT.1886 reads the SDR as a BT.1886 display
+  shows it) and your calibration or reference; the **Anchor knee** says where
+  that lets go.
 - HDR10 and ProRes (PQ) exports write their **Dolby Vision and HDR10+
   metadata** per shot beside the file: `<file>_hdr10plus.json`,
   `<file>_dovi_generate.json` (for `dovi_tool generate` or your finishing

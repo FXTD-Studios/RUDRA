@@ -57,7 +57,7 @@ FrameMeasure measure_frame(const SdrImage& sdr, const Fields& fields, const Fram
     out.model = composite(sdr, fields, scalars, model, params, &grade_gain);
     out.anchor_knee = anchor_knee;
     // The hold of the picture before its grade: the master anchors, then grades.
-    out.anchor_hold = anchor_hold(out.model, sdr, anchor_knee, 0.04, &grade_gain);
+    out.anchor_hold = anchor_hold(out.model, sdr, anchor_knee, 0.04, &grade_gain, anchor_target_knots(params));
     out.highlight.assign(fields.highlight.plane(0), fields.highlight.plane(0) + n);
     out.shadow.assign(fields.shadow.plane(0), fields.shadow.plane(0) + n);
     out.sdr8.resize(n * 3);
