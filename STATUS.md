@@ -74,6 +74,23 @@
 > train loss fell; whether that is overfitting or the 32-record slice is what
 > `training/sweep_val_checkpoints.py` answers. `shadow_v1` stays the default.
 >
+> **13 Oct 2026 — v10 prepared, not run (line G; docs/MODEL_PLAN_V10.md).** What v4 to v9 got wrong, fixed in
+> the training: (1) the residual rode on the ACES inverse, while on real SDR the BT.1886 inverse alone is +14 dB
+> over it (R3) and is 1.0's default: `--baseline-source` puts it on the Source picker's curve
+> (`rudra/source_baseline.py`, the app's 256 knots, held to native to 1e-5; BT.1886 for real and degraded samples,
+> a rendered sample's own curve, half of those on BT.1886 anyway, the exposure push on ACES); (2) crushed blacks:
+> `--crushed-hold` charges any change there; (3) the real val was an animation: `pipeline/build_v10_manifest.py`
+> holds out live-action shots of Nocturne and Sparks, Cosmos Laundromat to train; (4) best.pt was chosen on crops
+> in log-PSNR: `--best-metric bench_gain` (`training/bench_val.py`) scores full frames as the gate does (PU21 on
+> real and rendered val, the clipped error at +1/+2 EV, the crushed error) against the picker's baseline. Gate
+> written first, `training/cp10_verdicts.py`: real above the BT.1886 baseline (PU21 and CVVDP CIs above zero),
+> aces/oog/mix not worse, clip rows above the CLIP FILL at +0/+1/+2 EV, crushed not worse anywhere.
+> `export_bench_pairs.py --baseline-curve / --picker-baseline` writes the trees. `scripts/run_v10_2026_10_13.ps1`
+> (smoke, train 20k from v9 step 20,000, bench; -ClipOnly first). Tests: `tests/test_v10_2026_10_13.py` (8),
+> and an end-to-end CPU run on a synthetic corpus (manifest, 30 steps with bench selection, export with the
+> picker tree, region scoring). If v10 passes, the app needs the tile graph to take the picker's knots and a
+> re-run of inference on a picker change (docs/MODEL_PLAN_V10.md).
+>
 > **13 Oct 2026, late night — the anchor follows the Source picker; the clip fill ships on (line F, R3).**
 > The master's anchor (on by default) put every pixel below its knee on the sRGB reading of its code at
 > 203 nits whatever the picker said: an anchored BT.1886 master was the sRGB one below the knee, and the
