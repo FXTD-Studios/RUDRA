@@ -1,5 +1,36 @@
 # RUDRA — Training & Research Status
 
+> **Resume point:** read [CURRENT_HANDOFF](docs/CURRENT_HANDOFF.md) before
+> continuing in another model/session. Latest milestone: deterministic
+> repeatability passed; next: frozen-checkpoint quality diagnosis, no new training.
+
+> **Production roadmap audit, 13 Oct 2026:** local v10 completed 20k steps;
+> its clip-first gate **FAIL** was reproduced from existing CSVs, also under
+> supplemental scene bootstrap. Earlier "prepared, not run" entries below are
+> historical. All 728 real v10 validation rows appeared in v8/v9 training.
+> Current weights remain research-only. Master roadmap and current execution:
+> [PRODUCTION_PROGRESS](docs/PRODUCTION_PROGRESS.md),
+> [audit](docs/ai/RUDRA_EXECUTION_AUDIT.md).
+
+> **Internal scratch pilot update, 14 Oct 2026:** the approved paired
+> pre-clamp preservation experiment completed 200 steps per arm within budget.
+> Pushed crushed-region error improved, but real PU21 and clipped highlights
+> worsened; neither checkpoint is promoted. See the
+> [verified result](docs/ai/PRESERVATION_AB_RESULT.md). The analytic default
+> and the internal-only licensing restriction remain.
+
+> **Region-focus pilot, 14 Oct 2026:** both approved 200-step arms completed
+> within budget. Highlights improved, but real PU21 and pushed crushed scores
+> worsened; neither is promoted. Matched control inputs also exposed numerical
+> repeatability limits. [Result and next action](docs/ai/REGION_FOCUS_RESULT.md).
+
+> **Deterministic repeatability, 14 Oct 2026:** the revised pair completed
+> 200 steps per arm with exact matching inputs, training records, final model
+> tensors and benchmark reports. Independent verification passed; combined
+> post-preflight time 18.19 min. Quality still fails the analytic baseline
+> (real PU21 -1.29023 dB); no promotion or release clearance.
+> [Verified result](docs/ai/REPEATABILITY_MARGIN_RESULT.md).
+
 > **Updated 12 Oct 2026** (the newest entries are dated; the table is from 7 Oct). The snapshot below the line dates from 22 Aug and is
 > still accurate for what it covers. Read this section first: the repository
 > holds **five separate lines of work** that share a name, and "is RUDRA

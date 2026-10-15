@@ -17,6 +17,7 @@ import math
 from statistics import median
 import os
 import random
+import platform
 import sys
 import time
 from collections import Counter
@@ -36,7 +37,7 @@ from rudra.sdr2hdr import (  # noqa: E402
     temporal_spatial_loss,
 )
 from training.sdr2hdr_dataset import (  # noqa: E402
-    SDRHDRDataset, SDRHDRVideoDataset, corpus_ev_of, read_jsonl)
+    PUSH_BASELINES, SDRHDRDataset, SDRHDRVideoDataset, corpus_ev_of, read_jsonl)
 
 
 def seed_everything(seed: int) -> None:
@@ -45,6 +46,42 @@ def seed_everything(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def configure_determinism(enabled: bool) -> None:
+    """Opt-in process-wide strict mode, configured before CUDA initialization."""
+    if not enabled:
+        return
+    if torch.cuda.is_initialized():
+        raise RuntimeError("Deterministic training requires a fresh process before CUDA initialization")
+    if os.environ.get("CUBLAS_WORKSPACE_CONFIG") not in (None, ":4096:8", ":16:8"):
+        raise ValueError("Unsupported CUBLAS_WORKSPACE_CONFIG for deterministic training")
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    torch.use_deterministic_algorithms(True, warn_only=False)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cuda.matmul.allow_tf32 = False
+
+
+def runtime_record(device: torch.device) -> dict:
+    """Stable runtime fields for paired-run comparisons and checkpoints."""
+    return {
+        "python": platform.python_version(), "platform": platform.platform(),
+        "torch": str(torch.__version__), "cuda": torch.version.cuda,
+        "cudnn": torch.backends.cudnn.version() if device.type == "cuda" else None,
+        "device": str(device),
+        "gpu": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
+        "autocast": "bfloat16" if device.type == "cuda" else "disabled",
+        "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
+        "deterministic_warn_only": torch.is_deterministic_algorithms_warn_only_enabled(),
+        "cudnn_benchmark": torch.backends.cudnn.benchmark,
+        "cudnn_deterministic": torch.backends.cudnn.deterministic,
+        "cudnn_tf32": torch.backends.cudnn.allow_tf32,
+        "matmul_tf32": torch.backends.cuda.matmul.allow_tf32,
+        "cublas_workspace_config": os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
+        "cpu_threads": torch.get_num_threads(),
+    }
 
 
 def manifest_hash(path: str | Path) -> str:
@@ -108,9 +145,13 @@ def _picker_of(model: torch.nn.Module, batch: dict, device: torch.device) -> dic
     return {"baseline_curve": batch["baseline_curve"].to(device, non_blocking=True)}
 
 
+@torch.no_grad()
 def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
                    max_batches: int = 8, shadow_chroma_weight: float = 0.15,
                    shadow_smoothness_weight: float = 0.02) -> dict[str, float]:
+    from training.bench_val import pu_psnr_per_frame
+
+    was_training = model.training
     model.eval()
     sums = {
         "loss": 0.0, "log_l1": 0.0, "highlight": 0.0, "shadow": 0.0,
@@ -134,6 +175,7 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
     # gain_db can read +1.6 dB while the rendered rows alone are worse than the
     # inverse -- which is what the PU21/CVVDP benches then report. (v7, 7 Oct.)
     kind_sums = {"real": [0.0, 0.0, 0], "rendered": [0.0, 0.0, 0]}
+    pu_sums = {"all": [0.0, 0.0, 0], "real": [0.0, 0.0, 0], "rendered": [0.0, 0.0, 0]}
     count = 0
     for batch in loader:
         sdr, target = batch["sdr"].to(device), batch["hdr"].to(device)
@@ -158,6 +200,11 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
         # part of the model and is scored separately as curve_baseline_psnr_log.
         analytic = output.analytic_baseline if output.analytic_baseline is not None \
             else output.baseline
+        per_pu = pu_psnr_per_frame(output.hdr * 10000.0, target * 10000.0)
+        per_base_pu = pu_psnr_per_frame(analytic * 10000.0, target * 10000.0)
+        pu_sums["all"][0] += float(per_pu.sum())
+        pu_sums["all"][1] += float(per_base_pu.sum())
+        pu_sums["all"][2] += sdr.shape[0]
         if output.curve_params is not None:
             cb_mse = F.mse_loss(torch.log1p(output.baseline.clamp_min(0.0) * 16.0),
                                 target_log).clamp_min(1e-12)
@@ -179,6 +226,9 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
                     kind_sums[kind][0] += float(per_psnr[flag].sum())
                     kind_sums[kind][1] += float(per_base_psnr[flag].sum())
                     kind_sums[kind][2] += n
+                    pu_sums[kind][0] += float(per_pu[flag].sum())
+                    pu_sums[kind][1] += float(per_base_pu[flag].sum())
+                    pu_sums[kind][2] += n
         recovery = torch.maximum(output.highlight_mask, output.shadow_mask)
         preserved = output.baseline + recovery * (output.hdr - output.baseline)
         pres_mse = F.mse_loss(torch.log1p(preserved.clamp_min(0.0) * 16.0),
@@ -187,9 +237,16 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
         count += 1
         if max_batches > 0 and count >= max_batches:
             break
-    model.train()
+    model.train(was_training)
     metrics = {key: value / max(count, 1) for key, value in sums.items()}
     metrics["eval_batches"] = count
+    for kind, (psnr, base, n) in pu_sums.items():
+        prefix = "" if kind == "all" else f"{kind}_"
+        metrics[f"{prefix}pu_frames"] = n
+        if n:
+            metrics[f"{prefix}psnr_pu"] = psnr / n
+            metrics[f"{prefix}baseline_psnr_pu"] = base / n
+            metrics[f"{prefix}pu_gain_db"] = (psnr - base) / n
     for kind, (psnr, base, n) in kind_sums.items():
         metrics[f"{kind}_frames"] = n
         if n:
@@ -316,6 +373,7 @@ def build_loaders(args: argparse.Namespace):
                               exposure_push=args.exposure_push,
                               exposure_push_max_ev=args.exposure_push_max_ev,
                               baseline_dropout=args.baseline_dropout,
+                              push_baseline=getattr(args, "push_baseline", "picker"),
                               **common)
         val = SDRHDRDataset(args.manifest, split="val", augment=False,
                             augmentation_strength=0.0, max_items=args.max_val_items,
@@ -396,10 +454,17 @@ def check_source_curve_args(args: argparse.Namespace) -> None:
           + f"; dropout {args.source_curve_dropout:g}, degraded samples train as unknown")
 
 
-def train(args: argparse.Namespace) -> Path:
+def train(args: argparse.Namespace, observer=None) -> Path:
+    from training.preservation import validate_args
+    validate_args(args)
+    configure_determinism(getattr(args, "deterministic", False))
+    from pipeline.commercial_preflight import training_preflight
+    commercial_provenance = training_preflight(args)
+    if observer is not None:
+        observer("ready", 0, {})
     seed_everything(args.seed)
     device = torch.device(args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu"))
-    if device.type == "cuda":
+    if device.type == "cuda" and not getattr(args, "deterministic", False):
         torch.backends.cuda.matmul.allow_tf32 = True
     train_loader, val_loader, val_hard_loader = build_loaders(args)
     image_model: SDR2HDRNet | None = None
@@ -407,10 +472,14 @@ def train(args: argparse.Namespace) -> Path:
     # corpus's own render, exposure included. Read from the manifest, never
     # assumed: until 16 Sep 2026 this constructor took the class default, the
     # legacy -1 EV, whatever the corpus said.
-    corpus_ev = corpus_ev_of(args.manifest)
+    corpus_ev = corpus_ev_of(args.manifest, real_only_ev=getattr(args, "real_corpus_ev", None))
     if getattr(args, "exposure_push", 0.0) > 0.0 and abs(float(corpus_ev)) > 1e-6:
         raise SystemExit(f"--exposure-push re-renders at the corpus exposure + E and needs a 0 EV corpus; "
                          f"{args.manifest} is at {corpus_ev:+.2f} EV")
+    if getattr(args, "push_baseline", "picker") != "picker" and (
+            not args.baseline_source or getattr(args, "exposure_push", 0.0) <= 0.0):
+        raise SystemExit("--push-baseline render routes exposure pushes; it needs --baseline-source "
+                         "and --exposure-push > 0")
     if args.source_curve:
         check_source_curve_args(args)
     bench_val = None
@@ -424,6 +493,7 @@ def train(args: argparse.Namespace) -> Path:
         bench_val = BenchVal.from_manifest(args.manifest, "val", real_frames=n, rendered_frames=n,
                                            max_side=args.bench_val_max_side,
                                            push_evs=tuple(float(e) for e in args.bench_val_push.split(",") if e))
+        bench_val.push_pu = getattr(args, "bench_push_pu", False)
         print(f"[bench-val] {len(bench_val.records)} val frames at long side {args.bench_val_max_side}, "
               f"push {args.bench_val_push} EV; selection {args.best_metric}")
     if args.mode == "image":
@@ -511,6 +581,12 @@ def train(args: argparse.Namespace) -> Path:
             best = float(checkpoint.get("best", best))
 
     config = vars(args).copy()
+    config["runtime"] = runtime_record(device)
+    config["training_use"] = "commercial-candidate" if commercial_provenance else "research"
+    if commercial_provenance and commercial_provenance.get("scope") == "internal-pilot":
+        config["training_use"] = "internal-pilot"
+    if commercial_provenance:
+        config["commercial_provenance"] = commercial_provenance
     config.update({
         "manifest_sha256": manifest_hash(args.manifest),
         "corpus_ev": corpus_ev,
@@ -526,6 +602,12 @@ def train(args: argparse.Namespace) -> Path:
     optimizer.zero_grad(set_to_none=True)
     model.train()
     started = time.time()
+    baseline_counts = Counter()
+
+    def write_bench_report(step):
+        if bench_val is not None:
+            with (output_dir / "bench_val.jsonl").open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"step": step, **bench_val.last_report}) + "\n")
 
     def image_eval() -> tuple[dict, float]:
         """Both held-out conditions, and the score best.pt is selected on.
@@ -583,6 +665,9 @@ def train(args: argparse.Namespace) -> Path:
         print(f"[baseline] {json.dumps(initial_metrics)}")
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps({"step": 0, "eval": initial_metrics, "baseline": True}) + "\n")
+        write_bench_report(0)
+        if observer is not None:
+            observer("eval", 0, initial_metrics)
 
     for step in range(start_step + 1, args.steps + 1):
         try:
@@ -594,7 +679,10 @@ def train(args: argparse.Namespace) -> Path:
         amp = torch.autocast(device_type="cuda", dtype=torch.bfloat16) if device.type == "cuda" else contextlib.nullcontext()
         with amp:
             if args.mode == "image":
+                capture = (getattr(args, "crushed_hold_domain", "postclamp") == "preclamp"
+                           or getattr(args, "preservation_diagnostics", False))
                 output = model(sdr, source_curve=_source_of(model, batch, device),
+                               **({"record_preclamp": True} if capture else {}),
                                **_picker_of(model, batch, device))
                 losses = sdr2hdr_loss(
                     output, sdr, target, args.shadow_chroma_weight,
@@ -604,6 +692,7 @@ def train(args: argparse.Namespace) -> Path:
                     baseline_weight=args.baseline_weight if args.curve_head else 0.0,
                     region_focus=args.region_focus,
                     crushed_hold=args.crushed_hold,
+                    crushed_hold_domain=getattr(args, "crushed_hold_domain", "postclamp"),
                 )
                 loss = losses["total"]
             else:
@@ -625,16 +714,34 @@ def train(args: argparse.Namespace) -> Path:
                 losses = {"total": loss, "log_l1": spatial, "temporal": temporal,
                           "censored_fraction": censored_fraction}
             scaled_loss = loss / args.grad_accum
+        if observer is not None:
+            observer("loss", step, {"loss": loss, "output": output.hdr if args.mode == "image" else pred})
         scaled_loss.backward()
         did_optimizer_step = step % args.grad_accum == 0 or step == args.steps
         if did_optimizer_step:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm,
+                                                      error_if_nonfinite=observer is not None)
+            diagnostics = {}
+            if getattr(args, "preservation_diagnostics", False):
+                from training.preservation import hold_diagnostics
+                diagnostics = {"gradient_norm_before_clip": grad_norm,
+                               **hold_diagnostics(output, sdr)}
+                if observer is not None:
+                    observer("gradients", step, diagnostics)
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
             scheduler.step()
 
         record = {"step": step, "lr": scheduler.get_last_lr()[0],
                   **{key: float(value.detach()) for key, value in losses.items()}}
+        if did_optimizer_step and getattr(args, "preservation_diagnostics", False):
+            record.update({key: float(value.detach()) for key, value in diagnostics.items()})
+        if args.mode == "image" and args.baseline_source:
+            from rudra.source_baseline import BASELINE_CURVES
+            baseline_counts.update(BASELINE_CURVES[int(i)] for i in batch["baseline_curve"].tolist())
+            # Counts cover consumed training samples in this invocation, not
+            # prefetched samples, validation passes, or a previous resumed run.
+            record["baseline_curve_counts_since_start"] = dict(baseline_counts)
         if step == 1 or step % args.log_every == 0:
             rate = step * args.batch_size / max(time.time() - started, 1e-6)
             print(f"[{args.mode}] step {step}/{args.steps} loss={record['total']:.5f} samples/s={rate:.2f}")
@@ -650,6 +757,7 @@ def train(args: argparse.Namespace) -> Path:
             print(f"[eval] step {step}: {json.dumps(metrics)}")
             with log_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps({"step": step, "eval": metrics}) + "\n")
+            write_bench_report(step)
             score_history.append(score)
             smoothed = selection_score(score_history, args.best_smoothing)
             with log_path.open("a", encoding="utf-8") as handle:
@@ -668,6 +776,8 @@ def train(args: argparse.Namespace) -> Path:
                 "config": config,
             }
             _atomic_save(payload, output_dir / f"step_{step:07d}.pt")
+        if observer is not None and (step % args.eval_every == 0 or step == args.steps):
+            observer("eval", step, metrics)
     return output_dir / "best.pt"
 
 
@@ -675,6 +785,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("image", "temporal"), default="image")
     parser.add_argument("--manifest", required=True)
+    parser.add_argument("--commercial-evidence", help="Reviewed evidence JSON bound to this manifest; requires scratch image training")
+    parser.add_argument("--real-corpus-ev", type=float, default=None,
+                        help="Explicit analytic/augmentation EV for an all-real corpus; rejected for mixed/rendered data")
     parser.add_argument("--output-dir", default="hdrdata/checkpoints/sdr2hdr_image")
     parser.add_argument("--image-checkpoint")
     parser.add_argument("--best-eval", choices=("hard", "clean"), default="hard",
@@ -740,13 +853,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--baseline-dropout", type=float, default=0.5,
                         help="with --baseline-source: share of rendered samples on BT.1886 (the artist who "
                              "never opens the picker) instead of their own curve")
+    parser.add_argument("--push-baseline", choices=PUSH_BASELINES, default="picker",
+                        help="with --baseline-source and --exposure-push: 'picker' (default, as before) "
+                             "routes pushed renders like any rendered sample; 'render' (experimental) "
+                             "always gives a pushed sample its own ACES render's baseline")
     parser.add_argument("--crushed-hold", type=float, default=0.0,
                         help="v10: weight of the penalty on changing crushed pixels (max code <= 2/255); "
                              "0 = as before")
+    parser.add_argument("--crushed-hold-domain", choices=("postclamp", "preclamp"), default="postclamp",
+                        help="Experimental preclamp hold preserves gradients at saturation; default retains historical loss")
+    parser.add_argument("--preservation-diagnostics", action="store_true",
+                        help="Image training: log held-region saturation and parameter gradient norms")
     parser.add_argument("--bench-val-frames", type=int, default=0,
                         help="v10: real and rendered val frames (each) for the full-frame bench validation "
                              "(training/bench_val.py); 0 = off unless --best-metric bench_gain (then 48)")
     parser.add_argument("--bench-val-max-side", type=int, default=960)
+    parser.add_argument("--bench-push-pu", action="store_true",
+                        help="Report pushed full-frame PU21 without changing checkpoint selection")
     parser.add_argument("--bench-val-push", default="1,2",
                         help="EVs the real val frames are re-rendered at for the clip row")
     parser.add_argument("--baseline-weight", type=float, default=0.25,
@@ -799,6 +922,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-items", type=int)
     parser.add_argument("--max-val-items", type=int)
     parser.add_argument("--seed", type=int, default=20260715)
+    parser.add_argument("--deterministic", action="store_true",
+                        help="Strict deterministic algorithms; use a fresh process; may reduce speed")
     return parser.parse_args()
 
 
