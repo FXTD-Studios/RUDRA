@@ -38,6 +38,18 @@ check again; Help > Getting started shows the steps.
   opens a numbered sequence; a movie (`.mov`, `.mp4`, `.mxf`, `.mkv`, …)
   opens as a shot of its own. Dropping files or a folder on the window does
   the same.
+- **Stills keep their colour and orientation.** A still's own colour tag
+  (an ICC profile, a PNG cICP / sRGB / cHRM chunk) sets the primaries the
+  master converts from: Display P3 (phones), Adobe RGB (1998), Rec.2020 or
+  sRGB / Rec.709. Untagged files are read as sRGB / Rec.709, as before. A
+  profile RUDRA does not recognise is read as sRGB / Rec.709, and you should
+  check the colours. The EXIF orientation of a phone or camera photo is
+  applied, so portrait shots come out upright. The viewer still shows the
+  picture as Rec.709; the master converts correctly.
+- **Limited-range video above white** (codes 236–254, "super-whites") is
+  clipped at decode in 1.0, and Fill clipped highlights rebuilds it. If that
+  detail matters, export the clip with data levels and the super-whites kept
+  before opening it (docs/SUPER_WHITES_DESIGN.md).
 - **Reconstruct > Source** says how the SDR was made. This matters more than
   anything else: the baseline is the inverse of that curve.
   - *BT.1886* (the default): SDR as a display shows it, each code to the
@@ -146,6 +158,12 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
 
 - **Master EXR** (M): ACES 2065-1 (or linear Rec.2020) EXR, a frame, all
   frames or a range, with a JSON sidecar describing exactly how it was made.
+  The EXR and the sidecar both record:
+  - the app version and build commit (`rudra:appVersion`,
+    `rudra:buildCommit`);
+  - the source file's SHA-256 (`rudra:sourceSha256`);
+  - with the model on, the checkpoint's SHA-256 (`rudra:checkpointSha256`);
+  - whether the network ran in tiles (`rudra:tiled`).
 - For a movie, the export sheet adds **HDR10**, **HLG**, **ProRes 422 HQ** and
   **ProRes 4444** (graded PQ, or scene-referred ACEScct / ARRI LogC4) with
   the audio. Exports run in a queue you can stop and resume (the export

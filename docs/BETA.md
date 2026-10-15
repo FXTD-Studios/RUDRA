@@ -44,6 +44,16 @@ weights: LICENSE-weights).
 
 ## Changes since beta 10 (for the next beta)
 
+- **Stills: colour profile and orientation.** ICC profiles (PNG, JPEG,
+  TIFF, WebP) and PNG cICP / sRGB / cHRM set the master's source primaries.
+  - Display P3, Adobe RGB (1998), Rec.2020 and sRGB / Rec.709 are recognised.
+  - Untagged files are unchanged.
+  - An unknown profile is read as sRGB / Rec.709.
+  - EXIF orientation is applied.
+- **Master provenance.** Masters record the app version, build commit, source
+  SHA-256 and checkpoint SHA-256. `rudra:tiled` now reports whether the
+  network ran in tiles.
+
 - **Source: BT.1886 shadows (opt-in).** A new Source picker entry: BT.1886
   from SDR code 40 up, and below it the black levels measured on real graded
   HDR. BT.1886 stays the default. Held-out scores against BT.1886 (PU21):
@@ -299,6 +309,12 @@ ffmpeg yet). `RUDRA_FFMPEG_DIR` points either at another build;
 nothing extra.
 
 ## Known in this beta
+
+- Limited-range video detail above code 235 (super-whites) is clipped at
+  decode; the clip fill rebuilds it. A design for keeping it is in
+  docs/SUPER_WHITES_DESIGN.md.
+- The viewer shows a P3 or Adobe RGB still as Rec.709. The master converts it
+  correctly.
 
 - HDR10+ goes inside an HDR10 file only when the ffmpeg's x265 was built with
   HDR10+ (the report says which). The ffmpeg the Windows package carries

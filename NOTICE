@@ -30,6 +30,23 @@ Attribution required by the training sources
 Netflix Open Content -- Chimera (CC BY 4.0)
     https://opencontent.netflix.com/
 
+Netflix Open Content, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/),
+used to train sdr2hdr_image_v8 and to measure the "BT.1886 shadows" Source
+curve (native/core/src/source_curve.cpp), with Meridian held out for testing:
+    Nocturne -- Netflix Open Content
+    Sparks -- Netflix Open Content
+    Meridian -- Netflix Open Content
+    Sol Levante -- Netflix Open Content and Production I.G; director Akira Saitoh
+    Cosmos Laundromat -- (CC) Blender Foundation | gooseberry.blender.org;
+        director Mathieu Auvray; original film CC BY 3.0
+        (https://creativecommons.org/licenses/by/3.0/). HDR re-grade:
+        Netflix and Fotokem's Keep Me Posted.
+    https://opencontent.netflix.com/
+    RUDRA sampled frames from these titles, converted them (BT.709 SDR and
+    P3-D65 PQ HDR to BT.2020, linear-light downsampling, letterbox crops)
+    and measured them; it does not redistribute the footage. No rights in
+    logos or trademarks are claimed, and no endorsement is implied.
+
 Poly Haven HDRIs (CC0)
     https://polyhaven.com/license
 
