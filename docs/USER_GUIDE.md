@@ -44,6 +44,13 @@ check again; Help > Getting started shows the steps.
     power 2.4, white at 203 nits. Right for graded and broadcast video, and
     the best measured on real SDR by far (docs/RESULTS.md). On a still read
     as sRGB the mid-tones come out about a third of a stop darker.
+  - *BT.1886 shadows* (opt-in): BT.1886 from SDR code 40 up, with the blacks
+    real HDR masters keep below it. Measured on five Netflix Open Content
+    titles, real graded HDR sits 2–7 stops above code^2.4 in deep shadow.
+    Try it when the default looks crushed in the darks. On held-out real SDR
+    it scored +0.04 to +1.3 dB PU21 over BT.1886, but on very dark scenes it
+    can lift blacks about half a stop above some grades, so judge it on an
+    HDR display (docs/ai/SHADOW_CORRECTION_RESULT.md).
   - *Unknown (ACES inverse)*: RUDRA's default before 13 Oct 2026; projects
     saved with it keep it.
   - *ACES*, *filmic (Hable)*, *AgX*: CG renders and games with those tone mappers.

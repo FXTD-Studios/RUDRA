@@ -79,6 +79,8 @@ const std::vector<ActionSpec> kActions = {
     // Roadmap 3.1: the Source picker. Ids are core/source_curve.hpp's.
     {"source-unknown", "Source: unknown (ACES inverse)", "", "source:unknown", O::Native, E::Always, ""},
     {"source-bt1886", "Source: BT.1886 (display, the default)", "", "source:bt1886", O::Native, E::Always, ""},
+    // 14 Oct 2026, opt-in: BT.1886 with the measured real-SDR blacks below code 40.
+    {"source-bt1886_shadows", "Source: BT.1886, real-SDR shadows", "", "source:bt1886_shadows", O::Native, E::Always, ""},
     // 13 Oct 2026: the master exposure, in thirds of a stop.
     {"exposure-down", "Exposure: down a third of a stop", "", "", O::Native, E::Always, "Ctrl+Shift+Down"},
     {"exposure-up", "Exposure: up a third of a stop", "", "", O::Native, E::Always, "Ctrl+Shift+Up"},
@@ -129,7 +131,7 @@ const std::vector<MenuSpec> kMenus = {
      {"first", "prev", "next", "last", "-", "play", "-", ">While playing", "playback-side-0", "playback-side-960",
       "playback-side-640", "-", "playback-realtime", "<", "steady-shots"}},
     {"Reconstruct",
-     {"use-model", "-", "clip-fill", "clip-peak", "clip-peaks-clear", "-", ">Source", "source-bt1886", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
+     {"use-model", "-", "clip-fill", "clip-peak", "clip-peaks-clear", "-", ">Source", "source-bt1886", "source-bt1886_shadows", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
       "exposure-down", "exposure-up", "exposure-reset", "-", "mode-all", "mode-highlights", "mode-shadows", "mode-off", "-", "preserve", "-", "strength-down", "strength-up"}},
     {"Measure", {"copy-metrics", "copy-scopes", "-", "remeasure"}},
     {"Deliver", {"master", "-", "container-aces", "container-linear", "-", "copy-delivery"}},

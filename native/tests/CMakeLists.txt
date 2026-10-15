@@ -1,6 +1,11 @@
 add_executable(rudra_tests test_platform.cpp test_core.cpp test_source_curve.cpp test_reference_fit.cpp test_masks.cpp test_anchor_view.cpp test_anchor_target.cpp test_composite.cpp test_clip_fill.cpp test_exposure.cpp test_delivery.cpp test_qc.cpp test_queue.cpp test_sequence.cpp test_viewer.cpp test_viewport.cpp test_engine.cpp test_theme.cpp test_actions.cpp test_session.cpp test_project.cpp test_scope_draw.cpp test_readouts.cpp test_compare.cpp test_render_plan.cpp test_master_job.cpp test_model_catalog.cpp test_copy_texts.cpp test_video.cpp test_video_predict.cpp test_video_encode.cpp test_video_qc.cpp test_sequence_encode.cpp test_ffmpeg_check.cpp test_log_encode.cpp)
 target_link_libraries(rudra_tests PRIVATE rudra::rudra_core rudra::rudra_deliver rudra::rudra_media rudra::rudra_video rudra::rudra_engine
                       nlohmann_json::nlohmann_json GTest::gtest_main)
+# Prefer the headers of the linked GTest over unrelated dependency prefixes
+# (e.g. a Conda nlohmann_json whose include dir also holds another GTest),
+# as app/CMakeLists.txt does for rudra_app_tests.
+target_include_directories(rudra_tests BEFORE PRIVATE
+                           $<TARGET_PROPERTY:GTest::gtest,INTERFACE_INCLUDE_DIRECTORIES>)
 target_compile_definitions(rudra_tests PRIVATE RUDRA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
                            RUDRA_THEME_DIR="${RUDRA_THEME_DIR}" RUDRA_THEME_CSS="${RUDRA_THEME_CSS}"
                            RUDRA_APP_DIR="${PROJECT_SOURCE_DIR}/app" RUDRA_CMAKE_COMMAND="${CMAKE_COMMAND}")

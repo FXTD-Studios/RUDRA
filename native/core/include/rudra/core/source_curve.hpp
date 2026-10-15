@@ -27,12 +27,16 @@
 
 namespace rudra {
 
-enum class SourceCurve : std::uint8_t { Unknown, Aces, Hable, Agx, CameraLog, Clip, Bt1886 };
+// BT.1886 shadows (14 Oct 2026, opt-in) is BT.1886 from SDR code 40 up and,
+// below it, the median HDR the real Netflix Open Content trims hold per code
+// (docs/ai/SHADOW_CORRECTION_RESULT.md): real masters keep blacks well above
+// code^2.4. Appended last so every stored id and index keeps its meaning.
+enum class SourceCurve : std::uint8_t { Unknown, Aces, Hable, Agx, CameraLog, Clip, Bt1886, Bt1886Shadows };
 
 inline constexpr int kSourceCurveKnots = 256;   // one knot per 8-bit code
 
 // The id in params(), the sidecar and the CLI: unknown, aces, hable, agx,
-// camera_log, clip, bt1886. Round-trips through parse_source_curve.
+// camera_log, clip, bt1886, bt1886_shadows. Round-trips through parse_source_curve.
 std::string_view source_curve_id(SourceCurve c) noexcept;
 std::optional<SourceCurve> parse_source_curve(std::string_view id) noexcept;
 // Every curve, in the order the picker shows them.
@@ -49,7 +53,8 @@ float source_curve_forward(SourceCurve c, float scene_linear) noexcept;
 
 // Its inverse: display-linear (clamped to 0.995, as inverse_aces_approx) ->
 // scene-linear. Unknown and Aces are inverse_aces_approx exactly; BT.1886 is
-// bt709_oetf(display)^2.4 exactly (no table).
+// bt709_oetf(display)^2.4 exactly (no table). BT.1886 shadows is BT.1886 at
+// and above code 40 and its measured table below (log2-linear between codes).
 float source_curve_inverse(SourceCurve c, float display_linear) noexcept;
 
 // The correction over the ACES inverse: [exposure 0, then kSourceCurveKnots

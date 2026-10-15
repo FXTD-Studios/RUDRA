@@ -37,8 +37,31 @@ constexpr Pin kPins[] = {
 TEST(SourceCurve, IdsRoundTrip) {
     for (SourceCurve c : all_source_curves()) EXPECT_EQ(parse_source_curve(source_curve_id(c)), c);
     EXPECT_FALSE(parse_source_curve("narkowicz"));
-    EXPECT_EQ(all_source_curves().size(), 7u);
+    EXPECT_EQ(all_source_curves().size(), 8u);
     EXPECT_EQ(source_curve_id(SourceCurve::Bt1886), "bt1886");
+    EXPECT_EQ(source_curve_id(SourceCurve::Bt1886Shadows), "bt1886_shadows");
+    // Appended last: every stored enum value keeps its meaning.
+    EXPECT_EQ(int(SourceCurve::Bt1886), 6);
+    EXPECT_EQ(int(SourceCurve::Bt1886Shadows), 7);
+}
+
+// 14 Oct 2026: BT.1886 shadows is BT.1886 from code 40 up, brighter below it,
+// rising at every code, and the measured table at the codes it was fitted at.
+TEST(SourceCurve, Bt1886ShadowsIsBt1886AboveTheKneeAndLiftedBelow) {
+    const auto at = [](SourceCurve c, int code) { return source_curve_inverse(c, srgb_to_linear(float(code) / 255.0f)); };
+    for (int code = 40; code < 256; ++code)
+        EXPECT_EQ(at(SourceCurve::Bt1886Shadows, code), at(SourceCurve::Bt1886, code)) << code;
+    for (int code = 1; code < 40; ++code) {
+        EXPECT_GT(at(SourceCurve::Bt1886Shadows, code), at(SourceCurve::Bt1886, code)) << code;
+        EXPECT_GT(at(SourceCurve::Bt1886Shadows, code + 1), at(SourceCurve::Bt1886Shadows, code)) << code;
+    }
+    EXPECT_EQ(at(SourceCurve::Bt1886Shadows, 0), 0.0f);
+    // Pinned from tools/shadow_correction_eval.py (fit_v3.json): code 1, 20, 39 in log2 scene.
+    EXPECT_NEAR(std::log2(at(SourceCurve::Bt1886Shadows, 1)), -14.685428f, 2e-3f);
+    EXPECT_NEAR(std::log2(at(SourceCurve::Bt1886Shadows, 20)), -10.013963f, 2e-3f);
+    EXPECT_NEAR(std::log2(at(SourceCurve::Bt1886Shadows, 39)), -8.253048f, 2e-3f);
+    // About 0.2 nits at code 20 against BT.1886's 0.05.
+    EXPECT_NEAR(at(SourceCurve::Bt1886Shadows, 20) * 203.0f, 0.1964f, 2e-3f);
 }
 
 TEST(SourceCurve, ForwardMatchesThePipeline) {

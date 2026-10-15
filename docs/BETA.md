@@ -44,6 +44,13 @@ weights: LICENSE-weights).
 
 ## Changes since beta 10 (for the next beta)
 
+- **Source: BT.1886 shadows (opt-in).** A new Source picker entry: BT.1886
+  from SDR code 40 up, and below it the black levels measured on real graded
+  HDR. BT.1886 stays the default. Held-out scores against BT.1886 (PU21):
+  Sparks +0.04 / +0.08 dB, Meridian +1.30 dB, every scene above zero. On very
+  dark scenes it can lift blacks about half a stop above some grades.
+  Projects and requests can name it as `"source_curve": "bt1886_shadows"`.
+
 - **Getting started, for 1.0.** The welcome says the model is optional, and
   the five steps now cover the Source picker (BT.1886 by default), exposure,
   Fill clipped highlights, the HDR10+ and Dolby Vision metadata and Hold

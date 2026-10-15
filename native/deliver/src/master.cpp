@@ -169,7 +169,7 @@ Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, con
     auto mode = mode_of(q.recovery_mode);
     if (!mode) return mode.error();
     const auto source = parse_source_curve(q.source_curve);
-    if (!source) return make_error(ErrorCode::InvalidArgument, "source_curve must be unknown, bt1886, aces, hable, agx, camera_log, or clip", q.source_curve);
+    if (!source) return make_error(ErrorCode::InvalidArgument, "source_curve must be unknown, bt1886, bt1886_shadows, aces, hable, agx, camera_log, or clip", q.source_curve);
     CompositeParams cp;
     cp.mode = *mode;
     cp.strength = static_cast<float>(q.strength);
