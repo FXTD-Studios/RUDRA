@@ -1718,6 +1718,7 @@ MasterRequest MainWindow::master_request() const {
     MasterRequest q;
     q.analytic = !use_model_;
     q.checkpoint = use_model_ && manifest_ ? manifest_->name : std::string();
+    q.checkpoint_sha256 = use_model_ && manifest_ ? manifest_->source_sha256 : std::string();
     q.clip_fill = session_.grade.clip_fill;
     q.clip_peaks = session_.grade.clip_peaks;
     q.preserve_outside = session_.grade.preserve;
@@ -1784,12 +1785,14 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
             if (!d) return d.error();
             if (!backend) {   // the analytic reconstruction: no network, the clip fill unless it is off
                 Fields fields = analytic_fields_for(d->rgb, q);
-                return MasterFrame{std::move(d->rgb), d->bits, std::move(fields), FrameScalars{}};
+                return MasterFrame{std::move(d->rgb), d->bits, std::move(fields), FrameScalars{}, *file, false,
+                                   primaries_id(d->colour.primaries)};
             }
             std::lock_guard lock(*mu);
             auto fr = infer_frame(*backend, d->rgb, TileConfig{0, 0});   // full resolution, untiled
             if (!fr) return fr.error();
-            return MasterFrame{std::move(d->rgb), d->bits, std::move(fr->fields), std::move(fr->scalars)};
+            return MasterFrame{std::move(d->rgb), d->bits, std::move(fr->fields), std::move(fr->scalars), *file, fr->tiled,
+                               primaries_id(d->colour.primaries)};
         };
 #else
         say("This build has no still decode (RUDRA_WITH_OPENCV=OFF).");
