@@ -2364,10 +2364,44 @@ TEST(AppHelp, GettingStartedTheGuideAndTips) {
     w.run("getting-started");
     ASSERT_NE(w.sheet(), nullptr);
     EXPECT_EQ(w.sheet()->windowTitle(), "Getting started");
-    QStringList keys;
-    for (auto* l : w.sheet()->findChildren<QLabel*>())
-        if (l->property("role").toString() == "value") keys << l->text();
-    EXPECT_EQ(keys.mid(0, 5), (QStringList{"1  Source", "2  Calibrate", "3  Reconstruct", "4  Check", "5  Deliver"}));
+    auto* pages = w.sheet()->findChild<QStackedWidget*>("guidePages");
+    auto* next = w.sheet()->findChild<QPushButton*>("guideNext");
+    auto* back = w.sheet()->findChild<QPushButton*>("guideBack");
+    ASSERT_NE(pages, nullptr);
+    ASSERT_NE(next, nullptr);
+    ASSERT_NE(back, nullptr);
+    EXPECT_EQ(pages->count(), 5);
+    EXPECT_EQ(pages->currentIndex(), 0);
+    EXPECT_FALSE(back->isEnabled());
+    if (const auto capture = qEnvironmentVariable("RUDRA_GUIDE_CAPTURE"); !capture.isEmpty()) {
+        w.sheet()->resize(980, 640);
+        QCoreApplication::processEvents();
+        ASSERT_TRUE(w.sheet()->grab().save(capture));
+    }
+    next->click();
+    EXPECT_EQ(pages->currentIndex(), 1);
+    back->click();
+    EXPECT_EQ(pages->currentIndex(), 0);
+    auto* deliver = w.sheet()->findChild<QPushButton*>("guideStep4");
+    ASSERT_NE(deliver, nullptr);
+    deliver->click();
+    EXPECT_EQ(pages->currentIndex(), 4);
+    EXPECT_EQ(next->text(), "Start working");
+    EXPECT_TRUE(deliver->isChecked());
+    // Clicking instructional content no longer dismisses the guide.
+    QMouseEvent click(QEvent::MouseButtonPress, QPointF(20, 20), QPointF(20, 20),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(w.sheet(), &click);
+    EXPECT_TRUE(w.sheet()->isVisible());
+    next->click();
+    EXPECT_FALSE(w.sheet()->isVisible());
+    w.run("getting-started");
+    EXPECT_EQ(w.sheet()->findChild<QStackedWidget*>("guidePages")->currentIndex(), 0);
+    w.sheet()->findChild<QPushButton*>("guideClose")->click();
+    EXPECT_FALSE(w.sheet()->isVisible());
+    w.run("getting-started");
+    QTest::keyClick(w.sheet(), Qt::Key_Escape);
+    EXPECT_FALSE(w.sheet()->isVisible());
     // Once per edition of the steps: a beta user (who saw the old ones) sees RUDRA 1.0's once.
     QSettings().setValue("help/gettingStartedShown", true);
     w.show_getting_started_once();
