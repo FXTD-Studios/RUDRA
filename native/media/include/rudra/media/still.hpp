@@ -1,8 +1,10 @@
 #pragma once
 // Still SDR frames at full precision. Port of rudra/decode.py decode_sdr: the
 // same decoder (OpenCV imgcodecs, IMREAD_UNCHANGED, so no silent 8-bit
-// conversion and no EXIF rotation), the same normalisation by the container's
-// maximum, the same refusal of scene-linear float, the same honest bit depth.
+// conversion), the same normalisation by the container's maximum, the same
+// refusal of scene-linear float, the same honest bit depth. Since 16 Oct 2026
+// (roadmap 1.1) the file's own colour tag and EXIF orientation are read too
+// (still_metadata.hpp): the orientation is applied, the primaries reported.
 
 #include <cstdint>
 #include <filesystem>
@@ -10,6 +12,7 @@
 #include <string>
 
 #include "rudra/core/image.hpp"
+#include "rudra/media/still_metadata.hpp"
 #include "rudra/platform/result.hpp"
 
 namespace rudra {
@@ -19,6 +22,7 @@ struct DecodedStill {
     int bits = 8;              // effective bits: an 8-bit frame padded into 16 reports 8
     int distinct_codes = 0;    // distinct values in the green channel as stored
     std::string source;        // which decoder read it
+    StillColour colour;        // its ICC / cICP / sRGB tag and EXIF orientation (applied)
     bool truncated_to_8bit() const noexcept { return bits <= 8; }
 };
 
