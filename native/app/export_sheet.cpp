@@ -13,6 +13,8 @@
 #include <QVBoxLayout>
 
 #include <functional>
+#include <initializer_list>
+#include <utility>
 #include <map>
 
 #include "main_window.hpp"
@@ -52,8 +54,7 @@ public:
         setEnabled(offered);
         setCursor(offered ? Qt::PointingHandCursor : Qt::ArrowCursor);
         setToolTip(offered ? QString()
-                           : "For a movie: open one and it goes to the queue. A folder of frames goes out as EXR here, "
-                             "and to HDR10 or ProRes with rudra-native deliver.");
+                           : "For a movie or a folder of frames. A single still goes out as EXR.");
     }
     void set_on(bool on) {
         setProperty("on", on);
@@ -144,6 +145,25 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
         h->addWidget(seg);
         cv->addWidget(enc_row_);
     }
+    {
+        // A folder of frames has no clock of its own: the movie's frame rate.
+        fps_row_ = new QWidget(card);
+        fps_row_->setObjectName("exportFpsRow");
+        fps_row_->setProperty("role", "field");
+        auto* h = new QHBoxLayout(fps_row_);
+        h->setContentsMargins(0, 8, 0, 8);
+        h->addWidget(label("Frame rate", {}, "key", fps_row_));
+        h->addStretch(1);
+        fps_ = new QComboBox(fps_row_);
+        fps_->setObjectName("exportFps");
+        for (const auto& [text, value] : std::initializer_list<std::pair<const char*, double>>{
+                 {"23.976", 24000.0 / 1001.0}, {"24", 24.0}, {"25", 25.0}, {"29.97", 30000.0 / 1001.0},
+                 {"30", 30.0}, {"48", 48.0}, {"50", 50.0}, {"59.94", 60000.0 / 1001.0}, {"60", 60.0}})
+            fps_->addItem(text, value);
+        fps_->setCurrentIndex(1);
+        h->addWidget(fps_);
+        cv->addWidget(fps_row_);
+    }
     signal_ = label("", "exportSignal", {}, card);
     frames_ = label("", "exportFrames", {}, card);
     dest_ = label("", "exportDest", {}, card);
@@ -204,6 +224,8 @@ bool is_video_format(const QString& id) { return id == "hdr10" || id == "hlg" ||
 bool is_prores(const QString& id) { return id == "prores" || id == "prores4444"; }
 }  // namespace
 
+double ExportSheet::fps() const { return fps_ ? fps_->currentData().toDouble() : 24.0; }
+
 void ExportSheet::set_encoding(const QString& e) {
     if (e != "pq" && e != "acescct" && e != "logc4") return;
     encoding_ = e;
@@ -217,7 +239,7 @@ QString ExportSheet::video_format() const {
 
 void ExportSheet::pick(const QString& id) {
     if (is_video_format(id)) {
-        if (!w_->shot_is_video()) return;
+        if (!w_->shot_is_video() && !w_->shot_is_frame_folder()) return;
         picked_ = id;
         refresh();
         return;
@@ -230,7 +252,9 @@ void ExportSheet::pick(const QString& id) {
 }
 
 void ExportSheet::refresh() {
-    const bool movie = w_->shot_is_video();
+    const bool folder = !w_->shot_is_video() && w_->shot_is_frame_folder();
+    const bool movie = w_->shot_is_video() || folder;
+    if (folder) encoding_ = "pq";   // from frames: the graded PQ targets only
     for (const char* id : {"hdr10", "hlg", "prores", "prores4444"})
         if (auto it = tiles_.find(id); it != tiles_.end()) static_cast<Tile*>(it->second)->set_offered(movie);
     if (!(movie && is_video_format(picked_))) picked_ = w_->container() == "linear" ? "exr-linear" : "exr-aces";
@@ -247,7 +271,8 @@ void ExportSheet::refresh() {
     const QString dir = w_->findChild<QLineEdit*>("renderDir")->text().trimmed();
     const QString name = w_->findChild<QLineEdit*>("renderName")->text().trimmed();
     const bool prores = is_prores(picked_);
-    enc_row_->setVisible(prores);
+    enc_row_->setVisible(prores && !folder);
+    fps_row_->setVisible(folder && is_video_format(picked_));
     if (enc_seg_) enc_seg_->set_on(encoding_);
     const QString pr = picked_ == "prores4444" ? "ProRes 4444" : "ProRes 422 HQ 10-bit";
     const bool log = prores && encoding_ != "pq";
@@ -263,13 +288,21 @@ void ExportSheet::refresh() {
                          : encoding_ == "acescct" ? "ACEScct · AP1 · " + pr + " · scene-referred"
                          : encoding_ == "logc4"   ? "LogC4 · ARRI Wide Gamut 4 · " + pr + " · scene-referred"
                                                   : "PQ · Rec.2020 · " + pr);
-        frames_->setText(QStringLiteral("All %1, as a movie with its audio").arg(frames.size()));
-        const QString file = (name.isEmpty() ? QString::fromStdString(w_->shot_video()->path.stem().string()) + "_" +
-                                                   video_format()
-                                             : name + (log ? "_" + encoding_ : QString())) +
-                             (picked_.startsWith("prores") ? ".mov" : ".mp4");
-        dest_->setText(dir.isEmpty() ? QStringLiteral("choose a folder on the Deliver tab")
-                                     : QDir::toNativeSeparators(dir) + QDir::separator() + file);
+        const QString ext = picked_.startsWith("prores") ? ".mov" : ".mp4";
+        if (folder) {
+            frames_->setText(QStringLiteral("All %1, mastered as EXR, then as a movie (no audio)").arg(frames.size()));
+            const QString base = w_->frames_movie_base(video_format());
+            dest_->setText(dir.isEmpty() ? QStringLiteral("choose a folder on the Deliver tab")
+                                         : QDir::toNativeSeparators(dir) + QDir::separator() + base + ext);
+        } else {
+            frames_->setText(QStringLiteral("All %1, as a movie with its audio").arg(frames.size()));
+            const QString file = (name.isEmpty() ? QString::fromStdString(w_->shot_video()->path.stem().string()) + "_" +
+                                                       video_format()
+                                                 : name + (log ? "_" + encoding_ : QString())) +
+                                 ext;
+            dest_->setText(dir.isEmpty() ? QStringLiteral("choose a folder on the Deliver tab")
+                                         : QDir::toNativeSeparators(dir) + QDir::separator() + file);
+        }
     } else {
         signal_->setText(picked_ == "exr-aces" ? "Scene linear · AP0 · half" : "Scene linear · Rec.2020 · half");
         auto* mode = w_->findChild<QComboBox*>("renderMode");
@@ -283,6 +316,10 @@ void ExportSheet::refresh() {
 }
 
 void ExportSheet::export_now() {
+    if (is_video_format(picked_) && !w_->shot_is_video()) {
+        if (w_->export_frames_to_movie(video_format(), fps())) accept();
+        return;
+    }
     if (is_video_format(picked_)) {
         if (w_->queue_video_export(video_format())) {
             accept();

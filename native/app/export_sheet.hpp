@@ -5,12 +5,14 @@
 // the folder and the name) and Master EXR, so a render from the sheet is the
 // same render as one from the tab. EXR (ACES or linear) is written here; for a
 // movie, HDR10, HLG and ProRes 422 HQ go to the queue (Phase 4, step 11) and
-// the queue window shows them to the end.
+// the queue window shows them to the end. For a folder of frames they are
+// mastered as a linear sequence and encoded after it (16 Oct 2026).
 
 #include <QDialog>
 
 #include <map>
 
+class QComboBox;
 class QLabel;
 
 namespace rudra::app {
@@ -30,13 +32,15 @@ public:
     QString encoding() const { return encoding_; }
     QString video_format() const;  // the delivery format the queue gets, e.g. "prores4444_logc4"
     void export_now();           // Master EXR, or the movie's export queued; then close
+    double fps() const;          // a folder's movie: the frame rate picked
 
 private:
     MainWindow* w_;
     QString picked_ = "exr-aces";
     QString encoding_ = "pq";
     QLabel *title_ = nullptr, *sub_ = nullptr, *signal_ = nullptr, *frames_ = nullptr, *dest_ = nullptr, *hint_ = nullptr;
-    QWidget* enc_row_ = nullptr;
+    QWidget *enc_row_ = nullptr, *fps_row_ = nullptr;
+    QComboBox* fps_ = nullptr;
     Seg* enc_seg_ = nullptr;   // no Q_OBJECT: held here, not found with findChild
     std::map<QString, QWidget*> tiles_;
 };

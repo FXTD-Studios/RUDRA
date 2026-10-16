@@ -5,6 +5,7 @@
 #include "playback.hpp"
 
 #include "rudra/video/ffmpeg_check.hpp"
+#include "rudra/deliver/sequence_encode.hpp"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -258,6 +259,8 @@ MainWindow::~MainWindow() {
     if (model_worker_.joinable()) model_worker_.join();   // a package still loading
     if (stats_worker_.joinable()) stats_worker_.join();   // a measurement in flight uses the frame
     master_job_.reset();   // cancels and waits: it uses the backend
+    encode_cancel_ = true;
+    if (encode_worker_.joinable()) encode_worker_.join();   // a movie being encoded from mastered frames
     play_.stop();
     engine_.reset();   // joins the worker before the backend goes
 }
@@ -402,6 +405,11 @@ void MainWindow::bind_handlers() {
         if (mastering()) {   // while it renders, the button stops it after this frame
             master_job_->cancel();
             findChild<QLabel*>("renderStatus")->setText("Stopping after this frame\u2026");
+            return;
+        }
+        if (encoding_movie_) {
+            encode_cancel_ = true;
+            findChild<QLabel*>("renderStatus")->setText("Stopping the movie\u2026");
             return;
         }
         master();
@@ -1749,21 +1757,22 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     if (!injected && (needs_model() || frames_.empty())) return;   // !state.live || !current()
     if (mastering()) return;                                    // state.busy
     auto* dir = findChild<QLineEdit*>("renderDir");
-    const QString folder = dir->text().trimmed();
+    const bool to_movie = !injected && frames_movie_.has_value();   // export_frames_to_movie's frames
+    const QString folder = to_movie ? from_path(frames_movie_->frames_dir) : dir->text().trimmed();
     if (folder.isEmpty()) {
         say("Choose a render folder first.");
         dir->setFocus();
         return;
     }
-    const bool sequence = findChild<QComboBox*>("renderMode")->currentData().toString() == "sequence";
+    const bool sequence = to_movie || findChild<QComboBox*>("renderMode")->currentData().toString() == "sequence";
     std::vector<std::filesystem::path> sources;
     if (!injected) sources = sequence ? frames_ : std::vector<std::filesystem::path>{frames_[std::size_t(current_)]};
     const std::size_t n = injected ? (sequence ? count : 1) : sources.size();
     RenderPlan plan;
     plan.render_dir = folder.toStdString();
-    plan.render_name = findChild<QLineEdit*>("renderName")->text().trimmed().toStdString();
+    plan.render_name = to_movie ? frames_movie_->name : findChild<QLineEdit*>("renderName")->text().trimmed().toStdString();
     plan.render_count = int(n);
-    plan.frame_start = findChild<QSpinBox*>("renderStart")->value();
+    plan.frame_start = to_movie ? 0 : findChild<QSpinBox*>("renderStart")->value();
     plan.sequence = sequence;
     auto targets = master_targets(plan);
     if (!targets) {
@@ -1774,7 +1783,8 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     log("Render destination: " + QString::fromStdString(targets->front().string()) +
         (targets->size() > 1 ? " \u2026 " + QString::fromStdString(targets->back().string()) : QString()));
 
-    const MasterRequest q = master_request();
+    MasterRequest q = master_request();
+    if (to_movie) q.container = "linear";   // Rec.2020 scene linear, what deliver reads
     const ModelConstants model = frame_constants();
     if (!prepare) {
 #ifdef RUDRA_HAVE_STILL_DECODE
@@ -1837,6 +1847,11 @@ void MainWindow::master_finished(const MasterOutcome& o, const QString& folder) 
         status->setText(QStringLiteral("Rendered %1 frame(s) to %2").arg(o.completed).arg(folder));
     }
     status->show();
+    if (frames_movie_) {
+        FramesMovie job = std::move(*frames_movie_);
+        frames_movie_.reset();
+        if (!o.error && !o.cancelled) encode_frames_movie(std::move(job));
+    }
     delivered_ += int(o.completed);
     findChild<QLabel*>("colDelivered")->setText(QString::number(delivered_));
     btn_master_->setText("Master EXR");   // busy(false)
@@ -2351,6 +2366,152 @@ bool MainWindow::queue_video_export(const QString& format) {
     save_queues();
     say("Queued " + label + ": " + QString::fromStdString(output.string()));
     return true;
+}
+
+QString MainWindow::frames_movie_base(const QString& format) const {
+    QString name = findChild<QLineEdit*>("renderName")->text().trimmed();
+    if (name.isEmpty()) name = shot_title();
+    name += "_" + format;
+    for (QChar& c : name)
+        if (!(c.isLetterOrNumber() && c.unicode() < 128) && c != '_' && c != '.' && c != '-') c = '_';
+    return name;
+}
+
+bool MainWindow::export_frames_to_movie(const QString& format, double fps) {
+    auto* status = findChild<QLabel*>("renderStatus");
+    auto say = [this, status](const QString& t) {
+        status->setText(t);
+        status->setVisible(!t.isEmpty());
+        log(t);
+    };
+    const SequenceTarget* target = find_sequence_target(format.toStdString());
+    if (!target) {
+        say("Unknown movie format: " + format);
+        return false;
+    }
+    if (!shot_is_frame_folder()) {
+        say("Open a folder of frames first: a still goes out as EXR.");
+        return false;
+    }
+    if (mastering() || encoding_movie_) {
+        say("A render is running: wait for it, or stop it with the Master EXR button.");
+        return false;
+    }
+    if (needs_model()) {
+        say("Open a model package first, or turn off Reconstruct > Use the model.");
+        return false;
+    }
+    if (!(fps > 0.0 && fps <= 240.0)) {
+        say("The frame rate must be between 0 and 240 fps.");
+        return false;
+    }
+    const QString dir = findChild<QLineEdit*>("renderDir")->text().trimmed();
+    if (dir.isEmpty()) {
+        say("Choose a render folder first.");
+        return false;
+    }
+    const QString name = frames_movie_base(format);
+    const std::filesystem::path out_dir = to_path(dir);
+    std::filesystem::path output = out_dir / (name.toStdString() + target->suffix);
+    const std::filesystem::path frames_dir = out_dir / (name.toStdString() + "_frames");
+    std::error_code ec;
+    if (std::filesystem::exists(output, ec)) {
+        say(QString::fromStdString(output.filename().string()) + " is already there; nothing is replaced. Change the name.");
+        return false;
+    }
+    if (std::filesystem::exists(frames_dir, ec) && !std::filesystem::is_empty(frames_dir, ec)) {
+        say(QString::fromStdString(frames_dir.filename().string()) +
+            " is already there; nothing is replaced. Change the name, or move that folder.");
+        return false;
+    }
+    // What this ffmpeg can do, before anything is written.
+    auto caps = probe_ffmpeg();
+    if (!caps) {
+        say(QString::fromStdString(caps.error().message));
+        return false;
+    }
+    const bool prores = target->suffix == ".mov";
+    if (!(prores ? caps->prores_ks : caps->libx265)) {
+        say(QString::fromStdString(std::string("This FFmpeg build has no ") + (prores ? "prores_ks" : "libx265") + " (" +
+                                   caps->version + ")"));
+        return false;
+    }
+    std::filesystem::create_directories(frames_dir, ec);
+    if (ec) {
+        say("Could not make " + from_path(frames_dir) + ": " + QString::fromStdString(ec.message()));
+        return false;
+    }
+    frames_movie_ = FramesMovie{format, frames_dir, output, name.toStdString(), fps};
+    master();   // the frames first; master_finished hands them to the encoder
+    if (!mastering()) {
+        frames_movie_.reset();
+        return false;
+    }
+    log("Movie export: mastering " + QString::number(frames_.size()) + " frames to " + from_path(frames_dir) +
+        ", then " + QString::fromStdString(target->note));
+    return true;
+}
+
+void MainWindow::encode_frames_movie(FramesMovie job) {
+    auto* status = findChild<QLabel*>("renderStatus");
+    auto paths = list_linear_frames(job.frames_dir);
+    if (!paths) {
+        status->setText("Movie export stopped: " + QString::fromStdString(paths.error().message));
+        status->show();
+        return;
+    }
+    if (encode_worker_.joinable()) encode_worker_.join();
+    SequenceEncodeOptions o;
+    o.target = job.format.toStdString();
+    o.fps = job.fps;
+    o.peak_nits = 1000.0;   // the video export's peak (video/convert.hpp)
+    o.source = Primaries::Rec2020;
+    encode_cancel_ = false;
+    encoding_movie_ = true;
+    btn_master_->setText("Encoding…");
+    btn_master_->setToolTip("Click to stop the movie; the mastered frames stay");
+    status->setText("Measuring " + QString::number(paths->size()) + " frames for the movie…");
+    status->show();
+    QPointer<MainWindow> self(this);
+    encode_worker_ = std::thread([self, job, o, paths = std::move(*paths), cancel = &encode_cancel_]() mutable {
+        auto progress = [self](const LinearDeliveryProgress& p) {
+            const QString t = QStringLiteral("%1 %2 / %3").arg(p.encoding ? "Encoding" : "Measuring").arg(p.done).arg(p.total);
+            QMetaObject::invokeMethod(qApp, [self, t] {
+                if (self) self->findChild<QLabel*>("renderStatus")->setText(t);
+            });
+        };
+        o.note = [self](const std::string& n) {
+            const QString t = QString::fromStdString(n);
+            QMetaObject::invokeMethod(qApp, [self, t] {
+                if (self) self->log(t);
+            });
+        };
+        auto r = deliver_linear_frames(paths, job.output, o, 203.0 /* the linear master: 1.0 = 203 nits */, progress, cancel);
+        QString line;
+        if (r)
+            line = QStringLiteral("Movie written: %1 · %2 frames · MaxCLL %3 · MaxFALL %4")
+                       .arg(QString::fromStdString(r->file.string()))
+                       .arg(r->frames)
+                       .arg(r->metadata.maxcll)
+                       .arg(r->metadata.maxfall);
+        else
+            line = "Movie export stopped: " + QString::fromStdString(r.error().message) + ". The mastered frames are in " +
+                   QString::fromStdString(job.frames_dir.string());
+        QMetaObject::invokeMethod(qApp, [self, line] {
+            if (!self) return;
+            self->encoding_movie_ = false;
+            self->btn_master_->setText("Master EXR");
+            self->btn_master_->setToolTip({});
+            auto* st = self->findChild<QLabel*>("renderStatus");
+            st->setText(line);
+            st->show();
+            self->log(line);
+            self->refresh_enabled();
+            self->sync_ui();
+        });
+    });
+    refresh_enabled();
+    sync_ui();
 }
 
 void MainWindow::resume_queue(const std::filesystem::path& queue) {
