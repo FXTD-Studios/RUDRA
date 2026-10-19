@@ -2662,6 +2662,7 @@ int main(int argc, char** argv) {
 // 16 Oct 2026: "in export HDR10, HLG and ProRes are not enabled" for a folder
 // of frames. They are now: the frames are mastered as a linear EXR sequence
 // beside the movie, then encoded as `rudra-native deliver` encodes them.
+#ifdef RUDRA_HAVE_STILL_DECODE
 TEST(AppVideo, AFolderOfFramesExportsToAMovie) {
     if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
     QSettings().clear();
@@ -2713,3 +2714,4 @@ TEST(AppVideo, AFolderOfFramesExportsToAMovie) {
     w.open_export_sheet();
     EXPECT_FALSE(sheet->findChild<QWidget*>("hdr10")->isEnabled());
 }
+#endif
