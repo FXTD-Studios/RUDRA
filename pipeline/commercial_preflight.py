@@ -28,8 +28,10 @@ def decoder_dependencies(rows: list[dict]) -> set[Path]:
         if sentinel is None or not json.loads(sentinel.read_text(encoding="utf-8")).get("storage"):
             raise ValueError("commercial data requires explicit HDR storage metadata; legacy fallback is not approved")
         required.add(sentinel.resolve())
-        if row.get("metadata_path"):
-            required.add(Path(row["metadata_path"]).resolve())
+        # An image row has one sidecar; a clip row one per frame (metadata_paths).
+        for meta in [row.get("metadata_path"), *(row.get("metadata_paths") or [])]:
+            if meta:
+                required.add(Path(meta).resolve())
     return required
 
 

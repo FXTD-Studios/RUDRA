@@ -84,6 +84,14 @@ def run(recipe):
     # The smoke gate reads the bench_* fields, which only BenchVal writes.
     if args.best_metric != "bench_gain" and not args.bench_val_frames > 0:
         raise ValueError("pilot requires bench validation: --best-metric bench_gain or --bench-val-frames > 0")
+    # What the smoke gate's coverage can be known from before training: all
+    # three counts come from real val frames, the clipped one from their
+    # pushed copies. (Crushed coverage depends on the pixels; the gate checks it.)
+    if not [e for e in args.bench_val_push.split(",") if e.strip()]:
+        raise ValueError("pilot requires --bench-val-push: clipped coverage comes from pushed real frames")
+    from training.sdr2hdr_dataset import read_jsonl
+    if not any(r.get("split") == "val" and r.get("sdr_kind") == "real" for r in read_jsonl(args.manifest)):
+        raise ValueError("pilot requires real val frames in the manifest: bench coverage comes from them")
     out = Path(args.output_dir).resolve()
     if out.exists():
         raise ValueError("pilot output must be a new directory")

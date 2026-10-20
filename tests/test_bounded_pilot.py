@@ -67,7 +67,9 @@ def test_runner_stops_at_smoke_gate_and_retains_baseline(tmp_path, monkeypatch):
         observer("eval", 200, m)
         pytest.fail("must not continue after failed smoke")
     monkeypatch.setattr(trainer, "train", fake_train)
-    recipe = {"trainer_args": ["--manifest", "unused", "--commercial-evidence", "unused",
+    manifest = tmp_path / "pairs.jsonl"
+    manifest.write_text(json.dumps({"split": "val", "sdr_kind": "real"}) + "\n", encoding="utf-8")
+    recipe = {"trainer_args": ["--manifest", str(manifest), "--commercial-evidence", "unused",
         "--output-dir", str(out), "--steps", "1000", "--workers", "0",
         "--eval-every", "200", "--save-every", "200", "--best-metric", "bench_gain"]}
     assert bounded_pilot.run(recipe) == 1
@@ -87,3 +89,15 @@ def test_runner_rejects_a_recipe_without_bench_validation(tmp_path, monkeypatch)
     with pytest.raises(ValueError, match="bench validation"):
         bounded_pilot.run(recipe)
     assert not (tmp_path / "run").exists()
+
+
+def test_runner_rejects_a_manifest_without_real_val_frames(tmp_path, monkeypatch):
+    from training import bounded_pilot, train_sdr2hdr as trainer
+    monkeypatch.setattr(trainer, "train", lambda args, observer: pytest.fail("must not train"))
+    manifest = tmp_path / "pairs.jsonl"
+    manifest.write_text(json.dumps({"split": "val", "sdr_kind": "rendered"}) + "\n", encoding="utf-8")
+    recipe = {"trainer_args": ["--manifest", str(manifest), "--commercial-evidence", "unused",
+        "--output-dir", str(tmp_path / "run"), "--steps", "1000", "--workers", "0",
+        "--eval-every", "200", "--save-every", "200", "--best-metric", "bench_gain"]}
+    with pytest.raises(ValueError, match="real val frames"):
+        bounded_pilot.run(recipe)
