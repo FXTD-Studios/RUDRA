@@ -35,4 +35,34 @@ Result<MasterResult> render_master(const ModelManifest& pkg, InferenceBackend& b
                         ModelConstants{pkg.log_scale, pkg.max_hdr, pkg.corpus_ev}, qm, out);
 }
 
+Result<CorrectionEntry> log_master_correction(const ModelManifest* pkg, InferenceBackend* backend,
+                                              const std::filesystem::path& log_dir, const std::filesystem::path& image,
+                                              const MasterRequest& q, const std::string& label) {
+    // Before any work: no consent, nothing is decoded.
+    auto consent = read_correction_consent(log_dir);
+    if (!consent) return consent.error();
+    if (!consent->opted_in || consent->withdrawn())
+        return make_error(ErrorCode::Unsupported, "Correction logging is off: there is no active consent", log_dir.string());
+    auto decoded = decode_sdr_file(image);
+    if (!decoded) return decoded.error();
+    MasterRequest qg = q;
+    qg.source_space = q.source_space == "rec709" ? primaries_id(decoded->colour.primaries) : q.source_space;
+    qg.source_file = image;
+    Result<GradedMaster> g = make_error(ErrorCode::InvalidArgument, "no grade");
+    if (q.analytic) {
+        qg.checkpoint.clear();
+        qg.checkpoint_sha256.clear();
+        g = grade_master(decoded->rgb, analytic_fields_for(decoded->rgb, qg), FrameScalars{}, kAnalyticConstants, qg);
+    } else {
+        if (!pkg || !backend) return make_error(ErrorCode::InvalidArgument, "These settings run the model: give its package");
+        auto fr = infer_frame(*backend, decoded->rgb, TileConfig{0, 0});
+        if (!fr) return fr.error();
+        qg.checkpoint_sha256 = pkg->source_sha256;
+        qg.tiled = fr->tiled;
+        g = grade_master(decoded->rgb, fr->fields, fr->scalars, ModelConstants{pkg->log_scale, pkg->max_hdr, pkg->corpus_ev}, qg);
+    }
+    if (!g) return g.error();
+    return log_correction(log_dir, decoded->rgb, g->nits, qg, CorrectionSource{image, 0, label});
+}
+
 }  // namespace rudra

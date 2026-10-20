@@ -15,6 +15,7 @@
 
 #include "rudra/core/model_manifest.hpp"
 #include "rudra/deliver/master.hpp"
+#include "rudra/deliver/shot_grades.hpp"
 #include "rudra/infer/backend.hpp"
 #include "rudra/platform/pyjson.hpp"
 #include "rudra/platform/result.hpp"
@@ -56,6 +57,13 @@ struct VideoConvertArgs {
     // Unset: the Python's path, unchanged.
     std::optional<std::filesystem::path> grade_file;
     std::optional<MasterRequest> grade;
+    // Shot keyframes (roadmap 4.3, 20 Oct 2026): a grade per frame from its
+    // shot's keys (deliver/shot_grades.hpp), with the holds reset at every
+    // shot boundary as at a detected cut. Replaces `grade` when set; every
+    // grade in it must agree on `analytic`. The report lists the shots, each
+    // with its own flicker.
+    std::optional<std::filesystem::path> shots_file;
+    std::optional<ShotGrades> shots;
 };
 
 // progress(dict(phase=..., frames_done=..., frames_total=...)).
@@ -88,6 +96,17 @@ std::vector<std::pair<std::string, std::filesystem::path>> dynamic_metadata_path
 bool hdr10plus_capable(const std::filesystem::path& ffmpeg);
 
 #ifdef RUDRA_HAVE_STILL_DECODE
+// Conform (roadmap 5.4): the hard cuts in a movie, by the export's own cut
+// measure (ShadowSmoother::update on the 36x64 thumbnail, `threshold` the
+// mean change that makes a cut), each the first frame of a new shot.
+struct CutDetection {
+    int frames = 0;
+    std::string fps;          // ffprobe's, "24000/1001"
+    std::vector<int> cuts;    // frames > 0, in order
+};
+Result<CutDetection> detect_cuts(const std::filesystem::path& movie, double threshold = 0.15,
+                                 const std::atomic<bool>* cancel = nullptr);
+
 Result<VideoConvertResult> convert_video(const VideoConvertArgs& args, const ModelManifest& package,
                                          InferenceBackend& backend, const VideoConvertHooks& hooks = {});
 // The same with the package and backend optional: null for an analytic grade.
