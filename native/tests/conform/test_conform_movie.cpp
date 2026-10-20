@@ -113,6 +113,13 @@ TEST(ConformMovie, AnEdlConformsAndTheProgrammeExportsInOnePass) {
     EXPECT_EQ(rep["shots"][2]["name"], "dark");
     EXPECT_EQ(rep["shots"][2]["source"], "edl");
     EXPECT_EQ(rep["frames"].size(), 12u);
+    // The key reached the picture: the same clip with the base grade alone is
+    // darker on the dark shot's first frame (9) than the programme graded up a stop.
+    ASSERT_EQ(run(cli + " video - " + q(clip) + " --output " + q(dir / "reference.mp4") + " --grade " +
+                  q(dir / "base.json") + " --audio none --preset ultrafast --dynamic-metadata off"), 0);
+    const auto ref = read_json(dir / "reference.mp4.json");
+    ASSERT_EQ(ref["frames"].size(), 12u);
+    EXPECT_GT(rep["frames"][9]["frame_average"].get<double>(), ref["frames"][9]["frame_average"].get<double>());
     // The detected cuts and the EDL agree here.
     ASSERT_EQ(run(cli + " conform " + q(clip) + " --detect --output " + q(dir / "detected.shots.json")), 0);
     const auto det = read_json(dir / "detected.shots.json");
