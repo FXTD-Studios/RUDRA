@@ -32,6 +32,7 @@
 // vectorscope) at 1080p and 4K, median of --iters, one thread.
 
 #include <algorithm>
+#include <set>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -362,10 +363,41 @@ Result<MasterDiff> diff_master(const fs::path& got_exr, const fs::path& got_side
     }
     d.total = want->half_bits.size();
     const bool same_shape = got->half_bits.size() == want->half_bits.size() && !want->half_bits.empty();
-    if (got->attributes.size() != want->attributes.size()) d.header_diff = "attribute count";
-    for (std::size_t i = 0; d.header_diff.empty() && i < want->attributes.size(); ++i)
-        if (got->attributes[i] != want->attributes[i] || got->attribute_types[i] != want->attribute_types[i])
-            d.header_diff = want->attributes[i].first;
+    // Build provenance (16 Oct 2026: app version, commit, checkpoint and
+    // source hashes) says which build wrote the file, not what is in it; the
+    // Studio's goldens predate it. Left out when the reference has none.
+    static const std::set<std::string> kBuild = {"rudra:appVersion", "rudra:buildCommit", "rudra:checkpointSha256",
+                                                 "rudra:sourceSha256"};
+    std::vector<std::size_t> keep;
+    for (std::size_t i = 0; i < got->attributes.size(); ++i) {
+        const auto& name = got->attributes[i].first;
+        const bool in_want = std::any_of(want->attributes.begin(), want->attributes.end(),
+                                         [&](const auto& a) { return a.first == name; });
+        if (in_want || !kBuild.count(name)) keep.push_back(i);
+    }
+    if (keep.size() != want->attributes.size()) d.header_diff = "attribute count";
+    // The ACES writers pack the provenance into one JSON attribute,
+    // rudra:provenance; the build keys inside it are left out the same way.
+    const auto same_provenance = [&](const std::vector<std::uint8_t>& g, const std::vector<std::uint8_t>& w) {
+        try {
+            auto gj = nlohmann::json::parse(g.begin(), g.end());
+            const auto wj = nlohmann::json::parse(w.begin(), w.end());
+            if (!gj.is_object() || !wj.is_object()) return false;
+            for (const auto& k : kBuild)
+                if (!wj.contains(k)) gj.erase(k);
+            return gj == wj;
+        } catch (const std::exception&) {
+            return false;
+        }
+    };
+    for (std::size_t i = 0; d.header_diff.empty() && i < want->attributes.size(); ++i) {
+        const auto& ga = got->attributes[keep[i]];
+        const auto& wa = want->attributes[i];
+        const bool types_equal = got->attribute_types[keep[i]] == want->attribute_types[i];
+        const bool equal = ga == wa || (ga.first == wa.first && wa.first == "rudra:provenance" &&
+                                        same_provenance(ga.second, wa.second));
+        if (!equal || !types_equal) d.header_diff = wa.first;
+    }
     try {
         const auto gs = nlohmann::json::parse(read_text(got_side));
         const auto ws = nlohmann::json::parse(read_text(want_side));

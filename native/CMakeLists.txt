@@ -13,6 +13,19 @@ else()
   set(RUDRA_VERSION_LABEL "${PROJECT_VERSION}")
 endif()
 
+# The commit the build was configured from, for master provenance (deliver/).
+# Configure-time: rebuild after re-configuring to refresh it; "unknown" outside git.
+set(RUDRA_BUILD_COMMIT "unknown")
+find_package(Git QUIET)
+if(GIT_FOUND)
+  execute_process(COMMAND "${GIT_EXECUTABLE}" --no-optional-locks rev-parse --short=12 HEAD
+                  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" OUTPUT_VARIABLE _rudra_commit
+                  OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET RESULT_VARIABLE _rudra_git_rc)
+  if(_rudra_git_rc EQUAL 0 AND _rudra_commit)
+    set(RUDRA_BUILD_COMMIT "${_rudra_commit}")
+  endif()
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

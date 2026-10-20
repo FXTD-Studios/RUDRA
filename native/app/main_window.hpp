@@ -121,6 +121,17 @@ public:
     // folder and name: checked against this ffmpeg, written as a queue file
     // (rudra/batch.py's format) and run; false with the reason logged when it cannot be.
     bool queue_video_export(const QString& format);
+    // A folder of frames to a movie (16 Oct 2026): the frames mastered as a
+    // linear Rec.2020 EXR sequence into <name>_frames beside the movie, then
+    // encoded as `rudra-native deliver` encodes them (hdr10, hlg, prores422hq
+    // or prores4444; PQ, no audio, the Deliver tab's fps). False with the reason
+    // shown when it cannot start.
+    bool shot_is_frame_folder() const { return shot_kind_ == "folder" && frames_.size() > 1; }
+    bool export_frames_to_movie(const QString& format, double fps = 24.0);
+    // The movie's name, without its suffix: the Deliver tab's name (else the
+    // folder's) and the format, in the characters a render name may use.
+    QString frames_movie_base(const QString& format) const;
+    bool encoding_movie() const { return encoding_movie_; }
     void open_queue_window();
     VideoQueues& video_queues() { return *queues_; }
     void resume_queue(const std::filesystem::path& queue);
@@ -475,6 +486,17 @@ private:
     std::unique_ptr<MasterJob> master_job_;
     std::shared_ptr<std::mutex> backend_mutex_ = std::make_shared<std::mutex>();   // the engine and the master share it
     void master_finished(const MasterOutcome& o, const QString& folder);
+    struct FramesMovie {
+        QString format;                      // hdr10, hlg, prores422hq, prores4444
+        std::filesystem::path frames_dir, output;
+        std::string name;
+        double fps = 24.0;
+    };
+    std::optional<FramesMovie> frames_movie_;   // set while its frames are being mastered
+    void encode_frames_movie(FramesMovie job);
+    std::thread encode_worker_;
+    std::atomic<bool> encode_cancel_{false};
+    bool encoding_movie_ = false;
     bool probe_on_ = false;
     Session session_;
     QTimer play_;

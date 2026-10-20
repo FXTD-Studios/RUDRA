@@ -26,6 +26,7 @@ Frames are read once and kept (half precision) for every later evaluation.
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -55,6 +56,22 @@ _PU_PEAK = float(pu21(torch.tensor(PEAK_NITS)))
 def pu_psnr(test_nits: torch.Tensor, ref_nits: torch.Tensor) -> float:
     mse = float(((pu21(test_nits) - pu21(ref_nits)) ** 2).mean())
     return float("inf") if mse <= 0 else 10.0 * math.log10(_PU_PEAK ** 2 / mse)
+
+
+def pu_psnr_per_frame(test_nits: torch.Tensor, ref_nits: torch.Tensor) -> torch.Tensor:
+    """Batch version of pu_psnr, preserving equal weight per frame (B,C,H,W)."""
+    mse = ((pu21(test_nits) - pu21(ref_nits)) ** 2).flatten(1).mean(1)
+    return 10.0 * torch.log10(_PU_PEAK ** 2 / mse)
+
+
+def summarize_observations(rows: list[dict]) -> dict:
+    """Missing regions remain null with zero coverage, never a measured win."""
+    out = {"frames": len(rows)}
+    for key in ("pu_gain_db", "clip_gain_stops", "crushed_gain_stops"):
+        values = [r[key] for r in rows if r.get(key) is not None]
+        out[key] = float(np.mean(values)) if values else None
+        out[key.replace("gain_db", "frames").replace("gain_stops", "frames")] = len(values)
+    return out
 
 
 def log_luma(network_units: torch.Tensor) -> torch.Tensor:
@@ -94,6 +111,8 @@ class BenchVal:
     max_side: int = 960
     push_evs: tuple[float, ...] = (1.0, 2.0)
     frames: list[Frame] = field(default_factory=list)
+    last_report: dict = field(default_factory=dict, init=False)
+    push_pu: bool = False
 
     @classmethod
     def from_manifest(cls, manifest: str, split: str = "val", real_frames: int = 48, rendered_frames: int = 48,
@@ -127,6 +146,8 @@ class BenchVal:
         from training.sdr2hdr_dataset import exposure_push
 
         self.load()
+        if len(self.records) != len(self.frames):
+            raise ValueError("bench records and cached frames must match")
         was = model.training
         model.eval()
         use_picker = bool(getattr(model, "baseline_source", False))
@@ -145,17 +166,24 @@ class BenchVal:
 
         gains = {"real": [], "rendered": []}
         clip, crushed = [], []
+        observations = []
         aces = baseline_curve_index("aces")
-        for f in self.frames:
+        for record, f in zip(self.records, self.frames):
             ref = f.hdr.float().to(device)
             pred, base = run(f.sdr, f.baseline_curve, f.source_curve)
-            gains["real" if f.real else "rendered"].append(
-                pu_psnr(pred * PEAK_NITS, ref * PEAK_NITS) - pu_psnr(base * PEAK_NITS, ref * PEAK_NITS))
+            kind = "real" if f.real else "rendered"
+            gain = pu_psnr(pred * PEAK_NITS, ref * PEAK_NITS) - pu_psnr(base * PEAK_NITS, ref * PEAK_NITS)
+            gains[kind].append(gain)
+            identity = {"asset_id": record.get("asset_id"), "scene_id": record.get("scene_id")}
+            observation = {**identity, "condition": kind, "ev": None,
+                           "pu_gain_db": gain, "crushed_gain_stops": None}
+            observations.append(observation)
             if f.real:
                 top = f.sdr.float().amax(0).to(device)
                 e_m, e_b = region_error(pred, ref, top <= CRUSHED), region_error(base, ref, top <= CRUSHED)
                 if e_m is not None:
                     crushed.append(e_b - e_m)
+                    observation["crushed_gain_stops"] = e_b - e_m
                 for ev in self.push_evs:
                     sdr_p, hdr_p, _ = exposure_push(f.hdr.float(), ev)
                     ref_p = hdr_p.float().to(device)
@@ -164,6 +192,15 @@ class BenchVal:
                     e_m, e_b = region_error(pred_p, ref_p, mask), region_error(base_p, ref_p, mask)
                     if e_m is not None:
                         clip.append(e_b - e_m)
+                    push = {**identity, "condition": "push", "ev": ev,
+                            "clip_gain_stops": e_b - e_m if e_m is not None else None}
+                    dark = sdr_p.float().amax(0).to(device) <= CRUSHED
+                    d_m, d_b = region_error(pred_p, ref_p, dark), region_error(base_p, ref_p, dark)
+                    push["crushed_gain_stops"] = d_b - d_m if d_m is not None else None
+                    if self.push_pu:
+                        push["pu_gain_db"] = (pu_psnr(pred_p * PEAK_NITS, ref_p * PEAK_NITS)
+                                              - pu_psnr(base_p * PEAK_NITS, ref_p * PEAK_NITS))
+                    observations.append(push)
         model.train(was)
         mean = lambda xs: float(np.mean(xs)) if xs else 0.0
         out = {
@@ -175,4 +212,21 @@ class BenchVal:
         out["bench_gain"] = (out["bench_real_gain_db"] + min(0.0, out["bench_rendered_gain_db"])
                              + CLIP_WEIGHT_DB_PER_STOP * out["bench_clip_gain_stops"]
                              + CLIP_WEIGHT_DB_PER_STOP * min(0.0, out["bench_crushed_gain_stops"]))
+        # Detailed diagnostics do not change the historical aggregate or its
+        # selection rule. Only configured pushes run; +0 EV is not added here.
+        scenes = defaultdict(list)
+        for row in observations:
+            scenes[(row["scene_id"], row["condition"], row["ev"])].append(row)
+        by_ev = []
+        for ev in self.push_evs:
+            summary = summarize_observations([r for r in observations if r["condition"] == "push" and r["ev"] == ev])
+            by_ev.append({"ev": ev, **summary})
+        self.last_report = {
+            "comparison": "picker analytic inverse; not shipping clip fill",
+            "frames": observations,
+            "per_ev": by_ev,
+            "per_scene": [{"scene_id": scene, "condition": kind, "ev": ev,
+                           **summarize_observations(rows)}
+                          for (scene, kind, ev), rows in scenes.items()],
+        }
         return out

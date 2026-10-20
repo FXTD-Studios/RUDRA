@@ -19,7 +19,7 @@ def test_the_picker_knots_are_the_apps():
     pytest.importorskip("torch")
     from rudra.source_baseline import baseline_knots
     native = json.loads(FIXTURE.read_text(encoding="utf-8"))["knots"]
-    assert set(native) == {"bt1886", "hable", "agx", "camera_log", "clip"}
+    assert set(native) == {"bt1886", "hable", "agx", "camera_log", "clip", "bt1886_shadows"}
     for name, want in native.items():
         got = baseline_knots(name)
         assert got.shape == (257,)

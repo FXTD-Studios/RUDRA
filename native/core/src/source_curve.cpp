@@ -9,10 +9,11 @@
 namespace rudra {
 namespace {
 
-// The picker's order: BT.1886, the app's default since 13 Oct 2026, beside Unknown.
-constexpr std::array<SourceCurve, 7> kAll = {SourceCurve::Unknown, SourceCurve::Bt1886,    SourceCurve::Aces,
-                                             SourceCurve::Hable,   SourceCurve::Agx,       SourceCurve::CameraLog,
-                                             SourceCurve::Clip};
+// The picker's order: BT.1886, the app's default since 13 Oct 2026, beside
+// Unknown; its measured-shadows variant (opt-in) right after it.
+constexpr std::array<SourceCurve, 8> kAll = {SourceCurve::Unknown,   SourceCurve::Bt1886, SourceCurve::Bt1886Shadows,
+                                             SourceCurve::Aces,      SourceCurve::Hable,  SourceCurve::Agx,
+                                             SourceCurve::CameraLog, SourceCurve::Clip};
 
 // pipeline/sdr_render.py, float32 as numpy runs it; the constants are its.
 float forward_aces(float x) noexcept {
@@ -56,6 +57,62 @@ float bt709_oetf(float x) noexcept { return x < 0.018f ? 4.5f * x : 1.099f * std
 float bt709_inverse_oetf(float v) noexcept { return v < 0.081f ? v / 4.5f : std::pow((v + 0.099f) / 1.099f, 1.0f / 0.45f); }
 float forward_bt1886(float x) noexcept { return bt709_inverse_oetf(std::pow(std::clamp(x, 0.0f, 1.0f), 1.0f / 2.4f)); }
 float inverse_bt1886(float display) noexcept { return std::pow(bt709_oetf(std::clamp(display, 0.0f, 0.995f)), 2.4f); }
+
+// BT.1886 shadows (14 Oct 2026). log2 scene-linear (diffuse white 1.0 = 203
+// nits) at SDR codes 1..39: the median target of the training titles (Cosmos
+// Laundromat, Nocturne, Sol Levante; 60 frames each, equal title weight),
+// blended back to BT.1886 over codes 20..39, monotone, rising at least 0.02
+// stop per code. tools/shadow_correction_eval.py fit + relut (fit_v3.json,
+// SHA256 183d772e...); scored through this exact knot path on held-out Sparks
+// and Meridian (docs/ai/SHADOW_CORRECTION_RESULT.md). rudra/source_baseline.py
+// holds the same numbers. Code 0 stays 0, as every curve here.
+constexpr int kShadowKnee = 40;
+constexpr std::array<float, kShadowKnee> kShadowLog2Scene = {
+    0.0f,   // code 0: unused, the inverse is 0 there
+    -14.685428f, -14.249545f, -14.009058f, -13.741516f, -13.537101f, -13.242504f,
+    -13.008029f, -12.860731f, -12.457915f, -12.053934f, -12.033934f, -12.013934f,
+    -11.993934f, -11.973934f, -11.252472f, -10.590089f, -10.570089f, -10.389724f,
+    -10.164267f, -10.013963f, -9.968597f, -9.929899f, -9.870572f, -9.778883f,
+    -9.693991f, -9.599686f, -9.497595f, -9.392905f, -9.292866f, -9.197775f,
+    -9.111351f, -9.028863f, -8.925111f, -8.815446f, -8.703925f, -8.587965f,
+    -8.450235f, -8.357113f, -8.253048f,
+};
+
+float linear_to_srgb_code(float lin) noexcept {   // display-linear -> 8-bit code, continuous
+    const float x = std::clamp(lin, 0.0f, 1.0f);
+    const float v = x <= 0.0031308f ? x * 12.92f : 1.055f * std::pow(x, 1.0f / 2.4f) - 0.055f;
+    return v * 255.0f;
+}
+
+float shadow_scene_at(float code) noexcept {      // code in [0, kShadowKnee]
+    if (code <= 0.0f) return 0.0f;
+    if (code < 1.0f) return code * std::exp2(kShadowLog2Scene[1]);
+    const float knee = std::log2(inverse_bt1886(srgb_to_linear(float(kShadowKnee) / 255.0f)));
+    const int i = std::min(int(code), kShadowKnee - 1);
+    const float t = code - float(i);
+    const float a = kShadowLog2Scene[std::size_t(i)];
+    const float b = i + 1 < kShadowKnee ? kShadowLog2Scene[std::size_t(i + 1)] : knee;
+    return std::exp2(a + (b - a) * t);
+}
+
+float inverse_bt1886_shadows(float display) noexcept {
+    // Branch on the display value of the knee code, not a re-encoded code, so
+    // code 40 and above are BT.1886 bit for bit.
+    static const float knee_display = srgb_to_linear(float(kShadowKnee) / 255.0f);
+    if (display >= knee_display) return inverse_bt1886(display);
+    return shadow_scene_at(std::min(linear_to_srgb_code(display), float(kShadowKnee)));
+}
+
+float forward_bt1886_shadows(float x) noexcept {
+    const float knee_scene = shadow_scene_at(float(kShadowKnee));
+    if (x >= knee_scene) return forward_bt1886(x);
+    float lo = 0.0f, hi = float(kShadowKnee);   // shadow_scene_at is increasing in the code
+    for (int k = 0; k < 40; ++k) {
+        const float mid = 0.5f * (lo + hi);
+        (shadow_scene_at(mid) < x ? lo : hi) = mid;
+    }
+    return srgb_to_linear(0.5f * (lo + hi) / 255.0f);
+}
 
 // A dense monotone table of (display, scene) over 22 stops of exposure, read
 // by bisection and linear interpolation. Every curve above is non-decreasing.
@@ -119,6 +176,7 @@ std::string_view source_curve_id(SourceCurve c) noexcept {
         case SourceCurve::CameraLog: return "camera_log";
         case SourceCurve::Clip: return "clip";
         case SourceCurve::Bt1886: return "bt1886";
+        case SourceCurve::Bt1886Shadows: return "bt1886_shadows";
         default: return "unknown";
     }
 }
@@ -139,6 +197,7 @@ std::string_view source_curve_label(SourceCurve c) noexcept {
         case SourceCurve::CameraLog: return "Camera log";
         case SourceCurve::Clip: return "Rec.709";
         case SourceCurve::Bt1886: return "BT.1886";
+        case SourceCurve::Bt1886Shadows: return "BT.1886 shadows";
         default: return "Unknown";
     }
 }
@@ -151,6 +210,7 @@ std::string_view source_curve_detail(SourceCurve c) noexcept {
         case SourceCurve::CameraLog: return "log to 709";
         case SourceCurve::Clip: return "plain clip";
         case SourceCurve::Bt1886: return "display 2.4";
+        case SourceCurve::Bt1886Shadows: return "BT.1886, measured real-SDR blacks below code 40";
         default: return "ACES, as before";
     }
 }
@@ -162,6 +222,7 @@ float source_curve_forward(SourceCurve c, float x) noexcept {
         case SourceCurve::CameraLog: return forward_camera_log(x);
         case SourceCurve::Clip: return forward_clip(x);
         case SourceCurve::Bt1886: return forward_bt1886(x);
+        case SourceCurve::Bt1886Shadows: return forward_bt1886_shadows(x);
         default: return forward_aces(x);
     }
 }
@@ -171,6 +232,7 @@ float source_curve_inverse(SourceCurve c, float display) noexcept {
         case SourceCurve::Unknown:
         case SourceCurve::Aces: return inverse_aces_approx(display);
         case SourceCurve::Bt1886: return inverse_bt1886(display);
+        case SourceCurve::Bt1886Shadows: return inverse_bt1886_shadows(display);
         default: return table(c).at(display);
     }
 }
@@ -179,13 +241,15 @@ std::span<const float> source_curve_params(SourceCurve c) {
     static const std::vector<float> none;
     static const std::vector<float> hable = build_params(SourceCurve::Hable), agx = build_params(SourceCurve::Agx),
                                     camera = build_params(SourceCurve::CameraLog), clip = build_params(SourceCurve::Clip),
-                                    bt1886 = build_params(SourceCurve::Bt1886);
+                                    bt1886 = build_params(SourceCurve::Bt1886),
+                                    bt1886_shadows = build_params(SourceCurve::Bt1886Shadows);
     switch (c) {
         case SourceCurve::Hable: return hable;
         case SourceCurve::Agx: return agx;
         case SourceCurve::CameraLog: return camera;
         case SourceCurve::Clip: return clip;
         case SourceCurve::Bt1886: return bt1886;
+        case SourceCurve::Bt1886Shadows: return bt1886_shadows;
         default: return none;
     }
 }

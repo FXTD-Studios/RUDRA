@@ -24,17 +24,17 @@
 
 **Contents:**
 [What it does](#what-it-does) ·
+[What's new](#whats-new) ·
 [See it](#see-it) ·
 [Results](#results) ·
 [Install](#install) ·
 [Quick start](#quick-start) ·
-[The Studio](#the-studio) ·
-[Video delivery](#video-delivery) ·
-[Batch queues](#batch-queues) ·
-[Stills and sequences](#stills-and-sequences) ·
-[Validation diagnostics](#validation-diagnostics) ·
 [Desktop app](#desktop-app) ·
-[Roadmap](#roadmap) ·
+[The browser Studio](#the-browser-studio) ·
+[Command line](#command-line) ·
+[Validation diagnostics](#validation-diagnostics) ·
+[Known limitations](#known-limitations) ·
+[Still to do](#still-to-do) ·
 [Documentation](#documentation) ·
 [Licence](#licence)
 
@@ -60,8 +60,11 @@ so the model is optional and off by default. What the artist gets:
   the artist can set, and an **Invented** layer that marks every pixel RUDRA
   made up.
 - **Delivery**: ACES EXR masters, HDR10, HLG, ProRes 422 HQ / 4444 (PQ,
-  ACEScct or LogC4) with audio, QC before publishing, HDR10+ and Dolby Vision
-  L1/L6 metadata per shot, and holds that keep a shot steady over time.
+  ACEScct or LogC4) from a movie or a folder of frames, with audio, QC before
+  publishing, HDR10+ and Dolby Vision L1/L6 metadata per shot, and holds that
+  keep a shot steady over time.
+- **Provenance**: every master records the app version, build commit, the
+  source file's SHA-256 and, with the model on, the checkpoint's.
 
 It ships as a native desktop app (Windows, macOS, Linux; no Python), the
 browser Studio and two command lines (`rudra`, `rudra-native`).
@@ -73,6 +76,36 @@ Wan, LTX, SDXL, Qwen, Klein) and the latent-conditioning research pipeline are
 **paused** as of 23 Sep 2026. Their code stays in `rudra/` and `training/` and
 their results in [`STATUS.md`](STATUS.md), but they are not part of the product
 and are not maintained.
+
+---
+
+## What's new
+
+On `native` since `v1.0.0-rc.2`, for the next release candidate. Per-beta
+detail: [`docs/BETA.md`](docs/BETA.md).
+
+- **A folder of frames exports to a movie.** HDR10, HLG, ProRes 422 HQ and
+  4444 are offered for frame folders too: the frames are mastered as a linear
+  Rec.2020 EXR sequence beside the movie, then encoded and checked as
+  `rudra-native deliver` encodes them (measured MaxCLL/MaxFALL, tags verified,
+  a frame rate picked on the export sheet). Master EXR stops it.
+- **Stills keep their colour and orientation.** ICC profiles (PNG, JPEG, TIFF,
+  WebP) and PNG cICP / sRGB / cHRM set the master's source primaries: sRGB /
+  Rec.709, Display P3, Rec.2020 and Adobe RGB (1998) are recognised, an
+  unknown profile is reported and read as Rec.709, untagged files are
+  unchanged. EXIF orientation is applied. A tagged 16-bit PQ reference image
+  converts from its own primaries.
+- **Master provenance.** App version, build commit, source SHA-256, the
+  checkpoint SHA-256 when the model ran, and whether the network really tiled
+  (`rudra:tiled` was hard-coded).
+- **Source: BT.1886 shadows (opt-in).** BT.1886 from SDR code 40 up and, below
+  it, black levels measured on real graded HDR. BT.1886 stays the default.
+- **Getting started.** A five-step guide on the first start, any time from
+  Help > Getting started.
+- **Notes.** [`NOTICE`](NOTICE) credits the Netflix Open Content titles; the
+  super-white design and its 1.0 limit
+  ([`docs/SUPER_WHITES_DESIGN.md`](docs/SUPER_WHITES_DESIGN.md)); open licensing
+  questions in [`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md).
 
 ---
 
@@ -144,7 +177,7 @@ Full tables, the failure analysis, and how to recompute every number:
 
 **Desktop app (no Python).** From
 [Releases](https://github.com/FXTD-Studios/RUDRA/releases), the latest
-pre-release (`v1.0.0-rc.1` now, then 1.0): for Windows x64 `RUDRA-<version>-windows-x64-setup.exe`, which
+pre-release (`v1.0.0-rc.2` now, then 1.0): for Windows x64 `RUDRA-<version>-windows-x64-setup.exe`, which
 installs for your user (no administrator prompt) with the model and the Visual
 C++ runtime included, or the portable ZIP beside it; for Apple silicon
 `RUDRA-<version>-macos-arm64.dmg`. Details: [`docs/BETA.md`](docs/BETA.md).
@@ -183,7 +216,7 @@ time):
 
 The whole guide: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) (F1 in the app).
 
-**Browser Studio (Python).** It loads the shipped checkpoint and opens a browser tab: It loads the shipped checkpoint and opens a browser tab:
+**Browser Studio (Python).** It loads the shipped checkpoint and opens a browser tab:
 
 ```bash
 python ui/server.py
@@ -205,7 +238,38 @@ python training/infer_sdr2hdr.py input/ --output-dir out/ \
 
 ---
 
-## The Studio
+## Desktop app
+
+A native RUDRA for Windows, Linux and macOS, with no Python at runtime: Qt 6
+for the interface, a QRhi viewer on each OS's native GPU API (Direct3D 12,
+Metal, Vulkan, OpenGL fallback) with HDR output, a C++20 core, and inference
+through LibTorch (CUDA, MPS) and ONNX Runtime (DirectML, Core ML, ROCm,
+OpenVINO). It lives in [`native/`](native/README.md) on the `native` branch.
+The browser Studio and the Python CLI stay as they are and remain the
+reference every native module is tested against.
+
+In it today (`v1.0.0-rc.2` and the changes since, [`docs/BETA.md`](docs/BETA.md)):
+the Studio's layout, actions, undo and projects; the HDR viewer with scopes,
+wipe, Compare, the Changes tint and the Invented layer; Source, calibration,
+reference match, exposure, peak, knee, Region EV and painted masks, live on
+the GPU and held to the C++ core by `rudra-gpu-parity` on four backends;
+stills with their colour profile and orientation, sequences, EXR masters,
+movie exports from movies and frame folders with QC, HDR10+ and Dolby
+Vision metadata, a resumable queue; the shot and static holds in playback and
+export; the optional model checked against its reference frames on every
+device; installers for Windows (setup.exe, portable ZIP) and macOS (DMG);
+CI green on all three OSes.
+
+What is left for the desktop app (the Mac pass, signing, a clean-PC install)
+is under [Still to do](#still-to-do).
+
+Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
+[`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:
+[`native/README.md`](native/README.md).
+
+---
+
+## The browser Studio
 
 ![RUDRA Studio](docs/rudra_studio.png)
 
@@ -234,7 +298,7 @@ judgement of the picture inside it.
 Playback runs at the footage's frame rate, with a read-ahead in front of the
 playhead, and the transport reads timecode.
 
-### Mastering from the Studio
+### Mastering from the browser Studio
 
 **Master EXR** writes OpenEXR in ACES 2065-1 or linear Rec.2020 directly to an
 absolute **Render folder** on the computer running the Studio. Choose
@@ -257,13 +321,19 @@ loaded frame order and one frozen copy of the current grade.
 
 ---
 
-## Video delivery
+## Command line
+
+Two command lines: `rudra` (Python: video, batch queues, stills) and
+`rudra-native` (the desktop app's engine, no Python: `diff`, `video`,
+`deliver`, `batch`, `ffmpeg-check`).
+
+### Video delivery
 
 `rudra video` converts a complete SDR clip. Run `python -m rudra.video` with the
 same arguments if the CLI is not installed. It requires FFmpeg/ffprobe with
 `libx265` and `zscale`; ProRes also needs `prores_ks`.
 
-### Presets
+#### Presets
 
 Select a preset with `--format`:
 
@@ -284,7 +354,7 @@ rudra video transparent.mov --output delivery/composite.mov --format prores4444 
     --alpha-mode straight --checkpoint checkpoints/sdr2hdr_shadow_v1.pt --device cuda
 ```
 
-### Input
+#### Input
 
 Supported: progressive, square-pixel, constant-frame-rate SDR video with even
 dimensions. The rational frame rate and frame count are preserved, video start
@@ -301,7 +371,7 @@ Rejected rather than silently changed: HDR, alpha-bearing, interlaced, rotated,
 anamorphic and variable-frame-rate inputs. The exception is straight alpha with
 the ProRes 4444 preset. No preset carries subtitles.
 
-### Output and QC
+#### Output and QC
 
 HDR10 is 10-bit HEVC, BT.2020/PQ, with measured MaxCLL/MaxFALL and mastering
 display metadata; `--peak-nits 1000` selects the mastering peak. Every preset is
@@ -310,14 +380,14 @@ colour tags, HDR metadata, audio alignment and a complete decode. A matching
 `.json` sidecar records the checkpoint hash, settings, per-frame statistics and
 QC results. Existing outputs are never overwritten.
 
-### HLG
+#### HLG
 
 HLG uses BT.2100's inverse OOTF followed by its OETF, with zero reference black,
 the selected peak and the corresponding system gamma (1.2 at 1000 nits). It
 does not merely relabel PQ pixels. Saturated values outside legal HLG scene RGB
 receive a common RGB gain reduction. HLG has no HDR10 static SEI.
 
-### ProRes and alpha
+#### ProRes and alpha
 
 ProRes stores PQ colour tags, while the mastering and content-light analysis
 remains in the sidecar. ProRes MOV's `nclc` atom may omit a separate range flag;
@@ -331,7 +401,7 @@ of 128/65535 (two 10-bit steps), so arbitrary 16-bit alpha is **not lossless**.
 Premultiplied sources must first be unpremultiplied; `--alpha-mode straight`
 declares the supplied interpretation.
 
-### Performance and options
+#### Performance and options
 
 - CPU is the default device; select `--device cuda` explicitly when available.
 - Full source dimensions are kept, using 512-pixel tiles by default;
@@ -344,9 +414,7 @@ declares the supplied interpretation.
   detected hard cuts. It does not blend image pixels and is not a validated
   temporal model. Off by default.
 
----
-
-## Batch queues
+### Batch queues
 
 Save a queue as `queue.json`. Paths resolve relative to that file. Defaults and
 per-job `options` accept the same option names as `rudra video` (underscores or
@@ -391,9 +459,7 @@ rudra batch run queue.json --retry-failed
   review and relocate that job's output/report pair before retrying. Temporary
   folders may remain after a hard process termination.
 
----
-
-## Stills and sequences
+### Stills and sequences
 
 ```bash
 python training/infer_sdr2hdr.py input/ --output-dir out/ \
@@ -446,64 +512,56 @@ promoting a different recovery policy.
 
 ---
 
-## Desktop app
+## Known limitations
 
-A native RUDRA for Windows, Linux and macOS, with no Python at runtime: Qt 6
-for the interface, a QRhi viewer on each OS's native GPU API (Direct3D 12,
-Metal, Vulkan, OpenGL fallback) with HDR output, a C++20 core, and inference
-through LibTorch (CUDA, MPS) and ONNX Runtime (DirectML, Core ML, ROCm,
-OpenVINO). It lives in [`native/`](native/README.md) on the `native` branch.
-The browser Studio and the Python CLI stay as they are and remain the
-reference every native module is tested against.
-
-In it today (beta 10 and the changes since, [`docs/BETA.md`](docs/BETA.md)):
-the Studio's layout, actions, undo and projects; the HDR viewer with scopes,
-wipe, Compare, the Changes tint and the Invented layer; Source, calibration,
-reference match, exposure, peak, knee, Region EV and painted masks, live on
-the GPU and held to the C++ core by `rudra-gpu-parity` on four backends;
-stills, sequences, EXR masters, movie exports with QC, HDR10+ and Dolby
-Vision metadata, a resumable queue; the shot and static holds in playback and
-export; the optional model checked against its reference frames on every
-device; installers for Windows (setup.exe, portable ZIP) and macOS (DMG);
-CI green on all three OSes.
-
-Still open (release row R4):
-- [ ] macOS: inference on MPS and Core ML, HDR output on an XDR display (Metal
-  EDR), the GPU composite and display pass on Metal, a clean exit, and the
-  latency budgets for a Mac (`MACHINE=... scripts/native_gate_a.sh`)
-- [ ] The macOS DMG built with ffmpeg inside (`MAC_FFMPEG_DIR`) and opened on a Mac
-- [ ] Apple Developer enrollment and the six signing secrets
-  ([`docs/MACOS_SIGNING.md`](docs/MACOS_SIGNING.md)), so the DMG ships notarized
-- [ ] A Windows code-signing certificate (`WINDOWS_CERT_PFX`), so the
-  installer has no SmartScreen prompt
-- [ ] The Windows installer on a clean PC that has never had RUDRA or Python
-
-Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
-[`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:
-[`native/README.md`](native/README.md).
+- **Super-whites are clipped.** Limited-range video above code 235 is clipped
+  at decode, so recorded headroom does not reach the reconstruction. The fix is
+  designed, not built: [`docs/SUPER_WHITES_DESIGN.md`](docs/SUPER_WHITES_DESIGN.md).
+- **The clip fill at +0 EV and on fireworks.** It overshoots highlights that
+  sit just above the clip, and loses 4.9 to 7.7 dB on the four fireworks clips;
+  turn it down (Strength) or off (Reconstruct > Fill clipped highlights).
+- **Unknown ICC profiles** are reported and read as Rec.709; RUDRA matches the
+  four profiles above, it is not a general colour-management system.
+- **The model is optional.** None beats the analytic inverse on real SDR yet.
+- **Non-commercial.** Commercial clearance of sources, weights and formats is
+  open ([`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md)).
 
 ---
 
-## Roadmap
+## Still to do
 
-Only what is left. What is done (the interactive core, phase 3; the source
-curves, BT.1886 default and exposure; the clip fill; the holds; HDR10+ and
-Dolby Vision metadata; the open-source half of the market comparison) is in
+Open items only; what is done is in [What's new](#whats-new),
 [`STATUS.md`](STATUS.md) and [`docs/BETA.md`](docs/BETA.md). Release rows
 R1 to R5 are in [`STATUS.md`](STATUS.md); the steps to 1.0 in
 [`docs/RELEASE_V1.md`](docs/RELEASE_V1.md).
 
 ### To 1.0
 
-- [ ] R2 re-run on the release candidate on the RTX machine (Gate B, the
-  phase 3 exit), with Hold steady checked for shimmer and the model's
-  playback fps at 960 px measured
+- [ ] R2 by hand on the release candidate, on the RTX machine: the phase 3
+  exit (`scripts/NATIVE_PHASE3_EXIT.ps1`), Hold steady checked for shimmer,
+  the model's playback fps at 960 px measured, and a calibrated HDR review of
+  blacks, shadows, highlights and colour, the darkest Sparks frames
+  included. GPU parity and the 4K latency budgets
+  passed again on D3D12, D3D11, Vulkan and OpenGL on 16 Oct.
 - [ ] R3, the commercial tools (roadmap 2.2, 2.3): DaVinci Resolve, Topaz
   Video, RTX Video HDR, a hardware converter's LUT, each through
   `training/compare_market.py import`, then `score`, published in
   [`docs/RESULTS.md`](docs/RESULTS.md) whatever it says
-- [ ] R4: the Mac pass, signing and the clean-PC install (Desktop app, above)
-- [ ] Release candidates (`scripts/release_v1_rc.ps1`, `v1.0.0-rc.N`), then 1.0
+- [ ] R4, the Mac: inference on MPS and Core ML, HDR output on an XDR display
+  (Metal EDR), the GPU composite and display pass on Metal, a clean exit, and
+  the latency budgets for a Mac (`MACHINE=... scripts/native_gate_a.sh`); the
+  DMG built with ffmpeg inside (`MAC_FFMPEG_DIR`) and opened on a Mac
+- [ ] R4, signing: Apple Developer enrollment and the six signing secrets
+  ([`docs/MACOS_SIGNING.md`](docs/MACOS_SIGNING.md)) so the DMG ships
+  notarized; a Windows code-signing certificate (`WINDOWS_CERT_PFX`) so the
+  installer has no SmartScreen prompt
+- [ ] R4, a clean PC: the Windows installer on a machine that has never had
+  RUDRA or Python (open, scrub, grade, export HDR10 and ProRes, uninstall)
+- [ ] Licensing: the open questions in
+  [`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md), including the Netflix
+  terms, before any commercial distribution
+- [ ] 1.0 itself: `scripts/release_v1_rc.ps1 -Final`, then `-Final -Tag`
+  (further candidates with `-Rc N` if the checks above find anything)
 
 ### Phase R: real time
 

@@ -255,3 +255,39 @@ TEST(SequenceEncode, DeliverReportIsThePythons) {
     GTEST_SKIP() << "rudra-native is not built";
 #endif
 }
+
+// The app's folder-to-movie export and `deliver` share deliver_linear_frames
+// (16 Oct 2026): it reports a measuring pass then an encoding pass, and a stop
+// leaves no movie behind.
+TEST(SequenceEncode, LinearDeliveryReportsAndStops) {
+    if (!find_executable("ffmpeg") || !find_executable("ffprobe")) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    const fs::path work = fs::temp_directory_path() / "rudra-linear-delivery-test";
+    fs::remove_all(work);
+    auto paths = list_linear_frames(kDir / "frames");
+    ASSERT_TRUE(paths);
+    SequenceEncodeOptions o;
+    o.target = "hdr10";
+    o.source = Primaries::Rec709;
+    std::vector<LinearDeliveryProgress> seen;
+    auto d = deliver_linear_frames(*paths, work / "shot", o, 203.0, [&](const LinearDeliveryProgress& p) { seen.push_back(p); });
+    ASSERT_TRUE(d) << d.error().message;
+    EXPECT_EQ(d->frames, int(paths->size()));
+    EXPECT_TRUE(fs::exists(d->file));
+    EXPECT_EQ(d->file.extension(), ".mp4");
+    EXPECT_GT(d->metadata.maxcll, 0);
+    ASSERT_FALSE(seen.empty());
+    EXPECT_FALSE(seen.front().encoding);
+    EXPECT_TRUE(seen.back().encoding);
+    EXPECT_EQ(seen.back().done, paths->size());
+
+    std::atomic<bool> stop{false};
+    auto s = deliver_linear_frames(*paths, work / "stopped", o, 203.0,
+                                   [&](const LinearDeliveryProgress& p) { if (p.encoding) stop = true; }, &stop);
+    if (paths->size() > 1) {
+        ASSERT_FALSE(s);
+        EXPECT_EQ(s.error().code, ErrorCode::Cancelled);
+        EXPECT_FALSE(fs::exists(work / "stopped.mp4"));
+    }
+    EXPECT_FALSE(deliver_linear_frames({}, work / "none", o, 203.0));
+    fs::remove_all(work);
+}

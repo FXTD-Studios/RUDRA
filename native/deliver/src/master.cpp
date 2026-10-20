@@ -18,7 +18,15 @@
 #include "rudra/core/measure.hpp"
 #include "rudra/deliver/exr.hpp"
 #include "rudra/deliver/sidecars.hpp"
+#include "rudra/platform/hash.hpp"
 #include "rudra/platform/pyjson.hpp"
+
+#ifndef RUDRA_VERSION_LABEL
+#define RUDRA_VERSION_LABEL "unknown"
+#endif
+#ifndef RUDRA_BUILD_COMMIT
+#define RUDRA_BUILD_COMMIT "unknown"
+#endif
 
 namespace rudra {
 namespace {
@@ -27,6 +35,7 @@ Result<Primaries> primaries_of(const std::string& s) {
     if (s == "rec709") return Primaries::Rec709;
     if (s == "rec2020") return Primaries::Rec2020;
     if (s == "p3d65") return Primaries::P3D65;
+    if (s == "adobe_rgb") return Primaries::AdobeRgb;   // 16 Oct 2026: from a still's ICC profile
     return make_error(ErrorCode::InvalidArgument, "Unknown source space.", s);
 }
 
@@ -169,7 +178,7 @@ Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, con
     auto mode = mode_of(q.recovery_mode);
     if (!mode) return mode.error();
     const auto source = parse_source_curve(q.source_curve);
-    if (!source) return make_error(ErrorCode::InvalidArgument, "source_curve must be unknown, bt1886, aces, hable, agx, camera_log, or clip", q.source_curve);
+    if (!source) return make_error(ErrorCode::InvalidArgument, "source_curve must be unknown, bt1886, bt1886_shadows, aces, hable, agx, camera_log, or clip", q.source_curve);
     CompositeParams cp;
     cp.mode = *mode;
     cp.strength = static_cast<float>(q.strength);
@@ -248,12 +257,22 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         {"rudra:recoveryMode", q.recovery_mode},
         {"rudra:preserveOutside", q.preserve_outside ? "True" : "False"},
         {"rudra:regionEV", region_text},
-        {"rudra:tiled", "False"},
+        {"rudra:tiled", q.tiled ? "True" : "False"},
         {"rudra:anchored", q.anchor ? "True" : "False"},
         {"rudra:chromaCarried", q.carry_chroma ? "True" : "False"},
         {"rudra:grainSettled", q.settle_grain ? "True" : "False"},
         {"rudra:sourceSpace", q.source_space},
+        {"rudra:appVersion", RUDRA_VERSION_LABEL},
+        {"rudra:buildCommit", RUDRA_BUILD_COMMIT},
     };
+    if (!q.checkpoint_sha256.empty()) provenance.emplace_back("rudra:checkpointSha256", q.checkpoint_sha256);
+    std::string source_sha;
+    if (!q.source_file.empty()) {
+        auto h = sha256_file(q.source_file);
+        if (!h) return h.error();
+        source_sha = *h;
+        provenance.emplace_back("rudra:sourceSha256", source_sha);
+    }
     if (*source != SourceCurve::Unknown) provenance.emplace_back("rudra:sourceCurve", q.source_curve);
     if (q.exposure_ev != 0.0) {
         char b[32];
@@ -300,7 +319,9 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         {"preserve_outside", q.preserve_outside},
         {"region_ev", graded ? pyjson::Value(regions_json) : pyjson::Value(nullptr)},
         {"region_softness_stops", graded ? pyjson::Value(q.region_softness_stops) : pyjson::Value(nullptr)},
-        {"tiled", false},
+        {"tiled", q.tiled},
+        {"app_version", RUDRA_VERSION_LABEL},
+        {"build_commit", RUDRA_BUILD_COMMIT},
         {"invented_pixels", pyjson::Dict{
              {"invented_pct", pct3(support.invented_pct)},
              {"reinterpreted_pct", pct3(support.reinterpreted_pct)},
@@ -309,6 +330,8 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
              {"basis", "composite vs corrected baseline, max(R,G,B); invented where the SDR's max code is >= 254 or <= 1"},
          }},
     };
+    if (!q.checkpoint_sha256.empty()) sidecar_dict.emplace_back("checkpoint_sha256", q.checkpoint_sha256);
+    if (!source_sha.empty()) sidecar_dict.emplace_back("source_sha256", source_sha);
     if (*source != SourceCurve::Unknown) sidecar_dict.emplace_back("source_curve", q.source_curve);
     if (q.exposure_ev != 0.0) sidecar_dict.emplace_back("exposure_ev", q.exposure_ev);
     if (q.analytic) sidecar_dict.emplace_back("reconstruction", "analytic (no model)");

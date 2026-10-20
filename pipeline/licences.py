@@ -1,5 +1,9 @@
 """Which source a pair came from, under what licence, and whether it may train
-weights that are sold.
+weights that may be candidates for commercial review.
+
+This legacy path classifier is a screening heuristic, NOT clearance. Commercial
+training must additionally use training/train_sdr2hdr.py --commercial-evidence;
+pipeline.commercial_preflight checks explicit reviewed evidence and file hashes.
 
 The research weights are non-commercial because HdM-HDR-2014 and HdM-HFR-2017
 (75.6% of v3) are academic-use only. ``rudra-studio`` is the same recipe

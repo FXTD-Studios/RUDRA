@@ -57,38 +57,11 @@ int cmd_deliver(const std::vector<std::string>& args) {
     auto paths = list_linear_frames(input);
     if (!paths) return fail(paths.error());
 
-    std::vector<FrameStats> stats;
-    for (std::size_t i = 0; i < paths->size(); ++i) {
-        auto f = load_linear_frame((*paths)[i], nits_scale);
-        if (!f) return fail(f.error());
-        auto m = deliver_master_frame(std::move(*f), o.source, o.peak_nits);
-        if (!m) return fail(m.error());
-        stats.push_back(analyze_frame(*m, int(i)));
-    }
-    const StaticMetadata sm = maxcll_maxfall(stats);
-    o.maxcll = sm.maxcll;
-    o.maxfall = sm.maxfall;
-    const Primaries source = o.source;
-    o.source = Primaries::Rec2020;   // converted above, before the shoulder
-    o.shoulder = false;
     o.note = [](const std::string& n) { std::fprintf(stderr, "%s\n", n.c_str()); };
-    std::size_t next_index = 0;
-    Error load_error{};
-    bool load_failed = false;
-    auto next = [&]() -> std::optional<NitsFrame> {
-        if (next_index >= paths->size()) return std::nullopt;
-        auto f = load_linear_frame((*paths)[next_index++], nits_scale);
-        if (f) f = deliver_master_frame(std::move(*f), source, o.peak_nits);
-        if (!f) {
-            load_error = f.error();
-            load_failed = true;
-            return std::nullopt;
-        }
-        return std::move(*f);
-    };
-    auto out = encode_sequence(next, output, o);
-    if (load_failed) return fail(load_error);
-    if (!out) return fail(out.error());
+    auto delivered = deliver_linear_frames(*paths, output, o, nits_scale);
+    if (!delivered) return fail(delivered.error());
+    const fs::path* out = &delivered->file;
+    const StaticMetadata sm = delivered->metadata;
 
     auto tags_value = [](const std::optional<ColourTags>& t) -> pyjson::Value {
         if (!t) return nullptr;

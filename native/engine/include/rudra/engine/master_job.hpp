@@ -27,6 +27,9 @@ struct MasterFrame {
     int source_bits = 8;
     Fields fields;
     FrameScalars scalars;
+    std::filesystem::path source;   // the file it was decoded from, hashed into the master; empty if none
+    bool tiled = false;             // the network ran in tiles
+    std::string source_space;       // the still's own primaries (rec709, p3d65, ...); empty: the request's
 };
 // Frame i of the render: decode it and run the network.
 using PrepareMasterFrame = std::function<Result<MasterFrame>(std::size_t index)>;

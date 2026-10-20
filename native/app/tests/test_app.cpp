@@ -2364,10 +2364,44 @@ TEST(AppHelp, GettingStartedTheGuideAndTips) {
     w.run("getting-started");
     ASSERT_NE(w.sheet(), nullptr);
     EXPECT_EQ(w.sheet()->windowTitle(), "Getting started");
-    QStringList keys;
-    for (auto* l : w.sheet()->findChildren<QLabel*>())
-        if (l->property("role").toString() == "value") keys << l->text();
-    EXPECT_EQ(keys.mid(0, 5), (QStringList{"1  Source", "2  Calibrate", "3  Reconstruct", "4  Check", "5  Deliver"}));
+    auto* pages = w.sheet()->findChild<QStackedWidget*>("guidePages");
+    auto* next = w.sheet()->findChild<QPushButton*>("guideNext");
+    auto* back = w.sheet()->findChild<QPushButton*>("guideBack");
+    ASSERT_NE(pages, nullptr);
+    ASSERT_NE(next, nullptr);
+    ASSERT_NE(back, nullptr);
+    EXPECT_EQ(pages->count(), 5);
+    EXPECT_EQ(pages->currentIndex(), 0);
+    EXPECT_FALSE(back->isEnabled());
+    if (const auto capture = qEnvironmentVariable("RUDRA_GUIDE_CAPTURE"); !capture.isEmpty()) {
+        w.sheet()->resize(980, 640);
+        QCoreApplication::processEvents();
+        ASSERT_TRUE(w.sheet()->grab().save(capture));
+    }
+    next->click();
+    EXPECT_EQ(pages->currentIndex(), 1);
+    back->click();
+    EXPECT_EQ(pages->currentIndex(), 0);
+    auto* deliver = w.sheet()->findChild<QPushButton*>("guideStep4");
+    ASSERT_NE(deliver, nullptr);
+    deliver->click();
+    EXPECT_EQ(pages->currentIndex(), 4);
+    EXPECT_EQ(next->text(), "Start working");
+    EXPECT_TRUE(deliver->isChecked());
+    // Clicking instructional content no longer dismisses the guide.
+    QMouseEvent click(QEvent::MouseButtonPress, QPointF(20, 20), QPointF(20, 20),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(w.sheet(), &click);
+    EXPECT_TRUE(w.sheet()->isVisible());
+    next->click();
+    EXPECT_FALSE(w.sheet()->isVisible());
+    w.run("getting-started");
+    EXPECT_EQ(w.sheet()->findChild<QStackedWidget*>("guidePages")->currentIndex(), 0);
+    w.sheet()->findChild<QPushButton*>("guideClose")->click();
+    EXPECT_FALSE(w.sheet()->isVisible());
+    w.run("getting-started");
+    QTest::keyClick(w.sheet(), Qt::Key_Escape);
+    EXPECT_FALSE(w.sheet()->isVisible());
     // Once per edition of the steps: a beta user (who saw the old ones) sees RUDRA 1.0's once.
     QSettings().setValue("help/gettingStartedShown", true);
     w.show_getting_started_once();
@@ -2624,3 +2658,60 @@ int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+
+// 16 Oct 2026: "in export HDR10, HLG and ProRes are not enabled" for a folder
+// of frames. They are now: the frames are mastered as a linear EXR sequence
+// beside the movie, then encoded as `rudra-native deliver` encodes them.
+#ifdef RUDRA_HAVE_STILL_DECODE
+TEST(AppVideo, AFolderOfFramesExportsToAMovie) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    const auto dir = fresh_dir("folder-movie-frames");
+    std::filesystem::create_directories(dir);
+    for (int i = 0; i < 4; ++i) {
+        QImage img(64, 48, QImage::Format_RGB888);
+        for (int y = 0; y < 48; ++y)
+            for (int x = 0; x < 64; ++x) img.setPixel(x, y, qRgb(20 + 3 * x, 40 + 2 * y, 30 + 10 * i));
+        ASSERT_TRUE(img.save(QString::fromStdString((dir / QStringLiteral("f%1.png").arg(i, 3, 10, QChar('0')).toStdString()).string())));
+    }
+    app::MainWindow w(false);
+    const auto out = fresh_dir("folder-movie-out");
+    std::filesystem::create_directories(out);
+    w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(out.string()));
+    w.findChild<QLineEdit*>("renderName")->setText("sh020");
+    w.open_source(QString::fromStdString(dir.string()), true);
+    ASSERT_EQ(w.frame_count(), 4u);
+    ASSERT_TRUE(w.shot_is_frame_folder());
+    EXPECT_FALSE(w.shot_is_video());
+    w.open_export_sheet();
+    auto* sheet = static_cast<app::ExportSheet*>(w.findChild<QDialog*>("exportSheet"));
+    ASSERT_NE(sheet, nullptr);
+    for (const char* id : {"hdr10", "hlg", "prores", "prores4444"}) EXPECT_TRUE(sheet->findChild<QWidget*>(id)->isEnabled()) << id;
+    sheet->pick("prores");
+    EXPECT_EQ(sheet->video_format(), "prores422hq");
+    EXPECT_FALSE(sheet->findChild<QWidget*>("exportEncodingRow")->isVisibleTo(sheet));   // PQ only from frames
+    EXPECT_TRUE(sheet->findChild<QWidget*>("exportFpsRow")->isVisibleTo(sheet));
+    sheet->pick("hdr10");
+    EXPECT_EQ(text_of(*sheet, "exportFrames"), "All 4, mastered as EXR, then as a movie (no audio)");
+    EXPECT_TRUE(text_of(*sheet, "exportDest").endsWith("sh020_hdr10.mp4")) << text_of(*sheet, "exportDest").toStdString();
+    auto* fps = sheet->findChild<QComboBox*>("exportFps");
+    fps->setCurrentIndex(fps->findText("25"));
+    EXPECT_DOUBLE_EQ(sheet->fps(), 25.0);
+    sheet->export_now();
+    ASSERT_TRUE(wait_for([&] { return !w.mastering() && !w.encoding_movie() &&
+                                      std::filesystem::exists(out / "sh020_hdr10.mp4"); }, 60000))
+        << status_of(w).toStdString();
+    EXPECT_TRUE(status_of(w).startsWith("Movie written")) << status_of(w).toStdString();
+    int exrs = 0;
+    for (const auto& e : std::filesystem::directory_iterator(out / "sh020_hdr10_frames")) exrs += e.path().extension() == ".exr";
+    EXPECT_EQ(exrs, 4);
+    // Nothing is replaced: a second export under the same name is refused.
+    EXPECT_FALSE(w.export_frames_to_movie("hdr10", 25.0));
+    EXPECT_TRUE(status_of(w).contains("already there")) << status_of(w).toStdString();
+    // A single still is EXR only.
+    w.add_files({decode_dir() / "png8_rgb.png"});
+    EXPECT_FALSE(w.shot_is_frame_folder());
+    w.open_export_sheet();
+    EXPECT_FALSE(sheet->findChild<QWidget*>("hdr10")->isEnabled());
+}
+#endif
