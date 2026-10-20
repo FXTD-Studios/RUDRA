@@ -20,7 +20,9 @@ def decoder_dependencies(rows: list[dict]) -> set[Path]:
     for row in rows:
         if not row.get("hdr_path") or not Path(row["hdr_path"]).is_absolute():
             raise ValueError("absolute HDR path required for decoder dependency review")
-        directory = Path(row["hdr_path"]).resolve().parent
+        # The loader (storage_for) searches from the unresolved path; so must
+        # this, or a symlink/junction could pin a different sentinel.
+        directory = Path(row["hdr_path"]).parent
         sentinel = next((p / "_ingest_config.json" for p in (directory, *list(directory.parents)[:3])
                          if (p / "_ingest_config.json").is_file()), None)
         if sentinel is None or not json.loads(sentinel.read_text(encoding="utf-8")).get("storage"):

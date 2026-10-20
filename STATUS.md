@@ -1,8 +1,9 @@
 # RUDRA — Training & Research Status
 
 > **Resume point:** read [CURRENT_HANDOFF](docs/CURRENT_HANDOFF.md) before
-> continuing in another model/session. Latest milestone: deterministic
-> repeatability passed; next: frozen-checkpoint quality diagnosis, no new training.
+> continuing in another model/session. Frozen-checkpoint diagnosis and the
+> push-baseline A/B are complete; the current next step is the one at the top
+> of CURRENT_HANDOFF.
 
 > **Production roadmap audit, 13 Oct 2026:** local v10 completed 20k steps;
 > its clip-first gate **FAIL** was reproduced from existing CSVs, also under

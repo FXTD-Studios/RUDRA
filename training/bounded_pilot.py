@@ -81,6 +81,9 @@ def run(recipe):
             or args.resume or args.init_checkpoint or args.image_checkpoint
             or not args.commercial_evidence):
         raise ValueError("pilot requires reviewed scratch image run, zero workers, 1000 steps, eval/save every 200")
+    # The smoke gate reads the bench_* fields, which only BenchVal writes.
+    if args.best_metric != "bench_gain" and not args.bench_val_frames > 0:
+        raise ValueError("pilot requires bench validation: --best-metric bench_gain or --bench-val-frames > 0")
     out = Path(args.output_dir).resolve()
     if out.exists():
         raise ValueError("pilot output must be a new directory")

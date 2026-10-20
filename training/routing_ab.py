@@ -168,9 +168,20 @@ def preservation_comparison(states):
 
 
 def write_json(path, value):
-    temporary = path.with_suffix(path.suffix + ".tmp")
+    # A temporary name per write: the watchdog and the main thread both write.
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.{time.monotonic_ns()}.tmp")
     temporary.write_text(json.dumps(value, indent=2), encoding="utf-8")
-    os.replace(temporary, path)
+    # On Windows, replacing a file another process has open (the parent polls
+    # the status file) fails with PermissionError for a moment; retry briefly.
+    for attempt in range(40):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError:
+            if attempt == 39:
+                temporary.unlink(missing_ok=True)
+                raise
+            time.sleep(0.05)
 
 
 def approved_recipe(recipe_path, approval_path):

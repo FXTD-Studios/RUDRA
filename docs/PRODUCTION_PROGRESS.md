@@ -538,8 +538,10 @@ to the test command above: **107 passed**. `git diff --check` passed.
    complete and routing/evaluation fixes are implemented. The approved paired
    rerun completed but neither checkpoint qualifies for promotion. Preservation
    review isolated a lost crushed-hold gradient and broader dark-tone damage;
-   the optional pre-clamp fix and frozen single-factor experiment are ready,
-   now approved and running within its original bounds. Release rights remain separate;
+   the optional pre-clamp fix and its frozen single-factor comparison then ran
+   to completion within its original bounds (both arms 200 steps, verified):
+   it improved pushed crushed gains but worsened real PU21, so the recipe still
+   fails and nothing was promoted. Release rights remain separate;
    whole-library/crop/HDR duplicate coverage is incomplete. No third-party grant
    or weight-distribution approval was invented.
 4. Phase 4 scene-aware prototypes and phases 5–6 training/native integration

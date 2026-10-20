@@ -128,21 +128,24 @@ struct Inflater {
     }
 
     bool fixed() {
-        static Huffman lencode, distcode;
-        static bool built = false;
-        if (!built) {
-            short lengths[288];
-            int s = 0;
-            for (; s < 144; ++s) lengths[s] = 8;
-            for (; s < 256; ++s) lengths[s] = 9;
-            for (; s < 280; ++s) lengths[s] = 7;
-            for (; s < 288; ++s) lengths[s] = 8;
-            construct(lencode, lengths, 288);
-            for (s = 0; s < 30; ++s) lengths[s] = 5;
-            construct(distcode, lengths, 30);
-            built = true;
-        }
-        return codes(lencode, distcode);
+        // Built once, thread-safely (a function-local static): stills can be
+        // decoded on two threads at once (the master job's and the UI's).
+        struct Fixed {
+            Huffman lencode, distcode;
+            Fixed() {
+                short lengths[288];
+                int s = 0;
+                for (; s < 144; ++s) lengths[s] = 8;
+                for (; s < 256; ++s) lengths[s] = 9;
+                for (; s < 280; ++s) lengths[s] = 7;
+                for (; s < 288; ++s) lengths[s] = 8;
+                construct(lencode, lengths, 288);
+                for (s = 0; s < 30; ++s) lengths[s] = 5;
+                construct(distcode, lengths, 30);
+            }
+        };
+        static const Fixed f;
+        return codes(f.lencode, f.distcode);
     }
 
     bool dynamic() {

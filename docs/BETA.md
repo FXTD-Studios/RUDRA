@@ -50,8 +50,9 @@ weights: LICENSE-weights).
   - Untagged files are unchanged.
   - An unknown profile is read as sRGB / Rec.709.
   - EXIF orientation is applied.
-- **Master provenance.** Masters record the app version, build commit, source
-  SHA-256 and checkpoint SHA-256. `rudra:tiled` now reports whether the
+- **Master provenance.** Masters record the app version, build commit and
+  source SHA-256, and the checkpoint SHA-256 when the model is on (analytic
+  masters have none). `rudra:tiled` now reports whether the
   network ran in tiles.
 
 - **Source: BT.1886 shadows (opt-in).** A new Source picker entry: BT.1886

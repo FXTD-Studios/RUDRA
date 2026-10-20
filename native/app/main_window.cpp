@@ -1847,10 +1847,10 @@ void MainWindow::master_finished(const MasterOutcome& o, const QString& folder) 
         status->setText(QStringLiteral("Rendered %1 frame(s) to %2").arg(o.completed).arg(folder));
     }
     status->show();
+    std::optional<FramesMovie> movie;
     if (frames_movie_) {
-        FramesMovie job = std::move(*frames_movie_);
+        if (!o.error && !o.cancelled) movie = std::move(*frames_movie_);
         frames_movie_.reset();
-        if (!o.error && !o.cancelled) encode_frames_movie(std::move(job));
     }
     delivered_ += int(o.completed);
     findChild<QLabel*>("colDelivered")->setText(QString::number(delivered_));
@@ -1858,6 +1858,9 @@ void MainWindow::master_finished(const MasterOutcome& o, const QString& folder) 
     btn_master_->setToolTip({});
     refresh_enabled();
     sync_ui();
+    // The movie's encode goes last, so its "Encoding…" button (a click stops
+    // the movie) is what shows while it runs, not "Master EXR".
+    if (movie) encode_frames_movie(std::move(*movie));
 }
 
 // ---------------------------------------------------------------------------

@@ -36,7 +36,17 @@ foreach ($c in $commits) {
 }
 $left = @(git status --porcelain --untracked-files=no)
 if ($left.Count) { Write-Host "Still modified (left for you):" -ForegroundColor Yellow; $left | Write-Host }
-$credits = (git log origin/native..HEAD --format=%B) -join "`n"
-if ($credits -match '(?i)anthropic\.com|co-authored-by:\s*claude|claude-session') { Fail "a commit credits Claude; amend it first (AGENTS.md)" }
+# Every commit to be pushed carries the FXTD Studios Research credit and no
+# other co-author (docs/RELEASE_V1.md); a git failure stops the push.
+$shas = @(git rev-list origin/native..HEAD)
+if ($LASTEXITCODE -ne 0) { Fail "git rev-list origin/native..HEAD (fetch origin first)" }
+foreach ($c in $shas) {
+    $body = (git log -1 --format=%B $c) -join "`n"
+    if ($LASTEXITCODE -ne 0) { Fail "git log $c" }
+    if ($body -match '(?i)anthropic\.com|co-authored-by:\s*claude|claude-session') { Fail "$c credits Claude; amend it first (AGENTS.md)" }
+    if (-not $body.Contains($coauthor)) { Fail "$c lacks '$coauthor'" }
+    $others = @([regex]::Matches($body, '(?im)^co-authored-by:.*$') | ForEach-Object { $_.Value.Trim() } | Where-Object { $_ -ne $coauthor })
+    if ($others.Count) { Fail "$c has another co-author: $($others -join '; ')" }
+}
 if ($Push) { Invoke-Git push origin native; Write-Host "native pushed: https://github.com/FXTD-Studios/RUDRA/actions" -ForegroundColor Green }
 else { Write-Host "Committed locally, not pushed. Review: git log --stat origin/native..HEAD" -ForegroundColor Green }

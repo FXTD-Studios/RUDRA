@@ -212,7 +212,11 @@ Repeatability is demonstrated only for the fixed recipe/environment. The
 historical drift's specific cause and observed throughput variation are not
 established. No checkpoint is promoted or commercially cleared.
 
-## Next task acceptance criteria
+## Push-baseline A/B acceptance criteria (historical: completed, do not rerun)
+
+These were the criteria for the push-baseline A/B. It ran once, was verified
+and refuted its hypothesis; no promotion, continuation or retry. They are kept
+as a record only. The current next step is at the top of this file.
 
 1. Re-run the focused tests on Windows: `tests/test_push_baseline_ab.py` plus
    the 97-test suite. 131 passed on CPU Linux.
