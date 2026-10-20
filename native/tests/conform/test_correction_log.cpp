@@ -238,7 +238,14 @@ TEST(CorrectionLog, TheCommandLineLogsAStill) {
     {
         std::ofstream(dir / "grade.json") << R"({"analytic": true, "exposure_ev": 0.25})";
     }
-    auto run = [](const std::string& c) { return std::system(c.c_str()); };
+    // cmd.exe strips the first and last quote of a command that starts with one.
+    auto run = [](const std::string& c) {
+#ifdef _WIN32
+        return std::system(("\"" + c + "\"").c_str());
+#else
+        return std::system(c.c_str());
+#endif
+    };
     // Refused before the opt-in.
     EXPECT_NE(run(cli + " correction-log add \"" + log.string() + "\" \"" + still.string() + "\" --params \"" +
                   (dir / "grade.json").string() + "\""), 0);

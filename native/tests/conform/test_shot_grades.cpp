@@ -141,8 +141,11 @@ TEST(ShotGrades, TheFileRoundTripsWithRelativeMasks) {
     ASSERT_TRUE(set_key(s, 30, k));
     const fs::path file = dir / "programme.shots.json";
     ASSERT_TRUE(save_shot_grades(file, s));
-    std::ifstream in(file);
-    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::string text;
+    {   // closed before the next save: Windows cannot replace an open file
+        std::ifstream in(file);
+        text.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    }
     EXPECT_NE(text.find("\"masks/sh020.masks.png\""), std::string::npos) << text;
     // The masks file is missing, so the grade with it cannot load; without it, it does.
     auto missing = load_shot_grades(file);

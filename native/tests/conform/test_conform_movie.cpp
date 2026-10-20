@@ -28,6 +28,15 @@ fs::path fresh(const std::string& name) {
 
 std::string q(const fs::path& p) { return "\"" + p.string() + "\""; }
 
+// cmd.exe strips the first and last quote of a command that starts with one.
+int run(const std::string& cmd) {
+#ifdef _WIN32
+    return std::system(("\"" + cmd + "\"").c_str());
+#else
+    return std::system(cmd.c_str());
+#endif
+}
+
 // 12 frames at 24 fps, 64x36, BT.709: 5 grey, 4 a brighter grey, 3 dark: two hard cuts.
 fs::path three_shot_clip(const fs::path& dir) {
     const fs::path out = dir / "three_shots.mp4";
@@ -38,11 +47,10 @@ fs::path three_shot_clip(const fs::path& dir) {
         "-filter_complex \"[0:v][1:v][2:v]concat=n=3:v=1,format=yuv420p,setparams=color_primaries=bt709:"
         "color_trc=bt709:colorspace=bt709:range=tv\" -frames:v 12 -c:v libx264 -preset ultrafast -crf 1 "
         "-color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range tv " + q(out);
-    if (std::system(cmd.c_str()) != 0) return {};
+    if (run(cmd) != 0) return {};
     return out;
 }
 
-int run(const std::string& cmd) { return std::system(cmd.c_str()); }
 
 nlohmann::json read_json(const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
