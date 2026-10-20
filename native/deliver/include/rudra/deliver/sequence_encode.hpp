@@ -7,6 +7,7 @@
 // keeps them (the HEVC VUI through ffprobe, the ProRes frame header) and a
 // file whose tags did not land is not handed over.
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -17,6 +18,7 @@
 
 #include "rudra/core/color.hpp"
 #include "rudra/core/master.hpp"
+#include "rudra/core/measure.hpp"
 #include "rudra/platform/result.hpp"
 
 namespace rudra {
@@ -89,5 +91,24 @@ Result<std::filesystem::path> encode_sequence(const std::function<std::optional<
 // float64 nits, max(value * nits_scale, 0), its first three channels.
 Result<std::vector<std::filesystem::path>> list_linear_frames(const std::filesystem::path& path);
 Result<NitsFrame> load_linear_frame(const std::filesystem::path& path, double nits_scale);
+
+// `rudra deliver` end to end (cli.py _cmd_deliver), for the CLI and the app's
+// export of a folder shot: every frame into Rec.2020 and rolled off into the
+// peak, MaxCLL and MaxFALL measured from that in a first pass, then the frames
+// encoded in a second (each read again, so nothing long is held in memory).
+struct LinearDelivery {
+    std::filesystem::path file;
+    int frames = 0;
+    StaticMetadata metadata;
+};
+struct LinearDeliveryProgress {
+    std::size_t done = 0, total = 0;
+    bool encoding = false;   // false: measuring
+};
+Result<LinearDelivery> deliver_linear_frames(const std::vector<std::filesystem::path>& frames,
+                                             const std::filesystem::path& output, SequenceEncodeOptions options,
+                                             double nits_scale,
+                                             const std::function<void(const LinearDeliveryProgress&)>& progress = {},
+                                             const std::atomic<bool>* cancel = nullptr);
 
 }  // namespace rudra

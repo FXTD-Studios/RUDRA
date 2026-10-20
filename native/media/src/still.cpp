@@ -110,6 +110,13 @@ Result<DecodedStill> decode_sdr(std::span<const std::uint8_t> bytes) {
         out.bits = 8;
         out.distinct_codes = static_cast<int>(distinct_green<std::uint8_t>(m));
     }
+    out.colour = read_still_colour(bytes);
+    if (out.colour.orientation != 1) {
+        const Oriented o = apply_orientation(rgb.span(), 3, w, h, out.colour.orientation);
+        PlanarBuffer turned(3, o.height, o.width);
+        std::copy(o.data.begin(), o.data.end(), turned.span().begin());
+        rgb = std::move(turned);
+    }
     out.rgb = SdrImage(std::move(rgb));
     return out;
 }

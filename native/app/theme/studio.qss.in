@@ -319,3 +319,31 @@ QLabel[role="plabel-text"] { background: transparent; color: var(--ink); font-we
 QDialog#exportSheet QWidget[role="card"] { background: var(--panel-2); }
 QWidget[role="tile"]:disabled QLabel[role="tile-name"] { color: var(--ink-4); }
 QWidget[role="tile"]:disabled QLabel[role="tile-sub"] { color: var(--raise-2); }
+
+/* Getting started: scoped to the guide, using the colour-critical neutral palette. */
+QDialog#gettingStarted { background: var(--panel-2); }
+QDialog#gettingStarted QLabel { background: transparent; border: none; padding: 0; }
+QDialog#gettingStarted QWidget#guideHeader { background: var(--panel); border-bottom: 1px solid var(--line-2); }
+QDialog#gettingStarted QWidget#guideSidebar { background: var(--panel); border-right: 1px solid var(--line-2); }
+QDialog#gettingStarted QWidget#guideFooter { background: var(--panel); border-top: 1px solid var(--line-2); }
+QDialog#gettingStarted QScrollArea, QDialog#gettingStarted QScrollArea > QWidget > QWidget { background: var(--panel-2); }
+QDialog#gettingStarted QLabel[guideRole="brand"] { font-size: 18px; font-weight: 700; color: var(--ink); }
+QDialog#gettingStarted QLabel[guideRole="title"] { font-size: 28px; font-weight: 600; color: var(--ink); }
+QDialog#gettingStarted QLabel[guideRole="eyebrow"] { font-size: 11px; color: var(--ink-3); }
+QDialog#gettingStarted QLabel[guideRole="intro"] { font-size: 14px; color: var(--ink-2); }
+QDialog#gettingStarted QLabel[guideRole="heading"] { font-size: 13px; font-weight: 600; color: var(--ink); }
+QDialog#gettingStarted QLabel[guideRole="body"], QDialog#gettingStarted QLabel[guideRole="muted"] { font-size: 12px; color: var(--ink-2); }
+QDialog#gettingStarted QLabel[guideRole="note"] { font-size: 11px; color: var(--ink-3); }
+QDialog#gettingStarted QWidget#guideCard { background: var(--side); border: 1px solid var(--line-2); border-radius: 9px; }
+QDialog#gettingStarted QPushButton { padding: 9px 16px; border-radius: 6px; }
+QDialog#gettingStarted QWidget#guideSidebar QPushButton { text-align: left; padding: 0; background: transparent; border: 1px solid transparent; font-size: 12px; color: var(--ink-2); }
+QDialog#gettingStarted QWidget#guideSidebar QPushButton:hover { background: var(--card); }
+QDialog#gettingStarted QWidget#guideSidebar QPushButton:checked { background: var(--accent-dim); border: 1px solid var(--accent); color: var(--ink); }
+QDialog#gettingStarted QPushButton#guideNext { background: var(--accent); border: 1px solid var(--accent); color: var(--white); min-width: 96px; }
+QDialog#gettingStarted QPushButton#guideNext:hover { background: var(--accent-line); }
+QDialog#gettingStarted QPushButton#guideClose { background: transparent; border: none; padding: 0; font-size: 22px; }
+QDialog#gettingStarted QPushButton:focus { border: 1px solid var(--accent-line); }
+QDialog#gettingStarted QLabel[guideRole="stepTitle"] { font-size: 12px; font-weight: 600; color: var(--ink); }
+QDialog#gettingStarted QLabel[guideRole="stepSubtitle"] { font-size: 11px; color: var(--ink-3); }
+QDialog#gettingStarted QLabel[guideRole="number"] { border: 1px solid var(--raise-2); border-radius: 13px; color: var(--ink-3); }
+QDialog#gettingStarted QLabel[guideRole="number"][active="true"] { background: var(--accent); border-color: var(--accent); color: var(--white); }

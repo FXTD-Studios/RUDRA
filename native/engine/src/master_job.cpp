@@ -30,7 +30,11 @@ void MasterJob::start(std::function<void(std::size_t)> on_begin, std::function<v
                 out.error = frame.error();
                 break;
             }
-            auto r = publish_master(frame->sdr, frame->source_bits, frame->fields, frame->scalars, model_, request_,
+            MasterRequest q = request_;   // this frame's provenance
+            q.source_file = frame->source;
+            q.tiled = frame->tiled;
+            if (!frame->source_space.empty() && q.source_space == "rec709") q.source_space = frame->source_space;
+            auto r = publish_master(frame->sdr, frame->source_bits, frame->fields, frame->scalars, model_, q,
                                     targets_[i]);
             if (!r) {
                 out.error = r.error();

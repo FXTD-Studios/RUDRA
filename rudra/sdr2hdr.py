@@ -283,6 +283,9 @@ class SDR2HDROutput:
     analytic_baseline: torch.Tensor | None = None
     # (B, 1 + knots) log2 corrections from the CurveHead, else None.
     curve_params: torch.Tensor | None = None
+    # Opt-in training diagnostics/loss only. No parameters or export outputs.
+    preclamp_log_delta: torch.Tensor | None = None
+    preclamp_log_scale: float | None = None
 
 
 # Source-curve vocabulary (roadmap task 1.3). Index 0 is "unknown" and is the
@@ -636,9 +639,12 @@ class SDR2HDRNet(nn.Module):
         curve_params: torch.Tensor | None = None,
         source_curve: torch.Tensor | None = None,
         baseline_curve: torch.Tensor | int | None = None,
+        record_preclamp: bool = False,
     ) -> SDR2HDROutput:
         if sdr.ndim != 4 or sdr.shape[1] != 3:
             raise ValueError(f"Expected SDR tensor (B,3,H,W), got {tuple(sdr.shape)}")
+        if record_preclamp and preserve_outside:
+            raise ValueError("pre-clamp training capture requires preserve_outside=False")
         sdr = sdr.float().clamp(0.0, 1.0)
         baseline, analytic, curve_params = self.baseline_hdr(sdr, curve_params, source_curve, baseline_curve)
         e1, e2, m = self.encode(sdr, baseline)
@@ -706,7 +712,8 @@ class SDR2HDRNet(nn.Module):
             residual_gate = residual_gate * residual_scale.to(sdr.device, sdr.dtype)
         else:
             residual_scale = None
-        pred_log = (base_log + residual * residual_gate).clamp(0.0, torch.log1p(torch.tensor(
+        log_delta = residual * residual_gate
+        pred_log = (base_log + log_delta).clamp(0.0, torch.log1p(torch.tensor(
             self.max_hdr * self.log_scale, device=sdr.device, dtype=sdr.dtype
         )))
         pred = torch.expm1(pred_log) / self.log_scale
@@ -717,6 +724,8 @@ class SDR2HDRNet(nn.Module):
             pred, baseline, residual, highlight, shadow,
             highlight_logits, shadow_logits, residual_scale, shadow_weight,
             analytic, curve_params,
+            log_delta if record_preclamp else None,
+            self.log_scale if record_preclamp else None,
         )
 
 
@@ -845,6 +854,7 @@ def sdr2hdr_loss(
     baseline_weight: float = 0.0,
     region_focus: float = 0.0,
     crushed_hold: float = 0.0,
+    crushed_hold_domain: str = "postclamp",
 ) -> dict[str, torch.Tensor]:
     """Stable HDR recovery objective in log-radiance and masked regions.
 
@@ -862,6 +872,11 @@ def sdr2hdr_loss(
     dilated 1 px): a crushed black carries no detail to recover, and v8 and v9
     were 1.6 to 2.4 stops worse than the inverse there (0 of 287 frames better).
     0 leaves everything as it was.
+
+    ``crushed_hold_domain='preclamp'`` is experimental and opt-in. It holds the
+    actual gated log residual before saturation, using the same mask, weight
+    and normalization. Requires positive crushed_hold and forward capture;
+    the historical post-clamp objective is the default.
 
     ``baseline_weight`` > 0 adds a direct term on ``output.baseline`` -- the
     curve-corrected baseline when the model has a CurveHead. Without it the
@@ -882,6 +897,14 @@ def sdr2hdr_loss(
     reads the per-pixel error inherits it.
     """
     scale = 16.0
+    if crushed_hold_domain not in ("postclamp", "preclamp"):
+        raise ValueError("crushed_hold_domain must be postclamp or preclamp")
+    if crushed_hold_domain == "preclamp":
+        if not math.isfinite(crushed_hold) or crushed_hold <= 0:
+            raise ValueError("pre-clamp hold requires a positive finite crushed_hold")
+        if (output.preclamp_log_delta is None or output.preclamp_log_scale != scale
+                or output.preclamp_log_delta.shape != output.hdr.shape):
+            raise ValueError("pre-clamp hold requires matching forward capture at log_scale=16")
     hi, sh = recovery_masks(sdr)
     error, pred_log, target_log, censored_fraction = censored_log_error(
         output.hdr, target, target_ceiling, scale)
@@ -935,7 +958,8 @@ def sdr2hdr_loss(
     if crushed_hold > 0:
         top = sdr.clamp(0.0, 1.0).amax(dim=1, keepdim=True)
         crushed = F.max_pool2d((top <= 2.0 / 255.0).to(error.dtype), kernel_size=3, stride=1, padding=1)
-        change = (pred_log - torch.log1p(output.baseline.clamp_min(0.0) * scale)).abs()
+        change = (output.preclamp_log_delta.abs() if crushed_hold_domain == "preclamp" else
+                  (pred_log - torch.log1p(output.baseline.clamp_min(0.0) * scale)).abs())
         crushed_term = (change * crushed).sum() / (crushed.sum() * 3.0 + 1e-6)
         total = total + float(crushed_hold) * crushed_term
     baseline_term = torch.zeros((), device=total.device, dtype=total.dtype)

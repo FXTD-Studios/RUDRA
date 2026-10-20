@@ -66,15 +66,21 @@ Result<ReferenceImage> read_reference(const std::filesystem::path& path) {
     if (still->bits < 10)
         return make_error(ErrorCode::InvalidArgument, "reference must be a 16-bit PQ frame or an EXR", path.string());
     const SdrImage& codes = still->rgb;
-    PlanarBuffer nits2020(3, codes.height(), codes.width());
+    // PQ references are Rec.2020 unless the file's own tag (cICP, ICC, ...)
+    // names other primaries; an untagged or unrecognised one stays Rec.2020
+    // (an untagged still reports Rec.709, the SDR default, which a PQ frame is not).
+    const bool own = still->colour.tagged && still->colour.recognised;
+    const Primaries prim = own ? still->colour.primaries : Primaries::Rec2020;
+    PlanarBuffer nits(3, codes.height(), codes.width());
     const float k = 1.0f / kDiffuseWhite.v;
     for (int c = 0; c < 3; ++c) {
         const float* s = codes.buffer().plane(c);
-        float* d = nits2020.plane(c);
-        for (std::size_t i = 0; i < nits2020.plane_size(); ++i) d[i] = pq_eotf(s[i]) * k;
+        float* d = nits.plane(c);
+        for (std::size_t i = 0; i < nits.plane_size(); ++i) d[i] = pq_eotf(s[i]) * k;
     }
-    out.linear709 = convert_primaries(nits2020, Primaries::Rec2020, Primaries::Rec709);
-    out.note = (ext == ".tif" || ext == ".tiff") ? "TIFF 16-bit PQ, Rec.2020" : "PNG 16-bit PQ, Rec.2020";
+    out.linear709 = prim == Primaries::Rec709 ? std::move(nits) : convert_primaries(nits, prim, Primaries::Rec709);
+    out.note = std::string((ext == ".tif" || ext == ".tiff") ? "TIFF 16-bit PQ, " : "PNG 16-bit PQ, ") +
+               (own ? std::string(primaries_id(prim)) + " (" + still->colour.tag + ")" : std::string("Rec.2020"));
     return out;
 #endif
 }

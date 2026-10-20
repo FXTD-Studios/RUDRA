@@ -71,6 +71,14 @@ struct MasterRequest {
     // anchor, before the Region EV bands). In the JSON and the sidecar only
     // when not 0, so every master before reads the same.
     double exposure_ev = 0.0;
+    // 16 Oct 2026, provenance (roadmap 1.3): what made the master, for the
+    // record. Runtime facts, never in the request JSON. The source file is
+    // hashed (rudra:sourceSha256) when set; the checkpoint's SHA-256 is the
+    // package manifest's source_sha256, empty for the analytic
+    // reconstruction; tiled says whether the network ran in tiles.
+    std::string checkpoint_sha256;
+    std::filesystem::path source_file;
+    bool tiled = false;
 };
 
 // The fill's options for this request (the defaults, with its peaks).

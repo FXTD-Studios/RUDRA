@@ -22,7 +22,8 @@ from functools import lru_cache
 import numpy as np
 import torch
 
-BASELINE_CURVES: tuple[str, ...] = ("unknown", "bt1886", "aces", "hable", "agx", "camera_log", "clip")
+# "bt1886_shadows" (14 Oct 2026, opt-in) is appended last so existing indices keep their meaning.
+BASELINE_CURVES: tuple[str, ...] = ("unknown", "bt1886", "aces", "hable", "agx", "camera_log", "clip", "bt1886_shadows")
 DEFAULT_BASELINE = "bt1886"     # the app's default for new sessions since 13 Oct 2026
 KNOTS = 256
 
@@ -97,11 +98,49 @@ def _inverse_aces(display):
     return inverse_aces_approx(torch.as_tensor(display, dtype=torch.float32)).numpy()
 
 
+# BT.1886 shadows: log2 scene-linear at SDR codes 1..39, the same numbers as
+# native/core/src/source_curve.cpp kShadowLog2Scene (tools/shadow_correction_eval.py,
+# fit_v3.json; docs/ai/SHADOW_CORRECTION_RESULT.md). Code 40 up is BT.1886.
+SHADOW_KNEE = 40
+SHADOW_LOG2_SCENE = np.array([0.0,
+    -14.685428, -14.249545, -14.009058, -13.741516, -13.537101, -13.242504,
+    -13.008029, -12.860731, -12.457915, -12.053934, -12.033934, -12.013934,
+    -11.993934, -11.973934, -11.252472, -10.590089, -10.570089, -10.389724,
+    -10.164267, -10.013963, -9.968597, -9.929899, -9.870572, -9.778883,
+    -9.693991, -9.599686, -9.497595, -9.392905, -9.292866, -9.197775,
+    -9.111351, -9.028863, -8.925111, -8.815446, -8.703925, -8.587965,
+    -8.450235, -8.357113, -8.253048,
+], np.float32)
+
+
+def _inverse_bt1886(display):
+    return np.power(_bt709_oetf(np.clip(display, 0.0, 0.995)), 2.4).astype(np.float32)
+
+
+def _inverse_bt1886_shadows(display):
+    """native inverse_bt1886_shadows: BT.1886 from the knee code's display value up."""
+    display = np.asarray(display, np.float32)
+    knee_display = np.float32(((SHADOW_KNEE / 255.0 + 0.055) / 1.055) ** 2.4)
+    x = np.clip(np.minimum(display, np.float32(0.995)), 0.0, 1.0)
+    code = np.where(x <= 0.0031308, x * 12.92, 1.055 * np.power(x, 1.0 / 2.4) - 0.055).astype(np.float32) * 255.0
+    code = np.minimum(code, SHADOW_KNEE)
+    knee = np.log2(_inverse_bt1886(np.asarray([knee_display]))[0])
+    table = np.append(SHADOW_LOG2_SCENE, knee)
+    i = np.clip(np.floor(code).astype(int), 1, SHADOW_KNEE - 1)
+    t = code - i
+    lifted = np.exp2(table[i] + (table[i + 1] - table[i]) * t)
+    lifted = np.where(code < 1.0, code * np.exp2(table[1]), lifted)
+    lifted = np.where(code <= 0.0, 0.0, lifted)
+    return np.where(display >= knee_display, _inverse_bt1886(display), lifted).astype(np.float32)
+
+
 def _inverse(curve: str, display: np.ndarray) -> np.ndarray:
     if curve in ("unknown", "aces"):
         return _inverse_aces(display)
     if curve == "bt1886":
-        return np.power(_bt709_oetf(np.clip(display, 0.0, 0.995)), 2.4).astype(np.float32)
+        return _inverse_bt1886(display)
+    if curve == "bt1886_shadows":
+        return _inverse_bt1886_shadows(display)
     if curve == "clip":
         return np.clip(display, 0.0, 0.995).astype(np.float32)
     forward = {"hable": _forward_hable, "agx": _forward_agx, "camera_log": _forward_camera_log}[curve]

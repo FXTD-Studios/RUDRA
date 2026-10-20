@@ -34,6 +34,8 @@ def load(path: Path, metrics: tuple[str, ...] = METRICS) -> dict[str, dict[str, 
     with path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             key = row.get("frame") or row.get("asset_id")
+            if not key or key in rows:
+                raise ValueError(f"{path}: missing or duplicate frame ID {key!r}")
             vals = {}
             for m in metrics:
                 try:
@@ -46,19 +48,43 @@ def load(path: Path, metrics: tuple[str, ...] = METRICS) -> dict[str, dict[str, 
 
 
 def compare(a: dict, b: dict, draws: int = 5000, seed: int = 20260923,
-            metrics: tuple[str, ...] = METRICS) -> dict:
+            metrics: tuple[str, ...] = METRICS, *, require_same_frames: bool = False,
+            scenes: dict[str, str] | None = None) -> dict:
+    """Optional equal-scene bootstrap; historical callers retain frame weighting.
+
+    Scene IDs must come from export metadata, never guessed from filenames.
+    Strict pairing rejects partial exports and asymmetric missing metrics.
+    Symmetric NaNs (e.g. frames without clipped pixels) are still excluded.
+    """
+    if require_same_frames and a.keys() != b.keys():
+        raise ValueError("candidate/reference frame IDs differ; incomplete paired export")
     out = {}
     rng = np.random.default_rng(seed)
     for m in metrics:
-        d = np.array([a[k][m] - b[k][m] for k in a if k in b
-                      and math.isfinite(a[k][m]) and math.isfinite(b[k][m])])
+        if require_same_frames and any(math.isfinite(a[k][m]) != math.isfinite(b[k][m]) for k in a):
+            raise ValueError(f"{m}: candidate/reference finite coverage differs")
+        keys = [k for k in a if k in b and math.isfinite(a[k][m]) and math.isfinite(b[k][m])]
+        d = np.array([a[k][m] - b[k][m] for k in keys])
         if d.size == 0:
             out[m] = {"frames": 0}
             continue
-        boot = d[rng.integers(0, d.size, (draws, d.size))].mean(axis=1)
+        units = d
+        if scenes is not None:
+            grouped = {}
+            for k, value in zip(keys, d):
+                if not scenes.get(k):
+                    raise ValueError(f"missing scene ID for {k}")
+                grouped.setdefault(scenes[k], []).append(value)
+            units = np.array([np.mean(v) for v in grouped.values()])
+            if len(units) < 2:
+                out[m] = {"frames": 0, "scenes": len(units), "reason": "need at least two scenes"}
+                continue
+        boot = units[rng.integers(0, units.size, (draws, units.size))].mean(axis=1)
         lo, hi = np.quantile(boot, [0.025, 0.975])
-        out[m] = {"frames": int(d.size), "mean": float(d.mean()), "ci95": [float(lo), float(hi)],
+        out[m] = {"frames": int(d.size), "mean": float(units.mean()), "ci95": [float(lo), float(hi)],
                   "wins": int((d > 0).sum()), "losses": int((d < 0).sum())}
+        if scenes is not None:
+            out[m].update(scenes=int(units.size), bootstrap_unit="scene", weighting="equal_scene")
     return out
 
 

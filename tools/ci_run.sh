@@ -13,6 +13,14 @@ log=$(mktemp)
 "$@" 2>&1 | tee "$log"
 code=${PIPESTATUS[0]}
 if [ "$code" -ne 0 ]; then
+  esc() { sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk 'BEGIN { ORS = "%0A" } { print }'; }
+  # CTest: which tests failed, and how (Failed, SEGFAULT, Timeout, Exception,
+  # Not Run), first and on its own. An annotation keeps only about 4 KB, so the
+  # tail below can lose the summary at its end.
+  failed=$(grep -E '^[[:space:]]*[0-9]+ - .+ \(.+\)[[:space:]]*$|\*\*\*(Failed|Exception|Timeout|Not Run)|^[[:space:]]*[0-9]+/[0-9]+ Test +#[0-9]+: .*(Failed|Exception|Timeout|Not Run)|tests passed, [0-9]+ tests failed' "$log" | head -n 40)
+  if [ -n "$failed" ]; then
+    echo "::error title=${title}: failing tests::$(printf '%s\n' "$failed" | esc)"
+  fi
   # Workflow commands take one line: %, CR and LF are escaped.
   body=$(tail -n "${CI_TAIL_LINES:-60}" "$log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk 'BEGIN { ORS = "%0A" } { print }')
   echo "::error title=${title} failed (exit ${code})::${body}"

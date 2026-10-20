@@ -6,6 +6,14 @@ Written 13 Oct 2026. RUDRA 1.0 ships the analytic reconstruction:
 - the clip fill;
 - the artist's grade.
 
+**Production audit update, 13 Oct 2026:** the local v10 run completed 20,000
+steps and failed its clip-first gate. Recomputed frame and supplemental
+scene-bootstrap verdicts both fail. Its 728 real validation frames were
+previously training data for v8/v9, so resplitting did not create an independent
+validation set for this fine-tune. Do not promote or repeat this run. See
+`docs/PRODUCTION_PROGRESS.md` and `docs/ai/RUDRA_EXECUTION_AUDIT.md`; the recipe
+below is retained as experiment history, not authorization for another run.
+
 The model is optional (STATUS line G). This page sets out how a model earns a
 place in it, and what v10 changes.
 
@@ -40,6 +48,12 @@ The model's weights are unchanged, so v9 loads as v10's starting point.
 ### Shadows: `--crushed-hold 1.0`
 
 Changing a crushed black (max code ≤ 2/255) is penalised.
+
+Later diagnostic review found that this post-clamp penalty loses its residual
+gradient when a prediction saturates to black. The historical objective remains
+the default; an optional pre-clamp hold is implemented for a separately approved
+[isolated comparison](ai/PRECLAMP_HOLD_APPROVAL.md). No replacement training run
+or model promotion has occurred.
 
 ### Validation: `pipeline/build_v10_manifest.py`
 

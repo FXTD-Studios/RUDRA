@@ -525,4 +525,65 @@ Result<NitsFrame> load_linear_frame(const fs::path& path, double nits_scale) {
     return make_error(ErrorCode::InvalidArgument, "unsupported frame format: " + path.string());
 }
 
+Result<LinearDelivery> deliver_linear_frames(const std::vector<fs::path>& paths, const fs::path& output,
+                                             SequenceEncodeOptions o, double nits_scale,
+                                             const std::function<void(const LinearDeliveryProgress&)>& progress,
+                                             const std::atomic<bool>* cancel) {
+    if (paths.empty()) return encode_error("no frames to encode");
+    auto cancelled = [&] { return cancel && cancel->load(); };
+    auto stopped = [] { return make_error(ErrorCode::Cancelled, "stopped"); };
+    const Primaries source = o.source;
+    std::vector<FrameStats> stats;
+    stats.reserve(paths.size());
+    for (std::size_t i = 0; i < paths.size(); ++i) {
+        if (cancelled()) return stopped();
+        auto f = load_linear_frame(paths[i], nits_scale);
+        if (!f) return f.error();
+        auto m = deliver_master_frame(std::move(*f), source, o.peak_nits);
+        if (!m) return m.error();
+        stats.push_back(analyze_frame(*m, int(i)));
+        if (progress) progress({i + 1, paths.size(), false});
+    }
+    LinearDelivery d;
+    d.metadata = maxcll_maxfall(stats);
+    o.maxcll = d.metadata.maxcll;
+    o.maxfall = d.metadata.maxfall;
+    o.source = Primaries::Rec2020;   // converted above, before the shoulder
+    o.shoulder = false;
+    std::size_t next_index = 0;
+    std::optional<Error> load_error;
+    bool was_cancelled = false;
+    auto next = [&]() -> std::optional<NitsFrame> {
+        if (next_index >= paths.size()) return std::nullopt;
+        if (cancelled()) {
+            was_cancelled = true;
+            return std::nullopt;
+        }
+        if (progress && next_index > 0) progress({next_index, paths.size(), true});
+        auto f = load_linear_frame(paths[next_index++], nits_scale);
+        if (f) f = deliver_master_frame(std::move(*f), source, o.peak_nits);
+        if (!f) {
+            load_error = f.error();
+            return std::nullopt;
+        }
+        return std::move(*f);
+    };
+    auto out = encode_sequence(next, output, o);
+    // A stop or a bad frame ends the input early: whatever ffmpeg made of the
+    // frames before it is not the delivery.
+    if (load_error || was_cancelled) {
+        if (out) {
+            std::error_code ec;
+            fs::remove(*out, ec);
+        }
+        if (load_error) return *load_error;
+        return stopped();
+    }
+    if (!out) return out.error();
+    if (progress) progress({paths.size(), paths.size(), true});
+    d.file = *out;
+    d.frames = int(paths.size());
+    return d;
+}
+
 }  // namespace rudra
