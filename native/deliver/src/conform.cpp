@@ -275,15 +275,22 @@ Result<ConformEdit> parse_fcpxml(std::string_view text, const FrameRate& rate) {
     // To the first <sequence> outside <resources> (its tcStart), then its
     // <spine>: a compound clip's media in <resources> has a sequence and a
     // spine of its own, which are not the programme.
-    int in_resources = 0;
+    // Only a project's sequence is the programme.
+    int in_resources = 0, in_project = 0;
     while (next_tag(text, pos, tag)) {
-        if (tag.name == "resources" && !tag.self_closing) {
-            in_resources += tag.closing ? -1 : 1;
+        if (tag.name == "resources") {
+            if (!tag.self_closing) in_resources += tag.closing ? -1 : 1;
             continue;
         }
-        if (tag.closing || in_resources > 0) continue;
+        if (in_resources > 0) continue;
+        if (tag.name == "project" && !tag.self_closing) {
+            in_project += tag.closing ? -1 : 1;
+            if (!tag.closing && edit.title.empty() && tag.attrs.count("name")) edit.title = tag.attrs["name"];
+            continue;
+        }
+        if (tag.closing) continue;
         if (tag.name == "fcpxml") saw_root = true;
-        if (tag.name == "project" && edit.title.empty() && tag.attrs.count("name")) edit.title = tag.attrs["name"];
+        if (in_project == 0) continue;
         if (tag.name == "sequence") {
             if (auto t = tag.attrs.find("tcStart"); t != tag.attrs.end())
                 if (auto v = rational_seconds(t->second)) tc_start = *v;

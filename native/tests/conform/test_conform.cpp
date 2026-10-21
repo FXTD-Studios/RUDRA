@@ -214,4 +214,17 @@ TEST(Conform, OtherXmlIsRefused) {
     EXPECT_FALSE(parse_fcpxml("<xmeml><sequence/></xmeml>", rate("24")));
     EXPECT_FALSE(parse_fcpxml("<fcpxml><library/></fcpxml>", rate("24")));
     EXPECT_FALSE(parse_fcpxml("<fcpxml><sequence><spine><clip name='x'/></spine></sequence></fcpxml>", rate("24")));
+    // A storyline outside any project is not a programme.
+    EXPECT_FALSE(parse_fcpxml(
+        "<fcpxml><sequence tcStart='0s'><spine><clip name='x' offset='0s' duration='1s'/></spine></sequence></fcpxml>",
+        rate("24")));
+    auto in_project = parse_fcpxml(
+        "<fcpxml><sequence tcStart='0s'><spine><clip name='loose' offset='0s' duration='1s'/></spine></sequence>"
+        "<project name='P'><sequence tcStart='10s'><spine><clip name='x' offset='10s' duration='1s'/></spine></sequence></project>"
+        "</fcpxml>",
+        rate("24"));
+    ASSERT_TRUE(in_project) << in_project.error().message;
+    ASSERT_EQ(in_project->events.size(), 1u);
+    EXPECT_EQ(in_project->events[0].name, "x");
+    EXPECT_EQ(in_project->events[0].record_in, 0);
 }

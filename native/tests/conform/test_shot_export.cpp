@@ -3,6 +3,7 @@
 // with their own flicker. Analytic, so it needs ffmpeg and no model.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 
@@ -89,6 +90,26 @@ TEST(ShotExport, EachShotTakesItsOwnGrade) {
         if (i < 3) EXPECT_NEAR(k, f, 1e-9) << "frame " << i;
         else EXPECT_GT(k, f * 1.8) << "frame " << i << ": " << f << " -> " << k;
     }
+}
+
+// The hold restarts at a shot's end when a gap follows it: the fresh smoother
+// reports that frame as a cut, so the dynamic metadata starts a shot there too.
+TEST(ShotExport, AGapAfterAShotStartsAMetadataShotWhereTheHoldRestarts) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    const fs::path dir = fresh("gap");
+    ShotGrades s;
+    s.base = analytic(0.0);
+    s.shots = {{"sh010", 0, 1, "edl", {}}, {"sh020", 3, 5, "edl", {}}};   // frame 2 is in no shot
+    auto a = args(dir / "gap.mp4");
+    a.dynamic_metadata = "on";
+    a.shots = s;
+    auto r = convert_video(a, nullptr, nullptr);
+    ASSERT_TRUE(r) << r.error().message << " " << r.error().detail;
+    const auto dovi = read_json(dir / "gap.mp4_dovi_generate.json");
+    std::vector<int> starts;
+    for (const auto& g : dovi["shots"]) starts.push_back(g["start"].get<int>());
+    for (int want : {0, 2, 3})
+        EXPECT_NE(std::find(starts.begin(), starts.end(), want), starts.end()) << "no metadata shot starts at " << want;
 }
 
 TEST(ShotExport, AShotsFileMixingModelAndAnalyticIsRefused) {

@@ -64,7 +64,9 @@ struct CorrectionConsent {
 
 // Make the folder a log with this consent (an existing log keeps its records
 // and takes the new consent; a withdrawn one stays withdrawn until opened
-// again with opted_in). Refused unless opted_in, by, at, terms_version and
+// again with opted_in). Opening a withdrawn log again re-enables export of the
+// records it kept, each still with the rights of the consent it was logged
+// under; the replaced consent, withdrawal included, stays in consent_history. Refused unless opted_in, by, at, terms_version and
 // source_id are given and rights is one of the three.
 Result<void> open_correction_log(const std::filesystem::path& dir, const CorrectionConsent& consent);
 Result<CorrectionConsent> read_correction_consent(const std::filesystem::path& dir);
