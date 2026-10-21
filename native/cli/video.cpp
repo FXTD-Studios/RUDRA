@@ -219,7 +219,7 @@ int cmd_conform(const std::vector<std::string>& args) {
         if (!edit) return fail(edit.error());
         std::optional<long long> start;
         if (record_start) {
-            auto f = timecode_frames(*record_start, *rate);
+            auto f = timecode_frames(*record_start, *rate, edit->drop_frame);   // in the edit's timecode
             if (!f) return fail(f.error());
             start = *f;
         }

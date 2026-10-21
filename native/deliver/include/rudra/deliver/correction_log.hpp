@@ -18,7 +18,10 @@
 //                           nits) 16-bit, what pipeline/hdr_io decodes
 //   meta/<id>.json          the record: the source file and its SHA-256, the
 //                           frame, the grade (master params), the consent's
-//                           SHA-256, the app version, the pair's hashes
+//                           SHA-256 and a copy of its rights, the app
+//                           version, the pair's hashes
+//   consent_history/<sha256>.json  every consent a record was logged under or
+//                           that was replaced or withdrawn, as it was written
 // export_correction_manifest writes a training manifest (JSONL) from the
 // records, with absolute paths, as pipeline/commercial_preflight.py reads it:
 // source_id, scene_id (the source file's hash: frames of one file share a
@@ -26,7 +29,8 @@
 // and SHA-256, metadata_path, sdr_kind "real", target_kind
 // "artist_accepted_grade" (the target is RUDRA's output as an artist accepted
 // it; trainers may weight or filter it on that), commercial_ok when the
-// rights are "owner" or "licensed".
+// rights the record was logged under are "owner" or "licensed" (a later
+// consent does not change an earlier record's rights).
 //
 // Only Rec.709 frames are logged: the corpus's SDR is Rec.709 code. A frame in
 // other primaries is refused, not converted.
@@ -92,7 +96,8 @@ Result<CorrectionEntry> log_correction(const std::filesystem::path& dir, const S
 // exists). Refused when the consent is withdrawn. Returns the rows written.
 Result<int> export_correction_manifest(const std::filesystem::path& dir, const std::filesystem::path& manifest);
 
-// The 16-bit RGB PNG the log writes (zlib stored blocks, no library).
+// The 16-bit RGB PNG the log writes (zlib stored blocks, no library); empty
+// when the size is not positive or rgb_hwc is not width * height * 3 samples.
 std::vector<std::uint8_t> png16_rgb_bytes(int width, int height, const std::vector<std::uint16_t>& rgb_hwc);
 
 }  // namespace rudra

@@ -49,6 +49,7 @@ struct ConformEdit {
     std::string source;      // "edl" or "fcpxml"
     std::string title;
     std::vector<ConformEvent> events;   // in record order
+    bool drop_frame = false;  // the edit's timecode is drop frame (FCM: DROP FRAME, tcFormat="DF")
 };
 
 Result<ConformEdit> parse_edl(std::string_view text, const FrameRate& rate);

@@ -120,9 +120,25 @@ Result<void> active(const fs::path& dir, CorrectionConsent* out = nullptr, std::
     return {};
 }
 
+// Keep a consent's exact text as consent_history/<its SHA-256>.json, so every
+// record's consent_sha256 still names the text it was logged under after the
+// consent is replaced or withdrawn.
+Result<void> archive_consent(const fs::path& dir) {
+    std::error_code ec;
+    if (!fs::exists(dir / "consent.json", ec)) return {};
+    auto text = read_text(dir / "consent.json");
+    if (!text) return text.error();
+    const fs::path to = dir / "consent_history" / (hash_text(*text) + ".json");
+    if (fs::exists(to, ec)) return {};
+    fs::create_directories(to.parent_path(), ec);
+    if (ec) return make_error(ErrorCode::IoError, "The consent history could not be made", to.parent_path().string());
+    return write_bytes(to, *text);
+}
+
 }  // namespace
 
 std::vector<std::uint8_t> png16_rgb_bytes(int width, int height, const std::vector<std::uint16_t>& rgb) {
+    if (width <= 0 || height <= 0 || rgb.size() != std::size_t(width) * std::size_t(height) * 3) return {};
     std::vector<std::uint8_t> o = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
     std::vector<std::uint8_t> ihdr;
     put_u32(ihdr, std::uint32_t(width));
@@ -187,6 +203,7 @@ Result<void> open_correction_log(const fs::path& dir, const CorrectionConsent& c
                                {"hdr", "16-bit PNG, ST 2084 (PQ, 10 000 nits), Rec.2020"}};
         if (auto w = write_bytes(sentinel, j.dump(2)); !w) return w.error();
     }
+    if (auto h = archive_consent(dir); !h) return h.error();   // the one it replaces
     CorrectionConsent c = consent;
     c.withdrawn_by.clear(), c.withdrawn_at.clear();
     return write_bytes(dir / "consent.json", consent_json(c).dump(2));
@@ -220,13 +237,15 @@ Result<void> withdraw_correction_consent(const fs::path& dir, const std::string&
     if (!c) return c.error();
     if (by.empty() || at.empty()) return invalid("A withdrawal must say who and when");
     c->withdrawn_by = by, c->withdrawn_at = at;
+    if (auto h = archive_consent(dir); !h) return h.error();
     return write_bytes(dir / "consent.json", consent_json(*c).dump(2));
 }
 
 Result<CorrectionEntry> log_correction(const fs::path& dir, const SdrImage& sdr, const NitsFrame& accepted,
                                        const MasterRequest& grade, const CorrectionSource& source) {
     std::string consent_sha;
-    if (auto a = active(dir, nullptr, &consent_sha); !a) return a.error();
+    CorrectionConsent consent;
+    if (auto a = active(dir, &consent, &consent_sha); !a) return a.error();
     if (grade.source_space != "rec709")
         return make_error(ErrorCode::Unsupported, "Only Rec.709 frames are logged for training", grade.source_space);
     const int h = sdr.height(), w = sdr.width();
@@ -278,6 +297,8 @@ Result<CorrectionEntry> log_correction(const fs::path& dir, const SdrImage& sdr,
     const double clipped_fraction =
         double(std::count(clipped.begin(), clipped.end(), std::uint8_t(1))) / double(clipped.size());
     const auto sdr_bytes = png16_rgb_bytes(w, h, code), hdr_bytes = png16_rgb_bytes(w, h, pq);
+    if (sdr_bytes.empty() || hdr_bytes.empty()) return invalid("The frame could not be encoded");
+    if (auto hcopy = archive_consent(dir); !hcopy) return hcopy.error();
     const std::string sdr_s(sdr_bytes.begin(), sdr_bytes.end()), hdr_s(hdr_bytes.begin(), hdr_bytes.end());
     if (auto r = write_bytes(e.sdr, sdr_s); !r) return r.error();
     if (auto r = write_bytes(e.hdr, hdr_s); !r) return r.error();
@@ -289,6 +310,10 @@ Result<CorrectionEntry> log_correction(const fs::path& dir, const SdrImage& sdr,
         {"source", {{"file", fs::absolute(source.file).string()}, {"sha256", *source_sha}, {"frame", source.frame},
                     {"label", source.label}}},
         {"consent_sha256", consent_sha},
+        // The consent this record was logged under: export reads its rights from
+        // here, not from whatever consent.json says later.
+        {"consent", {{"by", consent.by}, {"at", consent.at}, {"terms_version", consent.terms_version},
+                     {"scope", consent.scope}, {"source_id", consent.source_id}, {"rights", consent.rights}}},
         {"grade", nlohmann::json::parse(grade_json)},
         {"sdr", {{"file", e.sdr.filename().string()}, {"sha256", hash_text(sdr_s)}, {"width", w}, {"height", h},
                  {"primaries", "rec709"}, {"encoding", "code values, 16-bit"}}},
@@ -314,7 +339,6 @@ Result<int> export_correction_manifest(const fs::path& dir, const fs::path& mani
     std::sort(metas.begin(), metas.end());
     std::string out;
     const fs::path root = fs::absolute(dir).lexically_normal();
-    const bool commercial = consent.rights == "owner" || consent.rights == "licensed";
     for (const auto& m : metas) {
         auto text = read_text(m);
         if (!text) return text.error();
@@ -324,8 +348,13 @@ Result<int> export_correction_manifest(const fs::path& dir, const fs::path& mani
         } catch (const std::exception& e) {
             return make_error(ErrorCode::ParseError, "A correction record could not be read", m.string() + ": " + e.what());
         }
+        // The record's own consent; a record without one takes the current consent's.
+        const nlohmann::json own = j.contains("consent") && j["consent"].is_object() ? j["consent"] : nlohmann::json::object();
+        const std::string source_id = own.value("source_id", consent.source_id);
+        const std::string rights = own.value("rights", consent.rights);
+        const bool commercial = rights == "owner" || rights == "licensed";
         const nlohmann::json row{
-            {"source_id", consent.source_id},
+            {"source_id", source_id},
             {"scene_id", "correction-" + j.value("scene_id", std::string())},
             {"asset_id", "correction-" + j.value("id", std::string())},
             {"split", j.value("split", std::string("train"))},
@@ -337,6 +366,8 @@ Result<int> export_correction_manifest(const fs::path& dir, const fs::path& mani
             {"sdr_kind", "real"},
             {"target_kind", "artist_accepted_grade"},
             {"commercial_ok", commercial},
+            {"rights", rights},
+            {"consent_sha256", j.value("consent_sha256", std::string())},
             {"source", "correction_log"},
         };
         out += row.dump() + "\n";

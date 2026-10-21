@@ -52,6 +52,8 @@
 #include "rudra/core/model_manifest.hpp"
 #include "rudra/core/scopes.hpp"
 #include "rudra/core/view.hpp"
+#include "rudra/deliver/correction_log.hpp"
+#include "rudra/deliver/dolby_vision.hpp"
 #include "rudra/deliver/exr.hpp"
 #include "rudra/infer/self_test.hpp"
 #include "rudra/infer/tiler.hpp"
@@ -326,140 +328,6 @@ int cmd_master(const fs::path& pkg, const fs::path& image, const fs::path& out, 
     return 0;
 }
 
-// rudra-native correction-log (roadmap 5.2): open (the opt-in), add, withdraw, export.
-int cmd_correction_log(const std::vector<std::string>& args) {
-    auto usage_error = [](const std::string& m) {
-        std::fprintf(stderr, "rudra-native correction-log: error: %s\n", m.c_str());
-        return 64;
-    };
-    if (args.size() < 2)
-        return usage_error("usage: rudra-native correction-log open|add|withdraw|export <log-dir> ...");
-    const std::string& verb = args[0];
-    const fs::path dir = args[1];
-    std::map<std::string, std::string> opt;
-    std::vector<std::string> positional;
-    for (std::size_t i = 2; i < args.size(); ++i) {
-        if (args[i].rfind("--", 0) == 0) {
-            if (i + 1 >= args.size()) return usage_error("argument " + args[i] + ": expected one argument");
-            opt[args[i]] = args[i + 1];
-            ++i;
-        } else {
-            positional.push_back(args[i]);
-        }
-    }
-    auto now = [] {
-        const std::time_t t = std::time(nullptr);
-        std::tm tm{};
-#ifdef _WIN32
-        gmtime_s(&tm, &t);
-#else
-        gmtime_r(&t, &tm);
-#endif
-        char b[32];
-        std::strftime(b, sizeof b, "%Y-%m-%dT%H:%M:%SZ", &tm);
-        return std::string(b);
-    };
-    auto get = [&](const char* k, std::string fallback = {}) { return opt.count(k) ? opt[k] : fallback; };
-    if (verb == "open") {
-        CorrectionConsent c;
-        c.opted_in = true;
-        c.by = get("--by"), c.at = get("--at", now()), c.terms_version = get("--terms");
-        c.source_id = get("--source-id"), c.rights = get("--rights"), c.note = get("--note");
-        if (opt.count("--scope")) c.scope = opt["--scope"];
-        if (auto r = open_correction_log(dir, c); !r) return fail(r.error());
-        std::printf("correction log open: %s (consent by %s, %s)\n", dir.string().c_str(), c.by.c_str(), c.at.c_str());
-        return 0;
-    }
-    if (verb == "withdraw") {
-        if (auto r = withdraw_correction_consent(dir, get("--by"), get("--at", now())); !r) return fail(r.error());
-        std::printf("consent withdrawn: nothing more is logged or exported from %s\n", dir.string().c_str());
-        return 0;
-    }
-    if (verb == "export") {
-        if (!opt.count("--output")) return usage_error("export needs --output <manifest.jsonl>");
-        auto n = export_correction_manifest(dir, opt["--output"]);
-        if (!n) return fail(n.error());
-        std::printf("%d pairs -> %s\n", *n, opt["--output"].c_str());
-        return 0;
-    }
-#ifdef RUDRA_HAVE_STILL_DECODE
-    if (verb == "add") {
-        if (positional.size() != 1 || !opt.count("--params"))
-            return usage_error("add <log-dir> <still> --params <settings.json> [--package DIR --runtime R --device D] [--label NAME]");
-        std::ifstream in(opt["--params"], std::ios::binary);
-        if (!in) return fail(make_error(ErrorCode::NotFound, "The settings file is missing", opt["--params"]));
-        auto q = master_request_from_json(std::string(std::istreambuf_iterator<char>(in), {}));
-        if (!q) return fail(q.error());
-        Result<CorrectionEntry> e = make_error(ErrorCode::InvalidArgument, "not run");
-        if (q->analytic) {
-            e = log_master_correction(nullptr, nullptr, dir, positional[0], *q, get("--label"));
-        } else {
-            if (!opt.count("--package")) return usage_error("these settings run the model: give --package");
-            auto m = read_manifest(opt["--package"]);
-            if (!m) return fail(m.error());
-            auto d = parse_device(get("--device", "cpu"));
-            if (!d) return fail(d.error());
-            auto b = backend_for(*m, get("--runtime", "auto"), *d);
-            if (!b) return fail(b.error());
-            e = log_master_correction(&*m, b->get(), dir, positional[0], *q, get("--label"));
-        }
-        if (!e) return fail(e.error());
-        std::printf("%s %s (%s, scene %s)\n", e->already_logged ? "already logged:" : "logged:", e->id.c_str(),
-                    e->split.c_str(), e->scene_id.c_str());
-        return 0;
-    }
-#endif
-    return usage_error("unknown verb: " + verb);
-}
-
-// rudra-native dolby-vision (roadmap 5.5): a master's <stem>_dovi_generate.json
-// as a profile 8.1 RPU and/or the Dolby Vision metadata XML.
-int cmd_dolby_vision(const std::vector<std::string>& args) {
-    auto usage_error = [](const std::string& m) {
-        std::fprintf(stderr, "rudra-native dolby-vision: error: %s\n", m.c_str());
-        return 64;
-    };
-    if (args.empty()) return usage_error("usage: rudra-native dolby-vision <generate.json> [--rpu FILE] [--xml FILE --fps N/D --size WxH --name TEXT]");
-    std::map<std::string, std::string> opt;
-    for (std::size_t i = 1; i + 1 < args.size(); i += 2) opt[args[i]] = args[i + 1];
-    if ((args.size() - 1) % 2) return usage_error("every option takes a value");
-    if (!opt.count("--rpu") && !opt.count("--xml")) return usage_error("give --rpu, --xml or both");
-    std::ifstream in(args[0], std::ios::binary);
-    if (!in) return fail(make_error(ErrorCode::NotFound, "The Dolby Vision config is missing", args[0]));
-    auto m = parse_dovi_generate(std::string(std::istreambuf_iterator<char>(in), {}));
-    if (!m) return fail(m.error());
-    auto write = [&](const std::string& path, const std::string& bytes) -> int {
-        std::error_code ec;
-        if (fs::exists(path, ec)) return fail(make_error(ErrorCode::InvalidArgument, "Refusing to overwrite", path));
-        std::ofstream out(path, std::ios::binary);
-        out.write(bytes.data(), std::streamsize(bytes.size()));
-        if (!out) return fail(make_error(ErrorCode::IoError, "Cannot write", path));
-        return 0;
-    };
-    if (opt.count("--rpu")) {
-        auto rpu = dovi_rpu_file(*m);
-        if (!rpu) return fail(rpu.error());
-        if (int r = write(opt["--rpu"], std::string(rpu->begin(), rpu->end()))) return r;
-        std::printf("RPU, profile 8.1, %d frames, %zu shots -> %s\n", m->length, m->shots.size(), opt["--rpu"].c_str());
-    }
-    if (opt.count("--xml")) {
-        long long num = 24, den = 1;
-        if (opt.count("--fps")) {
-            const std::string f = opt["--fps"];
-            const auto slash = f.find('/');
-            num = std::atoll(f.substr(0, slash).c_str());
-            den = slash == std::string::npos ? 1 : std::atoll(f.substr(slash + 1).c_str());
-        }
-        int w = 1920, h = 1080;
-        if (opt.count("--size") && std::sscanf(opt["--size"].c_str(), "%dx%d", &w, &h) != 2) return usage_error("--size WxH");
-        auto xml = dovi_metadata_xml(*m, opt.count("--name") ? opt["--name"] : fs::path(args[0]).stem().string(), num, den, w, h);
-        if (!xml) return fail(xml.error());
-        if (int r = write(opt["--xml"], *xml)) return r;
-        std::printf("Dolby Vision XML (CM v4.0) -> %s\n", opt["--xml"].c_str());
-    }
-    return 0;
-}
-
 int half_ulp(std::uint16_t a, std::uint16_t b) {
     auto key = [](std::uint16_t h) { return (h & 0x8000) ? -int(h & 0x7fff) : int(h); };
     return std::abs(key(a) - key(b));
@@ -632,6 +500,143 @@ int cmd_master_compare(const fs::path& pkg, const fs::path& report, const std::s
 }
 #endif
 
+// rudra-native correction-log (roadmap 5.2): open (the opt-in), add, withdraw, export.
+int cmd_correction_log(const std::vector<std::string>& args) {
+    auto usage_error = [](const std::string& m) {
+        std::fprintf(stderr, "rudra-native correction-log: error: %s\n", m.c_str());
+        return 64;
+    };
+    if (args.size() < 2)
+        return usage_error("usage: rudra-native correction-log open|add|withdraw|export <log-dir> ...");
+    const std::string& verb = args[0];
+    const fs::path dir = args[1];
+    std::map<std::string, std::string> opt;
+    std::vector<std::string> positional;
+    for (std::size_t i = 2; i < args.size(); ++i) {
+        if (args[i].rfind("--", 0) == 0) {
+            if (i + 1 >= args.size()) return usage_error("argument " + args[i] + ": expected one argument");
+            opt[args[i]] = args[i + 1];
+            ++i;
+        } else {
+            positional.push_back(args[i]);
+        }
+    }
+    auto now = [] {
+        const std::time_t t = std::time(nullptr);
+        std::tm tm{};
+#ifdef _WIN32
+        gmtime_s(&tm, &t);
+#else
+        gmtime_r(&t, &tm);
+#endif
+        char b[32];
+        std::strftime(b, sizeof b, "%Y-%m-%dT%H:%M:%SZ", &tm);
+        return std::string(b);
+    };
+    auto get = [&](const char* k, std::string fallback = {}) { return opt.count(k) ? opt[k] : fallback; };
+    if (verb == "open") {
+        CorrectionConsent c;
+        c.opted_in = true;
+        c.by = get("--by"), c.at = get("--at", now()), c.terms_version = get("--terms");
+        c.source_id = get("--source-id"), c.rights = get("--rights"), c.note = get("--note");
+        if (opt.count("--scope")) c.scope = opt["--scope"];
+        if (auto r = open_correction_log(dir, c); !r) return fail(r.error());
+        std::printf("correction log open: %s (consent by %s, %s)\n", dir.string().c_str(), c.by.c_str(), c.at.c_str());
+        return 0;
+    }
+    if (verb == "withdraw") {
+        if (auto r = withdraw_correction_consent(dir, get("--by"), get("--at", now())); !r) return fail(r.error());
+        std::printf("consent withdrawn: nothing more is logged or exported from %s\n", dir.string().c_str());
+        return 0;
+    }
+    if (verb == "export") {
+        if (!opt.count("--output")) return usage_error("export needs --output <manifest.jsonl>");
+        auto n = export_correction_manifest(dir, opt["--output"]);
+        if (!n) return fail(n.error());
+        std::printf("%d pairs -> %s\n", *n, opt["--output"].c_str());
+        return 0;
+    }
+#ifdef RUDRA_HAVE_STILL_DECODE
+    if (verb == "add") {
+        if (positional.size() != 1 || !opt.count("--params"))
+            return usage_error("add <log-dir> <still> --params <settings.json> [--package DIR --runtime R --device D] [--label NAME]");
+        std::ifstream in(opt["--params"], std::ios::binary);
+        if (!in) return fail(make_error(ErrorCode::NotFound, "The settings file is missing", opt["--params"]));
+        auto q = master_request_from_json(std::string(std::istreambuf_iterator<char>(in), {}));
+        if (!q) return fail(q.error());
+        Result<CorrectionEntry> e = make_error(ErrorCode::InvalidArgument, "not run");
+        if (q->analytic) {
+            e = log_master_correction(nullptr, nullptr, dir, positional[0], *q, get("--label"));
+        } else {
+            if (!opt.count("--package")) return usage_error("these settings run the model: give --package");
+            auto m = read_manifest(opt["--package"]);
+            if (!m) return fail(m.error());
+            auto d = parse_device(get("--device", "cpu"));
+            if (!d) return fail(d.error());
+            auto b = backend_for(*m, get("--runtime", "auto"), *d);
+            if (!b) return fail(b.error());
+            e = log_master_correction(&*m, b->get(), dir, positional[0], *q, get("--label"));
+        }
+        if (!e) return fail(e.error());
+        std::printf("%s %s (%s, scene %s)\n", e->already_logged ? "already logged:" : "logged:", e->id.c_str(),
+                    e->split.c_str(), e->scene_id.c_str());
+        return 0;
+    }
+#else
+    if (verb == "add") return usage_error("add renders the still: this build has no still decoder");
+#endif
+    return usage_error("unknown verb: " + verb);
+}
+
+// rudra-native dolby-vision (roadmap 5.5): a master's <stem>_dovi_generate.json
+// as a profile 8.1 RPU and/or the Dolby Vision metadata XML.
+int cmd_dolby_vision(const std::vector<std::string>& args) {
+    auto usage_error = [](const std::string& m) {
+        std::fprintf(stderr, "rudra-native dolby-vision: error: %s\n", m.c_str());
+        return 64;
+    };
+    if (args.empty()) return usage_error("usage: rudra-native dolby-vision <generate.json> [--rpu FILE] [--xml FILE --fps N/D --size WxH --name TEXT]");
+    std::map<std::string, std::string> opt;
+    for (std::size_t i = 1; i + 1 < args.size(); i += 2) opt[args[i]] = args[i + 1];
+    if ((args.size() - 1) % 2) return usage_error("every option takes a value");
+    if (!opt.count("--rpu") && !opt.count("--xml")) return usage_error("give --rpu, --xml or both");
+    std::ifstream in(args[0], std::ios::binary);
+    if (!in) return fail(make_error(ErrorCode::NotFound, "The Dolby Vision config is missing", args[0]));
+    auto m = parse_dovi_generate(std::string(std::istreambuf_iterator<char>(in), {}));
+    if (!m) return fail(m.error());
+    auto write = [&](const std::string& path, const std::string& bytes) -> int {
+        std::error_code ec;
+        if (fs::exists(path, ec)) return fail(make_error(ErrorCode::InvalidArgument, "Refusing to overwrite", path));
+        std::ofstream out(path, std::ios::binary);
+        out.write(bytes.data(), std::streamsize(bytes.size()));
+        if (!out) return fail(make_error(ErrorCode::IoError, "Cannot write", path));
+        return 0;
+    };
+    if (opt.count("--rpu")) {
+        auto rpu = dovi_rpu_file(*m);
+        if (!rpu) return fail(rpu.error());
+        if (int r = write(opt["--rpu"], std::string(rpu->begin(), rpu->end()))) return r;
+        std::printf("RPU, profile 8.1, %d frames, %zu shots -> %s\n", m->length, m->shots.size(), opt["--rpu"].c_str());
+    }
+    if (opt.count("--xml")) {
+        long long num = 24, den = 1;
+        if (opt.count("--fps")) {
+            const std::string f = opt["--fps"];
+            const auto slash = f.find('/');
+            num = std::atoll(f.substr(0, slash).c_str());
+            den = slash == std::string::npos ? 1 : std::atoll(f.substr(slash + 1).c_str());
+        }
+        int w = 1920, h = 1080;
+        if (opt.count("--size") && std::sscanf(opt["--size"].c_str(), "%dx%d", &w, &h) != 2) return usage_error("--size WxH");
+        auto xml = dovi_metadata_xml(*m, opt.count("--name") ? opt["--name"] : fs::path(args[0]).stem().string(), num, den, w, h);
+        if (!xml) return fail(xml.error());
+        if (int r = write(opt["--xml"], *xml)) return r;
+        std::printf("Dolby Vision XML (CM v4.0) -> %s\n", opt["--xml"].c_str());
+    }
+    return 0;
+}
+
+
 int cmd_bench_scopes(int iters) {
     std::printf("Viewer measurements and scopes on the CPU (sample, computeStats, buildScopes, vectorscope), median of %d\n",
                 iters);
@@ -719,10 +724,11 @@ int main(int argc, char** argv) {
     }
     if (args.size() < 2) { usage(); return 64; }
     if (args[0] == "deliver") return cmd_deliver(std::vector<std::string>(args.begin() + 1, args.end()));
-#ifdef RUDRA_HAVE_STILL_DECODE
-    if (args[0] == "batch") return cmd_batch(std::vector<std::string>(args.begin() + 1, args.end()));
+    // Neither needs a still decoder (only correction-log add does).
     if (args[0] == "dolby-vision") return cmd_dolby_vision(std::vector<std::string>(args.begin() + 1, args.end()));
     if (args[0] == "correction-log") return cmd_correction_log(std::vector<std::string>(args.begin() + 1, args.end()));
+#ifdef RUDRA_HAVE_STILL_DECODE
+    if (args[0] == "batch") return cmd_batch(std::vector<std::string>(args.begin() + 1, args.end()));
     if (args[0] == "video") return cmd_video(std::vector<std::string>(args.begin() + 1, args.end()));
     if (args[0] == "conform") return cmd_conform(std::vector<std::string>(args.begin() + 1, args.end()));
     if (args[0] == "bench-clip-fill") return cmd_bench_clip_fill(std::vector<std::string>(args.begin() + 1, args.end()));

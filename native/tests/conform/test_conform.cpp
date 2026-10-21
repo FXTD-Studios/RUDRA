@@ -119,6 +119,24 @@ FCM: DROP FRAME
     EXPECT_EQ(c->shots.shots[1].last, 1800 + 300 - 1);
 }
 
+TEST(Conform, TheEditSaysWhetherItsTimecodeIsDropFrame) {
+    const char* edl = R"(FCM: DROP FRAME
+001  AX V C 00:00:00:00 00:00:10:00 00:01:00:02 00:01:10:02
+)";
+    auto edit = parse_edl(edl, rate("29.97"));
+    ASSERT_TRUE(edit) << edit.error().message;
+    EXPECT_TRUE(edit->drop_frame);
+    // A record start written with colons is read in the edit's drop frame timecode.
+    auto start = timecode_frames("00:01:00:02", rate("29.97"), edit->drop_frame);
+    ASSERT_TRUE(start);
+    EXPECT_EQ(*start, 1800);
+    auto c = conform_shots(*edit, 400, {}, *start);
+    ASSERT_TRUE(c) << c.error().message;
+    EXPECT_EQ(c->shots.shots[0].first, 0);
+    EXPECT_FALSE(parse_edl("FCM: NON-DROP FRAME\n001  AX V C 00:00:00:00 00:00:01:00 01:00:00:00 01:00:01:00\n",
+                           rate("29.97"))->drop_frame);
+}
+
 TEST(Conform, AnEdlWithoutVideoIsRefused) {
     EXPECT_FALSE(parse_edl("TITLE: X\n001  AX A C 00:00:00:00 00:00:01:00 01:00:00:00 01:00:01:00\n", rate("24")));
     EXPECT_FALSE(parse_edl("001  AX V C 00:00:00:00 00:00:01:00 01:00:00\n", rate("24")));
@@ -161,6 +179,35 @@ TEST(Conform, AnFcpxmlStorylineBecomesShots) {
     EXPECT_EQ(c->shots.shots[1].last, 119);
     EXPECT_EQ(c->shots.shots[1].source, "fcpxml");
     EXPECT_EQ(shot_index(c->shots, 50), -1);   // the gap takes the base grade
+}
+
+TEST(Conform, ACompoundClipsSpineInResourcesIsNotTheProgramme) {
+    const char* xml = R"(<fcpxml version="1.10">
+  <resources>
+    <format id="r1" frameDuration="1/24s"/>
+    <media id="r5" name="compound">
+      <sequence format="r1" duration="10s" tcStart="0s">
+        <spine><asset-clip name="inside the compound" offset="0s" duration="10s"/></spine>
+      </sequence>
+    </media>
+  </resources>
+  <library><event><project name="Programme">
+    <sequence format="r1" duration="4s" tcStart="3600s" tcFormat="DF">
+      <spine>
+        <ref-clip ref="r5" name="sh010" offset="3600s" duration="2s"/>
+        <asset-clip name="sh020" offset="3602s" duration="2s"/>
+      </spine>
+    </sequence>
+  </project></event></library>
+</fcpxml>)";
+    auto edit = parse_fcpxml(xml, rate("24"));
+    ASSERT_TRUE(edit) << edit.error().message << " " << edit.error().detail;
+    EXPECT_EQ(edit->title, "Programme");
+    EXPECT_TRUE(edit->drop_frame);
+    ASSERT_EQ(edit->events.size(), 2u);
+    EXPECT_EQ(edit->events[0].name, "sh010");
+    EXPECT_EQ(edit->events[0].record_in, 0);   // less the programme's tcStart, not the compound's
+    EXPECT_EQ(edit->events[1].record_in, 48);
 }
 
 TEST(Conform, OtherXmlIsRefused) {

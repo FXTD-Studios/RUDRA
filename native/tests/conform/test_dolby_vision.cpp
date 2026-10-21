@@ -94,6 +94,25 @@ TEST(DolbyVision, ConfigsDoviToolRefusesAreRefused) {
     EXPECT_FALSE(parse_dovi_generate(gap));
 }
 
+TEST(DolbyVision, MetadataThisWriterDoesNotCarryIsRefused) {
+    auto with = [](const std::string& at, const std::string& insert) {
+        std::string c = config(1000, 50);
+        c.insert(c.find(at), insert);
+        return c;
+    };
+    // Top level, Level 6, a shot, a Level 1 block: an extra key is refused.
+    EXPECT_FALSE(parse_dovi_generate(with(R"("length")", R"("level5": {"active_area_left_offset": 0}, )")));
+    EXPECT_FALSE(parse_dovi_generate(with(R"("max_content_light_level")", R"("source_primary_index": 0, )")));
+    EXPECT_FALSE(parse_dovi_generate(with(R"("duration": 1)", R"("frame_edits": [], )")));
+    EXPECT_FALSE(parse_dovi_generate(with(R"("max_pq": 2081)", R"("mid_pq": 1, )")));
+    // Two Level 1 blocks in one shot: which one is meant is not known.
+    auto two = parse_dovi_generate(
+        with(R"({"Level1": {"min_pq": 12)", R"({"Level1": {"min_pq": 0, "max_pq": 1000, "avg_pq": 500}}, )"));
+    ASSERT_FALSE(two);
+    EXPECT_NE(two.error().message.find("two Level 1"), std::string::npos);
+    EXPECT_TRUE(parse_dovi_generate(config(1000, 50)));
+}
+
 TEST(DolbyVision, TheXmlCarriesTheSameShots) {
     auto m = parse_dovi_generate(read_file(kGolden / "two_shots.json"));
     ASSERT_TRUE(m);

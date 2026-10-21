@@ -259,6 +259,7 @@ Result<ConformEdit> parse_edl(std::string_view text, const FrameRate& rate) {
         edit.events.push_back(std::move(e));
     }
     if (edit.events.empty()) return parse_error("The EDL has no video events");
+    edit.drop_frame = drop;
     std::sort(edit.events.begin(), edit.events.end(),
               [](const ConformEvent& a, const ConformEvent& b) { return a.record_in < b.record_in; });
     return edit;
@@ -271,14 +272,22 @@ Result<ConformEdit> parse_fcpxml(std::string_view text, const FrameRate& rate) {
     XmlTag tag;
     bool saw_root = false;
     double tc_start = 0.0;
-    // To the first <sequence> (its tcStart), then its <spine>.
+    // To the first <sequence> outside <resources> (its tcStart), then its
+    // <spine>: a compound clip's media in <resources> has a sequence and a
+    // spine of its own, which are not the programme.
+    int in_resources = 0;
     while (next_tag(text, pos, tag)) {
-        if (tag.closing) continue;
+        if (tag.name == "resources" && !tag.self_closing) {
+            in_resources += tag.closing ? -1 : 1;
+            continue;
+        }
+        if (tag.closing || in_resources > 0) continue;
         if (tag.name == "fcpxml") saw_root = true;
         if (tag.name == "project" && edit.title.empty() && tag.attrs.count("name")) edit.title = tag.attrs["name"];
         if (tag.name == "sequence") {
             if (auto t = tag.attrs.find("tcStart"); t != tag.attrs.end())
                 if (auto v = rational_seconds(t->second)) tc_start = *v;
+            if (auto f = tag.attrs.find("tcFormat"); f != tag.attrs.end()) edit.drop_frame = f->second == "DF";
         }
         if (tag.name == "spine") break;
     }

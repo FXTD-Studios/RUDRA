@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <map>
 
 #include <nlohmann/json.hpp>
 
@@ -189,6 +190,52 @@ TEST(CorrectionLog, UnknownRightsAreNotCommercial) {
     std::string line;
     std::getline(in, line);
     EXPECT_EQ(nlohmann::json::parse(line)["commercial_ok"], false);
+}
+
+TEST(CorrectionLog, ARecordKeepsTheRightsItWasLoggedUnder) {
+    const fs::path dir = fresh("rights-snapshot");
+    const fs::path log = dir / "log";
+    CorrectionConsent unknown = consent();
+    unknown.rights = "unknown", unknown.source_id = "client-plates";
+    ASSERT_TRUE(open_correction_log(log, unknown));
+    const auto f = frame(2, 2);
+    auto first = log_correction(log, f.sdr, f.nits, analytic(), {source_file(dir, "a"), 0, ""});
+    ASSERT_TRUE(first);
+    // A later consent claims ownership: the earlier record stays unknown.
+    CorrectionConsent owned = consent();
+    owned.at = "2026-10-22T09:00:00Z";
+    ASSERT_TRUE(open_correction_log(log, owned));
+    const fs::path src2 = dir / "plate2.png";
+    std::ofstream(src2, std::ios::binary) << "b";
+    auto second = log_correction(log, f.sdr, f.nits, analytic(), {src2, 0, ""});
+    ASSERT_TRUE(second);
+    ASSERT_TRUE(export_correction_manifest(log, dir / "m.jsonl"));
+    std::ifstream in(dir / "m.jsonl");
+    std::map<std::string, nlohmann::json> rows;
+    for (std::string line; std::getline(in, line);) {
+        auto j = nlohmann::json::parse(line);
+        rows[j["asset_id"].get<std::string>()] = j;
+    }
+    ASSERT_EQ(rows.size(), 2u);
+    const auto& a = rows["correction-" + first->id];
+    const auto& b = rows["correction-" + second->id];
+    EXPECT_EQ(a["commercial_ok"], false);
+    EXPECT_EQ(a["source_id"], "client-plates");
+    EXPECT_EQ(b["commercial_ok"], true);
+    EXPECT_EQ(b["source_id"], "fxtd-owned");
+    // Each record's consent is kept, by its hash, after it was replaced.
+    for (const auto* r : {&a, &b}) {
+        const std::string sha = (*r)["consent_sha256"].get<std::string>();
+        ASSERT_FALSE(sha.empty());
+        EXPECT_TRUE(fs::is_regular_file(log / "consent_history" / (sha + ".json"))) << sha;
+    }
+}
+
+TEST(CorrectionLog, ThePngEncoderRefusesAMismatchedBuffer) {
+    EXPECT_TRUE(png16_rgb_bytes(2, 2, std::vector<std::uint16_t>(11)).empty());
+    EXPECT_TRUE(png16_rgb_bytes(0, 2, {}).empty());
+    EXPECT_TRUE(png16_rgb_bytes(-1, 2, std::vector<std::uint16_t>(6)).empty());
+    EXPECT_FALSE(png16_rgb_bytes(2, 2, std::vector<std::uint16_t>(12)).empty());
 }
 
 TEST(CorrectionLog, OnlyRec709FramesAreLogged) {

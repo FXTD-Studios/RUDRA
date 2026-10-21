@@ -4,7 +4,10 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <initializer_list>
+#include <optional>
 #include <sstream>
+#include <string_view>
 
 #include <nlohmann/json.hpp>
 
@@ -119,27 +122,49 @@ std::string uuid_of(std::string_view text) {
     return o;
 }
 
+// The first key of `j` not in `known`, if any: a config with metadata this
+// writer does not carry (Level 2, 5, 8, 11, frame edits...) is refused rather
+// than written without it.
+std::optional<std::string> unknown_key(const nlohmann::json& j, std::initializer_list<std::string_view> known) {
+    if (!j.is_object()) return std::string("(not an object)");
+    for (const auto& [k, v] : j.items())
+        if (std::find(known.begin(), known.end(), std::string_view(k)) == known.end()) return k;
+    return std::nullopt;
+}
+
 }  // namespace
 
 Result<DoviMetadata> parse_dovi_generate(std::string_view text) {
     DoviMetadata m;
     try {
         const auto j = nlohmann::json::parse(text);
+        if (auto k = unknown_key(j, {"cm_version", "profile", "length", "level6", "shots"}))
+            return refuse("The config has metadata this writer does not carry", *k);
         if (j.value("cm_version", std::string()) != "V40") return refuse("Only CM v4.0 configs are written", j.value("cm_version", std::string()));
         if (j.value("profile", std::string()) != "8.1") return refuse("Only profile 8.1 is written", j.value("profile", std::string()));
         m.length = j.at("length").get<int>();
         const auto& l6 = j.at("level6");
+        if (auto k = unknown_key(l6, {"max_display_mastering_luminance", "min_display_mastering_luminance",
+                                      "max_content_light_level", "max_frame_average_light_level"}))
+            return refuse("Level 6 has a field this writer does not carry", *k);
         m.max_display_nits = l6.at("max_display_mastering_luminance").get<int>();
         m.min_display_ten_thousandths = l6.at("min_display_mastering_luminance").get<int>();
         m.max_cll = l6.at("max_content_light_level").get<int>();
         m.max_fall = l6.at("max_frame_average_light_level").get<int>();
         for (const auto& s : j.at("shots")) {
+            if (auto k = unknown_key(s, {"start", "duration", "metadata_blocks"}))
+                return refuse("A shot has metadata this writer does not carry", *k);
             DoviShot shot;
             shot.start = s.at("start").get<int>();
             shot.duration = s.at("duration").get<int>();
             bool l1 = false;
-            for (const auto& b : s.value("metadata_blocks", nlohmann::json::array())) {
-                if (!b.contains("Level1") || b.size() != 1) return refuse("Only Level 1 shot blocks are written", b.dump());
+            const auto blocks = s.value("metadata_blocks", nlohmann::json::array());
+            if (!blocks.is_array()) return refuse("A shot's metadata_blocks is not a list", std::to_string(shot.start));
+            for (const auto& b : blocks) {
+                if (!b.is_object() || !b.contains("Level1") || b.size() != 1) return refuse("Only Level 1 shot blocks are written", b.dump());
+                if (l1) return refuse("A shot has two Level 1 blocks", std::to_string(shot.start));
+                if (auto k = unknown_key(b["Level1"], {"min_pq", "max_pq", "avg_pq"}))
+                    return refuse("A Level 1 block has a field this writer does not carry", *k);
                 shot.min_pq = b["Level1"].at("min_pq").get<int>();
                 shot.max_pq = b["Level1"].at("max_pq").get<int>();
                 shot.avg_pq = b["Level1"].at("avg_pq").get<int>();
