@@ -34,7 +34,6 @@
 [Command line](#command-line) ·
 [Validation diagnostics](#validation-diagnostics) ·
 [Known limitations](#known-limitations) ·
-[Still to do](#still-to-do) ·
 [Documentation](#documentation) ·
 [Licence](#licence)
 
@@ -283,9 +282,6 @@ Vision metadata, a resumable queue; the shot and static holds in playback and
 export; the optional model checked against its reference frames on every
 device; installers for Windows (setup.exe, portable ZIP) and macOS (DMG);
 CI green on all three OSes.
-
-What is left for the desktop app (the Mac pass, signing, a clean-PC install)
-is under [Still to do](#still-to-do).
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:
@@ -549,81 +545,6 @@ promoting a different recovery policy.
 - **The model is optional.** None beats the analytic inverse on real SDR yet.
 - **Non-commercial.** Commercial clearance of sources, weights and formats is
   open ([`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md)).
-
----
-
-## Still to do
-
-Everything left needs a particular machine, a GPU training run, a licence or
-a decision; the code-only roadmap items are done (see [What's new](#whats-new)).
-Release rows are in [`STATUS.md`](STATUS.md), the steps to 1.0 in
-[`docs/RELEASE_V1.md`](docs/RELEASE_V1.md).
-
-### Tests on your machines
-
-- [ ] **RTX machine, release candidate (R2 by hand):** the phase 3 exit
-  (`scripts/NATIVE_PHASE3_EXIT.ps1`), Hold steady checked for shimmer, the
-  model's playback fps at 960 px, and a calibrated HDR review of blacks,
-  shadows, highlights and colour, the darkest Sparks frames included. GPU
-  parity and the 4K latency budgets already passed on all four backends (16 Oct).
-- [ ] **The OFX plug-in in real hosts:** build with
-  `-DRUDRA_BUILD_OFX=ON -DRUDRA_OFX_SDK_DIR=<OpenFX SDK>`, copy
-  `RUDRA.ofx.bundle` into the host's OFX folder (Windows:
-  `C:\Program Files\Common Files\OFX\Plugins`), then in DaVinci Resolve,
-  Nuke, Baselight and Flame: the node appears under RUDRA, renders a 4K frame,
-  its parameters animate, and a render matches `rudra-native master` on the
-  same frame.
-- [ ] **Dolby Vision with Dolby's tools:** inject the RPU into an HDR10 master
-  (`dovi_tool inject-rpu`), and check it and the XML in Resolve and with the
-  Dolby Vision Professional Tools (metafier) before any delivery.
-- [ ] **Conform on a real programme:** an EDL and an FCPXML exported from
-  Resolve or Premiere for a cut you have, through `rudra-native conform` and a
-  keyframed export, checked shot by shot.
-- [ ] **The Mac (R4):** inference on MPS and Core ML, HDR on an XDR display
-  (Metal EDR), the GPU composite and display pass on Metal, a clean exit, the
-  Mac latency budgets (`MACHINE=... scripts/native_gate_a.sh`); the DMG built
-  with ffmpeg inside (`MAC_FFMPEG_DIR`) and opened on a Mac; the OFX bundle
-  built there too.
-- [ ] **A clean PC (R4):** the Windows installer on a machine that has never had
-  RUDRA or Python (open, scrub, grade, export HDR10 and ProRes, uninstall).
-- [ ] **Real time on the RTX 4080 (phase R):** the DirectML fp16 and TensorRT
-  fp16 numbers and playback on the fastest path that passes (target 1080p
-  ≤ 20 ms); then NVDEC to inference to the viewer through Direct3D 12 or
-  Vulkan interop with no host copy; each part at its own rate (target 4K at
-  24 fps); DeckLink and AJA over SDI (10-bit in, HLG or PQ out, ≤ 2 frames).
-  Gate: 1080p at 24 fps with inference live on the RTX 4080.
-
-### GPU training (the commercial model and after)
-
-- [ ] **4.4 Commercial weights:** the run in progress, without HdM data, through
-  `pipeline/licences.py` and the commercial preflight. The opt-in correction
-  log adds owned, consented pairs to it.
-- [ ] **4.2 Clipped highlights:** a model that beats the clip fill at 0, +1 and
-  +2 EV, and the fill's own +0 EV and fireworks losses.
-- [ ] **4.1 Rebuild on mask:** the optional inpaint pass inside an approved
-  clipped mask (8 to 16 GB), its pixels marked as invented.
-- [ ] **Two models, one recipe (R4) and a temporal model (R5):** a realtime
-  model within a fixed limit of the quality one, and one that sees
-  neighbouring frames, held to the flicker measure.
-- [ ] **The final model (line G):** beats the inverse on real SDR with its
-  interval excluding zero.
-
-### Your decisions and accounts
-
-- [ ] **R3, the commercial tools:** Resolve, Topaz Video, RTX Video HDR and a
-  hardware converter's LUT through `training/compare_market.py import`, then
-  `score`, published in [`docs/RESULTS.md`](docs/RESULTS.md) whatever it says.
-- [ ] **Signing:** Apple Developer enrollment and the six secrets
-  ([`docs/MACOS_SIGNING.md`](docs/MACOS_SIGNING.md)); a Windows code-signing
-  certificate (`WINDOWS_CERT_PFX`).
-- [ ] **Licensing:** the open questions in
-  [`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md) (the Netflix terms
-  among them), and Dolby's terms before shipping Dolby Vision metadata in a
-  product.
-- [ ] **5.6 Commercial release:** the Linux package, licence and support terms
-  for studios. **5.3:** publish the benchmark and the paper.
-- [ ] **1.0:** `scripts/release_v1_rc.ps1 -Final`, then `-Final -Tag` (further
-  candidates with `-Rc N` if the checks above find anything).
 
 ---
 
