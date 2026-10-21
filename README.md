@@ -534,9 +534,12 @@ promoting a different recovery policy.
 
 ## Known limitations
 
-- **Super-whites are clipped.** Limited-range video above code 235 is clipped
-  at decode, so recorded headroom does not reach the reconstruction. The fix is
-  designed, not built: [`docs/SUPER_WHITES_DESIGN.md`](docs/SUPER_WHITES_DESIGN.md).
+- **Super-whites are clipped.** In limited-range video, detail recorded above
+  white (code 235, or 940 at 10 bits) is clipped when the movie is read, and
+  the clip fill then rebuilds those highlights instead of using them. A mode
+  that keeps them for BT.1886 movies is built and in testing, not yet in the
+  app. Until then, convert such footage to full range with the super-whites
+  kept (in Resolve, data levels set to full) before opening it in RUDRA.
 - **The clip fill at +0 EV and on fireworks.** It overshoots highlights that
   sit just above the clip, and loses 4.9 to 7.7 dB on the four fireworks clips;
   turn it down (Strength) or off (Reconstruct > Fill clipped highlights).
