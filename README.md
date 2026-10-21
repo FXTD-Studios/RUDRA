@@ -84,6 +84,30 @@ and are not maintained.
 On `native` since `v1.0.0-rc.2`, for the next release candidate. Per-beta
 detail: [`docs/BETA.md`](docs/BETA.md).
 
+- **Shot keyframes (roadmap 4.3).** A programme's grade can be kept per shot
+  in a `<name>.shots.json`: keys inside a shot blend the continuous settings
+  (strength, exposure, knees, Region EV bands, calibration nits) and step the
+  rest; nothing reaches across a cut, and the holds reset at every shot.
+  `rudra-native video ... --shots FILE` (or a queue's `shots`) exports a whole
+  programme in one pass; the report lists each shot with its own flicker.
+- **Conform by shot (5.4).** `rudra-native conform <movie>` makes the shots
+  file from a CMX3600 EDL (drop frame, dissolves, clip names), an FCPXML's
+  primary storyline, or the movie's own cuts (`--detect`).
+- **Opt-in correction logging (5.2).** `rudra-native correction-log open | add |
+  withdraw | export`: nothing is kept without a recorded consent (who, when,
+  terms, rights holder); an accepted grade is kept as a 16-bit SDR / PQ HDR
+  pair with its source hash, and `export` writes a training manifest the
+  commercial preflight reads. A withdrawal stops logging and every export.
+- **Dolby Vision from RUDRA itself (5.5).** `rudra-native dolby-vision` writes
+  the per-shot metadata as a profile 8.1, CM v4.0 RPU (byte for byte what
+  dovi_tool 2.3.1 generates, on 165 configs; injects into the HDR10 master) and
+  as a Dolby Vision metadata XML (CM v4.0) that dovi_tool reads back.
+- **OFX plug-in (5.1).** "RUDRA SDR to HDR" (`-DRUDRA_BUILD_OFX=ON`,
+  `RUDRA.ofx.bundle`): the analytic reconstruction and the master chain on the
+  CPU, Source, exposure, strength, recovery, clip fill and anchor as
+  parameters, scene-linear Rec.2020 / ACEScg or PQ out. Loaded and rendered in
+  a test host on the OpenFX SDK; not yet run in a commercial host.
+
 - **A folder of frames exports to a movie.** HDR10, HLG, ProRes 422 HQ and
   4444 are offered for frame folders too: the frames are mastered as a linear
   Rec.2020 EXR sequence beside the movie, then encoded and checked as
@@ -530,96 +554,76 @@ promoting a different recovery policy.
 
 ## Still to do
 
-Open items only; what is done is in [What's new](#whats-new),
-[`STATUS.md`](STATUS.md) and [`docs/BETA.md`](docs/BETA.md). Release rows
-R1 to R5 are in [`STATUS.md`](STATUS.md); the steps to 1.0 in
+Everything left needs a particular machine, a GPU training run, a licence or
+a decision; the code-only roadmap items are done (see [What's new](#whats-new)).
+Release rows are in [`STATUS.md`](STATUS.md), the steps to 1.0 in
 [`docs/RELEASE_V1.md`](docs/RELEASE_V1.md).
 
-### To 1.0
+### Tests on your machines
 
-- [ ] R2 by hand on the release candidate, on the RTX machine: the phase 3
-  exit (`scripts/NATIVE_PHASE3_EXIT.ps1`), Hold steady checked for shimmer,
-  the model's playback fps at 960 px measured, and a calibrated HDR review of
-  blacks, shadows, highlights and colour, the darkest Sparks frames
-  included. GPU parity and the 4K latency budgets
-  passed again on D3D12, D3D11, Vulkan and OpenGL on 16 Oct.
-- [ ] R3, the commercial tools (roadmap 2.2, 2.3): DaVinci Resolve, Topaz
-  Video, RTX Video HDR, a hardware converter's LUT, each through
-  `training/compare_market.py import`, then `score`, published in
-  [`docs/RESULTS.md`](docs/RESULTS.md) whatever it says
-- [ ] R4, the Mac: inference on MPS and Core ML, HDR output on an XDR display
-  (Metal EDR), the GPU composite and display pass on Metal, a clean exit, and
-  the latency budgets for a Mac (`MACHINE=... scripts/native_gate_a.sh`); the
-  DMG built with ffmpeg inside (`MAC_FFMPEG_DIR`) and opened on a Mac
-- [ ] R4, signing: Apple Developer enrollment and the six signing secrets
-  ([`docs/MACOS_SIGNING.md`](docs/MACOS_SIGNING.md)) so the DMG ships
-  notarized; a Windows code-signing certificate (`WINDOWS_CERT_PFX`) so the
-  installer has no SmartScreen prompt
-- [ ] R4, a clean PC: the Windows installer on a machine that has never had
-  RUDRA or Python (open, scrub, grade, export HDR10 and ProRes, uninstall)
-- [ ] Licensing: the open questions in
-  [`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md), including the Netflix
-  terms, before any commercial distribution
-- [ ] 1.0 itself: `scripts/release_v1_rc.ps1 -Final`, then `-Final -Tag`
-  (further candidates with `-Rc N` if the checks above find anything)
+- [ ] **RTX machine, release candidate (R2 by hand):** the phase 3 exit
+  (`scripts/NATIVE_PHASE3_EXIT.ps1`), Hold steady checked for shimmer, the
+  model's playback fps at 960 px, and a calibrated HDR review of blacks,
+  shadows, highlights and colour, the darkest Sparks frames included. GPU
+  parity and the 4K latency budgets already passed on all four backends (16 Oct).
+- [ ] **The OFX plug-in in real hosts:** build with
+  `-DRUDRA_BUILD_OFX=ON -DRUDRA_OFX_SDK_DIR=<OpenFX SDK>`, copy
+  `RUDRA.ofx.bundle` into the host's OFX folder (Windows:
+  `C:\Program Files\Common Files\OFX\Plugins`), then in DaVinci Resolve,
+  Nuke, Baselight and Flame: the node appears under RUDRA, renders a 4K frame,
+  its parameters animate, and a render matches `rudra-native master` on the
+  same frame.
+- [ ] **Dolby Vision with Dolby's tools:** inject the RPU into an HDR10 master
+  (`dovi_tool inject-rpu`), and check it and the XML in Resolve and with the
+  Dolby Vision Professional Tools (metafier) before any delivery.
+- [ ] **Conform on a real programme:** an EDL and an FCPXML exported from
+  Resolve or Premiere for a cut you have, through `rudra-native conform` and a
+  keyframed export, checked shot by shot.
+- [ ] **The Mac (R4):** inference on MPS and Core ML, HDR on an XDR display
+  (Metal EDR), the GPU composite and display pass on Metal, a clean exit, the
+  Mac latency budgets (`MACHINE=... scripts/native_gate_a.sh`); the DMG built
+  with ffmpeg inside (`MAC_FFMPEG_DIR`) and opened on a Mac; the OFX bundle
+  built there too.
+- [ ] **A clean PC (R4):** the Windows installer on a machine that has never had
+  RUDRA or Python (open, scrub, grade, export HDR10 and ProRes, uninstall).
+- [ ] **Real time on the RTX 4080 (phase R):** the DirectML fp16 and TensorRT
+  fp16 numbers and playback on the fastest path that passes (target 1080p
+  ≤ 20 ms); then NVDEC to inference to the viewer through Direct3D 12 or
+  Vulkan interop with no host copy; each part at its own rate (target 4K at
+  24 fps); DeckLink and AJA over SDI (10-bit in, HLG or PQ out, ≤ 2 frames).
+  Gate: 1080p at 24 fps with inference live on the RTX 4080.
 
-### Phase R: real time
+### GPU training (the commercial model and after)
 
-Measured with `rudra-native bench` against `native/bench/latency_budgets.json`.
-Grading and display take 1.1 to 1.3 ms at 4K; one 1080p inference on the
-RTX 4080 SUPER takes 150 to 207 ms.
+- [ ] **4.4 Commercial weights:** the run in progress, without HdM data, through
+  `pipeline/licences.py` and the commercial preflight. The opt-in correction
+  log adds owned, consented pairs to it.
+- [ ] **4.2 Clipped highlights:** a model that beats the clip fill at 0, +1 and
+  +2 EV, and the fill's own +0 EV and fireworks losses.
+- [ ] **4.1 Rebuild on mask:** the optional inpaint pass inside an approved
+  clipped mask (8 to 16 GB), its pixels marked as invented.
+- [ ] **Two models, one recipe (R4) and a temporal model (R5):** a realtime
+  model within a fixed limit of the quality one, and one that sees
+  neighbouring frames, held to the flicker measure.
+- [ ] **The final model (line G):** beats the inverse on real SDR with its
+  interval excluding zero.
 
-- [ ] R1 Half precision and TensorRT: the fp16 graph and the TensorRT device
-  are in; left are the RTX 4080 numbers through DirectML fp16 and TensorRT
-  fp16, and playback on the fastest path that passes. Target 1080p ≤ 20 ms
-- [ ] R2 Frames stay on the GPU: NVDEC decode, inference, and the fields handed
-  to the viewer through Direct3D 12 or Vulkan interop, with no copy through
-  host memory, and frames prepared ahead of the playhead
-- [ ] R3 Each part at the rate it needs: the curve once per shot or every few
-  frames, the masks at half resolution, only the residual at full 4K. Target
-  4K at 24 fps and above
-- [ ] R4 Two models, one recipe: a small realtime model for playback and live
-  use, the quality model for masters, in the same package format, with a fixed
-  limit on how far the realtime model may fall below the quality one
-- [ ] R5 A model that sees neighbouring frames, held to the flicker measure on
-  the clip bench (the shot and static holds are in)
-- [ ] R6 Live input and output for broadcast: DeckLink and AJA over SDI,
-  10-bit Y'CbCr in, HLG or PQ out, a fixed delay of 2 frames or less
-- **Gate:** 1080p plays at 24 fps with inference live and every control
-  interactive on the RTX 4080, within the R4 quality limit and the R5 flicker
-  limit
+### Your decisions and accounts
 
-### Phase 4: clipped regions, video and commercial weights
-
-- [ ] 4.1 Rebuild on mask: an optional local inpaint pass that runs only inside
-  a clipped mask the artist approves, sized for 8 to 16 GB, its pixels marked
-  in the invented-pixel map and the sidecar
-- [ ] 4.2 Clipped highlights at 0, +1 and +2 EV with a model and with rebuild:
-  a model that beats the clip fill at every EV (v9 beat it at +0 EV and lost
-  at +1 and +2; its checkpoint selection runs without the exposure push), and
-  the fill's own losses at +0 EV and on the fireworks clips
-- [ ] 4.3 Shot keyframes: grade and source parameters stored per shot,
-  keyframed and reset at cuts, scored with clip-mode CVVDP and flicker
-- [ ] 4.4 `rudra-studio` commercial weights: the recipe without HdM data,
-  filtered through `pipeline/licences.py`
-- [ ] The final model (STATUS line G): one that beats the inverse on real SDR
-  with its interval excluding zero; after 1.0
-- **Gate:** rows 4, 5 and 6 pass
-
-### Phase 5: where colourists work, and release
-
-- [ ] 5.1 OFX plugin for DaVinci Resolve, Nuke, Baselight and Flame on the
-  native engine, plus a render-farm command line and an SDK (after 1.0)
-- [ ] 5.4 Conform by shot: cut detection, EDL and XML import, settings per shot
-  (with 4.3), a whole programme in one pass
-- [ ] 5.5 A Dolby Vision RPU and XML from RUDRA itself (after 1.0; today the
-  per-shot L1/L6 file goes to `dovi_tool` or a licensed finishing tool)
-- [ ] 5.6 Commercial release: a Linux package, licence and support terms for
-  studios
-- [ ] 5.2 Opt-in correction logging: an accepted grade on real SDR saved as a
-  training pair, with its source and the user's consent recorded
-- [ ] 5.3 Publish the benchmark and the paper
-- **Gate:** rows 1 to 6 green, then announce
+- [ ] **R3, the commercial tools:** Resolve, Topaz Video, RTX Video HDR and a
+  hardware converter's LUT through `training/compare_market.py import`, then
+  `score`, published in [`docs/RESULTS.md`](docs/RESULTS.md) whatever it says.
+- [ ] **Signing:** Apple Developer enrollment and the six secrets
+  ([`docs/MACOS_SIGNING.md`](docs/MACOS_SIGNING.md)); a Windows code-signing
+  certificate (`WINDOWS_CERT_PFX`).
+- [ ] **Licensing:** the open questions in
+  [`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md) (the Netflix terms
+  among them), and Dolby's terms before shipping Dolby Vision metadata in a
+  product.
+- [ ] **5.6 Commercial release:** the Linux package, licence and support terms
+  for studios. **5.3:** publish the benchmark and the paper.
+- [ ] **1.0:** `scripts/release_v1_rc.ps1 -Final`, then `-Final -Tag` (further
+  candidates with `-Rc N` if the checks above find anything).
 
 ---
 

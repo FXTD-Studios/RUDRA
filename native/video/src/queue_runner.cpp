@@ -73,6 +73,7 @@ Result<VideoConvertArgs> convert_args_for(const QueueJob& job) {
         else if (k == "static-hold") a.static_hold = v;
         else if (k == "dynamic-metadata") a.dynamic_metadata = v;
         else if (k == "grade") a.grade_file = fs::path(v);
+        else if (k == "shots") a.shots_file = fs::path(v);   // shot keyframes (roadmap 4.3)
         else return make_error(ErrorCode::InvalidArgument, "Invalid video options in queue", k);
     }
     return a;
@@ -104,7 +105,16 @@ QueueRunner make_video_queue_runner(const VideoQueueOptions& o) {
         hooks.progress = [&](const VideoProgress& p) {
             progress(pyjson::Dict{{"phase", p.phase}, {"frames_done", p.frames_done}, {"frames_total", p.frames_total}});
         };
-        if (args->grade_file) {
+        if (args->shots_file) {
+            auto s = load_shot_grades(*args->shots_file);
+            if (!s) return s.error();
+            args->shots = std::move(*s);
+            if (args->shots->base.analytic) {   // no model, no package to find
+                auto r = convert_video(*args, nullptr, nullptr, hooks);
+                if (!r) return r.error();
+                return {};
+            }
+        } else if (args->grade_file) {
             auto g = read_grade_file(*args->grade_file);
             if (!g) return g.error();
             args->grade = std::move(*g);
