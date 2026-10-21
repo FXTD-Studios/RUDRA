@@ -534,20 +534,24 @@ promoting a different recovery policy.
 
 ## Known limitations
 
-- **Super-whites are clipped.** In limited-range video, detail recorded above
-  white (code 235, or 940 at 10 bits) is clipped when the movie is read, and
-  the clip fill then rebuilds those highlights instead of using them. A mode
-  that keeps them for BT.1886 movies is built and in testing, not yet in the
-  app. Until then, convert such footage to full range with the super-whites
-  kept (in Resolve, data levels set to full) before opening it in RUDRA.
-- **The clip fill at +0 EV and on fireworks.** It overshoots highlights that
-  sit just above the clip, and loses 4.9 to 7.7 dB on the four fireworks clips;
-  turn it down (Strength) or off (Reconstruct > Fill clipped highlights).
-- **Unknown ICC profiles** are reported and read as Rec.709; RUDRA matches the
-  four profiles above, it is not a general colour-management system.
-- **The model is optional.** None beats the analytic inverse on real SDR yet.
-- **Non-commercial.** Commercial clearance of sources, weights and formats is
-  open ([`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md)).
+- **Brightest detail in some video is lost.** Broadcast and camera video often
+  records detail a little brighter than its nominal white. RUDRA cuts that
+  detail off when it reads the movie and then rebuilds the highlights itself,
+  so they can differ from what the camera captured. A mode that keeps this
+  detail is in testing. Until it ships, convert the footage to full range
+  first, keeping the super-whites (in Resolve, set data levels to full).
+- **Highlight filling can overdo it.** Highlights just above the clip point
+  can come out too bright, and fireworks don't reconstruct well. If a shot
+  looks wrong, lower **Strength** or turn off **Reconstruct > Fill clipped
+  highlights**.
+- **Limited colour management.** Images tagged sRGB / Rec.709, Display P3,
+  Rec.2020 or Adobe RGB (1998) are read correctly. Any other colour profile
+  is reported and read as Rec.709.
+- **The AI model is optional and off by default.** RUDRA's standard
+  reconstruction gives the best results on real footage today; the model
+  hasn't beaten it yet.
+- **Non-commercial use only** for now. Commercial licensing is still being
+  cleared ([`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md)).
 
 ---
 
