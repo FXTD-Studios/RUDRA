@@ -1,5 +1,6 @@
 #include "rudra/video/convert.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cmath>
@@ -106,6 +107,41 @@ Result<bool> has_hdr10plus(const fs::path& path) {
 }
 }  // namespace
 
+Result<CutDetection> detect_cuts(const fs::path& movie, double threshold, const std::atomic<bool>* cancel) {
+    if (!(0 < threshold && threshold <= 1)) return refuse("Invalid cut threshold");
+    const fs::path source = resolved(movie);
+    std::error_code ec;
+    if (!fs::is_regular_file(source, ec)) return make_error(ErrorCode::NotFound, source.string());
+    auto probe = probe_video(source);
+    if (!probe) return probe.error();
+    auto video = open_video_source(*probe, VideoArgs{});
+    if (!video) return video.error();
+    auto work = StagingDir::create(fs::temp_directory_path(), "rudra-cuts-");
+    if (!work) return work.error();
+    auto decoder = VideoDecoder::open(source, *video, work->path() / "decode.log");
+    if (!decoder) return decoder.error();
+    CutDetection out;
+    out.frames = video->clock.frames;
+    out.fps = video->clock.fps;
+    ShadowSmoother smoother(0.0, threshold, false);
+    const auto& c = video->contract;
+    for (int index = 0; index < out.frames; ++index) {
+        if (cancel && cancel->load()) return make_error(ErrorCode::Cancelled, "Cancelled");
+        auto frame = (*decoder)->next();
+        if (!frame) return frame.error();
+        // The thumbnail VideoPredictor::prepare makes: canonical code, Rec.2020, 36x64.
+        auto canon = canonicalize_sdr(rgb_from_frame(*frame).buffer(), c.transfer, "full");
+        if (!canon) return canon.error();
+        PlanarBuffer x = std::move(*canon);
+        if (c.primaries != "rec2020") x = srgb_code_to_rec2020(x, Primaries::Rec709);
+        const auto [w, cut] = smoother.update(area_resize(x, kCutThumbHeight, kCutThumbWidth), 1.0);
+        (void)w;
+        if (cut && index > 0) out.cuts.push_back(index);
+    }
+    if (auto done = (*decoder)->finish(); !done) return done.error();
+    return out;
+}
+
 Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelManifest& package,
                                          InferenceBackend& backend, const VideoConvertHooks& hooks) {
     return convert_video(a, &package, &backend, hooks);
@@ -113,7 +149,19 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
 
 Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelManifest* package_ptr,
                                          InferenceBackend* backend, const VideoConvertHooks& hooks) {
-    const bool analytic = a.grade && a.grade->analytic;
+    // Shot keyframes: every grade in the file runs the same reconstruction.
+    std::optional<bool> shots_analytic;
+    if (a.shots) {
+        shots_analytic = a.shots->base.analytic;
+        for (const auto& g : a.shots->shots)
+            for (const auto& k : g.keys)
+                if (k.grade.analytic != *shots_analytic)
+                    return make_error(ErrorCode::InvalidArgument,
+                                      "Every grade in the shots file must use the model, or none may",
+                                      g.name + " at frame " + std::to_string(k.frame));
+    }
+    const bool graded = a.grade.has_value() || a.shots.has_value();
+    const bool analytic = shots_analytic ? *shots_analytic : (a.grade && a.grade->analytic);
     if (!analytic && (!package_ptr || !backend))
         return make_error(ErrorCode::InvalidArgument, "This export runs the model, and no model package is open");
     static const ModelManifest kNoPackage{};
@@ -167,6 +215,8 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     if (!video) return video.error();
     const bool alpha = video->alpha;
     const int width = video->stream.width, height = video->stream.height, total = video->clock.frames;
+    if (a.shots)
+        if (auto v = validate_shot_grades(*a.shots, total); !v) return v.error();
 
     fs::create_directories(output.parent_path(), ec);
     const fs::path work_parent = resolved(a.work_dir ? *a.work_dir : output.parent_path());
@@ -177,7 +227,8 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     VideoPredictor predictor(backend, ModelConstants{package.log_scale, package.max_hdr, package.corpus_ev}, a.tile_size,
                              a.tile_overlap);
     auto predict = [&](const SdrImage& rgb, const std::string& transfer, const std::string& primaries,
-                       ShadowSmoother& sm) {
+                       ShadowSmoother& sm, int index) {
+        if (a.shots) return predictor.predict_graded(rgb, transfer, primaries, sm, grade_at(*a.shots, index));
         return a.grade ? predictor.predict_graded(rgb, transfer, primaries, sm, *a.grade)
                        : predictor.predict(rgb, transfer, primaries, sm);
     };
@@ -210,8 +261,8 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         {"temporal_smoothing", a.temporal_smoothing},
         {"static_hold", a.static_hold},
         {"dynamic_metadata", a.dynamic_metadata},
-        {"preserve_outside", a.grade ? a.grade->preserve_outside : true},
-        {"recovery_mode", a.grade ? a.grade->recovery_mode : std::string("all")},
+        {"preserve_outside", a.shots ? a.shots->base.preserve_outside : a.grade ? a.grade->preserve_outside : true},
+        {"recovery_mode", a.shots ? a.shots->base.recovery_mode : a.grade ? a.grade->recovery_mode : std::string("all")},
         {"tile_size", a.tile_size},
         {"tile_overlap", a.tile_overlap},
         {"timestamp_policy", "Video begins at zero; audio retains relative offset, clipped to video interval"},
@@ -220,14 +271,21 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         {"warnings", a.shadow_smoothing != 0.0 ? pyjson::List{"Scalar shadow smoothing is not validated temporal reconstruction"}
                                         : pyjson::List{}},
     };
-    if (a.grade) {
+    if (graded) {
         // What made the picture: the app's settings, the file they came from.
+        const MasterRequest& g = a.shots ? a.shots->base : *a.grade;
         pyjson::set(report, "reconstruction", analytic ? "analytic (no model)" : "model");
         pyjson::set(report, "grade_file", a.grade_file ? pyjson::Value(resolved(*a.grade_file).string()) : pyjson::Value());
-        pyjson::set(report, "residual_strength", a.grade->strength);
-        pyjson::set(report, "source_curve", a.grade->source_curve);
-        pyjson::set(report, "anchored", a.grade->anchor);
+        pyjson::set(report, "residual_strength", g.strength);
+        pyjson::set(report, "source_curve", g.source_curve);
+        pyjson::set(report, "anchored", g.anchor);
     }
+    if (a.shots)
+        pyjson::set(report, "shots_file", a.shots_file ? pyjson::Value(resolved(*a.shots_file).string()) : pyjson::Value());
+    // Per shot: the frames scored for flicker and their sum and peak.
+    struct ShotFlicker { int scored = 0; double sum = 0.0, peak = 0.0; };
+    std::vector<ShotFlicker> shot_flicker(a.shots ? a.shots->shots.size() : 0);
+    int current_shot = -2;
     pyjson::List cuts, frames;
     std::vector<VideoFrameLight> lights;
     std::optional<std::pair<std::vector<double>, std::vector<double>>> previous_exposure;   // (source, HDR) cells, EV
@@ -246,7 +304,17 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
             auto frame = (*decoder)->next();
             if (!frame) return frame.error();
             const SdrImage rgb = rgb_from_frame(*frame);
-            auto pred = predict(rgb, c.transfer, c.primaries, smoother);
+            // A shot boundary resets the holds as a detected cut does, and is not scored.
+            bool shot_start = false;
+            if (a.shots) {
+                const int shot = shot_index(*a.shots, index);
+                if (shot != current_shot) {
+                    shot_start = current_shot != -2;
+                    if (shot_start) smoother = ShadowSmoother(retention, a.cut_threshold, a.static_hold == "on");
+                    current_shot = shot;
+                }
+            }
+            auto pred = predict(rgb, c.transfer, c.primaries, smoother, index);
             if (!pred) return pred.error();
             // The flicker measure: how far the HDR's exposure moved beyond the source's.
             // The static hold (ShadowSmoother::hold_pixels), then the measure.
@@ -259,7 +327,7 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
             std::pair<std::vector<double>, std::vector<double>> exposure{
                 exposure_cells(linear, height, width), exposure_cells(hdr_luminance(pred->hdr.buffer()), height, width)};
             pyjson::Value flicker, local;
-            if (!pred->cut && previous_exposure) {
+            if (!pred->cut && !shot_start && previous_exposure) {
                 auto mean = [](const std::vector<double>& v) {
                     double s = 0.0;
                     for (double x : v) s += x;
@@ -275,6 +343,10 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
                 local = mean(d);
                 scored.emplace_back(index, f);
                 local_scored.push_back(mean(d));
+                if (current_shot >= 0) {
+                    auto& sf = shot_flicker[std::size_t(current_shot)];
+                    ++sf.scored, sf.sum += f, sf.peak = std::max(sf.peak, f);
+                }
             }
             previous_exposure = std::move(exposure);
             auto sf = master_video_frame(pred->hdr, index, a.format, a.peak_nits, a.knee_nits,
@@ -304,6 +376,19 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     }
     pyjson::set(report, "scene_cuts", cuts);
     pyjson::set(report, "frames", frames);
+    if (a.shots) {
+        pyjson::List shots;
+        for (std::size_t i = 0; i < a.shots->shots.size(); ++i) {
+            const auto& g = a.shots->shots[i];
+            const auto& sf = shot_flicker[i];
+            shots.push_back(pyjson::Dict{
+                {"name", g.name}, {"first", g.first}, {"last", g.last}, {"source", g.source},
+                {"keys", int(g.keys.size())}, {"frames_scored", sf.scored},
+                {"flicker_ev_mean", sf.scored ? pyjson::Value(sf.sum / sf.scored) : pyjson::Value()},
+                {"flicker_ev_max", sf.scored ? pyjson::Value(sf.peak) : pyjson::Value()}});
+        }
+        pyjson::set(report, "shots", shots);
+    }
     {
         pyjson::Value mean, peak, peak_frame, local_mean, local_peak;
         if (!scored.empty()) {
@@ -339,6 +424,10 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     if (dynamic) {
         std::vector<int> cut_frames;
         for (const auto& cut : cuts) cut_frames.push_back(int(std::get<std::int64_t>(cut.v)));
+        if (a.shots)   // the keyframed shots' boundaries are cuts too (roadmap 4.3)
+            for (const auto& g : a.shots->shots) cut_frames.push_back(g.first);
+        std::sort(cut_frames.begin(), cut_frames.end());
+        cut_frames.erase(std::unique(cut_frames.begin(), cut_frames.end()), cut_frames.end());
         const std::vector<Shot> shots = shots_from_cuts(cut_frames, int(stats.size()));
         auto written = write_all_sidecars(stats, staged, a.peak_nits, 0.35, shots, a.format == "hdr10" ? a.min_nits : 0.0001);
         if (!written) return written.error();

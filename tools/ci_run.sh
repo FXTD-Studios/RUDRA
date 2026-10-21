@@ -21,6 +21,12 @@ if [ "$code" -ne 0 ]; then
   if [ -n "$failed" ]; then
     echo "::error title=${title}: failing tests::$(printf '%s\n' "$failed" | esc)"
   fi
+  # GoogleTest's failing assertions with their values, by grep alone (the awk
+  # blocks below have not appeared on macOS runners, 21 Oct 2026).
+  asserts=$(grep -E -A4 '(: Failure$|: error: |^\[  FAILED  \] [^ ]+ \()' "$log" | grep -v '^--$' | head -n 60)
+  if [ -n "$asserts" ]; then
+    echo "::error title=${title}: failing assertions::$(printf '%s\n' "$asserts" | esc)"
+  fi
   # Workflow commands take one line: %, CR and LF are escaped.
   body=$(tail -n "${CI_TAIL_LINES:-60}" "$log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk 'BEGIN { ORS = "%0A" } { print }')
   echo "::error title=${title} failed (exit ${code})::${body}"

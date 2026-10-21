@@ -19,6 +19,9 @@ INCLUDE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.M)
 ORDER = {"platform": 0, "core": 1, "infer": 2, "media": 2, "render": 2, "deliver": 2, "video": 3, "engine": 4,
          "app": 5}
 CLI_ALLOWED = {"platform", "core", "infer", "media", "deliver", "video"}
+# The OFX plug-in (roadmap 5.1): an outer layer like the CLI, on the master
+# chain only (no media, no inference, no Qt), so it loads in any host.
+OFX_ALLOWED = {"platform", "core", "deliver"}
 
 QT = re.compile(r"^(Q[A-Z]\w*|Qt\w*/|rhi/|private/qrhi)")
 TORCH = re.compile(r"^(torch/|ATen/|c10/)")
@@ -48,6 +51,9 @@ def violations() -> list[str]:
                 if layer == "cli":
                     if target not in CLI_ALLOWED:
                         out.append(f"{rel}: cli may not include rudra/{target}")
+                elif layer == "ofx":
+                    if target not in OFX_ALLOWED:
+                        out.append(f"{rel}: ofx may not include rudra/{target}")
                 elif target in ORDER and target != layer and ORDER[target] >= ORDER[layer]:
                     out.append(f"{rel}: {layer} may not include rudra/{target} (same or higher layer)")
                 continue
