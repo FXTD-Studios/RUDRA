@@ -472,7 +472,8 @@ def train(args: argparse.Namespace, observer=None) -> Path:
     # corpus's own render, exposure included. Read from the manifest, never
     # assumed: until 16 Sep 2026 this constructor took the class default, the
     # legacy -1 EV, whatever the corpus said.
-    corpus_ev = corpus_ev_of(args.manifest, real_only_ev=getattr(args, "real_corpus_ev", None))
+    corpus_ev = corpus_ev_of(args.manifest, real_only_ev=getattr(args, "real_corpus_ev", None),
+                             pipeline_only_ev=getattr(args, "pipeline_corpus_ev", None))
     if getattr(args, "exposure_push", 0.0) > 0.0 and abs(float(corpus_ev)) > 1e-6:
         raise SystemExit(f"--exposure-push re-renders at the corpus exposure + E and needs a 0 EV corpus; "
                          f"{args.manifest} is at {corpus_ev:+.2f} EV")
@@ -786,6 +787,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=("image", "temporal"), default="image")
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--commercial-evidence", help="Reviewed evidence JSON bound to this manifest; requires scratch image training")
+    parser.add_argument("--pipeline-corpus-ev", type=float, default=None,
+                        help="Explicit model baseline EV for exclusively display-rendered pipeline pairs; does not change source tonemap metadata")
     parser.add_argument("--real-corpus-ev", type=float, default=None,
                         help="Explicit analytic/augmentation EV for an all-real corpus; rejected for mixed/rendered data")
     parser.add_argument("--output-dir", default="hdrdata/checkpoints/sdr2hdr_image")

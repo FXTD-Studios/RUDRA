@@ -1,0 +1,14 @@
+{
+  "control": {
+    "initial_setup_and_evaluation_seconds": 78.852064900002,
+    "initial_eval_to_last_gradient_seconds": 509.7671096000013,
+    "last_gradient_to_final_eval_callback_seconds": 42.394875999998476,
+    "final_callback_seconds": 631.0140505000018
+  },
+  "repeat": {
+    "initial_setup_and_evaluation_seconds": 60.13008300000001,
+    "initial_eval_to_last_gradient_seconds": 360.6137458999983,
+    "last_gradient_to_final_eval_callback_seconds": 39.75122689999989,
+    "final_callback_seconds": 460.4950557999982
+  }
+}

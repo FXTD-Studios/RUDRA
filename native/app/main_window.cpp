@@ -1,4 +1,6 @@
 #include "main_window.hpp"
+#include "rudra/engine/headroom_export.hpp"
+#include "rudra/video/headroom_render.hpp"
 #include "startup.hpp"
 #include "getting_started.hpp"
 #include "updates.hpp"
@@ -136,7 +138,9 @@ QString check_group(std::string_view check) {
 
 }  // namespace
 
-MainWindow::MainWindow(bool with_viewer) {
+MainWindow::MainWindow(bool with_viewer, bool headroom_capable)
+    : session_(headroom_capable ? Session::SourceSupport::HeadroomV1 : Session::SourceSupport::LegacyOnly),
+      headroom_capable_(headroom_capable) {
     setWindowTitle("RUDRA");
     resize(1600, 1000);
     session_.on_change([this](std::uint32_t what) { session_changed(what); });
@@ -248,6 +252,9 @@ MainWindow::MainWindow(bool with_viewer) {
 }
 
 MainWindow::~MainWindow() {
+    headroom_export_cancel_ = true;   // a headroom export publishes nothing once cancelled
+    if (headroom_export_worker_.joinable()) headroom_export_worker_.join();
+    headroom_.reset();   // cancels its decoder and joins its worker; queued frames become no-ops
     if (feeder_slot_) {   // its decoder thread first: the engine's loader reads from it
         std::lock_guard lock(feeder_slot_->mu);
         if (feeder_slot_->feeder) feeder_slot_->feeder->stop();   // releases a loader waiting in take()
@@ -361,6 +368,7 @@ void MainWindow::bind_handlers() {
     h["shortcuts"] = [this] {
         std::vector<std::pair<QString, QString>> rows;
         for (const auto& r : shortcut_sheet()) rows.emplace_back(qs(r.keys), qs(r.what));
+        rows.emplace_back("F", "Fit image to window");
         show_sheet("Keyboard", rows);
     };
     h["about"] = [this] {
@@ -466,6 +474,7 @@ void MainWindow::build_menus() {
             keys.removeAll(hint);
             keys.prepend(hint);
         }
+        if (spec.id == "zoom-fit") keys.prepend(QKeySequence(Qt::Key_F));
         a->setShortcuts(keys);
         a->setShortcutContext(Qt::WindowShortcut);
         if (!spec.check.empty()) {
@@ -638,7 +647,7 @@ void MainWindow::session_changed(std::uint32_t what) {
     if (what & (Session::Grade | Session::Peak | Session::Delivery)) mark_dirty();   // what a project keeps
     // The clip fill is in the fields, not the composite: a change (or its
     // undo) composes the frames again. With the model it does nothing.
-    if ((what & Session::Grade) && !use_model_ && !frames_.empty()) {
+    if ((what & Session::Grade) && !use_model_ && !frames_.empty() && !headroom_routed()) {
         const ClipFillOptions now = session_clip_options();
         const bool same = now.enabled == engine_clip_.enabled && now.overrides.size() == engine_clip_.overrides.size() &&
                           std::equal(now.overrides.begin(), now.overrides.end(), engine_clip_.overrides.begin(),
@@ -647,7 +656,13 @@ void MainWindow::session_changed(std::uint32_t what) {
                                      });
         if (!same) start_engine(frames_, current_);
     }
-    if (what & (Session::Grade | Session::Delivery)) schedule_stats();   // Delivery: the anchor knee moves the hold (3.3)
+    if (what & (Session::Grade | Session::Delivery)) {
+        // The headroom route snapshots the grade after every change, undo and
+        // restore included, and takes the frame on screen again (or switches
+        // back to the legacy engine when the policy was turned off).
+        if (headroom_capable_ && (headroom_ || headroom_routed())) route_headroom();
+        schedule_stats();   // Delivery: the anchor knee moves the hold (3.3)
+    }
     if (what & (Session::Peak | Session::Delivery)) update_pipe();
     if (what & (Session::Peak | Session::View)) update_compare();
 #ifdef RUDRA_APP_VIEWER
@@ -873,6 +888,10 @@ void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::fun
 }
 
 const Fields* MainWindow::frame_fields() const { return current_frame_ ? &current_frame_->fields : nullptr; }
+int MainWindow::presented_index() const {
+    if (headroom_routed()) return headroom_shown_ ? headroom_shown_->index : -1;
+    return current_frame_ && frame_ready_ok_ ? current_frame_->index : -1;
+}
 const FrameScalars* MainWindow::frame_scalars() const { return current_frame_ ? &current_frame_->scalars : nullptr; }
 
 void MainWindow::set_model_pills() {
@@ -994,6 +1013,7 @@ void MainWindow::open_source(const QString& preset, bool folder) {
 
 void MainWindow::close_frames() {
     halt_playback();
+    stop_headroom();
     engine_.reset();
     ++engine_gen_;
     frames_.clear();
@@ -1033,6 +1053,7 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
     auto files = frames_;
     source_sizes_ = std::make_shared<SourceSizes>();
     source_sizes_->size.assign(files.size(), {0, 0});
+    source_sizes_->colour.resize(files.size());
     engine_ = std::make_unique<FrameEngine>(
         [files, sizes = source_sizes_, side = preview_max_side_, slot = feeder_slot_](int i) -> Result<SdrImage> {
 #ifdef RUDRA_HAVE_STILL_DECODE
@@ -1051,6 +1072,7 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
             {
                 std::lock_guard lock(sizes->mu);
                 sizes->size[std::size_t(i)] = {d->rgb.width(), d->rgb.height()};
+                sizes->colour[std::size_t(i)] = d->colour;
             }
             // The Studio's preview: 1600 on the long side (ui/server.py _fit);
             // masters decode again at full size.
@@ -1108,15 +1130,35 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
 }
 
 void MainWindow::step_to(int i) {
+    if (headroom_routed()) {
+        headroom_request(i, headroom_playing_);
+        return;
+    }
+    if (headroom_) stop_headroom();   // another shot or policy: the legacy engine again
     if (!engine_ || frames_.empty()) return;
     const int n = int(frames_.size());
     current_ = ((i % n) + n) % n;
     waiting_ = true;
+    frame_ready_ok_ = false;
     engine_->show(current_);
     sync_ui();
 }
 
 void MainWindow::toggle_play() {
+    if (headroom_routed()) {
+        // The headroom preview plays as fast as its frames render (no clock,
+        // no skipping, no temporal hold): an inspection mode, not real time.
+        if (headroom_playing_) {
+            stop_playback();
+            return;
+        }
+        if (frames_.size() < 2) return;
+        headroom_playing_ = true;
+        btn_play_->set_glyph(IconButton::Glyph::Pause);
+        log(QStringLiteral("playing the headroom preview as frames render (not real time)"));
+        headroom_request(current_, true);
+        return;
+    }
     if (play_.isActive()) {
         stop_playback();
         return;
@@ -1159,6 +1201,10 @@ void MainWindow::start_feeder(int at) {
 }
 
 void MainWindow::halt_playback() {
+    if (headroom_playing_) {
+        headroom_playing_ = false;
+        if (headroom_) headroom_->pause();   // the frame on screen stays
+    }
     const bool was = play_.isActive();
     play_.stop();
     play_status_.stop();
@@ -1253,10 +1299,12 @@ void MainWindow::set_steady_shots(bool on) {
     if (play_.isActive()) play_hold_.configure(play_fps(), on ? kShotHoldSeconds : 0.0);
     log(on ? QStringLiteral("held steady within a shot while playing and in movie exports")
            : QStringLiteral("each frame's own values while playing and in movie exports"));
+    if (headroom_ || headroom_routed()) route_headroom();   // the preview requires the hold off
     sync_checks();
 }
 
 void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
+    if (headroom_routed()) return;   // legacy pixels never stand in for the headroom preview
     if (f.index != current_) return;   // the engine already dropped stale ones; this is the UI's own check
     waiting_ = false;
     if (play_.isActive()) {
@@ -1266,6 +1314,7 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
     const QString name = QString::fromStdString(frame_name(std::size_t(f.index)));
     if (f.error) {
         log(name + ": " + QString::fromStdString(f.error->message));
+        inspect_source();
         return;
     }
     FrameHeader header;
@@ -1290,6 +1339,7 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
         pixel = play_hold_.pixel_step();
     }
     present_frame(*f.sdr, f.fields->fields, scalars, model, header, own, pixel);
+    inspect_source();
     const auto st = engine_->stats();
     frame_info_ = QStringLiteral("%1  %2/%3  ·  %4")
                       .arg(name)
@@ -1329,11 +1379,23 @@ static QString timecode(int frame, double fps) {
            pad(f % rate);
 }
 
+void MainWindow::inspect_source() {
+    std::optional<StillColour> still;
+    if (!shot_video_ && source_sizes_) {
+        std::lock_guard lock(source_sizes_->mu);
+        if (current_ >= 0 && std::size_t(current_) < source_sizes_->colour.size())
+            still = source_sizes_->colour[std::size_t(current_)];
+    }
+    source_panel_->inspect_source(!frames_.empty(), shot_video_.has_value(),
+                                  shot_video_ ? shot_video_->stream : std::nullopt, still);
+}
+
 void MainWindow::sync_ui() {
     const auto& g = session_.grade;
     mode_seg_->set_on(QString::fromStdString(g.mode));
     // The exposure the frames and masters are composed at (analytic or the package's).
     source_panel_->sync(session_.source_curve(), g.calibration, frame_constants().corpus_ev, g.reference);
+    inspect_source();
     {
         const QSignalBlocker b1(strength_), b2(peak_), b3(exposure_);
         exposure_->setValue(int(std::lround(g.exposure_ev * 20.0)));
@@ -1486,6 +1548,7 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
     cur->model = model;
     cur->header = std::move(header);
     cur->index = current_;
+    frame_ready_ok_ = true;
     cur->own_shadow_weight = own_shadow_weight.value_or(cur->scalars.shadow_weight);
     cur->hold_shot = play_hold_.shot();
     current_frame_ = std::move(cur);
@@ -1494,10 +1557,39 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
 }
 
 void MainWindow::schedule_stats() {
-    if (current_frame_) stats_timer_.start();
+    if (current_frame_ || (headroom_routed() && headroom_shown_)) stats_timer_.start();
 }
 
 void MainWindow::run_stats() {
+    if (headroom_routed()) {
+        // E2: the headroom frame's own readouts and scopes, off the UI thread.
+        if (!headroom_shown_) return;
+        if (stats_running_) {
+            stats_again_ = true;
+            return;
+        }
+        stats_running_ = true;
+        const int gen = ++stats_gen_;
+        auto model = headroom_shown_->model, baseline = headroom_shown_->baseline;
+        const int index = headroom_shown_->index;
+        QPointer<MainWindow> self(this);
+        if (stats_worker_.joinable()) stats_worker_.join();
+        stats_worker_ = std::thread([self, model, baseline, gen, index] {
+            auto m = std::make_shared<const FrameMeasure>(measure_headroom(*model, *baseline));
+            QMetaObject::invokeMethod(qApp, [self, m, gen, index] {
+                if (!self) return;
+                self->stats_running_ = false;
+                if (gen == self->stats_gen_ && self->headroom_routed() && self->headroom_shown_ &&
+                    self->headroom_shown_->index == index)
+                    self->apply_measure(m, -1, -1);
+                if (self->stats_again_) {
+                    self->stats_again_ = false;
+                    self->run_stats();
+                }
+            });
+        });
+        return;
+    }
     if (!current_frame_) return;
     if (stats_running_) {   // the page's statsPending: once more when this one is done
         stats_again_ = true;
@@ -1535,6 +1627,12 @@ void MainWindow::run_stats() {
 }
 
 void MainWindow::measure_now() {
+    if (headroom_routed()) {
+        if (!headroom_shown_) return;
+        ++stats_gen_;
+        apply_measure(std::make_shared<const FrameMeasure>(measure_headroom(*headroom_shown_->model, *headroom_shown_->baseline)));
+        return;
+    }
     if (!current_frame_) return;
     const auto& f = *current_frame_;
     ++stats_gen_;   // anything in flight is now stale
@@ -1599,12 +1697,17 @@ void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m, int index,
     findChild<QLabel*>("statusMask")->setText(QString::fromStdString(t.status_mask));
     findChild<QLabel*>("statusTime")->setText(QString::fromStdString(t.status_time));
     src_info_->setText(QString::fromStdString(t.src_info));
-    clip_bar_->set(f.coverage.clipped_pct, f.coverage.highlight_pct);
-    clip_bar_->show();
+    // The headroom path has no SDR clip measure: no clip bar or lane rather than a false 0 %.
+    if (headroom_routed()) {
+        clip_bar_->hide();
+    } else {
+        clip_bar_->set(f.coverage.clipped_pct, f.coverage.highlight_pct);
+        clip_bar_->show();
+    }
     show_scopes(f.measured.scopes, f.measured.metrics.maxcll, f.vector_rgba);
     // The clipping lane: gold where the SDR clipped, violet where the network
     // found crushed shadows (its shadow mask over 1 % of the frame).
-    if (!frames_.empty()) {
+    if (!frames_.empty() && !headroom_routed()) {
         const auto lane = f.coverage.clipped_pct > 0.01 ? ScrubBar::Lane::Highlights
                           : f.coverage.shadow_pct > 1.0 ? ScrubBar::Lane::Shadows
                                                         : ScrubBar::Lane::None;
@@ -1754,6 +1857,7 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
         status->setVisible(!t.isEmpty());
     };
     const bool injected = bool(prepare);
+    if (refuse_headroom_export(QStringLiteral("Master EXR"))) return;
     if (!injected && (needs_model() || frames_.empty())) return;   // !state.live || !current()
     if (mastering()) return;                                    // state.busy
     auto* dir = findChild<QLineEdit*>("renderDir");
@@ -2280,6 +2384,7 @@ bool MainWindow::queue_video_export(const QString& format) {
             status->setVisible(!m.isEmpty());
         }
     };
+    if (session_.grade.headroom_policy != HeadroomPolicy::Disabled) return start_headroom_export(format);
     if (!shot_video_) {
         say("Open a movie to export it to HDR10, HLG or ProRes.");
         return false;
@@ -2381,6 +2486,7 @@ QString MainWindow::frames_movie_base(const QString& format) const {
 }
 
 bool MainWindow::export_frames_to_movie(const QString& format, double fps) {
+    if (refuse_headroom_export(format.toUpper() + QStringLiteral(" export"))) return false;
     auto* status = findChild<QLabel*>("renderStatus");
     auto say = [this, status](const QString& t) {
         status->setText(t);
@@ -2685,6 +2791,10 @@ Project MainWindow::current_project() const {
         p.backend = backend_choice_ ? backend_choice_->key() : std::string();
     }
     p.use_model = use_model_;
+    // The window has no grain control: the legacy path always settles grain
+    // at the anchor's knee, the headroom preview never does (it needs the
+    // canonical SDR v1 cannot represent). The project records what was shown.
+    if (p.grade.headroom_policy != HeadroomPolicy::Disabled) p.settle_grain = false;
     p.app_version = QCoreApplication::applicationVersion().toStdString();
     return p;
 }
@@ -2788,7 +2898,8 @@ void MainWindow::open_shot(const std::string& kind, const std::vector<std::files
 }
 
 bool MainWindow::open_project(const std::filesystem::path& path, bool adopt) {
-    auto p = load_project(path);
+    // Only a capable window reads a headroom project; others refuse it before any change.
+    auto p = load_project(path, headroom_capable_ ? ProjectReadSupport::HeadroomV1 : ProjectReadSupport::LegacyOnly);
     if (!p) {
         problem_ = "The project was not opened: " + qs(p.error().message);
         log(problem_);
@@ -2816,7 +2927,13 @@ bool MainWindow::open_project(const std::filesystem::path& path, bool adopt) {
     // project's choice, not this user's default for the next bare start.
     set_use_model(p->use_model, false);
     // The grade, then the shot: a new shot keeps the session's grade.
-    session_.load_state(p->grade, p->peak_ev, p->anchor, p->carry_chroma, p->anchor_knee, p->container);
+    if (auto loaded = session_.load_state(p->grade, p->peak_ev, p->anchor, p->carry_chroma,
+                                          p->anchor_knee, p->container); !loaded) {
+        restoring_ = false;
+        problem_ = qs(loaded.error().message);
+        log(problem_);
+        return false;
+    }
     pending_shot_.reset();
     close_frames();
     if (!p->source_kind.empty()) open_shot(p->source_kind, p->sources, p->frame);
@@ -3053,11 +3170,281 @@ void MainWindow::set_use_model(bool on, bool remember) {
             });
         }
     }
+    if (headroom_ || headroom_routed()) route_headroom();   // the preview requires the model off
     mark_dirty();
     show_mode();
     sync_checks();
     sync_ui();
     refresh_enabled();
+}
+
+// ---- Headroom preview (E1) -------------------------------------------------
+
+bool MainWindow::headroom_routed() const {
+    return headroom_capable_ && session_.grade.headroom_policy != HeadroomPolicy::Disabled && shot_video_ &&
+           !frames_.empty();
+}
+
+Result<void> MainWindow::set_headroom_preview(bool on) {
+    if (on && !headroom_capable_)
+        return make_error(ErrorCode::Unsupported, "This window does not support the headroom preview");
+    // A grade change (one undo step); session_changed routes the frames.
+    return session_.set_headroom_policy(on ? HeadroomPolicy::Bt1886V1 : HeadroomPolicy::Disabled);
+}
+
+HeadroomPreviewStats MainWindow::headroom_stats() const { return headroom_ ? headroom_->stats() : HeadroomPreviewStats{}; }
+
+void MainWindow::clear_legacy_frame() {
+    // What the measurements, scopes and probe read: legacy SDR state only.
+    current_frame_.reset();
+    frame_ready_ok_ = false;
+    measure_.reset();
+    ++stats_gen_;
+    clear_scopes();
+    if (clip_bar_) clip_bar_->hide();
+    probe_pixel(std::nullopt);
+}
+
+void MainWindow::stop_headroom() {
+    if (!headroom_ && !headroom_shown_ && headroom_problem_.isEmpty()) return;
+    const bool shown = headroom_shown_.has_value();
+    headroom_.reset();   // joins; frames already queued for this window are dropped
+    headroom_shown_.reset();
+    headroom_problem_.clear();
+    if (headroom_playing_) {
+        headroom_playing_ = false;
+        if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
+    }
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_ && shown) viewer_->clear_frame();
+#else
+    (void)shown;
+#endif
+}
+
+void MainWindow::route_headroom() {
+    if (!headroom_routed()) {
+        if (!headroom_ && !headroom_shown_ && headroom_problem_.isEmpty()) return;
+        stop_headroom();
+        // Turned off (the grade, undo, another shot): the legacy engine shows the frame again.
+        if (engine_ && !frames_.empty()) step_to(current_);
+        return;
+    }
+    if (!headroom_) {
+        auto port = headroom_factory_ ? headroom_factory_() : make_headroom_presentation_port();
+        if (!port) {
+            headroom_failed(port.error());
+            return;
+        }
+        QPointer<MainWindow> self(this);
+        HeadroomPreviewDriver::Callbacks cb;
+        cb.post = [self](std::function<void()> task) {
+            QMetaObject::invokeMethod(qApp, [self, task = std::move(task)] {
+                if (self) task();
+            });
+        };
+        cb.shown = [this](const HeadroomShown& f) { headroom_present(f); };
+        cb.failed = [this](const Error& e) { headroom_failed(e); };
+        cb.finished = [this] { headroom_finished(); };
+        auto driver = HeadroomPreviewDriver::create(std::move(*port), std::move(cb));
+        if (!driver) {
+            headroom_failed(driver.error());
+            return;
+        }
+        headroom_ = std::move(*driver);
+        // The legacy engine keeps its frames but nothing of it is shown now.
+        halt_playback();
+        clear_legacy_frame();
+#ifdef RUDRA_APP_VIEWER
+        if (viewer_) viewer_->clear_frame();
+#endif
+    }
+    if (auto c = headroom_->configure(session_, false, use_model_, steady_); !c) {
+        headroom_failed(c.error());
+        return;
+    }
+    headroom_request(current_, headroom_playing_);
+}
+
+void MainWindow::headroom_request(int index, bool play) {
+    if (frames_.empty()) return;
+    const int n = int(frames_.size());
+    current_ = ((index % n) + n) % n;
+    if (!headroom_) {
+        route_headroom();   // creates and configures, then requests current_
+        return;
+    }
+    if (!headroom_->configured()) {
+        // Still refused: the reason stays on screen; nothing older is shown.
+        sync_ui();
+        return;
+    }
+    if (auto r = headroom_->show(shot_video_->path, current_, n, play); !r) {
+        headroom_failed(r.error());
+        return;
+    }
+    headroom_problem_.clear();
+    waiting_ = true;
+    sync_ui();
+}
+
+void MainWindow::headroom_present(const HeadroomShown& f) {
+    // Inside the bridge's final presentation (its lock is held): no driver calls.
+    headroom_shown_ = f;
+    current_ = f.index;
+    waiting_ = false;
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) viewer_->set_composited(*f.model, *f.baseline);
+#endif
+    // The rest (labels, strip) after this returns, still before any other request.
+    QMetaObject::invokeMethod(this, [this] { headroom_after_present(); }, Qt::QueuedConnection);
+}
+
+void MainWindow::headroom_after_present() {
+    if (!headroom_shown_) return;
+    const auto& f = *headroom_shown_;
+    frame_info_ = QStringLiteral("%1  %2/%3  \u00b7  headroom preview (%4), %5x%6")
+                      .arg(QString::fromStdString(frame_name(std::size_t(f.index))))
+                      .arg(f.index + 1)
+                      .arg(frames_.size())
+                      .arg(qs(headroom_policy_id(session_.grade.headroom_policy)))
+                      .arg(f.width)
+                      .arg(f.height);
+    // E4: measured super-white detail is told apart from clipping at the code ceiling.
+    frame_info_ += QStringLiteral("  \u00b7  above white: %1% detail, %2% at the code ceiling (clipped), %3% at white")
+                       .arg(f.source_whites.detail_pct, 0, 'f', 2)
+                       .arg(f.source_whites.ceiling_pct, 0, 'f', 2)
+                       .arg(f.source_whites.at_white_pct, 0, 'f', 2);
+    note_frame_in_strip(f.index);
+    run_stats();   // E2: its readouts and scopes follow on their own thread
+    show_status();
+    sync_ui();
+}
+
+void MainWindow::headroom_failed(const Error& e) {
+    headroom_problem_ = qs(e.message);
+    log(QStringLiteral("headroom preview: ") + headroom_problem_ +
+        (e.detail.empty() ? QString() : QStringLiteral(" (") + qs(e.detail) + QStringLiteral(")")));
+    // Nothing older and no legacy picture stands in for the refused preview.
+    headroom_shown_.reset();
+    clear_legacy_frame();
+    waiting_ = false;
+    if (headroom_playing_) {
+        headroom_playing_ = false;
+        if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
+    }
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) viewer_->clear_frame();
+#endif
+    frame_info_ = QStringLiteral("Headroom preview stopped: ") + headroom_problem_;
+    statusBar()->showMessage(frame_info_);
+    sync_ui();
+}
+
+void MainWindow::headroom_finished() {
+    if (!headroom_playing_) return;   // a paused frame's range ends after its one frame
+    headroom_playing_ = false;
+    if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
+    log(QStringLiteral("the headroom preview reached the end of the shot"));
+    sync_ui();
+}
+
+bool MainWindow::refuse_headroom_export(const QString& what) {
+    if (session_.grade.headroom_policy == HeadroomPolicy::Disabled) return false;
+    const QString m = what + QStringLiteral(" does not support the headroom policy yet; turn the headroom preview off to export.");
+    log(m);
+    if (auto* status = findChild<QLabel*>("renderStatus")) {
+        status->setText(m);
+        status->setVisible(true);
+    }
+    return true;
+}
+
+bool MainWindow::start_headroom_export(const QString& format) {
+    auto say = [this](const QString& m) {
+        log(m);
+        if (auto* status = findChild<QLabel*>("renderStatus")) {
+            status->setText(m);
+            status->setVisible(!m.isEmpty());
+        }
+    };
+    if (headroom_export_running_) {   // a second click cancels, as Master EXR's does
+        headroom_export_cancel_ = true;
+        say(QStringLiteral("Cancelling the headroom export\u2026"));
+        return false;
+    }
+    static const QStringList kFormats = {"hdr10", "hlg", "prores422hq", "prores4444"};
+    if (!kFormats.contains(format)) {
+        say(format.toUpper() + QStringLiteral(" does not support the headroom policy yet; HDR10, HLG and ProRes do."));
+        return false;
+    }
+    if (!headroom_routed() || !shot_video_) {
+        say(QStringLiteral("Open a movie with the headroom preview to export it."));
+        return false;
+    }
+    if (use_model_) {
+        say(QStringLiteral("The headroom export is analytic; turn off Reconstruct > Use the model."));
+        return false;
+    }
+    const QString dir = findChild<QLineEdit*>("renderDir")->text().trimmed();
+    if (dir.isEmpty()) {
+        say("Choose a render folder first.");
+        return false;
+    }
+    QString name = findChild<QLineEdit*>("renderName")->text().trimmed();
+    if (name.isEmpty()) name = QString::fromStdString(shot_video_->path.stem().string()) + "_" + format + "_headroom";
+    HeadroomExportRequest r;
+    r.source = shot_video_->path;
+    r.output = std::filesystem::path(dir.toStdString()) / name.toStdString();
+    r.target = format.toStdString();
+    r.fps = play_fps();
+    r.grade = master_request();
+    r.grade.settle_grain = false;   // the window has no grain control; v1 never settles grain (see current_project)
+    r.grade.source_file = shot_video_->path;
+    r.app_version = QCoreApplication::applicationVersion().toStdString();
+    if (auto valid = validate_headroom_grade(r.grade); !valid) {
+        say(qs(valid.error().message));
+        return false;
+    }
+    if (headroom_export_worker_.joinable()) headroom_export_worker_.join();   // the last one finished
+    headroom_export_cancel_ = false;
+    headroom_export_running_ = true;
+    headroom_export_result_.clear();
+    say(QStringLiteral("Exporting %1 with the headroom policy (decode, render, encode, check, then publish)").arg(format.toUpper()));
+    QPointer<MainWindow> self(this);
+    headroom_export_worker_ = std::thread([self, r, cancel = &headroom_export_cancel_] {
+        auto out = export_headroom_movie(r, [self](const HeadroomExportProgress& p) {
+            QMetaObject::invokeMethod(qApp, [self, p] {
+                if (!self) return;
+                if (auto* status = self->findChild<QLabel*>("renderStatus")) {
+                    status->setText(QStringLiteral("Headroom export: %1 %2/%3").arg(qs(p.phase)).arg(p.done).arg(p.total));
+                    status->setVisible(true);
+                }
+            });
+        }, cancel);
+        QMetaObject::invokeMethod(qApp, [self, out = std::move(out)] {
+            if (!self) return;
+            self->headroom_export_running_ = false;
+            QString m;
+            if (out) {
+                self->headroom_export_result_ = qs(out->file.string());
+                m = QStringLiteral("Published %1 (%2 frames, MaxCLL %3, MaxFALL %4) and its provenance sidecar")
+                        .arg(qs(out->file.string())).arg(out->frames).arg(out->metadata.maxcll).arg(out->metadata.maxfall);
+            } else {
+                self->headroom_export_result_ = qs(out.error().message);
+                m = QStringLiteral("The headroom export did not publish anything: ") + qs(out.error().message) +
+                    (out.error().detail.empty() ? QString() : QStringLiteral(" (") + qs(out.error().detail) + ")");
+            }
+            self->log(m);
+            if (auto* status = self->findChild<QLabel*>("renderStatus")) {
+                status->setText(m);
+                status->setVisible(true);
+            }
+            self->refresh_enabled();
+        });
+    });
+    refresh_enabled();
+    return true;
 }
 
 }  // namespace rudra::app

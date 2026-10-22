@@ -476,6 +476,8 @@ def scopes(hdr_chw, columns: int = 230, bins: int = 76) -> dict:
 
 
 def run_inference(model, image_bytes: bytes, params: dict, args) -> dict:
+    from rudra.input_policy import require_legacy_input_policy
+    require_legacy_input_policy(params)
     import torch
 
     from rudra.inference import predict_image
@@ -541,6 +543,8 @@ def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, byte
     The SDR travels back because the page must compute the analytic baseline
     from the same pixels the network saw, not from its own resize of the file.
     """
+    from rudra.input_policy import require_legacy_input_policy
+    require_legacy_input_policy(params)
     import numpy as np
     import torch
 
@@ -638,6 +642,8 @@ SAFE_STEM = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
 def master_targets(params):
+    from rudra.input_policy import require_legacy_input_policy
+    require_legacy_input_policy(params)
     folder = Path(str(params.get('render_dir', '')).strip()).expanduser()
     if not folder.is_absolute():
         raise ValueError('Choose an absolute render folder on the Studio computer')
@@ -711,6 +717,8 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
     chromaticities, so the file lands in Resolve or Nuke as an ACES image
     rather than as untagged floats.
     """
+    from rudra.input_policy import require_legacy_input_policy
+    require_legacy_input_policy(params)
     import numpy as np
     import torch
 

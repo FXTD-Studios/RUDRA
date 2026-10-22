@@ -1,0 +1,10 @@
+{
+  "approved": true,
+  "approved_by": "Ahmed (project owner, explicit approval in this conversation)",
+  "approved_at": "2026-10-13T20:25:43.790448+00:00",
+  "release_authorized": false,
+  "recipe_sha256": "d03817577692b4801edf14ed9c5cbde7a2863c203ab62a522cb9797e50938df2",
+  "approved_draft_sha256": "37bd233941c15b266a618d26e4fa40b43d7294b76b09faa50404b8c86cce301e",
+  "scope": "internal-preservation-ab",
+  "authorization": "approved and are we need to use the extra high model ?"
+}

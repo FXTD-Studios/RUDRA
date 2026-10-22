@@ -16,6 +16,22 @@ if(NOT nlohmann_json_FOUND)
   FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
+# A Windows executable must carry the runtime matching the headers/import
+# library it was built with. PATH cannot override Windows' System32 copy, which
+# can expose an older C API even when the correct SDK is first on PATH.
+function(rudra_stage_onnxruntime target)
+  if(WIN32 AND RUDRA_WITH_ONNXRUNTIME)
+    find_file(RUDRA_ORT_RUNTIME_DLL NAMES onnxruntime.dll
+              PATHS "${ONNXRUNTIME_ROOT}/lib" "${ONNXRUNTIME_ROOT}/bin"
+              NO_DEFAULT_PATH NO_CACHE REQUIRED)
+    get_filename_component(_ort_runtime_dir "${RUDRA_ORT_RUNTIME_DLL}" DIRECTORY)
+    file(GLOB _ort_runtime_dlls CONFIGURE_DEPENDS "${_ort_runtime_dir}/*.dll")
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${_ort_runtime_dlls} "$<TARGET_FILE_DIR:${target}>"
+      COMMENT "Stage the configured ONNX Runtime beside ${target}" VERBATIM)
+  endif()
+endfunction()
+
 if(RUDRA_BUILD_TESTS)
   find_package(GTest 1.14 CONFIG QUIET)
   if(NOT GTest_FOUND)

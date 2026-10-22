@@ -7,7 +7,7 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets Network)
 qt_standard_project_setup()
 
 # The window and the look as a library: RUDRA and the app's Qt tests link it.
-add_library(rudra_app_ui STATIC getting_started.cpp getting_started.hpp main_window.cpp main_window.hpp layout.cpp widgets.cpp widgets.hpp source_panel.cpp source_panel.hpp scope_widgets.cpp scope_widgets.hpp region_editor.cpp region_editor.hpp model_dialogs.cpp model_dialogs.hpp export_sheet.cpp export_sheet.hpp video_queues.cpp video_queues.hpp queue_window.cpp queue_window.hpp workflow_check.cpp workflow_check.hpp theme.cpp theme.hpp startup.cpp startup.hpp updates.cpp updates.hpp playback.cpp playback.hpp)
+add_library(rudra_app_ui STATIC getting_started.cpp getting_started.hpp main_window.cpp main_window.hpp layout.cpp widgets.cpp widgets.hpp source_panel.cpp source_panel.hpp scope_widgets.cpp scope_widgets.hpp region_editor.cpp region_editor.hpp model_dialogs.cpp model_dialogs.hpp export_sheet.cpp export_sheet.hpp video_queues.cpp video_queues.hpp queue_window.cpp queue_window.hpp workflow_check.cpp workflow_check.hpp headroom_check.cpp headroom_check.hpp theme.cpp theme.hpp startup.cpp startup.hpp updates.cpp updates.hpp playback.cpp playback.hpp)
 target_include_directories(rudra_app_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(rudra_app_ui PUBLIC Qt6::Widgets Qt6::Network rudra::rudra_engine rudra::rudra_infer rudra::rudra_video
                       PRIVATE nlohmann_json::nlohmann_json)
@@ -49,6 +49,7 @@ qt_add_executable(RUDRA main.cpp ${_rudra_icon_sources})
 target_link_libraries(RUDRA PRIVATE rudra_app_ui)
 target_compile_definitions(RUDRA PRIVATE RUDRA_VERSION_LABEL="${RUDRA_VERSION_LABEL}")
 rudra_warnings(RUDRA)
+rudra_stage_onnxruntime(RUDRA)
 set_target_properties(RUDRA PROPERTIES
   WIN32_EXECUTABLE ON
   MACOSX_BUNDLE ON
@@ -72,6 +73,7 @@ if(RUDRA_BUILD_TESTS)
                              $<TARGET_PROPERTY:GTest::gtest,INTERFACE_INCLUDE_DIRECTORIES>)
   target_compile_definitions(rudra_app_tests PRIVATE RUDRA_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/tests/golden")
   rudra_warnings(rudra_app_tests)
+  rudra_stage_onnxruntime(rudra_app_tests)
   include(GoogleTest)
   gtest_discover_tests(rudra_app_tests TEST_PREFIX "app." PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
                        DISCOVERY_MODE PRE_TEST)

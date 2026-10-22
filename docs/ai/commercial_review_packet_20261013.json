@@ -1,0 +1,80 @@
+{
+  "status": "approved_internal_pilot_stopped_at_smoke_gate",
+  "production_training_started": true,
+  "expected_final_candidate": "reports/commercial_candidate_full_20261013/candidate_manifest.jsonl",
+  "identity_policy": "scratch only; title-disjoint; Meridian regression-only",
+  "rights_evidence_receipts": [
+    "docs/ai/rights/netflix_20261013/receipts.json",
+    "docs/ai/rights/netflix_20261013/title_receipts.json"
+  ],
+  "open_rights_question": "Current affirmative AOM CC BY 4.0 offer supports intended use; exact historical archive applicability and embedded notices are not expressly reconciled by issuer. Owner decision requested on documented interpretation; no release clearance claimed.",
+  "quality_samples": 108,
+  "quality_decode_errors": 0,
+  "quality_alignment_flags": 0,
+  "required_before_run": [
+    "No continuation after failed smoke. Stronger-model diagnosis and a separately reviewed proposal before retry."
+  ],
+  "candidate_manifest_sha256": "93b0e5eebb42d9bb9f1df6c901fd913ce953bffa4caee4a97fe6ab65aa14fcf5",
+  "file_hash_coverage": {
+    "files": 11888,
+    "bytes": 114013230104,
+    "exact_duplicates": 0,
+    "cache_policy": "size/mtime audit cache only; commercial preflight rehashes every file"
+  },
+  "perceptual_screen": {
+    "decoded": 5944,
+    "errors": 0,
+    "cross_split_flags": 0,
+    "low_information": [
+      "nf_sol_levante_3282-3874_frame00000575",
+      "nf_sol_levante_3282-3874_frame00000577",
+      "nf_sol_levante_3282-3874_frame00000578",
+      "nf_sol_levante_3282-3874_frame00000579",
+      "nf_sol_levante_3282-3874_frame00000581",
+      "nf_sol_levante_3282-3874_frame00000582",
+      "nf_sol_levante_3282-3874_frame00000583",
+      "nf_sol_levante_3282-3874_frame00000585",
+      "nf_sol_levante_3282-3874_frame00000586",
+      "nf_sol_levante_3282-3874_frame00000587",
+      "nf_sol_levante_3282-3874_frame00000589",
+      "nf_sol_levante_3282-3874_frame00000590",
+      "nf_sol_levante_3282-3874_frame00000591"
+    ],
+    "limitations": [
+      "SDR structural screening only, not proof of uniqueness",
+      "crops/reframing and HDR-only duplicates may be missed",
+      "low-information frames require separate review"
+    ],
+    "same_candidate_rows_except_hash_fields": true
+  },
+  "low_information_review": {
+    "scene_id": "nf_sol_levante_3282-3874",
+    "split": "train",
+    "visually_inspected_frames": [
+      575,
+      583,
+      591
+    ],
+    "observation": "Pale cyan/white transition with decreasing visible structure; not proof of uniqueness.",
+    "action": "No deletion or manifest modification; retain explicit structural-screening exclusion.",
+    "proposed_policy": "Retain all 13 training-only transition frames and audit flags; freeze split membership."
+  },
+  "evidence_reports": {
+    "docs/ai/commercial_candidate_full_summary_20261013.json": "0ebcafa9301d6ab6c06d5ab152fd42626c18168f529454185fa267e2870d97cb",
+    "docs/ai/commercial_perceptual_summary_20261013.json": "91eebc4aeddd8a1ec2e62aa5bc343daaf2c29e34e79e7af9a6ca86026c204756",
+    "docs/ai/candidate_quality_108_20261013.json": "507102eee7d1410e6f2a6ed84abaabc1129e9e7dd5972a074ae126480e2088d5",
+    "docs/ai/LICENSE_DECISION_20261013.md": "ec82939145e588f7a2c0756fe8a5c77a83a53576027bb86fb58d0fd6de26efcd",
+    "docs/ai/COMMERCIAL_ATTRIBUTION_DRAFT.md": "a7095b2811ae3c83b6dcfbcb6e14b3ecf7fb7e8d28c305e24df265672971e21a",
+    "docs/ai/commercial_attribution_inventory_20261013.json": "1ab2422f34faf6d8d22e95549a0cc621202a5e63e97a072a4aa1917cd0a0190e"
+  },
+  "license_recommendation": "Use affirmative current AOM CC BY 4.0 grant; preserve historical NC-ND notices and Cosmos original CC BY 3.0 attribution. This is an inference about current offered terms, not an issuer statement superseding old notices.",
+  "license_decision_document": "docs/ai/LICENSE_DECISION_20261013.md",
+  "attribution_draft": "docs/ai/COMMERCIAL_ATTRIBUTION_DRAFT.md",
+  "attribution_inventory": "docs/ai/commercial_attribution_inventory_20261013.json",
+  "owner_acceptance": "docs/ai/pilot_owner_acceptance_20261013.json",
+  "approved_manifest_sha256": "e9177b9f9cf7375c87160ec7648515f307290e9b818dd6c173f9fb392d22ac02",
+  "release_authorized": false,
+  "training_scope": "internal-pilot; not release-cleared",
+  "preflight": "passed; independently verified 11888 media files",
+  "pilot_result": "docs/ai/pilot_smoke_result_20261013.json"
+}

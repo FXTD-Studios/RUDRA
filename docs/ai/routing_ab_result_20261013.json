@@ -1,0 +1,351 @@
+{
+  "scope": "approved 200-step single-seed routing A/B; no promotion",
+  "approval_sha256": "a867871389d18a89e434077f521421332d24d35d0298665bcc51e8b361d9aa34",
+  "recipe_sha256": "00dc1794fa728690df75a314454c49ec00b08843eeccf2338efa89ab5d19ea35",
+  "manifest_sha256": "e9177b9f9cf7375c87160ec7648515f307290e9b818dd6c173f9fb392d22ac02",
+  "code_sha256": {
+    "training/routing_ab.py": "3ae8b00e935a3a9fa4a4d77d165b0116a6b6effe15dc87c9813dca1257deed0d",
+    "training/routing_replay.py": "a6ab8e4d5feda464c7035e22959ccb3cf39a8e89eb05b1f97cb0be45d9973964",
+    "training/train_sdr2hdr.py": "b0099753f2010e6023b13af6de8050a327ea0575e65337b7174422afc90c3c68",
+    "training/sdr2hdr_dataset.py": "3c75d68642e833bdb2cf00369005719dcb82265dd194c66acb5990ba6680c1ee",
+    "training/bench_val.py": "668db49092f0c2f5fc895ec41e8381d4593f51ac40c1ad18303f820da08853ba",
+    "training/bounded_pilot.py": "83dcac49e191837f5bb2ddd9a43275a73fa1758200ce463fe4f3d65ae20050e5",
+    "pipeline/commercial_preflight.py": "a0a99e748e087818389f92928f9b9e4c7e3afd820c05701e5ef36c963bd67b21",
+    "pipeline/hdr_io.py": "831e2e9357c0632b7cb821b8f53aadd1fcff7699c75a922e085d591d8fe86a75",
+    "rudra/sdr2hdr.py": "49124b7b4383be222418c3c51f9be26ed93db13814683e1ce45db1d6fca5d9f0",
+    "rudra/source_baseline.py": "d364290141dd72e4f2ce9b20cb2a96e7449a8f4a928e6e992a43bbdc2aed83a2"
+  },
+  "checkpoints": {
+    "control": {
+      "step_200_sha256": "fc54546448c132c1138eaa46157fe9ae4a604637a031e67cd2fe31040a6583fd",
+      "initial_model_sha256": "5c49ff756ed70e0353d1f52959b05d4c8e779d8235682a6e8da26c4422b56658",
+      "best_step": 0,
+      "training_use": "internal-pilot",
+      "finite_weights": true,
+      "scheduler_horizon": 1000,
+      "replay_sha256": "79a764bac04ff9601a61de1a13f46e3ad81b7ac93b96f29b310b6951d202e57d"
+    },
+    "corrected": {
+      "step_200_sha256": "dc524fc09b21005e62c9714b04be7d44d87e5e4369aca87e8dbbce7e584812e5",
+      "initial_model_sha256": "5c49ff756ed70e0353d1f52959b05d4c8e779d8235682a6e8da26c4422b56658",
+      "best_step": 0,
+      "training_use": "internal-pilot",
+      "finite_weights": true,
+      "scheduler_horizon": 1000,
+      "replay_sha256": "7ec53ae97b5365b416390e32bca46c9a3ca3da9b3bb92998f99b592040a57441"
+    }
+  },
+  "matched_training_draws": 800,
+  "unique_record_indices": 581,
+  "baseline_changes": 67,
+  "baseline_counts": {
+    "control": {
+      "bt1886": 800
+    },
+    "corrected": {
+      "bt1886": 733,
+      "aces": 67
+    }
+  },
+  "elapsed_seconds_after_preflight": {
+    "control": 489.6074773,
+    "corrected": 403.79326690000016
+  },
+  "combined_seconds_after_preflight": 893.4007442000002,
+  "artifact_bytes_before_summary": 48933995,
+  "metrics": {
+    "bench_real_gain_db": {
+      "control": -0.1123349435334342,
+      "corrected": -1.7972470065573363,
+      "corrected_minus_control": -1.684912063023902
+    },
+    "bench_clip_gain_stops": {
+      "control": -0.21664452981191482,
+      "corrected": -0.020066748678542825,
+      "corrected_minus_control": 0.196577781133372
+    },
+    "bench_crushed_gain_stops": {
+      "control": 0.0,
+      "corrected": 0.0,
+      "corrected_minus_control": 0.0
+    },
+    "bench_gain": {
+      "control": -0.9789130627810935,
+      "corrected": -1.8775140012715075,
+      "corrected_minus_control": -0.898600938490414
+    }
+  },
+  "per_ev": [
+    {
+      "ev": 1.0,
+      "control": {
+        "ev": 1.0,
+        "frames": 48,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.2784422250903049,
+        "clip_frames": 44,
+        "crushed_gain_stops": -4.035450622717164,
+        "crushed_frames": 33
+      },
+      "corrected": {
+        "ev": 1.0,
+        "frames": 48,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.06246920371418552,
+        "clip_frames": 44,
+        "crushed_gain_stops": -4.038727601003264,
+        "crushed_frames": 33
+      }
+    },
+    {
+      "ev": 2.0,
+      "control": {
+        "ev": 2.0,
+        "frames": 48,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.15622011665082214,
+        "clip_frames": 45,
+        "crushed_gain_stops": -2.3990973307402275,
+        "crushed_frames": 13
+      },
+      "corrected": {
+        "ev": 2.0,
+        "frames": 48,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": 0.021393429578530014,
+        "clip_frames": 45,
+        "crushed_gain_stops": -2.3991163912489863,
+        "crushed_frames": 13
+      }
+    }
+  ],
+  "scene_deltas_corrected_minus_control": [
+    {
+      "scene_id": "nf_sparks_11198-11570",
+      "condition": "real",
+      "ev": null,
+      "frames": 7,
+      "pu_gain_db": -1.6636128263552241,
+      "clip_gain_stops": null,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_11198-11570",
+      "condition": "push",
+      "ev": 1.0,
+      "frames": 7,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.15049363074678157,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_11198-11570",
+      "condition": "push",
+      "ev": 2.0,
+      "frames": 7,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.06199098795866265,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_2024-2455",
+      "condition": "real",
+      "ev": null,
+      "frames": 6,
+      "pu_gain_db": -0.6653451219297052,
+      "clip_gain_stops": null,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_2024-2455",
+      "condition": "push",
+      "ev": 1.0,
+      "frames": 6,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.1070101956823212,
+      "crushed_gain_stops": -0.017320042489975762
+    },
+    {
+      "scene_id": "nf_sparks_2024-2455",
+      "condition": "push",
+      "ev": 2.0,
+      "frames": 6,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.09025519142546133,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_30-511",
+      "condition": "real",
+      "ev": null,
+      "frames": 8,
+      "pu_gain_db": -2.8681789317921473,
+      "clip_gain_stops": null,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_30-511",
+      "condition": "push",
+      "ev": 1.0,
+      "frames": 8,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.16370705840187383,
+      "crushed_gain_stops": -0.0002552047619148734
+    },
+    {
+      "scene_id": "nf_sparks_30-511",
+      "condition": "push",
+      "ev": 2.0,
+      "frames": 8,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.36269175059329206,
+      "crushed_gain_stops": -3.09733267334078e-05
+    },
+    {
+      "scene_id": "nf_sparks_5363-5763",
+      "condition": "real",
+      "ev": null,
+      "frames": 7,
+      "pu_gain_db": -1.7306880110030245,
+      "clip_gain_stops": null,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_5363-5763",
+      "condition": "push",
+      "ev": 1.0,
+      "frames": 7,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.4902126107109074,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_5363-5763",
+      "condition": "push",
+      "ev": 2.0,
+      "frames": 7,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.14218271136986388,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_5764-6024",
+      "condition": "real",
+      "ev": null,
+      "frames": 4,
+      "pu_gain_db": -0.5346896246807038,
+      "clip_gain_stops": null,
+      "crushed_gain_stops": 0.0
+    },
+    {
+      "scene_id": "nf_sparks_5764-6024",
+      "condition": "push",
+      "ev": 1.0,
+      "frames": 4,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.22429331187166432,
+      "crushed_gain_stops": 0.0
+    },
+    {
+      "scene_id": "nf_sparks_5764-6024",
+      "condition": "push",
+      "ev": 2.0,
+      "frames": 4,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.03958959398913736,
+      "crushed_gain_stops": 0.0
+    },
+    {
+      "scene_id": "nf_sparks_6026-6502",
+      "condition": "real",
+      "ev": null,
+      "frames": 3,
+      "pu_gain_db": -1.115180158612337,
+      "clip_gain_stops": null,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_6026-6502",
+      "condition": "push",
+      "ev": 1.0,
+      "frames": 3,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.20491409387157447,
+      "crushed_gain_stops": -0.0007261301353791438
+    },
+    {
+      "scene_id": "nf_sparks_6026-6502",
+      "condition": "push",
+      "ev": 2.0,
+      "frames": 3,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.20930255906554485,
+      "crushed_gain_stops": 0.0
+    },
+    {
+      "scene_id": "nf_sparks_8396-8941",
+      "condition": "real",
+      "ev": null,
+      "frames": 8,
+      "pu_gain_db": -2.0458409104997797,
+      "clip_gain_stops": null,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_8396-8941",
+      "condition": "push",
+      "ev": 1.0,
+      "frames": 8,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.3578011577676558,
+      "crushed_gain_stops": 0.0
+    },
+    {
+      "scene_id": "nf_sparks_8396-8941",
+      "condition": "push",
+      "ev": 2.0,
+      "frames": 8,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.4153778384662357,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_9774-10071",
+      "condition": "real",
+      "ev": null,
+      "frames": 5,
+      "pu_gain_db": -1.6654289438332142,
+      "clip_gain_stops": null,
+      "crushed_gain_stops": null
+    },
+    {
+      "scene_id": "nf_sparks_9774-10071",
+      "condition": "push",
+      "ev": 1.0,
+      "frames": 5,
+      "pu_gain_db": null,
+      "clip_gain_stops": -0.09185016984656658,
+      "crushed_gain_stops": 0.0
+    },
+    {
+      "scene_id": "nf_sparks_9774-10071",
+      "condition": "push",
+      "ev": 2.0,
+      "frames": 5,
+      "pu_gain_db": null,
+      "clip_gain_stops": 0.01982300452377231,
+      "crushed_gain_stops": 0.0
+    }
+  ],
+  "release_authorized": false,
+  "preflight_media_checks": 23776,
+  "limitations": [
+    "one seed, 200 steps, already inspected one-title validation",
+    "no native or competitor benchmark",
+    "routing trades clipped-region improvement for real-PU21 regression; no quality promotion"
+  ]
+}

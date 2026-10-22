@@ -1,0 +1,14 @@
+{
+  "registered": "2026-10-22, before run04 is built or started",
+  "reference": "the winner of the run03 decision (run03 best if R1-R5 pass, otherwise run02 best.pt ad3d7910...)",
+  "candidate_selection": "same as run03: audit -> shortlist of <=3 by trailing pu_min -> production_shortlist_eval against the reference",
+  "acceptance": {
+    "R1_R5": "run03's R1-R5 unchanged, with the reference above in place of run02 for R2",
+    "G1_genstyle_stress": "FROZEN stress set = validation_kit SDR degraded by GeneratorStyleAugment(p=1, seed=20261022, default ops), built and hashed BEFORE any run04 checkpoint is scored. PU21 gain vs bt1886 baseline: lower CI > 0, and candidate-minus-reference CI lower bound > 0 (run04 must actually help here, not just tie)",
+    "G2_clean_cost": "clean validation mean gain >= reference minus 0.15 dB (the augmentation must not buy robustness by losing clean quality)",
+    "G3_generated_review": "training/generative_review.py on the owner's generated clips (folder fixed before scoring): no clip gains a FLAG the reference does not have; flicker_excess_ev not worse than reference on any clip by > 0.01",
+    "G4_visual": "owner side-by-side on 10 generated clips, blind A/B order: diagnostic, reported, cannot confirm alone"
+  },
+  "limits": "G1 is synthetic degradation of real validation frames, not real generator output; G3 has no reference HDR, so it can only catch defects (lifted blacks, seams, flicker, clipping), never prove accuracy",
+  "release_authorized": false
+}

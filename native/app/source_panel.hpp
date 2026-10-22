@@ -15,6 +15,8 @@
 #include "rudra/core/calibration.hpp"
 #include "rudra/core/reference_fit.hpp"
 #include "rudra/core/source_curve.hpp"
+#include "rudra/media/video_probe.hpp"
+#include "rudra/media/still_metadata.hpp"
 
 namespace rudra::app {
 
@@ -47,6 +49,8 @@ private:
 class SourcePanel : public QWidget {
 public:
     explicit SourcePanel(QWidget* parent = nullptr);
+    void inspect_source(bool loaded, bool movie, const std::optional<VideoStreamInfo>& stream,
+                        const std::optional<StillColour>& still = {});
     // The session's choice, its anchors by slot, and the loaded model's
     // exposure convention.
     void sync(SourceCurve source, const std::vector<CalibrationPoint>& calibration, float corpus_ev,
@@ -77,6 +81,7 @@ private:
     };
     void emit_anchor(int slot, int code);
     Seg* seg_ = nullptr;
+    QLabel* inspection_ = nullptr;
     SourceCurvePlot* plot_ = nullptr;
     QLabel *grey_ = nullptr, *white_ = nullptr, *clip_ = nullptr, *delta_ = nullptr;
     Row rows_[kMaxCalibrationPoints];

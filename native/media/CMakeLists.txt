@@ -2,7 +2,7 @@
 # (rudra/decode.py) on OpenCV imgcodecs, the decoder the Python uses, so a frame
 # decodes to the same floats in both. Video (rudra/video.py) runs ffprobe and
 # ffmpeg as programs, as the Python does.
-set(_media_sources src/sequence.cpp src/video_probe.cpp src/video_decode.cpp src/still_metadata.cpp)
+set(_media_sources src/sequence.cpp src/video_probe.cpp src/video_decode.cpp src/video_decode_float.cpp src/still_metadata.cpp)
 if(RUDRA_WITH_OPENCV)
   list(APPEND _media_sources src/still.cpp src/png16.cpp src/video_alpha.cpp)
 endif()

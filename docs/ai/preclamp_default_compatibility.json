@@ -1,0 +1,39 @@
+{
+  "compatibility_cases": 8,
+  "prechange_output_loss_and_head_gradient_exact": true,
+  "state_dict_keys_unchanged": true,
+  "reference_source_sha256": "49124b7b4383be222418c3c51f9be26ed93db13814683e1ce45db1d6fca5d9f0",
+  "checkpoint_sha256": "dc524fc09b21005e62c9714b04be7d44d87e5e4369aca87e8dbbce7e584812e5",
+  "current_model_sha256": "f976b70f70f8c48cb366a7058409a49b2a7703cd84e4fb7b6f2c06b77659fd4f",
+  "bench_wall_seconds": 31.384085400000913,
+  "device": "cuda",
+  "metrics": {
+    "bench_real_gain_db": -1.7972470065573363,
+    "bench_real_frames": 48,
+    "bench_rendered_gain_db": 0.0,
+    "bench_rendered_frames": 0,
+    "bench_clip_gain_stops": -0.020066748678542825,
+    "bench_clip_frames": 89,
+    "bench_crushed_gain_stops": 0.0,
+    "bench_crushed_frames": 4,
+    "bench_gain": -1.8775140012715075
+  },
+  "historical_differences": {
+    "bench_real_gain_db": 0.0,
+    "bench_real_frames": 0,
+    "bench_rendered_gain_db": 0.0,
+    "bench_rendered_frames": 0,
+    "bench_clip_gain_stops": 0.0,
+    "bench_clip_frames": 0,
+    "bench_crushed_gain_stops": 0.0,
+    "bench_crushed_frames": 0,
+    "bench_gain": 0.0
+  },
+  "training_performed": false,
+  "release_authorized": false,
+  "limitations": [
+    "same inspected 48 Sparks frames",
+    "analytic picker comparison, not shipping clip fill or competitor",
+    "no throughput or quality improvement claimed"
+  ]
+}

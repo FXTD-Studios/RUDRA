@@ -185,6 +185,13 @@ Result<FrameSequence> open_sequence(const std::string& raw) {
                           "ffmpeg is not on PATH, so video cannot be read. Install it (winget install Gyan.FFmpeg) and "
                           "restart the server, or point at a folder of frames instead.");
     seq.kind = "video";
+    // Inspect stream headers only; do not scan every frame a second time.
+    auto headers = run_process({"ffprobe", "-v", "error", "-select_streams", "v:0",
+                                "-show_streams", "-of", "json", path.string()});
+    if (headers && headers->exit_code == 0) {
+        auto parsed = parse_video_probe(headers->out);
+        if (parsed && !parsed->video_streams.empty()) seq.stream = parsed->video_streams.front();
+    }
     auto first_line = [&](std::vector<std::string> extra) -> std::string {
         std::vector<std::string> argv = {"ffprobe", "-v", "error", "-select_streams", "v:0"};
         argv.insert(argv.end(), extra.begin(), extra.end());

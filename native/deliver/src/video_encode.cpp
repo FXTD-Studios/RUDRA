@@ -61,7 +61,8 @@ Result<std::vector<std::string>> encode_command(const std::string& ffmpeg, const
     const std::string pix = r.alpha ? "yuva444p10le" : profile->pixel_format;
     cmd.insert(cmd.end(), {"-map_metadata", "1", "-map_chapters", "-1", "-vf",
                            "zscale=matrixin=gbr:transferin=" + zs_transfer + ":primariesin=2020:rangein=full:"
-                           "matrix=2020_ncl:transfer=" + zs_transfer + ":primaries=2020:range=limited,format=" + pix,
+                           "matrix=2020_ncl:transfer=" + zs_transfer + ":primaries=2020:range=limited,format=" + pix +
+                           (log ? ",setparams=color_primaries=unknown:color_trc=unknown" : ""),
                            "-c:v", profile->encoder});
     if (profile->codec == "hevc") {
         if (r.format == "hlg") params = "repeat-headers=1:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc";

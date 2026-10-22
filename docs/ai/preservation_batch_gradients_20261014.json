@@ -1,0 +1,2050 @@
+{
+  "verification": {
+    "elapsed_seconds": 10.535787599998002,
+    "optimizer_steps": 0,
+    "batches": 6,
+    "verified_draws": 24,
+    "probes": 18,
+    "first_training_step_parity": {
+      "control": {
+        "loss_difference": 0.0,
+        "gradient_norm_difference": 0.0
+      },
+      "preclamp": {
+        "loss_difference": 0.0,
+        "gradient_norm_difference": 0.0
+      }
+    },
+    "input_hashes": {
+      "D:\\A.I\\Devlopments\\rudra\\training\\routing_ab.py": "87d15d0748c5328827d1c51f77c057b470d070db54a9138f4b7b762361759d3c",
+      "D:\\A.I\\Devlopments\\rudra\\training\\routing_replay.py": "e15c81e1ace9c58437bd0844fb4719e705f349c1d7ac0ebe3a09e41b8d3529ce",
+      "D:\\A.I\\Devlopments\\rudra\\training\\train_sdr2hdr.py": "08b3e273a3e828cf50d20a00723976cbc8bdeb5eac268417aab517654db7f671",
+      "D:\\A.I\\Devlopments\\rudra\\training\\sdr2hdr_dataset.py": "3c75d68642e833bdb2cf00369005719dcb82265dd194c66acb5990ba6680c1ee",
+      "D:\\A.I\\Devlopments\\rudra\\training\\bench_val.py": "668db49092f0c2f5fc895ec41e8381d4593f51ac40c1ad18303f820da08853ba",
+      "D:\\A.I\\Devlopments\\rudra\\training\\bounded_pilot.py": "83dcac49e191837f5bb2ddd9a43275a73fa1758200ce463fe4f3d65ae20050e5",
+      "D:\\A.I\\Devlopments\\rudra\\training\\preservation.py": "bb6710c3c02cec68e7a7d2bc6209cea32eb705ce9109d61daa755eaa82b474c1",
+      "D:\\A.I\\Devlopments\\rudra\\pipeline\\commercial_preflight.py": "a0a99e748e087818389f92928f9b9e4c7e3afd820c05701e5ef36c963bd67b21",
+      "D:\\A.I\\Devlopments\\rudra\\pipeline\\hdr_io.py": "831e2e9357c0632b7cb821b8f53aadd1fcff7699c75a922e085d591d8fe86a75",
+      "D:\\A.I\\Devlopments\\rudra\\rudra\\sdr2hdr.py": "f976b70f70f8c48cb366a7058409a49b2a7703cd84e4fb7b6f2c06b77659fd4f",
+      "D:\\A.I\\Devlopments\\rudra\\rudra\\source_baseline.py": "d364290141dd72e4f2ce9b20cb2a96e7449a8f4a928e6e992a43bbdc2aed83a2",
+      "D:\\A.I\\Devlopments\\rudra\\reports\\approved_internal_pilot_20261013\\manifest.jsonl": "e9177b9f9cf7375c87160ec7648515f307290e9b818dd6c173f9fb392d22ac02",
+      "reports\\preservation_ab_20261013\\preclamp\\step_0000000.pt": "6ae863d628766cf6b683fbe93cb54abeaed506733c52e80456d830a903a6dfad",
+      "reports\\preservation_ab_20261013\\control\\step_0000200.pt": "68eb2f44d6add3fc80b51c012e4e1652c8a5f22ddd4c65a17994c2ff3e66c45b",
+      "reports\\preservation_ab_20261013\\preclamp\\step_0000200.pt": "1ffc19f4cd9801c7aae9d8ea728b24167867e24657465e708b654153b5eb5057"
+    },
+    "algorithm_sha256": {
+      "tools/probe_preservation_batches.py": "d8743819745fc289c8bc5bc3c3303cb05eefacf11887e21eefeba389d09dbb98",
+      "tools/diagnose_preservation_tradeoff.py": "2052549777511dd5f6e22b2797cc5860af1f442879fb0cba4785d58c6c8b957d"
+    },
+    "journal_sha256": "152c8fed5aa922e45b09124b000aecda6ec520e85107c3c1f38575c4d32b1d31",
+    "limitations": [
+      "six selected early batches, no population inference",
+      "weights frozen at initialization or step 200; no intermediate trajectory or AdamW updates"
+    ]
+  },
+  "aggregates": {
+    "initial": {
+      "terms": {
+        "task_without_hold": {
+          "mean_norm": 16.259433428446453,
+          "above_unit_clip_count": 6
+        },
+        "post_hold": {
+          "mean_norm": 0.002237663448066011,
+          "above_unit_clip_count": 0
+        },
+        "pre_hold": {
+          "mean_norm": 0.0,
+          "above_unit_clip_count": 0
+        },
+        "post_total": {
+          "mean_norm": 16.260612328847248,
+          "above_unit_clip_count": 6
+        },
+        "pre_total": {
+          "mean_norm": 16.259433428446453,
+          "above_unit_clip_count": 6
+        },
+        "region_half_pre_total": {
+          "mean_norm": 8.537200649579367,
+          "above_unit_clip_count": 6
+        },
+        "weighted_chroma": {
+          "mean_norm": 15.337666511535645,
+          "above_unit_clip_count": 6
+        },
+        "weighted_highlight": {
+          "mean_norm": 1.262665569782257,
+          "above_unit_clip_count": 4
+        },
+        "log_l1": {
+          "mean_norm": 0.47453952332337695,
+          "above_unit_clip_count": 0
+        },
+        "pu21_mse": {
+          "mean_norm": 379175.5572916667,
+          "above_unit_clip_count": 6
+        }
+      },
+      "relations": {
+        "pre_hold__task_without_hold": {
+          "mean_cosine": null,
+          "nonzero_pairs": 0,
+          "negative_cosines": 0
+        },
+        "post_hold__task_without_hold": {
+          "mean_cosine": 0.4707649101813634,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "pre_total__post_total": {
+          "mean_cosine": 0.9999995628992716,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "pre_total__pu21_mse": {
+          "mean_cosine": 0.8480336368083954,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "post_total__pu21_mse": {
+          "mean_cosine": 0.8480090995629629,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "region_half_pre_total__pu21_mse": {
+          "mean_cosine": 0.8427406748135885,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "weighted_chroma__pu21_mse": {
+          "mean_cosine": 0.8458591798941294,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "weighted_highlight__pu21_mse": {
+          "mean_cosine": 0.32706209023793537,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "weighted_chroma__pre_total": {
+          "mean_cosine": 0.9943387309710184,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        }
+      }
+    },
+    "control": {
+      "terms": {
+        "task_without_hold": {
+          "mean_norm": 4.476761897404988,
+          "above_unit_clip_count": 6
+        },
+        "post_hold": {
+          "mean_norm": 0.04361267698307832,
+          "above_unit_clip_count": 0
+        },
+        "pre_hold": {
+          "mean_norm": 12.733148574829102,
+          "above_unit_clip_count": 6
+        },
+        "post_total": {
+          "mean_norm": 4.491867462793986,
+          "above_unit_clip_count": 6
+        },
+        "pre_total": {
+          "mean_norm": 14.395925045013428,
+          "above_unit_clip_count": 6
+        },
+        "region_half_pre_total": {
+          "mean_norm": 21.326626141866047,
+          "above_unit_clip_count": 6
+        },
+        "weighted_chroma": {
+          "mean_norm": 0.27660636603832245,
+          "above_unit_clip_count": 0
+        },
+        "weighted_highlight": {
+          "mean_norm": 3.393991470336914,
+          "above_unit_clip_count": 6
+        },
+        "log_l1": {
+          "mean_norm": 0.8416628663738569,
+          "above_unit_clip_count": 3
+        },
+        "pu21_mse": {
+          "mean_norm": 95543.56705729167,
+          "above_unit_clip_count": 6
+        }
+      },
+      "relations": {
+        "pre_hold__task_without_hold": {
+          "mean_cosine": 0.14569585335751375,
+          "nonzero_pairs": 6,
+          "negative_cosines": 2
+        },
+        "post_hold__task_without_hold": {
+          "mean_cosine": 0.24457741528749466,
+          "nonzero_pairs": 6,
+          "negative_cosines": 1
+        },
+        "pre_total__post_total": {
+          "mean_cosine": 0.3822590410709381,
+          "nonzero_pairs": 6,
+          "negative_cosines": 1
+        },
+        "pre_total__pu21_mse": {
+          "mean_cosine": 0.6119758188724518,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "post_total__pu21_mse": {
+          "mean_cosine": 0.4006560569008191,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "region_half_pre_total__pu21_mse": {
+          "mean_cosine": 0.5897549117604891,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "weighted_chroma__pu21_mse": {
+          "mean_cosine": 0.501250147819519,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "weighted_highlight__pu21_mse": {
+          "mean_cosine": 0.32068925350904465,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "weighted_chroma__pre_total": {
+          "mean_cosine": 0.42155882716178894,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        }
+      }
+    },
+    "preclamp": {
+      "terms": {
+        "task_without_hold": {
+          "mean_norm": 6.657194415728251,
+          "above_unit_clip_count": 6
+        },
+        "post_hold": {
+          "mean_norm": 0.8582089131620402,
+          "above_unit_clip_count": 3
+        },
+        "pre_hold": {
+          "mean_norm": 1.4525637030601501,
+          "above_unit_clip_count": 6
+        },
+        "post_total": {
+          "mean_norm": 7.027706464131673,
+          "above_unit_clip_count": 6
+        },
+        "pre_total": {
+          "mean_norm": 7.161035060882568,
+          "above_unit_clip_count": 6
+        },
+        "region_half_pre_total": {
+          "mean_norm": 8.805195569992065,
+          "above_unit_clip_count": 6
+        },
+        "weighted_chroma": {
+          "mean_norm": 1.6702807197968166,
+          "above_unit_clip_count": 4
+        },
+        "weighted_highlight": {
+          "mean_norm": 4.907842477162679,
+          "above_unit_clip_count": 6
+        },
+        "log_l1": {
+          "mean_norm": 1.1406467060248058,
+          "above_unit_clip_count": 3
+        },
+        "pu21_mse": {
+          "mean_norm": 197191.42317708334,
+          "above_unit_clip_count": 6
+        }
+      },
+      "relations": {
+        "pre_hold__task_without_hold": {
+          "mean_cosine": 0.23790743574500084,
+          "nonzero_pairs": 6,
+          "negative_cosines": 1
+        },
+        "post_hold__task_without_hold": {
+          "mean_cosine": 0.2398646337290605,
+          "nonzero_pairs": 6,
+          "negative_cosines": 1
+        },
+        "pre_total__post_total": {
+          "mean_cosine": 0.9795214633146921,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "pre_total__pu21_mse": {
+          "mean_cosine": 0.5921605626742045,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "post_total__pu21_mse": {
+          "mean_cosine": 0.5631567637125651,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "region_half_pre_total__pu21_mse": {
+          "mean_cosine": 0.6401915947596232,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "weighted_chroma__pu21_mse": {
+          "mean_cosine": 0.4867607355117798,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "weighted_highlight__pu21_mse": {
+          "mean_cosine": 0.3986848369240761,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        },
+        "weighted_chroma__pre_total": {
+          "mean_cosine": 0.48257910708586377,
+          "nonzero_pairs": 6,
+          "negative_cosines": 0
+        }
+      }
+    }
+  },
+  "batches": [
+    {
+      "arm": "initial",
+      "first_draw": 0,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.42844027280807495,
+            "gradient_norm": 20.54689598083496,
+            "unit_norm_clip_scale": 0.04866914945515842
+          },
+          "post_hold": {
+            "value": 3.262137435178225e-11,
+            "gradient_norm": 0.005163161549717188,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.0,
+            "gradient_norm": 0.0,
+            "unit_norm_clip_scale": 1.0
+          },
+          "post_total": {
+            "value": 0.42844027280807495,
+            "gradient_norm": 20.54944610595703,
+            "unit_norm_clip_scale": 0.048663109758807686
+          },
+          "pre_total": {
+            "value": 0.42844027280807495,
+            "gradient_norm": 20.54689598083496,
+            "unit_norm_clip_scale": 0.04866914945515842
+          },
+          "region_half_pre_total": {
+            "value": 0.218687504529953,
+            "gradient_norm": 10.678610801696777,
+            "unit_norm_clip_scale": 0.09364513089998319
+          },
+          "weighted_chroma": {
+            "value": 0.011981764808297157,
+            "gradient_norm": 19.323617935180664,
+            "unit_norm_clip_scale": 0.05175014076578563
+          },
+          "weighted_highlight": {
+            "value": 0.21270722150802612,
+            "gradient_norm": 0.7348414063453674,
+            "unit_norm_clip_scale": 1.0
+          },
+          "log_l1": {
+            "value": 0.12792594730854034,
+            "gradient_norm": 0.6631655097007751,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pu21_mse": {
+            "value": 4654.662895867295,
+            "gradient_norm": 678206.1875,
+            "unit_norm_clip_scale": 1.4744778482259504e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": null,
+            "norm_ratio": 0.0
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.6110759377479553,
+            "norm_ratio": 0.000251286692218855
+          },
+          "pre_total__post_total": {
+            "cosine": 0.9999997019767761,
+            "norm_ratio": 0.9998759031295776
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.8480006456375122,
+            "norm_ratio": 3.0295943361124955e-05
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.8480157852172852,
+            "norm_ratio": 3.0299703212222084e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.8465965986251831,
+            "norm_ratio": 1.5745374184916727e-05
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.8427865505218506,
+            "norm_ratio": 2.849224620149471e-05
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.5670756101608276,
+            "norm_ratio": 1.0835074135684408e-06
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.9989874958992004,
+            "norm_ratio": 0.9404640793800354
+          }
+        }
+      }
+    },
+    {
+      "arm": "control",
+      "first_draw": 0,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.3312799036502838,
+            "gradient_norm": 3.680979013442993,
+            "unit_norm_clip_scale": 0.2716667833968088
+          },
+          "post_hold": {
+            "value": 0.0009197054896503687,
+            "gradient_norm": 0.10450449585914612,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.11102937906980515,
+            "gradient_norm": 11.495423316955566,
+            "unit_norm_clip_scale": 0.08699113424852148
+          },
+          "post_total": {
+            "value": 0.3321996033191681,
+            "gradient_norm": 3.7127511501312256,
+            "unit_norm_clip_scale": 0.2693419758613985
+          },
+          "pre_total": {
+            "value": 0.44230929017066956,
+            "gradient_norm": 10.105554580688477,
+            "unit_norm_clip_scale": 0.09895546979237647
+          },
+          "region_half_pre_total": {
+            "value": 0.4027373492717743,
+            "gradient_norm": 17.70966911315918,
+            "unit_norm_clip_scale": 0.05646632566334194
+          },
+          "weighted_chroma": {
+            "value": 0.01573888398706913,
+            "gradient_norm": 0.29032787680625916,
+            "unit_norm_clip_scale": 1.0
+          },
+          "weighted_highlight": {
+            "value": 0.16635413467884064,
+            "gradient_norm": 2.453843355178833,
+            "unit_norm_clip_scale": 0.4075238096864221
+          },
+          "log_l1": {
+            "value": 0.10534597933292389,
+            "gradient_norm": 1.251793384552002,
+            "unit_norm_clip_scale": 0.7988532400693623
+          },
+          "pu21_mse": {
+            "value": 4049.7116013069326,
+            "gradient_norm": 117639.71875,
+            "unit_norm_clip_scale": 8.500530353329321e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": -0.5140024423599243,
+            "norm_ratio": 3.1229255199432373
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.286688894033432,
+            "norm_ratio": 0.02839040756225586
+          },
+          "pre_total__post_total": {
+            "cosine": -0.22151488065719604,
+            "norm_ratio": 2.721850872039795
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.4064655303955078,
+            "norm_ratio": 8.590257493779063e-05
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.38689368963241577,
+            "norm_ratio": 3.156035381834954e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.24118198454380035,
+            "norm_ratio": 0.00015054158575367182
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.5292038917541504,
+            "norm_ratio": 2.4679409307282185e-06
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.29916611313819885,
+            "norm_ratio": 2.0858969946857542e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.4409155547618866,
+            "norm_ratio": 0.028729533776640892
+          }
+        }
+      }
+    },
+    {
+      "arm": "preclamp",
+      "first_draw": 0,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.33955129981040955,
+            "gradient_norm": 5.58420467376709,
+            "unit_norm_clip_scale": 0.17907649868587355
+          },
+          "post_hold": {
+            "value": 0.002950928872451186,
+            "gradient_norm": 1.101170301437378,
+            "unit_norm_clip_scale": 0.9081239210417877
+          },
+          "pre_hold": {
+            "value": 0.00803800206631422,
+            "gradient_norm": 1.5096718072891235,
+            "unit_norm_clip_scale": 0.6623951860109818
+          },
+          "post_total": {
+            "value": 0.342502236366272,
+            "gradient_norm": 6.209492206573486,
+            "unit_norm_clip_scale": 0.1610437384715038
+          },
+          "pre_total": {
+            "value": 0.34758931398391724,
+            "gradient_norm": 6.343835830688477,
+            "unit_norm_clip_scale": 0.15763331035919365
+          },
+          "region_half_pre_total": {
+            "value": 0.3013968765735626,
+            "gradient_norm": 8.865516662597656,
+            "unit_norm_clip_scale": 0.11279657184812301
+          },
+          "weighted_chroma": {
+            "value": 0.017634039744734764,
+            "gradient_norm": 1.947127103805542,
+            "unit_norm_clip_scale": 0.5135768920625005
+          },
+          "weighted_highlight": {
+            "value": 0.16300491988658905,
+            "gradient_norm": 3.045614719390869,
+            "unit_norm_clip_scale": 0.3283408322439321
+          },
+          "log_l1": {
+            "value": 0.10318909585475922,
+            "gradient_norm": 1.6640849113464355,
+            "unit_norm_clip_scale": 0.6009305127707534
+          },
+          "pu21_mse": {
+            "value": 3553.698143347358,
+            "gradient_norm": 265002.15625,
+            "unit_norm_clip_scale": 3.7735542010187943e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": 0.402570903301239,
+            "norm_ratio": 0.2703467905521393
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.5015556216239929,
+            "norm_ratio": 0.19719375669956207
+          },
+          "pre_total__post_total": {
+            "cosine": 0.9766859412193298,
+            "norm_ratio": 1.0216351747512817
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.8347034454345703,
+            "norm_ratio": 2.393880822637584e-05
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.7875508069992065,
+            "norm_ratio": 2.343185587960761e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.5829230546951294,
+            "norm_ratio": 3.345450750202872e-05
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.6728313565254211,
+            "norm_ratio": 7.347589871642413e-06
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.5354776978492737,
+            "norm_ratio": 1.1492792509670835e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.653099000453949,
+            "norm_ratio": 0.30693215131759644
+          }
+        }
+      }
+    },
+    {
+      "arm": "initial",
+      "first_draw": 4,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.19007405638694763,
+            "gradient_norm": 4.873807907104492,
+            "unit_norm_clip_scale": 0.20517833568368102
+          },
+          "post_hold": {
+            "value": 6.566331506308032e-11,
+            "gradient_norm": 0.006599761079996824,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.0,
+            "gradient_norm": 0.0,
+            "unit_norm_clip_scale": 1.0
+          },
+          "post_total": {
+            "value": 0.19007405638694763,
+            "gradient_norm": 4.877658843994141,
+            "unit_norm_clip_scale": 0.20501634635947386
+          },
+          "pre_total": {
+            "value": 0.19007405638694763,
+            "gradient_norm": 4.873807907104492,
+            "unit_norm_clip_scale": 0.20517833568368102
+          },
+          "region_half_pre_total": {
+            "value": 0.0998334288597107,
+            "gradient_norm": 2.630963087081909,
+            "unit_norm_clip_scale": 0.38008880657475397
+          },
+          "weighted_chroma": {
+            "value": 0.0027768672443926334,
+            "gradient_norm": 4.474381446838379,
+            "unit_norm_clip_scale": 0.22349452955381696
+          },
+          "weighted_highlight": {
+            "value": 0.029652906581759453,
+            "gradient_norm": 0.41377824544906616,
+            "unit_norm_clip_scale": 1.0
+          },
+          "log_l1": {
+            "value": 0.08318093419075012,
+            "gradient_norm": 0.2539971172809601,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pu21_mse": {
+            "value": 3255.6266514823456,
+            "gradient_norm": 101538.15625,
+            "unit_norm_clip_scale": 9.848514459214947e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": null,
+            "norm_ratio": 0.0
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.6661787629127502,
+            "norm_ratio": 0.0013541282387450337
+          },
+          "pre_total__post_total": {
+            "cosine": 0.9999976754188538,
+            "norm_ratio": 0.9992104768753052
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.9458050727844238,
+            "norm_ratio": 4.79997688671574e-05
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.9456570744514465,
+            "norm_ratio": 4.803769479622133e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.929368793964386,
+            "norm_ratio": 2.5911078409990296e-05
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.9561974406242371,
+            "norm_ratio": 4.406601146911271e-05
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.21056170761585236,
+            "norm_ratio": 4.0751010601525195e-06
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.9924231171607971,
+            "norm_ratio": 0.9180463552474976
+          }
+        }
+      }
+    },
+    {
+      "arm": "control",
+      "first_draw": 4,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.2776125967502594,
+            "gradient_norm": 7.745139122009277,
+            "unit_norm_clip_scale": 0.12911322251721583
+          },
+          "post_hold": {
+            "value": 0.0023548947647213936,
+            "gradient_norm": 0.13487184047698975,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.09532289952039719,
+            "gradient_norm": 10.545705795288086,
+            "unit_norm_clip_scale": 0.09482531796226393
+          },
+          "post_total": {
+            "value": 0.2799674868583679,
+            "gradient_norm": 7.799597263336182,
+            "unit_norm_clip_scale": 0.12821173171196928
+          },
+          "pre_total": {
+            "value": 0.3729355037212372,
+            "gradient_norm": 16.318452835083008,
+            "unit_norm_clip_scale": 0.061280315531493684
+          },
+          "region_half_pre_total": {
+            "value": 0.37352311611175537,
+            "gradient_norm": 21.833293914794922,
+            "unit_norm_clip_scale": 0.0458016073113348
+          },
+          "weighted_chroma": {
+            "value": 0.009699522517621517,
+            "gradient_norm": 0.4399343729019165,
+            "unit_norm_clip_scale": 1.0
+          },
+          "weighted_highlight": {
+            "value": 0.12036372721195221,
+            "gradient_norm": 5.721134662628174,
+            "unit_norm_clip_scale": 0.1747904715024045
+          },
+          "log_l1": {
+            "value": 0.11117818206548691,
+            "gradient_norm": 1.6954872608184814,
+            "unit_norm_clip_scale": 0.5898006038197275
+          },
+          "pu21_mse": {
+            "value": 4207.988557732642,
+            "gradient_norm": 96042.578125,
+            "unit_norm_clip_scale": 1.0412048692488053e-05
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": 0.5823678374290466,
+            "norm_ratio": 1.3615902662277222
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.390168160200119,
+            "norm_ratio": 0.01741374097764492
+          },
+          "pre_total__post_total": {
+            "cosine": 0.8488684296607971,
+            "norm_ratio": 2.092217445373535
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.5956482291221619,
+            "norm_ratio": 0.00016990852600429207
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.19235657155513763,
+            "norm_ratio": 8.120978600345552e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.6343295574188232,
+            "norm_ratio": 0.000227329321205616
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.3504914343357086,
+            "norm_ratio": 4.580618224281352e-06
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.1263328343629837,
+            "norm_ratio": 5.956873428658582e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.19691812992095947,
+            "norm_ratio": 0.026959318667650223
+          }
+        }
+      }
+    },
+    {
+      "arm": "preclamp",
+      "first_draw": 4,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.2871733009815216,
+            "gradient_norm": 8.81600284576416,
+            "unit_norm_clip_scale": 0.11343007756064805
+          },
+          "post_hold": {
+            "value": 0.005265605170279741,
+            "gradient_norm": 1.589989423751831,
+            "unit_norm_clip_scale": 0.6289346055558899
+          },
+          "pre_hold": {
+            "value": 0.008192525245249271,
+            "gradient_norm": 1.9184627532958984,
+            "unit_norm_clip_scale": 0.5212504006301978
+          },
+          "post_total": {
+            "value": 0.29243889451026917,
+            "gradient_norm": 9.72508430480957,
+            "unit_norm_clip_scale": 0.10282686152947647
+          },
+          "pre_total": {
+            "value": 0.2953658401966095,
+            "gradient_norm": 9.594096183776855,
+            "unit_norm_clip_scale": 0.10423075572873607
+          },
+          "region_half_pre_total": {
+            "value": 0.2781330347061157,
+            "gradient_norm": 15.240480422973633,
+            "unit_norm_clip_scale": 0.0656147251682346
+          },
+          "weighted_chroma": {
+            "value": 0.008966340683400631,
+            "gradient_norm": 0.8630304932594299,
+            "unit_norm_clip_scale": 1.0
+          },
+          "weighted_highlight": {
+            "value": 0.1175285205245018,
+            "gradient_norm": 6.244433879852295,
+            "unit_norm_clip_scale": 0.16014259404425943
+          },
+          "log_l1": {
+            "value": 0.11199291795492172,
+            "gradient_norm": 2.0183093547821045,
+            "unit_norm_clip_scale": 0.49546393974080327
+          },
+          "pu21_mse": {
+            "value": 4474.866838818276,
+            "gradient_norm": 288824.78125,
+            "unit_norm_clip_scale": 3.4623067856873438e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": 0.3134433329105377,
+            "norm_ratio": 0.2176114022731781
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.509672224521637,
+            "norm_ratio": 0.18035264313220978
+          },
+          "pre_total__post_total": {
+            "cosine": 0.991856038570404,
+            "norm_ratio": 0.9865309000015259
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.37734079360961914,
+            "norm_ratio": 3.3217704185517505e-05
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.33974841237068176,
+            "norm_ratio": 3.367122553754598e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.45358842611312866,
+            "norm_ratio": 5.2767220040550455e-05
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.6246746778488159,
+            "norm_ratio": 2.9880764031986473e-06
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.05812332034111023,
+            "norm_ratio": 2.1620146071654744e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.31822729110717773,
+            "norm_ratio": 0.08995433151721954
+          }
+        }
+      }
+    },
+    {
+      "arm": "initial",
+      "first_draw": 8,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.2898021340370178,
+            "gradient_norm": 19.45013427734375,
+            "unit_norm_clip_scale": 0.051413524160155204
+          },
+          "post_hold": {
+            "value": 4.299417267518424e-13,
+            "gradient_norm": 0.00017094486975111067,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.0,
+            "gradient_norm": 0.0,
+            "unit_norm_clip_scale": 1.0
+          },
+          "post_total": {
+            "value": 0.2898021340370178,
+            "gradient_norm": 19.450061798095703,
+            "unit_norm_clip_scale": 0.05141371574892328
+          },
+          "pre_total": {
+            "value": 0.2898021340370178,
+            "gradient_norm": 19.45013427734375,
+            "unit_norm_clip_scale": 0.051413524160155204
+          },
+          "region_half_pre_total": {
+            "value": 0.14495119452476501,
+            "gradient_norm": 10.305756568908691,
+            "unit_norm_clip_scale": 0.09703313835140925
+          },
+          "weighted_chroma": {
+            "value": 0.0055350326001644135,
+            "gradient_norm": 18.67283058166504,
+            "unit_norm_clip_scale": 0.05355374173576897
+          },
+          "weighted_highlight": {
+            "value": 0.14271259307861328,
+            "gradient_norm": 2.1787497997283936,
+            "unit_norm_clip_scale": 0.45897860375985244
+          },
+          "log_l1": {
+            "value": 0.06775225698947906,
+            "gradient_norm": 0.3992670178413391,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pu21_mse": {
+            "value": 3656.106058152932,
+            "gradient_norm": 176762.0625,
+            "unit_norm_clip_scale": 5.657322537715595e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": null,
+            "norm_ratio": 0.0
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.3569304049015045,
+            "norm_ratio": 8.788878403720446e-06
+          },
+          "pre_total__post_total": {
+            "cosine": 1.0000001192092896,
+            "norm_ratio": 1.000003695487976
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.8777804970741272,
+            "norm_ratio": 0.00011003568215528503
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.8777762055397034,
+            "norm_ratio": 0.00011003527470165864
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.8738531470298767,
+            "norm_ratio": 5.830299051012844e-05
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.8700055480003357,
+            "norm_ratio": 0.00010563822434050962
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.14411284029483795,
+            "norm_ratio": 1.2325890565989539e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.993213415145874,
+            "norm_ratio": 0.9600360989570618
+          }
+        }
+      }
+    },
+    {
+      "arm": "control",
+      "first_draw": 8,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.22197020053863525,
+            "gradient_norm": 4.556550979614258,
+            "unit_norm_clip_scale": 0.21946419232655315
+          },
+          "post_hold": {
+            "value": 0.00012381192937027663,
+            "gradient_norm": 0.0009220768697559834,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.14415115118026733,
+            "gradient_norm": 13.585946083068848,
+            "unit_norm_clip_scale": 0.07360546849517952
+          },
+          "post_total": {
+            "value": 0.22209401428699493,
+            "gradient_norm": 4.556879043579102,
+            "unit_norm_clip_scale": 0.21944839241688088
+          },
+          "pre_total": {
+            "value": 0.3661213517189026,
+            "gradient_norm": 14.048584938049316,
+            "unit_norm_clip_scale": 0.07118154128890589
+          },
+          "region_half_pre_total": {
+            "value": 0.34526100754737854,
+            "gradient_norm": 20.609601974487305,
+            "unit_norm_clip_scale": 0.04852107055327088
+          },
+          "weighted_chroma": {
+            "value": 0.010377025231719017,
+            "gradient_norm": 0.1264907270669937,
+            "unit_norm_clip_scale": 1.0
+          },
+          "weighted_highlight": {
+            "value": 0.113562673330307,
+            "gradient_norm": 4.214272499084473,
+            "unit_norm_clip_scale": 0.2372888233801732
+          },
+          "log_l1": {
+            "value": 0.06745857745409012,
+            "gradient_norm": 0.17032499611377716,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pu21_mse": {
+            "value": 4224.642519346986,
+            "gradient_norm": 80839.2734375,
+            "unit_norm_clip_scale": 1.2370224984280308e-05
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": -0.06127112731337547,
+            "norm_ratio": 2.9816293716430664
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.3825259208679199,
+            "norm_ratio": 0.00020236290583852679
+          },
+          "pre_total__post_total": {
+            "cosine": 0.26546335220336914,
+            "norm_ratio": 3.082940101623535
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.6256782412528992,
+            "norm_ratio": 0.00017378415213897824
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.5940124988555908,
+            "norm_ratio": 5.636961941490881e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.5509875416755676,
+            "norm_ratio": 0.0002549454220570624
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.7490342259407043,
+            "norm_ratio": 1.5647187865397427e-06
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.5453091263771057,
+            "norm_ratio": 5.213149779592641e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.6992711424827576,
+            "norm_ratio": 0.009003805927932262
+          }
+        }
+      }
+    },
+    {
+      "arm": "preclamp",
+      "first_draw": 8,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.2830396890640259,
+            "gradient_norm": 9.261945724487305,
+            "unit_norm_clip_scale": 0.10796866250117144
+          },
+          "post_hold": {
+            "value": 0.00011969525803579018,
+            "gradient_norm": 0.0013126048725098372,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.010329212062060833,
+            "gradient_norm": 1.3170338869094849,
+            "unit_norm_clip_scale": 0.7592813295527581
+          },
+          "post_total": {
+            "value": 0.28315937519073486,
+            "gradient_norm": 9.261819839477539,
+            "unit_norm_clip_scale": 0.10797012999189155
+          },
+          "pre_total": {
+            "value": 0.2933689057826996,
+            "gradient_norm": 9.255473136901855,
+            "unit_norm_clip_scale": 0.10804416772264208
+          },
+          "region_half_pre_total": {
+            "value": 0.20501232147216797,
+            "gradient_norm": 6.199411869049072,
+            "unit_norm_clip_scale": 0.16130559798534436
+          },
+          "weighted_chroma": {
+            "value": 0.009138419292867184,
+            "gradient_norm": 3.2105190753936768,
+            "unit_norm_clip_scale": 0.3114760152612904
+          },
+          "weighted_highlight": {
+            "value": 0.1609232872724533,
+            "gradient_norm": 8.088969230651855,
+            "unit_norm_clip_scale": 0.12362513045364668
+          },
+          "log_l1": {
+            "value": 0.06859763711690903,
+            "gradient_norm": 0.2854713201522827,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pu21_mse": {
+            "value": 4192.0729177405165,
+            "gradient_norm": 121790.53125,
+            "unit_norm_clip_scale": 8.210818934183681e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": -0.07570158690214157,
+            "norm_ratio": 0.14219839870929718
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.09908026456832886,
+            "norm_ratio": 0.00014172021474223584
+          },
+          "pre_total__post_total": {
+            "cosine": 0.9898960590362549,
+            "norm_ratio": 0.9993147253990173
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.3070465326309204,
+            "norm_ratio": 7.599501259392127e-05
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.32977384328842163,
+            "norm_ratio": 7.604712300235406e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.6970964074134827,
+            "norm_ratio": 5.090224658488296e-05
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.2597213685512543,
+            "norm_ratio": 2.6360990887042135e-05
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.21019597351551056,
+            "norm_ratio": 6.641705840593204e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.4831174612045288,
+            "norm_ratio": 0.34687790274620056
+          }
+        }
+      }
+    },
+    {
+      "arm": "initial",
+      "first_draw": 32,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.2117101550102234,
+            "gradient_norm": 9.075231552124023,
+            "unit_norm_clip_scale": 0.11019001378272714
+          },
+          "post_hold": {
+            "value": 1.72727034498249e-12,
+            "gradient_norm": 0.0003319801762700081,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.0,
+            "gradient_norm": 0.0,
+            "unit_norm_clip_scale": 1.0
+          },
+          "post_total": {
+            "value": 0.2117101550102234,
+            "gradient_norm": 9.075407981872559,
+            "unit_norm_clip_scale": 0.11018787164274627
+          },
+          "pre_total": {
+            "value": 0.2117101550102234,
+            "gradient_norm": 9.075231552124023,
+            "unit_norm_clip_scale": 0.11019001378272714
+          },
+          "region_half_pre_total": {
+            "value": 0.16299910843372345,
+            "gradient_norm": 5.113936901092529,
+            "unit_norm_clip_scale": 0.19554402484753725
+          },
+          "weighted_chroma": {
+            "value": 0.00425896467640996,
+            "gradient_norm": 7.981686592102051,
+            "unit_norm_clip_scale": 0.12528678784540612
+          },
+          "weighted_highlight": {
+            "value": 0.07763790339231491,
+            "gradient_norm": 1.1834874153137207,
+            "unit_norm_clip_scale": 0.8449596861790309
+          },
+          "log_l1": {
+            "value": 0.05552523583173752,
+            "gradient_norm": 0.3343191146850586,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pu21_mse": {
+            "value": 4529.935024132048,
+            "gradient_norm": 271493.46875,
+            "unit_norm_clip_scale": 3.6833298590956126e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": null,
+            "norm_ratio": 0.0
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.41616156697273254,
+            "norm_ratio": 3.6580902815330774e-05
+          },
+          "pre_total__post_total": {
+            "cosine": 0.9999998807907104,
+            "norm_ratio": 0.9999805688858032
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.9615153670310974,
+            "norm_ratio": 3.342706986586563e-05
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.9615079760551453,
+            "norm_ratio": 3.34277210640721e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.9588217735290527,
+            "norm_ratio": 1.8836317394743674e-05
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.9594060778617859,
+            "norm_ratio": 2.9399185223155655e-05
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.5798968076705933,
+            "norm_ratio": 4.3591744542936794e-06
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.9913188815116882,
+            "norm_ratio": 0.8795022368431091
+          }
+        }
+      }
+    },
+    {
+      "arm": "control",
+      "first_draw": 32,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.1707327514886856,
+            "gradient_norm": 2.739784002304077,
+            "unit_norm_clip_scale": 0.3649921432371627
+          },
+          "post_hold": {
+            "value": 0.00023865190451033413,
+            "gradient_norm": 0.006797142792493105,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.14294223487377167,
+            "gradient_norm": 14.979196548461914,
+            "unit_norm_clip_scale": 0.06675925040475092
+          },
+          "post_total": {
+            "value": 0.17097140848636627,
+            "gradient_norm": 2.740678071975708,
+            "unit_norm_clip_scale": 0.36487307478840175
+          },
+          "pre_total": {
+            "value": 0.3136749863624573,
+            "gradient_norm": 15.501049041748047,
+            "unit_norm_clip_scale": 0.06451175870710436
+          },
+          "region_half_pre_total": {
+            "value": 0.3661785125732422,
+            "gradient_norm": 22.10539436340332,
+            "unit_norm_clip_scale": 0.045237824683088644
+          },
+          "weighted_chroma": {
+            "value": 0.011535339057445526,
+            "gradient_norm": 0.2838047444820404,
+            "unit_norm_clip_scale": 1.0
+          },
+          "weighted_highlight": {
+            "value": 0.0719078928232193,
+            "gradient_norm": 1.98964524269104,
+            "unit_norm_clip_scale": 0.5026019090948942
+          },
+          "log_l1": {
+            "value": 0.05604187399148941,
+            "gradient_norm": 0.3533990681171417,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pu21_mse": {
+            "value": 5489.101421386156,
+            "gradient_norm": 137951.59375,
+            "unit_norm_clip_scale": 7.248919514514497e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": 0.10398513823747635,
+            "norm_ratio": 5.467290878295898
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.13918504118919373,
+            "norm_ratio": 0.002480904571712017
+          },
+          "pre_total__post_total": {
+            "cosine": 0.27638107538223267,
+            "norm_ratio": 5.655917644500732
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.6918407082557678,
+            "norm_ratio": 0.00011236585851293057
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.35020601749420166,
+            "norm_ratio": 1.9866954971803352e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.6485952138900757,
+            "norm_ratio": 0.0001602402189746499
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.6151921153068542,
+            "norm_ratio": 2.05727769753139e-06
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.2707606554031372,
+            "norm_ratio": 1.4422777894651517e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.5412934422492981,
+            "norm_ratio": 0.018308743834495544
+          }
+        }
+      }
+    },
+    {
+      "arm": "preclamp",
+      "first_draw": 32,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.20032136142253876,
+            "gradient_norm": 3.8363659381866455,
+            "unit_norm_clip_scale": 0.2606632827653016
+          },
+          "post_hold": {
+            "value": 0.0023921681568026543,
+            "gradient_norm": 0.9866691827774048,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.009258450008928776,
+            "gradient_norm": 1.3990453481674194,
+            "unit_norm_clip_scale": 0.7147726030019509
+          },
+          "post_total": {
+            "value": 0.20271353423595428,
+            "gradient_norm": 4.0744805335998535,
+            "unit_norm_clip_scale": 0.24542999931490372
+          },
+          "pre_total": {
+            "value": 0.20957981050014496,
+            "gradient_norm": 4.446005344390869,
+            "unit_norm_clip_scale": 0.22492095659323813
+          },
+          "region_half_pre_total": {
+            "value": 0.20183053612709045,
+            "gradient_norm": 6.251105785369873,
+            "unit_norm_clip_scale": 0.1599716713111358
+          },
+          "weighted_chroma": {
+            "value": 0.010764735750854015,
+            "gradient_norm": 0.49427101016044617,
+            "unit_norm_clip_scale": 1.0
+          },
+          "weighted_highlight": {
+            "value": 0.08602572232484818,
+            "gradient_norm": 3.0033373832702637,
+            "unit_norm_clip_scale": 0.3329628141705177
+          },
+          "log_l1": {
+            "value": 0.058253802359104156,
+            "gradient_norm": 0.5453513860702515,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pu21_mse": {
+            "value": 4951.234545826087,
+            "gradient_norm": 86407.1484375,
+            "unit_norm_clip_scale": 1.1573116554259937e-05
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": 0.2876729667186737,
+            "norm_ratio": 0.36467984318733215
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.11856939643621445,
+            "norm_ratio": 0.25718849897384644
+          },
+          "pre_total__post_total": {
+            "cosine": 0.9534054398536682,
+            "norm_ratio": 1.0911833047866821
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.7137141823768616,
+            "norm_ratio": 5.1454138883855194e-05
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.6014441251754761,
+            "norm_ratio": 4.715443719760515e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.6994155645370483,
+            "norm_ratio": 7.234477379824966e-05
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.65326988697052,
+            "norm_ratio": 5.720256012864411e-06
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.4843863844871521,
+            "norm_ratio": 3.475797348073684e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.5220291018486023,
+            "norm_ratio": 0.11117193102836609
+          }
+        }
+      }
+    },
+    {
+      "arm": "initial",
+      "first_draw": 40,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.21963481605052948,
+            "gradient_norm": 28.777965545654297,
+            "unit_norm_clip_scale": 0.0347488068141843
+          },
+          "post_hold": {
+            "value": 6.342905367606733e-12,
+            "gradient_norm": 0.0011593193048611283,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.0,
+            "gradient_norm": 0.0,
+            "unit_norm_clip_scale": 1.0
+          },
+          "post_total": {
+            "value": 0.21963481605052948,
+            "gradient_norm": 28.778533935546875,
+            "unit_norm_clip_scale": 0.034748120508553505
+          },
+          "pre_total": {
+            "value": 0.21963481605052948,
+            "gradient_norm": 28.777965545654297,
+            "unit_norm_clip_scale": 0.0347488068141843
+          },
+          "region_half_pre_total": {
+            "value": 0.13028374314308167,
+            "gradient_norm": 14.804472923278809,
+            "unit_norm_clip_scale": 0.06754714859726173
+          },
+          "weighted_chroma": {
+            "value": 0.007948501035571098,
+            "gradient_norm": 27.62588882446289,
+            "unit_norm_clip_scale": 0.03619792905691291
+          },
+          "weighted_highlight": {
+            "value": 0.11422128975391388,
+            "gradient_norm": 1.7166167497634888,
+            "unit_norm_clip_scale": 0.5825408715118887
+          },
+          "log_l1": {
+            "value": 0.026231389492750168,
+            "gradient_norm": 0.5974205136299133,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pu21_mse": {
+            "value": 1109.960060396234,
+            "gradient_norm": 574747.625,
+            "unit_norm_clip_scale": 1.7398940969930238e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": null,
+            "norm_ratio": 0.0
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.5784281492233276,
+            "norm_ratio": 4.028496550745331e-05
+          },
+          "pre_total__post_total": {
+            "cosine": 0.9999998807907104,
+            "norm_ratio": 0.9999802708625793
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.6881383657455444,
+            "norm_ratio": 5.007061190553941e-05
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.6881356835365295,
+            "norm_ratio": 5.007160143577494e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.6881729960441589,
+            "norm_ratio": 2.575821417849511e-05
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.6820257902145386,
+            "norm_ratio": 4.8066121962619945e-05
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.27488046884536743,
+            "norm_ratio": 2.986731260534725e-06
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.9977127909660339,
+            "norm_ratio": 0.9599667191505432
+          }
+        }
+      }
+    },
+    {
+      "arm": "control",
+      "first_draw": 40,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.17949530482292175,
+            "gradient_norm": 2.825469970703125,
+            "unit_norm_clip_scale": 0.35392329645883697
+          },
+          "post_hold": {
+            "value": 0.0005651778192259371,
+            "gradient_norm": 0.008213075809180737,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.11957190185785294,
+            "gradient_norm": 11.96841812133789,
+            "unit_norm_clip_scale": 0.08355322368491847
+          },
+          "post_total": {
+            "value": 0.180060476064682,
+            "gradient_norm": 2.8294291496276855,
+            "unit_norm_clip_scale": 0.35342805692926765
+          },
+          "pre_total": {
+            "value": 0.2990671992301941,
+            "gradient_norm": 12.455301284790039,
+            "unit_norm_clip_scale": 0.08028709196573765
+          },
+          "region_half_pre_total": {
+            "value": 0.3169839084148407,
+            "gradient_norm": 19.878252029418945,
+            "unit_norm_clip_scale": 0.05030623156471767
+          },
+          "weighted_chroma": {
+            "value": 0.013423660770058632,
+            "gradient_norm": 0.2421337217092514,
+            "unit_norm_clip_scale": 1.0
+          },
+          "weighted_highlight": {
+            "value": 0.10573895275592804,
+            "gradient_norm": 2.143531560897827,
+            "unit_norm_clip_scale": 0.46651962197445973
+          },
+          "log_l1": {
+            "value": 0.02648191526532173,
+            "gradient_norm": 0.38177815079689026,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pu21_mse": {
+            "value": 1959.0736682696008,
+            "gradient_norm": 79348.9296875,
+            "unit_norm_clip_scale": 1.2602564444482098e-05
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": 0.06267444044351578,
+            "norm_ratio": 4.235903263092041
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.46549171209335327,
+            "norm_ratio": 0.0029067997820675373
+          },
+          "pre_total__post_total": {
+            "cosine": 0.2891806960105896,
+            "norm_ratio": 4.402054309844971
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.71495521068573,
+            "norm_ratio": 0.0001569687301525846
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.46668899059295654,
+            "norm_ratio": 3.565806400729343e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.7328953146934509,
+            "norm_ratio": 0.00025051695411093533
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.18656101822853088,
+            "norm_ratio": 3.051505927942344e-06
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.38262075185775757,
+            "norm_ratio": 2.7013995349989273e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.28763747215270996,
+            "norm_ratio": 0.019440213218331337
+          }
+        }
+      }
+    },
+    {
+      "arm": "preclamp",
+      "first_draw": 40,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.2191127985715866,
+            "gradient_norm": 5.901773452758789,
+            "unit_norm_clip_scale": 0.16944056537649438
+          },
+          "post_hold": {
+            "value": 0.0010040055494755507,
+            "gradient_norm": 0.39754045009613037,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.006408871151506901,
+            "gradient_norm": 1.1568516492843628,
+            "unit_norm_clip_scale": 0.8644143233095478
+          },
+          "post_total": {
+            "value": 0.22011680901050568,
+            "gradient_norm": 5.831212520599365,
+            "unit_norm_clip_scale": 0.1714908906126309
+          },
+          "pre_total": {
+            "value": 0.22552166879177094,
+            "gradient_norm": 6.269564151763916,
+            "unit_norm_clip_scale": 0.1595006951508677
+          },
+          "region_half_pre_total": {
+            "value": 0.19612808525562286,
+            "gradient_norm": 7.113668918609619,
+            "unit_norm_clip_scale": 0.14057441678365812
+          },
+          "weighted_chroma": {
+            "value": 0.012065554037690163,
+            "gradient_norm": 1.589876413345337,
+            "unit_norm_clip_scale": 0.6289793109871612
+          },
+          "weighted_highlight": {
+            "value": 0.1218695417046547,
+            "gradient_norm": 4.557829856872559,
+            "unit_norm_clip_scale": 0.2194026130855959
+          },
+          "log_l1": {
+            "value": 0.0297696590423584,
+            "gradient_norm": 0.8177365660667419,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pu21_mse": {
+            "value": 1863.8068539979963,
+            "gradient_norm": 254618.6875,
+            "unit_norm_clip_scale": 3.927441500129768e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": 0.22972548007965088,
+            "norm_ratio": 0.19601763784885406
+          },
+          "post_hold__task_without_hold": {
+            "cosine": -0.21192891895771027,
+            "norm_ratio": 0.06735949218273163
+          },
+          "pre_total__post_total": {
+            "cosine": 0.9796720743179321,
+            "norm_ratio": 1.0751733779907227
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.8307940363883972,
+            "norm_ratio": 2.462334668962285e-05
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.8246748447418213,
+            "norm_ratio": 2.2901745978742838e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.7930572628974915,
+            "norm_ratio": 2.7938518542214297e-05
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.3976769745349884,
+            "norm_ratio": 6.24414678895846e-06
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.7624156475067139,
+            "norm_ratio": 1.7900609236676246e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.4174920618534088,
+            "norm_ratio": 0.25358644127845764
+          }
+        }
+      }
+    },
+    {
+      "arm": "initial",
+      "first_draw": 44,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.17457126080989838,
+            "gradient_norm": 14.832565307617188,
+            "unit_norm_clip_scale": 0.06741921655772105
+          },
+          "post_hold": {
+            "value": 1.967929291746273e-12,
+            "gradient_norm": 8.137077998071618e-07,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.0,
+            "gradient_norm": 0.0,
+            "unit_norm_clip_scale": 1.0
+          },
+          "post_total": {
+            "value": 0.17457126080989838,
+            "gradient_norm": 14.832565307617188,
+            "unit_norm_clip_scale": 0.06741921655772105
+          },
+          "pre_total": {
+            "value": 0.17457126080989838,
+            "gradient_norm": 14.832565307617188,
+            "unit_norm_clip_scale": 0.06741921655772105
+          },
+          "region_half_pre_total": {
+            "value": 0.1251467615365982,
+            "gradient_norm": 7.6894636154174805,
+            "unit_norm_clip_scale": 0.13004806576455094
+          },
+          "weighted_chroma": {
+            "value": 0.00794894341379404,
+            "gradient_norm": 13.947593688964844,
+            "unit_norm_clip_scale": 0.07169695006918914
+          },
+          "weighted_highlight": {
+            "value": 0.06210831552743912,
+            "gradient_norm": 1.3485198020935059,
+            "unit_norm_clip_scale": 0.741553262246718
+          },
+          "log_l1": {
+            "value": 0.03148377314209938,
+            "gradient_norm": 0.5990678668022156,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pu21_mse": {
+            "value": 1097.7216558178939,
+            "gradient_norm": 472305.84375,
+            "unit_norm_clip_scale": 2.117272130402013e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": null,
+            "norm_ratio": 0.0
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.19581463932991028,
+            "norm_ratio": 5.485954446271535e-08
+          },
+          "pre_total__post_total": {
+            "cosine": 1.0000001192092896,
+            "norm_ratio": 1.0
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.7669618725776672,
+            "norm_ratio": 3.140457556582987e-05
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.7669618725776672,
+            "norm_ratio": 3.140457556582987e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.7596307396888733,
+            "norm_ratio": 1.628068639547564e-05
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.7647336721420288,
+            "norm_ratio": 2.9530850952141918e-05
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.18584510684013367,
+            "norm_ratio": 2.8551833111123415e-06
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.9923766851425171,
+            "norm_ratio": 0.9403359293937683
+          }
+        }
+      }
+    },
+    {
+      "arm": "control",
+      "first_draw": 44,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.20339995622634888,
+            "gradient_norm": 5.312648296356201,
+            "unit_norm_clip_scale": 0.18823000431928985
+          },
+          "post_hold": {
+            "value": 4.0678500226931646e-05,
+            "gradient_norm": 0.006367430090904236,
+            "unit_norm_clip_scale": 1.0
+          },
+          "pre_hold": {
+            "value": 0.13635337352752686,
+            "gradient_norm": 13.824201583862305,
+            "unit_norm_clip_scale": 0.07233690290153523
+          },
+          "post_total": {
+            "value": 0.20344063639640808,
+            "gradient_norm": 5.311870098114014,
+            "unit_norm_clip_scale": 0.18825758033832019
+          },
+          "pre_total": {
+            "value": 0.33975332975387573,
+            "gradient_norm": 17.94660758972168,
+            "unit_norm_clip_scale": 0.055720834106379104
+          },
+          "region_half_pre_total": {
+            "value": 0.3856000006198883,
+            "gradient_norm": 25.823545455932617,
+            "unit_norm_clip_scale": 0.038724348017282625
+          },
+          "weighted_chroma": {
+            "value": 0.011231506243348122,
+            "gradient_norm": 0.2769467532634735,
+            "unit_norm_clip_scale": 1.0
+          },
+          "weighted_highlight": {
+            "value": 0.11235035210847855,
+            "gradient_norm": 3.8415215015411377,
+            "unit_norm_clip_scale": 0.2603134563441503
+          },
+          "log_l1": {
+            "value": 0.047163065522909164,
+            "gradient_norm": 1.1971943378448486,
+            "unit_norm_clip_scale": 0.8352855782082872
+          },
+          "pu21_mse": {
+            "value": 1415.5093655408705,
+            "gradient_norm": 61439.30859375,
+            "unit_norm_clip_scale": 1.627622482856928e-05
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": 0.7004212737083435,
+            "norm_ratio": 2.6021299362182617
+          },
+          "post_hold__task_without_hold": {
+            "cosine": -0.19659523665905,
+            "norm_ratio": 0.0011985416058450937
+          },
+          "pre_total__post_total": {
+            "cosine": 0.8351755738258362,
+            "norm_ratio": 3.3785855770111084
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.637266993522644,
+            "norm_ratio": 0.0002921030099969357
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.4137785732746124,
+            "norm_ratio": 8.645719208288938e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.730539858341217,
+            "norm_ratio": 0.00042030983604490757
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.5770182013511658,
+            "norm_ratio": 4.5076476453687064e-06
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.29994603991508484,
+            "norm_ratio": 6.252546882024035e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.36331722140312195,
+            "norm_ratio": 0.015431704930961132
+          }
+        }
+      }
+    },
+    {
+      "arm": "preclamp",
+      "first_draw": 44,
+      "probe": {
+        "terms": {
+          "task_without_hold": {
+            "value": 0.2441614270210266,
+            "gradient_norm": 6.542873859405518,
+            "unit_norm_clip_scale": 0.15283801409750017
+          },
+          "post_hold": {
+            "value": 0.0022546895779669285,
+            "gradient_norm": 1.0725715160369873,
+            "unit_norm_clip_scale": 0.9323378932875019
+          },
+          "pre_hold": {
+            "value": 0.004935217089951038,
+            "gradient_norm": 1.4143167734146118,
+            "unit_norm_clip_scale": 0.7070546795050753
+          },
+          "post_total": {
+            "value": 0.2464161217212677,
+            "gradient_norm": 7.064149379730225,
+            "unit_norm_clip_scale": 0.14155984035523736
+          },
+          "pre_total": {
+            "value": 0.24909664690494537,
+            "gradient_norm": 7.0572357177734375,
+            "unit_norm_clip_scale": 0.14169852025531893
+          },
+          "region_half_pre_total": {
+            "value": 0.23713243007659912,
+            "gradient_norm": 9.160989761352539,
+            "unit_norm_clip_scale": 0.10915849890589334
+          },
+          "weighted_chroma": {
+            "value": 0.009767635725438595,
+            "gradient_norm": 1.9168602228164673,
+            "unit_norm_clip_scale": 0.5216861753459063
+          },
+          "weighted_highlight": {
+            "value": 0.13171100616455078,
+            "gradient_norm": 4.506869792938232,
+            "unit_norm_clip_scale": 0.2218834410711062
+          },
+          "log_l1": {
+            "value": 0.0546235553920269,
+            "gradient_norm": 1.512926697731018,
+            "unit_norm_clip_scale": 0.6609701187305443
+          },
+          "pu21_mse": {
+            "value": 2305.6107463446424,
+            "gradient_norm": 166505.234375,
+            "unit_norm_clip_scale": 6.005817196964587e-06
+          }
+        },
+        "relations": {
+          "pre_hold__task_without_hold": {
+            "cosine": 0.2697335183620453,
+            "norm_ratio": 0.21616140007972717
+          },
+          "post_hold__task_without_hold": {
+            "cosine": 0.4222392141819,
+            "norm_ratio": 0.16392973065376282
+          },
+          "pre_total__post_total": {
+            "cosine": 0.985613226890564,
+            "norm_ratio": 0.9990212917327881
+          },
+          "pre_total__pu21_mse": {
+            "cosine": 0.4893643856048584,
+            "norm_ratio": 4.2384468542877585e-05
+          },
+          "post_total__pu21_mse": {
+            "cosine": 0.4957485496997833,
+            "norm_ratio": 4.242598879500292e-05
+          },
+          "region_half_pre_total__pu21_mse": {
+            "cosine": 0.6150688529014587,
+            "norm_ratio": 5.5019230785546824e-05
+          },
+          "weighted_chroma__pu21_mse": {
+            "cosine": 0.31239014863967896,
+            "norm_ratio": 1.1512312084960286e-05
+          },
+          "weighted_highlight__pu21_mse": {
+            "cosine": 0.34150999784469604,
+            "norm_ratio": 2.7067435439676046e-05
+          },
+          "weighted_chroma__pre_total": {
+            "cosine": 0.5015097260475159,
+            "norm_ratio": 0.2716163098812103
+          }
+        }
+      }
+    }
+  ]
+}

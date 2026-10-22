@@ -1,0 +1,50 @@
+{
+  "elapsed_seconds": 53.269801400005235,
+  "historical_aggregate_fields_exact": [
+    "bench_real_gain_db",
+    "bench_real_frames",
+    "bench_rendered_gain_db",
+    "bench_rendered_frames",
+    "bench_clip_gain_stops",
+    "bench_clip_frames",
+    "bench_crushed_gain_stops",
+    "bench_crushed_frames",
+    "bench_gain"
+  ],
+  "pushed_scores_match_frozen_diagnosis_exactly": true,
+  "checkpoint_sha256": "1ffc19f4cd9801c7aae9d8ea728b24167867e24657465e708b654153b5eb5057",
+  "metrics": {
+    "bench_real_gain_db": -3.781894382486731,
+    "bench_real_frames": 48,
+    "bench_rendered_gain_db": 0.0,
+    "bench_rendered_frames": 0,
+    "bench_clip_gain_stops": -0.16442165366637565,
+    "bench_clip_frames": 89,
+    "bench_crushed_gain_stops": 2.8182863534845386,
+    "bench_crushed_frames": 4,
+    "bench_gain": -4.439580997152234
+  },
+  "per_ev": [
+    {
+      "ev": 1.0,
+      "frames": 48,
+      "pu_gain_db": -17.393428169588955,
+      "pu_frames": 48,
+      "clip_gain_stops": -0.20626457659913058,
+      "clip_frames": 44,
+      "crushed_gain_stops": -2.87403293610674,
+      "crushed_frames": 33
+    },
+    {
+      "ev": 2.0,
+      "frames": 48,
+      "pu_gain_db": -9.07385060144942,
+      "pu_frames": 48,
+      "clip_gain_stops": -0.12350857346545971,
+      "clip_frames": 45,
+      "crushed_gain_stops": -2.066948936936887,
+      "crushed_frames": 13
+    }
+  ],
+  "optimizer_steps": 0
+}

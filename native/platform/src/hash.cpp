@@ -164,16 +164,19 @@ std::string sha256_hex(std::span<const std::byte> data) {
     return to_hex(d);
 }
 
-Result<std::string> sha256_file(const std::filesystem::path& path) {
+Result<std::string> sha256_file(const std::filesystem::path& path, std::stop_token stop) {
+    if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "File hashing was cancelled");
     std::ifstream in(path, std::ios::binary);
     if (!in) return make_error(ErrorCode::NotFound, "The file could not be opened.", path.string());
     Sha256 h;
     std::vector<char> buf(1 << 20);
     while (in) {
+        if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "File hashing was cancelled");
         in.read(buf.data(), static_cast<std::streamsize>(buf.size()));
         const auto got = static_cast<std::size_t>(in.gcount());
         if (got) h.update(std::as_bytes(std::span(buf.data(), got)));
     }
+    if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "File hashing was cancelled");
     if (in.bad()) return make_error(ErrorCode::IoError, "The file could not be read.", path.string());
     const auto d = h.finish();
     return to_hex(d);

@@ -9,11 +9,16 @@
 
 #include <gtest/gtest.h>
 
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QAbstractButton>
 #include <QLabel>
 #include <QLineEdit>
@@ -21,6 +26,7 @@
 #include <QSlider>
 #include <QStackedWidget>
 #include <QImage>
+#include <QColorSpace>
 #include <QMouseEvent>
 #include <QComboBox>
 #include <QFile>
@@ -37,9 +43,57 @@
 #include <QTreeWidget>
 
 #include "export_sheet.hpp"
+#include "source_panel.hpp"
 #include "queue_window.hpp"
 #include "rudra/deliver/queue.hpp"
 #include "rudra/platform/process.hpp"
+#include "rudra/media/video_probe.hpp"
+
+TEST(AppSourceInspection, ReportsTagsAndClearsWarningsWhenSourceChanges) {
+    rudra::app::SourcePanel panel;
+    auto* label = panel.findChild<QLabel*>("sourceInspection");
+    ASSERT_NE(label, nullptr);
+    rudra::VideoStreamInfo stream;
+    stream.width = 1920;
+    stream.height = 1080;
+    stream.color_range = "tv";
+    stream.color_transfer = "smpte2084";
+    panel.inspect_source(true, true, stream);
+    EXPECT_TRUE(label->text().contains("1920 x 1080"));
+    EXPECT_TRUE(label->text().contains("not reported"));
+    EXPECT_TRUE(label->text().contains("Limited range"));
+    EXPECT_TRUE(label->text().contains("HDR source detected"));
+    stream.color_range = "pc";
+    stream.color_transfer = "bt709";
+    panel.inspect_source(true, true, stream);
+    EXPECT_FALSE(label->text().contains("Limited range"));
+    EXPECT_FALSE(label->text().contains("HDR source detected"));
+    panel.inspect_source(true, true, {});
+    EXPECT_TRUE(label->text().contains("unavailable"));
+    panel.inspect_source(false, false, {});
+    EXPECT_TRUE(label->text().contains("Open a source"));
+}
+
+TEST(AppSourceInspection, StillProfileAndFallbackAreExplicitAndPlainText) {
+    rudra::app::SourcePanel panel;
+    auto* label = panel.findChild<QLabel*>("sourceInspection"); ASSERT_NE(label, nullptr);
+    rudra::StillColour colour;
+    colour.tagged = true; colour.primaries = rudra::Primaries::P3D65;
+    colour.tag = "icc"; colour.profile = "<b>Display P3</b>"; colour.orientation = 6;
+    panel.inspect_source(true, false, {}, colour);
+    EXPECT_EQ(label->textFormat(), Qt::PlainText);
+    EXPECT_TRUE(label->text().contains("Display P3"));
+    EXPECT_TRUE(label->text().contains("EXIF orientation 6 applied"));
+    colour.recognised = false;
+    panel.inspect_source(true, false, {}, colour);
+    EXPECT_TRUE(label->text().contains("not one RUDRA knows"));
+    EXPECT_TRUE(label->text().contains("read as Rec.709"));
+    panel.inspect_source(true, false, {}, rudra::StillColour{});
+    EXPECT_TRUE(label->text().contains("no colour profile"));
+    EXPECT_FALSE(label->text().contains("Display P3"));
+    panel.inspect_source(true, true, {});
+    EXPECT_FALSE(label->text().contains("no colour profile"));
+}
 
 #include <cstdio>
 #include <functional>
@@ -230,6 +284,25 @@ TEST(AppActions, HandlersDoWhatThePagesDo) {
     EXPECT_EQ(w.container(), "linear");
     EXPECT_TRUE(w.action("container-linear")->isChecked());
     EXPECT_FALSE(w.action("container-aces")->isChecked());
+}
+
+TEST(AppActions, FTriggersFitButStillTypesInTextFields) {
+    app::MainWindow w(false);
+    w.show();
+    w.activateWindow();
+    ASSERT_TRUE(QTest::qWaitForWindowActive(&w));
+    int fits = 0;
+    QObject::connect(w.action("zoom-fit"), &QAction::triggered, &w, [&] { ++fits; });
+    EXPECT_EQ(w.action("zoom-fit")->shortcut(), QKeySequence(Qt::Key_F));
+    QTest::keyClick(&w, Qt::Key_F);
+    EXPECT_EQ(fits, 1);
+    auto* name = w.findChild<QLineEdit*>("renderName");
+    ASSERT_NE(name, nullptr);
+    name->setText("");
+    name->setFocus();
+    QTest::keyClick(name, Qt::Key_F);
+    EXPECT_EQ(name->text(), "f");
+    EXPECT_EQ(fits, 1);
 }
 
 TEST(AppActions, EnabledAsThePageEnablesThem) {
@@ -1784,7 +1857,7 @@ TEST(AppCopy, SheetsAreThePagesAndAClickClosesThem) {
     EXPECT_EQ(w.sheet()->findChild<QLabel*>("sheetTitle")->text(), "Keyboard");
     EXPECT_EQ(w.sheet()->findChild<QLabel*>("sheetClose")->text(), "Esc, or click anywhere, to close");
     // The title, the rows (key and what), the close line.
-    EXPECT_EQ(w.sheet()->findChildren<QLabel*>().size(), qsizetype(2 + 2 * shortcut_sheet().size()));
+    EXPECT_EQ(w.sheet()->findChildren<QLabel*>().size(), qsizetype(2 + 2 * (shortcut_sheet().size() + 1))); // native F row
     QPointer<QDialog> first = w.sheet();
     QTest::mouseClick(first, Qt::LeftButton);
     QApplication::processEvents();
@@ -1958,6 +2031,93 @@ TEST(AppWorkflow, TheScriptedWorkflowPassesAndReportsEveryStep) {
     EXPECT_EQ(q->recovery_mode, "highlights");
     EXPECT_NEAR(q->strength, 1.2, 1e-12);
 }
+
+TEST(AppWorkflow, AnalyticWorkflowExportsWithoutLoadingAnyModel) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    const auto shot = fresh_dir("analytic-workflow-shot");
+    std::filesystem::create_directories(shot);
+    for (const char* file : {"png8_rgb.png", "png16_rgb.png", "bmp24.bmp"})
+        std::filesystem::copy_file(decode_dir() / file, shot / file);
+    app::WorkflowArgs a;
+    a.analytic = true; a.check_every = 1;
+    a.report = QString::fromStdString((shot / "report.json").string());
+    a.frames = QString::fromStdString(shot.string());
+    a.out = QString::fromStdString(fresh_dir("analytic-workflow-out").string());
+    if (find_executable("ffmpeg") && find_executable("ffprobe"))
+        a.movie = QString::fromStdString((std::filesystem::path(RUDRA_GOLDEN_DIR) / "video/clips/bars_709.mp4").string());
+    EXPECT_EQ(app::run_workflow_check(w, a), 0);
+    std::ifstream in(shot / "report.json"); const json r = json::parse(in);
+    EXPECT_EQ(r["verdict"], "PASS"); EXPECT_EQ(r["mode"], "analytic");
+    EXPECT_TRUE(r["model"]["skipped"].get<bool>());
+    EXPECT_TRUE(r["unexpected_dialogs"].empty());
+    EXPECT_TRUE(w.model_package().empty()); EXPECT_FALSE(w.using_model());
+    for (const auto& master : r["master"]["masters"]) {
+        std::ifstream side(master["sidecar"].get<std::string>());
+        EXPECT_EQ(json::parse(side)["reconstruction"], "analytic (no model)");
+    }
+    if (!a.movie.isEmpty()) EXPECT_TRUE(r["movie"]["ok"].get<bool>());
+}
+
+TEST(AppWorkflow, StillInspectionFollowsTheDecodedFrameAndSourceReplacement) {
+    QSettings().clear(); app::MainWindow w(false);
+    const auto shot = fresh_dir("profile-inspection"); std::filesystem::create_directories(shot);
+    QImage image(24, 16, QImage::Format_RGB32); image.fill(QColor(110, 140, 180));
+    image.setColorSpace(QColorSpace::DisplayP3);
+    const auto p3 = QString::fromStdString((shot / "a_p3.png").string());
+    ASSERT_TRUE(image.save(p3));
+    std::filesystem::copy_file(decode_dir() / "bmp24.bmp", shot / "b_untagged.bmp");
+    w.open_source(QString::fromStdString(shot.string()), true);
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    EXPECT_TRUE(text_of(w, "sourceInspection").contains("Display P3"));
+    w.run("next");
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 1; }));
+    EXPECT_TRUE(text_of(w, "sourceInspection").contains("no colour profile"));
+    EXPECT_FALSE(text_of(w, "sourceInspection").contains("Display P3"));
+    w.run("first");
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    EXPECT_TRUE(text_of(w, "sourceInspection").contains("Display P3"));
+    w.open_source(QString::fromStdString((decode_dir() / "bmp24.bmp").string()));
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    EXPECT_FALSE(text_of(w, "sourceInspection").contains("Display P3"));
+}
+
+TEST(AppWorkflow, UnexpectedDialogFailsAndReturnsInsteadOfWaitingForAnOperator) {
+    QSettings().clear(); app::MainWindow w(false);
+    const auto shot = fresh_dir("workflow-dialog"); std::filesystem::create_directories(shot);
+    std::filesystem::copy_file(decode_dir() / "png8_rgb.png", shot / "frame.png");
+    app::WorkflowArgs a; a.analytic = true; a.timeout_ms = 3000;
+    a.frames = QString::fromStdString(shot.string());
+    a.report = QString::fromStdString((shot / "report.json").string());
+    a.out = QString::fromStdString(fresh_dir("workflow-dialog-out").string());
+    QTimer::singleShot(0, &w, [&] { QMessageBox::warning(&w, "Test export failure", "Output unavailable"); });
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_EQ(app::run_workflow_check(w, a), 1);
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(3));
+    std::ifstream in(shot / "report.json"); const json r = json::parse(in);
+    EXPECT_EQ(r["verdict"], "FAIL"); ASSERT_EQ(r["unexpected_dialogs"].size(), 1u);
+    EXPECT_EQ(r["unexpected_dialogs"][0]["text"], "Output unavailable");
+    EXPECT_FALSE(r.contains("master"));
+}
+
+TEST(AppWorkflow, ExistingOutputsAndAmbiguousModesAreRefused) {
+    QSettings().clear(); app::MainWindow w(false);
+    const auto root = fresh_dir("workflow-refusal"); std::filesystem::create_directories(root);
+    app::WorkflowArgs a; a.analytic = true; a.frames = QString::fromStdString(decode_dir().string());
+    a.out = QString::fromStdString(root.string());
+    a.report = QString::fromStdString((root / "report.json").string());
+    std::ofstream(root / "keep.txt") << "keep";
+    EXPECT_EQ(app::run_workflow_check(w, a), 1);
+    std::ifstream in(root / "report.json"); const json r = json::parse(in);
+    EXPECT_FALSE(r["arguments"]["ok"].get<bool>());
+    EXPECT_EQ(app::run_workflow_check(w, a), 1); // existing report remains intact
+    std::ifstream unchanged(root / "report.json"); EXPECT_EQ(json::parse(unchanged), r);
+    a.report = QString::fromStdString((root / "ambiguous.json").string());
+    a.out = QString::fromStdString((root / "fresh").string()); a.package = "research-package";
+    EXPECT_EQ(app::run_workflow_check(w, a), 1);
+    EXPECT_FALSE(std::filesystem::exists(root / "fresh"));
+    EXPECT_TRUE(std::filesystem::exists(root / "keep.txt"));
+}
 #endif
 
 #ifdef RUDRA_HAVE_STILL_DECODE
@@ -1979,6 +2139,9 @@ TEST(AppVideo, AMovieOpensAsAShotAndScrubs) {
     ASSERT_TRUE(w.shot_is_video());
     EXPECT_EQ(w.frame_count(), 6u);
     EXPECT_EQ(w.shot_title(), "bars_709.mp4");
+    ASSERT_TRUE(w.shot_video()->stream.has_value());
+    EXPECT_TRUE(text_of(w, "sourceInspection").contains("Reported source:"));
+    EXPECT_TRUE(text_of(w, "sourceInspection").contains("bt709"));
     EXPECT_EQ(w.frame_name(0), "bars_709_000001");
     EXPECT_EQ(w.frame_name(5), "bars_709_000006");
     EXPECT_TRUE(last_log(w).startsWith("opened bars_709.mp4: 6 frames at 23.976"));
@@ -1992,6 +2155,7 @@ TEST(AppVideo, AMovieOpensAsAShotAndScrubs) {
     // A folder after it: no longer a movie.
     w.open_source(QString::fromStdString(decode_dir().string()));
     EXPECT_FALSE(w.shot_is_video());
+    EXPECT_TRUE(text_of(w, "sourceInspection").contains("Still / frame sequence"));
     EXPECT_EQ(w.frame_name(0), w.frames()[0].filename().string());
 }
 
@@ -2166,6 +2330,19 @@ TEST(AppProject, SaveAndOpenBringTheGradeAndTheModelBack) {
     EXPECT_TRUE(log_tail(w).contains("newer RUDRA")) << log_tail(w).toStdString();
     EXPECT_EQ(w.session().params_json(), now);
     EXPECT_EQ(w.project_path(), saved);
+    // A headroom project is refused before changing the current shot/grade.
+    Project headroom;
+    headroom.grade.headroom_policy = HeadroomPolicy::Bt1886V1;
+    headroom.source_kind = "movie"; headroom.sources = {dir / "headroom.mkv"};
+    headroom.grade.source = "bt1886";
+    headroom.anchor = headroom.carry_chroma = headroom.settle_grain = headroom.grade.clip_fill = false;
+    ASSERT_TRUE(save_project(dir / "headroom.rudra", headroom));
+    const bool was_dirty = w.project_dirty();
+    EXPECT_FALSE(w.open_project(dir / "headroom.rudra"));
+    EXPECT_TRUE(log_tail(w).contains("headroom projects")) << log_tail(w).toStdString();
+    EXPECT_EQ(w.session().params_json(), now);
+    EXPECT_EQ(w.project_path(), saved);
+    EXPECT_EQ(w.project_dirty(), was_dirty);
     // A dropped project opens like File > Open project.
     w.open_paths({QString::fromStdString(saved.string())});
     EXPECT_EQ(w.session().params_json(), params);
@@ -2580,6 +2757,31 @@ TEST(AppVideo, AnAnalyticMovieExportRunsWithoutAModelAndCarriesTheGrade) {
     EXPECT_DOUBLE_EQ(rep["temporal_smoothing"].get<double>(), 0.25);
     EXPECT_TRUE(rep.contains("temporal"));
 }
+
+TEST(AppVideo, EveryMovieDeliveryEncodingCompletesWithoutAModel) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    app::MainWindow w(false);
+    const auto out = fresh_dir("all-movie-encodings");
+    std::filesystem::create_directories(out);
+    w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(out.string()));
+    w.open_source(QString::fromStdString(movie("h264_709.mp4").string()));
+    ASSERT_TRUE(w.shot_is_video());
+    for (const char* format : {"hdr10", "hlg", "prores422hq", "prores4444",
+                               "prores422hq_acescct", "prores422hq_logc4",
+                               "prores4444_acescct", "prores4444_logc4"}) {
+        SCOPED_TRACE(format);
+        const QString name = QString::fromLatin1(format);
+        w.findChild<QLineEdit*>("renderName")->setText(name);
+        ASSERT_TRUE(w.queue_video_export(name)) << last_log(w).toStdString();
+        QString outputName = name;
+        if (name.endsWith("_acescct")) outputName += "_acescct";
+        else if (name.endsWith("_logc4")) outputName += "_logc4";
+        const auto queue = out / (outputName.toStdString() + "." + format + ".queue.json");
+        ASSERT_TRUE(wait_for([&] { return !w.video_queues().running() && app::read_queue_state(queue).status == "complete"; }, 60000))
+            << app::read_queue_state(queue).status << " " << last_log(w).toStdString();
+    }
+}
 #endif
 
 #ifdef RUDRA_HAVE_STILL_DECODE
@@ -2705,9 +2907,35 @@ TEST(AppVideo, AFolderOfFramesExportsToAMovie) {
     int exrs = 0;
     for (const auto& e : std::filesystem::directory_iterator(out / "sh020_hdr10_frames")) exrs += e.path().extension() == ".exr";
     EXPECT_EQ(exrs, 4);
+    const auto movie = rudra::probe_video(out / "sh020_hdr10.mp4");
+    ASSERT_TRUE(movie) << movie.error().message;
+    ASSERT_EQ(movie->video_streams.size(), 1u);
+    const auto& stream = movie->video_streams.front();
+    EXPECT_EQ(stream.avg_frame_rate, "25/1");
+    EXPECT_EQ(stream.color_primaries, "bt2020");
+    EXPECT_EQ(stream.color_transfer, "smpte2084");
+    EXPECT_EQ(stream.color_space, "bt2020nc");
+    EXPECT_EQ(movie->frames.size(), 4u);
     // Nothing is replaced: a second export under the same name is refused.
     EXPECT_FALSE(w.export_frames_to_movie("hdr10", 25.0));
     EXPECT_TRUE(status_of(w).contains("already there")) << status_of(w).toStdString();
+    // Exercise every remaining folder-delivery format, not only enabled tiles.
+    for (const auto& format : {"hlg", "prores422hq", "prores4444"}) {
+        SCOPED_TRACE(format);
+        w.findChild<QLineEdit*>("renderName")->setText(format);
+        ASSERT_TRUE(w.export_frames_to_movie(format, 24.0));
+        const auto output = out / (std::string(format) + "_" + format +
+                                  (std::string(format) == "hlg" ? ".mp4" : ".mov"));
+        ASSERT_TRUE(wait_for([&] { return !w.mastering() && !w.encoding_movie() && std::filesystem::exists(output); }, 60000))
+            << status_of(w).toStdString();
+        ASSERT_TRUE(std::filesystem::exists(output)) << status_of(w).toStdString();
+        auto probe = rudra::probe_video(output);
+        ASSERT_TRUE(probe) << probe.error().message;
+        ASSERT_EQ(probe->video_streams.size(), 1u);
+        EXPECT_EQ(probe->frames.size(), 4u);
+        EXPECT_EQ(probe->video_streams.front().avg_frame_rate, "24/1");
+        EXPECT_EQ(probe->video_streams.front().codec_name, std::string(format) == "hlg" ? "hevc" : "prores");
+    }
     // A single still is EXR only.
     w.add_files({decode_dir() / "png8_rgb.png"});
     EXPECT_FALSE(w.shot_is_frame_folder());
@@ -2715,3 +2943,352 @@ TEST(AppVideo, AFolderOfFramesExportsToAMovie) {
     EXPECT_FALSE(sheet->findChild<QWidget*>("hdr10")->isEnabled());
 }
 #endif
+
+// ---- Headroom preview in the window (E1, 17 Oct 2026) ------------------------
+// The routing, refusal, undo/restore and playback lifecycle, over a fake
+// renderer (the real decoder needs Windows source leases; the Windows workflow
+// check runs it end to end).
+#ifdef RUDRA_HAVE_STILL_DECODE
+namespace {
+class FakeHeadroomPort final : public rudra::HeadroomPreviewPort {
+public:
+    struct Shared {
+        std::mutex mu;
+        int opens = 0, seeks = 0, configures = 0;
+        std::optional<rudra::Error> fail_render;
+    };
+    explicit FakeHeadroomPort(std::shared_ptr<Shared> sh) : sh_(std::move(sh)) {}
+    struct Token final : Pending {
+        int revision = 0;
+        rudra::HeadroomShown shown;
+    };
+    rudra::Result<void> configure(const rudra::Session& s, bool, bool model, bool steady) override {
+        std::lock_guard lock(mu_);
+        ++revision_;
+        { std::lock_guard l(sh_->mu); ++sh_->configures; }
+        ok_ = false;
+        if (s.grade.headroom_policy != rudra::HeadroomPolicy::Bt1886V1)
+            return rudra::make_error(rudra::ErrorCode::Unsupported, "Headroom preview requires bt1886-headroom-v1");
+        if (model || steady)
+            return rudra::make_error(rudra::ErrorCode::Unsupported, "Headroom preview requires model and temporal hold off");
+        if (s.anchor || s.carry_chroma || s.grade.clip_fill)
+            return rudra::make_error(rudra::ErrorCode::Unsupported, "Headroom preview requires anchor, carry chroma and clip fill off");
+        ok_ = true;
+        exposure_ = s.grade.exposure_ev;
+        return {};
+    }
+    rudra::Result<void> open(const std::filesystem::path&, rudra::FloatFrameRange r) override {
+        std::lock_guard lock(mu_);
+        if (!ok_) return rudra::make_error(rudra::ErrorCode::Unsupported, "no grade");
+        { std::lock_guard l(sh_->mu); ++sh_->opens; }
+        set(r);
+        return {};
+    }
+    rudra::Result<void> seek(rudra::FloatFrameRange r) override {
+        std::lock_guard lock(mu_);
+        { std::lock_guard l(sh_->mu); ++sh_->seeks; }
+        set(r);
+        return {};
+    }
+    rudra::Result<std::shared_ptr<Pending>> render_next(std::chrono::milliseconds wait) override {
+        std::unique_lock lock(mu_);
+        if (!ok_) return rudra::make_error(rudra::ErrorCode::Unsupported, "no grade");
+        {
+            std::lock_guard l(sh_->mu);
+            if (sh_->fail_render) {
+                auto e = *sh_->fail_render;
+                sh_->fail_render.reset();
+                return e;
+            }
+        }
+        if (next_ < 0) {
+            cv_.wait_for(lock, wait);
+            return rudra::make_error(rudra::ErrorCode::Busy, "nothing yet");
+        }
+        if (next_ >= end_) return rudra::make_error(rudra::ErrorCode::NotFound, "range done");
+        auto t = std::make_shared<Token>();
+        t->index = next_++;
+        t->revision = revision_;
+        auto img = std::make_shared<rudra::NetworkLinearImage>(2, 3, float(0.02 * std::exp2(exposure_)));
+        t->shown.index = t->index;
+        t->shown.width = 3;
+        t->shown.height = 2;
+        t->shown.model = img;
+        t->shown.baseline = img;
+        t->shown.rendered_bytes = 2 * 2 * 3 * 3 * sizeof(float);
+        t->rendered_bytes = t->shown.rendered_bytes;
+        lock.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(3));
+        return std::shared_ptr<Pending>(t);
+    }
+    rudra::Result<void> present(const Pending& p, const std::function<void(const rudra::HeadroomShown&)>& d) override {
+        std::lock_guard lock(mu_);
+        const auto& t = static_cast<const Token&>(p);
+        if (t.revision != revision_) return rudra::make_error(rudra::ErrorCode::Cancelled, "stale");
+        d(t.shown);
+        return {};
+    }
+    void cancel() override {
+        std::lock_guard lock(mu_);
+        ++revision_;
+        next_ = -1;
+        cv_.notify_all();
+    }
+
+private:
+    void set(rudra::FloatFrameRange r) {
+        ++revision_;
+        next_ = r.first;
+        end_ = r.first + r.count;
+        cv_.notify_all();
+    }
+    std::shared_ptr<Shared> sh_;
+    std::mutex mu_;
+    std::condition_variable cv_;
+    int revision_ = 0, next_ = -1, end_ = -1;
+    bool ok_ = false;
+    double exposure_ = 0.0;
+};
+
+std::shared_ptr<FakeHeadroomPort::Shared> fake_headroom(app::MainWindow& w) {
+    auto sh = std::make_shared<FakeHeadroomPort::Shared>();
+    w.set_headroom_port_factory([sh]() -> rudra::Result<std::unique_ptr<rudra::HeadroomPreviewPort>> {
+        return std::unique_ptr<rudra::HeadroomPreviewPort>(new FakeHeadroomPort(sh));
+    });
+    return sh;
+}
+
+std::filesystem::path headroom_clip() {
+    return std::filesystem::path(RUDRA_GOLDEN_DIR) / "video" / "clips" / "bars_709.mp4";
+}
+
+// The controls the v1 preview refuses, turned off as an artist would.
+void headroom_ready_controls(app::MainWindow& w) {
+    w.set_steady_shots(false);
+    if (w.session().anchor) w.session().toggle_anchor();
+    if (w.session().carry_chroma) w.session().toggle_carry_chroma();
+    if (w.session().grade.clip_fill) w.session().toggle_clip_fill();
+}
+}  // namespace
+
+TEST(AppHeadroom, ClosedUnlessTheWindowIsCapable) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    EXPECT_FALSE(w.headroom_capable());
+    EXPECT_FALSE(w.set_headroom_preview(true));
+    EXPECT_EQ(w.session().grade.headroom_policy, HeadroomPolicy::Disabled);
+    EXPECT_FALSE(w.headroom_routed());
+}
+
+TEST(AppHeadroom, PausedFramesRouteThroughTheDriverAndUndoReturnsToLegacy) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    app::MainWindow w(false, true);
+    auto sh = fake_headroom(w);
+    w.open_source(QString::fromStdString(headroom_clip().string()));
+    ASSERT_GE(w.frame_count(), 3u);
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    headroom_ready_controls(w);
+    ASSERT_TRUE(w.set_headroom_preview(true));
+    EXPECT_TRUE(w.headroom_routed());
+    ASSERT_TRUE(wait_for([&] { return w.headroom_frame() != nullptr; })) << w.headroom_problem().toStdString();
+    EXPECT_EQ(w.headroom_frame()->index, 0);
+    EXPECT_EQ(w.presented_index(), 0);
+    EXPECT_EQ(w.frame_fields(), nullptr) << "no legacy frame is kept on screen beside the preview";
+    // E2: the readouts and scopes are the headroom frame's own (2 x 3 at 0.02 = 200 nits).
+    ASSERT_TRUE(wait_for([&] { return w.measurement() != nullptr; }));
+    EXPECT_EQ(w.measurement()->width, 3);
+    EXPECT_NEAR(w.measurement()->measured.metrics.peak_nits, 200.0, 0.5);
+    EXPECT_TRUE(w.measurement()->sdr8.empty()) << "nothing borrowed from the legacy path";
+    // Stepping seeks the same prepared source.
+    w.run("next");
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 1; }));
+    { std::lock_guard l(sh->mu); EXPECT_EQ(sh->opens, 1); EXPECT_GE(sh->seeks, 1); }
+    // A grade change renders the paused frame again with the new grade.
+    const auto before = w.headroom_stats().presented;
+    w.session().nudge_exposure(1);
+    ASSERT_TRUE(wait_for([&] { return w.headroom_stats().presented > before; }));
+    EXPECT_EQ(w.presented_index(), 1);
+    EXPECT_NEAR(w.headroom_frame()->model->buffer().at(0, 0, 0), 0.04f, 1e-6f);
+    // Undo the exposure, then the policy: the legacy engine shows the frame again.
+    w.run("undo");
+    ASSERT_TRUE(wait_for([&] { return w.headroom_frame() && w.headroom_frame()->model->buffer().at(0, 0, 0) < 0.03f; }));
+    w.run("undo");
+    EXPECT_EQ(w.session().grade.headroom_policy, HeadroomPolicy::Disabled);
+    EXPECT_FALSE(w.headroom_routed());
+    EXPECT_EQ(w.headroom_frame(), nullptr);
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr && w.presented_index() == 1; }));
+    // Redo: back to the preview, on the same frame.
+    w.run("redo");
+    ASSERT_TRUE(wait_for([&] { return w.headroom_frame() != nullptr && w.presented_index() == 1; }));
+    EXPECT_EQ(w.frame_fields(), nullptr);
+}
+
+TEST(AppHeadroom, ARefusedGradeShowsWhyAndNoLegacyPicture) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    app::MainWindow w(false, true);
+    fake_headroom(w);
+    w.open_source(QString::fromStdString(headroom_clip().string()));
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    // Steady shots, anchor, chroma and the clip fill are on by default: refused,
+    // and nothing is changed to make it pass.
+    ASSERT_TRUE(w.set_headroom_preview(true));
+    ASSERT_TRUE(wait_for([&] { return !w.headroom_problem().isEmpty(); }));
+    EXPECT_TRUE(w.headroom_problem().contains("temporal hold")) << w.headroom_problem().toStdString();
+    EXPECT_TRUE(w.steady_shots());
+    EXPECT_TRUE(w.session().anchor);
+    EXPECT_EQ(w.headroom_frame(), nullptr);
+    EXPECT_EQ(w.frame_fields(), nullptr);
+    EXPECT_EQ(w.presented_index(), -1);
+    QTest::qWait(100);   // a late legacy frame must not land either
+    EXPECT_EQ(w.frame_fields(), nullptr);
+    // Fixing the controls brings the preview without another request.
+    headroom_ready_controls(w);
+    ASSERT_TRUE(wait_for([&] { return w.headroom_frame() != nullptr; })) << w.headroom_problem().toStdString();
+    EXPECT_TRUE(w.headroom_problem().isEmpty());
+}
+
+TEST(AppHeadroom, PlaysThroughTheDriverAndStopsOnTheFrameReached) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    app::MainWindow w(false, true);
+    fake_headroom(w);
+    w.open_source(QString::fromStdString(headroom_clip().string()));
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    headroom_ready_controls(w);
+    ASSERT_TRUE(w.set_headroom_preview(true));
+    ASSERT_TRUE(wait_for([&] { return w.headroom_frame() != nullptr; }));
+    w.run("play");
+    EXPECT_TRUE(w.playing());
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() >= 2; }));
+    w.run("play");   // stop
+    EXPECT_FALSE(w.playing());
+    const int at = w.current_index();
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == at && !w.headroom_stats().active; }));
+    QTest::qWait(60);
+    EXPECT_EQ(w.presented_index(), at) << "no frame of the stopped range lands afterwards";
+    // To the end: playback stops by itself.
+    w.run("play");
+    ASSERT_TRUE(wait_for([&] { return !w.playing(); }, 15000));
+    EXPECT_EQ(w.presented_index(), int(w.frame_count()) - 1);
+    EXPECT_TRUE(log_tail(w).contains("end of the shot")) << log_tail(w).toStdString();
+}
+
+TEST(AppHeadroom, AFailureIsReportedWithoutFallingBack) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    app::MainWindow w(false, true);
+    auto sh = fake_headroom(w);
+    w.open_source(QString::fromStdString(headroom_clip().string()));
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    headroom_ready_controls(w);
+    {
+        std::lock_guard l(sh->mu);
+        sh->fail_render = rudra::make_error(rudra::ErrorCode::IntegrityError, "The source changed while previewing");
+    }
+    ASSERT_TRUE(w.set_headroom_preview(true));
+    ASSERT_TRUE(wait_for([&] { return !w.headroom_problem().isEmpty(); }));
+    EXPECT_TRUE(w.headroom_problem().contains("source changed"));
+    EXPECT_EQ(w.headroom_frame(), nullptr);
+    EXPECT_EQ(w.frame_fields(), nullptr);
+    // A new request (another frame) tries again.
+    w.run("next");
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 1; }));
+    EXPECT_TRUE(w.headroom_problem().isEmpty());
+}
+
+TEST(AppHeadroom, MovieExportsRunTheTransactionalHeadroomPath) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    const auto out = fresh_dir("headroom-export");
+    std::filesystem::create_directories(out);
+    app::MainWindow w(false, true);
+    fake_headroom(w);
+    w.open_source(QString::fromStdString(headroom_clip().string()));
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    headroom_ready_controls(w);
+    ASSERT_TRUE(w.set_headroom_preview(true));
+    w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(out.string()));
+    w.findChild<QLineEdit*>("renderName")->setText("graded");
+    // Log masters and stills are not supported yet: refused, nothing written.
+    EXPECT_FALSE(w.queue_video_export("prores4444_logc4"));
+    EXPECT_TRUE(log_tail(w).contains("does not support the headroom policy")) << log_tail(w).toStdString();
+    w.master();
+    EXPECT_FALSE(w.mastering());
+    EXPECT_TRUE(log_tail(w).contains("Master EXR does not support")) << log_tail(w).toStdString();
+    // HDR10 runs the headroom export, never the legacy queue.
+    ASSERT_TRUE(w.queue_video_export("hdr10"));
+    EXPECT_TRUE(w.exporting_headroom());
+    EXPECT_FALSE(w.video_queues().running());
+    ASSERT_TRUE(wait_for([&] { return !w.exporting_headroom(); }, 60000));
+#ifdef _WIN32
+    EXPECT_TRUE(std::filesystem::exists(out / "graded.mp4")) << w.headroom_export_result().toStdString();
+    EXPECT_TRUE(std::filesystem::exists(out / "graded.mp4.json"));
+#else
+    // Source leases are Windows-only: refused at preparation, nothing published or staged.
+    EXPECT_TRUE(log_tail(w).contains("did not publish anything")) << log_tail(w).toStdString();
+    EXPECT_TRUE(std::filesystem::is_empty(out));
+#endif
+}
+
+TEST(AppHeadroom, AProjectRestoresThePreviewOnlyInACapableWindow) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    const auto dir = fresh_dir("headroom-project");
+    {
+        app::MainWindow w(false, true);
+        fake_headroom(w);
+        w.open_source(QString::fromStdString(headroom_clip().string()));
+        ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+        headroom_ready_controls(w);
+        ASSERT_TRUE(w.set_headroom_preview(true));
+        w.run("next");
+        w.run("next");
+        ASSERT_TRUE(wait_for([&] { return w.presented_index() == 2; }));
+        ASSERT_TRUE(w.save_project_to(dir / "hr.rudra")) << log_tail(w).toStdString();
+    }
+    {
+        app::MainWindow w(false, true);
+        fake_headroom(w);
+        w.set_steady_shots(false);   // a window setting, not in the project
+        ASSERT_TRUE(w.open_project(dir / "hr.rudra")) << log_tail(w).toStdString();
+        EXPECT_EQ(w.session().grade.headroom_policy, HeadroomPolicy::Bt1886V1);
+        ASSERT_TRUE(wait_for([&] { return w.presented_index() == 2 && w.headroom_frame(); }))
+            << w.headroom_problem().toStdString();
+        EXPECT_EQ(w.frame_fields(), nullptr);
+        w.run("close");
+        EXPECT_FALSE(w.headroom_routed());
+        EXPECT_EQ(w.headroom_frame(), nullptr);
+        EXPECT_FALSE(w.headroom_stats().active);
+    }
+    {
+        app::MainWindow w(false);   // the default window still refuses it
+        EXPECT_FALSE(w.open_project(dir / "hr.rudra"));
+    }
+}
+TEST(AppHeadroom, ReplacingTheShotReopensOrLeavesTheRoute) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    app::MainWindow w(false, true);
+    auto sh = fake_headroom(w);
+    w.open_source(QString::fromStdString(headroom_clip().string()));
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    headroom_ready_controls(w);
+    ASSERT_TRUE(w.set_headroom_preview(true));
+    ASSERT_TRUE(wait_for([&] { return w.headroom_frame() != nullptr; }));
+    // A folder of stills is not a movie: the legacy engine takes it, the policy stays in the grade.
+    w.open_source(QString::fromStdString(decode_dir().string()), true);
+    EXPECT_FALSE(w.headroom_routed());
+    EXPECT_EQ(w.headroom_frame(), nullptr);
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    EXPECT_FALSE(w.headroom_stats().active);
+    // A movie again: a fresh driver opens it.
+    w.open_source(QString::fromStdString(headroom_clip().string()));
+    ASSERT_TRUE(wait_for([&] { return w.headroom_frame() != nullptr; })) << w.headroom_problem().toStdString();
+    EXPECT_EQ(w.frame_fields(), nullptr);
+    std::lock_guard l(sh->mu);
+    EXPECT_EQ(sh->opens, 2);
+}
+#endif
+

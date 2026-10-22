@@ -10,6 +10,7 @@
 
 #include "rudra/core/source_curve.hpp"
 #include "rudra/platform/io_error.hpp"
+#include "rudra/video/headroom_render.hpp"
 
 namespace rudra {
 
@@ -65,6 +66,32 @@ ReferenceFit reference_from(const json& j) {
     return r;
 }
 
+Result<void> validate_headroom_project(const Project& p, bool require_loaded_masks = false) {
+    if (p.grade.headroom_policy != HeadroomPolicy::Bt1886V1 || p.source_kind != "movie" ||
+        p.sources.size() != 1 || p.sources.front().empty() || p.frame < 0)
+        return make_error(ErrorCode::ContractMismatch, "Headroom projects require a single movie and a valid frame");
+    if (p.use_model || !p.package.empty() || p.grade.source != "bt1886" || p.grade.clip_fill ||
+        !p.grade.clip_peaks.empty() || !p.grade.calibration.empty() || !p.grade.reference.empty())
+        return make_error(ErrorCode::ContractMismatch, "Headroom projects require analytic BT.1886 without clip fill, calibration or reference");
+    if (require_loaded_masks && !p.masks_file.empty() && !p.grade.masks)
+        return make_error(ErrorCode::InvalidArgument, "Load the headroom project's painted masks before saving or rendering it");
+    // Unlike v1, do not pull unsupported saved settings into the UI's range.
+    if (!std::isfinite(p.grade.exposure_ev) || p.grade.exposure_ev < kExposureMin || p.grade.exposure_ev > kExposureMax ||
+        !std::isfinite(p.peak_ev) || p.peak_ev < -1 || p.peak_ev > 5 ||
+        !std::isfinite(p.anchor_knee) || p.anchor_knee < .5 || p.anchor_knee > .99)
+        return make_error(ErrorCode::InvalidArgument, "Headroom project settings exceed supported UI ranges");
+    MasterRequest q;
+    q.anchor = p.anchor; q.carry_chroma = p.carry_chroma; q.settle_grain = p.settle_grain;
+    q.recovery_mode = p.grade.mode; q.strength = p.grade.strength; q.preserve_outside = p.grade.preserve;
+    q.container = p.container; q.exposure_ev = p.grade.exposure_ev; q.masks = p.grade.masks;
+    for (const auto& r : p.grade.regions) {
+        if (!std::isfinite(r.ev) || r.ev < -4 || r.ev > 4)
+            return make_error(ErrorCode::InvalidArgument, "Headroom project region EV exceeds supported UI ranges");
+        q.regions.push_back({r.label, r.low_nits, r.high_nits, r.ev});
+    }
+    return validate_headroom_grade(q);
+}
+
 }  // namespace
 
 fs::path project_masks_path(const fs::path& project_file) {
@@ -98,7 +125,7 @@ std::string project_json(const Project& p, const fs::path& project_file) {
     json clip_peaks = json::array();
     for (const auto& c : p.grade.clip_peaks) clip_peaks.push_back({{"x", c.x}, {"y", c.y}, {"nits", c.nits}});
     json j = {
-        {"rudra_project", kProjectVersion},
+        {"rudra_project", p.grade.headroom_policy == HeadroomPolicy::Disabled ? 1 : kProjectVersion},
         {"app_version", p.app_version},
         {"shot", {{"kind", p.source_kind}, {"sources", sources}, {"frame", p.frame}}},
         {"model",
@@ -123,10 +150,14 @@ std::string project_json(const Project& p, const fs::path& project_file) {
         {"deliver",
          {{"anchor", p.anchor}, {"anchor_knee", p.anchor_knee}, {"carry_chroma", p.carry_chroma}, {"container", p.container}}},
     };
+    if (p.grade.headroom_policy != HeadroomPolicy::Disabled) {
+        j["decode"] = {{"headroom_policy", headroom_policy_id(p.grade.headroom_policy)}};
+        j["deliver"]["settle_grain"] = p.settle_grain;
+    }
     return j.dump(2) + "\n";
 }
 
-Result<Project> parse_project(const std::string& text, const fs::path& project_file) {
+Result<Project> parse_project(const std::string& text, const fs::path& project_file, ProjectReadSupport support) {
     json j;
     try {
         j = json::parse(text);
@@ -135,17 +166,30 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
     }
     if (!j.is_object() || !j.contains("rudra_project"))
         return make_error(ErrorCode::ParseError, "This is not a RUDRA project.", project_file.string());
-    if (!j["rudra_project"].is_number_integer())
+    if (!j["rudra_project"].is_number_integer() || j["rudra_project"] < 1)
         return make_error(ErrorCode::ParseError, "This is not a RUDRA project.", project_file.string());
-    const int version = j["rudra_project"].get<int>();
-    if (version > kProjectVersion)
+    if (j["rudra_project"] > kProjectVersion)
         return make_error(ErrorCode::ContractMismatch,
-                          "This project was saved by a newer RUDRA (project version " + std::to_string(version) +
+                          "This project was saved by a newer RUDRA (project version " + j["rudra_project"].dump() +
                               "); update RUDRA to open it.",
                           project_file.string());
+    const int version = j["rudra_project"].get<int>();
     const fs::path base = project_file.parent_path();
     Project p;
     try {
+        if (j.contains("headroom_policy"))
+            return make_error(ErrorCode::ContractMismatch, "Headroom policy must be in a version 2 project's decode settings");
+        if (version == 1 && j.contains("decode") && j["decode"].contains("headroom_policy"))
+            return make_error(ErrorCode::ContractMismatch, "Headroom policy requires project version 2");
+        if (version == 2) {
+            const auto policy = parse_headroom_policy(j.at("decode").at("headroom_policy").get<std::string>());
+            if (!policy || *policy != HeadroomPolicy::Bt1886V1)
+                return make_error(ErrorCode::Unsupported, "Unknown or disabled headroom policy in version 2 project");
+            if (support != ProjectReadSupport::HeadroomV1)
+                return make_error(ErrorCode::Unsupported, "This rendering path does not yet support headroom projects; the project was not opened");
+            p.grade.headroom_policy = *policy;
+            p.settle_grain = j.at("deliver").at("settle_grain").get<bool>();
+        }
         p.app_version = j.value("app_version", std::string());
         const json& shot = j.value("shot", json::object());
         p.source_kind = shot.value("kind", std::string());
@@ -170,6 +214,8 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
             p.grade.calibration.push_back({c.value("code", 0), c.value("nits", 0.0)});
         if (g.contains("reference") && !g["reference"].is_null()) p.grade.reference = reference_from(g["reference"]);
         if (g.contains("masks") && g["masks"].is_string()) p.masks_file = g["masks"].get<std::string>();
+        if (version == 2 && g.contains("masks") && !g["masks"].is_null() && !g["masks"].is_string())
+            return make_error(ErrorCode::ParseError, "Invalid headroom project's painted-mask reference");
         p.grade.clip_fill = g.value("clip_fill", true);   // projects before 12 Oct 2026: on, the default
         p.grade.exposure_ev = g.value("exposure_ev", 0.0);   // projects before 13 Oct 2026: none
         for (const auto& c : g.value("clip_peaks", json::array()))
@@ -183,6 +229,9 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
         p.container = d.value("container", std::string("aces"));
     } catch (const json::exception& e) {
         return make_error(ErrorCode::ParseError, "This RUDRA project is damaged.", e.what());
+    }
+    if (p.grade.headroom_policy != HeadroomPolicy::Disabled) {
+        if (auto valid = validate_headroom_project(p); !valid) return valid.error();
     }
     // What the window indexes or switches on must be in range: a hand-edited
     // file is refused rather than drawn out of bounds.
@@ -223,6 +272,10 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
 Result<fs::path> save_project(const fs::path& path_in, const Project& p) {
     fs::path path = path_in;
     if (path.extension() != kProjectSuffix) path += kProjectSuffix;
+    if (p.grade.headroom_policy != HeadroomPolicy::Disabled) {
+        // Validate before creating folders, touching masks, or replacing a save.
+        if (auto valid = validate_headroom_project(p, true); !valid) return valid.error();
+    }
     std::error_code ec;
     if (path.has_parent_path()) fs::create_directories(path.parent_path(), ec);
     const std::string text = project_json(p, path);
@@ -300,12 +353,12 @@ Result<fs::path> save_project(const fs::path& path_in, const Project& p) {
     return path;
 }
 
-Result<Project> load_project(const fs::path& path) {
+Result<Project> load_project(const fs::path& path, ProjectReadSupport support) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return make_error(ErrorCode::NotFound, "The project could not be opened.", path.string());
     std::stringstream ss;
     ss << f.rdbuf();
-    auto p = parse_project(ss.str(), path);
+    auto p = parse_project(ss.str(), path, support);
     if (!p) return p;
     if (!p->masks_file.empty()) {
         // The one the project's own name gives, else the name it stored (a
@@ -318,12 +371,19 @@ Result<Project> load_project(const fs::path& path) {
         if (!fs::is_regular_file(masks, ec) && stored.has_filename() && stored == stored.filename())
             masks = path.parent_path() / stored;
         if (!fs::is_regular_file(masks, ec)) {
+            if (p->grade.headroom_policy != HeadroomPolicy::Disabled)
+                return make_error(ErrorCode::NotFound, "Headroom project's painted masks are missing; refusing a changed grade", masks.string());
             p->notes.push_back("the painted masks (" + p->masks_file + ") are missing; the grade opens without them");
         } else if (auto m = read_mask_set(masks); !m) {
+            if (p->grade.headroom_policy != HeadroomPolicy::Disabled)
+                return make_error(ErrorCode::ParseError, "Headroom project's painted masks could not be read", m.error().message);
             p->notes.push_back("the painted masks could not be read (" + m.error().message + "); the grade opens without them");
         } else {
             p->grade.masks = std::make_shared<const MaskSet>(std::move(*m));
         }
+    }
+    if (p->grade.headroom_policy != HeadroomPolicy::Disabled) {
+        if (auto valid = validate_headroom_project(*p, true); !valid) return valid.error();
     }
     return p;
 }

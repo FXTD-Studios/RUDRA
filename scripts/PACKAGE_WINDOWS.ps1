@@ -38,6 +38,8 @@
   .\scripts\PACKAGE_WINDOWS.ps1 -Tests        # also build and run the app's Qt tests
   .\scripts\PACKAGE_WINDOWS.ps1 -SkipBuild    # package the last build
   .\scripts\PACKAGE_WINDOWS.ps1 -NoInstaller  # the ZIP alone, without Inno Setup
+  .\scripts\PACKAGE_WINDOWS.ps1 -NoModels -NoInstaller # isolated analytic evaluation ZIP; no clearance implied
+  # -BuildDirectory build\native_phase3 -SkipBuild reuses an explicitly selected build.
 #>
 [CmdletBinding()]
 param(
@@ -49,6 +51,8 @@ param(
     [switch]$SkipBuild,
     [switch]$Tests,
     [switch]$NoInstaller,
+    [switch]$NoModels,
+    [string]$BuildDirectory = "",
     [switch]$InstallBuildTools,
     [switch]$NoFfmpeg,
     [string]$FfmpegVersion = "7.1.1",
@@ -63,6 +67,7 @@ Set-Location $Repo
 $Deps = Join-Path $Repo "tmp\native_deps"
 $QtRoot = Join-Path $Deps "Qt\$QtVersion\msvc2022_64"
 $Build = Join-Path $Repo "build\native_release"
+if ($BuildDirectory) { $Build = (Resolve-Path -LiteralPath $BuildDirectory).Path }
 New-Item -ItemType Directory -Force -Path $Deps | Out-Null
 
 function Say($m) { Write-Host "`n== $m" -ForegroundColor Cyan }
@@ -70,7 +75,7 @@ function Fail($m) { Write-Host "FAILED: $m" -ForegroundColor Red; exit 1 }
 . (Join-Path $PSScriptRoot "native_toolchain.ps1")
 
 $Models = Join-Path $Repo "dist\models"
-if (-not (Get-ChildItem $Models -Recurse -Filter manifest.json -ErrorAction SilentlyContinue)) {
+if (-not $NoModels -and -not (Get-ChildItem $Models -Recurse -Filter manifest.json -ErrorAction SilentlyContinue)) {
     Fail "no model package in dist\models (run NATIVE_GATE_A.ps1 first)"
 }
 
@@ -227,6 +232,10 @@ $Version = (Get-Item $App).VersionInfo.ProductVersion
 if (-not $Version) { Fail "RUDRA.exe has no version resource" }
 $Name = "RUDRA-$Version-windows-x64"
 $Out = Join-Path $Repo "dist\beta\$Name"
+if ($NoModels) {
+    # A new staging parent for every analytic build: never replace a beta.
+    $Out = Join-Path $Repo ("dist\analytic\" + [guid]::NewGuid().ToString('N') + "\$Name")
+}
 $Zip = "$Out.zip"
 Say "Package $Name"
 if (Test-Path $Out) { Remove-Item $Out -Recurse -Force }
@@ -260,10 +269,17 @@ Write-Host "MSVC runtime: $($crt.FullName)"
 Copy-Item "$OrtRoot\lib\*.dll", $DmlDll.FullName, $CvDll.FullName $Out -Force
 $OutModels = Join-Path $Out "models"
 New-Item -ItemType Directory -Force -Path $OutModels | Out-Null
-Copy-Item "$Models\*" $OutModels -Recurse -Force
-Get-ChildItem $OutModels -Recurse -Include *.safetensors, *.config.json | Remove-Item -Force
+if (-not $NoModels) {
+    Copy-Item "$Models\*" $OutModels -Recurse -Force
+    Get-ChildItem $OutModels -Recurse -Include *.safetensors, *.config.json | Remove-Item -Force
+}
 Copy-Item LICENSE, NOTICE $Out
-if (Test-Path checkpoints\LICENSE) { Copy-Item checkpoints\LICENSE (Join-Path $Out "LICENSE-weights") }
+if (-not $NoModels -and (Test-Path checkpoints\LICENSE)) { Copy-Item checkpoints\LICENSE (Join-Path $Out "LICENSE-weights") }
+if ($NoModels) {
+    "Analytic evaluation package. No model weights bundled. This is not commercial or legal clearance." |
+        Set-Content -Encoding utf8 (Join-Path $Out "PACKAGE_MODE.txt")
+    if (Get-ChildItem $OutModels -Force) { Fail "model-free package contains model files" }
+}
 if (Test-Path docs\BETA.md) { Copy-Item docs\BETA.md (Join-Path $Out "Read me first.md") }
 if (Test-Path docs\USER_GUIDE.md) { Copy-Item docs\USER_GUIDE.md (Join-Path $Out "User guide.md") }
 if ($FfDir) {
@@ -285,16 +301,21 @@ if ($FfDir) {
 }
 
 Say "Check the package runs from where it is"
-$pkg = Get-ChildItem $OutModels -Directory | Where-Object { Test-Path (Join-Path $_.FullName "manifest.json") } | Select-Object -First 1
-& (Join-Path $Out "rudra-native.exe") info $pkg.FullName | Out-Null
-if ($LASTEXITCODE -ne 0) { Fail "rudra-native in the package cannot read its model" }
+if (-not $NoModels) {
+    $pkg = Get-ChildItem $OutModels -Directory | Where-Object { Test-Path (Join-Path $_.FullName "manifest.json") } | Select-Object -First 1
+    & (Join-Path $Out "rudra-native.exe") info $pkg.FullName | Out-Null
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native in the package cannot read its model" }
+}
 if ($FfDir) {
     & (Join-Path $Out "ffmpeg\ffmpeg.exe") -hide_banner -h encoder=prores_ks | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "the packaged ffmpeg does not run" }
 }
 $check = Join-Path $env:TEMP "rudra-theme-check.json"
-$p = Start-Process -FilePath (Join-Path $Out "RUDRA.exe") -ArgumentList @("--theme-check", "`"$check`"") -Wait -PassThru
+$p = Start-Process -FilePath (Join-Path $Out "RUDRA.exe") -ArgumentList @("--theme-check", "`"$check`"") -WindowStyle Hidden -Wait -PassThru
 if ($p.ExitCode -ne 0) { Fail "RUDRA.exe in the package does not start (exit $($p.ExitCode))" }
+if ($NoModels) {
+    & (Join-Path $PSScriptRoot "TEST_MODEL_FREE_PACKAGE.ps1") -Package $Out
+}
 
 Say "ZIP"
 Compress-Archive -Path $Out -DestinationPath $Zip -CompressionLevel Optimal
@@ -336,7 +357,8 @@ if (-not $NoInstaller) {
         Fail "Inno Setup 6 not found and could not be installed (https://jrsoftware.org/isdl.php, or -NoInstaller for the ZIP alone)"
     }
     $iss = Join-Path $Repo "native\app\windows\rudra.iss"
-    & $iscc /Q "/DAppVersion=$Version" "/DSourceDir=$Out" "/DOutputDir=$(Split-Path $Out)" $iss
+    $installerMode = @(); if ($NoModels) { $installerMode = @('/DModelFreeEvaluation=1') }
+    & $iscc /Q "/DAppVersion=$Version" "/DSourceDir=$Out" "/DOutputDir=$(Split-Path $Out)" @installerMode $iss
     if ($LASTEXITCODE -ne 0) { Fail "ISCC" }
     $Setup = Join-Path (Split-Path $Out) "$Name-setup.exe"
     if (-not (Test-Path $Setup)) { Fail "no installer at $Setup" }

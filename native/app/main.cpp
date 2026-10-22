@@ -8,8 +8,10 @@
 //   RUDRA --theme-check out.json      the fonts, weights and style as resolved here
 //   RUDRA --grab out.png [...]        the window as drawn, then quit
 //   RUDRA --tab grade|deliver ...     open on that inspector tab
-//   RUDRA --workflow-check report.json --package P --frames DIR [--backend libtorch/cuda] [--out DIR] [--movie CLIP]
+//   RUDRA --workflow-check report.json (--analytic | --package P) --frames DIR [--backend libtorch/cuda] [--out DIR] [--movie CLIP] [--timeout-ms N]
 //                                     the Studio workflow, scripted, in this window (Phase 3 step 12)
+//   RUDRA --headroom-check report.json --movie CLIP [--timeout-ms N]
+//                                     the experimental headroom preview, end to end (developer acceptance, Windows)
 
 #include <QApplication>
 #include <QDir>
@@ -25,6 +27,7 @@
 #include "main_window.hpp"
 #include "startup.hpp"
 #include "rudra/platform/tools.hpp"
+#include "headroom_check.hpp"
 #include "workflow_check.hpp"
 #include "theme.hpp"
 
@@ -86,6 +89,8 @@ int main(int argc, char** argv) {
         wa.backend = value("--backend");
         wa.out = value("--out", QDir::temp().filePath("rudra-workflow-masters"));
         wa.movie = value("--movie");
+        wa.analytic = args.contains("--analytic");
+        wa.timeout_ms = value("--timeout-ms", "120000").toInt();
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, QDir::temp().filePath("rudra-workflow-settings"));
         QSettings().clear();
@@ -93,6 +98,25 @@ int main(int argc, char** argv) {
         rudra::app::MainWindow w;
         w.show();
         return rudra::app::run_workflow_check(w, wa);
+    }
+    // Developer acceptance of the experimental headroom preview (E1): the only
+    // entry point that opts a window into the capability; not a user setting.
+    if (const qsizetype i = args.indexOf("--headroom-check"); i >= 0) {
+        auto value = [&](const char* flag, const QString& fallback = {}) {
+            const qsizetype k = args.indexOf(flag);
+            return k >= 0 && k + 1 < args.size() ? args[k + 1] : fallback;
+        };
+        rudra::app::HeadroomCheckArgs ha;
+        ha.report = i + 1 < args.size() ? args[i + 1] : QString("rudra-headroom.json");
+        ha.movie = value("--movie");
+        ha.timeout_ms = value("--timeout-ms", "120000").toInt();
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, QDir::temp().filePath("rudra-headroom-settings"));
+        QSettings().clear();
+        QSettings().setValue("firstRun/done", true);
+        rudra::app::MainWindow w(true, true);
+        w.show();
+        return rudra::app::run_headroom_check(w, ha);
     }
     // --grab-delay ms: time for a model and a frame to arrive (default 800).
     int grab_delay = 800;

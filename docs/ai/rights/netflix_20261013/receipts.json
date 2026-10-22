@@ -1,0 +1,32 @@
+[
+  {
+    "url": "https://s3.amazonaws.com/download.opencontent.netflix.com/aom_test_materials/README.txt",
+    "local_file": "aom_test_materials__README.txt",
+    "sha256": "17cd46bfb34aed6318fb07ffffb9c3022b641a7bb5642c3f4e2f84bb666c71f5",
+    "bytes": 2105,
+    "retrieved_date": "2026-10-13",
+    "last_modified": "Mon, 15 Jun 2020 02:44:33 GMT",
+    "etag": "\"e10f7112b5b612d76d3f4d43f5b0a764\"",
+    "content_type": "text/plain"
+  },
+  {
+    "url": "https://s3.amazonaws.com/download.opencontent.netflix.com/aom_test_materials/README_SDR.txt",
+    "local_file": "aom_test_materials__README_SDR.txt",
+    "sha256": "b6c9c7baacaea1e3b41fc0d1bc6aebb2eb9553136cbd18e186e967f0addcd8b9",
+    "bytes": 151,
+    "retrieved_date": "2026-10-13",
+    "last_modified": "Mon, 15 Jun 2020 03:10:25 GMT",
+    "etag": "\"5a3041a59a032a8fb9380343a4c9e39b\"",
+    "content_type": "text/plain"
+  },
+  {
+    "url": "https://s3.amazonaws.com/download.opencontent.netflix.com/aom_test_materials/creative-commons-attribution-4-intl-public-license.txt",
+    "local_file": "aom_test_materials__creative-commons-attribution-4-intl-public-license.txt",
+    "sha256": "7d3512159f970cdcf296e8404be05947228d0bfaf72801cb5b3077f4330f71f9",
+    "bytes": 105020,
+    "retrieved_date": "2026-10-13",
+    "last_modified": "Thu, 27 May 2021 18:34:28 GMT",
+    "etag": "\"118a301e5fe5ab37cbd71189c1befcbb\"",
+    "content_type": "text/plain"
+  }
+]

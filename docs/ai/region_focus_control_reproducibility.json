@@ -1,0 +1,67 @@
+{
+  "initial_hash_equal": true,
+  "replay_bytes_equal": true,
+  "first_training_log_difference": {
+    "step": 45,
+    "old_total": 0.23501883447170258,
+    "new_total": 0.23501959443092346,
+    "old_gradient_norm": 9.677942276000977,
+    "new_gradient_norm": 9.677504539489746
+  },
+  "final_tensors_equal": false,
+  "old_tensor_hash": "d21c88ececd88c8be61b52f8f535e567c04f1b271e8be7832a78a5f58a0ecfab",
+  "new_tensor_hash": "92b0e9514a9ce333ac41cad6380534c89aa6fc8ad1c0cc83f2a28e3cccf8c959",
+  "config_differences": {
+    "bench_push_pu": {
+      "old": null,
+      "new": true
+    },
+    "preservation_ab_arm": {
+      "old": "preclamp",
+      "new": "control"
+    },
+    "output_dir": {
+      "old": "D:\\A.I\\Devlopments\\rudra\\reports\\preservation_ab_20261013\\preclamp",
+      "new": "D:\\A.I\\Devlopments\\rudra\\reports\\region_focus_ab_20261014\\control"
+    }
+  },
+  "metrics": {
+    "bench_real_gain_db": {
+      "prior_preclamp": -3.781894382486731,
+      "new_control": -0.8038494646096592
+    },
+    "bench_real_frames": {
+      "prior_preclamp": 48,
+      "new_control": 48
+    },
+    "bench_rendered_gain_db": {
+      "prior_preclamp": 0.0,
+      "new_control": 0.0
+    },
+    "bench_rendered_frames": {
+      "prior_preclamp": 0,
+      "new_control": 0
+    },
+    "bench_clip_gain_stops": {
+      "prior_preclamp": -0.16442165366637565,
+      "new_control": -0.18995325686668987
+    },
+    "bench_clip_frames": {
+      "prior_preclamp": 89,
+      "new_control": 89
+    },
+    "bench_crushed_gain_stops": {
+      "prior_preclamp": 2.8182863534845386,
+      "new_control": 0.2043323863307982
+    },
+    "bench_crushed_frames": {
+      "prior_preclamp": 4,
+      "new_control": 4
+    },
+    "bench_gain": {
+      "prior_preclamp": -4.439580997152234,
+      "new_control": -1.5636624920764186
+    }
+  },
+  "interpretation": "Matched inputs and initialization do not guarantee a bitwise-reproducible training trajectory. Cause not established; use contemporaneous paired control and treat small gains cautiously."
+}

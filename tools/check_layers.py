@@ -41,7 +41,9 @@ def violations() -> list[str]:
         if f.suffix not in {".hpp", ".h", ".cpp", ".cc", ".mm"} or "build" in f.parts:
             continue
         layer = layer_of(f)
-        if layer in {"tests", "cmake"}:
+        # Standalone diagnostics, like tests, exercise multiple production
+        # layers; they are not linked back into a shipped layer.
+        if layer in {"tests", "bench", "cmake"}:
             continue
         rel = f.relative_to(NATIVE)
         is_backend_src = layer == "infer" and f.parent.name == "src" and f.stem.endswith("_backend")

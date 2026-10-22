@@ -22,6 +22,9 @@ from typing import Iterable
 
 # (source id, match keywords, licence, commercial_ok)
 RULES: tuple[tuple[str, tuple[str, ...], str, bool], ...] = (
+    # Quarantine first (17 Oct 2026): anything moved under G:\datasets\_noncommercial
+    # is out of every commercial path, whatever its folder name says.
+    ("quarantine", ("/_noncommercial/",), "quarantined non-commercial source", False),
     # Poly Haven first: two of its panoramas are named stuttgart_hillside /
     # stuttgart_suburbs and matched the HdM rule (23 Sep 2026).
     ("polyhaven_moves", ("rudra_v02", "pairs_moves", "hdri_moves"), "CC0 (rendered from Poly Haven)", True),

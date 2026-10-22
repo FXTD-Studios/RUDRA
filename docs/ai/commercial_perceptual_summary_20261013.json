@@ -1,0 +1,36 @@
+{
+  "input_manifest": "D:\\A.I\\Devlopments\\rudra\\reports\\commercial_candidate_20261013\\candidate_manifest.jsonl",
+  "manifest_sha256": "0da0979e8bb9d6ebca812d74cdb11a34ee6e7d3a11923a07f07302510ff0e8b4",
+  "algorithm_sha256": "6b45ca707ef7c2bcdb104258b06b4e0831d7a49b8ef117b49fbe99f5e9cbfe62",
+  "records": 5944,
+  "decoded": 5944,
+  "errors": [],
+  "cross_split_flags": [],
+  "low_information": [
+    "nf_sol_levante_3282-3874_frame00000575",
+    "nf_sol_levante_3282-3874_frame00000577",
+    "nf_sol_levante_3282-3874_frame00000578",
+    "nf_sol_levante_3282-3874_frame00000579",
+    "nf_sol_levante_3282-3874_frame00000581",
+    "nf_sol_levante_3282-3874_frame00000582",
+    "nf_sol_levante_3282-3874_frame00000583",
+    "nf_sol_levante_3282-3874_frame00000585",
+    "nf_sol_levante_3282-3874_frame00000586",
+    "nf_sol_levante_3282-3874_frame00000587",
+    "nf_sol_levante_3282-3874_frame00000589",
+    "nf_sol_levante_3282-3874_frame00000590",
+    "nf_sol_levante_3282-3874_frame00000591"
+  ],
+  "thresholds": {
+    "phash_hamming_max": 6,
+    "correlation_min": 0.98,
+    "std_min": 0.01,
+    "aspect_relative_max": 0.03
+  },
+  "elapsed_seconds": 1238.8810596000003,
+  "limitations": [
+    "SDR structural screening only, not proof of uniqueness",
+    "crops/reframing and HDR-only duplicates may be missed",
+    "low-information frames require separate review"
+  ]
+}

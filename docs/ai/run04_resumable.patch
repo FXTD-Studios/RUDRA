@@ -1,0 +1,66 @@
+--- a/training/resumable_training.py	2026-10-22 12:48:28.605802269 +0300
++++ b/training/resumable_training.py	2026-10-22 12:48:28.620175246 +0300
+@@ -81,7 +81,7 @@
+     "training/train_sdr2hdr.py", "training/resumable_training.py", "training/sdr2hdr_dataset.py",
+     "training/preservation.py", "training/bench_val.py", "rudra/sdr2hdr.py",
+     "rudra/source_baseline.py", "rudra/radiometry.py", "pipeline/hdr_io.py",
+-    "pipeline/commercial_preflight.py", "training/dark_experiment.py",
++    "pipeline/commercial_preflight.py", "training/dark_experiment.py", "training/generator_style.py",
+ )
+ # Trainer options that may differ between segments without changing the math.
+ MUTABLE_OPTIONS = {"log_every", "output_dir", "resume", "init_checkpoint", "reset_best", "device"}
+@@ -552,6 +552,10 @@
+         if experiment.get("shadow_codec_p", 0) > 0:
+             from training.dark_experiment import ShadowCodecAugment
+             augment = ShadowCodecAugment(experiment["shadow_codec_p"], seed=args.seed + 3)
++        gen_augment = None
++        if experiment.get("generator_style_p", 0) > 0:
++            from training.generator_style import GeneratorStyleAugment
++            gen_augment = GeneratorStyleAugment(experiment["generator_style_p"], seed=args.seed + 5)
+         config.update({"manifest_sha256": legacy.manifest_hash(args.manifest), "corpus_ev": corpus_ev,
+                        "architecture": type(model).__name__, "input_contract": "8-bit normalized sRGB RGB",
+                        "output_contract": "scene-linear RGB normalized to 10000 nits",
+@@ -656,6 +660,7 @@
+                     "baseline_counts": dict(baseline_counts), "amp": amp_config, "grad_scaler": None,
+                     "rng": capture_rng(), "sampler": sampler.state(batches_in_epoch, args.batch_size),
+                     "augment_rng": augment.state() if augment is not None else None,
++                    "generator_style_rng": gen_augment.state() if gen_augment is not None else None,
+                     "config": config, "code_sha256": current_code, "torch_version": str(torch.__version__),
+                     "dataset": {"manifest_sha256": config["manifest_sha256"],
+                                 "commercial_evidence_sha256": (provenance or {}).get("evidence_sha256"),
+@@ -689,6 +694,8 @@
+             restore_rng(state["rng"], skip_cuda=allow_device_change)
+             if augment is not None:
+                 augment.restore(state["augment_rng"])
++            if gen_augment is not None:
++                gen_augment.restore(state["generator_style_rng"])
+             del state
+             with log_path.open("a", encoding="utf-8") as handle:
+                 handle.write(json.dumps({"step": start_step, "resume": {
+@@ -720,6 +727,8 @@
+             batches_in_epoch += 1
+             if augment is not None:
+                 batch["sdr"] = augment(batch["sdr"])
++            if gen_augment is not None:
++                batch["sdr"] = gen_augment(batch["sdr"])
+             sdr, target = batch["sdr"].to(device, non_blocking=True), batch["hdr"].to(device, non_blocking=True)
+             amp = torch.autocast(device_type="cuda", dtype=torch.bfloat16) if device.type == "cuda" \
+                 else contextlib.nullcontext()
+@@ -818,6 +827,8 @@
+     own.add_argument("--recover-stale-lock", action="store_true")
+     own.add_argument("--shadow-codec-p", type=float, default=0.0,
+                      help="run03: probability of shadow-only JPEG/crush degradation of a training crop")
++    own.add_argument("--generator-style-p", type=float, default=0.0,
++                     help="run04: probability of generator-style SDR degradation of a training crop")
+     own.add_argument("--near-black-weight", type=float, default=0.0,
+                      help="run03: weight of the log-domain near-black luminance+chroma term")
+     own.add_argument("--near-black-code", type=int, default=16, help="run03: SDR max code (0-255) defining near-black")
+@@ -840,6 +851,8 @@
+     exp = {}
+     if mine.shadow_codec_p > 0:
+         exp["shadow_codec_p"] = mine.shadow_codec_p
++    if mine.generator_style_p > 0:
++        exp["generator_style_p"] = mine.generator_style_p
+     if mine.near_black_weight > 0:
+         exp.update(near_black_weight=mine.near_black_weight, near_black_code=mine.near_black_code)
+     if mine.selection != "legacy":

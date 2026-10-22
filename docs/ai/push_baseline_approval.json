@@ -1,0 +1,9 @@
+{
+  "approved": true,
+  "approved_by": "Ahmed (project owner, explicit conversation approval)",
+  "approved_at": "2026-10-14T17:23:05.384240+00:00",
+  "release_authorized": false,
+  "recipe_sha256": "841bd9c761805c7d84a64d386dd2e8204122c9f9aeb0f2f156fb74a0e389b323",
+  "approval_text": "Approve receipt; Approve compute",
+  "scope": "Two fresh 200-step scratch arms (control, render); 900 seconds per arm after preflight, 1800 combined; 1 GB storage with 900 MB stop; ~228 GB read-only verification; no retry, continuation or promotion."
+}

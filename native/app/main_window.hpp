@@ -27,6 +27,7 @@
 #include "rudra/core/composite.hpp"
 #include "rudra/core/model_manifest.hpp"
 #include "rudra/core/scopes.hpp"
+#include "rudra/engine/headroom_preview.hpp"
 #include "rudra/engine/master_job.hpp"
 #include "rudra/engine/measure.hpp"
 #include "rudra/engine/model_catalog.hpp"
@@ -35,6 +36,7 @@
 #include "rudra/infer/self_test.hpp"
 #include "rudra/engine/session.hpp"
 #include "rudra/media/sequence.hpp"
+#include "rudra/media/still_metadata.hpp"
 #include "video_queues.hpp"
 
 #include <atomic>
@@ -75,7 +77,10 @@ class MainWindow : public QMainWindow {
 public:
     // viewer: false builds the window without the QRhi viewer (tests, and
     // builds without Qt Shader Tools).
-    explicit MainWindow(bool viewer = true);
+    // headroom_capable: the session and project reader accept the experimental
+    // bt1886-headroom-v1 policy and movies preview through the headroom driver
+    // (E1). Off in every public entry point; the workflow check and tests opt in.
+    explicit MainWindow(bool viewer = true, bool headroom_capable = false);
     ~MainWindow() override;
 
     // A model package from a folder picker (or `preset`): use_model on it.
@@ -230,6 +235,8 @@ public:
     const Fields* frame_fields() const;
     const FrameScalars* frame_scalars() const;   // as shown (held while playing)
     int current_index() const { return current_; }
+    // Requested and delivered indices differ during asynchronous scrubbing.
+    int presented_index() const;
     std::size_t frame_count() const { return frames_.size(); }
 
     // Projects (engine/project.hpp): the shot, the model and the grade in a
@@ -276,7 +283,7 @@ public:
     // while playing (0: full size) with full size where it stops; a movie is
     // decoded in order by one ffmpeg (MovieFeeder); `realtime` keeps time by
     // skipping frames the model has not reached.
-    bool playing() const { return play_.isActive(); }
+    bool playing() const { return play_.isActive() || headroom_playing_; }
     void set_playback_side(int side);
     int playback_side() const { return play_state_->side.load(); }
     void set_playback_realtime(bool on);
@@ -303,6 +310,27 @@ public:
     const Session& session() const { return session_; }
     CompositeParams composite() const { return session_.composite_params(); }
     const std::string& container() const { return session_.container; }
+
+    // ---- Headroom preview (E1, 17 Oct 2026; experimental, capability-gated) ----
+    // When the window is capable, the grade's policy is bt1886-headroom-v1 and
+    // the shot is a movie, frames come from HeadroomPreviewDriver instead of the
+    // legacy SDR engine: paused frames, playback, grade changes, undo/redo and
+    // project restore all route through it. A refused grade or a failure is
+    // shown as such; legacy pixels are never substituted. Exports refuse the
+    // policy until they support it (E2). See docs/HEADROOM_APP_INTEGRATION_2026-10-17.md.
+    bool headroom_capable() const { return headroom_capable_; }
+    bool headroom_routed() const;                       // frames come from the headroom driver
+    Result<void> set_headroom_preview(bool on);         // the grade's policy: one undo step
+    const HeadroomShown* headroom_frame() const { return headroom_shown_ ? &*headroom_shown_ : nullptr; }
+    QString headroom_problem() const { return headroom_problem_; }   // why nothing is shown, or empty
+    HeadroomPreviewStats headroom_stats() const;
+    using HeadroomPortFactory = std::function<Result<std::unique_ptr<HeadroomPreviewPort>>()>;
+    void set_headroom_port_factory(HeadroomPortFactory f) { headroom_factory_ = std::move(f); }   // tests
+    // E2: with the policy on, a movie export (HDR10, HLG, ProRes) runs the
+    // transactional headroom export (engine/headroom_export.hpp) off the UI
+    // thread instead of the legacy queue; asking again while it runs cancels it.
+    bool exporting_headroom() const { return headroom_export_running_; }
+    QString headroom_export_result() const { return headroom_export_result_; }   // the published file, or why not
 
 protected:
     // The keys the page's keydown takes before its map: the wipe nudge,
@@ -404,6 +432,7 @@ private:
     void save_queues() const;
 
     void start_engine(std::vector<std::filesystem::path> frames, int at = 0);
+    void inspect_source();
     struct LoadedModel;
     void adopt_model(std::shared_ptr<LoadedModel> loaded, const std::function<void(bool, QString)>& done);
     void set_model_pills();
@@ -502,6 +531,7 @@ private:
     QTimer play_;
     int current_ = 0;
     bool waiting_ = false;
+    bool frame_ready_ok_ = false;
     QString frame_info_;
     QString runtimes_;
     Catalog catalog_;
@@ -525,9 +555,32 @@ private:
     struct SourceSizes {
         std::mutex mu;
         std::vector<std::pair<int, int>> size;
+        std::vector<std::optional<StillColour>> colour;
     };
     std::shared_ptr<SourceSizes> source_sizes_;
     int preview_max_side_ = 1600;                 // media/still.hpp kPreviewMaxSide
+
+    // Headroom preview (E1). The driver is destroyed before the engine.
+    bool headroom_capable_ = false;
+    bool headroom_playing_ = false;
+    HeadroomPortFactory headroom_factory_;
+    std::unique_ptr<HeadroomPreviewDriver> headroom_;
+    std::optional<HeadroomShown> headroom_shown_;
+    QString headroom_problem_;
+    void route_headroom();                       // after anything that decides or feeds the route
+    void headroom_request(int index, bool play);
+    void headroom_present(const HeadroomShown& f);   // inside the bridge's present: no driver calls
+    void headroom_after_present();
+    void headroom_failed(const Error& e);
+    void headroom_finished();
+    void stop_headroom();
+    void clear_legacy_frame();
+    bool refuse_headroom_export(const QString& what);
+    bool start_headroom_export(const QString& format);
+    std::thread headroom_export_worker_;
+    std::atomic<bool> headroom_export_cancel_{false};
+    bool headroom_export_running_ = false;
+    QString headroom_export_result_;
 };
 
 }  // namespace rudra::app

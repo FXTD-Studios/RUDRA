@@ -84,6 +84,16 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
     MasterRequest r;
     try {
         const auto j = nlohmann::json::parse(text);
+        // A project is not a master-params file. Neither this reader nor its
+        // legacy consumers may silently drop an unsupported input policy.
+        if (j.contains("rudra_project"))
+            return make_error(ErrorCode::Unsupported, "A RUDRA project cannot be read as legacy master parameters");
+        if (j.contains("decode") && !j.at("decode").is_object())
+            return make_error(ErrorCode::ParseError, "Invalid decode settings in master parameters");
+        for (const auto* where : {&j, j.contains("decode") ? &j.at("decode") : &j}) {
+            if (where->contains("headroom_policy") && where->at("headroom_policy") != "disabled")
+                return make_error(ErrorCode::Unsupported, "This master-parameters path does not yet support headroom_policy");
+        }
         r.checkpoint = j.value("checkpoint", std::string());
         r.analytic = j.value("analytic", false);
         r.preserve_outside = j.value("preserve_outside", true);

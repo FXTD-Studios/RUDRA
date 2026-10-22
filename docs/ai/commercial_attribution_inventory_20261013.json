@@ -1,0 +1,179 @@
+{
+  "status": "prepared_for_owner_review_not_approval",
+  "manifest_sha256": "93b0e5eebb42d9bb9f1df6c901fd913ce953bffa4caee4a97fe6ab65aa14fcf5",
+  "records": [
+    {
+      "title": "Cosmos Laundromat",
+      "source_id": "netflix_cosmos",
+      "split": "train",
+      "pairs": 163,
+      "scenes": [
+        "nf_cosmos_11589-11752",
+        "nf_cosmos_12025-12075",
+        "nf_cosmos_12149-12330",
+        "nf_cosmos_12916-13078",
+        "nf_cosmos_13446-13649",
+        "nf_cosmos_1573-1749",
+        "nf_cosmos_8686-8826",
+        "nf_cosmos_9561-9789"
+      ],
+      "credit": "(CC) Blender Foundation | gooseberry.blender.org; Cosmos Laundromat, directed by Mathieu Auvray; HDR re-grade: Netflix and Fotokem’s Keep Me Posted",
+      "proposed_license_basis": "CC BY 4.0, Netflix current AOM source-folder grant",
+      "underlying_notice": "CC BY 3.0; preserve Blender Foundation attribution",
+      "source_archives": [
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/cosmos/11589-11752.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/cosmos/12025-12075.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/cosmos/12149-12330.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/cosmos/12916-13078.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/cosmos/13446-13649.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/cosmos/1573-1749.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/cosmos/8686-8826.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/cosmos/9561-9789.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/cosmos/11589-11752.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/cosmos/12025-12075.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/cosmos/12149-12330.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/cosmos/12916-13078.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/cosmos/13446-13649.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/cosmos/1573-1749.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/cosmos/8686-8826.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/cosmos/9561-9789.zip"
+      ]
+    },
+    {
+      "title": "Meridian",
+      "source_id": "netflix_meridian",
+      "split": "test",
+      "pairs": 287,
+      "scenes": [
+        "nf_meridian_11872-12263",
+        "nf_meridian_12264-12745",
+        "nf_meridian_15932-16309",
+        "nf_meridian_1782-2163",
+        "nf_meridian_20988-21412",
+        "nf_meridian_22412-22738",
+        "nf_meridian_24058-24550"
+      ],
+      "credit": "Netflix Open Content — Meridian",
+      "proposed_license_basis": "CC BY 4.0, Netflix current AOM source-folder grant",
+      "underlying_notice": "Older AOM README lists NC-ND; see decision memo",
+      "source_archives": [
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/meridian/11872-12263.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/meridian/12264-12745.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/meridian/15932-16309.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/meridian/1782-2163.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/meridian/20988-21412.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/meridian/22412-22738.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/meridian/24058-24550.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/meridian/11872-12263.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/meridian/12264-12745.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/meridian/15932-16309.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/meridian/1782-2163.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/meridian/20988-21412.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/meridian/22412-22738.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/meridian/24058-24550.zip"
+      ]
+    },
+    {
+      "title": "Nocturne",
+      "source_id": "netflix_nocturne",
+      "split": "train",
+      "pairs": 2053,
+      "scenes": [
+        "nf_nocturne_17140-17709",
+        "nf_nocturne_18013-18315",
+        "nf_nocturne_2370-2539",
+        "nf_nocturne_23820-24322",
+        "nf_nocturne_27740-28109",
+        "nf_nocturne_32660-32799",
+        "nf_nocturne_8540-9009",
+        "nf_nocturne_9010-9349"
+      ],
+      "credit": "Netflix Open Content — Nocturne",
+      "proposed_license_basis": "CC BY 4.0, Netflix current AOM source-folder grant",
+      "underlying_notice": "Older AOM README lists NC-ND; see decision memo",
+      "source_archives": [
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/nocturne/17140-17709.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/nocturne/18013-18315.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/nocturne/2370-2539.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/nocturne/23820-24322.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/nocturne/27740-28109.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/nocturne/32660-32799.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/nocturne/8540-9009.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/nocturne/9010-9349.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/nocturne/17140-17709.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/nocturne/18013-18315.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/nocturne/2370-2539.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/nocturne/23820-24322.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/nocturne/27740-28109.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/nocturne/32660-32799.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/nocturne/8540-9009.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/nocturne/9010-9349.zip"
+      ]
+    },
+    {
+      "title": "Sol Levante",
+      "source_id": "netflix_sol_levante",
+      "split": "train",
+      "pairs": 1081,
+      "scenes": [
+        "nf_sol_levante_2268-2412",
+        "nf_sol_levante_289-453",
+        "nf_sol_levante_3282-3874",
+        "nf_sol_levante_4123-4545",
+        "nf_sol_levante_519-649"
+      ],
+      "credit": "Netflix Open Content and Production I.G — Sol Levante; director Akira Saitoh",
+      "proposed_license_basis": "CC BY 4.0, Netflix current AOM source-folder grant",
+      "underlying_notice": "Older AOM README lists NC-ND; see decision memo",
+      "source_archives": [
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sol_levante/2268-2412.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sol_levante/289-453.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sol_levante/3282-3874.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sol_levante/4123-4545.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sol_levante/519-649.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sol_levante/2268-2412.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sol_levante/289-453.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sol_levante/3282-3874.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sol_levante/4123-4545.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sol_levante/519-649.zip"
+      ]
+    },
+    {
+      "title": "Sparks",
+      "source_id": "netflix_sparks",
+      "split": "val",
+      "pairs": 2360,
+      "scenes": [
+        "nf_sparks_11198-11570",
+        "nf_sparks_2024-2455",
+        "nf_sparks_30-511",
+        "nf_sparks_5363-5763",
+        "nf_sparks_5764-6024",
+        "nf_sparks_6026-6502",
+        "nf_sparks_8396-8941",
+        "nf_sparks_9774-10071"
+      ],
+      "credit": "Netflix Open Content — Sparks",
+      "proposed_license_basis": "CC BY 4.0, Netflix current AOM source-folder grant",
+      "underlying_notice": "Older AOM README lists NC-ND; see decision memo",
+      "source_archives": [
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sparks/11198-11570.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sparks/2024-2455.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sparks/30-511.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sparks/5363-5763.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sparks/5764-6024.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sparks/6026-6502.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sparks/8396-8941.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/HDR/sparks/9774-10071.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sparks/11198-11570.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sparks/2024-2455.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sparks/30-511.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sparks/5363-5763.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sparks/5764-6024.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sparks/6026-6502.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sparks/8396-8941.zip",
+        "http://download.opencontent.netflix.com.s3.amazonaws.com/aom_test_materials/SDR/sparks/9774-10071.zip"
+      ]
+    }
+  ]
+}

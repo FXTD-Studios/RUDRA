@@ -5,11 +5,15 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
+#include <QSaveFile>
+#include <QTimer>
 #include <QSpinBox>
 #include <QThread>
 
@@ -31,17 +35,6 @@
 namespace rudra::app {
 namespace {
 
-bool wait_for(const std::function<bool()>& done, int ms) {
-    QElapsedTimer t;
-    t.start();
-    while (!done()) {
-        if (t.elapsed() > ms) return false;
-        QApplication::processEvents(QEventLoop::AllEvents, 20);
-        QThread::msleep(1);
-    }
-    return true;
-}
-
 QString q(const std::string& s) { return QString::fromStdString(s); }
 
 double percentile(std::vector<double> v, double p) {
@@ -53,9 +46,37 @@ double percentile(std::vector<double> v, double p) {
 }  // namespace
 
 int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
+    if (QFileInfo::exists(a.report)) {
+        std::fprintf(stderr, "Workflow report already exists; choose a fresh report path.\n");
+        return 1;
+    }
     QJsonObject report;
+    report["mode"] = a.analytic ? "analytic" : "model";
+    report["timeout_ms"] = a.timeout_ms;
+    QJsonArray dialogs;
+    // Active only during this scripted check. Cancel unexpected message boxes
+    // rather than entering an unbounded nested event loop or approving an action.
+    QTimer dialog_watch;
+    QObject::connect(&dialog_watch, &QTimer::timeout, [&] {
+        for (QWidget* widget : QApplication::topLevelWidgets())
+            if (auto* box = qobject_cast<QMessageBox*>(widget); box && box->isVisible()) {
+                dialogs.append(QJsonObject{{"title", box->windowTitle()}, {"text", box->text()}});
+                box->reject();
+            }
+    });
+    dialog_watch.start(10);
+    auto wait_for = [&](const std::function<bool()>& done, int ms) {
+        QElapsedTimer t; t.start();
+        while (!done()) {
+            if (!dialogs.isEmpty() || t.elapsed() >= std::min(ms, a.timeout_ms)) return false;
+            QApplication::processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(1);
+        }
+        return dialogs.isEmpty();
+    };
     bool all = true;
     auto step = [&](const char* name, QJsonObject o, bool ok) {
+        ok = ok && dialogs.isEmpty();
         o["ok"] = ok;
         report[name] = o;
         all = all && ok;
@@ -64,37 +85,52 @@ int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
         return ok;
     };
     auto finish = [&]() {
+        all = all && dialogs.isEmpty();
+        report["unexpected_dialogs"] = dialogs;
         report["verdict"] = all ? "PASS" : "FAIL";
-        QFile f(a.report);
-        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) f.write(QJsonDocument(report).toJson());
+        if (w.mastering()) w.master(); // a second click requests cancellation
+        if (w.video_queues().running()) w.video_queues().stop();
+        QSaveFile f(a.report);
+        const auto bytes = QJsonDocument(report).toJson();
+        if (!f.open(QIODevice::WriteOnly) || f.write(bytes) != bytes.size() || !f.commit()) {
+            std::fprintf(stderr, "Could not save workflow report: %s\n", f.errorString().toLocal8Bit().constData());
+            return 1;
+        }
         std::printf("  => %s (%s)\n", all ? "PASS" : "FAIL", a.report.toLocal8Bit().constData());
         return all ? 0 : 1;
     };
-    std::printf("RUDRA workflow check: %s on %s\n", a.frames.toLocal8Bit().constData(),
-                a.package.toLocal8Bit().constData());
+    std::printf("RUDRA workflow check: %s (%s)\n", a.frames.toLocal8Bit().constData(),
+                a.analytic ? "analytic, no model" : a.package.toLocal8Bit().constData());
+    if (!step("arguments", {{"fresh_output", !QFileInfo::exists(a.out)}},
+        !a.frames.isEmpty() && !a.out.isEmpty() && !QFileInfo::exists(a.out) && a.timeout_ms > 0 && a.timeout_ms <= 3600000 &&
+        (a.analytic ? a.package.isEmpty() && a.backend.isEmpty() : !a.package.isEmpty()))) return finish();
 
     // 1. The model, on the backend asked for, its goldens checked on first use.
-    {
+    if (a.analytic) {
+        w.set_use_model(false, false);
+        if (!step("model", {{"skipped", true}, {"reason", "Analytic reconstruction; no model loaded"}},
+             !w.using_model() && w.model_package().empty())) return finish();
+    } else {
         QJsonObject o;
-        std::optional<bool> done;
-        QString why;
+        struct Outcome { std::optional<bool> done; QString why; };
+        auto outcome = std::make_shared<Outcome>(); // callback can outlive a timed-out wait
         QElapsedTimer t;
         t.start();
         w.use_model(a.package.toStdString(), BackendChoice::from_key(a.backend.toStdString()),
-                    [&](bool ok, const QString& y) {
-                        done = ok;
-                        why = y;
+                    [outcome](bool ok, const QString& y) {
+                        outcome->done = ok;
+                        outcome->why = y;
                     });
-        wait_for([&] { return done.has_value(); }, 600000);
+        const bool completed = wait_for([&] { return outcome->done.has_value(); }, 600000);
         o["package"] = a.package;
         o["backend"] = w.model_backend() ? q(w.model_backend()->label()) : QString();
         o["device"] = w.findChild<QLabel*>("device")->text();
         o["load_s"] = double(t.elapsed()) / 1000.0;
-        if (!why.isEmpty()) o["why"] = why;
-        if (!step("model", o, done.value_or(false))) return finish();
+        if (!outcome->why.isEmpty()) o["why"] = outcome->why;
+        if (!step("model", o, completed && outcome->done.value_or(false))) return finish();
         // This check is of the model's workflow: the model runs (the app's
         // default is the analytic reconstruction).
-        w.set_use_model(true);
+        w.set_use_model(true, false);
     }
 
     // 2. The shot.
@@ -114,19 +150,17 @@ int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
     {
         std::vector<double> ms;
         int checked = 0, wrong = 0, missing = 0;
-        const Fields* last = nullptr;
         for (int i = 0; i < n; ++i) {
             QElapsedTimer t;
             t.start();
             if (i == 0) w.run("first");
             else w.run("next");
-            const bool got = wait_for([&] { return w.current_index() == i && w.frame_fields() && w.frame_fields() != last; },
+            const bool got = wait_for([&] { return w.current_index() == i && w.presented_index() == i && w.frame_fields(); },
                                       120000);
             if (!got) {
                 ++missing;
-                continue;
+                break;
             }
-            last = w.frame_fields();
             ms.push_back(double(t.nsecsElapsed()) / 1e6);
 #ifdef RUDRA_HAVE_STILL_DECODE
             if (a.check_every > 0 && (i % a.check_every == 0 || i == n - 1)) {
@@ -151,7 +185,7 @@ int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
         o["p95_ms"] = percentile(ms, 0.95);
         o["max_ms"] = ms.empty() ? 0.0 : *std::max_element(ms.begin(), ms.end());
         o["first_ms"] = ms.empty() ? 0.0 : ms.front();
-        step("scrub", o, missing == 0 && wrong == 0 && int(ms.size()) == n);
+        if (!step("scrub", o, missing == 0 && wrong == 0 && int(ms.size()) == n)) return finish();
     }
 
     // 4. Grade, then undo it all and redo it all: params() at each end.
@@ -259,32 +293,42 @@ int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
         for (int idx : which) {
             w.run("first");
             for (int k = 0; k < idx; ++k) w.run("next");
-            wait_for([&] { return w.current_index() == idx && w.frame_fields(); }, 120000);
+            if (!wait_for([&] { return w.current_index() == idx && w.presented_index() == idx && w.frame_fields(); }, 120000)) {
+                ok = false; break;
+            }
             const QString name = QStringLiteral("workflow_%1").arg(idx, 6, 10, QChar('0'));
             w.findChild<QLineEdit*>("renderName")->setText(name);
             QElapsedTimer t;
             t.start();
-            w.master();
             auto* status_label = w.findChild<QLabel*>("renderStatus");
+            status_label->clear();
+            w.master();
             // Finished is the page's status line, set when the job's end reaches this thread.
             const bool done = wait_for([&] {
                 const QString line = status_label->text();
-                return !w.mastering() && (line.startsWith("Rendered") || line.startsWith("Stopped"));
+                return !w.mastering() && !line.isEmpty();
             }, 600000);
             const QString status = status_label->text();
             const QString exr = QDir(a.out).filePath(name + ".exr"), side = QDir(a.out).filePath(name + ".json");
             const bool written = QFile::exists(exr) && QFile::exists(side);
-            ok = ok && done && written && status.startsWith("Rendered 1 frame");
+            bool analytic_tag = !a.analytic;
+            if (a.analytic) {
+                QFile sidecar(side);
+                if (sidecar.open(QIODevice::ReadOnly))
+                    analytic_tag = QJsonDocument::fromJson(sidecar.readAll()).object()["reconstruction"].toString() == "analytic (no model)";
+            }
+            ok = ok && done && written && analytic_tag && status.startsWith("Rendered 1 frame");
             masters.append(QJsonObject{{"frame", q(w.frames()[std::size_t(idx)].string())},
                                        {"exr", exr},
                                        {"sidecar", side},
                                        {"params", q(master_request_json(w.master_request()))},
                                        {"seconds", double(t.elapsed()) / 1000.0},
                                        {"status", status}});
+            if (!ok) break;
         }
         o["masters"] = masters;
         o["folder"] = a.out;
-        step("master", o, ok);
+        if (!step("master", o, ok)) return finish();
     }
     if (!a.movie.isEmpty()) {
         // Phase 4: the movie as a shot, every frame delivered, then HDR10 through the queue.
@@ -297,7 +341,8 @@ int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
         int delivered = 0;
         for (int i = 0; ok && i < count; ++i) {
             if (i) w.run("next");
-            if (wait_for([&] { return w.current_index() == i && w.frame_fields(); }, 120000)) ++delivered;
+            if (wait_for([&] { return w.current_index() == i && w.presented_index() == i && w.frame_fields(); }, 120000)) ++delivered;
+            else ok = false;
         }
         o["frames"] = count;
         o["delivered"] = delivered;
@@ -312,9 +357,10 @@ int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
         const QString master = QDir(a.out).filePath(name + ".mp4");
         bool passed = false;
         if (queued) {
-            wait_for([&] { return !w.video_queues().running(); }, 3600000);
+            const bool completed = wait_for([&] { return !w.video_queues().running(); }, 3600000);
+            o["completed"] = completed;
             QFile side(master + ".json");
-            if (side.open(QIODevice::ReadOnly)) {
+            if (completed && side.open(QIODevice::ReadOnly)) {
                 const auto doc = QJsonDocument::fromJson(side.readAll()).object();
                 passed = doc["qc"].toObject()["passed"].toBool();
                 o["max_cll"] = doc["max_cll"];

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "rudra/platform/result.hpp"
+#include "rudra/media/video_probe.hpp"
 
 namespace rudra {
 
@@ -21,6 +22,7 @@ struct FrameSequence {
     std::vector<std::filesystem::path> frames;    // a folder's frames; for a video, each frame's cache file
     std::optional<double> fps;                    // a video's rate (describe()'s "fps"); none for frames
     std::filesystem::path cache;                  // a video's frame cache folder
+    std::optional<VideoStreamInfo> stream;         // reported tags, not a guessed source curve
     int count() const noexcept { return static_cast<int>(frames.size()); }
     std::string name_of(int index) const;         // the file's name, or "<stem>_000001" for a video
 };

@@ -22,7 +22,8 @@ from pipeline.hdr_io import HDRStorage, decode_hdr_u16  # noqa: E402
 
 
 def corpus_ev_of(manifest_path: str | Path, records: list[dict] | None = None,
-                 real_only_ev: float | None = None) -> float:
+                 real_only_ev: float | None = None,
+                 pipeline_only_ev: float | None = None) -> float:
     """The exposure the corpus applied before its tone curve, from its sidecars.
 
     prepare_training_data.py writes ``tonemap_ev`` into every pair's metadata
@@ -46,6 +47,19 @@ def corpus_ev_of(manifest_path: str | Path, records: list[dict] | None = None,
     from rudra.sdr2hdr import LEGACY_CORPUS_EV
 
     rows = records if records is not None else read_jsonl(manifest_path)
+    if pipeline_only_ev is not None:
+        # A display-rendered pair has no inverse scene-render exposure. This
+        # explicitly chooses the model baseline convention without inventing
+        # a tonemap_ev or relabelling the SDR as a real grade.
+        if (real_only_ev is not None or not math.isfinite(pipeline_only_ev)
+                or not rows or any(r.get("sdr_kind") != "rendered"
+                    or r.get("render_family") != "pipeline"
+                    or not r.get("pipeline_recipe")
+                    or r.get("tonemap_ev") is not None for r in rows)):
+            raise ValueError("pipeline_only_ev requires exclusively pipeline-rendered pairs with unknown tonemap_ev")
+        return float(pipeline_only_ev)
+    if any(r.get("render_family") == "pipeline" for r in rows):
+        raise ValueError("pipeline-rendered targets require an explicit pipeline_only_ev; mixed objectives are unsupported")
     # Real grades have no synthetic rendering EV. A scratch real-only run may
     # explicitly choose the analytic/exposure-augmentation convention without
     # inventing tonemap_ev values in source records. Never override mixed data.

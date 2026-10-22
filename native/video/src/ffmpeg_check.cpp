@@ -121,7 +121,10 @@ Result<void> run_self_test(const FfmpegCapabilities& caps, const fs::path& work)
     const fs::path source = work / "source.mkv";
     // A tagged SDR clip every build can make: lavfi into FFV1.
     auto made = run_tool({ffmpeg, "-hide_banner", "-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i",
-                          "testsrc2=s=128x72:r=24", "-frames:v", "16", "-c:v", "ffv1", "-pix_fmt", "yuv420p",
+                          // Tag frames too: some FFmpeg builds propagate unspecified
+                          // lavfi frame metadata over the output codec options.
+                          "testsrc2=s=128x72:r=24,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=limited",
+                          "-frames:v", "16", "-c:v", "ffv1", "-pix_fmt", "yuv420p",
                           "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range",
                           "tv", source.string()});
     if (!made) return made.error();

@@ -1,0 +1,122 @@
+{
+  "candidate": "v10",
+  "gates": {
+    "G10/real": {
+      "question": "v10 on BT.1886 beats the BT.1886 baseline on real SDR (Meridian), PU21 and CVVDP CIs above zero",
+      "status": "not run",
+      "passed": null
+    },
+    "G10/aces": {
+      "question": "v10 told aces is not worse than the ACES inverse on the aces bench",
+      "status": "not run",
+      "passed": null
+    },
+    "G10/oog": {
+      "question": "v10 on the default BT.1886 is not worse than the BT.1886 baseline on the oog bench",
+      "status": "not run",
+      "passed": null
+    },
+    "G10/mix": {
+      "question": "v10 on the default BT.1886 is not worse than the BT.1886 baseline on the mix bench",
+      "status": "not run",
+      "passed": null
+    },
+    "G10/clip/ev0": {
+      "question": "v10 beats the clip fill inside clipped pixels at +0 EV (CI above zero)",
+      "status": "FAIL",
+      "passed": false,
+      "clipped_err_stops": {
+        "frames": 95,
+        "mean": 0.034412278404061976,
+        "ci95": [
+          -0.010869613426900087,
+          0.07511043180460068
+        ],
+        "wins": 85,
+        "losses": 10
+      }
+    },
+    "G10/clip/ev1": {
+      "question": "v10 beats the clip fill inside clipped pixels at +1 EV (CI above zero)",
+      "status": "FAIL",
+      "passed": false,
+      "clipped_err_stops": {
+        "frames": 104,
+        "mean": -0.0448583346210873,
+        "ci95": [
+          -0.09109973632438134,
+          -0.0058203900548864365
+        ],
+        "wins": 54,
+        "losses": 50
+      }
+    },
+    "G10/clip/ev2": {
+      "question": "v10 beats the clip fill inside clipped pixels at +2 EV (CI above zero)",
+      "status": "FAIL",
+      "passed": false,
+      "clipped_err_stops": {
+        "frames": 121,
+        "mean": -0.04292902157514215,
+        "ci95": [
+          -0.07079361496277546,
+          -0.019187320118609838
+        ],
+        "wins": 40,
+        "losses": 81
+      }
+    },
+    "G10/crushed/real": {
+      "question": "v10 is not worse than the BT.1886 baseline inside crushed pixels on real SDR",
+      "status": "not run",
+      "passed": null
+    },
+    "G10/crushed/ev0": {
+      "question": "v10 is not worse than the ACES inverse inside crushed pixels at +0 EV",
+      "status": "FAIL",
+      "passed": false,
+      "crushed_err_stops": {
+        "frames": 287,
+        "mean": -0.4063848104293415,
+        "ci95": [
+          -0.4992179645988466,
+          -0.31536141601495143
+        ],
+        "wins": 110,
+        "losses": 177
+      }
+    },
+    "G10/crushed/ev1": {
+      "question": "v10 is not worse than the ACES inverse inside crushed pixels at +1 EV",
+      "status": "FAIL",
+      "passed": false,
+      "crushed_err_stops": {
+        "frames": 287,
+        "mean": -0.31192578209356536,
+        "ci95": [
+          -0.3667962371885932,
+          -0.25596369325979756
+        ],
+        "wins": 100,
+        "losses": 187
+      }
+    },
+    "G10/crushed/ev2": {
+      "question": "v10 is not worse than the ACES inverse inside crushed pixels at +2 EV",
+      "status": "PASS",
+      "passed": true,
+      "crushed_err_stops": {
+        "frames": 287,
+        "mean": -0.03875196970169453,
+        "ci95": [
+          -0.10538112069725347,
+          0.02721354800000308
+        ],
+        "wins": 175,
+        "losses": 112
+      }
+    }
+  },
+  "verdict": "FAIL",
+  "bootstrap_unit": "frame"
+}

@@ -119,7 +119,7 @@ TEST(VideoGraded, TheShotHoldSteadiesTheAnchor) {
     // A second of a moving test pattern with grain, 24 fps, Rec.709.
     const fs::path clip = dir / "grain.mp4";
     auto made = run_process({find_executable("ffmpeg")->string(), "-v", "error", "-nostdin", "-f", "lavfi", "-i",
-                             "testsrc2=size=320x180:rate=24:duration=1,noise=alls=12:allf=t,format=yuv420p",
+                             "testsrc2=size=320x180:rate=24:duration=1,noise=alls=12:allf=t,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=limited",
                              "-c:v", "libx264", "-crf", "18", "-color_primaries", "bt709", "-color_trc", "bt709",
                              "-colorspace", "bt709", clip.string()});
     ASSERT_TRUE(made && fs::exists(clip)) << "this ffmpeg cannot make the test clip (libx264)";
@@ -162,7 +162,7 @@ TEST(VideoGraded, TheStaticHoldSteadiesAStillShot) {
     auto png = run_process({ffmpeg, "-v", "error", "-nostdin", "-f", "lavfi", "-i",
                             "nullsrc=size=320x180,format=gray,geq=lum='40+200*X/W'", "-frames:v", "1", still.string()});
     auto made = run_process({ffmpeg, "-v", "error", "-nostdin", "-loop", "1", "-i", still.string(), "-vf",
-                             "fps=24,format=yuv420p,noise=alls=3:allf=t", "-t", "1", "-c:v", "libx264", "-crf", "23",
+                             "fps=24,format=yuv420p,noise=alls=3:allf=t,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=limited", "-t", "1", "-c:v", "libx264", "-crf", "23",
                              "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", clip.string()});
     ASSERT_TRUE(png && made && fs::exists(clip)) << "this ffmpeg cannot make the test clip (libx264)";
     std::vector<double> local;

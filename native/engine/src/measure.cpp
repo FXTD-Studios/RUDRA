@@ -79,4 +79,25 @@ FrameMeasure measure_frame(const SdrImage& sdr, const Fields& fields, const Fram
     return out;
 }
 
+FrameMeasure measure_headroom(const NetworkLinearImage& model, const NetworkLinearImage& baseline) {
+    const auto t0 = std::chrono::steady_clock::now();
+    FrameMeasure out;
+    out.width = model.width();
+    out.height = model.height();
+    const std::size_t n = std::size_t(out.width) * std::size_t(out.height);
+    out.model = model;
+    out.baseline = baseline;
+    out.highlight.assign(n, 0.0f);
+    out.shadow.assign(n, 0.0f);
+    const SampleGrid grid = sample_grid(out.width, out.height);
+    const PlanarBuffer model_sample = take_sample(out.model.buffer(), grid);
+    const PlanarBuffer base_sample = take_sample(out.baseline.buffer(), grid);
+    out.measured = measure_view(model_sample, base_sample, grid, out.highlight, out.shadow, out.coverage,
+                                reduce_ladder(out.model.buffer()), reduce_ladder(out.baseline.buffer()), n);
+    out.vector_rgba = vectorscope(model_sample);
+    out.compare = compare_stats(out.model, out.baseline);
+    out.compose_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    return out;
+}
+
 }  // namespace rudra

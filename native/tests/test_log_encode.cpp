@@ -115,6 +115,7 @@ TEST(LogEncode, ProfilesAndTheEncoderCommand) {
     ASSERT_NE(vf, cmd->end());
     EXPECT_NE((vf + 1)->find("transferin=linear"), std::string::npos) << *(vf + 1);
     EXPECT_NE((vf + 1)->find(":transfer=linear"), std::string::npos) << *(vf + 1);
+    EXPECT_NE((vf + 1)->find("setparams=color_primaries=unknown:color_trc=unknown"), std::string::npos);
     // A graded file is unchanged.
     r.format = "prores4444";
     auto pq = encode_command("ffmpeg", r, clock, "spool", "in.mp4", "out.mov", 100, 50);

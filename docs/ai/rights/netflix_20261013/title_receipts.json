@@ -1,0 +1,26 @@
+[
+  {
+    "url": "https://s3.amazonaws.com/download.opencontent.netflix.com/Nocturne/creative-commons-attribution-4-intl-public-license.txt",
+    "local_file": "Nocturne__creative-commons-attribution-4-intl-public-license.txt",
+    "sha256": "7d3512159f970cdcf296e8404be05947228d0bfaf72801cb5b3077f4330f71f9",
+    "bytes": 105020,
+    "last_modified": "Thu, 27 May 2021 18:36:17 GMT",
+    "retrieved_date": "2026-10-13"
+  },
+  {
+    "url": "https://s3.amazonaws.com/download.opencontent.netflix.com/SolLevante/creative-commons-attribution-4-intl-public-license.txt",
+    "local_file": "SolLevante__creative-commons-attribution-4-intl-public-license.txt",
+    "sha256": "7d3512159f970cdcf296e8404be05947228d0bfaf72801cb5b3077f4330f71f9",
+    "bytes": 105020,
+    "last_modified": "Thu, 27 May 2021 18:36:25 GMT",
+    "retrieved_date": "2026-10-13"
+  },
+  {
+    "url": "https://s3.amazonaws.com/download.opencontent.netflix.com/Meridian/creative-commons-attribution-4-intl-public-license.txt",
+    "local_file": "Meridian__creative-commons-attribution-4-intl-public-license.txt",
+    "sha256": "7d3512159f970cdcf296e8404be05947228d0bfaf72801cb5b3077f4330f71f9",
+    "bytes": 105020,
+    "last_modified": "Thu, 27 May 2021 18:35:57 GMT",
+    "retrieved_date": "2026-10-13"
+  }
+]

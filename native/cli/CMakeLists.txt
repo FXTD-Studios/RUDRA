@@ -7,3 +7,10 @@ if(RUDRA_WITH_OPENCV)
   target_link_libraries(rudra-native PRIVATE rudra::rudra_media)
 endif()
 rudra_warnings(rudra-native)
+rudra_stage_onnxruntime(rudra-native)
+
+# clip_fill_probe (17 Oct 2026): the shipped clip fill as a file-in/file-out tool, for
+# PeakNet's data and native scoring (training/peaknet/). Core only, no Qt, no OpenCV.
+add_executable(clip_fill_probe ../tools/clip_fill_probe.cpp)
+target_link_libraries(clip_fill_probe PRIVATE rudra::rudra_core)
+rudra_warnings(clip_fill_probe)
