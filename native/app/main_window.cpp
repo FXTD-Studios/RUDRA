@@ -303,6 +303,7 @@ void MainWindow::bind_handlers() {
     h["open-folder"] = [this] { open_source({}, true); };
     h["open-package"] = [this] { open_package(); };
     h["models"] = [this] { open_model_manager(); };
+    h["aces-master"] = [this] { open_aces_master(); };
     h["first-run"] = [this] { open_first_run(); };
     // Through close(), so unsaved work is asked about and the settings and the autosave are written.
     h["quit"] = [this] {

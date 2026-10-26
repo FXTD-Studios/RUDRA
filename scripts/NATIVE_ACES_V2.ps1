@@ -31,7 +31,7 @@ param(
 )
 $Guard = @(); if (-not $NoLuminanceGuard) { $Guard = @('--forbid-new-negative-y') }
 $ErrorActionPreference = "Stop"
-$Repo = "D:\A.I\Devlopments\rudra"
+$Repo = Split-Path $PSScriptRoot -Parent   # the repo this script sits in
 Set-Location -LiteralPath $Repo
 . (Join-Path $PSScriptRoot "native_toolchain.ps1")
 $Stamp = Get-Date -Format "yyyy-MM-dd_HHmm"
@@ -173,6 +173,28 @@ if ($OrtArgs.Count -and (Test-Path (Join-Path $Package "rudra_g1.onnx"))) {
     Say "Native master through ONNX Runtime + DirectML (tolerance route)"
     & $Cli aces-v2 $Package $Frames --out (Join-Path $Out "master_directml") --runtime onnxruntime --device directml --ocio-threads 8
     if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --runtime onnxruntime --device directml" }
+}
+
+Say "Native master of a video (every frame, <stem>_<NNNNNN>.exr)"
+# ffmpeg and ffprobe: the PATH first, then the pack the app bundles (tmp\native_deps).
+if (-not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+    $ffd = Get-ChildItem "tmp\native_deps" -Directory -Filter "ffmpeg-*-full_build" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($ffd) { $env:PATH = "$(Join-Path $ffd.FullName 'bin');$env:PATH" }
+}
+if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
+    $first = Get-ChildItem $Frames -Filter "*_source.png" | Sort-Object Name | Select-Object -First 1
+    $clip = Join-Path $Out "video_smoke.mp4"
+    & ffmpeg -v error -y -loop 1 -i $first.FullName -frames:v 12 -r 24 -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" `
+        -c:v libx264 -crf 12 -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 $clip
+    if ($LASTEXITCODE -ne 0) { Fail "ffmpeg could not make the smoke clip" }
+    $vout = Join-Path $Out "master_video"
+    & $Cli aces-v2 $Package $clip --out $vout --device $Device --ocio-threads 8
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 on a video (exit $LASTEXITCODE)" }
+    $n = (Get-ChildItem $vout -Filter "video_smoke_*.exr").Count
+    if ($n -ne 12) { Fail "video master wrote $n EXRs, expected 12" }
+    Write-Host "video: 12 frames mastered"
+} else {
+    Write-Host "no ffmpeg on the PATH or in tmp\native_deps: video check skipped" -ForegroundColor Yellow
 }
 
 Say "Python export of the same frames (reference timing and EXRs)"

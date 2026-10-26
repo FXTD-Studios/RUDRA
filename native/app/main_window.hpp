@@ -63,6 +63,7 @@ class ViewerWindow;
 
 namespace rudra::app {
 
+class AcesEngine;
 class CheckRow;
 class IconButton;
 class RegionEditor;
@@ -114,6 +115,13 @@ public:
     // package used last (on its backend), else the catalog's pick.
     void boot();
     void open_model_manager();
+    // Deliver > Learned ACES 2.0 master… (aces_master.hpp): the learned ACES 2.0
+    // model's masters, run by the ACES v2 rudra-native as a child process.
+    void open_aces_master();
+    // The learned ACES 2.0 model kept loaded (aces_engine.hpp): started at
+    // launch when aces/preload is on (the default) and an engine and package are found.
+    void preload_aces_engine();
+    AcesEngine* aces_engine();
     // The export sheet (the Pro boards): format, frames, destination, then Master
     // EXR, or for a movie an HDR10, HLG or ProRes export as a queue job.
     void open_export_sheet();
@@ -547,7 +555,8 @@ private:
     std::thread model_worker_;
     std::thread stats_worker_;   // the measurement off the UI thread; joined, never left running
     std::optional<BackendChoice> backend_choice_;
-    QPointer<QDialog> manager_, first_run_, sheet_;
+    QPointer<QDialog> manager_, first_run_, sheet_, aces_master_;
+    std::shared_ptr<AcesEngine> aces_engine_;   // shared_ptr: the type stays incomplete here
     QMenu* recent_menu_ = nullptr;
     void remember_source(const QString& path);
     void copy_text(const QString& label, const std::string& text);

@@ -32,6 +32,8 @@
 #include <QFile>
 #include <QPlainTextEdit>
 #include <QSpinBox>
+#include <QStandardPaths>
+#include <QProcess>
 #include <QSettings>
 #include <QClipboard>
 #include <QDragEnterEvent>
@@ -3359,3 +3361,370 @@ TEST(AppHeadroom, ReplacingTheShotReopensOrLeavesTheRoute) {
 }
 #endif
 
+
+// ---- Deliver > Learned ACES 2.0 master… (aces_master.hpp, 26 Oct 2026) ------
+#include <QCheckBox>
+#include <QComboBox>
+#include <QFileInfo>
+#include <QProgressBar>
+#include <QPushButton>
+#include "aces_master.hpp"
+#include "aces_engine.hpp"
+#include <QJsonObject>
+
+namespace {
+
+std::filesystem::path aces_tmp(const std::string& name) {
+    const auto d = std::filesystem::temp_directory_path() / ("rudra-app-aces-" + name);
+    std::filesystem::remove_all(d);
+    std::filesystem::create_directories(d);
+    return d;
+}
+
+void write_text(const std::filesystem::path& p, const std::string& s) {
+    std::filesystem::create_directories(p.parent_path());
+    std::ofstream(p) << s;
+}
+
+json aces_manifest(bool parity, bool guard) {
+    return json{{"contract", "rudra_native_aces_v2_staged"}, {"contract_major", 2},
+                {"model_contract", {{"id", "aces2_test"}, {"full_context", "independent_pixel_rms"}, {"ocio_version", "2.5.2"},
+                                    {"config", "cg-config-v4.0.0_aces-v2.0_ocio-v2.5"}, {"view", "ACES 2.0 - SDR 100 nits (Rec.709)"},
+                                    {"display", "Rec.1886 Rec.709 - Display"}}},
+                {"checkpoint_sha256", "f73f14c7e74d5bb54d0cbf949b94365f"}, {"g1_sha256", "dd10d83287efa1ab"}, {"g1_file", "rudra_g1.ts"},
+                {"onnx_file", nullptr},
+                {"clipped_smoothing", {{"name", "hybrid64"}, {"sigma", 64.0}, {"ramp", 1.0}, {"start", 0.0}, {"mode", "hybrid"}}},
+                {"appearance_constraint", {{"max_display_error_codes", 1}, {"include_fully_clipped", true}, {"forbid_new_negative_y", guard}}},
+                {"parity_pass", parity}, {"release_authorized", false}};
+}
+
+}  // namespace
+
+TEST(AcesMaster, ParsesTheCommandsProgressLines) {
+    auto p = app::parse_aces_progress("frame 001.png -> frame 001.exr  361 ms  remaining_display_errors=0");
+    ASSERT_TRUE(p);
+    EXPECT_EQ(p->source, "frame 001.png");
+    EXPECT_EQ(p->exr, "frame 001.exr");
+    EXPECT_DOUBLE_EQ(p->milliseconds, 361.0);
+    EXPECT_EQ(p->remaining_display_errors, 0u);
+    p = app::parse_aces_progress("a.tif -> a.exr  12.5 ms  remaining_display_errors=7\r");
+    ASSERT_TRUE(p);
+    EXPECT_EQ(p->remaining_display_errors, 7u);
+    EXPECT_FALSE(app::parse_aces_progress("error [NotFound]: No stills found."));
+    EXPECT_FALSE(app::parse_aces_progress(""));
+}
+
+TEST(AcesMaster, CollectsStillsAndRefusesSameNameExrs) {
+    const auto d = aces_tmp("stills");
+    for (const char* f : {"b.png", "a.jpg", "notes.txt", "c.TIF"}) write_text(d / f, "x");
+    const auto stills = app::collect_aces_stills(d);
+    ASSERT_EQ(stills.size(), 3u);
+    EXPECT_EQ(stills[0].filename(), "a.jpg");
+    EXPECT_FALSE(app::aces_name_collision(stills));
+    write_text(d / "A.png", "x");   // a.jpg and A.png both want a.exr
+    EXPECT_TRUE(app::aces_name_collision(app::collect_aces_stills(d)));
+    EXPECT_EQ(app::collect_aces_stills(d / "b.png").size(), 1u);
+    EXPECT_TRUE(app::collect_aces_stills(d / "notes.txt").empty());
+    EXPECT_TRUE(app::collect_aces_stills(d / "missing").empty());
+}
+
+TEST(AcesMaster, CollectsAVideoAsItsOwnInput) {
+    const auto d = aces_tmp("video_inputs");
+    for (const char* f : {"a.png", "clip.MP4", "take.mov"}) write_text(d / f, "x");
+    EXPECT_TRUE(app::is_aces_video(d / "clip.MP4"));
+    EXPECT_TRUE(app::is_aces_video(d / "take.mov"));
+    EXPECT_FALSE(app::is_aces_video(d / "a.png"));
+    // A folder gives its stills only; a video is chosen on its own.
+    ASSERT_EQ(app::collect_aces_stills(d).size(), 1u);
+    ASSERT_EQ(app::collect_aces_stills(d / "clip.MP4").size(), 1u);
+    EXPECT_EQ(app::collect_aces_stills(d / "clip.MP4")[0].filename(), "clip.MP4");
+}
+
+TEST(AcesMaster, ReadsAVideoAndOffersItsFramesForPreview) {
+    if (QStandardPaths::findExecutable("ffmpeg").isEmpty() || QStandardPaths::findExecutable("ffprobe").isEmpty())
+        GTEST_SKIP() << "ffmpeg and ffprobe are not on the PATH";
+    QSettings().clear();
+    const auto root = aces_tmp("video_dialog");
+    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    const auto clip = root / "shot.mp4";
+    QProcess ff;
+    ff.start("ffmpeg", {"-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=64x32:rate=24", "-frames:v", "30",
+                        "-pix_fmt", "yuv420p", "-c:v", "libx264", QString::fromStdString(clip.string())});
+    ASSERT_TRUE(ff.waitForFinished(60000));
+    ASSERT_EQ(ff.exitCode(), 0) << ff.readAllStandardError().toStdString();
+    app::AcesMasterDialog d(nullptr, {root}, clip);
+    const QString note = d.findChild<QLabel*>("acesFramesNote")->text();
+    EXPECT_TRUE(note.startsWith("Video: 30 frames, 64 × 32, 24 fps, 8-bit")) << note.toStdString();
+    auto* pick = d.findChild<QComboBox*>("acesPreviewFrame");
+    ASSERT_EQ(pick->count(), 12);   // spread over the clip, first and last included
+    EXPECT_EQ(pick->itemData(0, Qt::UserRole + 1).toInt(), 0);
+    EXPECT_EQ(pick->itemData(11, Qt::UserRole + 1).toInt(), 29);
+    EXPECT_EQ(pick->itemText(11), "shot.mp4 · frame 29");
+    EXPECT_EQ(pick->itemData(5).toString(), QString::fromStdString(clip.string()));
+    // An unreadable video says so, and offers nothing to preview or master.
+    write_text(root / "broken.mp4", "not a video");
+    d.set_input(root / "broken.mp4");
+    EXPECT_TRUE(d.findChild<QLabel*>("acesFramesNote")->text().startsWith("This video cannot be read"));
+    EXPECT_EQ(pick->count(), 0);
+    EXPECT_FALSE(d.ready());
+    QSettings().clear();
+}
+
+TEST(AcesMaster, FindsOnlyPackagesTheContractAccepts) {
+    const auto root = aces_tmp("packages");
+    write_text(root / "good" / "manifest.json", aces_manifest(true, true).dump());
+    write_text(root / "failed_parity" / "manifest.json", aces_manifest(false, true).dump());
+    write_text(root / "v1" / "manifest.json", json{{"contract", "rudra_native_v1"}}.dump());
+    std::filesystem::create_directories(root / "empty");
+    const auto found = app::find_aces_packages({root, root / "good", root / "missing"});
+    ASSERT_EQ(found.size(), 1u);   // the good one, once, though two roots reach it
+    EXPECT_EQ(found[0].root.filename(), "good");
+    EXPECT_TRUE(found[0].luminance_guard);
+    EXPECT_FALSE(found[0].has_onnx);
+    EXPECT_FALSE(found[0].release_authorized);
+}
+
+TEST(AcesMaster, CommandArgumentsCarryTheChoices) {
+    app::AcesRunSettings s;
+    s.package = "pkg";
+    s.input = "in";
+    s.out = "out";
+    s.runtime = "onnxruntime";
+    s.device = "directml";
+    s.luminance_guard = false;
+    const QStringList a = app::aces_cli_arguments(s);
+    EXPECT_EQ(a.first(), "aces-v2");
+    EXPECT_TRUE(a.contains("--no-luminance-guard"));
+    EXPECT_EQ(a.at(a.indexOf("--runtime") + 1), "onnxruntime");
+    EXPECT_EQ(a.at(a.indexOf("--device") + 1), "directml");
+    s.luminance_guard = true;
+    EXPECT_TRUE(app::aces_cli_arguments(s).contains("--luminance-guard"));
+    ASSERT_EQ(app::aces_run_targets().size(), 4u);
+    EXPECT_EQ(app::aces_run_targets()[0].device, "cuda");
+}
+
+TEST(AcesMaster, SumsUpTheRunsProvenance) {
+    const auto d = aces_tmp("provenance");
+    EXPECT_FALSE(app::read_aces_provenance(d));
+    write_text(d / "provenance.json",
+               json{{"device", "cuda"}, {"runtime", "libtorch"}, {"appearance_constraint_pass", true}, {"luminance_guard", true},
+                    {"frames", json::array({{{"ms", 300.0}, {"reconstructed_fraction", 0.02}, {"remaining_display_errors", 0},
+                                             {"new_negative_luminance", 0}},
+                                            {{"ms", 400.0}, {"reconstructed_fraction", 0.04}, {"remaining_display_errors", 0},
+                                             {"new_negative_luminance", 0}}})}}
+                   .dump());
+    auto s = app::read_aces_provenance(d);
+    ASSERT_TRUE(s);
+    EXPECT_EQ(s->frames, 2u);
+    EXPECT_DOUBLE_EQ(s->mean_ms, 350.0);
+    EXPECT_NEAR(s->mean_reconstructed_fraction, 0.03, 1e-12);
+    EXPECT_TRUE(s->appearance_pass);
+    const std::string t = app::aces_summary_text(*s);
+    EXPECT_NE(t.find("2 masters written on cuda (libtorch), 350 ms a frame"), std::string::npos) << t;
+    EXPECT_NE(t.find("within 1 code"), std::string::npos) << t;
+}
+
+TEST(AcesMaster, OpensFromTheDeliverMenuAndWaitsForWhatItNeeds) {
+    QSettings().clear();
+    const auto root = aces_tmp("dialog");
+    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    const auto frames = root / "frames";
+    write_text(frames / "a.png", "x");
+    app::MainWindow w(false);
+    w.set_model_roots({root});
+    ASSERT_NE(w.action("aces-master"), nullptr);
+    EXPECT_EQ(w.action("aces-master")->text(), "Learned ACES 2.0 master…");
+    w.run("aces-master");
+    auto* d = static_cast<app::AcesMasterDialog*>(w.findChild<QDialog*>("acesMaster"));   // no Q_OBJECT: found as a QDialog
+    ASSERT_NE(d, nullptr);
+    auto* pkg = d->findChild<QComboBox*>("acesPackage");
+    ASSERT_NE(pkg, nullptr);
+    EXPECT_GE(pkg->findData(QString::fromStdString((root / "pkg").string())), 0);
+    EXPECT_TRUE(d->findChild<QCheckBox*>("acesGuard")->isChecked());   // the package's default
+    d->set_input(frames);
+    // No ACES-capable rudra-native here: Start stays off and says why.
+    d->set_cli(root / "missing-rudra-native");
+    QString why;
+    EXPECT_FALSE(d->ready(&why));
+    EXPECT_EQ(why, "Choose a rudra-native built with ACES v2.");
+    EXPECT_FALSE(d->findChild<QPushButton*>("acesStart")->isEnabled());
+    EXPECT_FALSE(d->running());
+    EXPECT_FALSE(app::cli_has_aces_v2(root / "missing-rudra-native"));
+    // The suggested output folder sits beside the frames and does not exist yet.
+    const QString out = d->findChild<QLineEdit*>("acesOut")->text();
+    EXPECT_TRUE(out.endsWith("frames_aces_master")) << out.toStdString();
+    EXPECT_FALSE(QFileInfo::exists(out));
+}
+
+TEST(AcesMaster, PutsTheConfiguredRuntimeFoldersFirstOnThePath) {
+    QSettings().clear();
+    const QString before = app::aces_child_environment().value("PATH");
+    QSettings().setValue("aces/path_prepend", QStringList{"/opt/torch/lib", "/opt/ort/lib"});
+    const QString path = app::aces_child_environment().value("PATH");
+#ifdef _WIN32
+    EXPECT_TRUE(path.startsWith("/opt/torch/lib;/opt/ort/lib;")) << path.toStdString();
+#else
+    EXPECT_TRUE(path.startsWith("/opt/torch/lib:/opt/ort/lib:")) << path.toStdString();
+#endif
+    EXPECT_TRUE(path.endsWith(before));
+    QSettings().clear();
+}
+
+#ifndef _WIN32
+// The whole run against a stand-in rudra-native (a shell script): progress from
+// its per-frame lines, the summary from its provenance.json.
+TEST(AcesMaster, RunsTheCommandAndReportsItsMasters) {
+    QSettings().clear();
+    const auto root = aces_tmp("run");
+    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    for (const char* f : {"a.png", "b.png"}) write_text(root / "frames" / f, "x");
+    const auto cli = root / "rudra-native";
+    write_text(cli, R"(#!/bin/sh
+[ "$1" = "aces-v2-serve" ] && exit 3
+if [ "$#" -lt 3 ]; then echo "usage: rudra-native aces-v2 <package> <image|folder> --out <dir>" >&2; exit 64; fi
+out=""; prev=""
+for a in "$@"; do [ "$prev" = "--out" ] && out="$a"; prev="$a"; done
+mkdir -p "$out"
+echo "a.png -> a.exr  100 ms  remaining_display_errors=0"
+echo "b.png -> b.exr  300 ms  remaining_display_errors=0"
+printf '%s' '{"device":"cpu","runtime":"libtorch","appearance_constraint_pass":true,"luminance_guard":true,"frames":[{"ms":100,"reconstructed_fraction":0.1,"remaining_display_errors":0,"new_negative_luminance":0},{"ms":300,"reconstructed_fraction":0.3,"remaining_display_errors":0,"new_negative_luminance":0}]}' > "$out/provenance.json"
+exit 0
+)");
+    std::filesystem::permissions(cli, std::filesystem::perms::owner_all);
+    EXPECT_TRUE(app::cli_has_aces_v2(cli));
+    app::AcesMasterDialog d(nullptr, {root}, root / "frames");
+    d.set_cli(cli);
+    QString why;
+    ASSERT_TRUE(d.ready(&why)) << why.toStdString();
+    EXPECT_TRUE(d.findChild<QPushButton*>("acesStart")->isEnabled());
+    d.start();
+    ASSERT_TRUE(wait_for([&] { return !d.running(); }));
+    const QString status = d.findChild<QLabel*>("acesStatus")->text();
+    EXPECT_TRUE(status.startsWith("2 masters written on cpu (libtorch), 200 ms a frame")) << status.toStdString();
+    EXPECT_EQ(d.findChild<QProgressBar*>("acesProgress")->value(), 2);
+    EXPECT_TRUE(d.findChild<QPlainTextEdit*>("acesLog")->toPlainText().contains("b.png -> b.exr"));
+    // The summary stays; the folder now exists, so Start waits for a new one.
+    EXPECT_FALSE(d.findChild<QPushButton*>("acesStart")->isEnabled());
+    EXPECT_TRUE(d.findChild<QPushButton*>("acesOpenOut")->isEnabled());
+    QSettings().clear();
+}
+#endif
+
+#ifndef _WIN32
+TEST(AcesMaster, CancelStopsTheCommandAndSaysWhatIsLeft) {
+    QSettings().clear();
+    const auto root = aces_tmp("cancel");
+    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    for (const char* f : {"a.png", "b.png"}) write_text(root / "frames" / f, "x");
+    const auto cli = root / "rudra-native";
+    write_text(cli, R"(#!/bin/sh
+[ "$1" = "aces-v2-serve" ] && exit 3
+if [ "$#" -lt 3 ]; then echo "usage: rudra-native aces-v2 <package> <image|folder> --out <dir>" >&2; exit 64; fi
+echo "a.png -> a.exr  100 ms  remaining_display_errors=0"
+exec sleep 30
+)");
+    std::filesystem::permissions(cli, std::filesystem::perms::owner_all);
+    app::AcesMasterDialog d(nullptr, {root}, root / "frames");
+    d.set_cli(cli);
+    d.start();
+    ASSERT_TRUE(wait_for([&] { return d.findChild<QProgressBar*>("acesProgress")->value() == 1; }));
+    EXPECT_TRUE(d.findChild<QPushButton*>("acesCancel")->isEnabled());
+    d.cancel();
+    ASSERT_TRUE(wait_for([&] { return !d.running(); }, 5000));
+    EXPECT_TRUE(d.findChild<QLabel*>("acesStatus")->text().startsWith("Cancelled after 1 of 2 frames"));
+    QSettings().clear();
+}
+#endif
+
+#ifndef _WIN32
+// The model kept loaded: a stand-in `aces-v2-serve` (Python) answers preview,
+// view and master over JSON lines; the dialog shows the frame and masters
+// through it without starting another process.
+TEST(AcesMaster, PreviewsAndMastersThroughTheLoadedModel) {
+    QSettings().clear();
+    const auto root = aces_tmp("engine");
+    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    for (const char* f : {"a.png", "b.png"}) write_text(root / "frames" / f, "x");
+    const auto cli = root / "rudra-native";
+    write_text(cli, R"(#!/usr/bin/env python3
+import json, os, sys
+a = sys.argv[1:]
+if a[:2] == ["aces-v2", "--help"]:
+    sys.stderr.write("usage: rudra-native aces-v2 <package> <image|folder> --out <dir>\n"); sys.exit(64)
+if not a or a[0] != "aces-v2-serve": sys.exit(2)
+def say(o): sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
+say({"event": "ready", "device": "cpu", "runtime": "libtorch", "load_ms": 1234.0})
+for line in sys.stdin:
+    r = json.loads(line); op = r.get("op")
+    if op == "quit": break
+    if op == "preview":
+        say({"id": r["id"], "ok": True, "width": 4, "height": 2, "bits": 8, "ms": 12.0, "reconstructed_fraction": 0.25,
+             "peak": 9.5, "peak_plain": 3.0, "remaining_display_errors": 0, "new_negative_luminance": 0})
+    elif op == "view":
+        with open(r["out"], "wb") as f: f.write(b"P6\n4 2\n255\n" + bytes([200, 100, 50]) * 8)
+        say({"id": r["id"], "ok": True, "path": r["out"], "width": 4, "height": 2, "ms": 3.0, "ev": r["ev"], "mode": r["mode"]})
+    elif op == "master":
+        os.makedirs(r["out"])
+        for i, s in enumerate(r["sources"]):
+            n = os.path.splitext(os.path.basename(s))[0]
+            say({"id": r["id"], "progress": {"index": i + 1, "total": len(r["sources"]), "source": os.path.basename(s),
+                                             "exr": n + ".exr", "ms": 50.0, "remaining_display_errors": 0}})
+        json.dump({"device": "cpu", "runtime": "libtorch", "appearance_constraint_pass": True, "luminance_guard": True,
+                   "frames": [{"ms": 50.0, "reconstructed_fraction": 0.25, "remaining_display_errors": 0,
+                               "new_negative_luminance": 0}] * len(r["sources"])}, open(os.path.join(r["out"], "provenance.json"), "w"))
+        say({"id": r["id"], "ok": True, "done": True, "cancelled": False, "frames": len(r["sources"])})
+)");
+    std::filesystem::permissions(cli, std::filesystem::perms::owner_all);
+    app::AcesMasterDialog d(nullptr, {root}, root / "frames");
+    d.set_cli(cli);
+    ASSERT_TRUE(wait_for([&] { return d.engine()->state() == app::AcesEngine::State::Ready; }))
+        << d.engine()->status_text().toStdString();
+    EXPECT_EQ(d.engine()->status_text(), "ACES model ready on cpu (libtorch), loaded in 1.2 s");
+    // The first frame is previewed as soon as the model is ready.
+    auto* image = d.findChild<QLabel*>("acesPreviewImage");
+    ASSERT_TRUE(wait_for([&] { return !image->pixmap().isNull() && !d.preview_busy(); }));
+    EXPECT_TRUE(d.findChild<QLabel*>("acesPreviewStats")->text().contains("25.00 % reconstructed"));
+    // Exposure, mode and frame changes ask again.
+    d.set_preview_ev(-4.0);
+    d.set_preview_mode("split");
+    d.preview_frame(1);
+    ASSERT_TRUE(wait_for([&] { return !d.preview_busy(); }));
+    EXPECT_EQ(d.findChild<QLabel*>("acesEvValue")->text(), "-4.0 EV");
+    // Start masters through the loaded model: no second process, progress per frame.
+    ASSERT_TRUE(d.ready());
+    d.start();
+    EXPECT_TRUE(d.running());
+    ASSERT_TRUE(wait_for([&] { return !d.running(); }));
+    EXPECT_TRUE(d.findChild<QLabel*>("acesStatus")->text().startsWith("2 masters written on cpu (libtorch), 50 ms a frame"))
+        << d.findChild<QLabel*>("acesStatus")->text().toStdString();
+    EXPECT_TRUE(d.findChild<QPlainTextEdit*>("acesLog")->toPlainText().contains("loaded model"));
+    EXPECT_EQ(d.findChild<QProgressBar*>("acesProgress")->value(), 2);
+    EXPECT_EQ(d.engine()->state(), app::AcesEngine::State::Ready);   // still loaded afterwards
+    QSettings().clear();
+}
+
+TEST(AcesMaster, EngineThatCannotLoadSaysWhy) {
+    QSettings().clear();
+    const auto root = aces_tmp("engine-fail");
+    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    const auto cli = root / "rudra-native";
+    write_text(cli, R"(#!/bin/sh
+[ "$1" = "aces-v2" ] && { echo "usage: rudra-native aces-v2 <package> <image|folder> --out <dir>" >&2; exit 64; }
+echo '{"event":"error","error":"This build has no LibTorch.","detail":""}'
+exit 2
+)");
+    std::filesystem::permissions(cli, std::filesystem::perms::owner_all);
+    app::AcesEngine e(nullptr);
+    int changes = 0;
+    QObject owner;
+    e.listen(&owner, [&] { ++changes; });
+    e.start({cli, root / "pkg", "libtorch", "cpu", 2});
+    ASSERT_TRUE(wait_for([&] { return e.state() == app::AcesEngine::State::Failed; }));
+    EXPECT_EQ(e.status_text(), "ACES model failed: This build has no LibTorch.");
+    EXPECT_GE(changes, 2);   // loading, then failed
+    bool answered = false;
+    e.request(QJsonObject{{"op", "preview"}}, [&](const QJsonObject& o) { answered = !o.value("ok").toBool(); });
+    EXPECT_TRUE(answered);   // not ready: answered at once, with the reason
+    QSettings().clear();
+}
+#endif
