@@ -155,6 +155,8 @@ int main(int argc, char** argv) {
         w.boot();
     }
     if (!project_arg && rest.size() > 1) w.open_source(rest[1]);
+    // The learned ACES 2.0 model loads in the background (Deliver > Learned ACES 2.0 master…).
+    if (grab_to.isEmpty()) w.preload_aces_engine();
     // The session is autosaved; the one the last run left is offered by File >
     // Reopen last session. One running RUDRA owns the autosave: a second one
     // (a .rudra double-clicked while the first is open) does without.

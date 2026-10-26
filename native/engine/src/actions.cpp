@@ -124,6 +124,8 @@ const std::vector<ActionSpec> kActions = {
     {"user-guide", "User guide", "", "", O::Native, E::Always, "F1"},
     {"check-updates", "Check for updates…", "", "", O::Native, E::Always, ""},
     {"open-log-folder", "Open log folder", "", "", O::Native, E::Always, ""},
+    // 26 Oct 2026: the learned ACES 2.0 model's masters (app/aces_master.hpp).
+    {"aces-master", "Learned ACES 2.0 master…", "", "", O::Native, E::Always, "Ctrl+Shift+E"},
 };
 
 const std::vector<MenuSpec> kMenus = {
@@ -138,7 +140,7 @@ const std::vector<MenuSpec> kMenus = {
      {"use-model", "-", "clip-fill", "clip-peak", "clip-peaks-clear", "keep-super-whites", "-", ">Source", "source-bt1886", "source-bt1886_shadows", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
       "exposure-down", "exposure-up", "exposure-reset", "-", "mode-all", "mode-highlights", "mode-shadows", "mode-off", "-", "preserve", "-", "strength-down", "strength-up"}},
     {"Measure", {"copy-metrics", "copy-scopes", "-", "remeasure"}},
-    {"Deliver", {"master", "-", "container-aces", "container-linear", "-", "copy-delivery"}},
+    {"Deliver", {"master", "aces-master", "-", "container-aces", "container-linear", "-", "copy-delivery"}},
     {"View",
      {"view-image", "view-false-colour", "view-difference", "-", "wipe", "-", ">Guides", "guides-action",
       "guides-title", "guides-centre", "-", "aspect-none", "aspect-2.39", "aspect-1.85", "aspect-16:9", "aspect-4:3",

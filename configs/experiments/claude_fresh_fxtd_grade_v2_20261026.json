@@ -1,0 +1,32 @@
+{
+  "registered_before_building": true,
+  "registered_before_evaluation": true,
+  "author": "Claude (Cowork), 26 Oct, correction of v1 after the bug was found while testing the preview engine (reported to ahmed before building v2)",
+  "purpose": "Fresh grading/highlight evaluation of the learned ACES 2.0 model on footage never used by any ACES corpus, training run, development selection or gate (verified: 0 of 115 FXTD scene ids appear in any aces/run05/temporal/ambientcg corpus report or manifest). Replaces the 14-frame old_coherent grade set as the deciding evidence for grading; the frozen ambientCG prospective holdout stays untouched.",
+  "source": "G:/datasets/corpora/rudra_run05_sources_20261022/sources.jsonl rows with licence_source == 'fxtd' (FXTD Studios own footage: RED Dragon linear EXR and ARRI LogC3, decoded to BT.2020 scene-linear, 1.0 = 203 nits, stored log2_extended PNG at 1920 wide). Per-frame metadata from rudra_fxtd_camera_20261016/_records.jsonl.",
+  "frame_selection": "Per scene: frames whose record has no sensor_clipped_channels true and peak_at_ceiling false (reference must not be sensor-clipped); take the one with the median frame_index (lower median on ties). Scenes without an eligible frame are dropped. Order: sorted by scene_id.",
+  "processing": "load_plate (rec2020) / (203/10000) -> scene units; area-downsample in linear light to longest side 512; BT.2020 -> AP1 (rudra.delivery.colorspace.convert). Reference = plate * 2**ev (ACEScg float32).",
+  "exposures": "Native camera exposure of the plate (FXTD ingest: scene 1.0 = 203 nits diffuse white, as shot) plus offsets 0, +1 and +2 stops: reference = plate * 2**offset. No automatic exposure. The SDR is what the ACES 2.0 SDR 100-nit view shows of that.",
+  "source_sdr": "rint(clip(view.forward(reference),0,1)*255)/255 float32 (8-bit codes).",
+  "inclusion": "A (frame, offset) case is kept if it has >= 100 highlight pixels (reconstruction_weight > 0 and max code > 0.5) and its median max code is <= 0.9 (not a blown-out frame). Recorded per case: median max code, clipped fraction. No model output looked at before freezing.",
+  "candidates": {
+    "primary": "G:/rudra_training/partial_pcgrad_duration6400_retry1_20261025/step6400.pt (sha f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e) with hybrid64 smoothing, constraint include_fully_clipped, forbid_new_negative_y",
+    "secondary_report_only": [
+      "G:/rudra_training/claude_d6400_plus3x16_1600_20261025/step1600.pt (same pipeline)"
+    ]
+  },
+  "metrics": "Per case on highlight pixels (w>0 & max code>0.5): display MSE in 8-bit codes^2 at -3, 0, +3 EV vs view.forward(reference*2**ev); asinh-RGB MSE vs reference (H); new negative AP1 luminance count; constraint remaining display errors. Means over cases (equal weight per case).",
+  "gates_primary": {
+    "grade_-3": "mean model <= mean analytic",
+    "grade_0": "mean model <= mean analytic",
+    "grade_+3": "mean model <= mean analytic",
+    "highlight_H": "mean model <= mean analytic",
+    "no_new_negativeY": "0 pixels",
+    "appearance": "0 remaining display errors > 1 code"
+  },
+  "secondary_reporting": "95% bootstrap CI (10,000 resamples over scenes, seed 20261026) of model-minus-analytic for each metric; per-project breakdown (Manchale, Lab, ELMATAREED). Reported, not gates.",
+  "limits": "Footage is the studio's own; three projects, two cameras; single frames, not video. Pass means numerical pass on this set only; visual review and release remain separate.",
+  "release_authorized": false,
+  "supersedes": "claude_fresh_fxtd_grade_20261026.json (v1): its exposure rule (1%/5% of pixels at max code >= 254.5/255) drove every case to a median max code of 0.996, i.e. nearly white frames, because the ACES 2.0 SDR view approaches code 255 very slowly. v1 results are withdrawn as evidence for normally exposed footage.",
+  "amendment_before_any_model_run": "26 Oct: the first v2 build decoded the FXTD plates without their ingest sentinel (_ingest_config.json was not staged), so log2_extended codes were read as linear; v1 had the same fault. Fixed by staging the sentinel; the builder now refuses a plate without one. No model output was produced from either faulty build of v2."
+}

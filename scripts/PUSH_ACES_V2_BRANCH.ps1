@@ -11,7 +11,7 @@
 #>
 param([switch]$DryRun, [string]$Branch = "aces-v2")
 $ErrorActionPreference = "Stop"
-Set-Location -LiteralPath "D:\A.I\Devlopments\rudra"
+Set-Location -LiteralPath (Split-Path $PSScriptRoot -Parent)   # the repo this script sits in
 function Fail([string]$m) { Write-Host "`nFAILED: $m" -ForegroundColor Red; exit 1 }
 
 if (git branch --list $Branch) { Fail "branch $Branch already exists locally" }

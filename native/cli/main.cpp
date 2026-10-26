@@ -69,6 +69,7 @@
 #include "deliver.hpp"
 #ifdef RUDRA_HAVE_ACES_V2
 #include "aces_v2_cmd.hpp"
+#include "aces_v2_serve.hpp"
 #endif
 #include "ffmpeg_check.hpp"
 
@@ -685,7 +686,7 @@ void usage() {
                  "directml|coreml|rocm|openvino|tensorrt] [--precision fp32|fp16]\n"
                  "       rudra-native bench <package> [--runtime ...] [--device ...] [--precision fp32|fp16] [--size WxH[,WxH]] [--iters N]\n"
                  "                          [--json FILE] [--budget FILE --machine LABEL]\n"
-                 "       rudra-native aces-v2 <aces-v2-package> <image|folder> --out <dir> [--device cpu|cuda] [--ocio-threads N] [--no-smoothing]\n"
+                 "       rudra-native aces-v2 <aces-v2-package> <image|folder> --out <dir> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml] [--ocio-threads N] [--no-smoothing] [--luminance-guard|--no-luminance-guard]\n"
                  "       rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]\n"
                  "       rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]\n"
                  "       rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]\n"
@@ -729,6 +730,7 @@ int main(int argc, char** argv) {
     if (args.size() < 2) { usage(); return 64; }
 #ifdef RUDRA_HAVE_ACES_V2
     if (args[0] == "aces-v2") return cmd_aces_v2(std::vector<std::string>(args.begin() + 1, args.end()));
+    if (args[0] == "aces-v2-serve") return cmd_aces_v2_serve(std::vector<std::string>(args.begin() + 1, args.end()));
 #endif
     if (args[0] == "deliver") return cmd_deliver(std::vector<std::string>(args.begin() + 1, args.end()));
     // Neither needs a still decoder (only correction-log add does).
