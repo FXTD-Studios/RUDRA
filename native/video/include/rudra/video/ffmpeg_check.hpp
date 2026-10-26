@@ -20,6 +20,7 @@ struct FfmpegCapabilities {
     std::string version;                       // ffmpeg -version, first line
     std::string ffmpeg_sha256, ffprobe_sha256;
     bool libx265 = false, prores_ks = false, zscale = false, alphaextract = false;
+    bool ffv1 = false;
     bool write_colr = false, prores_metadata = false;
     // What a delivery needs and this build lacks, in words for the user.
     std::vector<std::string> missing() const;

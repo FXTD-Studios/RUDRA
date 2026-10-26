@@ -78,7 +78,6 @@ def freeze_plan():
             j.update(hdri_path=light['path'],hdri_capture=light['capture_group'])
             if cat=='metal_textured':j['material_maps']=material_maps
         if cat in ('campfire','simple_fire'):
-            import re
             v=sorted((BJ/'unpacked'/cat).rglob('*.vdb'),key=lambda p:int(re.search(r'(\d+)\.vdb$',p.name).group(1)))
             start=80 if cat=='campfire' else 40
             j['vdb_frames']=[str(p) for p in v[start:start+4]]

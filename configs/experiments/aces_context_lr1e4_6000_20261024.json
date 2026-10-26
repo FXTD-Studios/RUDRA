@@ -1,0 +1,23 @@
+{
+  "registered_before_training": true,
+  "parent": "G:/rudra_training/aces_context_balanced1800_20261024/step1800.pt",
+  "parent_sha256": "ffc588d7dbcdfa6c7e86b38b7d7115ceca2d70b3b03db4ac66c82b361490bb6b",
+  "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+  "replay_pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+  "seed": 20261026,
+  "steps": 6000,
+  "learning_rate": 0.0001,
+  "loss": {
+    "equal_frame_highlight_asinh_mse": 1.0,
+    "highlight_gradient": 1.0,
+    "known_aligned_temporal_residual": 1.0
+  },
+  "include_fully_clipped": true,
+  "change": "Matched learning-rate experiment against balanced6000: same balanced1800 parent, seed20261026,6000 steps, losses, domain sampling, data and fresh Adam. Change only learning rate1e-5 to1e-4. Motivated by registered TRAIN single-pair fitting diagnosis; no early stopping or best checkpoint selection.",
+  "replay_geometry": "320x512 crops from full cached source/baseline/restored/target, crop origin multiple4 for predictor phase. Exclude64px at artificial crop boundaries and4px at original image boundaries. Still replay has no claimed motion loss.",
+  "acceptance": "New DEV H >=5% better than v8-600 and no worse than analytic; old coherent H no worse than equal-image control0.3825248606569533; zero new negativeY; outside-highlight exact; all-highlight appearance<=1code. Require known-motion/detail nonregression against analytic/previous control, plus real video/grade checks before adoption. Retain legacy scores.",
+  "old_coherent_control_max": 0.3825248606569533,
+  "aligned_residual_control_max": 0.010367255277136186,
+  "scope": "Research refinement using only TRAIN. Same previously examined development sets; no checkpoint selection or early stopping, no independent release claim.",
+  "release_authorized": false
+}

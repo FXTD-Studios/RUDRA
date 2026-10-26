@@ -1,0 +1,13 @@
+{
+  "purpose": "test natural transfer without losing procedural restoration gains",
+  "training": "G:/datasets/corpora/aces_mixed_restoration80_20261023/report.json",
+  "base": "G:/rudra_training/run05_aces_lower_lr300_20261023/step300.pt",
+  "output": "G:/rudra_training/aces_mixed_restorer300_20261023",
+  "composition": "48 natural TRAIN plus32 original procedural TRAIN, uniform image sampling; only source-defined ordinary pixels contribute",
+  "steps": 300,
+  "learning_rate": 0.001,
+  "seed": 20261023,
+  "frozen": "HDR predictor from lower_lr300, verified bitexact",
+  "acceptance": "natural24 ordinary codeMSE no worse than analytic, procedural8 codeMSE>=25% better than analytic, three0EV ramp plateaus>=25% lower than v3 control, no ramp gradient RMSE regression at any testedEV, original five natural development gates pass; visual/release separate",
+  "release_authorized": false
+}

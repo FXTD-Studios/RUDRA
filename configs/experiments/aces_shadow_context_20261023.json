@@ -1,0 +1,18 @@
+{
+  "purpose": "matched local vs radius40 shadow context on mixed original/natural TRAIN",
+  "pilot": "G:\\datasets\\corpora\\aces_shadow_mixed144_20261023\\report.json",
+  "pilot_sha256": "fbabe16b5fdbd4d6a5c6dd260e24b9a86517075d0ce4810064aa4772eb22a52d",
+  "steps": 1200,
+  "lr": 0.0001,
+  "seed": 20261023,
+  "crop": 192,
+  "border": 40,
+  "batch": "two natural/two original, equal domain loss",
+  "initialization": "fresh matched local shadow weights; wide extra feature weights zero; frozen coverage4800 predictor/restorer",
+  "outputs": [
+    "G:/rudra_training/aces_shadow_mixed_local1200_20261023",
+    "G:/rudra_training/aces_shadow_mixed_wide1200_20261023"
+  ],
+  "acceptance": "five natural gates and shadow MSE no worse than coverage4800; zero negativeY/lift in384motion, every max transition meanEV<=.02; wide must improve originaldev24 shadow MSE at least10% vs local and not regress natural shadow MSE or either dark motion mean vs local; visual/detail/release separate",
+  "release_authorized": false
+}

@@ -1,0 +1,16 @@
+{
+  "registered_before_evaluation": true,
+  "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+  "candidate": "G:/rudra_training/aces_full_temporal600_20261024/step600.pt",
+  "attribution": "G:/rudra_training/aces_flicker_attribution_20261024/report.json",
+  "gradient_groups": [
+    "tif_0000015_ferndale_studio_02_4k_00000__context_0",
+    "tif_0000041_amphitheatre_zanzibar_fort_4k_00000__context_2",
+    "tif_0000039_university_workshop_4k_00000__context_2",
+    "tif_0000026_fireplace_4k_00000__context_0"
+  ],
+  "scope": "All192 adjacent TRAIN pairs support counts; eight parameter-gradient comparisons on four previously fixed salted-hash groups at final rejected temporal600 checkpoint. No optimization or tuning. Active support includes frame0 full or any full bilinear neighbour in frame1, on valid high overlap. Entry/exit are interpolation-footprint categories, not semantic object transitions. Fixed-coordinate change/union compared descriptively with reused Hunyuan48; resolutions, motion and content differ, no distribution equivalence or release claim.",
+  "pilot_sha256": "9e410260e07304ec26e02106b094d11e25ef78e85e45aae914c6ffa5a85151c2",
+  "candidate_sha256": "6d0dbd8d1c658741f8f74f91e38d5f5b25c2ea982c64e622967e800c6c2e32c9",
+  "attribution_sha256": "6a58e0f57996fc9a5d249d94d6f341db1a03828bb2468a75cc523422f6d620c7"
+}

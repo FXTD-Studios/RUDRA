@@ -1,0 +1,26 @@
+{
+  "registered_before_training": true,
+  "parent": "G:/rudra_training/aces_guarded_projected600_20261024/step600.pt",
+  "parent_sha256": "e83b997c315bf5cc26d3df0e6fa2ad357828feebc0d78384b378057ed4349709",
+  "steps": 400,
+  "batch_frames": 4,
+  "seed": 20261025,
+  "crop": 192,
+  "border": 64,
+  "aligned_crops": true,
+  "paired_motion": true,
+  "temporal_weights": [
+    0,
+    1
+  ],
+  "display_weight": 0.5,
+  "display_evs": [
+    -3,
+    0,
+    3
+  ],
+  "relative": true,
+  "domain_schedule": "Odd updates two adjacent motion pairs; even updates four still crops. 800 motion+800 still frame exposures per arm. Exactly matching pool identities and batch indices required.",
+  "scope": "Original numerical quality gates, hybrid64 inference and independent full/outside-highlight preservation. New paired0 control required; prior independent-crop run is context only. No holdout or release claim.",
+  "release_authorized": false
+}

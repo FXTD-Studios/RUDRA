@@ -26,7 +26,9 @@ def srgb_to_linear(x: torch.Tensor) -> torch.Tensor:
 
 def linear_to_srgb(x: torch.Tensor) -> torch.Tensor:
     x = x.clamp(0.0, 1.0)
-    return torch.where(x <= 0.0031308, 12.92 * x, 1.055 * x.pow(1.0 / 2.4) - 0.055)
+    # Both branches participate in autograd. Avoid the unused power branch's
+    # infinite derivative at zero without changing any forward code values.
+    return torch.where(x <= 0.0031308, 12.92 * x, 1.055 * x.clamp_min(0.0031308).pow(1.0 / 2.4) - 0.055)
 
 
 def canonicalize_sdr(sdr: torch.Tensor, transfer: str = "srgb", value_range: str = "full") -> torch.Tensor:
@@ -443,7 +445,8 @@ class SDR2HDRNet(nn.Module):
                  shadow_conditioning: bool = False,
                  curve_head: bool = False,
                  source_curve: bool = False,
-                 baseline_source: bool = False):
+                 baseline_source: bool = False, bounded_source: bool = False,
+                 reconstruction_policy: str = 'legacy_nearwhite'):
         super().__init__()
         if source_curve and not curve_head:
             raise ValueError("source_curve conditions the CurveHead; it needs curve_head=True")
@@ -455,6 +458,14 @@ class SDR2HDRNet(nn.Module):
         # either way: the knots are a non-persistent buffer, so the state dict
         # of a v9 checkpoint loads into a v10 model strict.
         self.baseline_source = bool(baseline_source)
+        self.bounded_source = bool(bounded_source)
+        from rudra.reconstruction_policy import reconstruction_bands
+        reconstruction_bands(reconstruction_policy)
+        self.reconstruction_policy = reconstruction_policy
+        if reconstruction_policy != 'legacy_nearwhite' and not self.bounded_source:
+            raise ValueError('observed clipping requires bounded_source')
+        if self.bounded_source and (not baseline_source or curve_head):
+            raise ValueError('bounded_source requires a fixed picker baseline without CurveHead')
         if self.baseline_source:
             from rudra.source_baseline import knots_table
             self.register_buffer("baseline_knots", knots_table(), persistent=False)
@@ -485,6 +496,10 @@ class SDR2HDRNet(nn.Module):
         self.head = nn.Conv2d(c, 5, 3, padding=1)
         nn.init.zeros_(self.head.weight)
         nn.init.zeros_(self.head.bias)
+        self.dequant = nn.Conv2d(c, 3, 3, padding=1) if self.bounded_source else None
+        if self.dequant is not None:
+            nn.init.zeros_(self.dequant.weight)
+            nn.init.zeros_(self.dequant.bias)
         self.gate = ConditionGate(c * 4) if self.gate_conditioning else None
         self.shadow_gate = ShadowGate(c * 4) if self.shadow_conditioning else None
         # Off by default for the same reason as the gates: no parameters, and
@@ -509,6 +524,8 @@ class SDR2HDRNet(nn.Module):
             "curve_head": bool(config.get("curve_head", False)),
             "source_curve": bool(config.get("source_curve", False)),
             "baseline_source": bool(config.get("baseline_source", False)),
+            "bounded_source": bool(config.get("bounded_source", False)),
+            "reconstruction_policy": config.get("reconstruction_policy", 'legacy_nearwhite'),
         }
         for key in ("log_scale", "max_hdr", "corpus_ev"):
             if config.get(key) is not None:
@@ -645,6 +662,8 @@ class SDR2HDRNet(nn.Module):
             raise ValueError(f"Expected SDR tensor (B,3,H,W), got {tuple(sdr.shape)}")
         if record_preclamp and preserve_outside:
             raise ValueError("pre-clamp training capture requires preserve_outside=False")
+        if record_preclamp and self.bounded_source:
+            raise ValueError('pre-clamp capture does not describe the bounded output head')
         sdr = sdr.float().clamp(0.0, 1.0)
         baseline, analytic, curve_params = self.baseline_hdr(sdr, curve_params, source_curve, baseline_curve)
         e1, e2, m = self.encode(sdr, baseline)
@@ -717,9 +736,13 @@ class SDR2HDRNet(nn.Module):
             self.max_hdr * self.log_scale, device=sdr.device, dtype=sdr.dtype
         )))
         pred = torch.expm1(pred_log) / self.log_scale
-        if preserve_outside:
+        if preserve_outside and not self.bounded_source:
             recovery = torch.maximum(highlight, shadow)
             pred = baseline + recovery * (pred - baseline)
+        if self.bounded_source:
+            from rudra.preservation_head import bounded_source_head
+            pred = bounded_source_head(sdr, self.dequant(features), pred,
+                                       lambda x: self.picker_baseline(x, baseline_curve), self.reconstruction_policy)
         return SDR2HDROutput(
             pred, baseline, residual, highlight, shadow,
             highlight_logits, shadow_logits, residual_scale, shadow_weight,

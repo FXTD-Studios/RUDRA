@@ -58,6 +58,10 @@ class Target:
 
 
 TARGETS: dict[str, Target] = {
+    "ffv1rgb16": Target(
+        "ffv1rgb16", ["-c:v", "ffv1", "-level", "3"],
+        "gbrp16le", ".mkv", "pq",
+        "Lossless 16-bit RGB PQ, Rec.2020, Matroska archival video."),
     "prores4444": Target(
         "prores4444",
         ["-c:v", "prores_ks", "-profile:v", "4444", "-qscale:v", "5"],
@@ -197,7 +201,7 @@ def expected_tags(target: str) -> dict[str, str]:
     if target not in TARGETS:
         raise EncodeError(f"unknown target {target!r}")
     spec = TARGETS[target]
-    return {"color_primaries": PRIMARIES, "color_space": MATRIX,
+    return {"color_primaries": PRIMARIES, "color_space": "gbr" if target == "ffv1rgb16" else MATRIX,
             "color_transfer": TRANSFER_NAME.get(spec.transfer, "unknown")}
 
 
@@ -388,9 +392,18 @@ def _verify_tags(path: Path, target: str) -> None:
 
 
 def _encode_frame(rgb_nits: np.ndarray, target: Target, peak_nits: float,
-                  source_space: str, shoulder: bool = True) -> np.ndarray:
+                  source_space: str, shoulder: bool = True,
+                  input_encoding: str = 'linear_nits') -> np.ndarray:
     """One scene-linear frame in nits -> 16-bit code values for the pipe."""
     rgb = np.asarray(rgb_nits, dtype=np.float64)
+    if input_encoding == 'pq_codes':
+        if target.transfer != 'pq' or source_space != 'rec2020' or shoulder:
+            raise EncodeError('PQ codes require a PQ target, Rec.2020, and shoulder=False')
+        if not np.isfinite(rgb).all() or np.any((rgb < 0) | (rgb > 1)):
+            raise EncodeError('PQ codes must be finite and within [0,1]')
+        return (rgb * 65535.0 + .5).astype(np.uint16)
+    if input_encoding != 'linear_nits':
+        raise EncodeError('unknown input encoding')
     if source_space != "rec2020":
         rgb = convert((rgb / DIFFUSE_WHITE_NITS).astype(np.float32),
                       source_space, "rec2020").astype(np.float64) * DIFFUSE_WHITE_NITS
@@ -412,12 +425,16 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
                     peak_nits: float = 1000.0, maxcll: int | None = None,
                     maxfall: int | None = None, source_space: str = "rec2020",
                     min_nits: float = 0.005, verify_tags: bool = True,
-                    shoulder: bool = True) -> Path:
+                    shoulder: bool = True, input_encoding: str = 'linear_nits') -> Path:
     """Encode an iterable of scene-linear-nits frames to one file.
 
     ``frames`` yields (H, W, 3) float arrays in ABSOLUTE NITS. It is consumed
     lazily and written down a pipe, so a 900-frame 4K sequence never has to be
     held in memory.
+
+    ``input_encoding='pq_codes'`` accepts already mastered Rec.2020 PQ RGB
+    codes in [0,1]. It requires a PQ target and shoulder=False, preserving
+    the supplied display transform without a second tone map or PQ round trip.
 
     With ``shoulder`` (the default) every frame is rolled off into
     ``peak_nits`` before encoding, so no pixel exceeds the mastering display
@@ -433,6 +450,10 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
         raise EncodeError(f"unknown target {target!r}. Choose from: "
                           + ", ".join(sorted(TARGETS)))
     spec = TARGETS[target]
+    if input_encoding not in ('linear_nits', 'pq_codes'):
+        raise EncodeError('unknown input encoding')
+    if input_encoding == 'pq_codes' and (spec.transfer != 'pq' or source_space != 'rec2020' or shoulder):
+        raise EncodeError('PQ codes require a PQ target, Rec.2020, and shoulder=False')
 
     # ARGUMENTS FIRST, THEN THE ENVIRONMENT, THEN ANYTHING WITH SIDE EFFECTS.
     #
@@ -453,6 +474,8 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
     if first.ndim != 3 or first.shape[2] != 3:
         raise EncodeError(f"expected (H, W, 3) frames, got {first.shape}")
     height, width = first.shape[:2]
+    if input_encoding == 'pq_codes' and (not np.isfinite(first).all() or np.any((first < 0) | (first > 1))):
+        raise EncodeError('PQ codes must be finite and within [0,1]')
 
     if not shutil.which("ffmpeg"):
         raise EncodeError("ffmpeg is not on PATH, so nothing can be encoded. "
@@ -476,11 +499,12 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
             # "bt2020nc" through; 7.x parses the option as a constant and
             # rejects it ("[Eval] Undefined constant", 23 Sep 2026, Windows).
             # The container/VUI tag below stays bt2020nc, which is its name there.
-            "-vf", f"scale=out_color_matrix={SWS_MATRIX}:out_range=tv",
+            "-vf", ("setparams=range=full:color_primaries=bt2020:color_trc=smpte2084:colorspace=0"
+                    if target == "ffv1rgb16" else f"scale=out_color_matrix={SWS_MATRIX}:out_range=tv"),
             *spec.codec, "-pix_fmt", spec.pix_fmt,
-            "-color_primaries", PRIMARIES, "-colorspace", MATRIX,
+            "-color_primaries", PRIMARIES, "-colorspace", "rgb" if target == "ffv1rgb16" else MATRIX,
             "-color_trc", TRANSFER_NAME[spec.transfer],
-            "-color_range", "tv"]
+            "-color_range", "pc" if target == "ffv1rgb16" else "tv"]
 
     if spec.suffix in (".mov", ".mp4"):
         # MOV and MP4 carry the colour description in a 'colr' atom. Some builds
@@ -539,7 +563,7 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
             frame = first
             while True:
                 process.stdin.write(_encode_frame(frame, spec, peak_nits, source_space,
-                                                  shoulder).tobytes())
+                                                  shoulder, input_encoding).tobytes())
                 written += 1
                 try:
                     frame = np.asarray(next(iterator), dtype=np.float64)

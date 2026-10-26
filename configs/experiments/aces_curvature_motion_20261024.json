@@ -1,0 +1,23 @@
+{
+  "registered_before_evaluation": true,
+  "checkpoint": "G:/rudra_training/aces_context_balanced1800_20261024/step1800.pt",
+  "checkpoint_sha256": "ffc588d7dbcdfa6c7e86b38b7d7115ceca2d70b3b03db4ac66c82b361490bb6b",
+  "cases": [
+    "bright_linear",
+    "radial",
+    "low_contrast_texture",
+    "strong_edge"
+  ],
+  "frames": 12,
+  "shape": [
+    64,
+    256
+  ],
+  "shift_per_frame": [
+    0.5,
+    0.25
+  ],
+  "iterations": 200,
+  "checks": "Every case: source-code MSE, reference log-luminance gradient RMSE, all exposure-view MSE(-3,0,+3), mean temporal excess versus continuous reference no worse than frozen learned restorer; bounded correction and guarded exactness. Synthetic authored diagnostics only.",
+  "release_authorized": false
+}

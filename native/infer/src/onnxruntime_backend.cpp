@@ -27,7 +27,9 @@
 #include <filesystem>
 #include <system_error>
 
+#include "rudra/infer/aces_v2_runtime.hpp"
 #include "rudra/infer/backend.hpp"
+#include <memory>
 
 namespace rudra {
 namespace {
@@ -252,3 +254,55 @@ Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelMa
 }
 
 }  // namespace rudra
+
+// ---- ACES v2 G1 through ONNX Runtime (infer/aces_v2_runtime.hpp) -----------
+// Lives here to share the one process-wide Ort::Env. Tolerance (not bit
+// parity) vs LibTorch: measured on DEV frames, final master within 0.002 of a
+// display code, identical mask (tools/export_native_v2.py records it).
+namespace rudra::aces_v2 {
+
+Result<G1Fn> load_g1_onnxruntime(const std::filesystem::path& onnx, const std::string& device) {
+    try {
+        (void)rudra::env();
+        Ort::SessionOptions so;
+        so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+        const auto available = Ort::GetAvailableProviders();
+        auto offered = [&](const char* p) { return std::find(available.begin(), available.end(), p) != available.end(); };
+        if (device == "cuda") {
+            if (!offered("CUDAExecutionProvider")) return make_error(ErrorCode::Unsupported, "This ONNX Runtime has no CUDA provider.");
+            so.AppendExecutionProvider_CUDA(OrtCUDAProviderOptions{});
+        } else if (device == "directml") {
+#if RUDRA_ORT_HAS_DML
+            if (!offered("DmlExecutionProvider")) return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no DirectML provider.");
+            so.DisableMemPattern();
+            so.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+            Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(so, 0));
+#else
+            return make_error(ErrorCode::Unsupported, "This build was compiled without the DirectML header.");
+#endif
+        } else if (device != "cpu") {
+            return make_error(ErrorCode::InvalidArgument, "Unknown device for the ACES model.", device);
+        }
+        auto session = std::make_shared<Ort::Session>(rudra::env(), onnx.c_str(), so);
+        G1Fn fn = [session](const PlanarBuffer& source, const PlanarBuffer& baseline) -> Result<G1Output> {
+            try {
+                Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+                std::array<int64_t, 4> shape{1, 3, source.height(), source.width()};
+                std::array<Ort::Value, 2> in{
+                    Ort::Value::CreateTensor<float>(mem, const_cast<float*>(source.span().data()), source.span().size(), shape.data(), 4),
+                    Ort::Value::CreateTensor<float>(mem, const_cast<float*>(baseline.span().data()), baseline.span().size(), shape.data(), 4)};
+                const char* in_names[] = {"source", "baseline"};
+                const char* out_names[] = {"restored_source", "highlight_fields", "full_fields", "weight"};
+                auto r = session->Run(Ort::RunOptions{nullptr}, in_names, in.data(), 2, out_names, 4);
+                return G1Output{rudra::to_planar(r[0]), rudra::to_planar(r[1]), rudra::to_planar(r[2]), rudra::to_planar(r[3])};
+            } catch (const std::exception& e) {
+                return make_error(ErrorCode::BackendError, "ONNX Runtime could not run the ACES model.", e.what());
+            }
+        };
+        return fn;
+    } catch (const std::exception& e) {
+        return make_error(ErrorCode::BackendError, "ONNX Runtime could not load the ACES model.", e.what());
+    }
+}
+
+}  // namespace rudra::aces_v2

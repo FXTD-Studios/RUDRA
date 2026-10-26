@@ -201,7 +201,10 @@ Result<HeadroomExportResult> export_headroom_movie(const HeadroomExportRequest& 
     if (auto pub = publish_video(delivered->file, staged_sidecar, final_file, final_sidecar); !pub) {
         // A half-published pair is not left behind: the movie goes if its sidecar could not.
         // Only when our movie was renamed and our sidecar was not (never a file that appeared meanwhile).
-        if (pub.error().message == "Could not publish the sidecar") fs::remove(final_file, ec);
+        // Decided on file state, not on the error's wording: the staged movie is
+        // gone only when our rename to final_file succeeded.
+        std::error_code pec;
+        if (!fs::exists(delivered->file, pec) && fs::exists(final_file, pec)) fs::remove(final_file, pec);
         return pub.error();
     }
     say("publish", 1, 1);

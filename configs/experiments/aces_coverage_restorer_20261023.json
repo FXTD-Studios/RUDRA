@@ -1,0 +1,18 @@
+{
+  "purpose": "preserve legacy coloured coverage alongside balanced gradients; longer fixed training; combined intervention not causal isolation",
+  "pilot": "G:\\datasets\\corpora\\aces_coverage176_20261023\\report.json",
+  "pilot_sha256": "0ace7197b37c41975e4f7bc383f14fc92f0d33681806b04171b2d975d4e9f021",
+  "output": "G:/rudra_training/aces_coverage_restorer4800_20261023",
+  "steps": 4800,
+  "domain_crops": {
+    "natural": 2,
+    "legacy": 1,
+    "balanced": 1
+  },
+  "gradient_weight": 1,
+  "lr": 0.001,
+  "seed": 20261023,
+  "initialization": "fresh local branch; lower_lr300 HDR predictor frozen",
+  "acceptance": "same as balanced trial: natural24 and original procedural8 code MSE no worse than gradient1200; original five natural gates; each of nine ramp gradient RMSEs at least25% below mixed1200; visual review separate; balanced dev supplemental only",
+  "release_authorized": false
+}

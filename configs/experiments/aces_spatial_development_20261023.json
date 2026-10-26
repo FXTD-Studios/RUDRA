@@ -1,0 +1,24 @@
+{
+  "purpose": "development learning across varied spatial crops; not production release",
+  "training_report": "G:/datasets/corpora/run05_aces_spatial_train48_v2_20261023/report.json",
+  "development_report": "G:/datasets/corpora/run05_aces_spatial_dev24_v2_20261023/report.json",
+  "output": "G:/rudra_training/run05_aces_spatial300_20261023",
+  "initialization": "fresh zero-head ACESModel, channels8, pixel_rms v3",
+  "steps": 300,
+  "seed": 20261023,
+  "batch": 4,
+  "crop": 128,
+  "optimizer": "Adam",
+  "learning_rate": 0.001,
+  "sampling": "uniform image;25% highlight,25% shadow,50% uniform spatial locations",
+  "evaluation": "fixed final300 checkpoint, full-frame untiled FP32; compare analytic inverse on same development targets",
+  "development_acceptance": {
+    "equal_image_mean_target_asinh_mse_relative_improvement_min": 0.05,
+    "highlight_and_shadow_target_mse": "no worse than analytic, equal-image means on nonempty supports",
+    "ordinary_within_one_code_fraction_per_image_min": 0.999,
+    "source_shadow_pixels_lift_over_one_code_max": 0,
+    "visual": "required; no introduced colour streaks or obvious reconstruction seams"
+  },
+  "limitations": "development validation has been used in prior research; target quality is experimental; not independent release, temporal, platform, headroom, or deployment evidence",
+  "release_authorized": false
+}

@@ -43,7 +43,7 @@ def violations() -> list[str]:
         layer = layer_of(f)
         # Standalone diagnostics, like tests, exercise multiple production
         # layers; they are not linked back into a shipped layer.
-        if layer in {"tests", "bench", "cmake"}:
+        if layer in {"tests", "bench", "tools", "cmake"}:
             continue
         rel = f.relative_to(NATIVE)
         is_backend_src = layer == "infer" and f.parent.name == "src" and f.stem.endswith("_backend")

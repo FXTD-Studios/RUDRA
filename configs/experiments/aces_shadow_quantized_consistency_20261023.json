@@ -1,0 +1,17 @@
+{
+  "purpose": "isolate requantization of translated source in shadow error-consistency training",
+  "inherits": "configs/experiments/aces_shadow_consistency_20261023.json",
+  "initialization": "G:/rudra_training/aces_shadow_sqrt1200_20261023/step1200.pt",
+  "output": "G:/rudra_training/aces_shadow_quantized600_20261023",
+  "steps": 600,
+  "lr": 0.0001,
+  "seed": 20261023,
+  "consistency_weight": 10,
+  "consistency_quantize8": true,
+  "changed_behavior": "round translated display source to nearest8bit code before exact inverse and source mask; targets remain transformed continuous AP1; all other training settings unchanged",
+  "control": "G:/rudra_training/aces_shadow_continue600_20261023",
+  "unquantized_comparison": "G:/rudra_training/aces_shadow_consistency600_20261023",
+  "acceptance": "unchanged paired consistency acceptance: five natural gates, shadow MSE no worse than coverage4800 and continuation control, zero negativeY/lift over384 motion, every max transition mean EV<=.02, each dark mean no worse than continuation control; additionally compare unquantized treatment without changing acceptance",
+  "scope": "requantized interpolated still frames, not a physical motion/render simulation or actual temporal training corpus",
+  "release_authorized": false
+}

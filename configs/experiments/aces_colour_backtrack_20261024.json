@@ -1,0 +1,16 @@
+{
+  "purpose": "diagnose whether limiting partial-channel highlight colour drift preserves natural HDR reconstruction accuracy",
+  "registered_before_evaluation": true,
+  "parent": "G:/rudra_training/aces_v1_analytic_shadow_20261024/candidate.pt",
+  "policy": "Only partial-channel clipped highlights: retain prediction when ACES SDR display error <=1 code; otherwise halve per-pixel displacement from exact analytic baseline up to 8 times, then baseline fallback. Fully clipped neutral highlights, ordinary pixels and shadows unchanged.",
+  "acceptance": [
+    "partial-channel highlight display error <=1 code, separately disclose any analytic inverse failure",
+    "outside policy support and fully clipped highlights bit-exact to parent",
+    "original five natural development checks pass",
+    "natural highlight MSE no worse than parent",
+    "zero new negative luminance",
+    "motion, grade and detail tests required separately before any adoption"
+  ],
+  "scope": "postprocessing research diagnostic, no training and no product default change",
+  "release_authorized": false
+}

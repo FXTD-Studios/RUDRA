@@ -29,27 +29,33 @@ extern const Chromaticities kRec2020Chromaticities;
 std::uint16_t float_to_half(float f) noexcept;
 
 // write_exr as bytes: 3 or 4 planes, NaN -> 0, +inf -> 3.4e38, -inf -> 0,
-// half clipped to +-65504.
+// half clipped to +-65504. Optional mask is a matching one-plane finite [0,1]
+// image stored as rudra.reconstructed, separate from RGB and alpha.
 Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half = true,
                                             const std::optional<Chromaticities>& chromaticities = std::nullopt,
-                                            const ExrAttributes& attributes = {});
+                                            const ExrAttributes& attributes = {},
+                                            const PlanarBuffer* reconstruction_mask = nullptr);
 Result<void> write_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, bool half = true,
                        const std::optional<Chromaticities>& chromaticities = std::nullopt,
-                       const ExrAttributes& attributes = {});
+                       const ExrAttributes& attributes = {},
+                       const PlanarBuffer* reconstruction_mask = nullptr);
 
 // write_aces_exr / write_acescg_exr: scene linear in `source`, diffuse white
 // 1.0; `provenance` goes in as one sorted-keys JSON string attribute.
 Result<void> write_aces_exr(const std::filesystem::path& path, const PlanarBuffer& rgb_linear,
                             Primaries source = Primaries::Rec2020, double exposure_scale = 1.0,
-                            const ExrAttributes& provenance = {});
+                            const ExrAttributes& provenance = {}, bool half = true,
+                            const PlanarBuffer* reconstruction_mask = nullptr);
 Result<void> write_acescg_exr(const std::filesystem::path& path, const PlanarBuffer& rgb_linear,
                               Primaries source = Primaries::Rec2020, double exposure_scale = 1.0,
-                              const ExrAttributes& provenance = {});
+                              const ExrAttributes& provenance = {}, bool half = true,
+                              const PlanarBuffer* reconstruction_mask = nullptr);
 
 // read_exr for uncompressed scanline files (exr.py's reader): the planes in
 // R, G, B(, A) order, and the header's attributes in file order as raw bytes.
 struct ExrImage {
     PlanarBuffer pixels;
+    std::optional<PlanarBuffer> reconstruction_mask;
     std::vector<std::pair<std::string, std::string>> attribute_types;   // name -> type
     std::vector<std::pair<std::string, std::vector<std::uint8_t>>> attributes;   // name -> payload
     std::vector<int> pixel_types;   // per channel, file order: 1 half, 2 float

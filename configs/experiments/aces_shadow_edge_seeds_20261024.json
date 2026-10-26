@@ -1,0 +1,16 @@
+{
+  "purpose": "decide whether image-edge shadow supervision is a real improvement or seed noise; measure seed variance of the local radius-8 shadow branch",
+  "registered_before_training": true,
+  "registered_by": "Claude (Cowork) session, 24 Oct 2026, after aces_shadow_edge_20261024 failed its single-seed registration",
+  "prior_result": "single seed 20261023: edge natural shadow MSE 4.81% below control (needed 5%), first shadow result below coverage4800 (6.274e-7 vs 6.447e-7), but 3 lifted pixels (max 1.33 code) on acoustical_shell v1, original-dev shadow +0.09%, dark motion means 0.00447/0.00376 vs 0.00389/0.00326 EV. FAIL, kept as evidence.",
+  "evidence_limit": "natural development shadow metric rests on 7 frames from 3 scenes; single-seed differences of a few percent are not interpretable without seed spread",
+  "arms": {"control": "tools/train_aces_shadow_context.py, no --include-image-edges", "edge": "same plus --include-image-edges"},
+  "seeds": [20261023, 1, 2, 3, 4],
+  "seed_20261023_runs": ["G:/rudra_training/aces_shadow_mixed_local1200_20261023", "G:/rudra_training/aces_shadow_local_edges1200_20261024"],
+  "new_runs": "G:/rudra_training/aces_shadow_seed_<arm>_<seed>_20261024",
+  "unchanged": "pilot mixed144, base coverage4800, 1200 steps, Adam 1e-4, crop 192, border 40, frozen predictor/restorer, same evaluation tools and datasets",
+  "code_note": "--seed argument added to train_aces_shadow_context.py (default 20261023 keeps prior behaviour); seed 20261023 pair predates it",
+  "acceptance": "tools/summarize_aces_shadow_seeds.py --min-wins 4: edge mean natural shadow MSE at least 5% below control mean; edge lower in at least 4 of 5 seed pairs; every edge run passes all candidate gates (five natural gates incl. zero shadow lift, natural shadow no worse than coverage4800, frozen weights, 384 motion frames, zero negative Y, zero motion lift, worst transition <= 0.02 EV); edge mean original-dev shadow MSE and each dark-clip mean temporal excess no worse than control means. Control seed spread reported as noise floor.",
+  "if_pass": "adopt edge supervision; best-seed selection is NOT allowed, the candidate is the seed-20261023 edge run unless a later registration says otherwise",
+  "release_authorized": false
+}

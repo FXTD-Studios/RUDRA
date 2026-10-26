@@ -39,7 +39,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Plan failed.' }
     & $pythonExe -u 'pipeline\prepare_highlight_expansion.py' panoramas
     if ($LASTEXITCODE -ne 0) { throw 'Panorama preparation failed.' }
-    & $blenderExe --background --factory-startup --disable-autoexec --threads 2 --python (Join-Path $repoRoot 'pipeline\render_highlight_scenes.py') -- --plan (Join-Path $batchRoot 'plan.json') --out $batchRoot
+    & $blenderExe --background --factory-startup --disable-autoexec --threads 2 --python-exit-code 1 --python (Join-Path $repoRoot 'pipeline\render_highlight_scenes.py') -- --plan (Join-Path $batchRoot 'plan.json') --out $batchRoot
     if ($LASTEXITCODE -ne 0) { throw 'Synthetic render failed.' }
     & $pythonExe -u 'pipeline\prepare_highlight_expansion.py' convert
     if ($LASTEXITCODE -ne 0) { throw 'Pair conversion failed.' }

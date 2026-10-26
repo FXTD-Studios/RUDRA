@@ -1,0 +1,30 @@
+{
+  "registered_before_training": true,
+  "pilot": "G:\\datasets\\corpora\\aces_temporal_context_pairs_20261024\\train\\report.json",
+  "pilot_sha256": "9e410260e07304ec26e02106b094d11e25ef78e85e45aae914c6ffa5a85151c2",
+  "parent": "G:/rudra_training/aces_context_balanced6000_20261024/step6000.pt",
+  "parent_sha256": "2a2a9d7ca3ad28489193458e443fe4d21349b41ba88bd1c7af91c336ae0286c8",
+  "group_id": "tif_0000041_urban_courtyard_02_4k_00000__context_2",
+  "asset_ids": [
+    "tif_0000041_urban_courtyard_02_4k_00000__context_2_f0",
+    "tif_0000041_urban_courtyard_02_4k_00000__context_2_f1",
+    "tif_0000041_urban_courtyard_02_4k_00000__context_2_f2"
+  ],
+  "selection": "Lowest salted group hash among TRAIN groups with at least128 highlight pixels in all3 frames. Frames0/1 fit; frame2 within-TRAIN phase probe only. No DEV use.",
+  "steps_per_arm": 600,
+  "seed": 20261027,
+  "learning_rate": 1e-05,
+  "arms": {
+    "photo_only": {
+      "gradient": 0,
+      "temporal": 0
+    },
+    "balanced": {
+      "gradient": 1,
+      "temporal": 1
+    }
+  },
+  "diagnostic": "Compare identical-parent single-pair fitting at fixed600 steps, no early stopping or best checkpoint. Require >=50% fit photo error reduction as a fitting sanity threshold, not quality acceptance. Preserve frozen parent; no release or inference checkpoint promotion.",
+  "release_authorized": false,
+  "comparison": "Same fixed pair, parent, seed,600 steps and both objectives as high-lr sanity. Only lr differs; CLI argument plumbing changed, source snapshots preserve exact versions. TRAIN fitting diagnosis only."
+}

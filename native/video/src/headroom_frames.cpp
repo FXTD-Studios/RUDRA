@@ -174,6 +174,8 @@ Result<std::unique_ptr<HeadroomFrameSource>> HeadroomFrameSource::open(PreparedH
         auto& d = *out->d_;
         d.prepared = std::move(prepared);
         auto valid = d.verify(); if (!valid) return valid.error();
+        if (d.video().stream.width <= 0 || d.video().stream.height <= 0)
+            return make_error(ErrorCode::InvalidArgument, "Invalid headroom frame dimensions");
         const auto w = std::size_t(d.video().stream.width), h = std::size_t(d.video().stream.height);
         if (w > std::numeric_limits<std::size_t>::max() / h / (3 * sizeof(float)))
             return make_error(ErrorCode::InvalidArgument, "Headroom frame size overflows");

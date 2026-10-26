@@ -1,0 +1,21 @@
+{
+  "registered_before_evaluation": true,
+  "source_registration": "configs/experiments/aces_constrained_generated_review_20261024.json",
+  "clip": "hunyuan_demo",
+  "candidate": "G:/rudra_training/partial_pcgrad400_20261025/step400.pt",
+  "checkpoint_sha256": "8ec534a57e6677d8f7b935f0dbb6d424b621865c043391f73f52eeed3b6faf46",
+  "frames": 48,
+  "feather_radius": 0,
+  "all_highlight_appearance": true,
+  "policy": "PCGrad400; original Hunyuan48 limits with hybrid64",
+  "checks": "48frames; max transition mean excess<=0.02EV; ordinary >=99.9% within1code; all highlight appearance<=1code; zero shadow lift/new negativeY; exact outside constraint support",
+  "scope": "Previously failing Hunyuan development clip, full first48 frames. Selected after earlier failures; not independent release holdout or export transport validation.",
+  "release_authorized": false,
+  "include_fully_clipped": true,
+  "clipped_smoothing": {
+    "start": 0,
+    "mode": "hybrid",
+    "ramp": 1,
+    "sigma": 64
+  }
+}

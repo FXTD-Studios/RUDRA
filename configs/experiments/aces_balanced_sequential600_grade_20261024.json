@@ -1,0 +1,13 @@
+{
+  "registered_before_evaluation": true,
+  "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/val/report.json",
+  "evaluation": "G:/rudra_training/aces_balanced_sequential600_20261024/paired_development/old_coherent/candidate_report.json",
+  "parent": "G:/rudra_training/aces_balanced_sequential600_20261024/paired_development/old_coherent/parent_report.json",
+  "checks": [
+    "On common positive luminance support, mean interior highlight log-gradient RMSE no worse than analytic",
+    "Mean fully-clipped interior log-gradient RMSE no worse than analytic",
+    "Mean highlight display MSE at each of -3, 0, +3 EV no worse than analytic"
+  ],
+  "scope": "Unchanged old coherent24 detail and -3/0/+3EV grade gates for preregistered balanced600 sample-exposure comparison; no independent release claim.",
+  "release_authorized": false
+}

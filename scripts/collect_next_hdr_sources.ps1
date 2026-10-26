@@ -41,6 +41,12 @@ try {
     }
     & $pythonExe -u pipeline\collect_tos_sequences.py
     if ($LASTEXITCODE -ne 0) { throw 'Sequence collection failed; completed frames retained.' }
+    # Manual review inputs: no pipeline step writes these, and review/summary stop
+    # with FileNotFoundError without them. Say so before launching the chain.
+    $manual=@('licence_evidence\sihdr_reference_metadata.json','licence_evidence\sihdr_input_metadata.json',
+              'initial_visual_review.json','sihdr\reference_admission_notes.json') |
+        Where-Object { !(Test-Path -LiteralPath (Join-Path $batchRoot $_)) }
+    if ($manual.Count -gt 0) { throw "Manual review prerequisites missing under ${batchRoot}: $($manual -join ', ')" }
     foreach ($group in @('overlap','overlap_novel','sihdr','tos')) {
         & $pythonExe -u pipeline\review_next_hdr_sources.py $group
         if ($LASTEXITCODE -ne 0) { throw "Review failed for $group; do not merge into training." }

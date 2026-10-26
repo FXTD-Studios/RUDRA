@@ -1,0 +1,22 @@
+{
+  "purpose": "matched development trial of view-scaled shadow reconstruction loss",
+  "training_report": "G:/datasets/corpora/run05_aces_spatial_train48_v2_20261023/report.json",
+  "development_report": "G:/datasets/corpora/run05_aces_spatial_dev24_v2_20261023/report.json",
+  "control_output": "G:/rudra_training/run05_aces_shadow_control300_20261023",
+  "treatment_output": "G:/rudra_training/run05_aces_shadow_scaled300_20261023",
+  "steps": 300,
+  "seed": 20261023,
+  "channels": 8,
+  "crop": 128,
+  "batch": 4,
+  "learning_rate": 0.001,
+  "initialization": "fresh zero-head v3 pixel RMS in each arm",
+  "control_shadow_weight": 0,
+  "treatment_shadow_weight": 1,
+  "shadow_scale": "mean AP1 inverse of neutral5/255 under declared official ACES2 view; measured .0036889303",
+  "rationale": "TRAIN8 shadow median parameter gradient .00000598 under absolute objective versus13.9157 on TRAIN8 highlight crops. View-scaled shadow median .31054/max.44772, so unit weight remains below sampled highlight gradients. Different crop supports; diagnostic not a universal gradient bound.",
+  "acceptance": "retain aces_spatial_development_20261023 gates; additionally treatment shadow MSE must beat matched control by at least5% with no increase in equal-image overall or highlight target MSE; visual review required",
+  "evaluation": "same-device fixed final300 full-frame24 development; no step selection or threshold relaxation",
+  "limitations": "CUDA nondeterminism; development previously used in research; not independent release holdout",
+  "release_authorized": false
+}

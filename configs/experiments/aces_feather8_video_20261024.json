@@ -1,0 +1,11 @@
+{
+  "registered_before_evaluation": true,
+  "source_registration": "configs/experiments/aces_constrained_generated_review_20261024.json",
+  "clip": "hunyuan_demo",
+  "checkpoint_sha256": "4904f8c37766a3a8baa11ed4864807b09025df70a82c3d3fd98854f22fc7322a",
+  "frames": 48,
+  "policy": "partial-highlight colour backtracking plus fully-clipped feather radius8",
+  "checks": "48frames; maximum transition mean excess <=0.02 EV; ordinary >=99.9% within1code; zero partial appearance errors, shadow lift over1code, new negativeY; outside high support unchanged",
+  "scope": "Full first48 frames of previously failing Hunyuan development clip; selected after failure, not independent holdout. No export transport or recovered-detail claim.",
+  "release_authorized": false
+}

@@ -6,6 +6,13 @@ if(RUDRA_WITH_OPENCV)
   target_sources(rudra-native PRIVATE master.cpp video.cpp batch.cpp bench_clip_fill.cpp)
   target_link_libraries(rudra-native PRIVATE rudra::rudra_media)
 endif()
+# ACES v2 staged master (core/aces_v2.hpp): needs still decode, LibTorch and OCIO 2.5.2.
+# G1 runs through LibTorch (bit parity with Python) or ONNX Runtime (DirectML; tolerance).
+if(RUDRA_WITH_OPENCV AND RUDRA_WITH_OCIO AND (RUDRA_WITH_LIBTORCH OR RUDRA_WITH_ONNXRUNTIME))
+  target_sources(rudra-native PRIVATE aces_v2_cmd.cpp)
+  target_compile_definitions(rudra-native PRIVATE RUDRA_HAVE_ACES_V2
+    $<$<BOOL:${RUDRA_WITH_LIBTORCH}>:RUDRA_HAVE_LIBTORCH_ACES> $<$<BOOL:${RUDRA_WITH_ONNXRUNTIME}>:RUDRA_HAVE_ORT_ACES>)
+endif()
 rudra_warnings(rudra-native)
 rudra_stage_onnxruntime(rudra-native)
 

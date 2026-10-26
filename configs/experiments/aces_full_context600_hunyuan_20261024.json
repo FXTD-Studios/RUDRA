@@ -1,0 +1,15 @@
+{
+  "registered_before_evaluation": true,
+  "source_registration": "configs/experiments/aces_constrained_generated_review_20261024.json",
+  "clip": "hunyuan_demo",
+  "candidate": "G:\\rudra_training\\aces_full_context600_20261024\\step600.pt",
+  "checkpoint_sha256": "8f4a788daa0883be0f7004ea6e0350cd80244ef2f4fe37a470b8fc2595c13604",
+  "frames": 48,
+  "feather_radius": 0,
+  "all_highlight_appearance": true,
+  "policy": "Isolated full-context600, all-highlight colour constraint; fixed48-frame development check",
+  "checks": "48frames; max transition mean excess<=0.02EV; ordinary >=99.9% within1code; all highlight appearance<=1code; zero shadow lift/new negativeY; exact outside constraint support",
+  "scope": "Previously failing Hunyuan development clip, full first48 frames. Selected after earlier failures; not independent release holdout or export transport validation.",
+  "release_authorized": false,
+  "include_fully_clipped": true
+}

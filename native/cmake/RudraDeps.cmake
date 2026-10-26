@@ -80,6 +80,16 @@ if(RUDRA_WITH_LIBTORCH)
   endif()
 endif()
 
+if(RUDRA_WITH_OCIO)
+  # The ACES v2 checkpoints pin OCIO 2.5.2 (built-in cg-config-v4.0.0_aces-v2.0_ocio-v2.5).
+  # Another version is refused at run time too (aces_v2::make_ocio_view).
+  find_package(OpenColorIO CONFIG REQUIRED)
+  set(RUDRA_OCIO_ALLOW_VERSION_MISMATCH OFF CACHE BOOL "Configure even if OpenColorIO is not 2.5.2 (research only)")
+  if(NOT OpenColorIO_VERSION VERSION_EQUAL 2.5.2 AND NOT RUDRA_OCIO_ALLOW_VERSION_MISMATCH)
+    message(FATAL_ERROR "RUDRA_WITH_OCIO needs OpenColorIO 2.5.2, found ${OpenColorIO_VERSION}")
+  endif()
+endif()
+
 if(RUDRA_WITH_ONNXRUNTIME)
   if(NOT ONNXRUNTIME_ROOT)
     message(FATAL_ERROR "RUDRA_WITH_ONNXRUNTIME needs -DONNXRUNTIME_ROOT=<path to the ORT package>")

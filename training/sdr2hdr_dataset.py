@@ -217,9 +217,17 @@ def load_rgb(path: str | Path, hdr: bool,
     return np.ascontiguousarray(image)
 
 
-def _crop_params(height: int, width: int, size: int, training: bool) -> tuple[int, int, int, int]:
-    scale = max(size / height, size / width)
-    out_h, out_w = max(size, round(height * scale)), max(size, round(width * scale))
+def _crop_params(height: int, width: int, size: int, training: bool,
+                 native: bool = False) -> tuple[int, int, int, int]:
+    if native and min(height, width) < size:
+        raise ValueError('source-preserving pairs require native dimensions >= crop size')
+    # Interpolating source codes and scene radiance separately breaks their
+    # nonlinear view relationship. Preserve original samples for this contract.
+    if native:
+        out_h, out_w = height, width
+    else:
+        scale = max(size / height, size / width)
+        out_h, out_w = max(size, round(height * scale)), max(size, round(width * scale))
     if training:
         top = random.randint(0, out_h - size)
         left = random.randint(0, out_w - size)
@@ -230,7 +238,8 @@ def _crop_params(height: int, width: int, size: int, training: bool) -> tuple[in
 
 def _resize_crop(image: torch.Tensor, params: tuple[int, int, int, int], size: int) -> torch.Tensor:
     out_h, out_w, top, left = params
-    image = F.interpolate(image[None], size=(out_h, out_w), mode="bilinear", align_corners=False)[0]
+    if image.shape[-2:] != (out_h, out_w):
+        image = F.interpolate(image[None], size=(out_h, out_w), mode="bilinear", align_corners=False)[0]
     return image[:, top:top + size, left:left + size]
 
 
@@ -472,7 +481,8 @@ class SDRHDRDataset(Dataset):
         hdr = _to_tensor(load_rgb(record["hdr_path"], hdr=True))
         if sdr.shape[-2:] != hdr.shape[-2:]:
             raise ValueError(f"Pair geometry mismatch for {record['asset_id']}: {sdr.shape} vs {hdr.shape}")
-        params = _crop_params(sdr.shape[-2], sdr.shape[-1], self.crop_size, self.augment)
+        params = _crop_params(sdr.shape[-2], sdr.shape[-1], self.crop_size, self.augment,
+                              native=record.get('target_mode') == 'source_preserving')
         sdr = _resize_crop(sdr, params, self.crop_size)
         hdr = _resize_crop(hdr, params, self.crop_size)
         if self.augment and random.random() < 0.5:

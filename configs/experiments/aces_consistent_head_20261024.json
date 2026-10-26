@@ -1,0 +1,17 @@
+{
+  "registered_before_training": true,
+  "purpose": "isolated feasibility test of highlight supervision aligned with the declared ACES view",
+  "parent": "G:/rudra_training/aces_v1_analytic_shadow_20261024/candidate.pt",
+  "pilot": "G:/datasets/corpora/aces_consistent_exposures_20261024/train/report.json",
+  "training": "600 fresh-Adam updates at 0.0001, seed 20261024, batch4 crop192. Cache full-frame frozen predictor features and restored AP1. Train only final three radiance-output head channels; all other weights including source correction channels frozen. Equal eligible-scene sampling, then image and highlight location. Signed asinh RGB error only on highlight support; exclude one-pixel artificial head boundary.",
+  "acceptance": [
+    "all frozen weights bit-exact; no nonfinite values",
+    "original five natural development gates still pass; explicitly report change versus v7",
+    "on new scene-disjoint exact-view development set, highlight MSE at least 5% better than v7 and no worse than analytic",
+    "partial-highlight appearance within one code on at least 99.9% of evaluated pixels",
+    "ordinary and shadow outputs unchanged outside highlight support",
+    "motion, colour stress, detail and grading checks required separately before any promotion"
+  ],
+  "limits": "Small development experiment with previously used CC0 scenes; not independent release validation. Does not replace existing benchmark or relax product requirements.",
+  "release_authorized": false
+}

@@ -1,0 +1,11 @@
+{
+  "purpose": "isolate shadow luminance from signed chroma; frozen coverage4800 restorer and HDR predictor",
+  "steps": 1200,
+  "lr": 0.0001,
+  "seed": 20261023,
+  "pilot": "G:/datasets/corpora/run05_aces_spatial_train48_v2_20261023/report.json",
+  "base": "G:/rudra_training/aces_coverage_restorer4800_20261023/step4800.pt",
+  "output": "G:/rudra_training/aces_shadow_sqrt1200_20261023",
+  "acceptance": "all five natural development gates; shadow target MSE no worse than coverage4800; ordinary and highlight outputs unchanged; no negative luminance and zero shadow lift on first four frames of each dark object-motion variant; diagnostic only, full motion/detail/visual separate",
+  "release_authorized": false
+}

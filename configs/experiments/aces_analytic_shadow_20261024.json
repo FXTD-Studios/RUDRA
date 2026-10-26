@@ -1,0 +1,13 @@
+{
+  "purpose": "v1 shadow policy: exact analytic ACES inverse in crushed shadows, no learned shadow radiance, marked not reconstructed; learned restorer and highlight path unchanged",
+  "decision": "owner chose 'plain inverse in shadows' on 24 Oct 2026 after aces_shadow_edge_seeds_20261024 (0/10 trained shadow branches passed all gates; edge/control ratio .9998)",
+  "registered_before_evaluation": true,
+  "registered_by": "Claude (Cowork) session, 24 Oct 2026",
+  "parent": "G:/rudra_training/aces_coverage_restorer4800_20261023/step4800.pt",
+  "candidate": "G:/rudra_training/aces_v1_analytic_shadow_20261024/candidate.pt",
+  "training": "none; weights bit-exact copy of parent, contract shadow='analytic' (training/aces_model.py analytic_shadow)",
+  "shadow_policy": "support = source reconstruction_weight > 0 and max source <= .5; output = w*exact source inverse + (1-w)*exact inverse of bounded restored source; bit-exact source inverse where w==1",
+  "acceptance": "tools/compare_aces_analytic_shadow.py: five natural development gates (target improvement >=5%, ordinary R, zero natural shadow lift, highlight and shadow no worse than analytic); predictions outside shadow support bit-exact to parent on all 24 natural frames; original-dev24 zero shadow lift and ordinary R; 384 motion frames with zero negative luminance (whole frame), zero shadow lift and worst-transition mean excess <= 0.02 EV in every clip.",
+  "disclosed_not_gated": "natural shadow MSE vs coverage4800 (expected to equal analytic, ~2% above the single-seed parent, inside the measured +-4% seed spread); parent coverage4800 motion checks for comparison; grade ramps",
+  "release_authorized": false
+}

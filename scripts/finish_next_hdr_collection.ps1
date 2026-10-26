@@ -12,7 +12,15 @@ function Write-State([string]$stage,[string]$detail) {
 }
 Push-Location -LiteralPath $repoRoot
 try {
-    $watch=Get-Content -LiteralPath (Join-Path $batchRoot 'download_processes.json') -Raw | ConvertFrom-Json
+    # The watch list is written by hand when the downloads are launched; no pipeline
+    # step produces it. Without a valid one the wait would be skipped silently.
+    $watchPath=Join-Path $batchRoot 'download_processes.json'
+    if (!(Test-Path -LiteralPath $watchPath)) { throw "Missing $watchPath (record pid and start_ticks of each download process)." }
+    $watch=@(Get-Content -LiteralPath $watchPath -Raw | ConvertFrom-Json)
+    if ($watch.Count -eq 0) { throw "$watchPath lists no download processes." }
+    foreach ($w in $watch) {
+        if ($null -eq $w.pid -or [string]::IsNullOrEmpty([string]$w.start_ticks)) { throw "$watchPath has a record without pid/start_ticks." }
+    }
     $deadline=[DateTime]::UtcNow.AddHours(4)
     do {
         $live=@($watch | Where-Object {
@@ -29,6 +37,12 @@ try {
         if (!(Test-Path -LiteralPath (Join-Path (Join-Path $batchRoot $group) 'status.json'))) { throw "Missing completion record for $group" }
     }
     Write-State 'numeric_source_review' 'Full decodes, publisher archive checksums, hashes and split-history checks; no training.'
+    # Manual review inputs: no pipeline step writes these, and review/summary stop
+    # with FileNotFoundError without them. Say so before launching the chain.
+    $manual=@('licence_evidence\sihdr_reference_metadata.json','licence_evidence\sihdr_input_metadata.json',
+              'initial_visual_review.json','sihdr\reference_admission_notes.json') |
+        Where-Object { !(Test-Path -LiteralPath (Join-Path $batchRoot $_)) }
+    if ($manual.Count -gt 0) { throw "Manual review prerequisites missing under ${batchRoot}: $($manual -join ', ')" }
     foreach ($group in @('overlap','overlap_novel','sihdr','tos')) {
         & $pythonExe -u pipeline\review_next_hdr_sources.py $group
         if ($LASTEXITCODE -ne 0) { throw "Source review failed: $group" }

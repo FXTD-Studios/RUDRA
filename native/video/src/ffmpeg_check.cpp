@@ -42,6 +42,7 @@ pyjson::Value FfmpegCapabilities::to_json() const {
                         {"ffprobe_sha256", ffprobe_sha256},
                         {"libx265", libx265},
                         {"prores_ks", prores_ks},
+                        {"ffv1", ffv1},
                         {"zscale", zscale},
                         {"alphaextract", alphaextract},
                         {"write_colr", write_colr},
@@ -82,6 +83,7 @@ Result<FfmpegCapabilities> probe_ffmpeg(const std::optional<fs::path>& ffmpeg, c
     if (!filters) return filters.error();
     c.libx265 = listed(*encoders, "libx265");
     c.prores_ks = listed(*encoders, "prores_ks");
+    c.ffv1 = listed(*encoders, "ffv1");
     c.zscale = listed(*filters, "zscale");
     c.alphaextract = listed(*filters, "alphaextract");
     auto mov = run_process({exe, "-hide_banner", "-h", "muxer=mov"});

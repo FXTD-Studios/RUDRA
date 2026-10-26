@@ -41,6 +41,7 @@ if(RUDRA_BUILD_HDR_PROBE)
 endif()
 option(RUDRA_WITH_LIBTORCH     "Build the LibTorch inference backend"             OFF)
 option(RUDRA_WITH_ONNXRUNTIME  "Build the ONNX Runtime inference backend"         OFF)
+option(RUDRA_WITH_OCIO         "ACES v2 view through OpenColorIO 2.5.2 (infer/)"   OFF)
 option(RUDRA_WITH_OPENCV       "Still decode in media/ (OpenCV core + imgcodecs)"  OFF)
 option(RUDRA_BUILD_OFX         "Build the OFX plug-in (needs the OpenFX SDK)"       OFF)
 set(ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime package root (include/, lib/)")
@@ -78,4 +79,4 @@ if(RUDRA_BUILD_TESTS)
 endif()
 
 message(STATUS "RUDRA native: tests=${RUDRA_BUILD_TESTS} cli=${RUDRA_BUILD_CLI} app=${RUDRA_BUILD_APP} hdr_probe=${RUDRA_BUILD_HDR_PROBE} render=${RUDRA_BUILD_RENDER} "
-               "libtorch=${RUDRA_WITH_LIBTORCH} onnxruntime=${RUDRA_WITH_ONNXRUNTIME} opencv=${RUDRA_WITH_OPENCV} ofx=${RUDRA_BUILD_OFX}")
+               "libtorch=${RUDRA_WITH_LIBTORCH} onnxruntime=${RUDRA_WITH_ONNXRUNTIME} opencv=${RUDRA_WITH_OPENCV} ocio=${RUDRA_WITH_OCIO} ofx=${RUDRA_BUILD_OFX}")

@@ -1,0 +1,16 @@
+{
+  "purpose": "isolate bounded ordinary-pixel restoration with local code differences",
+  "base": "G:/rudra_training/run05_aces_lower_lr300_20261023/step300.pt",
+  "training": "G:/datasets/corpora/aces_procedural_restoration_20261023/train/report.json",
+  "output": "G:/rudra_training/aces_local_restorer300_20261023",
+  "steps": 300,
+  "learning_rate": 0.001,
+  "seed": 20261023,
+  "batch": 4,
+  "crop": 128,
+  "loss_border": 40,
+  "frozen": "all HDR predictor weights; local branch used only where source reconstruction weight == 0",
+  "inputs": "source RGB plus clipped +/-4 code local mean differences at5/17/65px; no normalization",
+  "acceptance": "procedural8 codeMSE>=25% better than analytic; all3 neutral0EV plateau fractions>=25% better than previous control; no gradient RMSE regression across -3/0/+3EV; original natural24 development gates unchanged; visual and release separate",
+  "release_authorized": false
+}

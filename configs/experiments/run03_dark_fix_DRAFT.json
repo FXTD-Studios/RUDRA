@@ -1,0 +1,16 @@
+{
+  "status": "DRAFT - do not launch. Only if the inference dark guard fails its frozen validation rule (training/dark_guard_eval.py).",
+  "created": "2026-10-22",
+  "addresses": "reserved-test failure: near-black (<0.1 nit), codec-noisy SDR lifted into coloured blobs with tile seams (Mataha A_0027C021); ToS 03_2a dim interior -1.38 dB",
+  "baseline_for_comparison": ["G:\\rudra_training\\fxtd_native1080_hdr_run02\\checkpoints\\best.pt (ad3d7910...)", "same + selected dark guard"],
+  "launcher": "scripts/train_resumable_hdr.ps1 -Action Start -RunName fxtd_darkfix_hdr_run03 -Recipe <this recipe after the code changes>",
+  "unchanged_from_run02": "manifest 0e4c5635... (no evaluation scenes added), architecture, lr, batch, seed, steps 20000, eval/save cadence",
+  "proposed_changes": [
+    "near-black hold: extend --crushed-hold from code <= 2/255 to a configurable threshold (e.g. <= 8/255) with a chroma term, so the residual cannot add colour in crushed blacks (needs a new loss parameter in rudra/sdr2hdr.py; not implemented)",
+    "dark/underexposed augmentation: -1 to -3 EV re-render of train pairs plus codec noise in shadows (needs a dataset option; not implemented)",
+    "checkpoint selection: trailing median of min(clean, hard) PU gain instead of log-domain composite_gain",
+    "eval: add a dark validation slice from TRAIN-EXCLUDED footage before training starts; never Mataha"
+  ],
+  "acceptance": "full validation gate as before, dark-slice mean gain >= -0.1 dB, and not worse than run02+guard; then a fresh held-out test (owner-supplied)",
+  "release_authorized": false
+}

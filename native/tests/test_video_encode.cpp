@@ -14,6 +14,7 @@
 #include "rudra/deliver/video_encode.hpp"
 #include "rudra/media/video_probe.hpp"
 #include "rudra/platform/process.hpp"
+#include "rudra/video/qc.hpp"
 
 using namespace rudra;
 using nlohmann::json;
@@ -134,4 +135,51 @@ TEST(VideoEncode, PublishingNeverReplaces) {
     EXPECT_FALSE(publish_video(work / "staged.mp4", work / "staged.json", work / "out.mp4", work / "out.mp4.json").ok());
     EXPECT_FALSE(fs::exists(work / "out.mp4"));
     fs::remove_all(work);
+}
+
+TEST(VideoEncode, Ffv1MoviePreservesEveryRgb16CodeAndPassesQc) {
+    if (!find_executable("ffmpeg") || !find_executable("ffprobe")) GTEST_SKIP();
+    auto work = StagingDir::create(fs::temp_directory_path(), "rudra-ffv1-movie-");
+    ASSERT_TRUE(work);
+    const auto root = work->path();
+    fs::create_directory(root / "spool");
+    std::string codes;
+    for (int i = 0; i < 64 * 32 * 3; ++i) {
+        const unsigned value = (i * 103 + 17) % 65536;
+        codes.push_back(char(value & 255));
+        codes.push_back(char(value >> 8));
+    }
+    { std::ofstream f(root / "ramp.raw", std::ios::binary); f.write(codes.data(), codes.size()); }
+    auto png = run_tool({"ffmpeg", "-v", "error", "-f", "rawvideo", "-pixel_format", "rgb48le",
+        "-video_size", "64x32", "-i", (root / "ramp.raw").string(), "-frames:v", "1",
+        (root / "spool/00000000.png").string()});
+    ASSERT_TRUE(png) << png.error().message;
+    fs::copy_file(root / "spool/00000000.png", root / "spool/00000001.png");
+    VideoEncodeRequest request;
+    request.format = "ffv1rgb16";
+    request.audio = "none";
+    VideoClock clock{"24/1", 2, 0, 2.0 / 24, 0.001};
+    const auto source = root / "spool/00000000.png";
+    const auto output = root / "master.mkv";
+    auto command = encode_command("ffmpeg", request, clock, root / "spool", source, output, 1000, 100);
+    ASSERT_TRUE(command);
+    auto encoded = run_tool(*command);
+    ASSERT_TRUE(encoded) << encoded.error().message;
+    auto probe = probe_video(source);
+    ASSERT_TRUE(probe);
+    VideoQcRequest qc;
+    qc.format = request.format;
+    qc.audio_mode = "none";
+    auto checked = run_quality_check(probe->streams_json, clock, output, qc);
+    ASSERT_TRUE(checked) << checked.error().message;
+    auto decoded = run_tool({"ffmpeg", "-v", "error", "-i", output.string(), "-f", "rawvideo",
+        "-pix_fmt", "rgb48le", (root / "decoded.raw").string()});
+    ASSERT_TRUE(decoded);
+    std::ifstream f(root / "decoded.raw", std::ios::binary);
+    const std::string actual{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+    EXPECT_EQ(actual, codes + codes);
+    f.close();
+    EXPECT_FALSE(encode_command("ffmpeg", request, clock, root, source, root / "bad.mp4", 1, 1));
+    request.alpha = true;
+    EXPECT_FALSE(encode_command("ffmpeg", request, clock, root, source, output, 1, 1));
 }

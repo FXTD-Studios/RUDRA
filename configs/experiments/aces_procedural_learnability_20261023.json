@@ -1,0 +1,16 @@
+{
+  "purpose": "isolated restoration learnability on original procedural gradients, not HDR quality or promotion",
+  "training_report": "G:/datasets/corpora/aces_procedural_restoration_20261023/train/report.json",
+  "development_report": "G:/datasets/corpora/aces_procedural_restoration_20261023/val/report.json",
+  "output": "G:/rudra_training/aces_procedural_learnability300_20261023",
+  "steps": 300,
+  "learning_rate": 0.001,
+  "restoration_weight": 1,
+  "shadow_weight": 0,
+  "seed": 20261023,
+  "deterministic": true,
+  "evaluation": "fixed final300; full8 separate procedural development frames and unchanged three neutral ramp probes",
+  "success_diagnostic": "procedural ordinary display-code MSE at least25% below analytic and all three ramp0EV plateau fractions at least25% below lower_lr300; source appearance within1code; not release acceptance",
+  "no_external_media": true,
+  "release_authorized": false
+}

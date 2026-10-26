@@ -42,7 +42,9 @@ def collect(a):
     if a['provider']=='JangaFX':
         r=fetch(url);(OUT/'licence_evidence'/(a['id']+'_download.html')).write_bytes(r.content)
         links=Links();links.feed(r.text);url=next(x['href'] for x in links.links if x.get('id')=='downloadButton')
-    p=OUT/'downloads'/a['filename'];p.parent.mkdir(parents=True,exist_ok=True)
+    name=Path(str(a['filename']).replace('\\','/')).name   # remote data: a bare basename only
+    if not name or name in ('.','..'):raise ValueError('Unsafe download filename')
+    p=OUT/'downloads'/name;p.parent.mkdir(parents=True,exist_ok=True)
     temp=p.with_suffix(p.suffix+'.part')
     for attempt in range(4):
         offset=temp.stat().st_size if temp.exists() else 0
@@ -86,7 +88,9 @@ def collect(a):
         for name in names:safe(name)
         # bsdtar has secure path/symlink handling; only data and text members selected.
         selected=[n for n in names if Path(n).suffix.lower() in ('.vdb','.txt')]
-        subprocess.run(['tar','-xf',str(p),'-C',str(dest),*selected],check=True)
+        # tar with no member arguments would extract everything; '--' stops option parsing.
+        if not selected:raise ValueError('No extractable data members in archive')
+        subprocess.run(['tar','-xf',str(p),'-C',str(dest),'--',*selected],check=True)
     media=[]
     for f in sorted(dest.rglob('*')):
         if f.is_file():media.append(dict(path=str(f),bytes=f.stat().st_size,sha256=sha(f)))

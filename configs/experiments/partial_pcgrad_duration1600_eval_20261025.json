@@ -1,0 +1,16 @@
+{
+  "parent": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+  "parent_sha256": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+  "steps": 1600,
+  "include_fully_clipped": true,
+  "old_coherent_control_max": 0.3825248606569533,
+  "aligned_residual_control_max": 0.010367255277136186,
+  "clipped_smoothing": {
+    "sigma": 64,
+    "mode": "hybrid",
+    "ramp": 1,
+    "start": 0
+  },
+  "scope": "Duration1600 comparison on reused DEV; all original limits retained. No release qualification.",
+  "release_authorized": false
+}

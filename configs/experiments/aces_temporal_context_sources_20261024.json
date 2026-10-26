@@ -1,0 +1,12 @@
+{
+  "registered_before_selection": true,
+  "purpose": "Freeze additional commercially usable natural scenes for a new temporal/context research stage after isolated final-head trials failed detail/stability together.",
+  "source_manifest": "G:/datasets/corpora/rudra_run05_sources_20261022/sources.jsonl",
+  "ancestry": "G:/rudra_training/aces_consistent_head_equal600_v2_20261024/training_ancestry.json",
+  "development": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/val/report.json",
+  "selection_salt": "RUDRA-temporal-context-v1-20261024",
+  "scenes": {"train": 32, "val": 8},
+  "selection": "Retain original source TRAIN/VAL split; exact CC0 commercial records only; exclude all declared candidate-ancestry and current coherent-development scenes and original-file hashes. One lexicographically first asset per scene. Sort scenes by SHA256(salt + scene_id); select first eligible unique original-content hashes. Record actual file hashes before any generation/training.",
+  "scope": "New relative to this candidate's declared ancestry and specified development split only. Earlier project inspection and perceptual near-duplicates not audited. Not independent release holdout. This registration authorizes selection only, not a claimed trained model or evaluation pass.",
+  "release_authorized": false
+}

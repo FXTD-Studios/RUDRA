@@ -94,20 +94,22 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
     tg->setContentsMargins(0, 0, 0, 0);
     tg->setSpacing(8);
     const struct { const char* id; const char* name; const char* sub; bool offered; } formats[] = {
-        {"exr-aces", "EXR", "ACES 2065-1, half", true},
-        {"exr-linear", "EXR linear", "Rec.2020 linear, half", true},
+        {"exr-aces", "EXR", "ACES 2065-1, float32", true},
+        {"exr-linear", "EXR linear", "Rec.2020 linear, float32", true},
         {"hdr10", "HDR10", "HEVC 10-bit, streaming", false},
         {"hlg", "HLG", "HEVC 10-bit, broadcast", false},
         {"prores", "422 HQ", "ProRes, editorial", false},
-        {"prores4444", "4444", "ProRes, finishing", false}};
+        {"prores4444", "4444", "ProRes, finishing", false},
+        {"ffv1rgb16", "RGB 16-bit", "FFV1, lossless PQ", false}};
     int col = 0;
     for (const auto& f : formats) {
         auto* t = new Tile(f.id, f.name, f.sub, f.offered, tiles);
         tiles_[f.id] = t;
         const QString id = f.id;
         t->picked = [this, id] { pick(id); };
-        tg->addWidget(t, 0, col++);
-        tg->setColumnStretch(col - 1, 1);
+        tg->addWidget(t, col / 4, col % 4);
+        tg->setColumnStretch(col % 4, 1);
+        ++col;
     }
     v->addWidget(tiles);
 
@@ -220,7 +222,7 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
 }
 
 namespace {
-bool is_video_format(const QString& id) { return id == "hdr10" || id == "hlg" || id == "prores" || id == "prores4444"; }
+bool is_video_format(const QString& id) { return id == "hdr10" || id == "hlg" || id == "prores" || id == "prores4444" || id == "ffv1rgb16"; }
 bool is_prores(const QString& id) { return id == "prores" || id == "prores4444"; }
 }  // namespace
 
@@ -255,10 +257,10 @@ void ExportSheet::refresh() {
     const bool folder = !w_->shot_is_video() && w_->shot_is_frame_folder();
     const bool movie = w_->shot_is_video() || folder;
     if (folder) encoding_ = "pq";   // from frames: the graded PQ targets only
-    for (const char* id : {"hdr10", "hlg", "prores", "prores4444"})
+    for (const char* id : {"hdr10", "hlg", "prores", "prores4444", "ffv1rgb16"})
         if (auto it = tiles_.find(id); it != tiles_.end()) static_cast<Tile*>(it->second)->set_offered(movie);
     if (!(movie && is_video_format(picked_))) picked_ = w_->container() == "linear" ? "exr-linear" : "exr-aces";
-    for (const char* id : {"exr-aces", "exr-linear", "hdr10", "hlg", "prores", "prores4444"})
+    for (const char* id : {"exr-aces", "exr-linear", "hdr10", "hlg", "prores", "prores4444", "ffv1rgb16"})
         if (auto* t = findChild<QWidget*>(id)) {
             t->setProperty("on", picked_ == id);
             t->style()->unpolish(t);
@@ -285,10 +287,11 @@ void ExportSheet::refresh() {
     if (is_video_format(picked_)) {
         signal_->setText(picked_ == "hdr10"  ? "PQ · Rec.2020 · HEVC 10-bit · HDR10 metadata"
                          : picked_ == "hlg" ? "HLG · Rec.2020 · HEVC 10-bit"
+                         : picked_ == "ffv1rgb16" ? "PQ · Rec.2020 · FFV1 · lossless 16-bit RGB"
                          : encoding_ == "acescct" ? "ACEScct · AP1 · " + pr + " · scene-referred"
                          : encoding_ == "logc4"   ? "LogC4 · ARRI Wide Gamut 4 · " + pr + " · scene-referred"
                                                   : "PQ · Rec.2020 · " + pr);
-        const QString ext = picked_.startsWith("prores") ? ".mov" : ".mp4";
+        const QString ext = picked_ == "ffv1rgb16" ? ".mkv" : picked_.startsWith("prores") ? ".mov" : ".mp4";
         if (folder) {
             frames_->setText(QStringLiteral("All %1, mastered as EXR, then as a movie (no audio)").arg(frames.size()));
             const QString base = w_->frames_movie_base(video_format());
@@ -304,7 +307,7 @@ void ExportSheet::refresh() {
                                          : QDir::toNativeSeparators(dir) + QDir::separator() + file);
         }
     } else {
-        signal_->setText(picked_ == "exr-aces" ? "Scene linear · AP0 · half" : "Scene linear · Rec.2020 · half");
+        signal_->setText(picked_ == "exr-aces" ? "Scene linear · AP0 · float32" : "Scene linear · Rec.2020 · float32");
         auto* mode = w_->findChild<QComboBox*>("renderMode");
         const bool sequence = mode && mode->currentData().toString() == "sequence";
         frames_->setText(sequence ? QStringLiteral("All %1, as a sequence").arg(frames.size()) : QStringLiteral("The frame on screen"));

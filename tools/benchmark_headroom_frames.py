@@ -63,13 +63,21 @@ def monitored(argv: list[str], log: Path, timeout: float = 120, trace: bool = Fa
                     pass
                 time.sleep(.01)
         except BaseException:
+            # Each process is killed on its own (one already gone must not spare
+            # the rest), and the final wait is bounded.
             try:
-                for child in parent.children(recursive=True):
-                    child.kill()
-                parent.kill()
+                victims = [*parent.children(recursive=True), parent]
             except psutil.Error:
+                victims = [parent]
+            for victim in victims:
+                try:
+                    victim.kill()
+                except psutil.Error:
+                    pass
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
                 pass
-            process.wait()
             raise
         code = process.wait()
     if code:

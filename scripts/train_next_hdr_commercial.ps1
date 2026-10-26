@@ -18,7 +18,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Next dataset is not ready. Finish preparation 
 if ($Action -eq 'Check') { return }
 if ($Action -in @('Start','Foreground')) {
     $active=@(Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" | Where-Object {
-        $_.CommandLine -match '(run_\w*commercial|train_sdr2hdr)\.py' -and $_.CommandLine -notmatch '--prepare-only'
+        $_.CommandLine -match '(run_\w*commercial|train_sdr2hdr|resumable_training)\.py' -and $_.CommandLine -notmatch '--prepare-only'
     })
     if ($active.Count -gt 0) { throw 'Another HDR trainer is active. Let it finish before starting this next run.' }
 }

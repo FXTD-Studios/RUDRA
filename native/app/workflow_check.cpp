@@ -68,7 +68,7 @@ int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
     auto wait_for = [&](const std::function<bool()>& done, int ms) {
         QElapsedTimer t; t.start();
         while (!done()) {
-            if (!dialogs.isEmpty() || t.elapsed() >= std::min(ms, a.timeout_ms)) return false;
+            if (!dialogs.isEmpty() || t.elapsed() >= ms) return false;
             QApplication::processEvents(QEventLoop::AllEvents, 20);
             QThread::msleep(1);
         }

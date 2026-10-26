@@ -82,7 +82,7 @@ def test_every_target_encodes_and_is_tagged(target, tmp_path):
         tags = colour_tags(out)              # every key present, "unknown" if absent
     assert tags["color_primaries"] == "bt2020", (target, tags)
     assert tags["color_transfer"] == want_trc, (target, tags)
-    assert tags["color_space"] == "bt2020nc", (target, tags)
+    assert tags["color_space"] == ("gbr" if target == "ffv1rgb16" else "bt2020nc"), (target, tags)
 
 
 @needs_ffmpeg

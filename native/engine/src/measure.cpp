@@ -82,6 +82,11 @@ FrameMeasure measure_frame(const SdrImage& sdr, const Fields& fields, const Fram
 FrameMeasure measure_headroom(const NetworkLinearImage& model, const NetworkLinearImage& baseline) {
     const auto t0 = std::chrono::steady_clock::now();
     FrameMeasure out;
+    // The sample grid is built from the model's size and indexes both buffers:
+    // an empty or mismatched pair is never sampled (an empty measure instead).
+    if (model.width() <= 0 || model.height() <= 0 ||
+        baseline.width() != model.width() || baseline.height() != model.height())
+        return out;
     out.width = model.width();
     out.height = model.height();
     const std::size_t n = std::size_t(out.width) * std::size_t(out.height);
