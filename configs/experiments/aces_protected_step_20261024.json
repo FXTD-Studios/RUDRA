@@ -1,0 +1,32 @@
+{
+  "registered_before_evaluation": true,
+  "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+  "checkpoint": "G:/rudra_training/aces_full_active600_20261024/step600.pt",
+  "groups": [
+    "tif_0000039_university_workshop_4k_00000__context_0",
+    "tif_0000035_pink_sunrise_4k_00000__context_0",
+    "tif_0000048_artist_workshop_4k_00000__context_0",
+    "tif_0000013_decor_shop_4k_00000__context_0",
+    "tif_0000037_unfinished_office_4k_00000__context_1",
+    "tif_0000014_neon_photostudio_4k_00000__context_1",
+    "tif_0000015_ferndale_studio_02_4k_00000__context_1",
+    "tif_0000032_zwartkops_curve_afternoon_4k_00000__context_1",
+    "tif_0000137_canary_wharf_4k_00000__context_2",
+    "tif_0000039_university_workshop_4k_00000__context_2",
+    "tif_0000035_pink_sunrise_4k_00000__context_2",
+    "tif_0000013_decor_shop_4k_00000__context_2"
+  ],
+  "selection": "Four salted-hash groups per desired clipping stratum, both adjacent pairs; independent reset for every probe",
+  "learning_rate": 0.0001,
+  "scales": [
+    1,
+    0.5,
+    0.25,
+    0.125
+  ],
+  "relative_tolerance": 1e-06,
+  "absolute_tolerance": 1e-09,
+  "scope": "24 independent TRAIN one-step probes at rejected active600 checkpoint. Fresh Adam direction, then nearest direction in intersection of three gradient halfspaces. Bounded TRAIN line search; require all losses non-increasing within tolerance and temporal strictly improving beyond tolerance. Adjacent overlapping pair measured separately, not holdout. Original branch restored after every probe, frozen parent verified, no checkpoint saved. No persistent-Adam trajectory or generalization/release claim.",
+  "pilot_sha256": "9e410260e07304ec26e02106b094d11e25ef78e85e45aae914c6ffa5a85151c2",
+  "checkpoint_sha256": "c354e68c2801423b5b18e6fd3b18cd57fcb7836df25651516c2a2ecbff972f51"
+}

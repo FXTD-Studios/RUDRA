@@ -851,7 +851,7 @@ QWidget* MainWindow::build_pipe() {
     arrow();
     view_transform_ = seg("viewTransform", "exposure + clip \u00b7 203 nits");
     arrow();
-    seg("pipeMaster", "ACES 2065-1 EXR, half");
+    seg("pipeMaster", "ACES 2065-1 EXR, float32");
     auto* warn = label("", "pipeWarn", {}, pipe);
     warn->hide();
     h->addWidget(warn);

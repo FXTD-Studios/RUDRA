@@ -108,6 +108,8 @@ const std::vector<DeliveryProfile>& log_delivery_profiles() {
 }
 
 const DeliveryProfile* find_delivery_profile(std::string_view name) {
+    static const DeliveryProfile rgb16{"ffv1rgb16", "ffv1", "ffv1", "smpte2084", "gbrp16le", -1, "", ""};
+    if (name == rgb16.name) return &rgb16;
     for (const auto* list : {&delivery_profiles(), &log_delivery_profiles()})
         for (const auto& p : *list)
             if (p.name == name) return &p;

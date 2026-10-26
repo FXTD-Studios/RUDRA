@@ -1,0 +1,20 @@
+{
+  "manifest": "sdr_hdr_manifest.jsonl",
+  "init_checkpoint": "shipped_v5_step81000.pt",
+  "output_dir": "sdr2hdr_shadow_s3",
+  "steps": 3000,
+  "lr": 0.003,
+  "grad_accum": 8,
+  "max_side": 512,
+  "degradation_probability": 0.5,
+  "eval_every": 200,
+  "eval_batches": 128,
+  "best_smoothing": 5,
+  "workers": 2,
+  "seed": 3,
+  "device": "cuda",
+  "base_channels": 32,
+  "shadow_conditioning": true,
+  "objective": "degradation_bce",
+  "publication_note": "local absolute paths reduced to file names; data identified by its sha256 fields"
+}

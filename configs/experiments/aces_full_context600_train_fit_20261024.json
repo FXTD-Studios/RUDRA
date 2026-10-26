@@ -1,0 +1,303 @@
+{
+  "registered_before_evaluation": true,
+  "purpose": "Fixed48 TRAIN fitting comparison of sampler-v2 parent and isolated full-context600. No acceptance or release claim.",
+  "candidates": {
+    "parent": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+    "isolated": "G:/rudra_training/aces_full_context600_20261024/step600.pt"
+  },
+  "rows": [
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000006_abandoned_factory_canteen_02_4k_00000__context_2_f0",
+      "scene_id": "ph:abandoned_factory_canteen_02"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000015_abandoned_hopper_terminal_04_4k_00000__context_2_f0",
+      "scene_id": "ph:abandoned_hopper_terminal_04"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000041_amphitheatre_zanzibar_fort_4k_00000__context_1_f2",
+      "scene_id": "ph:amphitheatre_zanzibar_fort"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000048_artist_workshop_4k_00000__context_0_f0",
+      "scene_id": "ph:artist_workshop"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000080_belfast_open_field_4k_00000__context_0_f1",
+      "scene_id": "ph:belfast_open_field"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000137_canary_wharf_4k_00000__context_1_f0",
+      "scene_id": "ph:canary_wharf"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000195_countrytrax_midday_4k_00000__context_1_f1",
+      "scene_id": "ph:countrytrax_midday"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000013_decor_shop_4k_00000__context_2_f1",
+      "scene_id": "ph:decor_shop"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000009_farm_field_puresky_4k_00000__context_0_f0",
+      "scene_id": "ph:farm_field_puresky"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000015_ferndale_studio_02_4k_00000__context_2_f0",
+      "scene_id": "ph:ferndale_studio_02"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000020_ferndale_studio_07_4k_00000__context_2_f0",
+      "scene_id": "ph:ferndale_studio_07"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000026_fireplace_4k_00000__context_2_f2",
+      "scene_id": "ph:fireplace"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000043_frozen_lake_4k_00000__context_2_f2",
+      "scene_id": "ph:frozen_lake"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000049_herkulessaulen_4k_00000__context_0_f1",
+      "scene_id": "ph:herkulessaulen"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000027_kart_club_4k_00000__context_2_f2",
+      "scene_id": "ph:kart_club"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000003_kloofendal_misty_morning_puresky_4k_00000__context_1_f0",
+      "scene_id": "ph:kloofendal_misty_morning_puresky"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000003_lythwood_lounge_4k_00000__context_1_f1",
+      "scene_id": "ph:lythwood_lounge"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000014_neon_photostudio_4k_00000__context_0_f1",
+      "scene_id": "ph:neon_photostudio"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000035_pink_sunrise_4k_00000__context_1_f1",
+      "scene_id": "ph:pink_sunrise"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000046_portland_landing_pad_4k_00000__context_1_f2",
+      "scene_id": "ph:portland_landing_pad"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000017_shady_patch_4k_00000__context_1_f1",
+      "scene_id": "ph:shady_patch"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000047_small_rural_road_4k_00000__context_1_f2",
+      "scene_id": "ph:small_rural_road"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000019_spooky_bamboo_morning_4k_00000__context_0_f1",
+      "scene_id": "ph:spooky_bamboo_morning"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000000_studio_kontrast_01_4k_00000__context_0_f2",
+      "scene_id": "ph:studio_kontrast_01"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000033_sunny_vondelpark_4k_00000__context_2_f1",
+      "scene_id": "ph:sunny_vondelpark"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000046_syferfontein_6d_clear_4k_00000__context_1_f1",
+      "scene_id": "ph:syferfontein_6d_clear"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000037_unfinished_office_4k_00000__context_1_f1",
+      "scene_id": "ph:unfinished_office"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000039_university_workshop_4k_00000__context_1_f1",
+      "scene_id": "ph:university_workshop"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000041_urban_courtyard_02_4k_00000__context_2_f0",
+      "scene_id": "ph:urban_courtyard_02"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000012_victoria_curve_02_4k_00000__context_0_f0",
+      "scene_id": "ph:victoria_curve_02"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000047_winter_sky_4k_00000__context_2_f0",
+      "scene_id": "ph:winter_sky"
+    },
+    {
+      "domain": "motion",
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+      "asset_id": "tif_0000032_zwartkops_curve_afternoon_4k_00000__context_1_f2",
+      "scene_id": "ph:zwartkops_curve_afternoon"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000005_dalkey_view_4k_00000__r05v0__consistent_ev+6",
+      "scene_id": "ph:dalkey_view"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000002_en_suite_4k_00000__r05v0__consistent_ev+4",
+      "scene_id": "ph:en_suite"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000001_evening_field_4k_00000__r05v0__consistent_ev+6",
+      "scene_id": "ph:evening_field"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000006_events_hall_interior_4k_00000__r05v0__consistent_ev+2",
+      "scene_id": "ph:events_hall_interior"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000007_factory_yard_4k_00000__r05v0__consistent_ev+2",
+      "scene_id": "ph:factory_yard"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000003_hochsal_field_4k_00000__r05v0__consistent_ev+2",
+      "scene_id": "ph:hochsal_field"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000004_lythwood_room_4k_00000__r05v0__consistent_ev+6",
+      "scene_id": "ph:lythwood_room"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000005_museumplein_4k_00000__r05v2__consistent_ev+6",
+      "scene_id": "ph:museumplein"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000002_san_giuseppe_bridge_4k_00000__r05v0__consistent_ev+2",
+      "scene_id": "ph:san_giuseppe_bridge"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000001_smelting_tower_interior_4k_00000__r05v0__consistent_ev+6",
+      "scene_id": "ph:smelting_tower_interior"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000005_snow_field_puresky_4k_00000__r05v0__consistent_ev+6",
+      "scene_id": "ph:snow_field_puresky"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000011_teutonic_castle_moat_4k_00000__r05v1__consistent_ev+6",
+      "scene_id": "ph:teutonic_castle_moat"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000004_venice_dawn_2_4k_00000__r05v0__consistent_ev+6",
+      "scene_id": "ph:venice_dawn_2"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000005_venice_sunrise_4k_00000__r05v1__consistent_ev+6",
+      "scene_id": "ph:venice_sunrise"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000006_venice_sunset_4k_00000__r05v0__consistent_ev+6",
+      "scene_id": "ph:venice_sunset"
+    },
+    {
+      "domain": "replay",
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+      "asset_id": "tif_0000008_versveldpas_4k_00000__r05v1__consistent_ev+6",
+      "scene_id": "ph:versveldpas"
+    }
+  ],
+  "release_authorized": false,
+  "checkpoint_sha256": {
+    "parent": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+    "isolated": "8f4a788daa0883be0f7004ea6e0350cd80244ef2f4fe37a470b8fc2595c13604"
+  }
+}

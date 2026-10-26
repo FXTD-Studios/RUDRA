@@ -1,0 +1,12 @@
+{
+  "registered_before_evaluation": true,
+  "checkpoint": "G:/rudra_training/aces_consistent_head_equal600_v2_20261024/step600.pt",
+  "checkpoint_sha256": "4904f8c37766a3a8baa11ed4864807b09025df70a82c3d3fd98854f22fc7322a",
+  "manifest": "G:/datasets/corpora/aces_object_motion_20261023/manifest.json",
+  "manifest_sha256": "18dbb0d88c9063620964030d1fd455ec19d1cf4c6d879e4238f6d4367bae65a1",
+  "frames": 384,
+  "colour_backtrack": true,
+  "checks": {"max_transition_mean_excess_ev": 0.02, "new_negative_luminance": 0, "shadow_lift_gt1code": 0, "remaining_partial_highlight_display_errors": 0, "outside_support_bit_exact": true},
+  "scope": "Original procedural moving object raw/H264 development diagnostic. Fixed-cell luminance is not optical-flow-aligned and does not bound chromatic flicker. Visual and broader real-platform testing remain required.",
+  "release_authorized": false
+}

@@ -28,7 +28,7 @@ struct SequenceTarget {
     std::vector<std::string> codec;
     std::string pix_fmt, suffix, transfer, note;   // transfer: pq, hlg or linear
 };
-const std::vector<SequenceTarget>& sequence_targets();   // prores4444, prores422hq, hdr10, hlg
+const std::vector<SequenceTarget>& sequence_targets();   // prores4444, prores422hq, hdr10, hlg, ffv1rgb16
 const SequenceTarget* find_sequence_target(const std::string& name);
 
 // Tags in the order the Python's dicts keep them (subtype, color_primaries,

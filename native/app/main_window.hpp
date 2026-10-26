@@ -321,6 +321,12 @@ public:
     bool headroom_capable() const { return headroom_capable_; }
     bool headroom_routed() const;                       // frames come from the headroom driver
     Result<void> set_headroom_preview(bool on);         // the grade's policy: one undo step
+    // Reconstruct > Keep super-whites: checks the shot, says what it turns off
+    // (asked first when the window is visible), opens the window's headroom
+    // support if needed (remembered for the next start) and sets the policy;
+    // on again, back to the usual reading. Refusals are in problem().
+    void toggle_super_whites();
+    QString problem() const { return problem_; }
     const HeadroomShown* headroom_frame() const { return headroom_shown_ ? &*headroom_shown_ : nullptr; }
     QString headroom_problem() const { return headroom_problem_; }   // why nothing is shown, or empty
     HeadroomPreviewStats headroom_stats() const;

@@ -1,0 +1,141 @@
+{
+  "purpose": "stability and visible-defect review of the v1 analytic-shadow candidate on generated (AI) video through the real export path",
+  "registered_before_evaluation": true,
+  "registered_by": "Claude (Cowork) session, 24 Oct 2026",
+  "candidate": "G:/rudra_training/aces_v1_analytic_shadow_20261024/candidate.pt",
+  "inputs": "18 generated clips already examined in generative_review_20261022 (inputs/ and inputs_b/): CogVideoX x4, FastVideo x2, Gen3C/Cosmos, Hunyuan demo + 2 i2v, Kandinsky5, Mochi, SkyReels, Turbo teacher x5. Previously examined: diagnostic, not fresh independent evidence.",
+  "procedure": "tools/rudra_aces_export.py --video --max-frames 48 --exr-every 12 --matrix bt709 per clip; tools/summarize_aces_generated.py",
+  "per_clip_checks": "EXR bit-exact read-back; ordinary pixels within 1 code of source through ACES 2.0 SDR view on every frame (>=99.9%); shadow lift <= 1 code; zero new negative luminance vs analytic; worst frame-to-frame 36x64 cell luminance excess vs analytic <= 0.02 EV; 16-bit PQ video written",
+  "not_measured": "reconstruction accuracy (no HDR ground truth), perceived highlight quality (visual contact sheets reviewed separately), long-clip drift beyond 48 frames",
+  "release_authorized": false,
+  "expected_inputs": [
+    {
+      "clip": "cogvideox_res1",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs\\cogvideox_res1.mp4",
+      "sha256": "122fa0b48bac71f7661b552546a4d23336eebf2f37fb882d3a64a59e229c2569",
+      "source_frames": 49,
+      "expected_frames": 48
+    },
+    {
+      "clip": "cogvideox_res2",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs\\cogvideox_res2.mp4",
+      "sha256": "6e738926f262a28b3b9af6573987905457ea82cdcadb0ec04ad9ab134324f5cc",
+      "source_frames": 49,
+      "expected_frames": 48
+    },
+    {
+      "clip": "cogvideox_res3",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs\\cogvideox_res3.mp4",
+      "sha256": "b50ba85a4d40b0431d402c9c526a2e6050c649dad4cb58856c21ce40b54ed7e9",
+      "source_frames": 49,
+      "expected_frames": 48
+    },
+    {
+      "clip": "cogvideox_res4",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs\\cogvideox_res4.mp4",
+      "sha256": "2ebcc9647b8416472489bc37ce7b141a58c8bed5da9d91790457b89916ff7b26",
+      "source_frames": 49,
+      "expected_frames": 48
+    },
+    {
+      "clip": "fastvideo_i2v_validation",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs\\fastvideo_i2v_validation.mp4",
+      "sha256": "581ff5eae2909d3a7b362dcb24d060c006c09e4d4deb44b82f4aa697f6789ba7",
+      "source_frames": 29,
+      "expected_frames": 29
+    },
+    {
+      "clip": "fastvideo_ref1",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs\\fastvideo_ref1.mp4",
+      "sha256": "28d3bd45313a36234364f97ce30cddb7044a57572d64e01e6b2357c1ced84fff",
+      "source_frames": 29,
+      "expected_frames": 29
+    },
+    {
+      "clip": "gen3c_cosmos",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs\\gen3c_cosmos.mp4",
+      "sha256": "1bc270c61cd7b96aca84c972625cc5b20a5c5da8db2102a371b7d971f123b2e3",
+      "source_frames": 121,
+      "expected_frames": 48
+    },
+    {
+      "clip": "hunyuan_demo",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs\\hunyuan_demo.mp4",
+      "sha256": "d14bb79ba69102dc0709bc3dcb25044b2cea334ddbe0e967acaf163ebb918d82",
+      "source_frames": 750,
+      "expected_frames": 48
+    },
+    {
+      "clip": "hunyuan_i2v_0",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs_b\\hunyuan_i2v_0.mp4",
+      "sha256": "32698cf04931412e6beca543586e0cd4fd60753dad0be2cafb925d746f7cb1e1",
+      "source_frames": 129,
+      "expected_frames": 48
+    },
+    {
+      "clip": "hunyuan_i2v_1",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs_b\\hunyuan_i2v_1.mp4",
+      "sha256": "a0f1a4591abbc60f902bd4b999ceb794f75ee848b9ed88a748079d71619144a3",
+      "source_frames": 129,
+      "expected_frames": 48
+    },
+    {
+      "clip": "kandinsky5_dmd",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs\\kandinsky5_dmd.mp4",
+      "sha256": "0c510614a4d1332932bb65fbed0782fdfd49a6a564b57fa7d44d439efa8bb05f",
+      "source_frames": 121,
+      "expected_frames": 48
+    },
+    {
+      "clip": "mochi_demo",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs\\mochi_demo.mp4",
+      "sha256": "1b74c52e4a138553abe7f8449715f9fef789351cee8a8797bf84cce9896e44ff",
+      "source_frames": 750,
+      "expected_frames": 48
+    },
+    {
+      "clip": "skyreels_v1_demo1",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs_b\\skyreels_v1_demo1.mp4",
+      "sha256": "e56340f1d0b5e94473684884787c4efc6bf1345f0bb1b1bcacb897a7c692fa42",
+      "source_frames": 122,
+      "expected_frames": 48
+    },
+    {
+      "clip": "turbo_teacher_1",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs_b\\turbo_teacher_1.mp4",
+      "sha256": "a6dcae52f1ddfc90e24d46188cc7b8096420bf6685ffc525ebb63186e9f8c61c",
+      "source_frames": 121,
+      "expected_frames": 48
+    },
+    {
+      "clip": "turbo_teacher_2",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs_b\\turbo_teacher_2.mp4",
+      "sha256": "358f0da89208ce52409937e9a92daa3fc2ee34b1eeaf37e757c1f536e3ccd653",
+      "source_frames": 121,
+      "expected_frames": 48
+    },
+    {
+      "clip": "turbo_teacher_3",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs_b\\turbo_teacher_3.mp4",
+      "sha256": "b2a710a80f85b25faeb3415f61040c7fbd61ccca5d37df8ecda217a5c086f627",
+      "source_frames": 121,
+      "expected_frames": 48
+    },
+    {
+      "clip": "turbo_teacher_4",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs_b\\turbo_teacher_4.mp4",
+      "sha256": "1fcb9acafdcaad8c712d2487f902141170e5325dd2c1b1b998b7d679d07a5d04",
+      "source_frames": 121,
+      "expected_frames": 48
+    },
+    {
+      "clip": "turbo_teacher_5",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs_b\\turbo_teacher_5.mp4",
+      "sha256": "0d2cf893d42f944492660a2f092cc98b8db6ea96585ce3b738bfb670f4c77a9e",
+      "source_frames": 121,
+      "expected_frames": 48
+    }
+  ],
+  "expected_frames_per_clip": "min(48, independently decoded source frame count); two FastVideo sources contain 29 frames",
+  "review_integrity": "Before evaluation: require all 18 named inputs, 48 frames per clip, candidate identity and saved EXR/video hashes. Thresholds unchanged."
+}

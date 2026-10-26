@@ -1,0 +1,14 @@
+{
+  "purpose": "paired test of image-edge shadow supervision for the local (radius 8) sqrt-luma shadow branch; only change versus aces_shadow_mixed_local1200 is --include-image-edges",
+  "registered_before_training": true,
+  "registered_by": "Claude (Cowork) session, 24 Oct 2026; launched by owner from PowerShell",
+  "pilot": "G:\\datasets\\corpora\\aces_shadow_mixed144_20261023\\report.json",
+  "base_checkpoint": "G:/rudra_training/aces_coverage_restorer4800_20261023/step4800.pt",
+  "control": "G:/rudra_training/aces_shadow_mixed_local1200_20261023",
+  "output": "G:/rudra_training/aces_shadow_local_edges1200_20261024",
+  "steps": 1200, "lr": 0.0001, "seed": 20261023, "crop": 192, "border": 40,
+  "changed_behavior": "loss weight keeps true image-edge pixels (artificial crop edges still excluded) instead of dropping a blanket 40px border; sampling and initialization identical to control",
+  "motivation": "4 of 21 shadow-eligible natural TRAIN images have shadow only within 40px of the image edge and were never supervised; local1200 was temporally stable (0.00800 EV) but missed natural shadow accuracy",
+  "acceptance": "candidate: five natural development gates, natural shadow MSE no worse than coverage4800, frozen predictor/restorer, 384 motion frames with zero negative Y and zero lift, every clip worst-transition mean excess EV <= 0.02; paired: natural shadow MSE at least 5% below local1200 control, original-dev24 shadow MSE no worse than control, each dark-clip mean temporal excess no worse than control. Visual, detail, platform, native and release acceptance are separate.",
+  "release_authorized": false
+}

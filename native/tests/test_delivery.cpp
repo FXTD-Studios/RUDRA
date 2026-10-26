@@ -194,6 +194,21 @@ TEST(Metadata, ShotsAndSidecarsByteIdentical) {
     EXPECT_EQ(bytes_of(paths->hdr10plus), bytes_of(kDir / sc.at("hdr10plus").get<std::string>()));
 }
 
+TEST(Exr, AcesFloatMastersRetainRangeAndPrecision) {
+    PlanarBuffer img = planar(f32(idx().at("exr").at("input")));
+    for (float& v : img.span()) v = 70000.125f;
+    for (bool ap0 : {false, true}) {
+        const auto path = scratch(ap0 ? "aces_float32.exr" : "acescg_float32.exr");
+        auto written = ap0 ? write_aces_exr(path, img, Primaries::Ap0, 1.0, {}, false)
+                           : write_acescg_exr(path, img, Primaries::Ap1, 1.0, {}, false);
+        ASSERT_TRUE(written);
+        auto read = read_exr(path);
+        ASSERT_TRUE(read);
+        for (int type : read->pixel_types) EXPECT_EQ(type, 2);
+        for (float value : read->pixels.span()) EXPECT_FLOAT_EQ(value, 70000.125f);
+    }
+}
+
 TEST(Exr, FloatToHalfMatchesNumpy) {
     const auto& e = idx().at("exr");
     const auto in = f32(e.at("half_in")), bits = f32(e.at("half_bits"));
@@ -201,6 +216,41 @@ TEST(Exr, FloatToHalfMatchesNumpy) {
     for (std::size_t i = 0; i < in.data.size(); ++i)
         if (float_to_half(in.data[i]) != std::uint16_t(bits.data[i])) ++bad;
     EXPECT_EQ(bad, 0u);
+}
+
+TEST(Exr, ReconstructionMaskIsSeparateFromAlpha) {
+    PlanarBuffer rgb(4, 2, 3, 70000.125f), mask(1, 2, 3, 0.0f);
+    for (std::size_t i = 0; i < mask.plane_size(); ++i) {
+        mask.plane(0)[i] = float(i) / 5.0f;
+        rgb.plane(3)[i] = 0.75f;
+    }
+    const auto path = scratch("reconstruction_mask_float.exr");
+    ASSERT_TRUE(write_exr(path, rgb, false, std::nullopt, {}, &mask));
+    auto result = read_exr(path);
+    ASSERT_TRUE(result);
+    ASSERT_TRUE(result->reconstruction_mask);
+    EXPECT_EQ(result->pixels.channels(), 4);
+    EXPECT_EQ(result->pixel_types.size(), 5u);
+    for (std::size_t i = 0; i < mask.plane_size(); ++i) {
+        EXPECT_FLOAT_EQ(result->reconstruction_mask->plane(0)[i], mask.plane(0)[i]);
+        EXPECT_FLOAT_EQ(result->pixels.plane(0)[i], 70000.125f);
+        EXPECT_FLOAT_EQ(result->pixels.plane(3)[i], 0.75f);
+    }
+    mask.plane(0)[0] = 1.1f;
+    EXPECT_FALSE(exr_bytes(rgb, false, std::nullopt, {}, &mask));
+    PlanarBuffer wrong(1, 1, 3);
+    EXPECT_FALSE(exr_bytes(rgb, false, std::nullopt, {}, &wrong));
+}
+
+TEST(Exr, AcesMaskKeepsValuesWithoutExposureScaling) {
+    PlanarBuffer rgb(3, 2, 3, .18f), mask(1, 2, 3, .25f);
+    const auto path = scratch("acescg_mask.exr");
+    ASSERT_TRUE(write_acescg_exr(path, rgb, Primaries::Ap1, 2.0, {}, false, &mask));
+    auto result = read_exr(path);
+    ASSERT_TRUE(result);
+    ASSERT_TRUE(result->reconstruction_mask);
+    for (float v : result->reconstruction_mask->span()) EXPECT_FLOAT_EQ(v, .25f);
+    for (float v : result->pixels.span()) EXPECT_NEAR(v, .36f, 1e-6f);
 }
 
 TEST(Exr, FilesByteIdentical) {

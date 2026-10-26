@@ -138,6 +138,7 @@ private:
     struct State;
     HeadroomPreviewDriver(std::unique_ptr<HeadroomPreviewPort> port, Callbacks callbacks, int max_pending);
     void run();
+    void worker_failed(const char* what) noexcept;   // run()'s exception guard
     void deliver(std::uint64_t epoch, std::shared_ptr<HeadroomPreviewPort::Pending> pending);
     void fail(std::uint64_t epoch, Error error);
     void finish(std::uint64_t epoch);

@@ -1,0 +1,9 @@
+{
+  "registered_before_evaluation": true,
+  "purpose": "Test whether an 8-pixel smooth boundary blend suppresses fully-clipped temporal instability while retaining core radiance. Analytic replacement of all fully-clipped pixels failed coherent accuracy.",
+  "parent": "G:/rudra_training/aces_consistent_head_equal600_v2_20261024/step600.pt",
+  "fully_clipped_feather_radius": 8,
+  "policy": "Existing partial-highlight colour constraint; in fully-clipped regions smoothstep((distance-to-boundary-1)/8) scales displacement from analytic inverse. Ordinary/shadow unchanged. All-fully-clipped image retains parent because no observed boundary exists.",
+  "acceptance": "Retain five coherent development checks, parent highlight nonregression, appearance/sign/outside-support checks. Selected known Hunyuan transition is diagnostic only; any promising result needs complete motion/detail/grade suites. Do not promote on selected-frame results.",
+  "release_authorized": false
+}

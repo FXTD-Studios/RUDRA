@@ -1,0 +1,12 @@
+{
+  "registered_before_training": true,
+  "purpose": "Matched single-factor detail-loss trial: test whether final-head texture can improve without changing ordinary pixels/shadows or relying on overall HDR error.",
+  "parent": "G:/rudra_training/aces_v1_analytic_shadow_20261024/candidate.pt",
+  "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+  "control": "G:/rudra_training/aces_consistent_head_equal600_v2_20261024/step600.pt",
+  "gradient_loss_weight": 0.25,
+  "change": "Add equal-image signed-asinh RGB gradient squared error on adjacent valid highlight pixels. Same v7 initialization, frozen body/restorer/source correction, scene sampler/seed/batch4/crop192/600 updates/Adam0.0001 as equal-image control. No radiance clamp; artificial crop borders excluded.",
+  "acceptance": "Retain original legacy/coherent evaluation checks and record failures. Apply same colour constraint after evaluation, then require coherent H error no worse than constrained equal-image control and fully-clipped/highlight log-gradient errors no worse than analytic. Grade -3/0/+3 EV errors reported separately, all must pass previous registered nonregression checks before adoption. No promotion based on one improved metric.",
+  "research_basis": ["https://arxiv.org/abs/1710.07480", "https://arxiv.org/abs/2108.08713"],
+  "release_authorized": false
+}

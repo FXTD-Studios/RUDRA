@@ -1,0 +1,10 @@
+{
+  "registered_before_rotated_runs": true,
+  "base_report": "G:/rudra_training/aces_anchor_direction12_20261024/report.json",
+  "base_report_sha256": "8aba26c0f8345cfdea63c42d00d1a8060398587c8ef716845cbbd30091cfb727",
+  "folds": [
+    "configs\\experiments\\aces_anchor_rotation_fold1_20261024.json",
+    "configs\\experiments\\aces_anchor_rotation_fold2_20261024.json"
+  ],
+  "decision": "Compare monitor per-member photo/detail/temporal/log-detail changes across all three folds, stalls and near/deep-region diagnostics. No favourable-fold selection or changed thresholds. Full product qualification remains separate."
+}

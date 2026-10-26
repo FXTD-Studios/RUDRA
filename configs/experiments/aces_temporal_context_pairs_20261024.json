@@ -1,0 +1,13 @@
+{
+  "registered_before_generation": true,
+  "source_manifest": "G:/datasets/corpora/aces_temporal_context_sources_20261024/manifest.json",
+  "height": 320,
+  "width": 512,
+  "fully_clipped_fractions": [0.001, 0.01, 0.05],
+  "translations_xy": [[0,0],[0.5,0.25],[1,0.5]],
+  "exposure_search": "14 bisections from -12 to +20 EV, target fraction of all RGB channels >=254.5/255 through exact ACES SDR view. Record actual achieved fractions; discrete plateaus may overshoot.",
+  "target": "Same corrected coherent target construction: original AP1 reference in highlights; inverse bounded clean source ordinary pixels; analytic source inverse in shadows. Saved source canonical encoding read-back is mandatory.",
+  "checks": "40 scenes with original32/8 split, nine frames per scene, source/content and scene disjoint from declared old training/development; every target displays within1code; finite arrays; >=8 TRAIN and >=3 VAL scenes with fully-clipped pixels; no optimization during generation",
+  "scope": "Original synthetic planar motion of existing CC0 references, one view per scene and3 exposure conditions. Known subpixel translations, reflected borders excluded by4px for future aligned loss. No real object motion/occlusion/compression, no independent release claim.",
+  "release_authorized": false
+}

@@ -1,0 +1,15 @@
+{
+  "registered_before_training": true,
+  "parent": "G:/rudra_training/aces_consistent_head_equal600_v2_20261024/step600.pt",
+  "parent_sha256": "4904f8c37766a3a8baa11ed4864807b09025df70a82c3d3fd98854f22fc7322a",
+  "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+  "architecture": "v8 independent highlight-context branch initialized from parent predictor; frozen parent source/restorer/shadows. Only highlight branch trained; ordinary and shadow outputs must stay bit-exact. Inference remains single-frame, no optical flow/recurrent state.",
+  "seed": 20261024,
+  "steps": 600,
+  "learning_rate": 0.00001,
+  "sampling": "Uniform scene then exposure-group then adjacent pair0/1 or1/2, full320x512 frames. No validation optimization or checkpoint selection.",
+  "loss": {"equal_frame_highlight_asinh_mse": 1.0,"highlight_gradient": 0.1,"known_aligned_temporal_residual": 0.1},
+  "acceptance": "New scene-disjoint development: H error >=5% better than parent and no worse than analytic; exact outside-highlight preservation; zero new negativeY; constrained partial display <=1code. Same parent comparison on old coherent24; legacy scores retained unchanged. Full real motion/detail/grade checks required before adoption, not inferred from static scores.",
+  "scope": "Controlled feasibility trial with original planar-motion pairs of CC0 sources; no claim of real-motion or fresh release coverage. This expands trainable spatial context and adds explicit temporal supervision after isolated-head ablations failed.",
+  "release_authorized": false
+}

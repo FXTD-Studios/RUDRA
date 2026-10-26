@@ -34,4 +34,6 @@
 # golden records the SHA-256 of its queue.json. A CRLF checkout on Windows
 # would change every one of them, so they are stored and checked out as-is.
 native/tests/golden/** -text
+# Rights evidence records the SHA-256 and byte size of each retrieved page.
+docs/ai/rights/** -text
 *.rpu  binary

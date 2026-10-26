@@ -1,0 +1,22 @@
+{
+  "registered_before_evaluation": true,
+  "source_registration": "configs/experiments/aces_constrained_generated_review_20261024.json",
+  "clip": "hunyuan_demo",
+  "candidate": "G:\\rudra_training\\partial_pcgrad_duration6400_retry1_20261025\\step6400.pt",
+  "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+  "frames": 48,
+  "feather_radius": 0,
+  "all_highlight_appearance": true,
+  "policy": "Deterministic uncapped PCGrad control; original Hunyuan48 gates",
+  "checks": "48frames; max transition mean excess<=0.02EV; ordinary >=99.9% within1code; all highlight appearance<=1code; zero shadow lift/new negativeY; exact outside constraint support",
+  "scope": "Duration6400 + luminance guard; original Hunyuan48 gates. Claude 26 Oct.",
+  "release_authorized": false,
+  "include_fully_clipped": true,
+  "clipped_smoothing": {
+    "start": 0,
+    "mode": "hybrid",
+    "ramp": 1,
+    "sigma": 64
+  },
+  "forbid_new_negative_y": true
+}

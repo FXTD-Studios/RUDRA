@@ -1,0 +1,19 @@
+{
+  "checkpoints": {
+    "parent": "G:/rudra_training/aces_guarded_projected600_20261024/step600.pt",
+    "local": "G:/rudra_training/aces_wide_local600_20261024/step600.pt",
+    "coarse": "G:/rudra_training/aces_wide_coarse600_20261024/step600.pt"
+  },
+  "context_audit": "G:/rudra_training/aces_receptive_context_20261024/report.json",
+  "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+  "schedule": "G:/rudra_training/aces_balanced_sequential600_20261024/sample_schedule.json",
+  "scope": "TRAIN diagnosis on all four previously certified-blind images and all scheduled intersecting crops. Fixed remote gray substitution tests field sensitivity, not reconstruction correctness or causal quality benefit. No fitting, selection, release or holdout claim.",
+  "input_hashes": {
+    "G:/rudra_training/aces_guarded_projected600_20261024/step600.pt": "e83b997c315bf5cc26d3df0e6fa2ad357828feebc0d78384b378057ed4349709",
+    "G:/rudra_training/aces_wide_local600_20261024/step600.pt": "1ff46f92869440d604684799729eb6a8faf33f00718ebb8ab7259d93284f11b6",
+    "G:/rudra_training/aces_wide_coarse600_20261024/step600.pt": "b46db3b0cd5df2c84d8ba358ebdd8398d1a5bb7b5e82f4527e4f8abea39885ba",
+    "G:/rudra_training/aces_receptive_context_20261024/report.json": "461341f6d7ece38ce954226856305f9da9eba2625bac68ffaaab8e510c37ed44",
+    "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json": "d2ac979f3d046c54c589acae20b905d47d96c1fbc1118c77322026de8e713836",
+    "G:/rudra_training/aces_balanced_sequential600_20261024/sample_schedule.json": "01035eaf180d31c08a2f1a9313812a2d3391a5ffc0a65093bc0389f7ac8e6b3c"
+  }
+}

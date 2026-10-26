@@ -58,8 +58,14 @@ $AppTests = Join-Path $Build "app\Release\rudra_app_tests.exe"
 $Tests = Join-Path $Build "tests\Release\rudra_tests.exe"
 foreach ($exe in $App, $AppTests, $Tests) { if (-not (Test-Path $exe)) { Fail "missing $exe" } }
 
+# Native tools write to stderr; with "Stop" the first stderr line (PowerShell 5.1)
+# or a nonzero exit (7.4) would end the script before summary.json is written.
+# Exit codes are recorded and gated below instead (as scripts\NATIVE_TESTS.ps1 does).
+$prevEap = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+$PSNativeCommandUseErrorActionPreference = $false
+
 Say "Headroom native tests"
-& $Tests --gtest_filter="HeadroomPreviewDriver.*:HeadroomExport.*:HeadroomFrames.*:HeadroomSession.*" `
+& $Tests --gtest_filter="HeadroomPreviewDriver.*:HeadroomExport.*:HeadroomFrames.*:HeadroomSession.*:HeadroomBaseline.*:HeadroomRender.*:HeadroomProject.*" `
     --gtest_output="json:$Out\headroom_native.json" 2>&1 | Tee-Object -FilePath (Join-Path $Out "headroom_native.log")
 $summary.headroom_native_exit = $LASTEXITCODE
 
@@ -83,7 +89,7 @@ if (-not $Movie) {
         & ffmpeg -v error -nostdin -f lavfi -i "testsrc2=size=1920x1080:rate=24" `
             -vf "setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709" -frames:v 48 -pix_fmt yuv444p10le `
             -color_range tv -colorspace bt709 -color_primaries bt709 -color_trc bt709 -c:v ffv1 -level 3 $Movie
-        if ($LASTEXITCODE -ne 0) { Fail "could not make the clip" }
+        if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $prevEap; Fail "could not make the clip" }
     }
 }
 $summary.movie = $Movie
@@ -93,12 +99,19 @@ $Report = Join-Path $Out ("headroom_check_" + (Get-Date -Format "HHmmss") + ".js
 & $App --headroom-check $Report --movie $Movie --timeout-ms $TimeoutMs 2>&1 | Tee-Object -FilePath (Join-Path $Out "headroom_check.log")
 $summary.headroom_check_exit = $LASTEXITCODE
 $summary.headroom_check_report = $Report
+$ErrorActionPreference = $prevEap
 
 $summary.finished = (Get-Date).ToString("o")
 $summary | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Out "summary.json")
 Say "Summary"
 $summary | Format-Table -AutoSize | Out-String | Write-Host
-if ($summary.headroom_native_exit -ne 0 -or $summary.headroom_check_exit -ne 0) {
+# googletest exits 0 when a filter selects nothing: an empty headroom run is a failure.
+$headroomRan = 0
+try { $headroomRan = [int]((Get-Content -Raw (Join-Path $Out "headroom_native.json") | ConvertFrom-Json).tests) } catch {}
+$summary.headroom_native_tests = $headroomRan
+$suiteFailed = ($summary.Contains('native_exit') -and $summary.native_exit -ne 0) -or
+               ($summary.Contains('app_exit') -and $summary.app_exit -ne 0)
+if ($summary.headroom_native_exit -ne 0 -or $summary.headroom_check_exit -ne 0 -or $suiteFailed -or $headroomRan -lt 1) {
     Write-Host "Something failed: read $Out (the check's JSON names the step and the reason)." -ForegroundColor Yellow
     exit 1
 }

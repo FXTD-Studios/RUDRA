@@ -1,0 +1,10 @@
+{
+  "registered_before_training": true,
+  "purpose": "matched loss-aggregation control after pooled highlight loss failed; normalize each sampled image independently",
+  "parent": "G:/rudra_training/aces_v1_analytic_shadow_20261024/candidate.pt",
+  "pilot": "G:/datasets/corpora/aces_consistent_exposures_20261024/train/report.json",
+  "control": "G:/rudra_training/aces_consistent_head600_20261024/step600.pt",
+  "change": "equal-image masked asinh loss instead of pixel-pooled loss; same frozen features, source order, scene sampler, seed20261024, learning rate0.0001, batch4, crop192, 600 updates and parent initialization",
+  "acceptance": "all checks in aces_consistent_head_20261024.json unchanged; also require consistent-view highlight MSE no worse than pooled control. Record both failures if neither passes; no promotion based on relative improvement alone.",
+  "release_authorized": false
+}

@@ -181,6 +181,12 @@ class NativeModel(nn.Module):
 
     def __init__(self, net: SDR2HDRNet, onnx_safe: bool = False):
         super().__init__()
+        if getattr(net, 'bounded_source', False) or getattr(net, 'baseline_source', False):
+            raise ValueError(
+                'Native package contract 1.0 cannot represent bounded restoration or '
+                'picker-conditioned encoder baselines. Export requires an extended '
+                'native inference/composite contract and full output parity; refusing '
+                'to silently drop these trained capabilities.')
         self.onnx_safe = bool(onnx_safe)
         self.gate_max_side = int(GATE_MAX_SIDE)
         self.curve_max_side = int(CURVE_MAX_SIDE)

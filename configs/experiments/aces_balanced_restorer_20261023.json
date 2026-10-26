@@ -1,0 +1,14 @@
+{
+  "purpose": "test balanced intensity/colour coverage with equal natural/synthetic batch representation; combined data and sampling intervention",
+  "output": "G:/rudra_training/aces_balanced_restorer1200_20261023",
+  "pilot": "G:\\datasets\\corpora\\aces_balanced_mixed144_20261023\\report.json",
+  "pilot_sha256": "72c3ba23aa5658fb892ff17649932ac0ea7ae0adaae97d989c0ebf9271aca36d",
+  "steps": 1200,
+  "gradient_weight": 1,
+  "balanced_domains": true,
+  "seed": 20261023,
+  "lr": 0.001,
+  "initialization": "fresh local restorer, frozen lower_lr300 HDR predictor",
+  "acceptance": "natural24 and original procedural8 code MSE no worse than gradient1200; original five natural gates; every ramp/exposure gradient RMSE at least25% below mixed1200; visual steps assessed separately; balanced dev24 reported as supplemental only",
+  "release_authorized": false
+}

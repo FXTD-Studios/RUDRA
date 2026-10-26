@@ -1,0 +1,36 @@
+{
+  "registered_before_training": true,
+  "parent": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+  "parent_sha256": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+  "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+  "replay_pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+  "seed": 20261030,
+  "steps": 600,
+  "learning_rate": 0.0001,
+  "loss": {
+    "equal_frame_highlight_asinh_mse": 1.0,
+    "highlight_gradient": 1.0,
+    "known_aligned_temporal_residual": 1.0
+  },
+  "include_fully_clipped": true,
+  "change": "Matched600 attempted mixed-scene updates. Same parent/seed/data/crops; compare projected versus unprojected persistent-Adam displacement with equal four-scale search. Motion: all three nonincrease and temporal strict improvement; replay: photo/detail nonincrease and photo strict improvement. Rejection restores weights and moments; advance to next sampled batch. Accepted steps retain proposed moments unscaled.",
+  "replay_geometry": "Origin multiple4; nominal320x512 crops may extend1..3 pixels to actual image edge. Exclude64px artificial boundaries,4px real boundaries. Select original interior highlights only; exclude and report replay rows without any. No motion objective on replay.",
+  "acceptance": "Unchanged new/old reconstruction, detail, aligned, source appearance, sign, outside-full, old grade and Hunyuan48 gates. Compare isolated final checkpoints of the two independently optimized arms; no early stopping or best checkpoint selection.",
+  "old_coherent_control_max": 0.3825248606569533,
+  "aligned_residual_control_max": 0.010367255277136186,
+  "scope": "Bounded mixed-scene TRAIN comparison motivated by fixed-pair pilot.600 attempts per arm, not600 accepted updates. No independent holdout or release claim.",
+  "release_authorized": false,
+  "replay_sampling": "nonempty_phase_aligned_v2",
+  "training_region": "fully_clipped",
+  "temporal_support": "active_union_composed",
+  "log_gradient_balance": false,
+  "update_mode": "projected_search",
+  "search_scales": [
+    1,
+    0.5,
+    0.25,
+    0.125
+  ],
+  "relative_tolerance": 1e-06,
+  "absolute_tolerance": 1e-09
+}

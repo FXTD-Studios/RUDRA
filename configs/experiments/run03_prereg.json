@@ -1,0 +1,14 @@
+{
+  "registered": "2026-10-22, before run03 starts",
+  "candidate_selection": "audit (both-positive PU) -> shortlist of <=3 by trailing pu_min -> production_shortlist_eval with run02 best.pt (ad3d7910...) as reference",
+  "acceptance": {
+    "R1_validation_gate": "clean lower CI >= -0.1 dB and hard lower CI > 0 vs bt1886 baseline (validation_kit, unchanged)",
+    "R2_not_worse_than_run02": "candidate-minus-run02 best.pt CI not entirely below 0 on clean or hard (validation_kit)",
+    "R3_dark_slice": "dark slice (>=10% ref pixels < 0.1 nit, dark_guard_eval definition): mean gain >= run02's (clean +0.378, hard +0.097 dB)",
+    "R4_sihdr": "SI-HDR protocol v1.1: A1-A3 pass both clip levels; full-frame mean >= run02 unguarded minus 0.1 dB (+0.648 / +1.020 floor)",
+    "R5_tos_dark": "ToS kit v1 section 03_2a clean mean PU gain >= -0.1 dB (run02: -1.38); T1 and T3 pass everywhere",
+    "R6_mataha": "DIAGNOSTIC ONLY (revealed the defect): report clean/hard gain and A_0027C021; cannot confirm"
+  },
+  "limits": "no unused production footage exists: no fresh held-out production test; SI-HDR SDR simulated, ToS SDR synthetic",
+  "release_authorized": false
+}

@@ -405,9 +405,15 @@ def prepare(out):
     if len({r['asset_id'] for r in kept}) != len(kept):
         raise ValueError('Duplicate pair identities')
     write_rows(out/'sdr_hdr_manifest.jsonl', kept)
-    render.write_sentinel(out)
     config_path = out / '_ingest_config.json'
+    # The sentinel is post-processed below (one family, this corpus), so on a
+    # resume it would no longer match what write_sentinel() checks against.
+    # Write it only once; a resumed run must belong to the same plan.
+    if not config_path.exists():
+        render.write_sentinel(out)
     config = json.loads(config_path.read_text())
+    if config.get('plan_sha256') not in (None, digest(out/'plan.json')):
+        raise SystemExit(f"{config_path}: written for a different plan; use a fresh --out")
     config['families'] = [config['families'][0]]
     config['families'][0]['weight'] = 1.0
     config.update(corpus='rudra_z_pipeline_20261018_v1', tool='pipeline/prepare_z_footage.py',

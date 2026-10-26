@@ -1,0 +1,16 @@
+{
+  "registered_before_build": true,
+  "purpose": "broaden exact-view highlight coverage beyond the two scenes in the initial coherent corpus",
+  "source": "first existing selected row per scene in natural TRAIN48 and development24, preserving split",
+  "exposure_offsets_stops": [
+    2,
+    4,
+    6
+  ],
+  "policy": "Same exact-view paired construction; scale original linear reference before rendering and quantization; never relabel development as TRAIN",
+  "acceptance": "all target RGB display errors <=1 code; scene/content disjoint; >=1000 TRAIN and >=100 development highlight pixels; at least three highlight-bearing scenes in each split",
+  "limits": "fixed exposure sweep of existing CC0 references, not new independent data or proof of arbitrary-look recovery",
+  "used_for_optimization": false,
+  "release_authorized": false,
+  "encoding_correction": "v2 uses canonical storage and validates the actual saved PNG through the training loader before target construction and scoring; earlier corpus and derived trials invalidated."
+}

@@ -1,5 +1,8 @@
 #include "headroom_check.hpp"
 
+#include <algorithm>
+#include <memory>
+
 #include <QApplication>
 #include <QDateTime>
 #include <QDir>
@@ -54,7 +57,7 @@ int run_headroom_check(MainWindow& w, const HeadroomCheckArgs& a) {
         QElapsedTimer t;
         t.start();
         while (!done()) {
-            if (!dialogs.isEmpty() || t.elapsed() >= std::min(ms, a.timeout_ms)) return false;
+            if (!dialogs.isEmpty() || t.elapsed() >= ms) return false;
             QApplication::processEvents(QEventLoop::AllEvents, 20);
             QThread::msleep(1);
         }
@@ -215,14 +218,18 @@ int run_headroom_check(MainWindow& w, const HeadroomCheckArgs& a) {
         wait_for([&] { return v->isExposed(); }, 10000);
         const bool exposed = v->isExposed();
         const auto s0 = v->status();
-        bool grabbed = false, nonzero = false;
-        QString format;
-        v->grab([&](const ViewerWindow::Grab& g) {
-            grabbed = true;
-            format = QString::fromStdString(g.format);
-            for (unsigned char b : g.bytes) if (b) { nonzero = true; break; }
+        // grab() is asynchronous: the callback can fire after a timed-out wait,
+        // so it writes into shared state, never into this stack frame.
+        struct GrabState { bool grabbed = false, nonzero = false; QString format; };
+        auto gs = std::make_shared<GrabState>();
+        v->grab([gs](const ViewerWindow::Grab& g) {
+            gs->grabbed = true;
+            gs->format = QString::fromStdString(g.format);
+            gs->nonzero = std::any_of(g.bytes.begin(), g.bytes.end(), [](unsigned char b) { return b != 0; });
         });
-        wait_for([&] { return grabbed; }, std::min(a.timeout_ms, 30000));
+        wait_for([&] { return gs->grabbed; }, std::min(a.timeout_ms, 30000));
+        const bool grabbed = gs->grabbed, nonzero = gs->nonzero;
+        const QString format = gs->format;
         const auto s1 = v->status();
         step("viewer", {{"exposed", exposed}, {"window_visible", w.isVisible()}, {"minimized", w.isMinimized()},
                         {"reason", exposed ? QString() : QStringLiteral("the viewer window was never exposed: unlock the screen and leave the window visible")},

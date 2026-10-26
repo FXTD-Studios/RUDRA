@@ -1,0 +1,34 @@
+{
+  "registered_before_evaluation": true,
+  "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+  "checkpoint": "G:/rudra_training/aces_full_active600_20261024/step600.pt",
+  "groups": [
+    "tif_0000039_university_workshop_4k_00000__context_0",
+    "tif_0000035_pink_sunrise_4k_00000__context_0",
+    "tif_0000048_artist_workshop_4k_00000__context_0",
+    "tif_0000013_decor_shop_4k_00000__context_0",
+    "tif_0000037_unfinished_office_4k_00000__context_1",
+    "tif_0000014_neon_photostudio_4k_00000__context_1",
+    "tif_0000015_ferndale_studio_02_4k_00000__context_1",
+    "tif_0000032_zwartkops_curve_afternoon_4k_00000__context_1",
+    "tif_0000137_canary_wharf_4k_00000__context_2",
+    "tif_0000039_university_workshop_4k_00000__context_2",
+    "tif_0000035_pink_sunrise_4k_00000__context_2",
+    "tif_0000013_decor_shop_4k_00000__context_2"
+  ],
+  "selection": "Four salted-hash groups per desired clipping stratum, both adjacent pairs; independent reset for every probe",
+  "learning_rate": 0.0001,
+  "scales": [
+    1,
+    0.5,
+    0.25,
+    0.125
+  ],
+  "relative_tolerance": 1e-06,
+  "absolute_tolerance": 1e-09,
+  "scope": "TRAIN-only persistent-Adam pilot: same24 fixed pair starts, both methods, up to5 accepted updates per trajectory. Same four-scale search and tolerances. Accepted scaled/projected steps retain newly computed Adam moments unscaled; rejected steps restore both weights and optimizer state, clear gradients and stop trajectory since identical retry is redundant. No cross-probe state, no checkpoint saved. Other adjacent pair measured before/after only, overlapping same scene not holdout. All initial stalled cases retained. Not generalization or release evidence.",
+  "pilot_sha256": "9e410260e07304ec26e02106b094d11e25ef78e85e45aae914c6ffa5a85151c2",
+  "checkpoint_sha256": "c354e68c2801423b5b18e6fd3b18cd57fcb7836df25651516c2a2ecbff972f51",
+  "matched_adam_search": true,
+  "max_steps": 5
+}

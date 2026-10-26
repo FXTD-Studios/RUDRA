@@ -1,0 +1,36 @@
+{
+  "registered_before_evaluation": true,
+  "train_pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+  "models": {
+    "all_highlight": "G:/rudra_training/aces_full_temporal600_20261024/step600.pt",
+    "active": "G:/rudra_training/aces_full_active600_20261024/step600.pt"
+  },
+  "development": {
+    "new_motion": {
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/val/report.json",
+      "reports": {
+        "all_highlight": "G:/rudra_training/aces_full_temporal600_20261024/paired_development/new_motion/candidate_report.json",
+        "active": "G:/rudra_training/aces_full_active600_20261024/paired_development/new_motion/candidate_report.json"
+      }
+    },
+    "old_coherent": {
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/val/report.json",
+      "reports": {
+        "all_highlight": "G:/rudra_training/aces_full_temporal600_20261024/paired_development/old_coherent/candidate_report.json",
+        "active": "G:/rudra_training/aces_full_active600_20261024/paired_development/old_coherent/candidate_report.json"
+      }
+    }
+  },
+  "scope": "All192 adjacent TRAIN pairs at both final rejected checkpoints, same active temporal/photo/detail unit-weight objectives. No optimization. Cosines and first-order unpreconditioned gradient dot products, not actual Adam trajectory or causal proof. DEV saved constrained reports grouped by scene and declared clipping fraction; reused development, no independent holdout or release claim.",
+  "input_hashes": {
+    "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json": "9e410260e07304ec26e02106b094d11e25ef78e85e45aae914c6ffa5a85151c2",
+    "G:/rudra_training/aces_full_temporal600_20261024/step600.pt": "6d0dbd8d1c658741f8f74f91e38d5f5b25c2ea982c64e622967e800c6c2e32c9",
+    "G:/rudra_training/aces_full_active600_20261024/step600.pt": "c354e68c2801423b5b18e6fd3b18cd57fcb7836df25651516c2a2ecbff972f51",
+    "G:/datasets/corpora/aces_temporal_context_pairs_20261024/val/report.json": "9016d03cc2addd7e1bb24cdf72dd9c63f83273b3eb4349b5b02277924852a2dc",
+    "G:/rudra_training/aces_full_temporal600_20261024/paired_development/new_motion/candidate_report.json": "c3497be43bf053c2e4162eb5026890aaa04d66837d1b7b6711e3b606d6a261d4",
+    "G:/rudra_training/aces_full_active600_20261024/paired_development/new_motion/candidate_report.json": "37691dda7879227686605a7de257fd6c0e302819da2ed4d1a18e3416f395f82b",
+    "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/val/report.json": "872fbb24546732fc24af205a2d10ef968a70e62a4b0f3af402de7151ed382eca",
+    "G:/rudra_training/aces_full_temporal600_20261024/paired_development/old_coherent/candidate_report.json": "51b054ec4061f494e390337bfa2ae6b43bd6bb5b6560933fa635c6f917d21796",
+    "G:/rudra_training/aces_full_active600_20261024/paired_development/old_coherent/candidate_report.json": "708055c32214bfe60b3ed07da751129953f742fcba78b64e060baee96127882e"
+  }
+}

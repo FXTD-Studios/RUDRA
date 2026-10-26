@@ -16,7 +16,7 @@ def active_trainers():
             if proc.pid in own_tree or not (proc.info['name'] or '').lower().startswith('python'):continue
             args=proc.info['cmdline'] or []
             if '--prepare-only' in args:continue
-            if any(re.fullmatch(r'(run_.*commercial|train_sdr2hdr)\.py',Path(a).name,re.I) for a in args):found.append(proc.pid)
+            if any(re.fullmatch(r'(run_.*commercial|train_sdr2hdr|resumable_training)\.py',Path(a).name,re.I) for a in args):found.append(proc.pid)
         except (psutil.NoSuchProcess,psutil.AccessDenied):continue
     return found
 

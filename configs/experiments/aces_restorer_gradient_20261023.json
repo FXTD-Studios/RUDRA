@@ -1,0 +1,11 @@
+{
+  "purpose": "match target spatial derivatives rather than only average codes",
+  "inherits": "configs/experiments/aces_mixed_restorer1200_20261023.json",
+  "output": "G:/rudra_training/aces_restorer_gradient1200_20261023",
+  "steps": 1200,
+  "gradient_weight": 1,
+  "gradient_definition": "mean RGB squared difference of horizontal/vertical target and restored code gradients; both endpoints ordinary,40px border excluded",
+  "acceptance": "all mixed1200 restoration requirements; natural and procedural code MSE no worse than mixed1200 control; ramp gradient RMSE at least25% lower than control for each of3 ramps at each of-3/0/+3EV; visual separate",
+  "initialization": "fresh same seeded local branch; same frozen lower_lr300 HDR predictor",
+  "release_authorized": false
+}

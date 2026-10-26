@@ -1,0 +1,16 @@
+{
+  "registered_before_export": true,
+  "candidate": "G:/rudra_training/aces_context_balanced6000_20261024/step6000.pt",
+  "checkpoint_sha256": "2a2a9d7ca3ad28489193458e443fe4d21349b41ba88bd1c7af91c336ae0286c8",
+  "expected_inputs": [
+    {
+      "clip": "hunyuan_smoke4",
+      "path": "G:\\rudra_training\\generative_review_20261022\\inputs\\hunyuan_demo.mp4",
+      "sha256": "d14bb79ba69102dc0709bc3dcb25044b2cea334ddbe0e967acaf163ebb918d82",
+      "source_frames": 750,
+      "expected_frames": 4
+    }
+  ],
+  "scope": "Four-frame v8 all-highlight-constrained float32 EXR/16-bit PQ transport smoke only. No reconstruction quality or release acceptance.",
+  "release_authorized": false
+}

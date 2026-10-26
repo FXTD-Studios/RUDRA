@@ -1,0 +1,28 @@
+{
+  "registered_before_building": true,
+  "registered_before_evaluation": true,
+  "author": "Claude (Cowork), approved by ahmed 26 Oct ('YES, work hard to deliver it today', option 2: bigger fresh grading set)",
+  "purpose": "Fresh grading/highlight evaluation of the learned ACES 2.0 model on footage never used by any ACES corpus, training run, development selection or gate (verified: 0 of 115 FXTD scene ids appear in any aces/run05/temporal/ambientcg corpus report or manifest). Replaces the 14-frame old_coherent grade set as the deciding evidence for grading; the frozen ambientCG prospective holdout stays untouched.",
+  "source": "G:/datasets/corpora/rudra_run05_sources_20261022/sources.jsonl rows with licence_source == 'fxtd' (FXTD Studios own footage: RED Dragon linear EXR and ARRI LogC3, decoded to BT.2020 scene-linear, 1.0 = 203 nits, stored log2_extended PNG at 1920 wide). Per-frame metadata from rudra_fxtd_camera_20261016/_records.jsonl.",
+  "frame_selection": "Per scene: frames whose record has no sensor_clipped_channels true and peak_at_ceiling false (reference must not be sensor-clipped); take the one with the median frame_index (lower median on ties). Scenes without an eligible frame are dropped. Order: sorted by scene_id.",
+  "processing": "load_plate (rec2020) / (203/10000) -> scene units; area-downsample in linear light to longest side 512; BT.2020 -> AP1 (rudra.delivery.colorspace.convert). Reference = plate * 2**ev (ACEScg float32).",
+  "exposures": "Two per frame, chosen only from the reference: ev such that the fraction of pixels whose max display code (ACES 2.0 SDR 100 nits, OCIO 2.5.2, cg-config-v4.0.0) is >= 254.5/255 equals 1% and 5% (bisection on ev in [-8, 12], 40 iterations).",
+  "source_sdr": "rint(clip(view.forward(reference),0,1)*255)/255 float32 (8-bit codes).",
+  "inclusion": "A (frame, exposure) case is kept if it has >= 100 highlight pixels (reconstruction_weight > 0 and max code > 0.5) after rendering. No other filtering, no look at any model output before freezing the case list.",
+  "candidates": {
+    "primary": "G:/rudra_training/partial_pcgrad_duration6400_retry1_20261025/step6400.pt (sha f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e) with hybrid64 smoothing, constraint include_fully_clipped, forbid_new_negative_y",
+    "secondary_report_only": ["G:/rudra_training/claude_d6400_plus3x16_1600_20261025/step1600.pt (same pipeline)"]
+  },
+  "metrics": "Per case on highlight pixels (w>0 & max code>0.5): display MSE in 8-bit codes^2 at -3, 0, +3 EV vs view.forward(reference*2**ev); asinh-RGB MSE vs reference (H); new negative AP1 luminance count; constraint remaining display errors. Means over cases (equal weight per case).",
+  "gates_primary": {
+    "grade_-3": "mean model <= mean analytic",
+    "grade_0": "mean model <= mean analytic",
+    "grade_+3": "mean model <= mean analytic",
+    "highlight_H": "mean model <= mean analytic",
+    "no_new_negativeY": "0 pixels",
+    "appearance": "0 remaining display errors > 1 code"
+  },
+  "secondary_reporting": "95% bootstrap CI (10,000 resamples over scenes, seed 20261026) of model-minus-analytic for each metric; per-project breakdown (Manchale, Lab, ELMATAREED). Reported, not gates.",
+  "limits": "Footage is the studio's own; three projects, two cameras; single frames, not video. Pass means numerical pass on this set only; visual review and release remain separate.",
+  "release_authorized": false
+}

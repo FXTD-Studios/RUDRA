@@ -88,6 +88,7 @@ Mat3 rgb_to_rgb_matrix(Primaries src, Primaries dst) noexcept {
 
 PlanarBuffer convert_primaries(const PlanarBuffer& rgb, Primaries src, Primaries dst) {
     assert(rgb.channels() == 3);
+    if (src == dst) return rgb;   // exact: an AP1 master written as ACEScg keeps its bits
     const Mat3 m = rgb_to_rgb_matrix(src, dst);
     PlanarBuffer out(3, rgb.height(), rgb.width());
     const std::size_t n = rgb.plane_size();

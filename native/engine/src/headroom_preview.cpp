@@ -256,7 +256,7 @@ HeadroomPreviewStats HeadroomPreviewDriver::stats() const {
     return s;
 }
 
-void HeadroomPreviewDriver::run() {
+void HeadroomPreviewDriver::run() try {
     auto s = state_;
     for (;;) {
         std::uint64_t epoch;
@@ -311,6 +311,30 @@ void HeadroomPreviewDriver::run() {
             auto st = weak.lock();
             if (st && st->owner) st->owner->fail(epoch, std::move(e));
         });
+    }
+} catch (const std::exception& ex) {
+    worker_failed(ex.what());
+} catch (...) {
+    worker_failed("unknown exception");
+}
+
+// An exception escaping the worker would terminate the app: stop the range and
+// report it on the display thread like any other failure (best effort: if even
+// posting throws, the preview just stays stopped).
+void HeadroomPreviewDriver::worker_failed(const char* what) noexcept {
+    try {
+        std::uint64_t epoch;
+        {
+            std::lock_guard lock(state_->mu);
+            state_->active = false;
+            epoch = state_->epoch;
+        }
+        std::weak_ptr<State> weak = state_;
+        cb_.post([weak, epoch, e = make_error(ErrorCode::IoError, "The headroom preview worker stopped", what)]() mutable {
+            auto st = weak.lock();
+            if (st && st->owner) st->owner->fail(epoch, std::move(e));
+        });
+    } catch (...) {
     }
 }
 

@@ -59,6 +59,8 @@ struct Fakes {
     }
 };
 
+// Declared before the engine in every test: the engine's worker can still
+// deliver until the engine is destroyed (joined), so `seen` must outlive it.
 struct Seen {
     std::mutex mu;
     std::vector<ReadyFrame> frames;
@@ -81,8 +83,8 @@ bool wait_for(const std::function<bool()>& done, int ms = 3000) {
 
 TEST(FrameEngine, DeliversOnlyTheFrameItWasAskedFor) {
     Fakes fk;
-    FrameEngine engine(fk.loader(), fk.infer(), {32, 4});
     Seen seen;
+    FrameEngine engine(fk.loader(), fk.infer(), {32, 4});
     engine.on_ready([&](const ReadyFrame& f) { seen.add(f); });
     engine.set_sequence(240);
     // A fast scrub: 0, 50, 120, 180 without waiting.
@@ -102,13 +104,13 @@ TEST(FrameEngine, DeliversOnlyTheFrameItWasAskedFor) {
 TEST(FrameEngine, ScrubbingAFolderNeverShowsAStaleFrame) {
     Fakes fk;
     fk.infer_time = std::chrono::milliseconds(3);
-    FrameEngine engine(fk.loader(), fk.infer(), {32, 12});
     Seen seen;
     // `pending` is set before show(i) and `asked` once it returned: a frame
     // delivered while show(i) is being called may be either, and after it
     // returned nothing older may arrive (FrameEngine::deliver_mu_).
     std::atomic<int> pending{-1}, asked{-1};
     std::atomic<int> wrong{0};
+    FrameEngine engine(fk.loader(), fk.infer(), {32, 12});
     engine.on_ready([&](const ReadyFrame& f) {
         if (f.index != asked.load() && f.index != pending.load()) ++wrong;   // a request no longer current
         seen.add(f);
@@ -131,8 +133,8 @@ TEST(FrameEngine, ScrubbingAFolderNeverShowsAStaleFrame) {
 
 TEST(FrameEngine, ReadAheadMakesTheNextFramesFreeAndTheCacheIsBounded) {
     Fakes fk;
-    FrameEngine engine(fk.loader(), fk.infer(), {8, 5});
     Seen seen;
+    FrameEngine engine(fk.loader(), fk.infer(), {8, 5});
     engine.on_ready([&](const ReadyFrame& f) { seen.add(f); });
     engine.set_sequence(20);
     engine.show(0);
@@ -156,8 +158,8 @@ TEST(FrameEngine, AFailedFrameIsReportedNotShownAsAnother) {
         if (i == 7) return make_error(ErrorCode::InvalidArgument, "frame 7 is not an image");
         return SdrImage(PlanarBuffer(3, 2, 2, float(i)));
     };
-    FrameEngine engine(bad, fk.infer(), {8, 0});
     Seen seen;
+    FrameEngine engine(bad, fk.infer(), {8, 0});
     engine.on_ready([&](const ReadyFrame& f) { seen.add(f); });
     engine.set_sequence(10);
     engine.show(7);
@@ -176,8 +178,8 @@ TEST(FrameEngine, AFailedFrameIsReportedNotShownAsAnother) {
 TEST(FrameEngine, PlaybackKeepsInferenceAheadOfThePlayhead) {
     Fakes fk;
     fk.infer_time = std::chrono::milliseconds(4);
-    FrameEngine engine(fk.loader(), fk.infer(), {64, 4, 16});
     Seen seen;
+    FrameEngine engine(fk.loader(), fk.infer(), {64, 4, 16});
     engine.on_ready([&](const ReadyFrame& f) { seen.add(f); });
     engine.set_sequence(120);
     engine.set_playing(true);
@@ -211,8 +213,8 @@ TEST(FrameEngine, AProxyUnderAStoppedPlayheadIsInferredAgainAtFullSize) {
         if (!r.proxy) ++full;
         return r;
     };
-    FrameEngine engine(fk.loader(), infer, {32, 2, 4});
     Seen seen;
+    FrameEngine engine(fk.loader(), infer, {32, 2, 4});
     engine.on_ready([&](const ReadyFrame& f) { seen.add(f); });
     engine.set_sequence(30);
     engine.set_playing(true);

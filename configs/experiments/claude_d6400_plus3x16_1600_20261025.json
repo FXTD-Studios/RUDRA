@@ -1,0 +1,37 @@
+{
+  "registered_before_training": true,
+  "author": "Claude (Cowork), approved by ahmed 25 Oct ('yes go')",
+  "parent": "G:/rudra_training/partial_pcgrad_duration6400_retry1_20261025/step6400.pt",
+  "parent_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+  "steps": 1600,
+  "batch_frames": 4,
+  "seed": 20261026,
+  "crop": 192,
+  "border": 64,
+  "aligned_crops": true,
+  "paired_motion": true,
+  "temporal_weights": [
+    1
+  ],
+  "display_weight": 0.5,
+  "display_evs": [
+    -3,
+    0,
+    3
+  ],
+  "display_ev_weights": [
+    1,
+    1,
+    16
+  ],
+  "relative": true,
+  "pcgrad": true,
+  "deterministic": true,
+  "lr": 0.0001,
+  "optimizer_state": "fresh Adam (the parent checkpoint stores no optimizer state)",
+  "rationale": "duration6400 passes every check except grade 0 EV (0.0648 vs 0.0604), grade +3 EV (0.00330 vs 0.00250), legacy natural H, and one new negative-Y pixel. At step 6400 the weighted +3 EV gradient norm was 0.135 vs 35.7 for 0 EV and 2.31 for -3 EV, so +3 EV barely steers the update. Continue the same recipe with the +3 EV display term weighted 16x.",
+  "gates": "original limits, unchanged: new H <=0.29235, old coherent H <=0.38252, detail <= analytic, aligned residual <=0.010367, grade -3/0/+3 EV <= analytic (18.6199/0.060382/0.0025029), Hunyuan48 <=0.02 EV, preservation; plus no new negative Y with the colour-constraint luminance guard (forbid_new_negative_y) on.",
+  "selection": "pass/fail only; no other arms in this registration.",
+  "compute": "cloud CPU (no GPU reachable from this session)",
+  "release_authorized": false
+}

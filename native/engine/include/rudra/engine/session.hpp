@@ -86,6 +86,9 @@ public:
     enum class SourceSupport { LegacyOnly, HeadroomV1 };
     explicit Session(SourceSupport support = SourceSupport::LegacyOnly);
     Result<void> set_headroom_policy(HeadroomPolicy policy);
+    // Opens headroom preservation in a session made without it (the artist
+    // turns on Keep super-whites). Never closes it: a grade may hold the policy.
+    void allow_headroom() { source_support_ = SourceSupport::HeadroomV1; }
 
     // ---- the state (the page's names) -------------------------------------
     GradeSnapshot grade;              // mode, strength, preserve, regions

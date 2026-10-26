@@ -343,6 +343,7 @@ void MainWindow::bind_handlers() {
     h["playback-side-640"] = [this] { set_playback_side(640); };
     h["playback-realtime"] = [this] { set_playback_realtime(!realtime_); };
     h["steady-shots"] = [this] { set_steady_shots(!steady_); };
+    h["keep-super-whites"] = [this] { toggle_super_whites(); };
     h["user-guide"] = [this] {
         log("user guide: " + user_guide_url());
         QDesktopServices::openUrl(QUrl(user_guide_url()));
@@ -569,6 +570,7 @@ void MainWindow::sync_checks() {
     set("playback-side-640", play_state_->side.load() == 640);
     set("playback-realtime", realtime_);
     set("steady-shots", steady_);
+    set("keep-super-whites", session_.grade.headroom_policy != HeadroomPolicy::Disabled);
     for (SourceCurve c : all_source_curves())
         set("source-" + std::string(source_curve_id(c)), grade.source == source_curve_id(c));
     set("container-aces", session_.container == "aces");
@@ -1763,7 +1765,7 @@ void MainWindow::update_pipe() {
     findChild<QLabel*>("pipeIn")->setText(QString::fromStdString(t.in));
     findChild<QLabel*>("pipeWorking")->setText(QString::fromStdString(t.working));
     view_transform_->setText(QString::fromStdString(t.view));
-    findChild<QLabel*>("pipeMaster")->setText(QString::fromStdString(t.master));
+    findChild<QLabel*>("pipeMaster")->setText(QString::fromStdString(t.master).replace("EXR, half", "EXR, float32"));
     auto* warn = findChild<QLabel*>("pipeWarn");
     warn->setText(QString::fromStdString(t.warn));
     warn->setVisible(t.warn_shown);
@@ -1841,6 +1843,7 @@ MasterRequest MainWindow::master_request() const {
     q.anchor_knee = session_.anchor_knee;
     q.carry_chroma = session_.carry_chroma;
     q.container = session_.container;
+    q.exr_half = false;  // Grading masters retain float32 precision and range.
     q.source_curve = session_.grade.source;
     q.calibration = session_.calibration_points();
     q.reference = session_.grade.reference;
@@ -2405,7 +2408,7 @@ bool MainWindow::queue_video_export(const QString& format) {
     else if (format.endsWith("_logc4")) name += "_logc4";
     const bool prores = format.startsWith("prores");
     const std::filesystem::path output =
-        std::filesystem::path(dir.toStdString()) / (name.toStdString() + (prores ? ".mov" : ".mp4"));
+        std::filesystem::path(dir.toStdString()) / (name.toStdString() + (format == "ffv1rgb16" ? ".mkv" : prores ? ".mov" : ".mp4"));
     std::error_code ec;
     std::filesystem::path sidecar = output;
     sidecar += ".json";
@@ -2419,9 +2422,9 @@ bool MainWindow::queue_video_export(const QString& format) {
         say(QString::fromStdString(caps.error().message));
         return false;
     }
-    const bool can = caps->zscale && (prores ? caps->prores_ks : caps->libx265);
+    const bool can = caps->zscale && (format == "ffv1rgb16" ? caps->ffv1 : prores ? caps->prores_ks : caps->libx265);
     if (!can) {
-        say(QString::fromStdString(std::string("This FFmpeg build needs ") + (prores ? "prores_ks" : "libx265") +
+        say(QString::fromStdString(std::string("This FFmpeg build needs ") + (format == "ffv1rgb16" ? "ffv1" : prores ? "prores_ks" : "libx265") +
                                    " and zscale support (" + caps->version + ")"));
         return false;
     }
@@ -2465,6 +2468,7 @@ bool MainWindow::queue_video_export(const QString& format) {
     }
     QString label = format == "hdr10" ? "HDR10"
                     : format == "hlg" ? "HLG"
+                    : format == "ffv1rgb16" ? "FFV1 RGB16"
                     : format.startsWith("prores4444") ? "ProRes 4444"
                                                       : "ProRes 422 HQ";
     if (format.endsWith("_acescct")) label += " ACEScct";
@@ -2540,8 +2544,8 @@ bool MainWindow::export_frames_to_movie(const QString& format, double fps) {
         return false;
     }
     const bool prores = target->suffix == ".mov";
-    if (!(prores ? caps->prores_ks : caps->libx265)) {
-        say(QString::fromStdString(std::string("This FFmpeg build has no ") + (prores ? "prores_ks" : "libx265") + " (" +
+    if (!(format == "ffv1rgb16" ? caps->ffv1 : prores ? caps->prores_ks : caps->libx265)) {
+        say(QString::fromStdString(std::string("This FFmpeg build has no ") + (format == "ffv1rgb16" ? "ffv1" : prores ? "prores_ks" : "libx265") + " (" +
                                    caps->version + ")"));
         return false;
     }
@@ -3192,6 +3196,68 @@ Result<void> MainWindow::set_headroom_preview(bool on) {
     return session_.set_headroom_policy(on ? HeadroomPolicy::Bt1886V1 : HeadroomPolicy::Disabled);
 }
 
+void MainWindow::toggle_super_whites() {
+    if (session_.grade.headroom_policy != HeadroomPolicy::Disabled) {
+        (void)set_headroom_preview(false);   // never refused
+        log(QStringLiteral("super-whites: off, the movie is read as usual"));
+        return;
+    }
+    // What bt1886-headroom-v1 accepts (engine/headroom_presentation.cpp): said
+    // before anything changes, and nothing the artist set is cleared for them.
+    QString why;
+    if (frames_.empty() || !shot_video_)
+        why = QStringLiteral("Open a movie first. Super-whites are kept for limited-range BT.709 movies, "
+                             "not for stills or folders of frames.");
+    else if (session_.grade.source != "bt1886")
+        why = QStringLiteral("Super-whites are kept with Reconstruct > Source > BT.1886 only. Choose it, then try again.");
+    else if (!session_.grade.clip_peaks.empty() || !session_.grade.calibration.empty() ||
+             !session_.grade.reference.empty())
+        why = QStringLiteral("Clear the clipped peaks, the calibration and the reference match first: "
+                             "they are not available while super-whites are kept.");
+    if (!why.isEmpty()) {
+        problem_ = why;
+        log(QStringLiteral("super-whites: ") + why);
+        if (isVisible()) QMessageBox::information(this, QStringLiteral("Keep super-whites"), why);
+        return;
+    }
+    QStringList off;
+    if (use_model_) off << QStringLiteral("the model");
+    if (steady_) off << QStringLiteral("Hold steady within a shot");
+    if (session_.grade.clip_fill) off << QStringLiteral("Fill clipped highlights");
+    if (session_.anchor) off << QStringLiteral("Anchor to source exposure");
+    if (session_.carry_chroma) off << QStringLiteral("Carry source chroma");
+    if (isVisible()) {
+        QString text = QStringLiteral(
+            "Keep super-whites is experimental. RUDRA reads the movie with the detail recorded above white and "
+            "carries it into the HDR, instead of clipping it and rebuilding the highlights.\n\n"
+            "It works on limited-range BT.709 movies; others are refused with the reason.");
+        if (!off.isEmpty()) text += QStringLiteral("\n\nIt also turns off: ") + off.join(QStringLiteral(", ")) + '.';
+        if (QMessageBox::question(this, QStringLiteral("Keep super-whites"), text + QStringLiteral("\n\nTurn it on?")) !=
+            QMessageBox::Yes)
+            return;
+    }
+    if (!headroom_capable_) {
+        // Remembered, so a project saved with super-whites opens at the next start.
+        headroom_capable_ = true;
+        session_.allow_headroom();
+        QSettings().setValue("experimental/superWhites", true);
+    }
+    if (use_model_) set_use_model(false, false);   // the default for the next start is unchanged
+    if (steady_) set_steady_shots(false);
+    if (session_.anchor) session_.toggle_anchor();
+    if (session_.carry_chroma) session_.toggle_carry_chroma();
+    if (session_.grade.clip_fill) session_.toggle_clip_fill();
+    if (auto on = set_headroom_preview(true); !on) {
+        problem_ = qs(on.error().message);
+        log(QStringLiteral("super-whites: ") + problem_);
+        if (isVisible()) QMessageBox::warning(this, QStringLiteral("Keep super-whites"), problem_);
+        return;
+    }
+    problem_.clear();
+    log(QStringLiteral("super-whites: kept (bt1886-headroom-v1, experimental)") +
+        (off.isEmpty() ? QString() : QStringLiteral("; turned off: ") + off.join(QStringLiteral(", "))));
+}
+
 HeadroomPreviewStats MainWindow::headroom_stats() const { return headroom_ ? headroom_->stats() : HeadroomPreviewStats{}; }
 
 void MainWindow::clear_legacy_frame() {
@@ -3373,9 +3439,9 @@ bool MainWindow::start_headroom_export(const QString& format) {
         say(QStringLiteral("Cancelling the headroom export\u2026"));
         return false;
     }
-    static const QStringList kFormats = {"hdr10", "hlg", "prores422hq", "prores4444"};
+    static const QStringList kFormats = {"hdr10", "hlg", "prores422hq", "prores4444", "ffv1rgb16"};
     if (!kFormats.contains(format)) {
-        say(format.toUpper() + QStringLiteral(" does not support the headroom policy yet; HDR10, HLG and ProRes do."));
+        say(format.toUpper() + QStringLiteral(" does not support the headroom policy yet; HDR10, HLG, ProRes and FFV1 RGB16 do."));
         return false;
     }
     if (!headroom_routed() || !shot_video_) {

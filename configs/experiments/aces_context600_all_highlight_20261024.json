@@ -1,0 +1,8 @@
+{
+  "registered_before_evaluation": true,
+  "parent": "G:/rudra_training/aces_context_motion600_20261024/step600.pt",
+  "include_fully_clipped": true,
+  "purpose": "Extend the appearance guarantee to every reconstructed highlight after v8 Hunyuan48 showed21 fully-clipped violations. Already consistent fully-clipped predictions retain their radiance.",
+  "acceptance": "Retain coherent development checks and parent H nonregression; zero appearance errors on all highlight support, exact outside-highlight output, zero new negativeY. Real motion/detail/grade remain separate, no promotion based on appearance alone.",
+  "release_authorized": false
+}

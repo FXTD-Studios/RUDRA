@@ -67,6 +67,9 @@
 #include "video.hpp"
 #endif
 #include "deliver.hpp"
+#ifdef RUDRA_HAVE_ACES_V2
+#include "aces_v2_cmd.hpp"
+#endif
 #include "ffmpeg_check.hpp"
 
 using namespace rudra;
@@ -682,6 +685,7 @@ void usage() {
                  "directml|coreml|rocm|openvino|tensorrt] [--precision fp32|fp16]\n"
                  "       rudra-native bench <package> [--runtime ...] [--device ...] [--precision fp32|fp16] [--size WxH[,WxH]] [--iters N]\n"
                  "                          [--json FILE] [--budget FILE --machine LABEL]\n"
+                 "       rudra-native aces-v2 <aces-v2-package> <image|folder> --out <dir> [--device cpu|cuda] [--ocio-threads N] [--no-smoothing]\n"
                  "       rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]\n"
                  "       rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]\n"
                  "       rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]\n"
@@ -691,7 +695,7 @@ void usage() {
                  "                            [--record-start TC] [--fps RATE] [--threshold X] [--key-each-shot]\n"
                  "       rudra-native batch run <queue.json> [--retry-failed] [--package DIR] [--runtime ...] [--device ...]\n"
                  "       rudra-native batch status <queue.json>\n"
-                 "       rudra-native deliver <frames> --output <stem> [--target hdr10|hlg|prores422hq|prores4444] [--fps N]\n"
+                 "       rudra-native deliver <frames> --output <stem> [--target hdr10|hlg|prores422hq|prores4444|ffv1rgb16] [--fps N]\n"
                  "                            [--peak-nits N] [--min-nits N] [--source-space rec709|rec2020|p3d65] [--nits-scale N] [--no-verify-tags]\n"
                  "       rudra-native correction-log open <dir> --by NAME --terms VERSION --source-id ID --rights owner|licensed|unknown\n"
                  "                                   [--at ISO] [--scope TEXT] [--note TEXT]\n"
@@ -723,6 +727,9 @@ int main(int argc, char** argv) {
         return cmd_bench_scopes(iters);
     }
     if (args.size() < 2) { usage(); return 64; }
+#ifdef RUDRA_HAVE_ACES_V2
+    if (args[0] == "aces-v2") return cmd_aces_v2(std::vector<std::string>(args.begin() + 1, args.end()));
+#endif
     if (args[0] == "deliver") return cmd_deliver(std::vector<std::string>(args.begin() + 1, args.end()));
     // Neither needs a still decoder (only correction-log add does).
     if (args[0] == "dolby-vision") return cmd_dolby_vision(std::vector<std::string>(args.begin() + 1, args.end()));

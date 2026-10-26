@@ -49,7 +49,9 @@ struct HeadroomStream::Impl {
 };
 
 HeadroomStream::HeadroomStream() : d_(std::make_unique<Impl>()) {}
-HeadroomStream::~HeadroomStream() { cancel(); }
+// close() interrupts, then waits for an in-flight next()/finish() before the
+// decoder and Impl go away.
+HeadroomStream::~HeadroomStream() { close(); }
 
 Result<std::unique_ptr<HeadroomStream>> HeadroomStream::open(const fs::path& source,
     HeadroomPolicy policy, const fs::path& decoder, std::size_t pixel_bytes, const fs::path& log,
@@ -70,6 +72,8 @@ Result<std::unique_ptr<HeadroomStream>> HeadroomStream::open(PreparedHeadroomSou
         auto& d = *out->d_;
         d.prepared = std::move(prepared);
         auto valid = d.verify(); if (!valid) return valid.error();
+        if (d.video().stream.width <= 0 || d.video().stream.height <= 0)
+            return make_error(ErrorCode::InvalidArgument, "Invalid headroom frame dimensions");
         const auto w = std::size_t(d.video().stream.width), h = std::size_t(d.video().stream.height);
         if (w > std::numeric_limits<std::size_t>::max() / h / (3 * sizeof(float)))
             return make_error(ErrorCode::InvalidArgument, "Headroom frame size overflows");

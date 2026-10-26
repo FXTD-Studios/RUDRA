@@ -913,7 +913,7 @@ TEST(AppMeasure, TheFramePanelAndBarsShowTheMeasurement) {
     EXPECT_EQ(w.findChild<QLabel*>("viewTransform")->text().toStdString(), "exposure + clip \u00b7 6,496 nits");
     EXPECT_FALSE(w.findChild<QLabel*>("pipeWarn")->isVisible());
     w.run("container-linear");
-    EXPECT_EQ(w.findChild<QLabel*>("pipeMaster")->text().toStdString(), "linear Rec.2020 EXR, half");
+    EXPECT_EQ(w.findChild<QLabel*>("pipeMaster")->text().toStdString(), "linear Rec.2020 EXR, float32");
     // A grade change measures again, on its own thread, after the grade settles.
     const double before = m->measured.metrics.peak_nits;
     w.run("mode-off");
@@ -2209,6 +2209,11 @@ TEST(AppVideo, TheExportTilesQueueAMovieAndTheQueueWindowFollowsIt) {
     EXPECT_EQ(text_of(*sheet, "exportSignal"), "ACEScct · AP1 · ProRes 422 HQ 10-bit · scene-referred");
     sheet->set_encoding("pq");
     EXPECT_EQ(sheet->video_format(), "prores422hq");
+    sheet->pick("ffv1rgb16");
+    EXPECT_EQ(sheet->video_format(), "ffv1rgb16");
+    EXPECT_TRUE(text_of(*sheet, "exportDest").endsWith("sh010.mkv"));
+    EXPECT_TRUE(text_of(*sheet, "exportSignal").contains("lossless 16-bit RGB"));
+    EXPECT_FALSE(sheet->findChild<QWidget*>("exportEncodingRow")->isVisibleTo(sheet));
     sheet->pick("hdr10");
     EXPECT_EQ(sheet->video_format(), "hdr10");
     sheet->export_now();
@@ -2767,7 +2772,7 @@ TEST(AppVideo, EveryMovieDeliveryEncodingCompletesWithoutAModel) {
     w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(out.string()));
     w.open_source(QString::fromStdString(movie("h264_709.mp4").string()));
     ASSERT_TRUE(w.shot_is_video());
-    for (const char* format : {"hdr10", "hlg", "prores422hq", "prores4444",
+    for (const char* format : {"hdr10", "hlg", "ffv1rgb16", "prores422hq", "prores4444",
                                "prores422hq_acescct", "prores422hq_logc4",
                                "prores4444_acescct", "prores4444_logc4"}) {
         SCOPED_TRACE(format);
@@ -2920,12 +2925,12 @@ TEST(AppVideo, AFolderOfFramesExportsToAMovie) {
     EXPECT_FALSE(w.export_frames_to_movie("hdr10", 25.0));
     EXPECT_TRUE(status_of(w).contains("already there")) << status_of(w).toStdString();
     // Exercise every remaining folder-delivery format, not only enabled tiles.
-    for (const auto& format : {"hlg", "prores422hq", "prores4444"}) {
+    for (const auto& format : {"hlg", "ffv1rgb16", "prores422hq", "prores4444"}) {
         SCOPED_TRACE(format);
         w.findChild<QLineEdit*>("renderName")->setText(format);
         ASSERT_TRUE(w.export_frames_to_movie(format, 24.0));
         const auto output = out / (std::string(format) + "_" + format +
-                                  (std::string(format) == "hlg" ? ".mp4" : ".mov"));
+                                  (std::string(format) == "ffv1rgb16" ? ".mkv" : std::string(format) == "hlg" ? ".mp4" : ".mov"));
         ASSERT_TRUE(wait_for([&] { return !w.mastering() && !w.encoding_movie() && std::filesystem::exists(output); }, 60000))
             << status_of(w).toStdString();
         ASSERT_TRUE(std::filesystem::exists(output)) << status_of(w).toStdString();
@@ -2934,7 +2939,7 @@ TEST(AppVideo, AFolderOfFramesExportsToAMovie) {
         ASSERT_EQ(probe->video_streams.size(), 1u);
         EXPECT_EQ(probe->frames.size(), 4u);
         EXPECT_EQ(probe->video_streams.front().avg_frame_rate, "24/1");
-        EXPECT_EQ(probe->video_streams.front().codec_name, std::string(format) == "hlg" ? "hevc" : "prores");
+        EXPECT_EQ(probe->video_streams.front().codec_name, std::string(format) == "ffv1rgb16" ? "ffv1" : std::string(format) == "hlg" ? "hevc" : "prores");
     }
     // A single still is EXR only.
     w.add_files({decode_dir() / "png8_rgb.png"});
@@ -3080,6 +3085,51 @@ TEST(AppHeadroom, ClosedUnlessTheWindowIsCapable) {
     EXPECT_FALSE(w.headroom_routed());
 }
 
+TEST(AppSuperWhites, TheMenuSaysWhyWithoutAMovie) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    w.run("keep-super-whites");
+    EXPECT_FALSE(w.headroom_capable());
+    EXPECT_EQ(w.session().grade.headroom_policy, HeadroomPolicy::Disabled);
+    EXPECT_TRUE(w.problem().contains("Open a movie first")) << w.problem().toStdString();
+    EXPECT_FALSE(w.action("keep-super-whites")->isChecked());
+    EXPECT_FALSE(QSettings().value("experimental/superWhites", false).toBool());
+}
+
+TEST(AppSuperWhites, TheMenuOpensSupportTurnsOffWhatV1RefusesAndRoutes) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    app::MainWindow w(false);   // a window started without the choice
+    auto sh = fake_headroom(w);
+    w.open_source(QString::fromStdString(headroom_clip().string()));
+    ASSERT_GE(w.frame_count(), 3u);
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    // Another Source is refused, and nothing changes.
+    w.session().set_source("aces");
+    w.run("keep-super-whites");
+    EXPECT_TRUE(w.problem().contains("BT.1886")) << w.problem().toStdString();
+    EXPECT_EQ(w.session().grade.headroom_policy, HeadroomPolicy::Disabled);
+    EXPECT_FALSE(w.headroom_capable());
+    w.session().set_source("bt1886");
+    ASSERT_TRUE(w.session().grade.clip_fill);   // the default: turned off by the menu
+    w.run("keep-super-whites");
+    EXPECT_TRUE(w.headroom_capable());
+    EXPECT_TRUE(QSettings().value("experimental/superWhites", false).toBool());
+    EXPECT_EQ(w.session().grade.headroom_policy, HeadroomPolicy::Bt1886V1);
+    EXPECT_FALSE(w.session().grade.clip_fill);
+    EXPECT_FALSE(w.session().anchor);
+    EXPECT_FALSE(w.session().carry_chroma);
+    EXPECT_TRUE(w.action("keep-super-whites")->isChecked());
+    EXPECT_TRUE(w.headroom_routed());
+    ASSERT_TRUE(wait_for([&] { return w.headroom_frame() != nullptr; })) << w.headroom_problem().toStdString();
+    // Off again: the usual reading, and the support stays for this window.
+    w.run("keep-super-whites");
+    EXPECT_EQ(w.session().grade.headroom_policy, HeadroomPolicy::Disabled);
+    EXPECT_FALSE(w.headroom_routed());
+    EXPECT_FALSE(w.action("keep-super-whites")->isChecked());
+    EXPECT_TRUE(w.headroom_capable());
+}
+
 TEST(AppHeadroom, PausedFramesRouteThroughTheDriverAndUndoReturnsToLegacy) {
     if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
     QSettings().clear();
@@ -3203,9 +3253,16 @@ TEST(AppHeadroom, MovieExportsRunTheTransactionalHeadroomPath) {
     QSettings().clear();
     const auto out = fresh_dir("headroom-export");
     std::filesystem::create_directories(out);
+    // The real float decoder accepts YUV444; the generic playback fixture is
+    // YUV420 and only worked with the fake preview port, not a real export.
+    const auto source444 = out.parent_path() / (out.filename().string() + "-source444.mkv");
+    auto prepared444 = rudra::run_tool({"ffmpeg", "-v", "error", "-y", "-i", headroom_clip().string(),
+        "-c:v", "ffv1", "-pix_fmt", "yuv444p10le", "-color_range", "tv", "-colorspace", "bt709",
+        "-color_primaries", "bt709", "-color_trc", "bt709", source444.string()});
+    ASSERT_TRUE(prepared444) << prepared444.error().message;
     app::MainWindow w(false, true);
     fake_headroom(w);
-    w.open_source(QString::fromStdString(headroom_clip().string()));
+    w.open_source(QString::fromStdString(source444.string()));
     ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
     headroom_ready_controls(w);
     ASSERT_TRUE(w.set_headroom_preview(true));
@@ -3225,6 +3282,16 @@ TEST(AppHeadroom, MovieExportsRunTheTransactionalHeadroomPath) {
 #ifdef _WIN32
     EXPECT_TRUE(std::filesystem::exists(out / "graded.mp4")) << w.headroom_export_result().toStdString();
     EXPECT_TRUE(std::filesystem::exists(out / "graded.mp4.json"));
+    w.findChild<QLineEdit*>("renderName")->setText("graded16");
+    ASSERT_TRUE(w.queue_video_export("ffv1rgb16"));
+    ASSERT_TRUE(wait_for([&] { return !w.exporting_headroom(); }, 60000));
+    ASSERT_TRUE(std::filesystem::exists(out / "graded16.mkv")) << w.headroom_export_result().toStdString();
+    EXPECT_TRUE(std::filesystem::exists(out / "graded16.mkv.json"));
+    auto rgb16 = rudra::probe_video(out / "graded16.mkv");
+    ASSERT_TRUE(rgb16);
+    ASSERT_EQ(rgb16->video_streams.size(), 1u);
+    EXPECT_EQ(rgb16->video_streams.front().pix_fmt, "gbrp16le");
+    EXPECT_EQ(rgb16->video_streams.front().color_space, "gbr");
 #else
     // Source leases are Windows-only: refused at preparation, nothing published or staged.
     EXPECT_TRUE(log_tail(w).contains("did not publish anything")) << log_tail(w).toStdString();

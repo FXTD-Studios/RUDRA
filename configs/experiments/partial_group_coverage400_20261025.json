@@ -1,0 +1,28 @@
+{
+  "registered_before_training": true,
+  "parent": "G:/rudra_training/aces_guarded_projected600_20261024/step600.pt",
+  "parent_sha256": "e83b997c315bf5cc26d3df0e6fa2ad357828feebc0d78384b378057ed4349709",
+  "steps": 400,
+  "batch_frames": 4,
+  "seed": 20261025,
+  "crop": 192,
+  "border": 64,
+  "aligned_crops": true,
+  "paired_motion": true,
+  "temporal_weights": [
+    1
+  ],
+  "display_weight": 0.5,
+  "display_evs": [
+    -3,
+    0,
+    3
+  ],
+  "relative": true,
+  "domain_schedule": "Original scene/exposure group per motion slot; within-group greedy coverage. Original still batches. 800motion+800still frame exposures.",
+  "scope": "Group-preserving coverage schedule versus EMA temporal1 and unconstrained coverage400. Every original motion scene/exposure slot and all still batches retained. Same pools,parent,loss,400updates and original gates; no best-step selection.",
+  "release_authorized": false,
+  "comparison_control": "G:/rudra_training/partial_temporal1_400_20261025",
+  "registered_schedule": "G:/rudra_training/partial_group_coverage_schedule_20261025",
+  "schedule_manifest_sha256": "2b50105735c997033cdfb1b8dfaf4f3320b1901e0a02dfb4a9a4426bea654411"
+}

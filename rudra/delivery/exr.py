@@ -6,7 +6,8 @@ Writes uncompressed HALF/FLOAT RGB EXRs with correct headers — including the
 long-standing ``rudra.exr_io.save_exr_placeholder`` refusal: RUDRA can now
 emit EXR masters on any machine, no OpenEXR/OpenImageIO wheel required.
 
-Scope (deliberate): NO compression only, scanline only, RGB(A) only. The
+Scope (deliberate): NO compression only, scanline RGB(A), with an optional
+``rudra.reconstructed`` mask plane. The
 reader exists to round-trip our own files and ingest simple reference EXRs;
 it refuses compressed input with a clear error instead of mis-reading it.
 """
@@ -46,6 +47,8 @@ def write_exr(
     half: bool = True,
     chromaticities: tuple[float, ...] | None = None,
     attributes: dict[str, str] | None = None,
+    *,
+    reconstruction_mask: np.ndarray | None = None,
 ) -> Path:
     """Write an (H, W, 3) or (H, W, 4) linear float image as scanline EXR.
 
@@ -56,6 +59,9 @@ def write_exr(
         chromaticities: 8 floats (rx,ry,gx,gy,bx,by,wx,wy). Pass
             ``colorspace.AP0_CHROMATICITIES`` for an ACES container file.
         attributes: extra string attributes (e.g. provenance JSON).
+        reconstruction_mask: optional finite HxW values in [0, 1], stored as
+            ``rudra.reconstructed``. The caller defines reconstruction support;
+            this writer does not infer confidence or modify alpha/RGB.
     """
     arr = np.asarray(rgb)
     if arr.ndim != 3 or arr.shape[2] not in (3, 4):
@@ -63,7 +69,12 @@ def write_exr(
     arr = np.nan_to_num(arr.astype(np.float32), nan=0.0, posinf=3.4e38, neginf=0.0)
     height, width, n_ch = arr.shape
     names = ["R", "G", "B", "A"][:n_ch]
-    sorted_names = sorted(names)                       # EXR requires sorted chlist
+    mask = None
+    if reconstruction_mask is not None:
+        mask = np.asarray(reconstruction_mask, dtype=np.float32)
+        if mask.shape != (height, width) or not np.isfinite(mask).all() or np.any((mask < 0) | (mask > 1)):
+            raise ValueError('reconstruction_mask must be finite HxW values in [0, 1]')
+    sorted_names = sorted(names + (["rudra.reconstructed"] if mask is not None else []))
     dtype = np.float16 if half else np.float32
     pixel_type = _PIXEL_HALF if half else _PIXEL_FLOAT
     if half:
@@ -88,13 +99,15 @@ def write_exr(
     header += b"\0"
 
     bytes_per_px = 2 if half else 4
-    row_data_size = width * bytes_per_px * n_ch
+    row_data_size = width * bytes_per_px * len(sorted_names)
     chunk_size = 8 + row_data_size                     # y + size prefix per chunk
     table_pos = 8 + len(header)
     data_start = table_pos + 8 * height
 
     planes = {name: np.ascontiguousarray(arr[:, :, names.index(name)], dtype=dtype)
-              for name in sorted_names}
+              for name in names}
+    if mask is not None:
+        planes['rudra.reconstructed'] = np.ascontiguousarray(mask, dtype=dtype)
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,6 +145,7 @@ def _read_null_str(buf: bytes, pos: int) -> tuple[str, int]:
 def read_exr(path: str | Path) -> tuple[np.ndarray, dict]:
     """Read an uncompressed scanline RGB(A) EXR written by this module
     (or any conforming writer). Returns (float32 (H,W,C) image, attributes).
+    An optional mask is returned separately as attributes['reconstruction_mask'].
 
     Raises on compressed, tiled, deep, or multi-part input — by design, so a
     file this reader cannot faithfully decode is never silently mangled.
@@ -195,4 +209,6 @@ def read_exr(path: str | Path) -> tuple[np.ndarray, dict]:
     order = [c for c in ("R", "G", "B", "A") if c in planes] or names
     image = np.stack([planes[c] for c in order], axis=-1)
     attrs["channel_order"] = order
+    if 'rudra.reconstructed' in planes:
+        attrs['reconstruction_mask'] = planes['rudra.reconstructed']
     return image, attrs

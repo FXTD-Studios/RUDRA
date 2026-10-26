@@ -33,10 +33,19 @@ for path in sorted(ROOT.rglob("*.blend")):
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 for name in ("campfire", "simple_fire"):
-    frames = sorted((ROOT / "unpacked" / name).rglob("*.vdb"),
-                    key=lambda p: int(re.search(r"(\d+)\.vdb$", p.name).group(1)))
+    numbered = []
+    for p in (ROOT / "unpacked" / name).rglob("*.vdb"):
+        m = re.search(r"(\d+)\.vdb$", p.name)
+        if m:
+            numbered.append((int(m.group(1)), p))
+    frames = [p for _, p in sorted(numbered)]
+    if not frames:
+        # Recorded, not fatal: the scene results above must still be saved.
+        report["volume_sequences"].append({"id": name, "frame_count": 0, "sampled_headers": [],
+                                           "error": "no numbered .vdb frames found (archive not unpacked?)"})
+        continue
     samples = []
-    for p in [frames[0], frames[len(frames)//2], frames[-1]]:
+    for p in [frames[i] for i in sorted({0, len(frames) // 2, len(frames) - 1})]:
         volume = bpy.data.volumes.new("source_validation")
         volume.filepath = str(p)
         volume.grids.load()

@@ -1,0 +1,431 @@
+{
+  "registered_before_optimization": true,
+  "checkpoint": "G:/rudra_training/aces_guarded_projected600_20261024/step600.pt",
+  "checkpoint_sha256": "e83b997c315bf5cc26d3df0e6fa2ad357828feebc0d78384b378057ed4349709",
+  "pilots": {
+    "motion": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+    "replay": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json"
+  },
+  "pilot_hashes": {
+    "motion": "9e410260e07304ec26e02106b094d11e25ef78e85e45aae914c6ffa5a85151c2",
+    "replay": "d2ac979f3d046c54c589acae20b905d47d96c1fbc1118c77322026de8e713836"
+  },
+  "selection": [
+    {
+      "role": "monitor",
+      "domain": "motion",
+      "slot": 0,
+      "scene": "ph:zwartkops_curve_afternoon",
+      "assets": [
+        "tif_0000032_zwartkops_curve_afternoon_4k_00000__context_0_f0",
+        "tif_0000032_zwartkops_curve_afternoon_4k_00000__context_0_f1"
+      ],
+      "crop": null,
+      "borders": [
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "role": "monitor",
+      "domain": "motion",
+      "slot": 1,
+      "scene": "ph:kart_club",
+      "assets": [
+        "tif_0000027_kart_club_4k_00000__context_1_f0",
+        "tif_0000027_kart_club_4k_00000__context_1_f1"
+      ],
+      "crop": null,
+      "borders": [
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "role": "monitor",
+      "domain": "motion",
+      "slot": 2,
+      "scene": "ph:unfinished_office",
+      "assets": [
+        "tif_0000037_unfinished_office_4k_00000__context_2_f0",
+        "tif_0000037_unfinished_office_4k_00000__context_2_f1"
+      ],
+      "crop": null,
+      "borders": [
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "role": "monitor",
+      "domain": "replay",
+      "slot": 0,
+      "scene": "ph:hochsal_field",
+      "assets": [
+        "tif_0000003_hochsal_field_4k_00000__r05v0__consistent_ev+2"
+      ],
+      "crop": [
+        0,
+        472,
+        320,
+        512
+      ],
+      "borders": [
+        4,
+        64,
+        64,
+        64
+      ]
+    },
+    {
+      "role": "monitor",
+      "domain": "replay",
+      "slot": 1,
+      "scene": "ph:events_hall_interior",
+      "assets": [
+        "tif_0000006_events_hall_interior_4k_00000__r05v0__consistent_ev+6"
+      ],
+      "crop": [
+        332,
+        768,
+        320,
+        512
+      ],
+      "borders": [
+        64,
+        64,
+        64,
+        4
+      ]
+    },
+    {
+      "role": "monitor",
+      "domain": "replay",
+      "slot": 2,
+      "scene": "ph:factory_yard",
+      "assets": [
+        "tif_0000007_factory_yard_4k_00000__r05v0__consistent_ev+6"
+      ],
+      "crop": [
+        0,
+        768,
+        320,
+        512
+      ],
+      "borders": [
+        4,
+        64,
+        64,
+        4
+      ]
+    },
+    {
+      "role": "update",
+      "domain": "motion",
+      "slot": 0,
+      "scene": "ph:spooky_bamboo_morning",
+      "assets": [
+        "tif_0000019_spooky_bamboo_morning_4k_00000__context_0_f0",
+        "tif_0000019_spooky_bamboo_morning_4k_00000__context_0_f1"
+      ],
+      "crop": null,
+      "borders": [
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "role": "update",
+      "domain": "motion",
+      "slot": 1,
+      "scene": "ph:abandoned_hopper_terminal_04",
+      "assets": [
+        "tif_0000015_abandoned_hopper_terminal_04_4k_00000__context_1_f0",
+        "tif_0000015_abandoned_hopper_terminal_04_4k_00000__context_1_f1"
+      ],
+      "crop": null,
+      "borders": [
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "role": "update",
+      "domain": "motion",
+      "slot": 2,
+      "scene": "ph:lythwood_lounge",
+      "assets": [
+        "tif_0000003_lythwood_lounge_4k_00000__context_2_f0",
+        "tif_0000003_lythwood_lounge_4k_00000__context_2_f1"
+      ],
+      "crop": null,
+      "borders": [
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "role": "update",
+      "domain": "replay",
+      "slot": 0,
+      "scene": "ph:snow_field_puresky",
+      "assets": [
+        "tif_0000005_snow_field_puresky_4k_00000__r05v0__consistent_ev+6"
+      ],
+      "crop": [
+        0,
+        0,
+        320,
+        512
+      ],
+      "borders": [
+        4,
+        64,
+        4,
+        64
+      ]
+    },
+    {
+      "role": "update",
+      "domain": "replay",
+      "slot": 1,
+      "scene": "ph:venice_sunrise",
+      "assets": [
+        "tif_0000005_venice_sunrise_4k_00000__r05v1__consistent_ev+6"
+      ],
+      "crop": [
+        0,
+        0,
+        320,
+        512
+      ],
+      "borders": [
+        4,
+        64,
+        4,
+        64
+      ]
+    },
+    {
+      "role": "update",
+      "domain": "replay",
+      "slot": 2,
+      "scene": "ph:san_giuseppe_bridge",
+      "assets": [
+        "tif_0000002_san_giuseppe_bridge_4k_00000__r05v0__consistent_ev+6"
+      ],
+      "crop": [
+        52,
+        768,
+        320,
+        512
+      ],
+      "borders": [
+        64,
+        64,
+        64,
+        4
+      ]
+    },
+    {
+      "role": "anchor",
+      "domain": "motion",
+      "slot": 0,
+      "scene": "ph:farm_field_puresky",
+      "assets": [
+        "tif_0000009_farm_field_puresky_4k_00000__context_0_f0",
+        "tif_0000009_farm_field_puresky_4k_00000__context_0_f1"
+      ],
+      "crop": null,
+      "borders": [
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "role": "anchor",
+      "domain": "motion",
+      "slot": 1,
+      "scene": "ph:artist_workshop",
+      "assets": [
+        "tif_0000048_artist_workshop_4k_00000__context_1_f0",
+        "tif_0000048_artist_workshop_4k_00000__context_1_f1"
+      ],
+      "crop": null,
+      "borders": [
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "role": "anchor",
+      "domain": "motion",
+      "slot": 2,
+      "scene": "ph:neon_photostudio",
+      "assets": [
+        "tif_0000014_neon_photostudio_4k_00000__context_2_f0",
+        "tif_0000014_neon_photostudio_4k_00000__context_2_f1"
+      ],
+      "crop": null,
+      "borders": [
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "role": "anchor",
+      "domain": "replay",
+      "slot": 0,
+      "scene": "ph:dalkey_view",
+      "assets": [
+        "tif_0000005_dalkey_view_4k_00000__r05v0__consistent_ev+6"
+      ],
+      "crop": [
+        0,
+        0,
+        320,
+        512
+      ],
+      "borders": [
+        4,
+        64,
+        4,
+        64
+      ]
+    },
+    {
+      "role": "anchor",
+      "domain": "replay",
+      "slot": 1,
+      "scene": "ph:smelting_tower_interior",
+      "assets": [
+        "tif_0000001_smelting_tower_interior_4k_00000__r05v0__consistent_ev+2"
+      ],
+      "crop": [
+        400,
+        768,
+        320,
+        512
+      ],
+      "borders": [
+        64,
+        4,
+        64,
+        4
+      ]
+    },
+    {
+      "role": "anchor",
+      "domain": "replay",
+      "slot": 2,
+      "scene": "ph:en_suite",
+      "assets": [
+        "tif_0000002_en_suite_4k_00000__r05v0__consistent_ev+4"
+      ],
+      "crop": [
+        144,
+        296,
+        320,
+        512
+      ],
+      "borders": [
+        64,
+        64,
+        64,
+        64
+      ]
+    }
+  ],
+  "excluded_empty_full": [
+    "tif_0000011_teutonic_castle_moat_4k_00000__r05v1__consistent_ev+4",
+    "tif_0000011_teutonic_castle_moat_4k_00000__r05v1__consistent_ev+2",
+    "tif_0000001_evening_field_4k_00000__r05v0__consistent_ev+2",
+    "tif_0000011_teutonic_castle_moat_4k_00000__r05v1__consistent_ev+4",
+    "tif_0000011_teutonic_castle_moat_4k_00000__r05v1__consistent_ev+2",
+    "tif_0000001_evening_field_4k_00000__r05v0__consistent_ev+2",
+    "tif_0000011_teutonic_castle_moat_4k_00000__r05v1__consistent_ev+4",
+    "tif_0000011_teutonic_castle_moat_4k_00000__r05v1__consistent_ev+2",
+    "tif_0000001_evening_field_4k_00000__r05v0__consistent_ev+2",
+    "tif_0000001_evening_field_4k_00000__r05v0__consistent_ev+4",
+    "tif_0000001_evening_field_4k_00000__r05v0__consistent_ev+4",
+    "tif_0000006_venice_sunset_4k_00000__r05v0__consistent_ev+2",
+    "tif_0000001_evening_field_4k_00000__r05v0__consistent_ev+4",
+    "tif_0000006_venice_sunset_4k_00000__r05v0__consistent_ev+2",
+    "tif_0000005_museumplein_4k_00000__r05v2__consistent_ev+4",
+    "tif_0000001_veld_fire_4k_00000__r05v0__consistent_ev+6",
+    "tif_0000001_evening_field_4k_00000__r05v0__consistent_ev+4",
+    "tif_0000001_veld_fire_4k_00000__r05v0__consistent_ev+4",
+    "tif_0000011_teutonic_castle_moat_4k_00000__r05v1__consistent_ev+2",
+    "tif_0000007_horn-koppe_spring_4k_00000__r05v1__consistent_ev+4",
+    "tif_0000002_en_suite_4k_00000__r05v0__consistent_ev+2",
+    "tif_0000001_evening_field_4k_00000__r05v0__consistent_ev+4",
+    "tif_0000001_veld_fire_4k_00000__r05v0__consistent_ev+4",
+    "tif_0000011_teutonic_castle_moat_4k_00000__r05v1__consistent_ev+2",
+    "tif_0000007_horn-koppe_spring_4k_00000__r05v1__consistent_ev+4",
+    "tif_0000002_en_suite_4k_00000__r05v0__consistent_ev+2",
+    "tif_0000007_horn-koppe_spring_4k_00000__r05v1__consistent_ev+6",
+    "tif_0000004_lythwood_room_4k_00000__r05v0__consistent_ev+6",
+    "tif_0000004_snow_field_4k_00000__r05v0__consistent_ev+2",
+    "tif_0000001_evening_field_4k_00000__r05v0__consistent_ev+4",
+    "tif_0000001_veld_fire_4k_00000__r05v0__consistent_ev+4",
+    "tif_0000011_teutonic_castle_moat_4k_00000__r05v1__consistent_ev+2",
+    "tif_0000007_horn-koppe_spring_4k_00000__r05v1__consistent_ev+4",
+    "tif_0000002_en_suite_4k_00000__r05v0__consistent_ev+2",
+    "tif_0000007_horn-koppe_spring_4k_00000__r05v1__consistent_ev+6",
+    "tif_0000004_lythwood_room_4k_00000__r05v0__consistent_ev+6",
+    "tif_0000004_snow_field_4k_00000__r05v0__consistent_ev+2",
+    "tif_0000008_versveldpas_4k_00000__r05v1__consistent_ev+2",
+    "tif_0000008_versveldpas_4k_00000__r05v1__consistent_ev+4"
+  ],
+  "seed": 20261031,
+  "attempts": 12,
+  "learning_rate": 0.0001,
+  "scales": [
+    1,
+    0.5,
+    0.25,
+    0.125
+  ],
+  "rtol": 1e-06,
+  "atol": 1e-09,
+  "order": [
+    0,
+    3,
+    1,
+    4,
+    2,
+    5,
+    0,
+    3,
+    1,
+    4,
+    2,
+    5
+  ],
+  "scope": "Cyclic TRAIN role rotation fold 2. Same eighteen scenes, exact sources/crops/borders, initial checkpoint and fresh optimizer. Roles shift update->anchor->monitor cyclically, with no score-based selection. Two methods: current-only projected Adam versus projection against current and anchor gradients with per-member finite-step anchor acceptance. Twelve attempts in same motion/replay slot order, four scales, original tolerances. Monitor is excluded from gradients and acceptance. Each fold resets weights/moments; no saved inference weights or DEV/release claim. Log-edge counts preserved; region metrics diagnostic only.",
+  "methods": [
+    "current_only",
+    "anchor_direction"
+  ],
+  "research_basis": "Gradient Episodic Memory (Lopez-Paz and Ranzato, NeurIPS2017), projection principle only; no external implementation imported. https://papers.neurips.cc/paper/2017/file/f87522788a2be2d171666752f97ddebb-Paper.pdf",
+  "rotation_fold": 2,
+  "base_registration_sha256": "6c255000b9cb1b326de16e493897c3256119773f9f1dc1a56696bbde3e8d04e5"
+}

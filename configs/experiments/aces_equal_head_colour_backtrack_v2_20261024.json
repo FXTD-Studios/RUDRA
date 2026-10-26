@@ -1,0 +1,12 @@
+{
+  "purpose": "Test whether the existing appearance constraint retains corrected equal-image head reconstruction gains on coherent development targets; retain legacy natural diagnostics unchanged.",
+  "registered_before_evaluation": true,
+  "parent": "G:/rudra_training/aces_consistent_head_equal600_v2_20261024/step600.pt",
+  "parent_sha256": "4904f8c37766a3a8baa11ed4864807b09025df70a82c3d3fd98854f22fc7322a",
+  "datasets": ["G:/datasets/corpora/aces_consistent_exposures_v2_20261024/val/report.json", "G:/datasets/corpora/run05_aces_spatial_dev24_v2_20261023/report.json"],
+  "policy": "Existing partial-channel highlight backtracking: up to eight halvings toward analytic inverse, then analytic fallback. Ordinary pixels, shadows and fully clipped highlights unchanged.",
+  "acceptance": ["all existing five development checks retained separately on each dataset", "highlight MSE no worse than unconstrained parent", "zero partial-highlight display errors above one code", "outside support bit-exact", "zero new negative luminance"],
+  "limitations": "Legacy targets have documented appearance conflict; their failures remain failures. Both datasets previously used for research. Discrete backtracking needs motion and spatial review before adoption. Passing numerical checks is not release approval.",
+  "scope": "research postprocessing only; no model or export default changes",
+  "release_authorized": false
+}

@@ -51,8 +51,18 @@ int main(int argc, char** argv) {
     std::int32_t hw[2];
     if (std::fread(hw, 4, 2, in) != 2) return 3;
     const int h = hw[0], w = hw[1];
-    std::vector<float> data(std::size_t(3) * h * w);
-    if (std::fread(data.data(), 4, data.size(), in) != data.size()) return 3;
+    constexpr std::int64_t kMaxPixels = std::int64_t(1) << 28;  // ~268 Mpx, well past any real frame
+    if (h <= 0 || w <= 0 || std::int64_t(h) * w > kMaxPixels) {
+        std::fprintf(stderr, "bad header: h=%d w=%d\n", h, w);
+        std::fclose(in);
+        return 3;
+    }
+    std::vector<float> data(std::size_t(3) * std::size_t(h) * std::size_t(w));
+    if (std::fread(data.data(), 4, data.size(), in) != data.size()) {
+        std::fprintf(stderr, "short read\n");
+        std::fclose(in);
+        return 3;
+    }
     std::fclose(in);
 
     SdrImage sdr(PlanarBuffer(3, h, w, std::move(data)));

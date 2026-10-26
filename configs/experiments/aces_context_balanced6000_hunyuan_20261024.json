@@ -1,0 +1,15 @@
+{
+  "registered_before_evaluation": true,
+  "source_registration": "configs/experiments/aces_constrained_generated_review_20261024.json",
+  "clip": "hunyuan_demo",
+  "candidate": "G:\\rudra_training\\aces_context_balanced6000_20261024\\step6000.pt",
+  "checkpoint_sha256": "2a2a9d7ca3ad28489193458e443fe4d21349b41ba88bd1c7af91c336ae0286c8",
+  "frames": 48,
+  "feather_radius": 0,
+  "all_highlight_appearance": true,
+  "policy": "Longer-fit balanced v8 plus all-highlight colour backtracking",
+  "checks": "48frames; max transition mean excess<=0.02EV; ordinary >=99.9% within1code; all highlight appearance<=1code; zero shadow lift/new negativeY; exact outside constraint support",
+  "scope": "Previously failing Hunyuan development clip, full first48 frames. Selected after earlier failures; not independent release holdout or export transport validation.",
+  "release_authorized": false,
+  "include_fully_clipped": true
+}

@@ -1,0 +1,52 @@
+{
+  "registered_before_training": true,
+  "parent": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+  "parent_sha256": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+  "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+  "replay_pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+  "seed": 20261103,
+  "steps": 600,
+  "learning_rate": 0.0001,
+  "loss": {
+    "equal_frame_highlight_asinh_mse": 1.0,
+    "highlight_gradient": 1.0,
+    "known_aligned_temporal_residual": 1.0
+  },
+  "include_fully_clipped": true,
+  "change": "Same frozen v9, 3251 new parameters, seed,600 samples,600 Adam updates and losses as prior local/coarse controls. Pool whole-frame64 conditioning to4x4 spatial cells before the same two convolutions; bilinear decode predicted4x4 fields to full frame before crop. No global mean addition. No learned upsampling. Equal parameters, different compute and spatial support.",
+  "replay_geometry": "Origin multiple4; nominal320x512 crops may extend1..3 pixels to actual image edge. Exclude64px artificial boundaries,4px real boundaries. Select original interior highlights only; exclude and report replay rows without any. No motion objective on replay.",
+  "acceptance": "Every original DEV/detail/grade/Hunyuan48 gate unchanged; no best-step selection.",
+  "old_coherent_control_max": 0.3825248606569533,
+  "aligned_residual_control_max": 0.010367255277136186,
+  "scope": "Research-only final checkpoint comparison. Both new branches have equal parameter count; context computation/resolution differ, so not identical compute. All original DEV/detail/grade/Hunyuan48 gates; no best-step selection or threshold change. Saved sample schedule was frozen before training.",
+  "release_authorized": false,
+  "replay_sampling": "nonempty_phase_aligned_v2",
+  "training_region": "fully_clipped",
+  "temporal_support": "active_union_composed",
+  "log_gradient_balance": false,
+  "update_mode": "adam",
+  "search_scales": [
+    1,
+    0.5,
+    0.25,
+    0.125
+  ],
+  "relative_tolerance": 1E-06,
+  "absolute_tolerance": 1E-09,
+  "balanced_windows": true,
+  "accumulation_steps": 1,
+  "initial_checkpoint": "G:/rudra_training/aces_guarded_projected600_20261024/step600.pt",
+  "schedule": "G:/rudra_training/aces_balanced_sequential600_20261024/sample_schedule.json",
+  "pilots": {
+    "motion": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+    "replay": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json"
+  },
+  "context_mode": "coarse4_spatial",
+  "input_hashes": {
+    "G:/rudra_training/aces_guarded_projected600_20261024/step600.pt": "e83b997c315bf5cc26d3df0e6fa2ad357828feebc0d78384b378057ed4349709",
+    "G:/rudra_training/aces_balanced_sequential600_20261024/sample_schedule.json": "01035eaf180d31c08a2f1a9313812a2d3391a5ffc0a65093bc0389f7ac8e6b3c",
+    "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+    "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json": "9e410260e07304ec26e02106b094d11e25ef78e85e45aae914c6ffa5a85151c2",
+    "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json": "d2ac979f3d046c54c589acae20b905d47d96c1fbc1118c77322026de8e713836"
+  }
+}

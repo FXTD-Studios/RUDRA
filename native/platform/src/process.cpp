@@ -500,7 +500,8 @@ Result<ProcessOutput> run_process(const std::vector<std::string>& argv, std::sto
     {
         // Serialize reaping and cancellation so a reused PID cannot be killed.
         std::mutex lifecycle;
-        bool reaped = false;
+        bool reaped = false, wait_failed = false;
+        int wait_errno = 0;
         std::stop_callback interrupt(stop, [&] {
             std::lock_guard lock(lifecycle);
             if (!reaped) ::kill(pid, SIGKILL);
@@ -510,16 +511,24 @@ Result<ProcessOutput> run_process(const std::vector<std::string>& argv, std::sto
         t.join();
         ::close(o[0]); ::close(e[0]);
         if (!stop.stop_possible()) {
-            while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+            for (;;) {
+                if (::waitpid(pid, &status, 0) >= 0) break;
+                if (errno != EINTR) { wait_failed = true; wait_errno = errno; break; }
+            }
         } else for (;;) {
             {
                 std::lock_guard lock(lifecycle);
                 const auto got = ::waitpid(pid, &status, WNOHANG);
-                reaped = got == pid || (got < 0 && errno != EINTR);
-                if (reaped) break;
+                if (got == pid) { reaped = true; break; }
+                // A lost child (ECHILD: SIGCHLD ignored, another reaper) is an
+                // error, never a run that exited 0.
+                if (got < 0 && errno != EINTR) { reaped = true; wait_failed = true; wait_errno = errno; break; }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
+        if (wait_failed)
+            return make_error(ErrorCode::IoError, "Could not read the program's exit status.",
+                              argv[0] + ": " + std::strerror(wait_errno));
     }
     if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "Program was cancelled");
     r.exit_code = exit_code_of(status);

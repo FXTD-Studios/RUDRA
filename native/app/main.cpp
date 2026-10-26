@@ -130,7 +130,9 @@ int main(int argc, char** argv) {
         dialog = rest[i + 1];
         rest.remove(i, 2);
     }
-    rudra::app::MainWindow w;
+    // Keep super-whites, turned on once (Reconstruct menu): the window opens
+    // with headroom support so its projects reopen.
+    rudra::app::MainWindow w(true, QSettings().value("experimental/superWhites", false).toBool());
     for (const auto& line : ignored_env) w.log(QString::fromStdString(line));
     if (!log_file.isEmpty()) w.log("log file: " + QDir::toNativeSeparators(log_file));
     w.restore_settings();   // the window, rails, tab, container and Render fields of the last run

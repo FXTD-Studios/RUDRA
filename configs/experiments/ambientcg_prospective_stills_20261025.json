@@ -1,0 +1,71 @@
+{
+  "registered_before_rendering_and_model_evaluation": true,
+  "sources": [
+    {
+      "asset_id": "DayEnvironmentHDRI113",
+      "path": "G:/datasets/corpora/ambientcg_quarantine_acescg_20261025/DayEnvironmentHDRI113_acescg_float32.exr",
+      "sha256": "007b8008b3b57986d37e83de4b32dc168201899d9880ab25e2fcb3051a3abe2f"
+    },
+    {
+      "asset_id": "EveningSkyHDRI048A",
+      "path": "G:/datasets/corpora/ambientcg_quarantine_acescg_20261025/EveningSkyHDRI048A_acescg_float32.exr",
+      "sha256": "47410b982d5f6814ea930494c0c56c6755c9ed3e3c324bb2129e54d17c426696"
+    }
+  ],
+  "excluded": [
+    "DaySkyHDRI071A"
+  ],
+  "source_conversion_report_sha256": "01083aeb289c3706b44a872335d616f47559367bd56596841f1d6d1ae64cc290",
+  "manual_overlap_review_sha256": "178481289880c94eed1cb830ed02e6c98261298de0e9d5cc6b6a9fbdbf5cb576",
+  "projection": {
+    "width": 512,
+    "height": 288,
+    "hfov": 90,
+    "yaw_degrees": [
+      0,
+      90,
+      180,
+      270
+    ],
+    "pitch_degrees": [
+      0
+    ],
+    "implementation": "pipeline/prepare_next_hdr_training.py:perspective",
+    "implementation_file_sha256": "2aafccff1ff586cba59692edf7a7b0891dd2bc86eddc79063aa3e75245044023"
+  },
+  "exposure": {
+    "normalization": "Once per entire panorama: scale median positive AP1 luminance to0.18; do not auto-expose per view. No absolute luminance calibration claimed.",
+    "ev_offsets": [
+      -2,
+      0,
+      2
+    ]
+  },
+  "source_bits": [
+    8,
+    10
+  ],
+  "storage": "Rec709 Rec1886 display codes via official ACES2SDR100 view; round to2^bits-1 levels then store16bitPNG. Evaluator must use actual decoded PNG codes.",
+  "target": "Unmodified projected/exposed scene-linear ACEScg reference; no analytic replacement or target reconciliation. Preserve original truth.",
+  "expected_input_rows": 48,
+  "scope": "Prospective two-scene still-image stress test; screened sources with documented overlap limitations. Not full independent release holdout or video qualification.",
+  "model_evaluation_rule": "No model evaluation before checkpoint selection is frozen after original DEV gates pass. Never tune current training using these cases.",
+  "comparison_plan": {
+    "baselines": [
+      "exact analytic inverse",
+      "frozen selected checkpoint"
+    ],
+    "metrics": [
+      "per-scene and pooled highlight asinh-RGB error",
+      "full/partial support coverage",
+      "raw-reference display MSE at-3/0/+3EV",
+      "gradient detail",
+      "ordinary/shadow preservation",
+      "finite signed float master/export precision"
+    ],
+    "reporting": "Keep all48cases; report empty supports and per-scene results. No scene/view/exposure filtering from results. Existing DEV limits remain unchanged; these prospective results cannot independently authorize release.",
+    "provisional_acceptance": "No-worse-than analytic per exposure grade and highlight/detail metric, reported separately per input precision and scene; no acceptance when required coverage absent. Broad release coverage still required."
+  },
+  "release_authorized": false,
+  "used_for_optimization": false
+}
