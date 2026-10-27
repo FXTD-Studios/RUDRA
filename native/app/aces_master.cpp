@@ -38,8 +38,14 @@
 
 #include "aces_engine.hpp"
 #include "main_window.hpp"
+#include "widgets.hpp"
 #include <QStatusBar>
 #include "rudra/core/aces_v2_manifest.hpp"
+#include "rudra/core/gamut.hpp"
+#include "rudra/core/color.hpp"
+#ifdef RUDRA_APP_VIEWER
+#include "rudra/render/viewer_window.hpp"
+#endif
 #include "rudra/media/aces_frames.hpp"
 
 namespace fs = std::filesystem;
@@ -145,10 +151,25 @@ const std::vector<AcesRunTarget>& aces_run_targets() {
     return t;
 }
 
+const std::vector<AcesLogChoice>& aces_log_choices() {
+    static const std::vector<AcesLogChoice> c = {
+        {"", "Nothing else (ACEScg EXR only)"},
+        {"tiff16", "ARRI LogC4: 16-bit TIFF per frame (lossless)"},
+        {"dpx10", "ARRI LogC4: 10-bit DPX per frame"},
+        {"prores4444xq", "ARRI LogC4: ProRes 4444 XQ movie (12-bit 4:4:4)"},
+        {"prores4444", "ARRI LogC4: ProRes 4444 movie (12-bit 4:4:4)"},
+        {"prores422hq", "ARRI LogC4: ProRes 422 HQ movie (10-bit 4:2:2)"},
+        {"tiff16,prores4444xq", "ARRI LogC4: 16-bit TIFF + ProRes 4444 XQ"},
+        {"dpx10,prores422hq", "ARRI LogC4: 10-bit DPX + ProRes 422 HQ"},
+    };
+    return c;
+}
+
 QStringList aces_cli_arguments(const AcesRunSettings& s) {
     QStringList a = {"aces-v2", qp(s.package), qp(s.input), "--out", qp(s.out), "--runtime", q(s.runtime),
                      "--device", q(s.device), "--ocio-threads", QString::number(s.ocio_threads)};
     a << (s.luminance_guard ? "--luminance-guard" : "--no-luminance-guard");
+    if (!s.log_curve.empty() && !s.log_formats.empty()) a << "--log" << q(s.log_curve) << "--log-format" << q(s.log_formats);
     return a;
 }
 
@@ -183,6 +204,11 @@ Result<AcesRunSummary> read_aces_provenance(const fs::path& out_dir) {
             s.remaining_display_errors += f.value("remaining_display_errors", std::size_t(0));
             s.new_negative_luminance += f.value("new_negative_luminance", std::size_t(0));
         }
+        if (j.contains("log_delivery") && j["log_delivery"].is_object()) {
+            s.log_curve = j["log_delivery"].value("curve", std::string());
+            for (const auto& f : j["log_delivery"].value("files", nlohmann::json::array()))
+                s.log_files.push_back(f.value("kind", std::string()));
+        }
         if (s.frames) {
             s.mean_ms = ms / double(s.frames);
             s.mean_reconstructed_fraction = rec / double(s.frames);
@@ -207,6 +233,11 @@ std::string aces_summary_text(const AcesRunSummary& s) {
         t << s.remaining_display_errors << " pixels show more than 1 code from the source: check those frames";
     t << (s.luminance_guard ? "; no new negative luminance (" : "; luminance guard off (") << s.new_negative_luminance
       << " new negative pixels).";
+    if (!s.log_curve.empty()) {
+        t << " " << s.log_curve << " copies: ";
+        for (std::size_t i = 0; i < s.log_files.size(); ++i) t << (i ? ", " : "") << s.log_files[i];
+        t << ".";
+    }
     return t.str();
 }
 
@@ -379,6 +410,17 @@ AcesMasterDialog::AcesMasterDialog(QWidget* parent, std::vector<fs::path> roots,
                        "has none are moved back toward the plain inverse.");
     guard_->setChecked(true);
     g->addWidget(guard_, row++, 1, 1, 2);
+
+    g->addWidget(label("Also write", "acesLogLabel", "value", this), row, 0);
+    log_format_ = new QComboBox(this);
+    log_format_->setObjectName("acesLog");
+    for (const auto& c : aces_log_choices()) log_format_->addItem(q(c.label), q(c.key));
+    log_format_->setToolTip("A camera-log copy of the same master in ARRI LogC4 / ARRI Wide Gamut 4 (no peak, knee or exposure "
+                     "change; above 469.8 x diffuse white is clamped). Set the clip to LogC4 / AWG4 in Resolve or Nuke. "
+                     "The rudra.reconstructed mask stays in the EXR. ProRes needs every frame the same size.");
+    if (const int i = log_format_->findData(st.value("aces/log_formats", "").toString()); i >= 0) log_format_->setCurrentIndex(i);
+    connect(log_format_, &QComboBox::currentIndexChanged, this, [this] { QSettings().setValue("aces/log_formats", log_format_->currentData()); });
+    g->addWidget(log_format_, row++, 1, 1, 2);
 
     g->addWidget(label("Engine", "acesCliLabel", "value", this), row, 0);
     cli_ = new QLineEdit(this);
@@ -630,6 +672,8 @@ AcesRunSettings AcesMasterDialog::settings() const {
     s.runtime = t.runtime;
     s.device = t.device;
     s.luminance_guard = guard_->isChecked();
+    s.log_formats = log_format_->currentData().toString().toStdString();
+    if (!s.log_formats.empty()) s.log_curve = "logc4";
     return s;
 }
 
@@ -662,7 +706,7 @@ void AcesMasterDialog::update_state() {
     start_->setEnabled(!busy && ok);
     cancel_->setEnabled(busy);
     open_out_->setEnabled(QFileInfo(out_->text()).isDir());
-    for (QWidget* w : std::initializer_list<QWidget*>{package_, target_, guard_, input_, out_, cli_}) w->setEnabled(!busy);
+    for (QWidget* w : std::initializer_list<QWidget*>{package_, target_, guard_, log_format_, input_, out_, cli_}) w->setEnabled(!busy);
     // A finished run's summary stays until something is changed.
     if (!busy && !hold_)
         status_->setText(ok ? QStringLiteral("Ready: %1.").arg(frames_text(total_frames_)) : why);
@@ -875,7 +919,8 @@ void AcesMasterDialog::start_with_engine(const AcesRunSettings& s) {
     const QPointer<QObject> self(this);
     const fs::path out = s.out;
     engine_->request(
-        QJsonObject{{"op", "master"}, {"sources", sources}, {"out", qp(s.out)}, {"guard", s.luminance_guard}},
+        QJsonObject{{"op", "master"}, {"sources", sources}, {"out", qp(s.out)}, {"guard", s.luminance_guard},
+                    {"log", q(s.log_curve)}, {"log_formats", q(s.log_formats)}},
         [this, self, out](const QJsonObject& o) {
             if (!self) return;
             engine_master_ = false;
@@ -934,9 +979,144 @@ AcesEngine* MainWindow::aces_engine() {
             const QString text = aces_engine_->status_text();
             log(text);
             if (statusBar()) statusBar()->showMessage(text, st == AcesEngine::State::Loading ? 0 : 10000);
+            if (aces_view_ && ckpt_) {
+                if (st == AcesEngine::State::Ready)
+                    ckpt_->setText(QStringLiteral("learned ACES 2.0 (%1)").arg(q(aces_engine_->config().device)));
+                else if (st == AcesEngine::State::Loading)
+                    ckpt_->setText(QStringLiteral("loading learned ACES 2.0…"));
+            }
+            // Ready: the frame on screen is shown again through the model; lost: the legacy path again.
+            if (!frames_.empty()) step_to(current_);
         });
     }
     return aces_engine_.get();
+}
+
+// ---- the main viewer through the learned ACES 2.0 model ----------------------
+
+bool MainWindow::aces_routed() const {
+    return aces_view_ && aces_engine_ && aces_engine_->state() == AcesEngine::State::Ready && !frames_.empty() &&
+           !headroom_routed();
+}
+
+void MainWindow::set_aces_viewer(bool on) {
+    aces_view_ = on;
+    QSettings().setValue("aces/viewer", on);
+    if (!on) aces_playing_ = false;
+    if (!frames_.empty()) step_to(current_);
+}
+
+namespace {
+// Raw planar float32 (R, G, B planes) as aces-v2-serve writes it.
+std::optional<PlanarBuffer> read_planes(const QString& path, int w, int h) {
+    PlanarBuffer b(3, h, w);
+    std::ifstream in(pq(path), std::ios::binary);
+    for (int c = 0; c < 3 && in; ++c)
+        in.read(reinterpret_cast<char*>(b.plane(c)), std::streamsize(b.plane_size() * sizeof(float)));
+    if (!in) return std::nullopt;
+    return b;
+}
+// ACEScg (1.0 = diffuse white = 203 nits, as the delivery reads it) to the
+// viewer's precomposited convention: linear Rec.709, 1.0 = 10 000 nits. No clamp.
+NetworkLinearImage aces_view_image(const PlanarBuffer& acescg) {
+    PlanarBuffer out(3, acescg.height(), acescg.width());
+    const Mat3 m = rgb_to_rgb_matrix(Primaries::Ap1, Primaries::Rec709);
+    constexpr double k = 203.0 / 10000.0;
+    float f[3][3];
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c) f[r][c] = float(m[std::size_t(r)][std::size_t(c)] * k);
+    const float *ir = acescg.plane(0), *ig = acescg.plane(1), *ib = acescg.plane(2);
+    float *orr = out.plane(0), *og = out.plane(1), *ob = out.plane(2);
+    for (std::size_t i = 0; i < acescg.plane_size(); ++i) {
+        const float r = ir[i], g = ig[i], bl = ib[i];
+        orr[i] = f[0][0] * r + f[0][1] * g + f[0][2] * bl;
+        og[i] = f[1][0] * r + f[1][1] * g + f[1][2] * bl;
+        ob[i] = f[2][0] * r + f[2][1] * g + f[2][2] * bl;
+    }
+    return NetworkLinearImage(std::move(out));
+}
+}  // namespace
+
+void MainWindow::aces_request(int index) {
+    if (frames_.empty() || !aces_engine_) return;
+    const int n = int(frames_.size());
+    index = ((index % n) + n) % n;
+    if (aces_busy_) {
+        aces_next_ = index;   // the newest ask wins; it runs when this one is back
+        return;
+    }
+    if (!aces_tmp_) aces_tmp_ = std::make_unique<QTemporaryDir>();
+    if (!aces_tmp_->isValid()) {
+        log("learned ACES view: no temporary folder");
+        return;
+    }
+    // A movie: the file and the frame number (the engine decodes it); stills: the file.
+    const bool movie = shot_video_.has_value() && !shot_sources_.empty();
+    const QString source = movie ? qp(shot_sources_.front()) : qp(frames_[std::size_t(index)]);
+    const QString model_path = aces_tmp_->filePath(QStringLiteral("model_%1.f32").arg(index % 2));
+    const QString base_path = aces_tmp_->filePath(QStringLiteral("baseline_%1.f32").arg(index % 2));
+    aces_busy_ = true;
+    const QPointer<MainWindow> self(this);
+    aces_engine_->request(QJsonObject{{"op", "preview"}, {"source", source}, {"frame", movie ? index : 0}, {"keep", false},
+                                      {"model_out", model_path}, {"baseline_out", base_path}},
+                          [self, index, model_path, base_path](const QJsonObject& o) {
+                              if (self) self->aces_after_frame(o, index, model_path, base_path);
+                          });
+}
+
+void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString& model_path, const QString& base_path) {
+    aces_busy_ = false;
+    const bool routed = aces_routed();
+    if (routed && aces_next_ >= 0 && aces_next_ != index) {
+        const int next = aces_next_;
+        aces_next_ = -1;
+        aces_request(next);   // the user has moved on: show where they are now
+        return;
+    }
+    aces_next_ = -1;
+    if (!routed) return;
+    waiting_ = false;
+    if (!o.value("ok").toBool()) {
+        aces_playing_ = false;
+        if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
+        problem_ = QStringLiteral("Learned ACES view: ") + o.value("error").toString() + ' ' + o.value("detail").toString();
+        log(problem_);
+        sync_ui();
+        return;
+    }
+    const int w = o.value("width").toInt(), h = o.value("height").toInt();
+    auto model = read_planes(model_path, w, h);
+    auto base = read_planes(base_path, w, h);
+    if (!model || !base) {
+        log("learned ACES view: the frame could not be read back");
+        return;
+    }
+    problem_.clear();
+    aces_shown_ = index;
+    current_ = index;
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) viewer_->set_composited(aces_view_image(*model), aces_view_image(*base));
+#endif
+    frame_info_ = QStringLiteral("%1  %2/%3  \u00b7  learned ACES 2.0, %4x%5, %6 ms, %7 % rebuilt, peak %8x (plain %9x)")
+                      .arg(QString::fromStdString(frame_name(std::size_t(index))))
+                      .arg(index + 1)
+                      .arg(frames_.size())
+                      .arg(w)
+                      .arg(h)
+                      .arg(o.value("ms").toDouble(), 0, 'f', 0)
+                      .arg(100.0 * o.value("reconstructed_fraction").toDouble(), 0, 'f', 2)
+                      .arg(o.value("peak").toDouble(), 0, 'f', 1)
+                      .arg(o.value("peak_plain").toDouble(), 0, 'f', 1);
+    sync_ui();
+    show_status();
+    if (aces_playing_) {
+        // Plays as fast as the model runs (an inspection mode, not real time).
+        if (index + 1 < int(frames_.size())) aces_request(index + 1);
+        else {
+            aces_playing_ = false;
+            if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
+        }
+    }
 }
 
 void MainWindow::preload_aces_engine() {

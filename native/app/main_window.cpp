@@ -143,6 +143,7 @@ MainWindow::MainWindow(bool with_viewer, bool headroom_capable)
       headroom_capable_(headroom_capable) {
     setWindowTitle("RUDRA");
     resize(1600, 1000);
+    aces_view_ = QSettings().value("aces/viewer", true).toBool();
     session_.on_change([this](std::uint32_t what) { session_changed(what); });
     build_ui(with_viewer);
     setAcceptDrops(true);   // a drop anywhere opens (the page's window drop)
@@ -1138,6 +1139,15 @@ void MainWindow::step_to(int i) {
         return;
     }
     if (headroom_) stop_headroom();   // another shot or policy: the legacy engine again
+    if (aces_routed()) {
+        // The learned ACES 2.0 model kept loaded shows the frame (aces_master.cpp).
+        const int n = int(frames_.size());
+        current_ = ((i % n) + n) % n;
+        waiting_ = true;
+        aces_request(current_);
+        sync_ui();
+        return;
+    }
     if (!engine_ || frames_.empty()) return;
     const int n = int(frames_.size());
     current_ = ((i % n) + n) % n;
@@ -1148,6 +1158,19 @@ void MainWindow::step_to(int i) {
 }
 
 void MainWindow::toggle_play() {
+    if (aces_routed() && !headroom_routed()) {
+        if (aces_playing_) {
+            aces_playing_ = false;
+            btn_play_->set_glyph(IconButton::Glyph::Play);
+            return;
+        }
+        if (frames_.size() < 2) return;
+        aces_playing_ = true;
+        btn_play_->set_glyph(IconButton::Glyph::Pause);
+        log(QStringLiteral("playing through the learned ACES model as frames render (not real time)"));
+        aces_request(current_ + 1 < int(frames_.size()) ? current_ + 1 : 0);
+        return;
+    }
     if (headroom_routed()) {
         // The headroom preview plays as fast as its frames render (no clock,
         // no skipping, no temporal hold): an inspection mode, not real time.
@@ -1204,6 +1227,7 @@ void MainWindow::start_feeder(int at) {
 }
 
 void MainWindow::halt_playback() {
+    aces_playing_ = false;
     if (headroom_playing_) {
         headroom_playing_ = false;
         if (headroom_) headroom_->pause();   // the frame on screen stays

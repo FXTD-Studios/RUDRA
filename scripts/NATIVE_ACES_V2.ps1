@@ -193,6 +193,15 @@ if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
     $n = (Get-ChildItem $vout -Filter "video_smoke_*.exr").Count
     if ($n -ne 12) { Fail "video master wrote $n EXRs, expected 12" }
     Write-Host "video: 12 frames mastered"
+    # ARRI LogC4 copies: 16-bit TIFF, 10-bit DPX and a ProRes 422 HQ movie of the same frames.
+    $lout = Join-Path $Out "master_video_logc4"
+    & $Cli aces-v2 $Package $clip --out $lout --device $Device --ocio-threads 8 --log logc4 --log-format tiff16,dpx10,prores422hq
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --log logc4 (exit $LASTEXITCODE)" }
+    $nt = (Get-ChildItem (Join-Path $lout "log_logc4") -Filter "*.tif").Count
+    $nd = (Get-ChildItem (Join-Path $lout "log_logc4_dpx") -Filter "*.dpx").Count
+    $mov = Join-Path $lout "video_smoke_logc4.mov"
+    if ($nt -ne 12 -or $nd -ne 12 -or -not (Test-Path $mov)) { Fail "LogC4 copies: $nt TIFF, $nd DPX, movie $(Test-Path $mov); expected 12, 12, True" }
+    Write-Host "LogC4: 12 TIFF (16-bit), 12 DPX (10-bit), ProRes 422 HQ movie"
 } else {
     Write-Host "no ffmpeg on the PATH or in tmp\native_deps: video check skipped" -ForegroundColor Yellow
 }

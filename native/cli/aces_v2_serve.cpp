@@ -11,11 +11,15 @@
 // On start:  {"event":"ready", ...}  or  {"event":"error", ...} and exit 2.
 // Requests (id is echoed):
 //   {"id":1,"op":"preview","source":"<still or video>","frame":0,"guard":true}
-//       runs the frame, keeps it, answers its size and statistics
+//       runs the frame, keeps it, answers its size and statistics. Options for the
+//       app's main viewer: "keep":false leaves the kept frame alone; "model_out" and
+//       "baseline_out" write the master and the plain ACES inverse as raw float32
+//       ACEScg, planar R, G, B (width x height each), native byte order
 //   {"id":2,"op":"view","ev":-2,"mode":"model|plain|source|mask|split","max_side":1600,"out":"<file.ppm>"}
 //       the kept frame through the ACES 2.0 SDR view at that exposure, 8-bit PPM
 //   {"id":3,"op":"master","sources":["<still or video>",...],"out":"<new dir>","guard":true}
-//       a video is mastered frame by frame as <stem>_<NNNNNN>.exr
+//       a video is mastered frame by frame as <stem>_<NNNNNN>.exr; "log":"logc4" and
+//       "log_formats":"tiff16,dpx10,prores4444xq" add camera-log copies (aces_v2_log.hpp)
 //   {"id":4,"op":"probe","source":"<still or video>"}  -> frames, width, height, fps
 //       {"id":3,"progress":{...}} per frame, then {"id":3,"ok":true,"done":true,...}
 //   {"op":"cancel"}  stops a master after the frame in hand
@@ -47,6 +51,7 @@
 #include "rudra/infer/aces_v2_runtime.hpp"
 #include "rudra/media/still.hpp"
 #include "aces_v2_inputs.hpp"
+#include "aces_v2_log.hpp"
 
 namespace fs = std::filesystem;
 using nlohmann::json;
@@ -132,6 +137,13 @@ std::vector<std::uint8_t> render_view(const Kept& k, const aces_v2::AcesView& vi
                 rgb[(std::size_t(y) * out_w + x) * 3 + c] = static_cast<std::uint8_t>(std::lround(v * 255.0));
             }
     return rgb;
+}
+
+bool write_planes(const fs::path& p, const PlanarBuffer& b) {
+    std::ofstream o(p, std::ios::binary);
+    for (int c = 0; c < 3; ++c)
+        o.write(reinterpret_cast<const char*>(b.plane(c)), std::streamsize(b.plane_size() * sizeof(float)));
+    return bool(o);
 }
 
 bool write_ppm(const fs::path& p, const std::vector<std::uint8_t>& rgb, int w, int h) {
@@ -264,6 +276,13 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     continue;
                 }
                 Kept k{src, codes, aces_v2::view_inverse(**view, codes), std::move(r->acescg), std::move(r->mask)};
+                bool wrote = true;
+                if (req.contains("model_out")) wrote = wrote && write_planes(req["model_out"].get<std::string>(), k.master);
+                if (req.contains("baseline_out")) wrote = wrote && write_planes(req["baseline_out"].get<std::string>(), k.baseline);
+                if (!wrote) {
+                    send(err(id, "The frame could not be written for the viewer."));
+                    continue;
+                }
                 const double ms = ms_since(t);
                 const std::size_t recon = count_positive(k.mask);
                 send({{"id", id}, {"ok", true}, {"source", src.string()}, {"frame", frame_index}, {"label", still->source},
@@ -272,7 +291,7 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                       {"peak", peak_luma(k.master)}, {"peak_plain", peak_luma(k.baseline)},
                       {"fully_clipped_pixels", r->smoothing.full_pixels}, {"remaining_display_errors", r->constraint.remaining_display_errors},
                       {"new_negative_luminance", r->constraint.new_negative_luminance}, {"luminance_guard", guard}});
-                kept = std::move(k);
+                if (req.value("keep", true)) kept = std::move(k);
             } else if (op == "probe") {
                 const fs::path src = req.at("source").get<std::string>();
                 if (aces_is_video(src)) {
@@ -315,6 +334,11 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     send(err(id, frames.error()));
                     continue;
                 }
+                auto log_opts = parse_aces_log(req.value("log", std::string()), req.value("log_formats", std::string()));
+                if (!log_opts) {
+                    send(err(id, log_opts.error()));
+                    continue;
+                }
                 if (fs::exists(out)) {
                     send(err(id, "Choose a new output folder.", out.string()));
                     continue;
@@ -334,7 +358,15 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                             {"release_authorized", m->release_authorized}, {"engine", "aces-v2-serve"}, {"frames", json::array()}};
                 bool all_ok = true, stopped = false;
                 std::optional<Error> failure;
-                const std::size_t total = (*frames)->total();
+                std::unique_ptr<AcesLogWriter> logw;
+                if (log_opts->any()) {
+                    const std::string stem = sources.size() == 1 ? sources.front().stem().string() : out.filename().string();
+                    auto w = AcesLogWriter::open(*log_opts, out, out / (stem + "_" + log_curve_name(*log_opts->curve) + ".mov"),
+                                                 (*frames)->fps());
+                    if (!w) failure = w.error();
+                    else logw = std::move(*w);
+                }
+                const std::size_t total = failure ? 0 : (*frames)->total();
                 for (std::size_t i = 0; i < total; ++i) {
                     if (in.cancel) {
                         stopped = true;
@@ -359,6 +391,11 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                         failure = w.error();
                         break;
                     }
+                    if (logw)
+                        if (auto lw = logw->write(r->acescg, f->exr); !lw) {
+                            failure = lw.error();
+                            break;
+                        }
                     const std::size_t recon = count_positive(r->mask);
                     const bool ok = r->constraint.remaining_display_errors == 0 && (!guard || r->constraint.new_negative_luminance == 0);
                     all_ok = all_ok && ok;
@@ -375,6 +412,10 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     send({{"id", id}, {"progress", {{"index", i + 1}, {"total", total}, {"source", f->source},
                                                     {"exr", exr.filename().string()}, {"ms", ms},
                                                     {"remaining_display_errors", r->constraint.remaining_display_errors}}}});
+                }
+                if (logw) {
+                    if (auto fin = logw->finish(); !fin && !failure) failure = fin.error();
+                    run["log_delivery"] = logw->provenance();
                 }
                 run["appearance_constraint_pass"] = all_ok;
                 run["cancelled"] = stopped;
