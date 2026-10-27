@@ -69,8 +69,16 @@ struct AcesRunSettings {
     std::string runtime = "libtorch", device = "cuda";
     bool luminance_guard = true;
     int ocio_threads = 8;
+    // Camera-log copies beside the EXRs (cli/aces_v2_log.hpp): "" for none, else
+    // "logc4"/"acescct", and the formats ("tiff16", "dpx10", "prores4444xq"...).
+    std::string log_curve, log_formats;
 };
 QStringList aces_cli_arguments(const AcesRunSettings& s);
+// What the "Also write" list offers: key (log_formats), label. Key "" = EXR only.
+struct AcesLogChoice {
+    std::string key, label;
+};
+const std::vector<AcesLogChoice>& aces_log_choices();
 
 // One line the command prints per finished frame:
 //   "<source> -> <exr>  <ms> ms  remaining_display_errors=<n>"
@@ -87,6 +95,8 @@ struct AcesRunSummary {
     bool appearance_pass = false, luminance_guard = false;
     double mean_ms = 0, mean_reconstructed_fraction = 0;
     std::string device, runtime;
+    std::string log_curve;                 // "ARRI LogC4" when camera-log copies were written
+    std::vector<std::string> log_files;    // what they are ("16-bit TIFF per frame (lossless)", ...)
 };
 Result<AcesRunSummary> read_aces_provenance(const std::filesystem::path& out_dir);
 std::string aces_summary_text(const AcesRunSummary& s);
@@ -147,7 +157,7 @@ private:
     std::size_t total_frames_ = 0;                // frames to master (a video's frame count)
     bool video_ = false;
     QString frames_text(std::size_t n) const;
-    QComboBox *package_ = nullptr, *target_ = nullptr;
+    QComboBox *package_ = nullptr, *target_ = nullptr, *log_format_ = nullptr;
     QLabel *package_note_ = nullptr, *frames_note_ = nullptr, *cli_note_ = nullptr, *status_ = nullptr;
     QLineEdit *input_ = nullptr, *out_ = nullptr, *cli_ = nullptr;
     QCheckBox* guard_ = nullptr;

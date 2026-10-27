@@ -21,6 +21,7 @@
 #include "rudra/infer/aces_v2_runtime.hpp"
 #include "rudra/media/still.hpp"
 #include "aces_v2_inputs.hpp"
+#include "aces_v2_log.hpp"
 
 namespace fs = std::filesystem;
 using namespace rudra;
@@ -36,7 +37,7 @@ int fail_v2(const Error& e) {
 
 int cmd_aces_v2(const std::vector<std::string>& args) {
     if (args.size() < 2) {
-        std::fprintf(stderr, "usage: rudra-native aces-v2 <package> <image|folder|video> --out <dir> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml] [--ocio-threads N] [--no-smoothing] [--luminance-guard|--no-luminance-guard]\n");
+        std::fprintf(stderr, "usage: rudra-native aces-v2 <package> <image|folder|video> --out <dir> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml] [--ocio-threads N] [--no-smoothing] [--luminance-guard|--no-luminance-guard] [--log logc4|acescct] [--log-format tiff16,dpx10,prores4444xq|prores4444|prores422hq]\n");
         return 64;
     }
     const fs::path pkg = args[0], input = args[1];
@@ -45,6 +46,7 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
     int threads = 4;
     bool smoothing = true;
     int guard_override = -1;   // -1: the package's appearance_constraint.forbid_new_negative_y
+    std::string log_curve, log_formats;
     for (std::size_t i = 2; i < args.size(); ++i) {
         if (args[i] == "--out" && i + 1 < args.size()) out = args[++i];
         else if (args[i] == "--device" && i + 1 < args.size()) device = args[++i];
@@ -53,6 +55,8 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
         else if (args[i] == "--no-smoothing") smoothing = false;
         else if (args[i] == "--luminance-guard") guard_override = 1;
         else if (args[i] == "--no-luminance-guard") guard_override = 0;
+        else if (args[i] == "--log" && i + 1 < args.size()) log_curve = args[++i];
+        else if (args[i] == "--log-format" && i + 1 < args.size()) log_formats = args[++i];
         else return fail_v2(make_error(ErrorCode::InvalidArgument, "Unknown option.", args[i]));
     }
     if (out.empty()) return fail_v2(make_error(ErrorCode::InvalidArgument, "--out <dir> is required."));
@@ -67,6 +71,8 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
     }
     auto frames = AcesInputs::open(sources, fs::temp_directory_path() / "rudra_aces_decode.log");
     if (!frames) return fail_v2(frames.error());
+    auto log_opts = parse_aces_log(log_curve, log_formats);
+    if (!log_opts) return fail_v2(log_opts.error());
 
     auto m = aces_v2::read_manifest(pkg);
     if (!m) return fail_v2(m.error());
@@ -107,6 +113,13 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
                           {"not", "not camera RAW; reconstructed highlights are estimates"},
                           {"release_authorized", m->release_authorized}, {"frames", nlohmann::json::array()}};
     bool all_ok = true;
+    std::unique_ptr<AcesLogWriter> logw;
+    if (log_opts->any()) {
+        const std::string stem = (fs::is_directory(input) ? input.filename() : input.stem()).string();
+        auto w = AcesLogWriter::open(*log_opts, out, out / (stem + "_" + log_curve_name(*log_opts->curve) + ".mov"), (*frames)->fps());
+        if (!w) return fail_v2(w.error());
+        logw = std::move(*w);
+    }
     for (std::size_t n = 0; n < (*frames)->total(); ++n) {
         auto f = (*frames)->next();
         if (!f) return fail_v2(f.error());
@@ -119,6 +132,8 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
                                     {"source", f->source}, {"view", (*view)->identity()}};
         if (auto w = write_acescg_exr(exr, r->acescg, Primaries::Ap1, 1.0, prov, /*half=*/false, &r->mask); !w)
             return fail_v2(w.error());
+        if (logw)
+            if (auto lw = logw->write(r->acescg, f->exr); !lw) return fail_v2(lw.error());
         std::size_t reconstructed = 0;
         for (float v : r->mask.span()) reconstructed += v > 0;
         const bool ok = r->constraint.remaining_display_errors == 0 &&
@@ -136,6 +151,10 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
         std::printf("%s -> %s  %.0f ms  remaining_display_errors=%zu\n", f->source.c_str(),
                     exr.filename().string().c_str(), ms, r->constraint.remaining_display_errors);
         std::fflush(stdout);   // one line per frame reaches a pipe (the app's progress) as it happens
+    }
+    if (logw) {
+        if (auto fin = logw->finish(); !fin) return fail_v2(fin.error());
+        run["log_delivery"] = logw->provenance();
     }
     run["appearance_constraint_pass"] = all_ok;
     std::ofstream(out / "provenance.json") << run.dump(1);

@@ -9,7 +9,7 @@ endif()
 # ACES v2 staged master (core/aces_v2.hpp): needs still decode, LibTorch and OCIO 2.5.2.
 # G1 runs through LibTorch (bit parity with Python) or ONNX Runtime (DirectML; tolerance).
 if(RUDRA_WITH_OPENCV AND RUDRA_WITH_OCIO AND (RUDRA_WITH_LIBTORCH OR RUDRA_WITH_ONNXRUNTIME))
-  target_sources(rudra-native PRIVATE aces_v2_cmd.cpp aces_v2_serve.cpp aces_v2_inputs.cpp)
+  target_sources(rudra-native PRIVATE aces_v2_cmd.cpp aces_v2_serve.cpp aces_v2_inputs.cpp aces_v2_log.cpp)
   target_compile_definitions(rudra-native PRIVATE RUDRA_HAVE_ACES_V2
     $<$<BOOL:${RUDRA_WITH_LIBTORCH}>:RUDRA_HAVE_LIBTORCH_ACES> $<$<BOOL:${RUDRA_WITH_ONNXRUNTIME}>:RUDRA_HAVE_ORT_ACES>)
 endif()

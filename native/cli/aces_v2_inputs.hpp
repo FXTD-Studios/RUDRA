@@ -32,6 +32,8 @@ public:
                                                     const std::filesystem::path& decode_log);
     ~AcesInputs();
     std::size_t total() const noexcept { return total_; }
+    // The first video's frame rate, else 24 (stills).
+    double fps() const;
     // The next frame; call total() times.
     Result<AcesFrameIn> next();
 

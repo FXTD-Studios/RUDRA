@@ -21,7 +21,8 @@ param(
     [string]$Python = ".venv\Scripts\python.exe",
     [string]$Package = "",
     [switch]$SkipBuild,
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$NoFfmpegDownload
 )
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path $PSScriptRoot -Parent   # the repo this script sits in
@@ -38,6 +39,18 @@ if (-not $SkipBuild) {
     $exePath = [IO.Path]::GetFullPath((Join-Path $Repo (Join-Path $Build "app\Release\RUDRA.exe")))
     $open = Get-Process RUDRA -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ([IO.Path]::GetFullPath($_.Path) -eq $exePath) }
     if ($open) { Fail "RUDRA is open from this build (pid $($open.Id -join ', ')): close it, then run this again" }
+    # Still decode (OpenCV) in the app: without it RUDRA opens no image and the viewer stays empty.
+    if (-not (Select-String -Path $Cache -Pattern '^RUDRA_WITH_OPENCV:BOOL=ON' -Quiet)) {
+        $CvBuild = Get-ChildItem "tmp\native_deps" -Directory -Filter "opencv-*" -ErrorAction SilentlyContinue |
+                   ForEach-Object { Join-Path $_.FullName "opencv\build" } | Where-Object { Test-Path (Join-Path $_ "OpenCVConfig.cmake") } |
+                   Select-Object -First 1
+        if (-not $CvBuild) { Fail "no OpenCV in tmp\native_deps (NATIVE_ACES_V2.ps1 fetches it): the app cannot open images without it" }
+        $CvLib = Get-ChildItem (Join-Path $CvBuild "x64") -Directory | Where-Object { $_.Name -match "^vc\d+$" } |
+                 Sort-Object { [int]($_.Name.Substring(2)) } -Descending | Select-Object -First 1
+        Say "Turn on still decode in the app build (OpenCV $((Split-Path (Split-Path $CvBuild)) | Split-Path -Leaf))"
+        & $cmake -S native -B $Build -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$(Join-Path $CvLib.FullName 'lib')"
+        if ($LASTEXITCODE -ne 0) { Fail "cmake configure with OpenCV" }
+    }
     Say "Build the app (Release): RUDRA, rudra_app_tests"
     & $cmake --build $Build --config Release --parallel --target RUDRA rudra_app_tests
     if ($LASTEXITCODE -ne 0) { Fail "app build" }
@@ -53,6 +66,31 @@ if (-not $SkipBuild) {
 $App = Join-Path $Build "app\Release\RUDRA.exe"
 $AppTests = Join-Path $Build "app\Release\rudra_app_tests.exe"
 if (-not (Test-Path $App)) { Fail "no $App" }
+$AppDir = Split-Path (Resolve-Path $App).Path
+
+# Beside RUDRA.exe: OpenCV's DLL (still decode) and ffmpeg\ (movies; the ACES engine reads video through it).
+$CvDll = Get-ChildItem "tmp\native_deps" -Recurse -Filter "opencv_world*.dll" -ErrorAction SilentlyContinue |
+         Where-Object { $_.Name -notmatch "d\.dll$" -and $_.FullName -match "\\x64\\" } | Select-Object -First 1
+if ($CvDll) { Copy-Item $CvDll.FullName $AppDir -Force }
+$FfBin = $null
+$ffd = Get-ChildItem "tmp\native_deps" -Directory -Filter "ffmpeg-*-full_build" -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($ffd) { $FfBin = Join-Path $ffd.FullName "bin" }
+elseif (Get-Command ffprobe -ErrorAction SilentlyContinue) { $FfBin = Split-Path (Get-Command ffprobe).Source }
+elseif (-not $NoFfmpegDownload) {
+    Say "Fetch ffmpeg (GPL full build from gyan.dev, run as a separate program) for movies"
+    New-Item -ItemType Directory -Force "tmp\native_deps" | Out-Null
+    $zip = "tmp\native_deps\ffmpeg-release-full.zip"
+    Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.zip" -OutFile $zip -UseBasicParsing
+    Expand-Archive -Path $zip -DestinationPath "tmp\native_deps" -Force
+    Remove-Item $zip
+    $ffd = Get-ChildItem "tmp\native_deps" -Directory -Filter "ffmpeg-*-full_build" | Select-Object -First 1
+    if ($ffd) { $FfBin = Join-Path $ffd.FullName "bin" }
+}
+if ($FfBin -and (Test-Path (Join-Path $FfBin "ffprobe.exe"))) {
+    New-Item -ItemType Directory -Force (Join-Path $AppDir "ffmpeg") | Out-Null
+    Copy-Item (Join-Path $FfBin "ffmpeg.exe"), (Join-Path $FfBin "ffprobe.exe") (Join-Path $AppDir "ffmpeg") -Force
+    Write-Host "ffmpeg   $(Join-Path $AppDir 'ffmpeg')"
+} else { Write-Host "no ffmpeg: stills only (movies need ffmpeg and ffprobe)" -ForegroundColor Yellow }
 
 if (-not $SkipTests -and (Test-Path $AppTests)) {
     Say "App tests: the ACES master dialog and the menus"
@@ -111,5 +149,7 @@ Write-Host "package  $Package"
 Write-Host "LibTorch $TorchLib"
 
 New-ItemProperty -Path $Key -Name "preload" -PropertyType String -Value "true" -Force | Out-Null
-Say "Start RUDRA: the ACES model loads in the background (status bar); Deliver > Learned ACES 2.0 master… or Ctrl+Shift+E"
+# The main viewer shows every frame through the learned ACES 2.0 model once it is loaded.
+New-ItemProperty -Path $Key -Name "viewer" -PropertyType String -Value "true" -Force | Out-Null
+Say "Start RUDRA: the ACES model loads in the background (status bar); then every frame you open is shown through it. Masters: Deliver > Learned ACES 2.0 master… or Ctrl+Shift+E"
 Start-Process -FilePath (Resolve-Path $App).Path -WorkingDirectory (Split-Path (Resolve-Path $App).Path)

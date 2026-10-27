@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <set>
 
 #include "rudra/media/still.hpp"
@@ -19,6 +20,13 @@ Result<AcesFrameIn> from_raw(const RawFrame16& raw, const fs::path& video, const
     AcesFrameIn f;
     f.codes = rgb_from_frame(raw).buffer();
     f.bits = aces_video_bits(vs.stream.pix_fmt);
+    if (f.bits == 8) {
+        // An 8-bit video's code values, as the model was made for (the stills and
+        // the Python's rgb24 decode): the YCbCr-to-RGB conversion lands between the
+        // 8-bit codes, and some of those values (e.g. 252.9, 255, 255) are outside
+        // what the ACES 2.0 SDR view can show, so even the exact inverse misses them.
+        for (float& v : f.codes.span()) v = std::nearbyint(v * 255.0f) / 255.0f;
+    }
     f.source = video.filename().string() + " frame " + std::to_string(index);
     f.source_path = video.string();
     f.exr = aces_video_exr_name(video, index);
@@ -79,6 +87,20 @@ Result<std::unique_ptr<AcesInputs>> AcesInputs::open(const std::vector<fs::path>
         in->items_.push_back(std::move(it));
     }
     return in;
+}
+
+double AcesInputs::fps() const {
+    for (const auto& it : items_) {
+        if (!it.video) continue;
+        const std::string& f = it.source.clock.fps;
+        const auto slash = f.find('/');
+        try {
+            const double v = slash == std::string::npos ? std::stod(f) : std::stod(f.substr(0, slash)) / std::stod(f.substr(slash + 1));
+            if (v > 0) return v;
+        } catch (...) {
+        }
+    }
+    return 24.0;
 }
 
 AcesInputs::~AcesInputs() {

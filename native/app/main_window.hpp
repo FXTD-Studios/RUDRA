@@ -21,6 +21,8 @@
 #include <QImage>
 #include <QPointer>
 #include <QTimer>
+#include <QTemporaryDir>
+#include <QJsonObject>
 
 #include <thread>
 
@@ -122,6 +124,13 @@ public:
     // launch when aces/preload is on (the default) and an engine and package are found.
     void preload_aces_engine();
     AcesEngine* aces_engine();
+    // The main viewer shows the learned ACES 2.0 master of each frame, through
+    // the kept-loaded engine, when it is ready and aces/viewer is on (default).
+    bool aces_routed() const;
+    void set_aces_viewer(bool on);
+    bool aces_viewer() const { return aces_view_; }
+    int aces_shown() const { return aces_shown_; }      // the frame the ACES route last showed (-1: none)
+    QString frame_info() const { return frame_info_; }
     // The export sheet (the Pro boards): format, frames, destination, then Master
     // EXR, or for a movie an HDR10, HLG or ProRes export as a queue job.
     void open_export_sheet();
@@ -291,7 +300,7 @@ public:
     // while playing (0: full size) with full size where it stops; a movie is
     // decoded in order by one ffmpeg (MovieFeeder); `realtime` keeps time by
     // skipping frames the model has not reached.
-    bool playing() const { return play_.isActive() || headroom_playing_; }
+    bool playing() const { return play_.isActive() || headroom_playing_ || aces_playing_; }
     void set_playback_side(int side);
     int playback_side() const { return play_state_->side.load(); }
     void set_playback_realtime(bool on);
@@ -578,6 +587,14 @@ private:
     // Headroom preview (E1). The driver is destroyed before the engine.
     bool headroom_capable_ = false;
     bool headroom_playing_ = false;
+    // The learned ACES 2.0 route of the main viewer.
+    bool aces_view_ = true;
+    bool aces_busy_ = false, aces_playing_ = false;
+    int aces_next_ = -1;            // a frame asked for while one was running
+    int aces_shown_ = -1;
+    std::unique_ptr<QTemporaryDir> aces_tmp_;
+    void aces_request(int index);
+    void aces_after_frame(const QJsonObject& o, int index, const QString& model_path, const QString& base_path);
     HeadroomPortFactory headroom_factory_;
     std::unique_ptr<HeadroomPreviewDriver> headroom_;
     std::optional<HeadroomShown> headroom_shown_;

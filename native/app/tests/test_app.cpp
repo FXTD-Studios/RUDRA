@@ -3501,6 +3501,17 @@ TEST(AcesMaster, CommandArgumentsCarryTheChoices) {
     EXPECT_TRUE(app::aces_cli_arguments(s).contains("--luminance-guard"));
     ASSERT_EQ(app::aces_run_targets().size(), 4u);
     EXPECT_EQ(app::aces_run_targets()[0].device, "cuda");
+    // No log copy: no --log. A LogC4 choice carries the curve and the formats.
+    EXPECT_FALSE(app::aces_cli_arguments(s).contains("--log"));
+    s.log_curve = "logc4";
+    s.log_formats = "dpx10,prores422hq";
+    const QStringList l = app::aces_cli_arguments(s);
+    EXPECT_EQ(l.at(l.indexOf("--log") + 1), "logc4");
+    EXPECT_EQ(l.at(l.indexOf("--log-format") + 1), "dpx10,prores422hq");
+    EXPECT_EQ(app::aces_log_choices().front().key, "");
+    bool has_dpx = false;
+    for (const auto& c : app::aces_log_choices()) has_dpx = has_dpx || c.key == "dpx10";
+    EXPECT_TRUE(has_dpx);
 }
 
 TEST(AcesMaster, SumsUpTheRunsProvenance) {
@@ -3522,6 +3533,14 @@ TEST(AcesMaster, SumsUpTheRunsProvenance) {
     const std::string t = app::aces_summary_text(*s);
     EXPECT_NE(t.find("2 masters written on cuda (libtorch), 350 ms a frame"), std::string::npos) << t;
     EXPECT_NE(t.find("within 1 code"), std::string::npos) << t;
+    EXPECT_EQ(t.find("LogC4"), std::string::npos) << t;
+    // Camera-log copies are named in the summary.
+    auto j = json::parse(std::ifstream(d / "provenance.json"));
+    j["log_delivery"] = {{"curve", "ARRI LogC4"},
+                         {"files", json::array({{{"kind", "10-bit DPX per frame (RGB)"}}, {{"kind", "ProRes 422 HQ, 10-bit 4:2:2 (lossy)"}}})}};
+    write_text(d / "provenance.json", j.dump());
+    const std::string t2 = app::aces_summary_text(*app::read_aces_provenance(d));
+    EXPECT_NE(t2.find("ARRI LogC4 copies: 10-bit DPX per frame (RGB), ProRes 422 HQ, 10-bit 4:2:2 (lossy)."), std::string::npos) << t2;
 }
 
 TEST(AcesMaster, OpensFromTheDeliverMenuAndWaitsForWhatItNeeds) {
@@ -3701,6 +3720,66 @@ for line in sys.stdin:
     EXPECT_EQ(d.findChild<QProgressBar*>("acesProgress")->value(), 2);
     EXPECT_EQ(d.engine()->state(), app::AcesEngine::State::Ready);   // still loaded afterwards
     QSettings().clear();
+}
+
+TEST(AcesMaster, TheMainViewerShowsFramesThroughTheLoadedModel) {
+#ifndef RUDRA_HAVE_STILL_DECODE
+    GTEST_SKIP() << "no still decode in this build";
+#else
+    QSettings().clear();
+    const auto root = aces_tmp("viewer_route");
+    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    std::filesystem::create_directories(root / "frames");
+    for (const char* f : {"a.png", "b.png"}) {
+        QImage img(4, 2, QImage::Format_RGB888);
+        img.fill(QColor(200, 120, 60));
+        ASSERT_TRUE(img.save(QString::fromStdString((root / "frames" / f).string())));
+    }
+    const auto log = root / "requests.jsonl";
+    const auto cli = root / "rudra-native";
+    write_text(cli, std::string(R"(#!/usr/bin/env python3
+import json, struct, sys
+LOG = ")") + log.string() + R"("
+def say(o): sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
+if sys.argv[1:2] != ["aces-v2-serve"]: sys.exit(64)
+say({"event": "ready", "device": "cpu", "runtime": "libtorch", "load_ms": 10.0})
+for line in sys.stdin:
+    r = json.loads(line)
+    open(LOG, "a").write(line)
+    if r.get("op") == "quit": break
+    if r.get("op") == "preview":
+        for k, v in (("model_out", 2.0), ("baseline_out", 1.0)):
+            if k in r: open(r[k], "wb").write(struct.pack("<24f", *([v] * 24)))
+        say({"id": r["id"], "ok": True, "width": 4, "height": 2, "bits": 8, "ms": 5.0, "reconstructed_fraction": 0.5,
+             "peak": 2.0, "peak_plain": 1.0, "remaining_display_errors": 0, "new_negative_luminance": 0})
+)");
+    std::filesystem::permissions(cli, std::filesystem::perms::owner_all);
+    app::MainWindow w(false);
+    w.set_model_roots({root});
+    app::AcesEngine::Config c;
+    c.cli = cli;
+    c.package = root / "pkg";
+    c.device = "cpu";
+    w.aces_engine()->start(c);
+    ASSERT_TRUE(wait_for([&] { return w.aces_engine()->state() == app::AcesEngine::State::Ready; }));
+    w.open_source(QString::fromStdString((root / "frames").string()), true);
+    ASSERT_TRUE(wait_for([&] { return w.aces_shown() == 0; })) << w.problem().toStdString();
+    EXPECT_TRUE(w.frame_info().contains("learned ACES 2.0, 4x2")) << w.frame_info().toStdString();
+    w.run("next");
+    ASSERT_TRUE(wait_for([&] { return w.aces_shown() == 1; }));
+    // The viewer's requests leave the ACES window's kept frame alone and ask for the raw master.
+    std::ifstream in(log);
+    std::string line, last;
+    while (std::getline(in, line))
+        if (line.find("\"preview\"") != std::string::npos) last = line;
+    EXPECT_NE(last.find("\"keep\":false"), std::string::npos) << last;
+    EXPECT_NE(last.find("model_out"), std::string::npos);
+    EXPECT_NE(last.find("b.png"), std::string::npos);
+    // Off: the legacy path shows frames again, nothing more goes to the model.
+    w.set_aces_viewer(false);
+    EXPECT_FALSE(w.aces_routed());
+    QSettings().clear();
+#endif
 }
 
 TEST(AcesMaster, EngineThatCannotLoadSaysWhy) {
