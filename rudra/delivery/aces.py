@@ -50,19 +50,20 @@ def write_aces_exr(
     aces = convert(np.asarray(rgb_linear, dtype=np.float32) * float(exposure_scale),
                    source_space, "ap0")
     attrs = {
-        "acesImageContainerFlag": "1",
         "rudra:sourceSpace": source_space,
         "rudra:exposureConvention": "0.18 = 18% grey (scene), diffuse white = 1.0",
         "rudra:exposureScale": repr(float(exposure_scale)),
     }
     if provenance:
         attrs["rudra:provenance"] = json.dumps(provenance, sort_keys=True)
+    # SMPTE ST 2065-4: acesImageContainerFlag is an int 1, on the strict container only.
+    ints = {"acesImageContainerFlag": 1}
     if reconstruction_mask is not None:
         # An auxiliary layer is a general AP0 EXR, not a strict ACES container.
-        attrs.pop('acesImageContainerFlag')
+        ints = {}
         attrs['rudra:container'] = 'AP0 linear with reconstruction mask'
     return write_exr(path, aces, half=half, chromaticities=AP0_CHROMATICITIES, attributes=attrs,
-                     reconstruction_mask=reconstruction_mask)
+                     reconstruction_mask=reconstruction_mask, int_attributes=ints)
 
 
 def write_acescg_exr(

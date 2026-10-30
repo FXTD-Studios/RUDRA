@@ -58,7 +58,7 @@ int cmd_video(const std::vector<std::string>& args) {
         double d = 0;
         if (k == "--output") a.output = v, have_output = true;
         else if (k == "--format") {
-            if (!one_of(v, {"hdr10", "hlg", "prores422", "prores422hq", "prores4444", "ffv1rgb16"})) return usage_error("invalid --format: " + v);
+            if (!one_of(v, {"hdr10", "hlg", "prores422", "prores422hq", "prores4444", "ffv1rgb16", "rgb16mov"})) return usage_error("invalid --format: " + v);
             a.format = v;
         } else if (k == "--alpha-mode") {
             if (v != "straight") return usage_error("invalid --alpha-mode: " + v);

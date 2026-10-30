@@ -48,6 +48,35 @@ private:
     QImage image_;
 };
 
+// The colorist's QC scope of the learned frame (28 Oct 2026 review): an RGB parade
+// of the Rec.2020 components on the PQ scale (0-100 % code, nits marked at 100,
+// 203, 1000, 4000), and how much of the frame lies outside P3-D65 and Rec.2020.
+struct QcScope {
+    QImage parade;                 // R | G | B panels, density, transparent background
+    double out_p3 = 0, out_2020 = 0;   // fraction of pixels outside each gamut
+    double peak_nits = 0;          // brightest component
+    double avg_nits = 0;           // mean luminance (the frame average light, as MaxFALL counts it)
+    double above_white = 0;        // fraction of pixels brighter than diffuse white (203 nits)
+    bool empty() const { return parade.isNull(); }
+};
+// `rgb709_linear`: planar Rec.709 linear, 1.0 = 10 000 nits (the viewer's convention).
+QcScope qc_scope(const PlanarBuffer& rgb709_linear, int width = 300, int height = 120);
+
+class ParadeView : public QWidget {
+public:
+    explicit ParadeView(QWidget* parent = nullptr);
+    void set_scope(QcScope s);
+    void clear();
+    const QcScope& scope() const { return s_; }
+    QSize sizeHint() const override { return {300, 132}; }
+
+protected:
+    void paintEvent(class QPaintEvent* e) override;
+
+private:
+    QcScope s_;
+};
+
 // Paints one drawing into `target` as an <svg> of that box would show it;
 // without its <text> elements when `text` is false (the tests).
 void paint_svg(class QPainter& p, const SvgDrawing& d, const QRectF& target, bool text = true);

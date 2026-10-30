@@ -1,4 +1,6 @@
 #include "aces_master.hpp"
+#include "scope_widgets.hpp"
+#include "paths.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -54,8 +56,8 @@ namespace rudra::app {
 namespace {
 
 QString q(const std::string& s) { return QString::fromStdString(s); }
-QString qp(const fs::path& p) { return QString::fromStdString(p.string()); }
-fs::path pq(const QString& s) { return fs::path(s.toStdString()); }
+QString qp(const fs::path& p) { return from_path(p); }
+fs::path pq(const QString& s) { return to_path(s); }
 
 std::string lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -159,6 +161,7 @@ const std::vector<AcesLogChoice>& aces_log_choices() {
         {"prores4444xq", "ARRI LogC4: ProRes 4444 XQ movie (12-bit 4:4:4)"},
         {"prores4444", "ARRI LogC4: ProRes 4444 movie (12-bit 4:4:4)"},
         {"prores422hq", "ARRI LogC4: ProRes 422 HQ movie (10-bit 4:2:2)"},
+        {"mov16", "ARRI LogC4: uncompressed 16-bit RGB movie (lossless)"},
         {"tiff16,prores4444xq", "ARRI LogC4: 16-bit TIFF + ProRes 4444 XQ"},
         {"dpx10,prores422hq", "ARRI LogC4: 10-bit DPX + ProRes 422 HQ"},
     };
@@ -186,8 +189,10 @@ std::optional<AcesProgressLine> parse_aces_progress(const std::string& line) {
 }
 
 Result<AcesRunSummary> read_aces_provenance(const fs::path& out_dir) {
-    std::ifstream in(out_dir / "provenance.json");
-    if (!in) return make_error(ErrorCode::NotFound, "The run wrote no provenance.json.", (out_dir / "provenance.json").string());
+    // A folder's provenance.json, or the file itself (<name>_provenance.json in a shared folder).
+    const fs::path file = out_dir.extension() == ".json" ? out_dir : out_dir / "provenance.json";
+    std::ifstream in(file);
+    if (!in) return make_error(ErrorCode::NotFound, "The run wrote no provenance.json.", file.string());
     nlohmann::json j;
     try {
         in >> j;
@@ -332,6 +337,7 @@ AcesMasterDialog::AcesMasterDialog(QWidget* parent, std::vector<fs::path> roots,
     mode_->addItem("Split: plain inverse | model", "split");
     mode_->addItem("Plain ACES inverse", "plain");
     mode_->addItem("Reconstructed areas", "mask");
+    mode_->addItem("AI fill regions (Deliver thresholds)", "fill");
     mode_->addItem("SDR source", "source");
     pr->addWidget(mode_, 1);
     pv->addLayout(pr);
@@ -524,6 +530,11 @@ AcesMasterDialog::AcesMasterDialog(QWidget* parent, std::vector<fs::path> roots,
     connect(preview_frame_, &QComboBox::currentIndexChanged, this, [this] { request_preview(); });
     connect(guard_, &QCheckBox::toggled, this, [this] { request_preview(); });
     connect(reload_, &QPushButton::clicked, this, [this] {
+        if (engine_->busy()) {   // the Deliver tab or the batch is rendering on it
+            hold_ = true;
+            status_->setText(AcesEngine::busy_text());
+            return;
+        }
         if (engine_->state() == AcesEngine::State::Ready) engine_->stop();
         ensure_engine();
     });
@@ -755,7 +766,7 @@ void AcesMasterDialog::start() {
 void AcesMasterDialog::cancel() {
     if (!running()) return;
     cancelled_ = true;
-    if (engine_master_) engine_->cancel_master();   // stops after the frame in hand; the model stays loaded
+    if (engine_master_) engine_->cancel_master(engine_master_id_);   // stops after the frame in hand; the model stays loaded
     else proc_->kill();
 }
 
@@ -808,7 +819,10 @@ void AcesMasterDialog::ensure_engine() {
     c.runtime = t.runtime;
     c.device = t.device;
     if (c == engine_->config() && engine_->state() == AcesEngine::State::Failed) return;   // "Load model" retries
-    engine_->start(c);
+    if (!engine_->start(c)) {   // a render elsewhere holds it: the model is not swapped under it
+        hold_ = true;
+        status_->setText(AcesEngine::busy_text() + " The new target or package loads afterwards (Load model).");
+    }
 }
 
 void AcesMasterDialog::on_engine_change() {
@@ -875,8 +889,14 @@ void AcesMasterDialog::request_view() {
     view_busy_ = true;
     const QString out = tmp_->filePath(QStringLiteral("view_%1.ppm").arg(views_++ % 2));
     const QPointer<QObject> self(this);
-    engine_->request(QJsonObject{{"op", "view"}, {"ev", ev_->value() / 2.0}, {"mode", mode_->currentData().toString()},
-                                 {"max_side", 1600}, {"out", out}},
+    QJsonObject view_req{{"op", "view"}, {"ev", ev_->value() / 2.0}, {"mode", mode_->currentData().toString()},
+                         {"max_side", 1600}, {"out", out}};
+    if (mode_->currentData().toString() == "fill") {   // the Deliver tab's AI fill thresholds (genfill_job.hpp)
+        QSettings st;
+        view_req["tau_high"] = st.value("deliver/aiTauHigh", 250).toInt();
+        view_req["tau_low"] = st.value("deliver/aiTauLow", -1).toInt();
+    }
+    engine_->request(view_req,
                      [this, self, out](const QJsonObject& o) {
                          if (!self) return;
                          view_busy_ = false;
@@ -918,7 +938,7 @@ void AcesMasterDialog::start_with_engine(const AcesRunSettings& s) {
     update_state();
     const QPointer<QObject> self(this);
     const fs::path out = s.out;
-    engine_->request(
+    engine_master_id_ = engine_->request(
         QJsonObject{{"op", "master"}, {"sources", sources}, {"out", qp(s.out)}, {"guard", s.luminance_guard},
                     {"log", q(s.log_curve)}, {"log_formats", q(s.log_formats)}},
         [this, self, out](const QJsonObject& o) {
@@ -987,6 +1007,10 @@ AcesEngine* MainWindow::aces_engine() {
             }
             // Ready: the frame on screen is shown again through the model; lost: the legacy path again.
             if (!frames_.empty()) step_to(current_);
+            refresh_enabled();
+            sync_deliver();   // the Deliver tab's source follows the engine
+            batch_changed();  // the batch window says whether it can start
+            show_mode();
         });
     }
     return aces_engine_.get();
@@ -1037,6 +1061,32 @@ NetworkLinearImage aces_view_image(const PlanarBuffer& acescg) {
 }
 }  // namespace
 
+namespace {
+// A small picture of the frame as the viewer shows it: the viewer's linear
+// (1.0 = 10 000 nits) at diffuse white = 1.0, a soft shoulder, sRGB codes.
+QImage aces_thumb(const NetworkLinearImage& img, int height) {
+    const auto& b = img.buffer();
+    if (b.width() <= 0 || b.height() <= 0) return {};
+    const int h = std::max(1, std::min(height, b.height()));
+    const int w = std::max(1, int(std::lround(double(b.width()) * h / b.height())));
+    QImage out(w, h, QImage::Format_RGB888);
+    for (int y = 0; y < h; ++y) {
+        uchar* row = out.scanLine(y);
+        const int sy = std::min(b.height() - 1, int((y + 0.5) * b.height() / h));
+        for (int x = 0; x < w; ++x) {
+            const int sx = std::min(b.width() - 1, int((x + 0.5) * b.width() / w));
+            for (int c = 0; c < 3; ++c) {
+                double v = std::max(0.0, double(b.at(c, sy, sx)) * 10000.0 / 203.0);
+                v = v / (1.0 + 0.25 * v) * 1.25;   // 1.0 stays 1.0; highlights roll off
+                const double s = v <= 0.0031308 ? 12.92 * v : 1.055 * std::pow(std::min(v, 1.0), 1.0 / 2.4) - 0.055;
+                row[x * 3 + c] = uchar(std::clamp(int(std::lround(s * 255.0)), 0, 255));
+            }
+        }
+    }
+    return out;
+}
+}  // namespace
+
 void MainWindow::aces_request(int index) {
     if (frames_.empty() || !aces_engine_) return;
     const int n = int(frames_.size());
@@ -1057,8 +1107,18 @@ void MainWindow::aces_request(int index) {
     const QString base_path = aces_tmp_->filePath(QStringLiteral("baseline_%1.f32").arg(index % 2));
     aces_busy_ = true;
     const QPointer<MainWindow> self(this);
-    aces_engine_->request(QJsonObject{{"op", "preview"}, {"source", source}, {"frame", movie ? index : 0}, {"keep", false},
-                                      {"model_out", model_path}, {"baseline_out", base_path}},
+    QJsonObject req{{"op", "preview"}, {"source", source}, {"frame", movie ? index : 0}, {"keep", false},
+                    {"model_out", model_path}, {"baseline_out", base_path}};
+    // The monitoring transform, the Invented layer's codes, and a proxy while playing (28 Oct 2026).
+    if (aces_monitor_ != "scene") req["display"] = aces_monitor_;
+    if (aces_source_display_ != "bt1886") req["source_display"] = aces_source_display_;   // an sRGB / 2.2 master
+    req["codes_out"] = aces_tmp_->filePath(QStringLiteral("codes_%1.f32").arg(index % 2));
+    if (aces_playing_ && play_state_->side.load() > 0) req["max_side"] = play_state_->side.load();
+    // The colorist's trims: the viewer shows what a render writes.
+    if (const QJsonObject t = aces_trims_fields(aces_trims_.strength, aces_trims_.saturation, aces_trims_.peak_nits,
+                                                 aces_trims_.exposure_ev, aces_trims_.contrast); !t.isEmpty())
+        req["trims"] = t;
+    aces_engine_->request(req,
                           [self, index, model_path, base_path](const QJsonObject& o) {
                               if (self) self->aces_after_frame(o, index, model_path, base_path);
                           });
@@ -1067,7 +1127,8 @@ void MainWindow::aces_request(int index) {
 void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString& model_path, const QString& base_path) {
     aces_busy_ = false;
     const bool routed = aces_routed();
-    if (routed && aces_next_ >= 0 && aces_next_ != index) {
+    // Asked again while this ran (another frame, or the same one with new trims or monitor): show that.
+    if (routed && aces_next_ >= 0) {
         const int next = aces_next_;
         aces_next_ = -1;
         aces_request(next);   // the user has moved on: show where they are now
@@ -1094,9 +1155,52 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
     problem_.clear();
     aces_shown_ = index;
     current_ = index;
+    aces_model_img_ = std::make_shared<const NetworkLinearImage>(aces_view_image(*model));
+    aces_base_img_ = std::make_shared<const NetworkLinearImage>(aces_view_image(*base));
+    // The SDR's largest code per pixel: the Invented layer tells invented from reinterpreted pixels.
+    std::vector<float> codes(std::size_t(w) * std::size_t(h));
+    {
+        QString cp = model_path;
+        cp.replace(QStringLiteral("model_"), QStringLiteral("codes_"));
+        std::ifstream in(pq(cp), std::ios::binary);
+        if (!in.read(reinterpret_cast<char*>(codes.data()), std::streamsize(codes.size() * sizeof(float)))) codes.clear();
+    }
+    aces_codes_ = codes;
+    // A reference still compared: it takes the baseline's place (Baseline, Wipe, B), when it is the same size.
+    const auto* ref = ref_compare_ ? reference_still() : nullptr;
+    aces_ref_shown_ = ref && ref->width() == aces_model_img_->width() && ref->height() == aces_model_img_->height();
 #ifdef RUDRA_APP_VIEWER
-    if (viewer_) viewer_->set_composited(aces_view_image(*model), aces_view_image(*base));
+    if (viewer_) viewer_->set_composited(*aces_model_img_, aces_ref_shown_ ? *ref : *aces_base_img_, codes);
 #endif
+    sync_reference_ui();
+    show_mode();   // the status bar says the learned model, not the analytic reconstruction
+    // The filmstrip's picture of this frame, from what the viewer shows (29 Oct 2026).
+    if (scrub_ && index < scrub_->count()) {
+        const QImage t = aces_thumb(*aces_model_img_, 88);
+        scrub_->set_thumb(index, t);
+        if (index == 0 || first_thumb_.isNull()) {
+            first_thumb_ = t;
+            refresh_library();
+        }
+    }
+    // The playback cache: a frame rendered at the playback size while playing goes in, made with
+    // what the screen shows now (anything changed empties it).
+    if (aces_playing_ && play_state_->side.load() > 0) {
+        if (const QString key = aces_cache_key(); key != aces_cache_key_ || aces_cache_.size() != frames_.size()) {
+            aces_cache_.assign(frames_.size(), nullptr);
+            aces_cache_bytes_ = 0;
+            aces_cache_key_ = key;
+        }
+        const std::size_t bytes = std::size_t(w) * std::size_t(h) * 3 * sizeof(float);
+        const std::size_t budget = std::size_t(QSettings().value("aces/playCacheMB", 2048).toInt()) * 1024 * 1024;
+        if (!aces_cache_[std::size_t(index)] && aces_cache_bytes_ + bytes <= budget) {
+            aces_cache_[std::size_t(index)] = aces_model_img_;
+            aces_cache_bytes_ += bytes;
+        }
+    }
+    run_stats();   // the readouts and scopes of this frame, in nits (28 Oct 2026)
+    if (parade_) parade_->set_scope(qc_scope(aces_model_img_->buffer()));   // parade and gamut (28 Oct 2026 review)
+    sync_check_summary();   // Simple's Check reads the same
     frame_info_ = QStringLiteral("%1  %2/%3  \u00b7  learned ACES 2.0, %4x%5, %6 ms, %7 % rebuilt, peak %8x (plain %9x)")
                       .arg(QString::fromStdString(frame_name(std::size_t(index))))
                       .arg(index + 1)
@@ -1110,13 +1214,37 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
     sync_ui();
     show_status();
     if (aces_playing_) {
-        // Plays as fast as the model runs (an inspection mode, not real time).
+        // Plays as fast as the model runs, filling the cache; the next play is real time.
         if (index + 1 < int(frames_.size())) aces_request(index + 1);
         else {
             aces_playing_ = false;
             if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
+            const int n = aces_cached_frames();
+            log(n == int(frames_.size()) ? QStringLiteral("playback cache: all %1 frames in; Play again for real time").arg(n)
+                                         : QStringLiteral("playback cache: %1 of %2 frames (the memory budget, aces/playCacheMB)")
+                                               .arg(n)
+                                               .arg(frames_.size()));
         }
     }
+}
+
+QString MainWindow::aces_cache_key() const {
+    return shot_trim_key() + "|" + QString::fromStdString(aces_v2::trims_text(aces_trims_)) + "|" + aces_monitor_ + "|" +
+           aces_source_display_ + "|" + QString::number(play_state_->side.load());
+}
+
+int MainWindow::aces_cached_frames() const {
+    if (aces_cache_key_ != aces_cache_key() || aces_cache_.size() != frames_.size()) return 0;
+    return int(std::count_if(aces_cache_.begin(), aces_cache_.end(), [](const auto& p) { return p != nullptr; }));
+}
+
+void MainWindow::aces_rt_stop() {
+    if (aces_rt_timer_) aces_rt_timer_->stop();
+    if (!aces_rt_playing_) return;
+    aces_rt_playing_ = false;
+    if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
+    // The full-size frame where it stopped.
+    if (aces_routed() && !frames_.empty()) aces_request(current_);
 }
 
 void MainWindow::preload_aces_engine() {

@@ -202,6 +202,50 @@ if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
     $mov = Join-Path $lout "video_smoke_logc4.mov"
     if ($nt -ne 12 -or $nd -ne 12 -or -not (Test-Path $mov)) { Fail "LogC4 copies: $nt TIFF, $nd DPX, movie $(Test-Path $mov); expected 12, 12, True" }
     Write-Host "LogC4: 12 TIFF (16-bit), 12 DPX (10-bit), ProRes 422 HQ movie"
+    # The Deliver tab (27 Oct 2026): a 16-bit uncompressed RGB MOV in PQ through the ACES 2.0 HDR
+    # 1000-nit output, no EXR; a half-float ACES 2065-1 still of one frame, numbered; 10-bit PQ DPX.
+    $dout = Join-Path $Out "deliver_mov16_pq"
+    & $Cli aces-v2 $Package $clip --out $dout --device $Device --ocio-threads 8 --exr none --log pq1000 --log-format mov16 --name SH010 --fps 25
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --log pq1000 --log-format mov16 (exit $LASTEXITCODE)" }
+    $m16 = Join-Path $dout "SH010.mov"
+    $tag = (& ffprobe -v error -select_streams v:0 -show_entries stream=codec_tag_string,pix_fmt,color_transfer -of csv=p=0 $m16) -join ","
+    if ($tag -notmatch "b48r" -or $tag -notmatch "rgb48be") { Fail "16-bit MOV: $tag" }
+    if ($tag -notmatch "smpte2084") { Write-Host "note: this ffmpeg leaves the 16-bit MOV's colr transfer unknown ($tag); set the clip to Rec.2100 PQ on import" -ForegroundColor Yellow }
+    if ((Get-ChildItem $dout -Filter "*.exr").Count -ne 0) { Fail "--exr none wrote EXRs" }
+    Write-Host "Deliver: 16-bit RGB MOV (b48r) in PQ, ACES 2.0 HDR 1000 nits: $tag"
+    $sout = Join-Path $Out "deliver_still_half_ap0"
+    & $Cli aces-v2 $Package $clip --out $sout --device $Device --ocio-threads 8 --exr half --exr-gamut ap0 --frame 5 --name SH010 --start 1006
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --exr half --exr-gamut ap0 --frame 5 (exit $LASTEXITCODE)" }
+    if (-not (Test-Path (Join-Path $sout "SH010.001006.exr")) -or (Get-ChildItem $sout -Filter "*.exr").Count -ne 1) { Fail "the half AP0 still is not SH010.001006.exr alone" }
+    Write-Host "Deliver: one half-float ACES 2065-1 still, SH010.001006.exr"
+    $pout = Join-Path $Out "deliver_dpx_pq"
+    & $Cli aces-v2 $Package $clip --out $pout --device $Device --ocio-threads 8 --exr none --log pq1000 --log-format dpx10
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --log pq1000 --log-format dpx10 (exit $LASTEXITCODE)" }
+    $np = (Get-ChildItem (Join-Path $pout "pq1000_dpx") -Filter "*.dpx").Count
+    if ($np -ne 12) { Fail "PQ DPX: $np, expected 12" }
+    Write-Host "Deliver: 12 DPX (10-bit) in PQ"
+    # The conform and the trims (28 Oct 2026): a typed start timecode and reel in the EXR and the MOV, trimmed.
+    $tout = Join-Path $Out "deliver_timecode_trims"
+    & $Cli aces-v2 $Package $clip --out $tout --device $Device --ocio-threads 8 --name SH010 --timecode 01:00:00:00 --reel A001 `
+        --strength 0.8 --peak-nits 1000 --log logc4 --log-format prores422hq
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --timecode --reel --strength --peak-nits (exit $LASTEXITCODE)" }
+    $tmov = Join-Path $tout "SH010.mov"
+    $ttc = (& ffprobe -v error -show_entries stream_tags=timecode -of csv=p=0 $tmov) -join ","
+    if ($ttc -notmatch "01:00:00:00") { Fail "MOV timecode: $ttc" }
+    $prov = Get-Content (Join-Path $tout "provenance.json") -Raw | ConvertFrom-Json
+    if ($prov.frames[11].timecode -ne "01:00:00:11" -or $prov.frames[0].reel -ne "A001" -or $prov.trims.strength -ne 0.8) {
+        Fail "provenance: timecode $($prov.frames[11].timecode), reel $($prov.frames[0].reel), strength $($prov.trims.strength)"
+    }
+    Write-Host "Deliver: timecode 01:00:00:00 to 01:00:00:11, reel A001, trims in the provenance and the MOV"
+    # A shot's in and out (28 Oct 2026): frames 3-7 only, still on their own timecode, with the light level.
+    $rout = Join-Path $Out "deliver_range"
+    & $Cli aces-v2 $Package $clip --out $rout --device $Device --ocio-threads 8 --name SH020 --timecode 01:00:00:00 --range 3:7
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --range 3:7 (exit $LASTEXITCODE)" }
+    $rp = Get-Content (Join-Path $rout "provenance.json") -Raw | ConvertFrom-Json
+    if ($rp.frames.Count -ne 5 -or $rp.frames[0].timecode -ne "01:00:00:03" -or -not ($rp.maxcll -gt 0)) {
+        Fail "range: $($rp.frames.Count) frames, first $($rp.frames[0].timecode), MaxCLL $($rp.maxcll)"
+    }
+    Write-Host "Deliver: frames 3-7 only (01:00:00:03 on), MaxCLL $([math]::Round($rp.maxcll)) nits"
 } else {
     Write-Host "no ffmpeg on the PATH or in tmp\native_deps: video check skipped" -ForegroundColor Yellow
 }

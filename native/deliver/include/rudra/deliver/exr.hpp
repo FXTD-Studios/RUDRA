@@ -20,6 +20,16 @@ namespace rudra {
 
 using ExrAttributes = std::vector<std::pair<std::string, std::string>>;   // string attributes, in order
 using Chromaticities = std::array<double, 8>;   // rx ry gx gy bx by wx wy
+// Attributes of other types (28 Oct 2026): name, OpenEXR type ("timecode",
+// "rational", "string" ...), payload bytes. Written after the string ones.
+struct ExrTyped {
+    std::string name, type;
+    std::vector<std::uint8_t> payload;
+};
+using ExrTypedAttributes = std::vector<ExrTyped>;
+// timeCode (SMPTE, timecode), framesPerSecond (rational) and reelName (string)
+// for a frame; an invalid timecode leaves timeCode out, an empty reel reelName.
+ExrTypedAttributes exr_timecode_attributes(const std::string& timecode, double fps, const std::string& reel);
 
 extern const Chromaticities kAp0Chromaticities;
 extern const Chromaticities kAp1Chromaticities;
@@ -34,22 +44,23 @@ std::uint16_t float_to_half(float f) noexcept;
 Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half = true,
                                             const std::optional<Chromaticities>& chromaticities = std::nullopt,
                                             const ExrAttributes& attributes = {},
-                                            const PlanarBuffer* reconstruction_mask = nullptr);
+                                            const PlanarBuffer* reconstruction_mask = nullptr,
+                                            const ExrTypedAttributes& typed = {});
 Result<void> write_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, bool half = true,
                        const std::optional<Chromaticities>& chromaticities = std::nullopt,
                        const ExrAttributes& attributes = {},
-                       const PlanarBuffer* reconstruction_mask = nullptr);
+                       const PlanarBuffer* reconstruction_mask = nullptr, const ExrTypedAttributes& typed = {});
 
 // write_aces_exr / write_acescg_exr: scene linear in `source`, diffuse white
 // 1.0; `provenance` goes in as one sorted-keys JSON string attribute.
 Result<void> write_aces_exr(const std::filesystem::path& path, const PlanarBuffer& rgb_linear,
                             Primaries source = Primaries::Rec2020, double exposure_scale = 1.0,
                             const ExrAttributes& provenance = {}, bool half = true,
-                            const PlanarBuffer* reconstruction_mask = nullptr);
+                            const PlanarBuffer* reconstruction_mask = nullptr, const ExrTypedAttributes& typed = {});
 Result<void> write_acescg_exr(const std::filesystem::path& path, const PlanarBuffer& rgb_linear,
                               Primaries source = Primaries::Rec2020, double exposure_scale = 1.0,
                               const ExrAttributes& provenance = {}, bool half = true,
-                              const PlanarBuffer* reconstruction_mask = nullptr);
+                              const PlanarBuffer* reconstruction_mask = nullptr, const ExrTypedAttributes& typed = {});
 
 // read_exr for uncompressed scanline files (exr.py's reader): the planes in
 // R, G, B(, A) order, and the header's attributes in file order as raw bytes.

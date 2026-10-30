@@ -1,4 +1,5 @@
 #include "aces_engine.hpp"
+#include "paths.hpp"
 
 #include <QCoreApplication>
 #include <QJsonDocument>
@@ -16,8 +17,8 @@ namespace fs = std::filesystem;
 
 namespace rudra::app {
 namespace {
-QString qp(const fs::path& p) { return QString::fromStdString(p.string()); }
-fs::path pq(const QString& s) { return fs::path(s.toStdString()); }
+QString qp(const fs::path& p) { return from_path(p); }
+fs::path pq(const QString& s) { return to_path(s); }
 }  // namespace
 
 AcesEngine::AcesEngine(QObject* parent) : parent_(parent), alive_(new QObject) {}
@@ -32,9 +33,12 @@ AcesEngine::~AcesEngine() {
         stopping_ = true;
         QObject::disconnect(proc_, nullptr, nullptr, nullptr);
         if (proc_->state() != QProcess::NotRunning) {
+            // A master still running stops after the frame in hand (written whole), then quits.
+            for (const int id : masters_)
+                proc_->write(QJsonDocument(QJsonObject{{"op", "cancel"}, {"target", id}}).toJson(QJsonDocument::Compact) + "\n");
             proc_->write("{\"op\":\"quit\"}\n");
             proc_->closeWriteChannel();
-            if (!proc_->waitForFinished(2000)) {
+            if (!proc_->waitForFinished(masters_.empty() ? 2000 : 30000)) {
                 proc_->kill();
                 proc_->waitForFinished(2000);
             }
@@ -71,18 +75,23 @@ void AcesEngine::listen(QObject* owner, std::function<void()> on_change) {
     QObject::connect(owner, &QObject::destroyed, alive_, [this, id] { listeners_.erase(id); });
 }
 
-void AcesEngine::start(const Config& c) {
-    if (proc_ && proc_->state() != QProcess::NotRunning && c == config_ && state_ != State::Failed) return;
+QString AcesEngine::busy_text() {
+    return QStringLiteral("A render is using the ACES model: wait for it or stop it first.");
+}
+
+bool AcesEngine::start(const Config& c) {
+    if (proc_ && proc_->state() != QProcess::NotRunning && c == config_ && state_ != State::Failed) return true;
+    if (busy()) return false;
     stop();
     config_ = c;
     std::error_code ec;
     if (c.cli.empty() || !fs::is_regular_file(c.cli, ec)) {
         set_state(State::Failed, "no ACES v2 rudra-native");
-        return;
+        return true;
     }
     if (c.package.empty() || !fs::is_regular_file(c.package / "manifest.json", ec)) {
         set_state(State::Failed, "no ACES v2 model package");
-        return;
+        return true;
     }
     proc_ = new QProcess(parent_);
     proc_->setProcessEnvironment(aces_child_environment());
@@ -91,6 +100,13 @@ void AcesEngine::start(const Config& c) {
     QObject::connect(p, &QProcess::readyReadStandardOutput, p, [this, p] {
         if (p == proc_) on_stdout();
     });
+    // stderr read as it comes (28 Oct 2026 review): only its tail is kept, for the exit message,
+    // not a session's worth in QProcess's buffer.
+    QObject::connect(p, &QProcess::readyReadStandardError, p, [this, p] {
+        if (p != proc_) return;
+        stderr_tail_ += p->readAllStandardError();
+        if (stderr_tail_.size() > 8192) stderr_tail_ = stderr_tail_.right(4096);
+    });
     QObject::connect(p, &QProcess::finished, p, [this, p](int, QProcess::ExitStatus) {
         if (p == proc_) on_finished();
     });
@@ -98,14 +114,17 @@ void AcesEngine::start(const Config& c) {
         if (p == proc_ && e == QProcess::FailedToStart) set_state(State::Failed, "the engine did not start: " + p->errorString());
     });
     stopping_ = false;
-    pending_.clear();
+    lines_.clear();
+    stderr_tail_.clear();
     set_state(State::Loading);
     proc_->start(qp(c.cli), {"aces-v2-serve", qp(c.package), "--runtime", QString::fromStdString(c.runtime), "--device",
                              QString::fromStdString(c.device), "--ocio-threads", QString::number(c.ocio_threads)});
+    return true;
 }
 
-void AcesEngine::stop() {
-    if (!proc_) return;
+bool AcesEngine::stop() {
+    if (busy()) return false;
+    if (!proc_) return true;
     stopping_ = true;
     QProcess* p = proc_;
     proc_ = nullptr;
@@ -116,11 +135,14 @@ void AcesEngine::stop() {
         if (!p->waitForFinished(1500)) p->kill();
     }
     p->deleteLater();
+    // The state first: a reply callback (the batch) asks for the next job and must see the engine gone.
     const auto waiting = std::move(waiting_);
     waiting_.clear();
+    masters_.clear();
+    set_state(State::Stopped);
     for (const auto& [id, cb] : waiting)
         if (cb.first) cb.first(QJsonObject{{"id", id}, {"ok", false}, {"error", "The ACES engine was stopped."}});
-    set_state(State::Stopped);
+    return true;
 }
 
 int AcesEngine::request(QJsonObject req, Reply on_reply, Reply on_progress) {
@@ -129,26 +151,28 @@ int AcesEngine::request(QJsonObject req, Reply on_reply, Reply on_progress) {
         if (on_reply) on_reply(QJsonObject{{"id", id}, {"ok", false}, {"error", status_text()}});
         return id;
     }
+    if (req.value("op").toString() == "master") {
+        if (busy()) {
+            if (on_reply) on_reply(QJsonObject{{"id", id}, {"ok", false}, {"error", busy_text()}});
+            return id;
+        }
+        masters_.insert(id);
+    }
     req["id"] = id;
     waiting_[id] = {std::move(on_reply), std::move(on_progress)};
     proc_->write(QJsonDocument(req).toJson(QJsonDocument::Compact) + "\n");
     return id;
 }
 
-void AcesEngine::cancel_master() {
-    if (proc_ && state_ == State::Ready) proc_->write("{\"op\":\"cancel\"}\n");
+void AcesEngine::cancel_master(int id) {
+    if (proc_ && state_ == State::Ready && masters_.count(id))
+        proc_->write(QJsonDocument(QJsonObject{{"op", "cancel"}, {"target", id}}).toJson(QJsonDocument::Compact) + "\n");
 }
 
 void AcesEngine::on_stdout() {
-    pending_ += proc_->readAllStandardOutput().toStdString();
-    std::size_t nl;
-    while ((nl = pending_.find('\n')) != std::string::npos) {
-        std::string line = pending_.substr(0, nl);
-        pending_.erase(0, nl + 1);
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        const QJsonDocument d = QJsonDocument::fromJson(QByteArray::fromStdString(line));
-        if (!d.isObject()) continue;   // anything else the engine prints is not ours
-        const QJsonObject o = d.object();
+    std::vector<QJsonObject> got;
+    lines_.feed(proc_->readAllStandardOutput(), [&got](const QJsonObject& o) { got.push_back(o); });
+    for (const QJsonObject& o : got) {
         const QString event = o.value("event").toString();
         if (event == "ready") {
             load_ms_ = o.value("load_ms").toDouble();
@@ -171,20 +195,24 @@ void AcesEngine::on_stdout() {
         }
         const Reply cb = it->second.first;
         waiting_.erase(it);
+        masters_.erase(id);
         if (cb) cb(o);
     }
 }
 
 void AcesEngine::on_finished() {
     if (stopping_) return;
-    QString err = QString::fromUtf8(proc_->readAllStandardError()).trimmed().section('\n', -1);
+    stderr_tail_ += proc_->readAllStandardError();
+    QString err = QString::fromUtf8(stderr_tail_).trimmed().section('\n', -1);
     const int code = proc_->exitCode();
     const auto waiting = std::move(waiting_);
     waiting_.clear();
-    for (const auto& [id, cb] : waiting)
-        if (cb.first) cb.first(QJsonObject{{"id", id}, {"ok", false}, {"error", "The ACES engine stopped."}});
+    masters_.clear();
+    // Failed before the replies: nothing may be written to the dead process from a reply callback.
     if (state_ != State::Failed)
         set_state(State::Failed, QStringLiteral("the engine stopped (exit %1)%2").arg(code).arg(err.isEmpty() ? QString() : ": " + err));
+    for (const auto& [id, cb] : waiting)
+        if (cb.first) cb.first(QJsonObject{{"id", id}, {"ok", false}, {"error", "The ACES engine stopped."}});
 }
 
 std::optional<AcesEngine::Config> aces_engine_config(const std::vector<fs::path>& roots) {

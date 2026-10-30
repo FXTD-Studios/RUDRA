@@ -1,6 +1,7 @@
 #include "scope_widgets.hpp"
 
 #include <QFontDatabase>
+#include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QStyle>
@@ -9,6 +10,10 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
+
+#include "rudra/core/gamut.hpp"
+#include "rudra/core/hdr10.hpp"
+#include "theme.hpp"
 
 namespace rudra::app {
 namespace {
@@ -217,6 +222,117 @@ void VectorscopeView::paintEvent(QPaintEvent*) {
         const QString t = QString::fromLatin1(l.text);
         const QPointF c(l.left * width(), l.top * height());   // left and top of .plot.vs
         p.drawText(QPointF(c.x() - fm.horizontalAdvance(t) / 2.0, c.y() + (fm.ascent() - fm.descent()) / 2.0), t);
+    }
+}
+
+QcScope qc_scope(const PlanarBuffer& rgb, int width, int height) {
+    QcScope q;
+    const int W = rgb.width(), H = rgb.height();
+    if (W <= 0 || H <= 0 || rgb.channels() < 3 || width < 3 || height < 8) return q;
+    const Mat3 to2020 = rgb_to_rgb_matrix(Primaries::Rec709, Primaries::Rec2020);
+    const Mat3 toP3 = rgb_to_rgb_matrix(Primaries::Rec709, Primaries::P3D65);
+    const int panel = width / 3;
+    std::vector<std::uint32_t> count(std::size_t(panel) * 3 * std::size_t(height), 0);
+    // A sample of about 300 000 pixels: every step-th row and column.
+    const int step = std::max(1, int(std::sqrt(double(W) * H / 300000.0)));
+    std::size_t n = 0, out_p3 = 0, out_2020 = 0, above = 0;
+    double sum_y = 0;
+    const float* p[3] = {rgb.plane(0), rgb.plane(1), rgb.plane(2)};
+    for (int y = 0; y < H; y += step)
+        for (int x = 0; x < W; x += step) {
+            const std::size_t i = std::size_t(y) * std::size_t(W) + std::size_t(x);
+            const double v[3] = {p[0][i], p[1][i], p[2][i]};
+            if (!std::isfinite(v[0]) || !std::isfinite(v[1]) || !std::isfinite(v[2])) continue;
+            ++n;
+            const double y_nits = std::max(0.0, 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]) * 10000.0;
+            sum_y += y_nits;
+            if (y_nits > 203.0) ++above;
+            double c2020[3], cp3[3];
+            for (int r = 0; r < 3; ++r) {
+                c2020[r] = to2020[std::size_t(r)][0] * v[0] + to2020[std::size_t(r)][1] * v[1] + to2020[std::size_t(r)][2] * v[2];
+                cp3[r] = toP3[std::size_t(r)][0] * v[0] + toP3[std::size_t(r)][1] * v[1] + toP3[std::size_t(r)][2] * v[2];
+            }
+            // Outside a gamut: a component below zero by more than a hair (1e-4 of the brightest one).
+            const double tol = 1e-4 * std::max({c2020[0], c2020[1], c2020[2], 1e-6});
+            if (std::min({cp3[0], cp3[1], cp3[2]}) < -tol) ++out_p3;
+            if (std::min({c2020[0], c2020[1], c2020[2]}) < -tol) ++out_2020;
+            const int col = int(std::lround(double(x) / std::max(1, W - 1) * (panel - 1)));
+            for (int c = 0; c < 3; ++c) {
+                const double nits = std::max(0.0, c2020[c]) * 10000.0;
+                q.peak_nits = std::max(q.peak_nits, nits);
+                const double code = pq_oetf(float(std::min(nits, 10000.0)));
+                const int row = std::clamp(int(std::lround((1.0 - code) * (height - 1))), 0, height - 1);
+                ++count[(std::size_t(row) * 3 + std::size_t(c)) * std::size_t(panel) + std::size_t(col)];
+            }
+        }
+    if (n == 0) return q;
+    q.out_p3 = double(out_p3) / double(n);
+    q.out_2020 = double(out_2020) / double(n);
+    q.avg_nits = sum_y / double(n);
+    q.above_white = double(above) / double(n);
+    QImage img(panel * 3, height, QImage::Format_ARGB32);
+    img.fill(Qt::transparent);
+    // Density: a log of the count against the busiest cell, so faint traces still show.
+    std::uint32_t top = 1;
+    for (auto c : count) top = std::max(top, c);
+    const double lt = std::log1p(double(top));
+    const QColor tint[3] = {QColor::fromRgbF(1.0f, 0.35f, 0.3f), QColor::fromRgbF(0.35f, 1.0f, 0.4f),
+                            QColor::fromRgbF(0.4f, 0.55f, 1.0f)};
+    for (int row = 0; row < height; ++row)
+        for (int c = 0; c < 3; ++c)
+            for (int col = 0; col < panel; ++col) {
+                const std::uint32_t k = count[(std::size_t(row) * 3 + std::size_t(c)) * std::size_t(panel) + std::size_t(col)];
+                if (!k) continue;
+                QColor t = tint[c];
+                t.setAlphaF(float(std::clamp(0.25 + 0.75 * std::log1p(double(k)) / lt, 0.0, 1.0)));
+                img.setPixelColor(c * panel + col, row, t);
+            }
+    q.parade = img;
+    return q;
+}
+
+ParadeView::ParadeView(QWidget* parent) : QWidget(parent) {
+    setObjectName("parade");
+    setMinimumHeight(132);
+    setToolTip("RGB parade of the learned frame: the Rec.2020 components on the PQ scale (0-100 % code), "
+               "marked at 100, 203 (diffuse white), 1000 and 4000 nits; below, the share outside P3-D65 and Rec.2020");
+}
+
+void ParadeView::set_scope(QcScope s) {
+    s_ = std::move(s);
+    update();
+}
+
+void ParadeView::clear() {
+    s_ = {};
+    update();
+}
+
+void ParadeView::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    const QRectF r = QRectF(rect()).adjusted(28, 2, -2, -16);
+    p.fillRect(r, theme_colour("scope-bg"));
+    p.setPen(theme_colour("scope-line"));
+    QFont f = font();
+    f.setPointSizeF(7.0);
+    p.setFont(f);
+    for (double nits : {100.0, 203.0, 1000.0, 4000.0}) {
+        const double y = r.top() + (1.0 - pq_oetf(float(nits))) * r.height();
+        p.drawLine(QPointF(r.left(), y), QPointF(r.right(), y));
+        p.drawText(QRectF(0, y - 6, 26, 12), Qt::AlignRight | Qt::AlignVCenter, nits >= 1000 ? QString("%1k").arg(nits / 1000) : QString::number(nits));
+    }
+    if (!s_.empty()) {
+        p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        p.drawImage(r, s_.parade);
+        const QString gam = QStringLiteral("outside P3-D65 %1 % · Rec.2020 %2 % · peak %3 nits")
+                                .arg(100.0 * s_.out_p3, 0, 'f', 2)
+                                .arg(100.0 * s_.out_2020, 0, 'f', 2)
+                                .arg(std::lround(s_.peak_nits));
+        p.setPen(s_.out_p3 > 0.001 ? theme_colour("gold") : theme_colour("ink-4"));
+        p.drawText(QRectF(r.left(), r.bottom() + 2, r.width(), 14), Qt::AlignLeft | Qt::AlignVCenter, gam);
+    } else {
+        p.setPen(theme_colour("ink-4"));
+        p.drawText(r, Qt::AlignCenter, "learned frames only");
     }
 }
 

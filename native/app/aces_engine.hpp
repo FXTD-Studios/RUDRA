@@ -5,13 +5,17 @@
 // through the model at any exposure and masters with nothing loaded twice.
 // No Q_OBJECT (as elsewhere in the app): listeners are callbacks.
 
+#include <QByteArray>
 #include <QJsonObject>
 #include <QString>
+
+#include "json_lines.hpp"
 
 #include <filesystem>
 #include <functional>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -37,18 +41,24 @@ public:
     AcesEngine& operator=(const AcesEngine&) = delete;
 
     // Starts it with this config; a running engine with another config is
-    // stopped first, one with the same config is left alone.
-    void start(const Config& c);
-    void stop();
+    // stopped first, one with the same config is left alone. Refused (false)
+    // while a master runs on it: a render is never killed by a reload.
+    bool start(const Config& c);
+    bool stop();
     State state() const { return state_; }
     const Config& config() const { return config_; }
     QString status_text() const;          // for a label or the status bar
     double load_ms() const { return load_ms_; }
 
     // Sends one request ({"op": ...}); on_reply gets the answer (ok or not).
-    // on_progress gets the progress lines of a master. Not ready: an error at once.
+    // on_progress gets the progress lines of a master. Not ready, or a master
+    // while another runs (one at a time: the Deliver tab, the batch, the ACES
+    // window share it): an error at once.
     int request(QJsonObject req, Reply on_reply, Reply on_progress = {});
-    void cancel_master();                 // stops a master after the frame in hand
+    // Stops that master (running: after the frame in hand; still queued: before it starts).
+    void cancel_master(int id);
+    bool busy() const { return !masters_.empty(); }   // a master is running on it
+    static QString busy_text();
 
     // Called on every state change; removed when `owner` is destroyed.
     void listen(QObject* owner, std::function<void()> on_change);
@@ -66,9 +76,11 @@ private:
     QString why_;
     double load_ms_ = 0;
     QString ready_device_, ready_runtime_;
-    std::string pending_;
+    JsonLines lines_;
+    QByteArray stderr_tail_;   // the engine's last words, for the exit message
     int next_id_ = 1;
     std::map<int, std::pair<Reply, Reply>> waiting_;
+    std::set<int> masters_;   // the master requests in flight (at most one)
     std::map<int, std::pair<QObject*, std::function<void()>>> listeners_;
     int next_listener_ = 1;
     bool stopping_ = false;

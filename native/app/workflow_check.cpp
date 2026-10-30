@@ -306,7 +306,8 @@ int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
             // Finished is the page's status line, set when the job's end reaches this thread.
             const bool done = wait_for([&] {
                 const QString line = status_label->text();
-                return !w.mastering() && !line.isEmpty();
+                // "Rendering i / n" can arrive after the job's thread has ended: wait for the end's line.
+                return !w.mastering() && (line.startsWith("Rendered") || line.startsWith("Stopped"));
             }, 600000);
             const QString status = status_label->text();
             const QString exr = QDir(a.out).filePath(name + ".exr"), side = QDir(a.out).filePath(name + ".json");

@@ -179,6 +179,7 @@ private:
     QSlider* ev_ = nullptr;
     bool preview_busy_ = false, view_busy_ = false, preview_again_ = false, view_again_ = false;
     bool engine_master_ = false;
+    int engine_master_id_ = 0;   // its request on the shared engine (cancelled by id)
     int views_ = 0;
 };
 

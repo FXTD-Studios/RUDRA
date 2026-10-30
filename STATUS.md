@@ -1,5 +1,13 @@
 # RUDRA — Training & Research Status
 
+> **1.0 release plan, 29 Oct 2026 (supersedes the 12 Oct steps):** 1.0 ships
+> on the analytic reconstruction with the artist in the loop, for Windows x64,
+> code under Apache 2.0. The learned ACES 2.0 model is an optional "preview"
+> download (it fails its 0 EV grading check: .121 against .0604), loaded by the
+> app when installed. The app is feature-complete at 1.0.0 RC 2 (Simple workspace,
+> tips, model downloads, About, ACES delivery). What is left, in order:
+> [docs/RELEASE_V1.md](docs/RELEASE_V1.md) "The plan from 29 Oct 2026".
+
 > **Resume point:** read [CURRENT_HANDOFF](docs/CURRENT_HANDOFF.md) before
 > continuing in another model/session. Frozen-checkpoint diagnosis and the
 > push-baseline A/B are complete; the current next step is the one at the top

@@ -5,6 +5,9 @@
 #include <cmath>
 #include <set>
 
+#include <nlohmann/json.hpp>
+
+#include "rudra/core/timecode.hpp"
 #include "rudra/media/still.hpp"
 
 namespace fs = std::filesystem;
@@ -30,6 +33,11 @@ Result<AcesFrameIn> from_raw(const RawFrame16& raw, const fs::path& video, const
     f.source = video.filename().string() + " frame " + std::to_string(index);
     f.source_path = video.string();
     f.exr = aces_video_exr_name(video, index);
+    f.frame = index;
+    f.fps = aces_video_fps(vs);
+    const AcesSourceTimecode tc = aces_source_timecode(vs.streams_json);
+    f.timecode = timecode_at(tc.start, index, f.fps);
+    f.reel = tc.reel.empty() ? video.stem().string() : tc.reel;
     return f;
 }
 Result<AcesFrameIn> from_still(const fs::path& p) {
@@ -44,6 +52,37 @@ Result<AcesFrameIn> from_still(const fs::path& p) {
     return f;
 }
 }  // namespace
+
+AcesSourceTimecode aces_source_timecode(const std::string& streams_json) {
+    AcesSourceTimecode out;
+    const auto j = nlohmann::json::parse(streams_json, nullptr, false);
+    if (j.is_discarded() || !j.contains("streams") || !j["streams"].is_array()) return out;
+    std::vector<const nlohmann::json*> tagged;
+    for (const auto& s : j["streams"]) tagged.push_back(&s);
+    if (j.contains("format") && j["format"].is_object()) tagged.push_back(&j["format"]);   // MXF keeps it here
+    for (const auto* sp : tagged) {
+        const auto& s = *sp;
+        if (!s.contains("tags") || !s["tags"].is_object()) continue;
+        for (const auto& [k, v] : s["tags"].items()) {
+            if (!v.is_string()) continue;
+            std::string key = lower(k);
+            if (key == "timecode" && out.start.empty() && parse_timecode(v.get<std::string>())) out.start = v.get<std::string>();
+            if (key == "reel_name" && out.reel.empty()) out.reel = v.get<std::string>();
+        }
+    }
+    return out;
+}
+
+double aces_video_fps(const VideoSource& vs) {
+    const std::string& f = vs.clock.fps;
+    const auto slash = f.find('/');
+    try {
+        const double v = slash == std::string::npos ? std::stod(f) : std::stod(f.substr(0, slash)) / std::stod(f.substr(slash + 1));
+        if (v > 0) return v;
+    } catch (...) {
+    }
+    return 24.0;
+}
 
 std::vector<fs::path> aces_expand_input(const fs::path& input) {
     std::vector<fs::path> out;
@@ -103,6 +142,19 @@ double AcesInputs::fps() const {
     return 24.0;
 }
 
+Result<void> AcesInputs::set_range(int first, int last) {
+    if (items_.size() != 1 || !items_.front().video)
+        return make_error(ErrorCode::InvalidArgument, "A frame range is for one video.");
+    const int frames = items_.front().source.clock.frames;
+    if (first < 0 || last < first || last >= frames)
+        return make_error(ErrorCode::InvalidArgument, "That frame range is not in the video.",
+                          std::to_string(first) + "-" + std::to_string(last) + " of " + std::to_string(frames));
+    first_ = first;
+    count_ = last - first + 1;
+    total_ = std::size_t(count_);
+    return {};
+}
+
 AcesInputs::~AcesInputs() {
     if (decoder_) decoder_->close();
 }
@@ -115,12 +167,13 @@ Result<AcesFrameIn> AcesInputs::next() {
             return from_still(it.path);
         }
         if (!decoder_) {
-            auto d = aces_open_video_decoder(it.path, it.source, log_);
+            auto d = count_ >= 0 ? aces_open_video_decoder_range(it.path, it.source, first_, count_, log_)
+                                 : aces_open_video_decoder(it.path, it.source, log_);
             if (!d) return d.error();
             decoder_ = std::move(*d);
-            frame_ = 0;
+            frame_ = count_ >= 0 ? first_ : 0;
         }
-        if (frame_ < it.source.clock.frames) {
+        if (frame_ < (count_ >= 0 ? first_ + count_ : it.source.clock.frames)) {
             auto raw = decoder_->next();
             if (!raw) return raw.error();
             return from_raw(*raw, it.path, it.source, frame_++);

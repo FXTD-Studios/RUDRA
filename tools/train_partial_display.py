@@ -101,6 +101,52 @@ def build_pool(crops_per_frame, crop, seed, aligned=False, border=48, matched=Fa
     return pool, used
 
 
+class CropStore:
+    """Crops written by tools/build_aces_scale_crops.py, read from disk on demand (memmap):
+    item i -> (source codes float32 [0,1] HxWx3, ACEScg target float32 HxWx3)."""
+    def __init__(self, folder, crop):
+        folder = Path(folder)
+        summary = json.loads((folder / 'summary.json').read_text())
+        if summary['crop'] != crop:
+            raise ValueError('crop store was built for another crop size')
+        self.src, self.tgt, self.index = [], [], []
+        shards = sorted(folder.glob('shard_*_src.npy'))
+        for n, f in enumerate(shards):
+            s = np.load(f, mmap_mode='r'); t = np.load(str(f).replace('_src.npy', '_tgt.npy'), mmap_mode='r')
+            if s.shape[:3] != t.shape[:3] or s.dtype != np.uint8:
+                raise ValueError(f'crop store shard {f.name} malformed')
+            self.src.append(s); self.tgt.append(t); self.index += [(n, i) for i in range(len(s))]
+        if len(self.index) != summary['crops']:
+            raise ValueError('crop store count differs from its summary')
+        self.summary = summary
+
+    def __len__(self):
+        return len(self.index)
+
+    def __getitem__(self, k):
+        n, i = self.index[k]
+        return (np.asarray(self.src[n][i], np.float32) / np.float32(255), np.asarray(self.tgt[n][i], np.float32))
+
+
+class ConcatPool:
+    def __init__(self, *parts):
+        self.parts = [p for p in parts if len(p)]
+
+    def __len__(self):
+        return sum(len(p) for p in self.parts)
+
+    def __getitem__(self, k):
+        for p in self.parts:
+            if k < len(p):
+                return p[k]
+            k -= len(p)
+        raise IndexError(k)
+
+
+def save_checkpoint(path, state, model, recipe):
+    torch.save({**state, 'model': {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}, 'recipe': recipe}, path)
+
+
 def forward_partial(model, x):
     with torch.no_grad():
         base = super(type(model).__mro__[1], model).forward(x)  # ACESModel.forward (frozen v7 path)
@@ -143,6 +189,9 @@ def main():
     ap.add_argument('--pcgrad-probe-steps',nargs='+',type=int,default=[],help='diagnostics only at specified one-based updates; save state and restore counterfactuals')
     ap.add_argument('--deterministic',action='store_true',help='require deterministic torch algorithms and CUDA workspace for reproducible diagnostics')
     ap.add_argument('--max-update-l2',type=float,help='opt-in cap on applied Adam parameter step; requires PCGrad; moments unchanged')
+    ap.add_argument('--crop-store', nargs='*', default=[], help='crop stores from tools/build_aces_scale_crops.py, added to the still pool')
+    ap.add_argument('--save-every', type=int, default=0, help='also save stepN.pt every N updates (diagnostics; the registered result is the last)')
+    ap.add_argument('--max-hours', type=float, default=0, help='stop at the first save boundary after this many hours (requires --save-every)')
     ap.add_argument('--display-ev-weights',type=float,nargs='+',help='per-EV multipliers for the display terms, same order as --display-evs (default all 1)')
     ap.add_argument('--direct-step-report',help='replace Adam with normalized PCGrad using capped TRAIN report step lengths')
     a = ap.parse_args()
@@ -184,6 +233,13 @@ def main():
         if len(motion_pool)<a.batch//2:raise ValueError('insufficient motion pairs')
         (out/'motion_pool.json').write_text(json.dumps(motion_metadata,indent=2))
         used=sorted(set(used)|{asset for row in motion_metadata for asset in row['assets']})
+    stores=[CropStore(f,a.crop) for f in a.crop_store]
+    if stores:
+        if a.matched_crops:raise ValueError('crop stores carry aligned crops only')
+        pool=ConcatPool(pool,*stores)
+        (out/'crop_stores.json').write_text(json.dumps([{'folder':f,'summary_sha256':sha(Path(f)/'summary.json'),
+            'crops_jsonl_sha256':sha(Path(f)/'crops.jsonl'),'crops':len(st)} for f,st in zip(a.crop_store,stores)],indent=2))
+    if a.max_hours and not a.save_every:raise ValueError('--max-hours stops at save boundaries; give --save-every')
     (out/'crop_pool.json').write_text(json.dumps(metadata,indent=2))
     if len(pool)<a.batch:raise ValueError('insufficient eligible crops')
     print('pool', len(pool), 'frames', len(used), 'prep_s', round(time.time() - t0), flush=True)
@@ -203,6 +259,7 @@ def main():
     b = a.border
     hist = []
     ema = {}
+    stopped_at = a.steps
     projection_rng=np.random.default_rng(a.seed+2)
     trainable=[p for p in model.parameters() if p.requires_grad]
     for step in range(1, a.steps + 1):
@@ -304,6 +361,13 @@ def main():
                 (out/f'step_probe_{step:04d}.json').write_text(json.dumps(probe,indent=2,allow_nan=False))
         hist.append({'step': step, 'photo': float(photo.detach()), 'display': float(disp.detach()), 'pixels': int(n), 'analytic_ema': dict(ema),'domain':'motion' if is_motion else 'still','temporal':float(temporal.detach()),'active_pixels':active_count})
         if projection_info is not None:hist[-1]['pcgrad']=projection_info
+        if a.save_every and step % a.save_every == 0 and step < a.steps:
+            save_checkpoint(out / f'step{step}.pt', state, model, {**vars(a), 'parent_checkpoint': a.checkpoint,
+                            'trained': 'highlight_context only (partial highlights)', 'intermediate': True, 'step': step})
+            if a.max_hours and time.time() - t0 > a.max_hours * 3600:
+                print('max-hours reached at step', step, flush=True)
+                stopped_at = step
+                break
         if step % 25 == 0:
             r = hist[-25:]
             print(step, 'photo', round(np.mean([h['photo'] for h in r]), 5), 'display', round(np.mean([h['display'] for h in r]), 5),
@@ -321,7 +385,7 @@ def main():
         if rel.parts[0] not in ('training','tools','rudra','src'):continue
         dest=out/'source_snapshot'/rel;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(path.read_bytes());sources[str(rel)]=sha(path)
     (out/'source_hashes.json').write_text(json.dumps(sources,indent=2))
-    ck = out / f'step{a.steps}.pt'
+    ck = out / f'step{stopped_at}.pt'
     torch.save({**state, 'model': after,
                 'recipe': {**vars(a), 'parent_checkpoint': a.checkpoint, 'parent_sha256': sha(a.checkpoint), 'trainer_sha256': sha(out / 'trainer_snapshot.py'), 'geometry_sha256':sha(out / 'geometry_snapshot.py'),
                            'trained': 'highlight_context only (partial highlights)', 'train_frames': used,
@@ -330,8 +394,9 @@ def main():
                            'schedule_manifest_sha256':sha(out/'schedule_manifest.json') if a.registered_schedule else None,
                            'direct_step_source_sha256':sha(out/'direct_step_source.json') if a.direct_step_report else None,
                            'motion_pool_sha256':sha(out/'motion_pool.json') if a.paired_motion else None,
+                           'crop_stores_sha256':sha(out/'crop_stores.json') if a.crop_store else None,'steps_done':stopped_at,
                            'fixed_display_scale_sha256':sha(out/'fixed_display_scale.json') if fixed_scale else None}}, ck)
-    (out / 'report.json').write_text(json.dumps({'frozen_parent_bit_exact': frozen_ok, 'checkpoint_sha256': sha(ck),
+    (out / 'report.json').write_text(json.dumps({'frozen_parent_bit_exact': frozen_ok, 'checkpoint_sha256': sha(ck), 'steps_done': stopped_at,
                                                  'recipe': {**vars(a)}, 'history': hist, 'train_frames': len(used),
                                                  'pool': len(pool)}, indent=1))
     print('done frozen_ok', frozen_ok, flush=True)

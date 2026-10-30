@@ -1,0 +1,33 @@
+{
+  "id": "claude_genfill_v3_20261030",
+  "written": "2026-10-30, after claude_genfill_v2_20261029 FAILED and Ahmed chose 'split shape & brightness', before the v3 estimator was trained on the full set or any v3 output was evaluated",
+  "author": "Claude (Cowork session); approved by Ahmed",
+  "parents": ["claude_genfill_v1_20261027 (FAIL)", "claude_genfill_v1_1_20261029 (FAIL, H log2 only)", "claude_genfill_v2_20261029 (FAIL, worse)"],
+  "idea": "The generative model gives only the SHAPE inside a fully clipped area (zero-mean log2 luminance relative to the master); a small deterministic estimator gives the BRIGHTNESS (b, the component's mean excess in stops over the master), plus the artist's offset. fill log2 Y = log2 Y_master + max(0, b + shape_gain * shape); the generated colour ratios are kept.",
+  "development_evidence": {
+    "shape": "post-hoc on the v1.1 evaluation clips (frame 0): with the true brightness, the generated shape lowers |dlog2| from 0.512 (flat) to 0.434 stops, better in 20 of 33 clips",
+    "brightness": "configs/experiments/claude_genfill_v3_brightness_dev_20261030.json: a 260-source subset of the TRAIN sources (5,934 components), 5-fold CV grouped by scene: estimator MAE 0.311 stops vs the master's 0.475 (b = 0), overshoot (> +1 stop) 2.7 %; Poly Haven 0.356 / 0.506, FXTD 0.228 / 0.366. Settings chosen there: over_weight 4, 300 epochs."
+  },
+  "lora": "the v1 LoRA unchanged (sha256 9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a): the best structure so far (v1.1 PU21 -3.02 / -2.01). The v2 LoRA is not used.",
+  "brightness_estimator": {
+    "data": "tools/build_brightness_set.py on EVERY commercial-clean TRAIN source of the clip builder's plan (1,961 sources, exclusions asserted), 6 frames each, 512x288, kinds highlight 0.40 / broad 0.35 / random 0.25, seed 20261030; components = 8-connected max code 255, >= 16 px; target b = mean(log2 Y_true - log2 Y_master), clipped to [0, 12]; weight sqrt(area)",
+    "model": "rudra/genfill/brightness.py: 14 features from the 8-bit codes and the master only; MLP 14-32-32-1, softplus output; asymmetric squared loss, overshoot x4; AdamW lr 3e-3, wd 1e-3, 300 epochs, batch 512, seed 20261030",
+    "out": "G:/rudra_training/claude_genfill_v3_20261030/brightness.json (with a copy of the v1 LoRA and its prompt_cache beside it)"
+  },
+  "inference": "blend only at max code 255 (shadows off), no feather; brightness = estimator + offset 0; shape_gain 1.0; b smoothed in time per pixel (EMA 0.7); cap +3 stops over the master; steps 30, seed 0, window 33, overlap 8",
+  "evaluation": {
+    "tool": "tools/evaluate_genfill.py (defaults = this registration) --lora <v3 folder>/rudra_genfill.safetensors --brightness-model <v3 folder>/brightness.json",
+    "scenes": "Poly Haven: the shuffled held-scene list (seed 20261029) entries 72-95, none evaluated before (gated). FXTD: every held FXTD scene has been evaluated before (v1 fresh 0-7, v1.1 fresh 8-17, v2 the 4 extra), so FXTD fresh 0-9 is run and REPORTED but NOT gated.",
+    "clips": "as v1.1/v2"
+  },
+  "gates": {
+    "R": "codes kept on every pixel of every frame",
+    "H": "on code-255 pixels: log2 delta < 0 with the 95 % bootstrap CI excluding 0; PU21 at -3 and -6 EV lower than the master's",
+    "B": "the estimator alone, frame 0, per clipped component (sqrt-area weighted per clip): mean(|b_est - b_true|) - mean(b_true) < 0 with the CI excluding 0, and the overshoot rate (b_est - b_true > 1 stop) <= 5 %",
+    "S": "codes <= 4 at +3 EV: CI upper <= +2 %",
+    "T": "flicker excess <= 0.02 EV",
+    "A": "window joins <= 1.5"
+  },
+  "decision_rule": "PASS on every gate: the AI fill (v3) may be offered, experimental and off by default, with the artist's brightness offset, in the app and Radiance Studio. FAIL: report and review with Ahmed; no further training without his decision.",
+  "release_authorized": false
+}

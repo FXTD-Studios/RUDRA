@@ -183,3 +183,31 @@ TEST(VideoEncode, Ffv1MoviePreservesEveryRgb16CodeAndPassesQc) {
     request.alpha = true;
     EXPECT_FALSE(encode_command("ffmpeg", request, clock, root, source, output, 1, 1));
 }
+
+// Native only (27 Oct 2026): a movie's 16-bit uncompressed RGB QuickTime master.
+TEST(VideoEncode, SixteenBitRgbMovIsRawRgb48InAMov) {
+    VideoEncodeRequest r;
+    r.format = "rgb16mov";
+    r.audio = "none";
+    const VideoClock clock{"24/1", 2, 0, 2.0 / 24, 0.001};
+    auto cmd = encode_command("ffmpeg", r, clock, "spool", "in.mov", "out.mov", 1000, 100);
+    ASSERT_TRUE(cmd) << cmd.error().message;
+    std::string all;
+    for (const auto& a : *cmd) all += a + " ";
+    EXPECT_NE(all.find("-c:v rawvideo -pix_fmt rgb48be"), std::string::npos) << all;
+    EXPECT_NE(all.find("format=rgb48be,setparams=range=full"), std::string::npos) << all;
+    EXPECT_NE(all.find("-colorspace rgb -color_range pc"), std::string::npos) << all;
+    EXPECT_EQ(all.find("x265"), std::string::npos);
+    EXPECT_FALSE(encode_command("ffmpeg", r, clock, "spool", "in.mov", "out.mp4", 1, 1));   // MOV only
+    r.alpha = true;
+    EXPECT_FALSE(encode_command("ffmpeg", r, clock, "spool", "in.mov", "out.mov", 1, 1));
+}
+
+TEST(VideoEncode, TheMasteringDisplayCanBeP3D65) {
+    // Review 28 Oct: most HDR10 specs name a P3-D65 mastering display.
+    ASSERT_TRUE(set_mastering_display_primaries("p3d65"));
+    EXPECT_EQ(mastering_display(1000, 0.0001), "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)");
+    EXPECT_FALSE(set_mastering_display_primaries("dci"));
+    ASSERT_TRUE(set_mastering_display_primaries("rec2020"));   // back to the Python's for the other tests
+    EXPECT_EQ(mastering_display_primaries(), "rec2020");
+}

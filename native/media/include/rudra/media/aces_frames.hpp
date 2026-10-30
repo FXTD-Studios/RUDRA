@@ -32,6 +32,9 @@ std::string aces_video_exr_name(const std::filesystem::path& video, int index);
 // Every frame in order (full-range 16-bit RGB).
 Result<std::unique_ptr<VideoDecoder>> aces_open_video_decoder(const std::filesystem::path& file, const VideoSource& video,
                                                               const std::filesystem::path& log);
+// Frames first .. first + count - 1 in order (28 Oct 2026: a shot's in and out).
+Result<std::unique_ptr<VideoDecoder>> aces_open_video_decoder_range(const std::filesystem::path& file, const VideoSource& video,
+                                                                    int first, int count, const std::filesystem::path& log);
 // One frame by index (0-based), for previews; decodes from the start up to it.
 Result<RawFrame16> aces_read_video_frame(const std::filesystem::path& file, const VideoSource& video, int index,
                                          const std::filesystem::path& log);
