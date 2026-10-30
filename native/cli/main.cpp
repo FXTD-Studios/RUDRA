@@ -696,7 +696,7 @@ void usage() {
                  "                            [--record-start TC] [--fps RATE] [--threshold X] [--key-each-shot]\n"
                  "       rudra-native batch run <queue.json> [--retry-failed] [--package DIR] [--runtime ...] [--device ...]\n"
                  "       rudra-native batch status <queue.json>\n"
-                 "       rudra-native deliver <frames> --output <stem> [--target hdr10|hlg|prores422hq|prores4444|ffv1rgb16] [--fps N]\n"
+                 "       rudra-native deliver <frames> --output <stem> [--target hdr10|hlg|prores422hq|prores4444|ffv1rgb16|rgb16mov] [--fps N]\n"
                  "                            [--peak-nits N] [--min-nits N] [--source-space rec709|rec2020|p3d65] [--nits-scale N] [--no-verify-tags]\n"
                  "       rudra-native correction-log open <dir> --by NAME --terms VERSION --source-id ID --rights owner|licensed|unknown\n"
                  "                                   [--at ISO] [--scope TEXT] [--note TEXT]\n"

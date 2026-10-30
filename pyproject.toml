@@ -8,8 +8,8 @@ version = "0.3.2"
 description = "Radiometric dynamic-range conditioning and HDR decoder research"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
-license = {file = "LICENSE"}   # PolyForm Noncommercial 1.0.0
-classifiers = ["License :: Other/Proprietary License"]
+license = {file = "LICENSE"}   # Apache-2.0 (code); weights: checkpoints/LICENSE
+classifiers = ["License :: OSI Approved :: Apache Software License"]
 dependencies = [
   "numpy>=1.26,<3",
   "torch>=2.3",
@@ -32,6 +32,16 @@ vae = [
   "accelerate>=1.0",
   "huggingface-hub>=0.25",
   "OpenEXR>=3.2",
+]
+genfill = [
+  "diffusers>=0.35",
+  "transformers>=4.45",
+  "peft>=0.13",
+  "accelerate>=1.0",
+  "OpenEXR>=3.2",
+  "sentencepiece",
+  "ftfy",
+  "huggingface-hub>=0.25",
 ]
 test = ["pytest>=8"]
 

@@ -19,6 +19,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "rudra/core/composite.hpp"
 #include "rudra/core/fields.hpp"
@@ -80,6 +81,10 @@ public:
     // A picture that is already composited (a master, a test card): shown
     // through the display pass as it is, with no composite pass.
     void set_composited(NetworkLinearImage model, NetworkLinearImage baseline);
+    // The same, with the SDR's largest code per pixel ([0, 1], width x height),
+    // so the Invented layer tells invented (clipped or crushed) from reinterpreted
+    // pixels on a precomposited picture too (the learned ACES 2.0 route, 28 Oct 2026).
+    void set_composited(NetworkLinearImage model, NetworkLinearImage baseline, std::vector<float> sdr_max_codes);
     void clear_frame();
     void set_composite(const CompositeParams& params);
     // Mode, view peak, source, wipe and difference gain; the target is the

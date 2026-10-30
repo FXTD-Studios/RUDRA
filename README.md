@@ -1,18 +1,21 @@
 <p align="center">
-  <img src="ui/assets/rudra-mark.png" width="150" alt="RUDRA">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="ui/assets/brand/rudra_lockup_dark.png">
+    <img src="ui/assets/brand/rudra_lockup_light.png" width="420" alt="RUDRA by FXTD Studios">
+  </picture>
 </p>
-
-<h1 align="center">RUDRA</h1>
 
 <p align="center">
   <b>R</b>adiance <b>U</b>niversal <b>D</b>ynamic <b>R</b>ange <b>A</b>dapter<br>
-  Turns 8-bit SDR footage into scene-linear HDR, and tells you where it did it.
+  Turns 8-bit SDR footage into scene-linear HDR, and tells you where it did it.<br>
+  <sub>Light meets shadow: the 8-bit ceiling, split open.</sub>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue">
   <img src="https://img.shields.io/badge/torch-2.x-ee4c2c">
-  <img src="https://img.shields.io/badge/weights-noncommercial-orange">
+  <a href="LICENSE"><img alt="Licence: Apache 2.0" src="https://img.shields.io/badge/licence-Apache%202.0-blue"></a>
+  <a href="https://www.fxtdstudios.com"><img alt="www.fxtdstudios.com" src="https://img.shields.io/badge/www-fxtdstudios.com-111"></a>
   <img src="https://github.com/FXTD-Studios/RUDRA/actions/workflows/tests.yml/badge.svg">
   <a href="https://github.com/FXTD-Studios/RUDRA/releases"><img alt="Desktop beta" src="https://img.shields.io/github/v/release/FXTD-Studios/RUDRA?include_prereleases&label=desktop%20beta"></a>
   <a href="https://github.com/FXTD-Studios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="Windows build" src="https://img.shields.io/github/check-runs/FXTD-Studios/RUDRA/native?nameFilter=core%2C%20windows-2022&label=Windows&logo=windows"></a>
@@ -25,6 +28,7 @@
 **Contents:**
 [What it does](#what-it-does) ·
 [What's new](#whats-new) ·
+[AI fill](#ai-fill-experimental) ·
 [See it](#see-it) ·
 [Results](#results) ·
 [Install](#install) ·
@@ -68,6 +72,14 @@ so the model is optional and off by default. What the artist gets:
 It ships as a native desktop app (Windows, macOS, Linux; no Python), the
 browser Studio and two command lines (`rudra`, `rudra-native`).
 
+**Since late October 2026** the app also has a **learned ACES 2.0 route**: a
+small model (2 MB, in the C++ engine) that renders the master through the
+exact inverse of the ACES 2.0 SDR view and rebuilds only what the 8-bit codes
+cannot hold, and an optional, experimental **AI fill** for regions that are
+fully clipped or crushed ([below](#ai-fill-experimental)). Three layers, each
+honest about what it knows: the exact inverse, a constrained learned layer,
+and a generative fill that is marked pixel by pixel.
+
 **Scope.** RUDRA is one thing: SDR to HDR for any image or video, whatever made
 it, whether a camera, a phone, an archive or any generative model. It works on
 pixels, not on a model's latent space. The per-backbone VAE decoders (Flux,
@@ -80,8 +92,54 @@ and are not maintained.
 
 ## What's new
 
-On `native` since `v1.0.0-rc.2`, for the next release candidate. Per-beta
-detail: [`docs/BETA.md`](docs/BETA.md).
+### In `v1.0.0-rc.3` (27 to 30 Oct 2026)
+
+- **Apache 2.0.** The code is now licensed under the [Apache License 2.0](LICENSE):
+  commercial use is allowed. Each model keeps its own licence (see [Licence](#licence)).
+- **Simple workspace.** New users start in *Simple*: three numbered tabs, **1 Look**
+  (monitor and four trims), **2 Check** (peak, average, light above SDR white,
+  out-of-P3 share, scopes beside the picture) and **3 Deliver** (Grading master,
+  HDR10 movie, Broadcast HDR or Custom…). Hold **B** for the original SDR; one
+  **View** menu for wipe, what changed, invented pixels and false colour. *Full*
+  keeps every control.
+- **First-run tips.** A welcome card, then four coach marks the first time a shot
+  is open; Help > Show tips brings them back.
+- **Model downloads and a new About** (in progress): models listed, downloaded,
+  SHA-256-checked and installed from inside the app; About with the version, the
+  model, the GPU and a link to [www.fxtdstudios.com](https://www.fxtdstudios.com).
+- **User guide** updated for 1.0.0 RC 2:
+  [www.fxtdstudios.com/rudra-docs](https://www.fxtdstudios.com/rudra-docs/).
+
+- **New look.** A new app icon (one circle split by a line of light: gold
+  highlights, deep shadows with a blue rim, on a graphite tile) and a start
+  screen in the FXTD family layout, painted in code. Brand kit in
+  [`ui/assets/brand/`](ui/assets/brand/).
+- **AI fill (experimental, off by default).** Wan2.1-VACE-1.3B with a LoRA
+  trained by FXTD on commercial-clean data fills only the fully clipped
+  regions; no 8-bit code of the master's SDR view changes. The model draws the
+  shape, a separately tested estimator sets the brightness, and
+  **Highlight brightness** (±3 stops) lets you move it. It passed every
+  registered gate on new scenes (30 Oct 2026). See [AI fill](#ai-fill-experimental).
+- **The Deliver tab, rebuilt.** Learned ACES 2.0 or analytic; a still, a
+  sequence or one MOV; EXR 32-bit float or 16-bit half in ACES 2065-1 or
+  ACEScg, DPX 10-bit, ProRes 422 HQ / 4444 or uncompressed 16-bit RGB MOV;
+  LogC4, ACEScct or the ACES 2.0 HDR 1000-nit PQ output. A Nuke-style file path
+  (`SH010_hdr_v001.####.exr`); nothing is ever overwritten.
+- **Batch queue** (Deliver > Batch queue…, Ctrl+Shift+B): shots, sequences and
+  movies rendered one after another through the loaded model, each with its own
+  settings, range and optional AI fill; it survives a restart.
+- **Conform.** CMX 3600 EDL import into the batch, matched to the movies by clip
+  name or reel, only the frames each edit uses plus handles; per-shot in/out
+  ranges; MaxCLL / MaxFALL per shot.
+- **For the colourist.** Source timecode and reel carried into the EXR header
+  and the MOV; scopes and readouts on the learned route; trims (strength,
+  highlight saturation, peak limit); monitoring through the ACES 2.0 SDR 100-nit
+  or HDR 1000-nit output; the Invented layer, reference stills with wipe, and a
+  playback proxy.
+
+### On `native` since `v1.0.0-rc.2`
+
+For the next release candidate. Per-beta detail: [`docs/BETA.md`](docs/BETA.md).
 
 - **Shot keyframes (roadmap 4.3).** A programme's grade can be kept per shot
   in a `<name>.shots.json`: keys inside a shot blend the continuous settings
@@ -129,6 +187,59 @@ detail: [`docs/BETA.md`](docs/BETA.md).
   super-white design and its 1.0 limit
   ([`docs/SUPER_WHITES_DESIGN.md`](docs/SUPER_WHITES_DESIGN.md)); open licensing
   questions in [`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md).
+
+---
+
+## AI fill (experimental)
+
+An 8-bit pixel at code 255 or 0 holds no information about what was there. The
+exact inverse cannot know it, and no regression model can either. The AI fill
+draws a plausible version of it, and only there:
+
+1. **Where:** the master's own SDR view gives the regions. The model sees
+   codes at or above 250, dilated a little and steadied over time; the fill is
+   blended only where a pixel is fully clipped (code 255). Shadows are off by
+   default. The ACES window's "AI fill regions" view shows them.
+2. **What:** Wan2.1-VACE-1.3B (Apache-2.0) with a RUDRA LoRA sees the exact
+   inverse, log-encoded, and the region mask, in overlapping windows of 33
+   frames, so the fill stays steady through a shot. A seed and optional region
+   prompts steer it. The model gives only the **shape** inside each clipped
+   area.
+3. **How bright:** a small, separately tested estimator reads the 8-bit codes
+   around each clipped area (its size, outline, how fast the picture rises
+   towards it) and sets its **brightness** in stops. You can move it with
+   **Highlight brightness** (±3 stops) in Deliver > AI fill. The fill is capped
+   at +3 stops over the master.
+4. **How it is kept honest:** the fill is blended so that **no 8-bit code of the
+   master's SDR view changes**; it only adds what lies above white and below
+   black, which shows when the master is graded. Pixels it does not touch are
+   copied bit for bit. Every frame gets a `rudra.generated` channel (1 =
+   invented), and `rudra.reconstructed` includes it.
+
+In the app: Deliver > **AI fill (experimental)** for a learned EXR still or
+sequence; it writes a copy beside the master, `<name>_aifill`. From a terminal:
+
+```powershell
+scripts\GENFILL.ps1 -Setup        # packages and the base model (G:)
+scripts\GENFILL.ps1               # build the training clips, then train the LoRA
+scripts\GENFILL.ps1 -Evaluate     # the registered gates on held-out scenes
+scripts\GENFILL.ps1 -Fill -Master <EXR folder>
+```
+
+The first LoRA (29 Oct 2026) trained on 4,972 clips from 941 scenes (Poly
+Haven HDRIs, CC0, and FXTD Studios' own footage; no DiffHDR, LTX, Netflix or
+non-commercial data; every evaluation scene excluded); its validation loss fell
+from 0.074 to 0.030. v1, v1.1 and v2, which asked the model for
+brightness too, failed their registered gates. **v3 (30 Oct 2026), which
+splits shape from brightness, passed every gate** on 25 new Poly Haven scenes
+(`configs/experiments/claude_genfill_v3_20261030.json`): clipped highlights
+0.13 stops closer to the truth than the exact inverse (95 % CI 0.04–0.23),
+much better detail at -3 and -6 EV, the brightness estimate better than
+leaving it (overshoot of more than a stop in 3 % of areas), every 8-bit code
+kept, no flicker or seams. On FXTD's own footage, whose clipped areas are
+small, it is neutral. It stays experimental and off by default. Code:
+[`rudra/genfill/`](rudra/genfill/), `tools/build_genfill_clips.py`,
+`training/genfill_train.py`, `tools/evaluate_genfill.py`.
 
 ---
 
@@ -200,10 +311,24 @@ Full tables, the failure analysis, and how to recompute every number:
 
 **Desktop app (no Python).** From
 [Releases](https://github.com/FXTD-Studios/RUDRA/releases), the latest
-pre-release (`v1.0.0-rc.2` now, then 1.0): for Windows x64 `RUDRA-<version>-windows-x64-setup.exe`, which
+pre-release (`v1.0.0-rc.3` now, then 1.0): for Windows x64 `RUDRA-<version>-windows-x64-setup.exe`, which
 installs for your user (no administrator prompt) with the model and the Visual
 C++ runtime included, or the portable ZIP beside it; for Apple silicon
 `RUDRA-<version>-macos-arm64.dmg`. Details: [`docs/BETA.md`](docs/BETA.md).
+
+> **These builds are not code-signed yet, on Windows or on macOS.** That is
+> expected for this release candidate; check each download against its
+> `.sha256` file.
+>
+> - **Windows:** SmartScreen says *Windows protected your PC*. Click **More
+>   info › Run anyway**. Or right-click the ZIP before extracting it,
+>   **Properties**, tick **Unblock**.
+> - **macOS:** the first open says RUDRA *cannot be verified*. Open **System
+>   Settings › Privacy & Security** and click **Open Anyway**, or run
+>   `xattr -dr com.apple.quarantine /Applications/RUDRA.app` once.
+>
+> Signed builds (Windows code signing, Apple Developer ID and notarization)
+> come with 1.0.
 
 **Python package.** Requires Python 3.10 to 3.13. CUDA is optional: everything runs on CPU, slower.
 FFmpeg is needed for video, not for stills.
@@ -550,8 +675,16 @@ promoting a different recovery policy.
 - **The AI model is optional and off by default.** RUDRA's standard
   reconstruction gives the best results on real footage today; the model
   hasn't beaten it yet.
-- **Non-commercial use only** for now. Commercial licensing is still being
-  cleared ([`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md)).
+- **The AI fill is experimental.** What it draws is plausible, not recovered:
+  it is a guess at what was there, marked in `rudra.generated`. It works at up
+  to 832 × 480 inside the regions and is scaled up, prompts have little effect
+  yet (trained on one generic prompt), it needs the base model (about 18 GB
+  today; a slim ~4 GB pack is planned) and a 16 GB GPU, it runs in Python beside the app, and only EXR stills and
+  sequences can be filled.
+- **Model licences differ from the code's.** The code is Apache 2.0; the
+  `sdr2hdr_image_v8` / Beta 2 weights stay non-commercial because of a training
+  source's terms, and the learned ACES 2.0 model is a preview whose licence is
+  confirmed with its training ancestry ([`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md)).
 
 ---
 
@@ -580,18 +713,25 @@ promoting a different recovery policy.
 
 ## Licence
 
-**RUDRA is non-commercial.** The code is licensed under the
-[PolyForm Noncommercial License 1.0.0](LICENSE): research, teaching,
-evaluation, personal projects and noncommercial organizations may use,
-change and share it. **The weights are non-commercial too**, under their own
-terms, because of their training corpus; that is a term FXTD Studios cannot
-waive for you. See [`checkpoints/LICENSE`](checkpoints/LICENSE) and
-[`NOTICE`](NOTICE).
+**The code is licensed under the [Apache License 2.0](LICENSE)**, from
+29 October 2026: you may use it commercially, change it and redistribute it,
+under the licence's terms (keep the [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE)
+files, and say what you changed). Copies obtained between 24 September and
+28 October 2026 under the PolyForm Noncommercial License 1.0.0 may be used
+under Apache 2.0 from now on.
 
-Commercial use of the code or the weights needs a licence from
-[FXTD Studios](https://fxtdstudios.com). Copies of the code obtained before
-24 September 2026 were released under Apache 2.0 and keep that licence.
+**Models carry their own licence**, shown in the app's Model packages window
+before a download:
+
+| Model | Licence |
+|---|---|
+| `sdr2hdr_image_v8`, `sdr2hdr_shadow_v1` (Beta 2) | non-commercial ([`checkpoints/LICENSE`](checkpoints/LICENSE)): one training source allows academic use only, a term FXTD Studios cannot waive |
+| Learned ACES 2.0 (preview) | set when its training ancestry is confirmed |
+| AI fill LoRA on Wan2.1-VACE | the base model's Apache 2.0, and the LoRA's own terms |
+
+Training-data attributions are in [`NOTICE`](NOTICE). For anything else, contact
+[FXTD Studios](https://www.fxtdstudios.com).
 
 ---
 
-<p align="center"><a href="https://fxtdstudios.com">FXTD Studios</a> · Cairo</p>
+<p align="center"><a href="https://www.fxtdstudios.com">www.fxtdstudios.com</a> · FXTD Studios · Cairo</p>

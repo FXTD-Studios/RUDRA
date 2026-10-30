@@ -89,10 +89,12 @@ namespace {
 // The decode tools/rudra_aces_export.py uses (swscale, accurate rounding, full
 // chroma interpolation), so a frame reaches the model as the Python reads it.
 std::vector<std::string> aces_decoder_command(const std::string& ffmpeg, const fs::path& source, const VideoSource& video,
-                                              int only_frame) {
+                                              int only_frame, int count = 1) {
     const InputContract& c = video.contract;
     std::string vf;
-    if (only_frame >= 0) vf = "select=eq(n\\," + std::to_string(only_frame) + "),";
+    if (only_frame >= 0 && count == 1) vf = "select=eq(n\\," + std::to_string(only_frame) + "),";
+    else if (only_frame >= 0)
+        vf = "select=between(n\\," + std::to_string(only_frame) + "\\," + std::to_string(only_frame + count - 1) + "),";
     if (c.matrix == "gbr") vf += "scale=flags=accurate_rnd+full_chroma_int";
     else
         vf += std::string("scale=in_color_matrix=") + (c.matrix == "bt2020nc" ? "bt2020" : "bt709") +
@@ -100,7 +102,7 @@ std::vector<std::string> aces_decoder_command(const std::string& ffmpeg, const f
     vf += video.alpha ? ",format=rgba64le" : ",format=rgb48le";
     std::vector<std::string> a = {ffmpeg, "-hide_banner", "-v", "error", "-nostdin", "-noautorotate", "-i", source.string(),
                                   "-map", "0:v:0", "-vf", vf, "-fps_mode", "passthrough"};
-    if (only_frame >= 0) a.insert(a.end(), {"-frames:v", "1"});
+    if (only_frame >= 0) a.insert(a.end(), {"-frames:v", std::to_string(count)});
     a.insert(a.end(), {"-pix_fmt", video.alpha ? "rgba64le" : "rgb48le", "-f", "rawvideo", "pipe:1"});
     return a;
 }
@@ -112,6 +114,17 @@ Result<std::unique_ptr<VideoDecoder>> aces_open_video_decoder(const fs::path& fi
     if (!ffmpeg) return ffmpeg.error();
     return VideoDecoder::open_command(aces_decoder_command(ffmpeg->string(), file, video, -1), video.stream.width,
                                       video.stream.height, video.alpha ? 4 : 3, video.clock.frames, log);
+}
+
+Result<std::unique_ptr<VideoDecoder>> aces_open_video_decoder_range(const fs::path& file, const VideoSource& video, int first,
+                                                                    int count, const fs::path& log) {
+    if (first < 0 || count < 1 || first + count > video.clock.frames)
+        return make_error(ErrorCode::InvalidArgument, "That frame range is not in the video.",
+                          std::to_string(first) + " +" + std::to_string(count) + " of " + std::to_string(video.clock.frames));
+    auto ffmpeg = require_executable("ffmpeg");
+    if (!ffmpeg) return ffmpeg.error();
+    return VideoDecoder::open_command(aces_decoder_command(ffmpeg->string(), file, video, first, count), video.stream.width,
+                                      video.stream.height, video.alpha ? 4 : 3, count, log);
 }
 
 Result<RawFrame16> aces_read_video_frame(const fs::path& file, const VideoSource& video, int index, const fs::path& log) {

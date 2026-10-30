@@ -126,6 +126,15 @@ const std::vector<ActionSpec> kActions = {
     {"open-log-folder", "Open log folder", "", "", O::Native, E::Always, ""},
     // 26 Oct 2026: the learned ACES 2.0 model's masters (app/aces_master.hpp).
     {"aces-master", "Learned ACES 2.0 master…", "", "", O::Native, E::Always, "Ctrl+Shift+E"},
+    // 28 Oct 2026: the batch queue (app/batch_queue.hpp).
+    {"batch-queue", "Batch queue…", "", "", O::Native, E::Always, "Ctrl+Shift+B"},
+    {"batch-add", "Add shot to batch", "", "", O::Native, E::AnyFrames, "Ctrl+B"},
+    // 28 Oct 2026: monitoring and reference stills on the learned ACES 2.0 route.
+    {"monitor-scene", "Scene light (RUDRA view)", "", "monitor:scene", O::Native, E::Always, ""},
+    {"monitor-sdr100", "ACES 2.0 SDR 100 nits (Rec.709)", "", "monitor:sdr100", O::Native, E::Always, ""},
+    {"monitor-hdr1000", "ACES 2.0 HDR 1000 nits (P3 D65, PQ)", "", "monitor:hdr1000", O::Native, E::Always, ""},
+    {"still-grab", "Grab reference still", "", "", O::Native, E::AnyFrames, "Ctrl+Alt+G"},
+    {"still-compare", "Compare with reference still", "", "stillCompare", O::Native, E::Always, "Ctrl+Alt+W"},
 };
 
 const std::vector<MenuSpec> kMenus = {
@@ -140,11 +149,12 @@ const std::vector<MenuSpec> kMenus = {
      {"use-model", "-", "clip-fill", "clip-peak", "clip-peaks-clear", "keep-super-whites", "-", ">Source", "source-bt1886", "source-bt1886_shadows", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
       "exposure-down", "exposure-up", "exposure-reset", "-", "mode-all", "mode-highlights", "mode-shadows", "mode-off", "-", "preserve", "-", "strength-down", "strength-up"}},
     {"Measure", {"copy-metrics", "copy-scopes", "-", "remeasure"}},
-    {"Deliver", {"master", "aces-master", "-", "container-aces", "container-linear", "-", "copy-delivery"}},
+    {"Deliver", {"master", "aces-master", "-", "batch-add", "batch-queue", "-", "container-aces", "container-linear", "-", "copy-delivery"}},
     {"View",
      {"view-image", "view-false-colour", "view-difference", "-", "wipe", "-", ">Guides", "guides-action",
       "guides-title", "guides-centre", "-", "aspect-none", "aspect-2.39", "aspect-1.85", "aspect-16:9", "aspect-4:3",
-      "aspect-1:1", "<"}},
+      "aspect-1:1", "<", "-", ">Monitor (learned ACES 2.0)", "monitor-scene", "monitor-sdr100", "monitor-hdr1000", "<",
+      "-", "still-grab", "still-compare"}},
     {"Window", {"rail-left", "rail-right", "scopes", "-", "zoom-fit", "zoom-actual"}},
     {"Help",
      {"getting-started", "user-guide", "-", "shortcuts", "about", "first-run", "-", "check-updates", "open-log-folder"}},

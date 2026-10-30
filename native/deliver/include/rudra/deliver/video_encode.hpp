@@ -35,6 +35,13 @@ std::string x265_param_path(const std::filesystem::path& path);
 
 // x265's master-display string, luminances in 0.0001-nit units (round half even).
 std::string mastering_display(double peak_nits, double min_nits);
+// The mastering display's primaries in the HDR10 SEI (28 Oct 2026 review): "rec2020"
+// (the Python's, the default here) or "p3d65" (what most specs and the grading monitor
+// are; the app sets it from Deliver > Export). Process-wide; false for an unknown name.
+bool set_mastering_display_primaries(const std::string& name);
+std::string mastering_display_primaries();
+// "G(...)B(...)R(...)WP(...)" of the current primaries.
+std::string mastering_display_primaries_text();
 
 // encode_command: ffmpeg reading the spool (spool/%08d.png) at the clip's rate,
 // the source for audio and metadata, into `output`.

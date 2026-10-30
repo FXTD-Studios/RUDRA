@@ -101,7 +101,7 @@ Result<VideoQcFindings> evaluate_video_qc(std::string_view source_streams_json, 
     VideoQcFindings f;
     auto& errors = f.errors;
     const bool prores = profile->codec == "prores";
-    const bool rgb16 = profile->codec == "ffv1";
+    const bool rgb16 = profile->codec == "ffv1" || profile->codec == "rawvideo";
     const bool log = !profile->log.empty();
     // ProRes 4444 decodes as 12-bit whatever went in.
     const std::string pix = profile->prores_profile == 4 ? (r.alpha ? "yuva444p12le" : "yuv444p12le") : profile->pixel_format;
@@ -113,7 +113,9 @@ Result<VideoQcFindings> evaluate_video_qc(std::string_view source_streams_json, 
     for (const auto& [k, want] : expected_tags) {
         const ojson* got = key(*video, k);
         // MOV's nclc atom carries primaries, transfer and matrix, not a range bit.
-        if (std::string(k) == "color_range" && prores && (!got || got->is_null())) continue;
+        if (std::string(k) == "color_range" && (prores || profile->codec == "rawvideo") &&
+            (!got || got->is_null() || (got->is_string() && got->get<std::string>() == "unknown")))
+            continue;
         // A log master says unknown primaries and transfer; ffprobe leaves them out or says so.
         if (log && (std::string(k) == "color_primaries" || std::string(k) == "color_transfer")) {
             if (!got || got->is_null() || (got->is_string() && (got->get<std::string>() == "unknown" ||

@@ -347,3 +347,41 @@ QDialog#gettingStarted QLabel[guideRole="stepTitle"] { font-size: 12px; font-wei
 QDialog#gettingStarted QLabel[guideRole="stepSubtitle"] { font-size: 11px; color: var(--ink-3); }
 QDialog#gettingStarted QLabel[guideRole="number"] { border: 1px solid var(--raise-2); border-radius: 13px; color: var(--ink-3); }
 QDialog#gettingStarted QLabel[guideRole="number"][active="true"] { background: var(--accent); border-color: var(--accent); color: var(--white); }
+
+/* ── Simple: Look, Check, Deliver, and the first-run tips (29 Oct 2026) ── */
+QWidget#emptySimple { background: transparent; border: 1.5px dashed var(--raise-2); border-radius: 18px; }
+QWidget#empty QLabel[role="empty-title"] { color: var(--ink); font-size: 24px; font-weight: 600; }
+QWidget#empty QLabel[role="empty-t"] { color: var(--ink-3); font-size: 12px; }
+QWidget#emptySimple QPushButton#emptyChoose { padding: 7px 18px; font-size: 13px; }
+QWidget#emptySimple QPushButton[role="recent"] { background: transparent; border: 0; color: var(--ink-2); text-align: left; padding: 5px 8px; font-size: 12px; }
+QWidget#emptySimple QPushButton[role="recent"]:hover { background: var(--raise); color: var(--ink); }
+QWidget#hud QLabel#holdHint { color: var(--ink-3); font-size: 11px; padding: 0 6px; }
+QWidget#hud QPushButton#viewMenuBtn { background: transparent; border: 0; color: var(--ink); padding: 4px 10px; font-size: 12px; }
+QWidget#hud QPushButton#viewMenuBtn::menu-indicator { width: 0; image: none; }
+QWidget#hud QPushButton#viewMenuBtn:hover { background: var(--raise-2); }
+QWidget#hud QPushButton#scopesBtn { background: transparent; border: 0; color: var(--ink-2); padding: 4px 10px; font-size: 12px; }
+QWidget#hud QPushButton#scopesBtn:checked { background: var(--raise-2); color: var(--ink); }
+QWidget#deliverPreset QPushButton { text-align: left; padding: 8px 12px; border: 1px solid var(--raise); border-radius: var(--radius-card); font-size: 12px; color: var(--ink-2); }
+QWidget#deliverPreset QPushButton:checked { border-color: var(--accent); background: var(--accent-dim); color: var(--ink); }
+QWidget#deliverPreset QPushButton:disabled { color: var(--ink-4); border-color: var(--raise); background: transparent; }
+QPushButton#lookAdvanced { background: transparent; border: 0; color: var(--accent); padding: 2px 0; font-size: 12px; }
+QPushButton#lookAdvanced:hover { color: var(--ink); }
+QWidget#coachCard { background: var(--card); border: 1px solid var(--raise-2); border-radius: 14px; }
+QWidget#coachCard QLabel { background: transparent; }
+QLabel#coachCount { color: var(--gold); font-size: 11px; font-weight: 600; }
+QLabel#coachTitle { color: var(--ink); font-size: 17px; font-weight: 600; }
+QLabel#coachBody { color: var(--ink-2); font-size: 13px; }
+QLabel#coachDots { color: var(--ink-4); font-size: 9px; letter-spacing: 2px; }
+QPushButton#coachSkip { background: transparent; border: 0; color: var(--ink-3); padding: 4px 2px; }
+QPushButton#coachSkip:hover { color: var(--ink); }
+
+/* ── About and model downloads (29 Oct 2026) ── */
+QDialog#aboutDialog { background: var(--panel); }
+QLabel#aboutName { color: var(--ink); font-size: 24px; font-weight: 700; letter-spacing: 4px; }
+QLabel#aboutVersion, QLabel#aboutUpdate { background: var(--raise); color: var(--ink-2); border-radius: 9px; padding: 2px 10px; font-size: 11px; }
+QLabel#aboutUpdate[state="ok"] { color: var(--ok); }
+QLabel#aboutUpdate[state="warn"] { color: var(--warn); }
+QPushButton[role="about-link"] { background: var(--card); border: 0; border-radius: var(--radius-card); color: var(--ink-2); text-align: left; padding: 9px 12px; font-size: 12px; }
+QPushButton[role="about-link"]:hover { background: var(--raise); color: var(--ink); }
+QWidget#dlList QWidget[role="card"] QProgressBar { background: var(--raise); border: 0; border-radius: 2px; }
+QWidget#dlList QWidget[role="card"] QProgressBar::chunk { background: var(--accent); border-radius: 2px; }

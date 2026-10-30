@@ -1,0 +1,40 @@
+{
+  "id": "claude_genfill_v2_20261029",
+  "written": "2026-10-29, after claude_genfill_v1_1_20261029 FAILED (H log2 CI [-0.130, +0.100]; one +1.56-stop overshoot), before any v2 data, training or output",
+  "author": "Claude (Cowork session); approved by Ahmed ('do the recommendations')",
+  "parents": ["claude_genfill_v1_20261027 (FAIL)", "claude_genfill_v1_1_20261029 (FAIL on H log2 only)"],
+  "base_model": {"repo": "Wan-AI/Wan2.1-VACE-1.3B-diffusers", "licence": "Apache-2.0", "local": "G:/datasets/models/Wan2.1-VACE-1.3B-diffusers"},
+  "data": {
+    "builder": "tools/build_genfill_clips.py --recipe v2",
+    "out": "G:/datasets/corpora/claude_genfill_clips_v2_20261029",
+    "sources_and_exclusions": "as claude_genfill_v1_20261027 (commercial-clean only; every development, validation, holdout and fresh-grade scene excluded and asserted)",
+    "changes_from_v1": [
+      "clip kinds: highlight 0.40, broad 0.25, shadow 0.15, random 0.20; 'broad' = exposure raised in half stops from -2 until >= 5 % of frame 0 is at code 255 (wide, mild clipping: the v1.1 overshoot case)",
+      "FXTD own footage: 2 clips per plate (was 1)",
+      "stored per clip: the core mask (max SDR code 255 or 0, every frame) and frame 0's true log2 AP1 luminance"
+    ],
+    "seed": 20261027
+  },
+  "training": {
+    "trainer": "training/genfill_train.py",
+    "out": "G:/rudra_training/claude_genfill_v2_20261029",
+    "init": "the v1 LoRA (sha256 9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a)",
+    "loss": [
+      "flow matching (shift 3) weighted 1 + 4 on the latent cells of the CORE (code 255/0), not the context mask",
+      "plus 0.5 x calibration at noise levels <= 0.6: the predicted clean latents of frame 0 decoded by the frozen float32 VAE; on frame 0's core pixels, (4 x relu(log2 Y_pred - log2 Y_true)^2 + relu(log2 Y_true - log2 Y_pred)^2): overshoot costs 4x undershoot",
+      "if the calibration runs out of GPU memory 3 times it is switched off; report.json says so and the run is then NOT this registration"
+    ],
+    "transformer": "loaded in bf16 keeping Wan's float32 modules (fixes the v1 cast warning)",
+    "optimiser": "AdamW lr 1e-4, 200 warm-up, wd 0.01, clip 1, batch 1 x 4, float32 LoRA, seed 20261028",
+    "length": "4000 updates or 9.5 h (first 1000-update save after 9.5 h). THE LAST LoRA IS THE RESULT."
+  },
+  "inference": "blend only at max code 255 (shadows off), no feather, and a cap: the fill's luminance at most 3 stops over the master's (MaskSettings.max_gain_stops = 3); steps 30, seed 0, window 33, overlap 8",
+  "evaluation": {
+    "tool": "tools/evaluate_genfill.py (defaults = this registration)",
+    "scenes": "Poly Haven: the shuffled held-scene list (seed 20261029) entries 48-71, none evaluated before; FXTD: the held FXTD scenes outside the fresh grade set (4 ELMATAREED scenes, pool 'extra'), none evaluated before",
+    "clips": "as v1.1: Poly Haven highlight + shadow clip per scene, FXTD highlight clip; exposure until >= 0.5 % of frame 0 at code 255 (highlight) / <= 4 (shadow)"
+  },
+  "gates": "identical to claude_genfill_v1_1_20261029: R codes kept; H on code-255 pixels (log2 delta < 0 with the 95 % bootstrap CI excluding 0; PU21 at -3 and -6 EV lower); S on codes <= 4 at +3 EV (CI upper <= +2 %); T <= 0.02 EV; A <= 1.5",
+  "decision_rule": "PASS: offer the AI fill (experimental, off by default) in the app and Radiance Studio. FAIL: stop and review the approach with Ahmed before any further training.",
+  "release_authorized": false
+}

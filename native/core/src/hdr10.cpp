@@ -109,7 +109,10 @@ const std::vector<DeliveryProfile>& log_delivery_profiles() {
 
 const DeliveryProfile* find_delivery_profile(std::string_view name) {
     static const DeliveryProfile rgb16{"ffv1rgb16", "ffv1", "ffv1", "smpte2084", "gbrp16le", -1, "", ""};
+    // Native only (27 Oct 2026): uncompressed 16-bit RGB QuickTime ('b48r'), PQ, lossless.
+    static const DeliveryProfile mov16{"rgb16mov", "rawvideo", "rawvideo", "smpte2084", "rgb48be", -1, "b48r", ""};
     if (name == rgb16.name) return &rgb16;
+    if (name == mov16.name) return &mov16;
     for (const auto* list : {&delivery_profiles(), &log_delivery_profiles()})
         for (const auto& p : *list)
             if (p.name == name) return &p;

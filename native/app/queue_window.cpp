@@ -1,4 +1,5 @@
 #include "queue_window.hpp"
+#include "paths.hpp"
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -89,7 +90,7 @@ QueueWindow::Row& QueueWindow::row_for(const fs::path& queue, const QString& tit
     r.box->setProperty("role", "card");
     r.box->setAttribute(Qt::WA_StyledBackground, true);
     r.box->setObjectName("queueRow");
-    r.box->setProperty("queue", QString::fromStdString(queue.string()));
+    r.box->setProperty("queue", from_path(queue));
     auto* v = new QVBoxLayout(r.box);
     v->setContentsMargins(14, 10, 14, 10);
     v->setSpacing(6);
@@ -143,7 +144,7 @@ void QueueWindow::refresh() {
         const bool is_current = current && *current == e.queue;
         const bool waiting = q.waiting(e.queue);
         r.status->setText(describe(s, waiting, is_current));
-        r.status->setToolTip(QString::fromStdString(e.queue.string()));
+        r.status->setToolTip(from_path(e.queue));
         const int pct = s.status == "complete" ? 100
                         : s.frames_total > 0   ? int(100.0 * s.frames_done / s.frames_total * (s.phase == "inference" ? 0.9 : 1.0))
                                                : 0;

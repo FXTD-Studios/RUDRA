@@ -58,23 +58,30 @@ private:
 }  // namespace
 
 Result<std::unique_ptr<AcesView>> make_ocio_view(int threads, bool require_exact_version) {
+    return make_ocio_display_view(kOcioDisplay, kOcioView, threads, require_exact_version);
+}
+
+Result<std::unique_ptr<AcesView>> make_ocio_display_view(const char* display, const char* view, int threads,
+                                                         bool require_exact_version, const char* config_name) {
+    const char* cfg = config_name ? config_name : kOcioConfig;
     if (threads < 1 || threads > 16) return make_error(ErrorCode::InvalidArgument, "OCIO threads must be 1 to 16.");
     if (require_exact_version && std::strcmp(OCIO::GetVersion(), kOcioVersion) != 0)
         return make_error(ErrorCode::ContractMismatch, "This build has the wrong OpenColorIO version for the ACES model.",
                           std::string("need ") + kOcioVersion + ", have " + OCIO::GetVersion());
     try {
-        auto config = OCIO::Config::CreateFromBuiltinConfig(kOcioConfig);
+        auto config = OCIO::Config::CreateFromBuiltinConfig(cfg);
         auto t = OCIO::DisplayViewTransform::Create();
         t->setSrc("ACEScg");
-        t->setDisplay(kOcioDisplay);
-        t->setView(kOcioView);
+        t->setDisplay(display);
+        t->setView(view);
         auto fwd = config->getProcessor(t)->getDefaultCPUProcessor();
         t->setDirection(OCIO::TRANSFORM_DIR_INVERSE);
         auto inv = config->getProcessor(t)->getDefaultCPUProcessor();
-        std::string id = std::string("ocio ") + OCIO::GetVersion() + " " + kOcioConfig + " | " + kOcioDisplay + " | " + kOcioView;
+        std::string id = std::string("ocio ") + OCIO::GetVersion() + " " + cfg + " | " + display + " | " + view;
         return std::unique_ptr<AcesView>(new OcioView(fwd, inv, threads, std::move(id)));
     } catch (const std::exception& e) {
-        return make_error(ErrorCode::BackendError, "OpenColorIO could not build the ACES 2.0 view.", e.what());
+        return make_error(ErrorCode::BackendError, "OpenColorIO could not build the ACES 2.0 view.",
+                          std::string(display) + " | " + view + ": " + e.what());
     }
 }
 

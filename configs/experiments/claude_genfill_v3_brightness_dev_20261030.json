@@ -1,0 +1,1 @@
+{"id": "claude_genfill_v3_brightness_dev_20261030", "what": "DEVELOPMENT run of the v3 brightness estimator on a 260-source subset of the commercial-clean TRAIN sources (140 Poly Haven HDRIs, 90 FXTD scenes, 30 CC0 renders), built in the cloud; for design only, not the registered model. Evaluation scenes are never used here.", "release_authorized": false}

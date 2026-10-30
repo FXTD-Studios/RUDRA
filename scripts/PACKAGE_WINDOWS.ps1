@@ -39,6 +39,15 @@
   .\scripts\PACKAGE_WINDOWS.ps1 -SkipBuild    # package the last build
   .\scripts\PACKAGE_WINDOWS.ps1 -NoInstaller  # the ZIP alone, without Inno Setup
   .\scripts\PACKAGE_WINDOWS.ps1 -NoModels -NoInstaller # isolated analytic evaluation ZIP; no clearance implied
+  .\scripts\PACKAGE_WINDOWS.ps1 -NoModels -WithAcesEngine   # 1.0: analytic, plus the learned ACES 2.0 engine;
+                                                            # its model is downloaded in the app (Model packages)
+
+  -WithAcesEngine (29 Oct 2026): rudra-native.exe from -AcesBuild (built by
+  NATIVE_ACES_V2.ps1: OCIO 2.5.2, the same commands plus aces-v2 and aces-v2-serve)
+  replaces the analytic-only one, with every DLL beside it; LibTorch's DLLs come
+  from -TorchPython's torch\lib unless -NoLibTorch (DirectML and CPU only, a much
+  smaller package). The package is refused when that engine cannot start on its
+  own (PATH reduced to Windows' folders).
   # -BuildDirectory build\native_phase3 -SkipBuild reuses an explicitly selected build.
 #>
 [CmdletBinding()]
@@ -58,7 +67,11 @@ param(
     [string]$FfmpegVersion = "7.1.1",
     # The pinned build's SHA-256 (GyanD/codexffmpeg release asset, checked 10 Oct 2026).
     # Another -FfmpegVersion needs its own: -FfmpegSha256 <hash>.
-    [string]$FfmpegSha256 = "d760e1b3574402ed18b4865851f87d87e73965a982e6453212df8621fed1c508"
+    [string]$FfmpegSha256 = "d760e1b3574402ed18b4865851f87d87e73965a982e6453212df8621fed1c508",
+    [switch]$WithAcesEngine,
+    [string]$AcesBuild = "build\native_aces_v2",
+    [string]$TorchPython = ".venv\Scripts\python.exe",
+    [switch]$NoLibTorch
 )
 
 $ErrorActionPreference = "Stop"
@@ -267,6 +280,28 @@ Write-Host "MSVC runtime: $($crt.FullName)"
 # ONNX Runtime and DirectML beside the exe: Windows' own older onnxruntime.dll
 # in System32 would otherwise be loaded first.
 Copy-Item "$OrtRoot\lib\*.dll", $DmlDll.FullName, $CvDll.FullName $Out -Force
+if ($WithAcesEngine) {
+    Say "The learned ACES 2.0 engine (its model is downloaded in the app)"
+    $AcesDir = Join-Path $Repo "$AcesBuild\cli\Release"
+    $AcesExe = Join-Path $AcesDir "rudra-native.exe"
+    if (-not (Test-Path $AcesExe)) { Fail "no ACES engine at $AcesExe (run NATIVE_ACES_V2.ps1 first)" }
+    Copy-Item $AcesExe $Out -Force   # the same commands as the analytic CLI, plus aces-v2 and aces-v2-serve
+    Get-ChildItem $AcesDir -Filter "*.dll" | ForEach-Object {
+        $dest = Join-Path $Out $_.Name
+        if (-not (Test-Path $dest)) { Copy-Item $_.FullName $dest }
+        elseif ((Get-FileHash $dest).Hash -ne (Get-FileHash $_.FullName).Hash) {
+            Write-Host "  kept the app's $($_.Name) (the engine's differs)" -ForegroundColor Yellow
+        }
+    }
+    if (-not $NoLibTorch) {
+        if (-not (Test-Path $TorchPython)) { Fail "no $TorchPython for LibTorch's DLLs (or -NoLibTorch)" }
+        $TorchLib = & $TorchPython -c "import torch, os; print(os.path.join(os.path.dirname(torch.__file__), 'lib'))"
+        if (-not $TorchLib -or -not (Test-Path $TorchLib)) { Fail "torch\lib not found through $TorchPython" }
+        Copy-Item (Join-Path $TorchLib "*.dll") $Out -Force
+        Write-Host "LibTorch DLLs: $TorchLib"
+    }
+    Invoke-Sign @((Join-Path $Out "rudra-native.exe"))
+}
 $OutModels = Join-Path $Out "models"
 New-Item -ItemType Directory -Force -Path $OutModels | Out-Null
 if (-not $NoModels) {
@@ -305,6 +340,18 @@ if (-not $NoModels) {
     $pkg = Get-ChildItem $OutModels -Directory | Where-Object { Test-Path (Join-Path $_.FullName "manifest.json") } | Select-Object -First 1
     & (Join-Path $Out "rudra-native.exe") info $pkg.FullName | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "rudra-native in the package cannot read its model" }
+}
+if ($WithAcesEngine) {
+    # On its own: PATH reduced to Windows' folders, so a DLL missing from the package shows here.
+    $keepPath = $env:PATH
+    $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+    $probe = (& (Join-Path $Out "rudra-native.exe") aces-v2 --help 2>&1 | Out-String)
+    $probeRc = $LASTEXITCODE
+    $env:PATH = $keepPath
+    if ($probe -notmatch "usage: rudra-native aces-v2 <package>") {
+        Fail ("the packaged ACES engine does not start on its own (exit {0}; -1073741515 = a DLL is missing)" -f $probeRc)
+    }
+    Write-Host "ACES engine starts on its own"
 }
 if ($FfDir) {
     & (Join-Path $Out "ffmpeg\ffmpeg.exe") -hide_banner -h encoder=prores_ks | Out-Null

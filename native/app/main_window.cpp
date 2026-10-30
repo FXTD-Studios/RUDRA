@@ -1,4 +1,8 @@
 #include "main_window.hpp"
+#include "batch_queue.hpp"
+#include "rudra/deliver/video_encode.hpp"
+#include "paths.hpp"
+#include "aces_engine.hpp"
 #include "rudra/engine/headroom_export.hpp"
 #include "rudra/video/headroom_render.hpp"
 #include "startup.hpp"
@@ -103,9 +107,6 @@ namespace {
 
 QString qs(std::string_view s) { return QString::fromUtf8(s.data(), qsizetype(s.size())); }
 
-// Paths through UTF-16 both ways: std::string paths are the ANSI code page on Windows.
-std::filesystem::path to_path(const QString& s) { return std::filesystem::path(s.toStdU16String()); }
-QString from_path(const std::filesystem::path& p) { return QString::fromStdU16String(p.u16string()); }
 
 QString describe(const ModelManifest& m) {
     return QStringLiteral("%1  ·  contract %2  ·  residual gate %3  ·  shadow gate %4  ·  curve %5  ·  corpus EV %6")
@@ -144,6 +145,24 @@ MainWindow::MainWindow(bool with_viewer, bool headroom_capable)
     setWindowTitle("RUDRA");
     resize(1600, 1000);
     aces_view_ = QSettings().value("aces/viewer", true).toBool();
+    load_deliver_settings();
+    {
+        QSettings st;
+        aces_trims_.strength = st.value("aces/trimStrength", 1.0).toDouble();
+        aces_trims_.saturation = st.value("aces/trimSaturation", 1.0).toDouble();
+        aces_trims_.peak_nits = st.value("aces/trimPeakNits", 0.0).toDouble();
+        aces_trims_.exposure_ev = st.value("aces/trimExposure", 0.0).toDouble();
+        aces_trims_.contrast = st.value("aces/trimContrast", 1.0).toDouble();
+        aces_monitor_ = st.value("aces/monitor", "scene").toString();
+        aces_source_display_ = st.value("aces/sourceDisplay", "bt1886").toString();
+        // HDR10's mastering display: P3-D65 unless the colorist chose Rec.2020 (Deliver > Export).
+        set_mastering_display_primaries(st.value("deliver/masteringDisplay", "p3d65").toString().toStdString());
+        if (aces_source_display_ != "srgb" && aces_source_display_ != "gamma22") aces_source_display_ = "bt1886";
+        render_padding_ = std::clamp(st.value("deliver/renderPadding", 4).toInt(), 1, 10);
+        render_separator_ = st.value("deliver/renderSeparator", ".").toString();
+        if (render_separator_ != "." && render_separator_ != "_" && !render_separator_.isEmpty()) render_separator_ = ".";
+        if (aces_monitor_ != "sdr100" && aces_monitor_ != "hdr1000") aces_monitor_ = "scene";
+    }
     session_.on_change([this](std::uint32_t what) { session_changed(what); });
     build_ui(with_viewer);
     setAcceptDrops(true);   // a drop anywhere opens (the page's window drop)
@@ -163,6 +182,7 @@ MainWindow::MainWindow(bool with_viewer, bool headroom_capable)
 #endif
     bind_handlers();
     build_menus();
+    build_simple_parts();
     apply_tooltips();
     // Autosave (set_autosave_path): the trailing edge of the last change.
     autosave_timer_.setSingleShot(true);
@@ -294,17 +314,26 @@ void MainWindow::run(std::string_view id) {
 void MainWindow::bind_handlers() {
     auto& h = handlers_;
     h["open"] = [this] {
-        // The page's file input: several stills at once, added to the frames.
-        const QStringList files = QFileDialog::getOpenFileNames(
-            this, "Open SDR frames", {}, "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp)");
-        std::vector<std::filesystem::path> paths;
-        for (const auto& f : files) paths.emplace_back(f.toStdString());
-        if (!paths.empty()) add_files(paths);
+        // Stills (several at once, added to the frames) or a movie (a shot of its own), as a drop opens them.
+        const QStringList files = QFileDialog::getOpenFileNames(this, "Open SDR stills or a movie", {}, open_file_filter());
+        if (!files.isEmpty()) open_paths(files);
     };
     h["open-folder"] = [this] { open_source({}, true); };
     h["open-package"] = [this] { open_package(); };
     h["models"] = [this] { open_model_manager(); };
     h["aces-master"] = [this] { open_aces_master(); };
+    h["batch-queue"] = [this] { open_batch(); };
+    h["monitor-scene"] = [this] { set_aces_monitor("scene"); };
+    h["monitor-sdr100"] = [this] { set_aces_monitor("sdr100"); };
+    h["monitor-hdr1000"] = [this] { set_aces_monitor("hdr1000"); };
+    h["still-grab"] = [this] {
+        if (grab_reference_still() < 0) log("Reference still: only the learned ACES 2.0 frame on screen can be kept");
+    };
+    h["still-compare"] = [this] { set_reference_compare(!ref_compare_); };
+    h["batch-add"] = [this] {
+        QString why;
+        if (!batch_add_current(&why)) log("Batch: " + why);
+    };
     h["first-run"] = [this] { open_first_run(); };
     // Through close(), so unsaved work is asked about and the settings and the autosave are written.
     h["quit"] = [this] {
@@ -374,22 +403,7 @@ void MainWindow::bind_handlers() {
         rows.emplace_back("F", "Fit image to window");
         show_sheet("Keyboard", rows);
     };
-    h["about"] = [this] {
-        const QString device = device_->text();   // the page's $("device").textContent
-        QString composite = "CPU";
-#ifdef RUDRA_APP_VIEWER
-        if (viewer_) composite = QStringLiteral("GPU, QRhi %1 — render/shaders/composite.frag")
-                                     .arg(QString::fromStdString(viewer_->status().backend));
-#endif
-        // head.checkpoint: the model that made the frame on screen.
-        show_sheet("RUDRA Studio", {{"Checkpoint", manifest_ && current_frame_ ? QString::fromStdString(manifest_->name) : "—"},
-                                    {"Step", "—"},
-                                    {"Device", device},
-                                    {"Composite", composite},
-                                    {"Storage", "log2_extended, 0.005–1 000 000 nits"},
-                                    {"Master", "ACES 2065-1 (AP0), ST 2065-4 chromaticities"},
-                                    {"Built by", "FXTD Studios / Radiance Research"}});
-    };
+    h["about"] = [this] { open_about(); };
 
     h["view-image"] = [this] { session_.set_view_layer(0); };
     h["view-false-colour"] = [this] { session_.set_view_layer(1); };
@@ -423,7 +437,7 @@ void MainWindow::bind_handlers() {
             findChild<QLabel*>("renderStatus")->setText("Stopping the movie\u2026");
             return;
         }
-        master();
+        deliver_render();   // the Deliver tab's choice: learned ACES 2.0 or analytic; still, sequence or MOV
     };
 
 #ifdef RUDRA_APP_VIEWER
@@ -543,7 +557,9 @@ void MainWindow::refresh_enabled() {
             case EnableRule::Always: break;
             case EnableRule::AnyFrames: on = any; break;
             case EnableRule::ManyFrames: on = many; break;
-            case EnableRule::CanMaster: on = (any && !needs_model()) || mastering(); break;
+            case EnableRule::CanMaster:
+                on = (any && (deliver_aces() || !needs_model())) || mastering() || aces_delivering();
+                break;
             case EnableRule::CanUndo: on = session_.undo_depth() > 0; break;
             case EnableRule::CanRedo: on = session_.redo_depth() > 0; break;
             case EnableRule::HasMetrics:
@@ -578,6 +594,10 @@ void MainWindow::sync_checks() {
     set("container-aces", session_.container == "aces");
     set("container-linear", session_.container == "linear");
     set("wipe", session_.wipe.has_value());
+    set("monitor-scene", aces_monitor_ == "scene");
+    set("monitor-sdr100", aces_monitor_ == "sdr100");
+    set("monitor-hdr1000", aces_monitor_ == "hdr1000");
+    set("still-compare", ref_compare_);
     set("view-image", session_.view_layer == 0);
     set("view-false-colour", session_.view_layer == 1);
     set("view-difference", session_.view_layer == 2);
@@ -743,14 +763,14 @@ std::vector<std::filesystem::path> MainWindow::model_roots() const {
     for (const auto& r : st.value("model/roots").toStringList()) extra.emplace_back(r.toStdString());
     // The packages shipped with the app: beside the executable, or in a macOS
     // bundle's Resources (RUDRA.app/Contents/MacOS/../Resources/models).
-    auto app_models = std::filesystem::path(QCoreApplication::applicationDirPath().toStdString()) / "models";
+    auto app_models = to_path(QCoreApplication::applicationDirPath()) / "models";
 #ifdef __APPLE__
     if (const auto res = app_models.parent_path().parent_path() / "Resources" / "models"; std::filesystem::is_directory(res))
         app_models = res;
 #endif
     const QString user = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     return package_roots(extra, app_models,
-                         user.isEmpty() ? std::filesystem::path() : std::filesystem::path(user.toStdString()) / "models");
+                         user.isEmpty() ? std::filesystem::path() : to_path(user) / "models");
 }
 
 void MainWindow::add_model_root(const std::filesystem::path& root) {
@@ -760,14 +780,17 @@ void MainWindow::add_model_root(const std::filesystem::path& root) {
     } else {
         QSettings st;
         QStringList r = st.value("model/roots").toStringList();
-        const QString q = QString::fromStdString(root.string());
+        const QString q = from_path(root);
         if (!r.contains(q)) r << q;
         st.setValue("model/roots", r);
     }
     rescan_models();
 }
 
-void MainWindow::rescan_models() { catalog_ = scan_packages(model_roots()); }
+void MainWindow::rescan_models() {
+    catalog_ = scan_packages(model_roots());
+    have_aces_package_.reset();
+}
 
 void MainWindow::use_model(const std::filesystem::path& package, std::optional<BackendChoice> choice,
                            std::function<void(bool, QString)> done) {
@@ -855,7 +878,7 @@ void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::fun
         backend_choice_ = loaded->opened.choice;
     }
     QSettings st;
-    st.setValue("model/package", QString::fromStdString(m.root.string()));
+    st.setValue("model/package", from_path(m.root));
     st.setValue("model/backend", QString::fromStdString(backend_choice_->key()));
     // Whether the package in use is the catalog's default. A bare start
     // follows the default when it moves (shadow_v1 -> v8 on 9 Oct 2026);
@@ -947,7 +970,7 @@ void MainWindow::boot() {
         if (moved) {
             const CatalogEntry& def = catalog_.entries[*catalog_.chosen];
             log("the default model is now " + QString::fromStdString(def.label()) + "; opening it instead of " +
-                QString::fromStdString(last.filename().string()) +
+                from_path(last.filename()) +
                 " (File > Model packages… switches back)");
             use_model(def.package, choice);
             return;
@@ -979,9 +1002,7 @@ void MainWindow::open_source(const QString& preset, bool folder) {
     QString path = preset;
     if (path.isEmpty())
         path = folder ? QFileDialog::getExistingDirectory(this, "Open a folder of SDR frames")
-                      : QFileDialog::getOpenFileName(this, "Open an SDR still or movie", {},
-                                                     "Stills and movies (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp "
-                                                     "*.mov *.mp4 *.mxf *.mkv *.avi *.m2ts *.ts *.webm *.m4v)");
+                      : QFileDialog::getOpenFileName(this, "Open an SDR still or movie", {}, open_file_filter());
     if (path.isEmpty()) return;
     std::vector<std::filesystem::path> frames;
     std::optional<FrameSequence> video;
@@ -998,7 +1019,7 @@ void MainWindow::open_source(const QString& preset, bool folder) {
         frames = seq->frames;
         if (seq->kind == "video") video = std::move(*seq);
     } else {
-        frames = {std::filesystem::path(path.toStdString())};
+        frames = {to_path(path)};
     }
     remember_source(path);
     shot_kind_ = video ? "movie" : QFileInfo(path).isDir() ? "folder" : "files";
@@ -1051,6 +1072,14 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
     halt_playback();
     engine_.reset();   // joins the old worker before the new one starts
     frames_ = std::move(frames);
+    // Per-shot trims: a shot opened again gets its own back; a new one keeps those in hand.
+    if (const QString key = shot_trim_key(); !key.isEmpty() && key != trims_shot_) {
+        trims_shot_ = key;
+        if (auto t = remembered_trims(key); t && !(*t == aces_trims_)) {
+            set_aces_trims(*t);
+            log(QString::fromStdString("trims of this shot: " + aces_v2::trims_text(*t)));
+        }
+    }
     auto* backend = use_model_ ? backend_.get() : nullptr;
     const ModelConstants model = frame_constants();
     engine_clip_ = session_clip_options();
@@ -1159,15 +1188,46 @@ void MainWindow::step_to(int i) {
 
 void MainWindow::toggle_play() {
     if (aces_routed() && !headroom_routed()) {
+        if (aces_rt_playing_) {
+            aces_rt_stop();
+            return;
+        }
         if (aces_playing_) {
             aces_playing_ = false;
             btn_play_->set_glyph(IconButton::Glyph::Play);
             return;
         }
         if (frames_.size() < 2) return;
+        // Every frame cached with what the screen shows: real time at the shot's rate (28 Oct 2026 review).
+        if (aces_cached_frames() == int(frames_.size())) {
+            const double fps = shot_video_ && shot_video_->fps && *shot_video_->fps > 0 ? *shot_video_->fps : deliver_.fps;
+            if (!aces_rt_timer_) {
+                aces_rt_timer_ = new QTimer(this);
+                aces_rt_timer_->setTimerType(Qt::PreciseTimer);
+                connect(aces_rt_timer_, &QTimer::timeout, this, [this] {
+                    if (!aces_routed() || aces_cached_frames() != int(frames_.size())) {
+                        aces_rt_stop();
+                        return;
+                    }
+                    current_ = (current_ + 1) % int(frames_.size());
+                    aces_shown_ = current_;
+                    aces_model_img_ = aces_cache_[std::size_t(current_)];
+#ifdef RUDRA_APP_VIEWER
+                    if (viewer_) viewer_->set_composited(*aces_model_img_, *aces_model_img_, {});
+#endif
+                    sync_ui();
+                });
+            }
+            aces_rt_timer_->setInterval(std::max(1, int(std::lround(1000.0 / std::max(1.0, fps)))));
+            aces_rt_playing_ = true;
+            btn_play_->set_glyph(IconButton::Glyph::Pause);
+            log(QStringLiteral("playing the cached learned frames in real time (%1 fps)").arg(fps, 0, 'f', 3));
+            aces_rt_timer_->start();
+            return;
+        }
         aces_playing_ = true;
         btn_play_->set_glyph(IconButton::Glyph::Pause);
-        log(QStringLiteral("playing through the learned ACES model as frames render (not real time)"));
+        log(QStringLiteral("playing through the learned ACES model as frames render, caching them: play again for real time"));
         aces_request(current_ + 1 < int(frames_.size()) ? current_ + 1 : 0);
         return;
     }
@@ -1228,6 +1288,8 @@ void MainWindow::start_feeder(int at) {
 
 void MainWindow::halt_playback() {
     aces_playing_ = false;
+    if (aces_rt_timer_) aces_rt_timer_->stop();
+    aces_rt_playing_ = false;
     if (headroom_playing_) {
         headroom_playing_ = false;
         if (headroom_) headroom_->pause();   // the frame on screen stays
@@ -1458,13 +1520,17 @@ void MainWindow::sync_ui() {
     // Window
     rail_left_->setVisible(session_.rail_left);
     rail_right_->setVisible(session_.rail_right);
-    scopes_->setVisible(session_.scopes_open && workspace_ != "simple");
+    // Simple (29 Oct 2026): the scopes show while Check is on, unless the Scopes button says otherwise.
+    const QString shown = shown_tab();
+    const bool dock = workspace_ == "simple" ? simple_scopes_.value_or(shown == "check") : session_.scopes_open;
+    scopes_dock_->setVisible(dock);
+    if (scopes_btn_) scopes_btn_->setChecked(dock);
     i_media_->set_on(session_.rail_left);
     i_inspector_->set_on(session_.rail_right);
-    i_scopes_->set_on(session_.scopes_open && workspace_ != "simple");
+    i_scopes_->set_on(dock);
     ws_->set_on(workspace_);
-    tabs_->set_on(tab_);
-    const int page = tab_ == "grade" ? 1 : tab_ == "deliver" ? 2 : 0;
+    tabs_->set_on(shown);
+    const int page = shown == "grade" ? 1 : shown == "deliver" ? 2 : shown == "check" ? 3 : 0;
     for (int i = 0; i < int(pages_.size()); ++i) pages_[std::size_t(i)]->setVisible(i == page);
     for (auto* n : notes_) n->setVisible(workspace_ != "simple");
     // Frames (drawFrames)
@@ -1498,6 +1564,9 @@ void MainWindow::sync_ui() {
     btn_master_->setEnabled((ready && pending_reason("master").isEmpty()) || mastering());
     btn_reprocess_->setEnabled(ready);
     if (viewer_stack_->count() > 1) viewer_stack_->setCurrentIndex(n > 0 ? 1 : 0);
+    sync_deliver();
+    sync_aces_trims();
+    sync_simple();
 }
 
 void MainWindow::keyPressEvent(QKeyEvent* e) {
@@ -1525,10 +1594,12 @@ void MainWindow::keyReleaseEvent(QKeyEvent* e) {
 
 void MainWindow::set_workspace(const QString& mode) {
     workspace_ = mode == "simple" ? "simple" : "full";
+    simple_scopes_.reset();
     sync_ui();
 }
 
 void MainWindow::show_tab(const QString& tab) {
+    if (tab != tab_) simple_scopes_.reset();
     tab_ = tab;
     sync_ui();
 }
@@ -1584,10 +1655,40 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
 }
 
 void MainWindow::schedule_stats() {
-    if (current_frame_ || (headroom_routed() && headroom_shown_)) stats_timer_.start();
+    if (current_frame_ || (headroom_routed() && headroom_shown_) || (aces_routed() && aces_model_img_)) stats_timer_.start();
 }
 
 void MainWindow::run_stats() {
+    if (aces_routed()) {
+        // The learned ACES 2.0 frame's readouts and scopes (28 Oct 2026): the
+        // master and the plain ACES inverse in the viewer's convention, measured
+        // as the headroom route's are (no network mask on this path).
+        if (!aces_model_img_ || !aces_base_img_) return;
+        if (stats_running_) {
+            stats_again_ = true;
+            return;
+        }
+        stats_running_ = true;
+        const int gen = ++stats_gen_;
+        auto model = aces_model_img_, baseline = aces_base_img_;
+        const int index = aces_shown_;
+        QPointer<MainWindow> self(this);
+        if (stats_worker_.joinable()) stats_worker_.join();
+        stats_worker_ = std::thread([self, model, baseline, gen, index] {
+            auto m = std::make_shared<const FrameMeasure>(measure_headroom(*model, *baseline));
+            QMetaObject::invokeMethod(qApp, [self, m, gen, index] {
+                if (!self) return;
+                self->stats_running_ = false;
+                if (gen == self->stats_gen_ && self->aces_routed() && self->aces_shown_ == index)
+                    self->apply_measure(m, -1, -1);
+                if (self->stats_again_) {
+                    self->stats_again_ = false;
+                    self->run_stats();
+                }
+            });
+        });
+        return;
+    }
     if (headroom_routed()) {
         // E2: the headroom frame's own readouts and scopes, off the UI thread.
         if (!headroom_shown_) return;
@@ -1721,6 +1822,7 @@ void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m, int index,
                                        f.coverage.clipped_pct);
     fill_rows(findChild<QWidget*>("measA"), t.a);
     fill_rows(findChild<QWidget*>("measB"), t.b);
+    sync_check_summary();
     findChild<QLabel*>("statusMask")->setText(QString::fromStdString(t.status_mask));
     findChild<QLabel*>("statusTime")->setText(QString::fromStdString(t.status_time));
     src_info_->setText(QString::fromStdString(t.src_info));
@@ -1787,10 +1889,23 @@ void MainWindow::update_pipe() {
     if (measure_) maxcll = measure_->measured.metrics.maxcll;
     const PipeText t = pipe_text(session_.container, session_.display_nits(), maxcll,
                                  current_frame_ ? std::optional(current_frame_->header) : std::nullopt);
-    findChild<QLabel*>("pipeIn")->setText(QString::fromStdString(t.in));
+    QString in = QString::fromStdString(t.in);
+    // What the input is read as (28 Oct 2026 review): the learned model's contract, or the source curve.
+    if (aces_routed()) {
+        in.replace(QStringLiteral("sRGB · Rec.709"),
+                   aces_source_display_ == "srgb"      ? QStringLiteral("sRGB display → BT.1886 · ACES 2.0 SDR 100")
+                   : aces_source_display_ == "gamma22" ? QStringLiteral("gamma 2.2 → BT.1886 · ACES 2.0 SDR 100")
+                                                       : QStringLiteral("Rec.709 · BT.1886 2.4 · ACES 2.0 SDR 100"));
+    } else {
+        const auto id = source_curve_label(session_.source_curve());
+        in.replace(QStringLiteral("sRGB · Rec.709"), QStringLiteral("Rec.709 · ") + QString::fromUtf8(id.data(), qsizetype(id.size())));
+    }
+    findChild<QLabel*>("pipeIn")->setText(in);
     findChild<QLabel*>("pipeWorking")->setText(QString::fromStdString(t.working));
     view_transform_->setText(QString::fromStdString(t.view));
     findChild<QLabel*>("pipeMaster")->setText(QString::fromStdString(t.master).replace("EXR, half", "EXR, float32"));
+    if (const QString pipe = deliver_pipe_label(deliver_effective(), deliver_aces()); !pipe.isEmpty())
+        findChild<QLabel*>("pipeMaster")->setText(pipe);   // the Deliver tab's learned master or movie
     auto* warn = findChild<QLabel*>("pipeWarn");
     warn->setText(QString::fromStdString(t.warn));
     warn->setVisible(t.warn_shown);
@@ -1912,8 +2027,8 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
         log("Render stopped: " + QString::fromStdString(targets.error().message));
         return;
     }
-    log("Render destination: " + QString::fromStdString(targets->front().string()) +
-        (targets->size() > 1 ? " \u2026 " + QString::fromStdString(targets->back().string()) : QString()));
+    log("Render destination: " + from_path(targets->front()) +
+        (targets->size() > 1 ? " \u2026 " + from_path(targets->back()) : QString()));
 
     MasterRequest q = master_request();
     if (to_movie) q.container = "linear";   // Rec.2020 scene linear, what deliver reads
@@ -1954,7 +2069,7 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
             });
         },
         [self](const MasterProgress& p) {
-            const QString line = "Saved " + QString::fromStdString(p.last.exr.string()) +
+            const QString line = "Saved " + from_path(p.last.exr) +
                                  QStringLiteral(" \u00b7 %1x%2").arg(p.last.width).arg(p.last.height);
             QMetaObject::invokeMethod(qApp, [self, line] {
                 if (self) self->log(line);
@@ -2031,7 +2146,7 @@ void MainWindow::add_files(const std::vector<std::filesystem::path>& files) {
     const std::size_t start = all.size();
     all.insert(all.end(), files.begin(), files.end());
     log(QStringLiteral("added %1 frame%2").arg(files.size()).arg(files.size() == 1 ? "" : "s"));
-    for (const auto& f : files) remember_source(QString::fromStdString(f.string()));
+    for (const auto& f : files) remember_source(from_path(f));
     // The project's shot: stills are kept by name. A movie stays the shot
     // (stills added to one are not saved with it); a folder becomes its frames.
     if (shot_kind_ != "movie") {
@@ -2042,6 +2157,15 @@ void MainWindow::add_files(const std::vector<std::filesystem::path>& files) {
     mark_dirty();
     // select(state.frames.length === files.length ? 0 : start)
     start_engine(std::move(all), all.size() == files.size() ? 0 : int(start));
+}
+
+QString open_file_filter() {
+    // Every movie the reader opens (video_suffixes) beside the stills; the movies first, so a .mov or .mp4 is never hidden.
+    QStringList movies;
+    for (const auto& s : video_suffixes()) movies << "*" + QString::fromStdString(s);
+    const QString stills = QStringLiteral("*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp");
+    return QStringLiteral("Stills and movies (%1 %2);;Movies (%2);;Stills (%1);;RUDRA projects (*.rudra);;All files (*)")
+        .arg(stills, movies.join(' '));
 }
 
 void MainWindow::open_paths(const QStringList& paths) {
@@ -2160,7 +2284,7 @@ void MainWindow::save_settings() const {
 void MainWindow::save_queues() const {
     QStringList q;
     for (const auto& e : queues_->entries())
-        q << QString::fromStdString(e.queue.string()) + "\t" + QString::fromStdString(e.title);
+        q << from_path(e.queue) + "\t" + QString::fromStdString(e.title);
     QSettings().setValue("queue/entries", q);
 }
 
@@ -2198,11 +2322,48 @@ void MainWindow::restore_settings() {
     sync_ui();
 }
 
+QStringList MainWindow::running_work() const {
+    QStringList w;
+    if (aces_delivering()) w << QStringLiteral("the Deliver render");
+    if (batch_running()) w << QStringLiteral("the batch");
+    if (genfill_running()) w << QStringLiteral("the AI fill");
+    if (mastering()) w << QStringLiteral("the master");
+    if (queues_ && queues_->running()) w << QStringLiteral("the export");
+    return w;
+}
+
+void MainWindow::stop_running_work() {
+    if (batch_running()) batch_runner_->stop_now();
+    if (aces_engine_ && aces_deliver_id_ > 0) aces_engine_->cancel_master(aces_deliver_id_);
+    if (genfill_running()) genfill_->cancel();
+    if (mastering()) master_job_->cancel();
+    if (queues_ && queues_->running()) queues_->stop();
+}
+
 void MainWindow::closeEvent(QCloseEvent* e) {
+    // A render running is never dropped without asking (28 Oct 2026 review).
+    if (const QStringList work = running_work(); !work.isEmpty()) {
+        const QString text = QStringLiteral("Still running: %1.\n\nQuitting stops it after the frame in hand. Finished frames "
+                                            "stay; nothing half-written is left under a finished name.").arg(work.join(", "));
+        bool quit = true;
+        if (quit_question) quit = quit_question(text);
+        else if (isVisible()) {
+            QMessageBox box(QMessageBox::Warning, "RUDRA", text, QMessageBox::NoButton, this);
+            QPushButton* stop = box.addButton("Stop and quit", QMessageBox::DestructiveRole);
+            box.addButton("Keep working", QMessageBox::RejectRole);
+            box.exec();
+            quit = box.clickedButton() == stop;
+        }
+        if (!quit) {
+            e->ignore();
+            return;
+        }
+    }
     if (!confirm_replace(true)) {
         e->ignore();
         return;
     }
+    stop_running_work();
     save_settings();
     if (autosave_timer_.isActive()) autosave_now();
     QMainWindow::closeEvent(e);
@@ -2294,7 +2455,7 @@ void MainWindow::refresh_library() {
     if (!frames_.empty()) {
         const bool folder = frames_.size() > 1;
         const auto& first = frames_.front();
-        current = QString::fromStdString(shot_video_ ? shot_video_->path.string() : (folder ? first.parent_path() : first).string());
+        current = from_path(shot_video_ ? shot_video_->path : (folder ? first.parent_path() : first));
         QString res;
         if (current_frame_ && current_frame_->header.source_resolution)
             res = QString::fromStdString(*current_frame_->header.source_resolution).replace('x', QChar(0xd7)) + " · ";
@@ -2345,8 +2506,15 @@ void MainWindow::update_badges() {
     if (measure_) {
         const double maxcll = measure_->measured.metrics.maxcll;
         const bool clipped = maxcll > session_.display_nits() + 0.5;
-        cll->setText(QStringLiteral("MaxCLL ") + QLocale(QLocale::English).toString(qlonglong(std::lround(maxcll))) +
-                     (clipped ? QStringLiteral(" · clipped on screen") : QString()));
+        // On the learned route's Scene monitor the frame is scene light x 203, not a
+        // deliverable's display light: never called MaxCLL (28 Oct 2026 review).
+        const bool scene = aces_routed() && aces_monitor_ == "scene";
+        cll->setText((scene ? QStringLiteral("Scene peak ") : QStringLiteral("MaxCLL ")) +
+                     QLocale(QLocale::English).toString(qlonglong(std::lround(maxcll))) +
+                     (scene ? QStringLiteral(" nits") : clipped ? QStringLiteral(" · clipped on screen") : QString()));
+        cll->setToolTip(scene ? QStringLiteral("Scene-linear peak (diffuse white = 203 nits), before the HDR output transform. "
+                                               "The render's HDR10 MaxCLL/MaxFALL is measured on its PQ output (Batch, provenance).")
+                              : QString());
     } else {
         cll->setText(QStringLiteral("MaxCLL —"));
     }
@@ -2362,7 +2530,7 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e) {
         if (!p.isEmpty()) {
             QTimer::singleShot(0, this, [this, p] {
                 if (QFileInfo(p).isDir()) open_source(p, true);
-                else add_files({std::filesystem::path(p.toStdString())});
+                else add_files({to_path(p)});
             });
             return true;
         }
@@ -2373,296 +2541,6 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e) {
 void MainWindow::log(const QString& line) {
     if (log_) log_->appendPlainText(line);
     app_log_line(line);   // and the log file, when the app installed one (startup.hpp)
-}
-
-}  // namespace rudra::app
-
-// ---------------------------------------------------------------------------
-// Phase 4 step 11: movies and their exports
-// ---------------------------------------------------------------------------
-
-namespace rudra::app {
-
-QString MainWindow::shot_title() const {
-    if (frames_.empty()) return {};
-    if (shot_video_) return QString::fromStdString(shot_video_->path.filename().string());
-    const auto& first = frames_.front();
-    return QString::fromStdString(frames_.size() > 1 ? first.parent_path().filename().string() : first.filename().string());
-}
-
-std::string MainWindow::frame_name(std::size_t i) const {
-    if (shot_video_ && i < std::size_t(shot_video_->count())) return shot_video_->name_of(int(i));
-    return i < frames_.size() ? frames_[i].filename().string() : std::string();
-}
-
-VideoQueueOptions MainWindow::queue_options() const {
-    VideoQueueOptions o;
-    if (backend_choice_) {
-        o.runtime = to_string(backend_choice_->runtime);
-        o.device = backend_choice_->device;
-    }
-    return o;
-}
-
-bool MainWindow::queue_video_export(const QString& format) {
-    auto say = [this](const QString& m) {
-        log(m);
-        if (auto* status = findChild<QLabel*>("renderStatus")) {
-            status->setText(m);
-            status->setVisible(!m.isEmpty());
-        }
-    };
-    if (session_.grade.headroom_policy != HeadroomPolicy::Disabled) return start_headroom_export(format);
-    if (!shot_video_) {
-        say("Open a movie to export it to HDR10, HLG or ProRes.");
-        return false;
-    }
-    if (needs_model() || (use_model_ && !manifest_)) {
-        say("Open a model package first, or turn off Reconstruct > Use the model.");
-        return false;
-    }
-    const QString dir = findChild<QLineEdit*>("renderDir")->text().trimmed();
-    if (dir.isEmpty()) {
-        say("Choose a render folder first.");
-        return false;
-    }
-    QString name = findChild<QLineEdit*>("renderName")->text().trimmed();
-    if (name.isEmpty()) name = QString::fromStdString(shot_video_->path.stem().string()) + "_" + format;
-    // A log master never takes the graded file's name: the curve goes on the end.
-    else if (format.endsWith("_acescct")) name += "_acescct";
-    else if (format.endsWith("_logc4")) name += "_logc4";
-    const bool prores = format.startsWith("prores");
-    const std::filesystem::path output =
-        std::filesystem::path(dir.toStdString()) / (name.toStdString() + (format == "ffv1rgb16" ? ".mkv" : prores ? ".mov" : ".mp4"));
-    std::error_code ec;
-    std::filesystem::path sidecar = output;
-    sidecar += ".json";
-    if (std::filesystem::exists(output, ec) || std::filesystem::exists(sidecar, ec)) {
-        say(QString::fromStdString(output.filename().string()) + " is already there; nothing is replaced. Change the name.");
-        return false;
-    }
-    // What this ffmpeg can do, before anything is written.
-    auto caps = probe_ffmpeg();
-    if (!caps) {
-        say(QString::fromStdString(caps.error().message));
-        return false;
-    }
-    const bool can = caps->zscale && (format == "ffv1rgb16" ? caps->ffv1 : prores ? caps->prores_ks : caps->libx265);
-    if (!can) {
-        say(QString::fromStdString(std::string("This FFmpeg build needs ") + (format == "ffv1rgb16" ? "ffv1" : prores ? "prores_ks" : "libx265") +
-                                   " and zscale support (" + caps->version + ")"));
-        return false;
-    }
-    // The export carries what the view and Master EXR use: the reconstruction
-    // (analytic or the model), recovery, source curve, calibration or
-    // reference, painted masks, anchor and Region EV, in a settings file
-    // beside the queue that the export reads every frame through.
-    // A name of its own: an earlier queue for this output (one that failed,
-    // say) keeps the settings it was made with.
-    std::filesystem::path grade = output, masks = output;
-    grade += ".settings.json";
-    masks += ".masks.png";
-    for (int k = 2; std::filesystem::exists(grade, ec) || std::filesystem::exists(masks, ec); ++k) {
-        grade = output;
-        grade += ".settings " + std::to_string(k) + ".json";
-        masks = output;
-        masks += ".masks " + std::to_string(k) + ".png";
-    }
-    MasterRequest q = master_request();
-    if (q.masks) {
-        if (auto w = write_mask_set(masks, *q.masks); !w) {
-            say(QString::fromStdString(w.error().message));
-            return false;
-        }
-        q.masks_file = masks.string();
-    }
-    {
-        std::ofstream gf(grade, std::ios::binary);
-        gf << master_request_json(q) << "\n";
-        if (!gf) {
-            say("Could not write the export's settings: " + from_path(grade));
-            return false;
-        }
-    }
-    auto queue = write_export_queue(shot_video_->path, output,
-                                    use_model_ ? manifest_->root / "manifest.json" : std::filesystem::path(),
-                                    format.toStdString(), grade, steady_ ? kShotHoldSeconds : 0.0);
-    if (!queue) {
-        say(QString::fromStdString(queue.error().message));
-        return false;
-    }
-    QString label = format == "hdr10" ? "HDR10"
-                    : format == "hlg" ? "HLG"
-                    : format == "ffv1rgb16" ? "FFV1 RGB16"
-                    : format.startsWith("prores4444") ? "ProRes 4444"
-                                                      : "ProRes 422 HQ";
-    if (format.endsWith("_acescct")) label += " ACEScct";
-    if (format.endsWith("_logc4")) label += " LogC4";
-    const std::string title = shot_title().toStdString() + " \xe2\x86\x92 " + label.toStdString() + ", " + output.filename().string();
-    queues_->run({*queue, title}, queue_options());
-    save_queues();
-    say("Queued " + label + ": " + QString::fromStdString(output.string()));
-    return true;
-}
-
-QString MainWindow::frames_movie_base(const QString& format) const {
-    QString name = findChild<QLineEdit*>("renderName")->text().trimmed();
-    if (name.isEmpty()) name = shot_title();
-    name += "_" + format;
-    for (QChar& c : name)
-        if (!(c.isLetterOrNumber() && c.unicode() < 128) && c != '_' && c != '.' && c != '-') c = '_';
-    return name;
-}
-
-bool MainWindow::export_frames_to_movie(const QString& format, double fps) {
-    if (refuse_headroom_export(format.toUpper() + QStringLiteral(" export"))) return false;
-    auto* status = findChild<QLabel*>("renderStatus");
-    auto say = [this, status](const QString& t) {
-        status->setText(t);
-        status->setVisible(!t.isEmpty());
-        log(t);
-    };
-    const SequenceTarget* target = find_sequence_target(format.toStdString());
-    if (!target) {
-        say("Unknown movie format: " + format);
-        return false;
-    }
-    if (!shot_is_frame_folder()) {
-        say("Open a folder of frames first: a still goes out as EXR.");
-        return false;
-    }
-    if (mastering() || encoding_movie_) {
-        say("A render is running: wait for it, or stop it with the Master EXR button.");
-        return false;
-    }
-    if (needs_model()) {
-        say("Open a model package first, or turn off Reconstruct > Use the model.");
-        return false;
-    }
-    if (!(fps > 0.0 && fps <= 240.0)) {
-        say("The frame rate must be between 0 and 240 fps.");
-        return false;
-    }
-    const QString dir = findChild<QLineEdit*>("renderDir")->text().trimmed();
-    if (dir.isEmpty()) {
-        say("Choose a render folder first.");
-        return false;
-    }
-    const QString name = frames_movie_base(format);
-    const std::filesystem::path out_dir = to_path(dir);
-    std::filesystem::path output = out_dir / (name.toStdString() + target->suffix);
-    const std::filesystem::path frames_dir = out_dir / (name.toStdString() + "_frames");
-    std::error_code ec;
-    if (std::filesystem::exists(output, ec)) {
-        say(QString::fromStdString(output.filename().string()) + " is already there; nothing is replaced. Change the name.");
-        return false;
-    }
-    if (std::filesystem::exists(frames_dir, ec) && !std::filesystem::is_empty(frames_dir, ec)) {
-        say(QString::fromStdString(frames_dir.filename().string()) +
-            " is already there; nothing is replaced. Change the name, or move that folder.");
-        return false;
-    }
-    // What this ffmpeg can do, before anything is written.
-    auto caps = probe_ffmpeg();
-    if (!caps) {
-        say(QString::fromStdString(caps.error().message));
-        return false;
-    }
-    const bool prores = target->suffix == ".mov";
-    if (!(format == "ffv1rgb16" ? caps->ffv1 : prores ? caps->prores_ks : caps->libx265)) {
-        say(QString::fromStdString(std::string("This FFmpeg build has no ") + (format == "ffv1rgb16" ? "ffv1" : prores ? "prores_ks" : "libx265") + " (" +
-                                   caps->version + ")"));
-        return false;
-    }
-    std::filesystem::create_directories(frames_dir, ec);
-    if (ec) {
-        say("Could not make " + from_path(frames_dir) + ": " + QString::fromStdString(ec.message()));
-        return false;
-    }
-    frames_movie_ = FramesMovie{format, frames_dir, output, name.toStdString(), fps};
-    master();   // the frames first; master_finished hands them to the encoder
-    if (!mastering()) {
-        frames_movie_.reset();
-        return false;
-    }
-    log("Movie export: mastering " + QString::number(frames_.size()) + " frames to " + from_path(frames_dir) +
-        ", then " + QString::fromStdString(target->note));
-    return true;
-}
-
-void MainWindow::encode_frames_movie(FramesMovie job) {
-    auto* status = findChild<QLabel*>("renderStatus");
-    auto paths = list_linear_frames(job.frames_dir);
-    if (!paths) {
-        status->setText("Movie export stopped: " + QString::fromStdString(paths.error().message));
-        status->show();
-        return;
-    }
-    if (encode_worker_.joinable()) encode_worker_.join();
-    SequenceEncodeOptions o;
-    o.target = job.format.toStdString();
-    o.fps = job.fps;
-    o.peak_nits = 1000.0;   // the video export's peak (video/convert.hpp)
-    o.source = Primaries::Rec2020;
-    encode_cancel_ = false;
-    encoding_movie_ = true;
-    btn_master_->setText("Encoding…");
-    btn_master_->setToolTip("Click to stop the movie; the mastered frames stay");
-    status->setText("Measuring " + QString::number(paths->size()) + " frames for the movie…");
-    status->show();
-    QPointer<MainWindow> self(this);
-    encode_worker_ = std::thread([self, job, o, paths = std::move(*paths), cancel = &encode_cancel_]() mutable {
-        auto progress = [self](const LinearDeliveryProgress& p) {
-            const QString t = QStringLiteral("%1 %2 / %3").arg(p.encoding ? "Encoding" : "Measuring").arg(p.done).arg(p.total);
-            QMetaObject::invokeMethod(qApp, [self, t] {
-                if (self) self->findChild<QLabel*>("renderStatus")->setText(t);
-            });
-        };
-        o.note = [self](const std::string& n) {
-            const QString t = QString::fromStdString(n);
-            QMetaObject::invokeMethod(qApp, [self, t] {
-                if (self) self->log(t);
-            });
-        };
-        auto r = deliver_linear_frames(paths, job.output, o, 203.0 /* the linear master: 1.0 = 203 nits */, progress, cancel);
-        QString line;
-        if (r)
-            line = QStringLiteral("Movie written: %1 · %2 frames · MaxCLL %3 · MaxFALL %4")
-                       .arg(QString::fromStdString(r->file.string()))
-                       .arg(r->frames)
-                       .arg(r->metadata.maxcll)
-                       .arg(r->metadata.maxfall);
-        else
-            line = "Movie export stopped: " + QString::fromStdString(r.error().message) + ". The mastered frames are in " +
-                   QString::fromStdString(job.frames_dir.string());
-        QMetaObject::invokeMethod(qApp, [self, line] {
-            if (!self) return;
-            self->encoding_movie_ = false;
-            self->btn_master_->setText("Master EXR");
-            self->btn_master_->setToolTip({});
-            auto* st = self->findChild<QLabel*>("renderStatus");
-            st->setText(line);
-            st->show();
-            self->log(line);
-            self->refresh_enabled();
-            self->sync_ui();
-        });
-    });
-    refresh_enabled();
-    sync_ui();
-}
-
-void MainWindow::resume_queue(const std::filesystem::path& queue) {
-    for (const auto& e : queues_->entries())
-        if (e.queue == queue) {
-            queues_->run(e, queue_options(), true);   // a failed job is tried again, an interrupted one restarts
-            return;
-        }
-}
-
-void MainWindow::forget_queue(const std::filesystem::path& queue) {
-    queues_->forget(queue);
-    save_queues();
 }
 
 }  // namespace rudra::app
@@ -2797,348 +2675,6 @@ void MainWindow::calibration_picked(double x, double y) {
     if (const auto code = sdr_code_at(x, y)) source_panel_->set_picked(slot, *code);
 }
 
-// ---------------------------------------------------------------------------
-// Projects, autosave, updates and help (product items 3 to 5, 10 Oct 2026)
-// ---------------------------------------------------------------------------
-
-Project MainWindow::current_project() const {
-    Project p = project_from_session(session_);
-    if (pending_shot_) {   // waiting for its model: still the shot
-        p.source_kind = pending_shot_->kind;
-        p.sources = pending_shot_->sources;
-        p.frame = pending_shot_->frame;
-    } else {
-        p.source_kind = shot_kind_;
-        p.sources = shot_sources_;
-        p.frame = frames_.empty() ? 0 : current_;
-    }
-    if (project_model_) {   // loading, or queued: still the project's model
-        p.package = project_model_->package;
-        p.backend = project_model_->backend;
-    } else {
-        p.package = model_package();
-        p.backend = backend_choice_ ? backend_choice_->key() : std::string();
-    }
-    p.use_model = use_model_;
-    // The window has no grain control: the legacy path always settles grain
-    // at the anchor's knee, the headroom preview never does (it needs the
-    // canonical SDR v1 cannot represent). The project records what was shown.
-    if (p.grade.headroom_policy != HeadroomPolicy::Disabled) p.settle_grain = false;
-    p.app_version = QCoreApplication::applicationVersion().toStdString();
-    return p;
-}
-
-void MainWindow::mark_dirty() {
-    if (restoring_) return;
-    if (!dirty_) {
-        dirty_ = true;
-        update_title();
-    }
-    if (!autosave_path_.empty()) autosave_timer_.start();
-}
-
-void MainWindow::update_title() {
-    if (project_path_.empty()) {
-        setWindowTitle("RUDRA");
-        setWindowModified(false);
-        return;
-    }
-    // [*] is where Qt puts the unsaved mark (and macOS the dot in the close button).
-    setWindowTitle(from_path(project_path_.filename()) + QStringLiteral("[*] — RUDRA"));
-    setWindowModified(dirty_);
-}
-
-bool MainWindow::save_project_to(const std::filesystem::path& path) {
-    auto r = save_project(path, current_project());
-    if (!r) {
-        problem_ = "The project was not saved: " + qs(r.error().message);
-        log(problem_);
-        return false;
-    }
-    project_path_ = *r;
-    dirty_ = false;
-    update_title();
-    remember_source(from_path(*r));
-    log("saved project " + from_path(*r));
-    return true;
-}
-
-bool MainWindow::autosave_now() {
-    autosave_timer_.stop();
-    if (autosave_path_.empty()) return false;
-    auto r = save_project(autosave_path_, current_project());
-    if (!r) {
-        log("autosave failed: " + qs(r.error().message));
-        return false;
-    }
-    return true;
-}
-
-void MainWindow::set_autosave_path(const std::filesystem::path& file, int delay_ms) {
-    autosave_path_ = file;
-    autosave_timer_.setInterval(delay_ms);
-    reopen_path_.clear();
-    std::error_code ec;
-    if (!file.empty() && std::filesystem::is_regular_file(file, ec)) {
-        // What the last run left: kept aside before this run's first change
-        // writes over it, and offered as File > Reopen last session.
-        const std::filesystem::path prev = file.parent_path() / ("previous-session" + std::string(kProjectSuffix));
-        std::filesystem::rename(file, prev, ec);
-        if (!ec) {
-            const auto masks = project_masks_path(file), prev_masks = project_masks_path(prev);
-            std::filesystem::remove(prev_masks, ec);
-            if (std::filesystem::is_regular_file(masks, ec)) std::filesystem::rename(masks, prev_masks, ec);
-            reopen_path_ = prev;
-        }
-    }
-    if (reopen_path_.empty() && !file.empty()) {
-        const auto prev = file.parent_path() / ("previous-session" + std::string(kProjectSuffix));
-        if (std::filesystem::is_regular_file(prev, ec)) reopen_path_ = prev;
-    }
-    if (reopen_path_.empty()) pending_["reopen-session"] = "No earlier session was saved.";
-    else {
-        pending_.erase("reopen-session");
-        log("the last session was saved: File > Reopen last session opens it");
-    }
-    refresh_enabled();
-}
-
-void MainWindow::open_shot(const std::string& kind, const std::vector<std::filesystem::path>& sources, int frame) {
-    std::vector<std::filesystem::path> present;
-    std::error_code ec;
-    for (const auto& s : sources) {
-        if (std::filesystem::exists(s, ec)) present.push_back(s);
-        else log("the project's footage is missing: " + from_path(s));
-    }
-    if (present.empty()) return;
-    if (needs_model()) {
-        // Opened when a model is in (the project's, loading, or one opened next).
-        pending_shot_ = PendingShot{kind, present, frame};
-        if (!loading_model_) log("the shot opens when a model package is open (File > Model packages…)");
-        return;
-    }
-    if (kind == "folder" || kind == "movie") {
-        open_source(from_path(present.front()), kind == "folder");
-    } else {
-        close_frames();
-        add_files(present);
-    }
-    if (frame > 0 && frame < int(frames_.size())) step_to(frame);
-}
-
-bool MainWindow::open_project(const std::filesystem::path& path, bool adopt) {
-    // Only a capable window reads a headroom project; others refuse it before any change.
-    auto p = load_project(path, headroom_capable_ ? ProjectReadSupport::HeadroomV1 : ProjectReadSupport::LegacyOnly);
-    if (!p) {
-        problem_ = "The project was not opened: " + qs(p.error().message);
-        log(problem_);
-        return false;
-    }
-    // Changes not yet autosaved go there now, so what was on screen stays recoverable.
-    if (autosave_timer_.isActive()) autosave_now();
-    restoring_ = true;
-    for (const auto& note : p->notes) log(QString::fromStdString(note));
-    // The model: the project's when it is another one and still there. A load
-    // already running finishes first; the project's follows it.
-    project_model_.reset();
-    // Its model only matters when the project runs one.
-    if (p->use_model && !p->package.empty() && p->package != model_package()) {
-        std::error_code ec;
-        if (std::filesystem::is_regular_file(p->package / "manifest.json", ec)) {
-            project_model_ = ProjectModel{p->package, p->backend};
-            use_project_model();
-        } else {
-            log("the project's model package is missing (" + from_path(p->package) + "); " +
-                (backend_ ? QStringLiteral("the model in use stays") : QStringLiteral("open one to see the shot")));
-        }
-    }
-    // Before the shot: it decides whether the shot waits for a model. The
-    // project's choice, not this user's default for the next bare start.
-    set_use_model(p->use_model, false);
-    // The grade, then the shot: a new shot keeps the session's grade.
-    if (auto loaded = session_.load_state(p->grade, p->peak_ev, p->anchor, p->carry_chroma,
-                                          p->anchor_knee, p->container); !loaded) {
-        restoring_ = false;
-        problem_ = qs(loaded.error().message);
-        log(problem_);
-        return false;
-    }
-    pending_shot_.reset();
-    close_frames();
-    if (!p->source_kind.empty()) open_shot(p->source_kind, p->sources, p->frame);
-    restoring_ = false;
-    project_path_ = adopt ? path : std::filesystem::path();
-    dirty_ = !adopt;   // a reopened session is unsaved work until it is saved as a project
-    update_title();
-    if (adopt) remember_source(from_path(path));
-    log((adopt ? "opened project " : "reopened the last session from ") + from_path(path));
-    if (!autosave_path_.empty() && !adopt) autosave_timer_.start();
-    return true;
-}
-
-QString MainWindow::default_updates_feed() {
-    return QStringLiteral("https://api.github.com/repos/FXTD-Studios/RUDRA/releases?per_page=20");
-}
-
-void MainWindow::check_for_updates(bool interactive, std::function<void(QString)> done) {
-    if (!net_) net_ = new QNetworkAccessManager(this);
-    const QString current = QCoreApplication::applicationVersion();
-    QNetworkRequest req{QUrl(updates_feed_)};
-    req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("RUDRA/") + current);
-    req.setRawHeader("Accept", "application/vnd.github+json");
-    req.setTransferTimeout(15000);
-    QNetworkReply* reply = net_->get(req);
-    QPointer<MainWindow> self(this);
-    connect(reply, &QNetworkReply::finished, this, [self, reply, interactive, done, current] {
-        reply->deleteLater();
-        if (!self) return;
-        QString line, url;
-        bool newer = false;
-        if (reply->error() != QNetworkReply::NoError) {
-            line = "update check failed: " + reply->errorString();
-        } else {
-            const QByteArray body = reply->readAll();
-            const std::string cur = current.toStdString();
-            // A beta follows the betas; a release only releases.
-            const auto latest = newest_release(body.toStdString(), is_prerelease(cur));
-            if (!latest) line = "update check: no release found";
-            else if (cur.empty() || compare_versions(latest->version, cur) > 0) {
-                newer = true;
-                url = QString::fromStdString(latest->url);
-                line = "RUDRA " + QString::fromStdString(latest->version) + " is available (this is " +
-                       (current.isEmpty() ? QStringLiteral("an unversioned build") : current) + "): " + url;
-            } else {
-                line = "RUDRA is up to date (" + current + ")";
-            }
-        }
-        self->update_url_ = url;
-        self->log(line);
-        if (newer) self->statusBar()->showMessage(line);
-        if (interactive) {
-            if (newer) {
-                const auto b = QMessageBox::information(self, "Updates", line, QMessageBox::Open | QMessageBox::Close,
-                                                        QMessageBox::Open);
-                if (b == QMessageBox::Open) QDesktopServices::openUrl(QUrl(url));
-            } else {
-                QMessageBox::information(self, "Updates", line);
-            }
-        }
-        if (done) done(line);
-    });
-}
-
-void MainWindow::maybe_check_for_updates() {
-    if (qEnvironmentVariableIsSet("RUDRA_NO_UPDATE_CHECK")) return;
-    QSettings st;
-    if (!st.value("updates/auto", true).toBool()) return;
-    const QDateTime last = st.value("updates/last").toDateTime();
-    const QDateTime now = QDateTime::currentDateTimeUtc();
-    if (last.isValid() && last.secsTo(now) < 24 * 3600) return;
-    st.setValue("updates/last", now);
-    check_for_updates(false);
-}
-
-QString MainWindow::user_guide_url() {
-    return QStringLiteral("https://github.com/FXTD-Studios/RUDRA/blob/native/docs/USER_GUIDE.md");
-}
-
-void MainWindow::show_getting_started() {
-    if (sheet_) sheet_->close();
-    sheet_ = make_getting_started(this);
-    sheet_->show();
-}
-
-void MainWindow::apply_tooltips() {
-    // Only where the control has none of its own.
-    auto tip = [](QWidget* w, const char* text) {
-        if (w && w->toolTip().isEmpty()) w->setToolTip(QString::fromUtf8(text));
-    };
-    tip(mode_seg_, "What the model may change: everything, only highlights, only shadows, or nothing (1 2 3 4)");
-    tip(strength_, "How much of the model's residual is applied on top of the analytic inverse ([ and ])");
-    tip(exposure_, "The whole master brighter or darker, in stops, before the Region EV bands; in the master, "
-                   "movie exports and projects (Ctrl+Shift+Up / Down by a third of a stop, double-click for 0)");
-    tip(peak_, "The view peak: how bright the display shows. It changes the view only, never the master");
-    tip(preserve_, "Outside painted masks, keep the analytic inverse untouched");
-    tip(regions_, "Region EV: drag a band up or down to push the brightness of that range of nits");
-    tip(anchor_, "Hold the master's exposure to the SDR's below the knee, so mid-tones match the source");
-    tip(anchor_knee_, "Where the anchor lets go: below it the master follows the SDR, above it the reconstruction");
-    tip(carry_chroma_, "Keep the SDR's colour below the clip, where the source still had it");
-    tip(btn_master_, "Render the master for the frames chosen below (M)");
-    tip(btn_reprocess_, "Run the network again on the frame on screen");
-    tip(findChild<QWidget*>("renderDir"), "Where masters are written");
-    tip(findChild<QWidget*>("renderName"), "The file name; frames get a number after it");
-    tip(findChild<QWidget*>("renderMode"), "Which frames to render: this one, all of them, or a range");
-    tip(findChild<QWidget*>("renderStart"), "The first frame number written");
-    tip(findChild<QWidget*>("calibrate"), "Anchor the inverse to patches of known brightness picked on the frame");
-    tip(findChild<QWidget*>("reference"), "Fit the inverse to a graded HDR version of this frame");
-    tip(findChild<QWidget*>("maskSize"), "Brush size in frame pixels (the mouse wheel over the picture too)");
-    tip(findChild<QWidget*>("maskSoft"), "Brush softness: how much of the radius fades out");
-    tip(findChild<QWidget*>("maskFlow"), "Brush flow: how much each stamp adds or takes away");
-}
-
-void MainWindow::use_project_model() {
-    if (!project_model_ || loading_model_) return;   // model_settled() comes back
-    if (mastering()) {
-        // Not queued behind a render: it could switch models long after,
-        // over a choice made meanwhile.
-        log("a render is running, so the project's model (" + from_path(project_model_->package.filename()) +
-            ") was not loaded; File > Model packages… switches to it");
-        project_model_.reset();
-        return;
-    }
-    const auto want = *project_model_;
-    from_project_ = true;
-    use_model(want.package, BackendChoice::from_key(want.backend), [this, want](bool, const QString&) {
-        // In use, or refused (and logged): either way no longer pending.
-        if (project_model_ && project_model_->package == want.package) project_model_.reset();
-    });
-    from_project_ = false;
-}
-
-void MainWindow::model_settled() {
-    if (!project_model_) return;
-    QTimer::singleShot(0, this, [this] {
-        if (project_model_ && project_model_->package == model_package()) project_model_.reset();
-        else use_project_model();
-    });
-}
-
-bool MainWindow::save_interactive() {
-    if (project_path_.empty()) {
-        run("save-project-as");
-        return !project_path_.empty() && !dirty_;
-    }
-    if (save_project_to(project_path_)) return true;
-    QMessageBox::warning(this, "RUDRA", problem_);
-    return false;
-}
-
-bool MainWindow::confirm_replace(bool closing) {
-    if (!dirty_ || !isVisible()) return true;
-    // Closing an untitled session loses nothing: it is autosaved, and the
-    // next start offers it (File > Reopen last session).
-    if (project_path_.empty() && (closing || (frames_.empty() && !pending_shot_))) return true;
-    const QString name = project_path_.empty() ? QStringLiteral("this session") : from_path(project_path_.filename());
-    const auto b = QMessageBox::question(this, "RUDRA", "Save the changes to " + name + "?",
-                                         QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
-                                         QMessageBox::Save);
-    if (b == QMessageBox::Cancel) return false;
-    if (b == QMessageBox::Save) return save_interactive();
-    return true;
-}
-
-void MainWindow::show_getting_started_once() {
-    QSettings st;
-    // Once per edition of the steps: "2" is RUDRA 1.0's (Source, exposure, the
-    // clip fill), so a beta user sees the new ones once too.
-    if (st.value("help/gettingStarted", 0).toInt() >= 2) return;
-    st.setValue("help/gettingStarted", 2);
-    QPointer<MainWindow> self(this);
-    QTimer::singleShot(600, this, [self] {
-        if (self) self->show_getting_started();
-    });
-}
-
 // ---- The reconstruction: analytic, or with the model (10 Oct 2026 review) ----
 
 ModelConstants MainWindow::frame_constants() const {
@@ -3148,6 +2684,12 @@ ModelConstants MainWindow::frame_constants() const {
 
 void MainWindow::show_mode() {
     if (!mode_label_) return;
+    if (aces_routed()) {   // the learned ACES 2.0 model shows and renders the frames (29 Oct 2026)
+        mode_label_->setText(QStringLiteral("Learned ACES 2.0 (%1)").arg(QString::fromStdString(aces_engine_->config().device)));
+        mode_label_->setToolTip("The learned ACES 2.0 model kept loaded shows the frames and renders the Deliver tab's "
+                                "masters; its trims and monitor are on the Reconstruct tab.");
+        return;
+    }
     if (!use_model_) {
         mode_label_->setText("Analytic reconstruction");
         mode_label_->setToolTip("The inverse of the source curve, with your calibration, reference and grade. No model "
@@ -3205,337 +2747,6 @@ void MainWindow::set_use_model(bool on, bool remember) {
     sync_checks();
     sync_ui();
     refresh_enabled();
-}
-
-// ---- Headroom preview (E1) -------------------------------------------------
-
-bool MainWindow::headroom_routed() const {
-    return headroom_capable_ && session_.grade.headroom_policy != HeadroomPolicy::Disabled && shot_video_ &&
-           !frames_.empty();
-}
-
-Result<void> MainWindow::set_headroom_preview(bool on) {
-    if (on && !headroom_capable_)
-        return make_error(ErrorCode::Unsupported, "This window does not support the headroom preview");
-    // A grade change (one undo step); session_changed routes the frames.
-    return session_.set_headroom_policy(on ? HeadroomPolicy::Bt1886V1 : HeadroomPolicy::Disabled);
-}
-
-void MainWindow::toggle_super_whites() {
-    if (session_.grade.headroom_policy != HeadroomPolicy::Disabled) {
-        (void)set_headroom_preview(false);   // never refused
-        log(QStringLiteral("super-whites: off, the movie is read as usual"));
-        return;
-    }
-    // What bt1886-headroom-v1 accepts (engine/headroom_presentation.cpp): said
-    // before anything changes, and nothing the artist set is cleared for them.
-    QString why;
-    if (frames_.empty() || !shot_video_)
-        why = QStringLiteral("Open a movie first. Super-whites are kept for limited-range BT.709 movies, "
-                             "not for stills or folders of frames.");
-    else if (session_.grade.source != "bt1886")
-        why = QStringLiteral("Super-whites are kept with Reconstruct > Source > BT.1886 only. Choose it, then try again.");
-    else if (!session_.grade.clip_peaks.empty() || !session_.grade.calibration.empty() ||
-             !session_.grade.reference.empty())
-        why = QStringLiteral("Clear the clipped peaks, the calibration and the reference match first: "
-                             "they are not available while super-whites are kept.");
-    if (!why.isEmpty()) {
-        problem_ = why;
-        log(QStringLiteral("super-whites: ") + why);
-        if (isVisible()) QMessageBox::information(this, QStringLiteral("Keep super-whites"), why);
-        return;
-    }
-    QStringList off;
-    if (use_model_) off << QStringLiteral("the model");
-    if (steady_) off << QStringLiteral("Hold steady within a shot");
-    if (session_.grade.clip_fill) off << QStringLiteral("Fill clipped highlights");
-    if (session_.anchor) off << QStringLiteral("Anchor to source exposure");
-    if (session_.carry_chroma) off << QStringLiteral("Carry source chroma");
-    if (isVisible()) {
-        QString text = QStringLiteral(
-            "Keep super-whites is experimental. RUDRA reads the movie with the detail recorded above white and "
-            "carries it into the HDR, instead of clipping it and rebuilding the highlights.\n\n"
-            "It works on limited-range BT.709 movies; others are refused with the reason.");
-        if (!off.isEmpty()) text += QStringLiteral("\n\nIt also turns off: ") + off.join(QStringLiteral(", ")) + '.';
-        if (QMessageBox::question(this, QStringLiteral("Keep super-whites"), text + QStringLiteral("\n\nTurn it on?")) !=
-            QMessageBox::Yes)
-            return;
-    }
-    if (!headroom_capable_) {
-        // Remembered, so a project saved with super-whites opens at the next start.
-        headroom_capable_ = true;
-        session_.allow_headroom();
-        QSettings().setValue("experimental/superWhites", true);
-    }
-    if (use_model_) set_use_model(false, false);   // the default for the next start is unchanged
-    if (steady_) set_steady_shots(false);
-    if (session_.anchor) session_.toggle_anchor();
-    if (session_.carry_chroma) session_.toggle_carry_chroma();
-    if (session_.grade.clip_fill) session_.toggle_clip_fill();
-    if (auto on = set_headroom_preview(true); !on) {
-        problem_ = qs(on.error().message);
-        log(QStringLiteral("super-whites: ") + problem_);
-        if (isVisible()) QMessageBox::warning(this, QStringLiteral("Keep super-whites"), problem_);
-        return;
-    }
-    problem_.clear();
-    log(QStringLiteral("super-whites: kept (bt1886-headroom-v1, experimental)") +
-        (off.isEmpty() ? QString() : QStringLiteral("; turned off: ") + off.join(QStringLiteral(", "))));
-}
-
-HeadroomPreviewStats MainWindow::headroom_stats() const { return headroom_ ? headroom_->stats() : HeadroomPreviewStats{}; }
-
-void MainWindow::clear_legacy_frame() {
-    // What the measurements, scopes and probe read: legacy SDR state only.
-    current_frame_.reset();
-    frame_ready_ok_ = false;
-    measure_.reset();
-    ++stats_gen_;
-    clear_scopes();
-    if (clip_bar_) clip_bar_->hide();
-    probe_pixel(std::nullopt);
-}
-
-void MainWindow::stop_headroom() {
-    if (!headroom_ && !headroom_shown_ && headroom_problem_.isEmpty()) return;
-    const bool shown = headroom_shown_.has_value();
-    headroom_.reset();   // joins; frames already queued for this window are dropped
-    headroom_shown_.reset();
-    headroom_problem_.clear();
-    if (headroom_playing_) {
-        headroom_playing_ = false;
-        if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
-    }
-#ifdef RUDRA_APP_VIEWER
-    if (viewer_ && shown) viewer_->clear_frame();
-#else
-    (void)shown;
-#endif
-}
-
-void MainWindow::route_headroom() {
-    if (!headroom_routed()) {
-        if (!headroom_ && !headroom_shown_ && headroom_problem_.isEmpty()) return;
-        stop_headroom();
-        // Turned off (the grade, undo, another shot): the legacy engine shows the frame again.
-        if (engine_ && !frames_.empty()) step_to(current_);
-        return;
-    }
-    if (!headroom_) {
-        auto port = headroom_factory_ ? headroom_factory_() : make_headroom_presentation_port();
-        if (!port) {
-            headroom_failed(port.error());
-            return;
-        }
-        QPointer<MainWindow> self(this);
-        HeadroomPreviewDriver::Callbacks cb;
-        cb.post = [self](std::function<void()> task) {
-            QMetaObject::invokeMethod(qApp, [self, task = std::move(task)] {
-                if (self) task();
-            });
-        };
-        cb.shown = [this](const HeadroomShown& f) { headroom_present(f); };
-        cb.failed = [this](const Error& e) { headroom_failed(e); };
-        cb.finished = [this] { headroom_finished(); };
-        auto driver = HeadroomPreviewDriver::create(std::move(*port), std::move(cb));
-        if (!driver) {
-            headroom_failed(driver.error());
-            return;
-        }
-        headroom_ = std::move(*driver);
-        // The legacy engine keeps its frames but nothing of it is shown now.
-        halt_playback();
-        clear_legacy_frame();
-#ifdef RUDRA_APP_VIEWER
-        if (viewer_) viewer_->clear_frame();
-#endif
-    }
-    if (auto c = headroom_->configure(session_, false, use_model_, steady_); !c) {
-        headroom_failed(c.error());
-        return;
-    }
-    headroom_request(current_, headroom_playing_);
-}
-
-void MainWindow::headroom_request(int index, bool play) {
-    if (frames_.empty()) return;
-    const int n = int(frames_.size());
-    current_ = ((index % n) + n) % n;
-    if (!headroom_) {
-        route_headroom();   // creates and configures, then requests current_
-        return;
-    }
-    if (!headroom_->configured()) {
-        // Still refused: the reason stays on screen; nothing older is shown.
-        sync_ui();
-        return;
-    }
-    if (auto r = headroom_->show(shot_video_->path, current_, n, play); !r) {
-        headroom_failed(r.error());
-        return;
-    }
-    headroom_problem_.clear();
-    waiting_ = true;
-    sync_ui();
-}
-
-void MainWindow::headroom_present(const HeadroomShown& f) {
-    // Inside the bridge's final presentation (its lock is held): no driver calls.
-    headroom_shown_ = f;
-    current_ = f.index;
-    waiting_ = false;
-#ifdef RUDRA_APP_VIEWER
-    if (viewer_) viewer_->set_composited(*f.model, *f.baseline);
-#endif
-    // The rest (labels, strip) after this returns, still before any other request.
-    QMetaObject::invokeMethod(this, [this] { headroom_after_present(); }, Qt::QueuedConnection);
-}
-
-void MainWindow::headroom_after_present() {
-    if (!headroom_shown_) return;
-    const auto& f = *headroom_shown_;
-    frame_info_ = QStringLiteral("%1  %2/%3  \u00b7  headroom preview (%4), %5x%6")
-                      .arg(QString::fromStdString(frame_name(std::size_t(f.index))))
-                      .arg(f.index + 1)
-                      .arg(frames_.size())
-                      .arg(qs(headroom_policy_id(session_.grade.headroom_policy)))
-                      .arg(f.width)
-                      .arg(f.height);
-    // E4: measured super-white detail is told apart from clipping at the code ceiling.
-    frame_info_ += QStringLiteral("  \u00b7  above white: %1% detail, %2% at the code ceiling (clipped), %3% at white")
-                       .arg(f.source_whites.detail_pct, 0, 'f', 2)
-                       .arg(f.source_whites.ceiling_pct, 0, 'f', 2)
-                       .arg(f.source_whites.at_white_pct, 0, 'f', 2);
-    note_frame_in_strip(f.index);
-    run_stats();   // E2: its readouts and scopes follow on their own thread
-    show_status();
-    sync_ui();
-}
-
-void MainWindow::headroom_failed(const Error& e) {
-    headroom_problem_ = qs(e.message);
-    log(QStringLiteral("headroom preview: ") + headroom_problem_ +
-        (e.detail.empty() ? QString() : QStringLiteral(" (") + qs(e.detail) + QStringLiteral(")")));
-    // Nothing older and no legacy picture stands in for the refused preview.
-    headroom_shown_.reset();
-    clear_legacy_frame();
-    waiting_ = false;
-    if (headroom_playing_) {
-        headroom_playing_ = false;
-        if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
-    }
-#ifdef RUDRA_APP_VIEWER
-    if (viewer_) viewer_->clear_frame();
-#endif
-    frame_info_ = QStringLiteral("Headroom preview stopped: ") + headroom_problem_;
-    statusBar()->showMessage(frame_info_);
-    sync_ui();
-}
-
-void MainWindow::headroom_finished() {
-    if (!headroom_playing_) return;   // a paused frame's range ends after its one frame
-    headroom_playing_ = false;
-    if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
-    log(QStringLiteral("the headroom preview reached the end of the shot"));
-    sync_ui();
-}
-
-bool MainWindow::refuse_headroom_export(const QString& what) {
-    if (session_.grade.headroom_policy == HeadroomPolicy::Disabled) return false;
-    const QString m = what + QStringLiteral(" does not support the headroom policy yet; turn the headroom preview off to export.");
-    log(m);
-    if (auto* status = findChild<QLabel*>("renderStatus")) {
-        status->setText(m);
-        status->setVisible(true);
-    }
-    return true;
-}
-
-bool MainWindow::start_headroom_export(const QString& format) {
-    auto say = [this](const QString& m) {
-        log(m);
-        if (auto* status = findChild<QLabel*>("renderStatus")) {
-            status->setText(m);
-            status->setVisible(!m.isEmpty());
-        }
-    };
-    if (headroom_export_running_) {   // a second click cancels, as Master EXR's does
-        headroom_export_cancel_ = true;
-        say(QStringLiteral("Cancelling the headroom export\u2026"));
-        return false;
-    }
-    static const QStringList kFormats = {"hdr10", "hlg", "prores422hq", "prores4444", "ffv1rgb16"};
-    if (!kFormats.contains(format)) {
-        say(format.toUpper() + QStringLiteral(" does not support the headroom policy yet; HDR10, HLG, ProRes and FFV1 RGB16 do."));
-        return false;
-    }
-    if (!headroom_routed() || !shot_video_) {
-        say(QStringLiteral("Open a movie with the headroom preview to export it."));
-        return false;
-    }
-    if (use_model_) {
-        say(QStringLiteral("The headroom export is analytic; turn off Reconstruct > Use the model."));
-        return false;
-    }
-    const QString dir = findChild<QLineEdit*>("renderDir")->text().trimmed();
-    if (dir.isEmpty()) {
-        say("Choose a render folder first.");
-        return false;
-    }
-    QString name = findChild<QLineEdit*>("renderName")->text().trimmed();
-    if (name.isEmpty()) name = QString::fromStdString(shot_video_->path.stem().string()) + "_" + format + "_headroom";
-    HeadroomExportRequest r;
-    r.source = shot_video_->path;
-    r.output = std::filesystem::path(dir.toStdString()) / name.toStdString();
-    r.target = format.toStdString();
-    r.fps = play_fps();
-    r.grade = master_request();
-    r.grade.settle_grain = false;   // the window has no grain control; v1 never settles grain (see current_project)
-    r.grade.source_file = shot_video_->path;
-    r.app_version = QCoreApplication::applicationVersion().toStdString();
-    if (auto valid = validate_headroom_grade(r.grade); !valid) {
-        say(qs(valid.error().message));
-        return false;
-    }
-    if (headroom_export_worker_.joinable()) headroom_export_worker_.join();   // the last one finished
-    headroom_export_cancel_ = false;
-    headroom_export_running_ = true;
-    headroom_export_result_.clear();
-    say(QStringLiteral("Exporting %1 with the headroom policy (decode, render, encode, check, then publish)").arg(format.toUpper()));
-    QPointer<MainWindow> self(this);
-    headroom_export_worker_ = std::thread([self, r, cancel = &headroom_export_cancel_] {
-        auto out = export_headroom_movie(r, [self](const HeadroomExportProgress& p) {
-            QMetaObject::invokeMethod(qApp, [self, p] {
-                if (!self) return;
-                if (auto* status = self->findChild<QLabel*>("renderStatus")) {
-                    status->setText(QStringLiteral("Headroom export: %1 %2/%3").arg(qs(p.phase)).arg(p.done).arg(p.total));
-                    status->setVisible(true);
-                }
-            });
-        }, cancel);
-        QMetaObject::invokeMethod(qApp, [self, out = std::move(out)] {
-            if (!self) return;
-            self->headroom_export_running_ = false;
-            QString m;
-            if (out) {
-                self->headroom_export_result_ = qs(out->file.string());
-                m = QStringLiteral("Published %1 (%2 frames, MaxCLL %3, MaxFALL %4) and its provenance sidecar")
-                        .arg(qs(out->file.string())).arg(out->frames).arg(out->metadata.maxcll).arg(out->metadata.maxfall);
-            } else {
-                self->headroom_export_result_ = qs(out.error().message);
-                m = QStringLiteral("The headroom export did not publish anything: ") + qs(out.error().message) +
-                    (out.error().detail.empty() ? QString() : QStringLiteral(" (") + qs(out.error().detail) + ")");
-            }
-            self->log(m);
-            if (auto* status = self->findChild<QLabel*>("renderStatus")) {
-                status->setText(m);
-                status->setVisible(true);
-            }
-            self->refresh_enabled();
-        });
-    });
-    refresh_enabled();
-    return true;
 }
 
 }  // namespace rudra::app

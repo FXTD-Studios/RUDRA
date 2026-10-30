@@ -1,27 +1,30 @@
 RUDRA
 Copyright 2026 FXTD Studios
 
-Required Notice: Copyright 2026 FXTD Studios (https://fxtdstudios.com)
+Licensed under the Apache License, Version 2.0 (see LICENSE). Website:
+https://www.fxtdstudios.com
 
 ------------------------------------------------------------------------
 Code
 ------------------------------------------------------------------------
 The code, documentation and tools in this repository are licensed under the
-PolyForm Noncommercial License 1.0.0 (see LICENSE,
-https://polyformproject.org/licenses/noncommercial/1.0.0). Research,
-teaching, evaluation, personal projects and use by noncommercial
-organizations are permitted. Commercial use needs a separate licence from
-FXTD Studios (https://fxtdstudios.com).
+Apache License, Version 2.0 (see LICENSE,
+https://www.apache.org/licenses/LICENSE-2.0), from 29 October 2026.
+Commercial use is permitted under its terms.
 
-Copies of the code obtained before 24 September 2026 were released under the
-Apache License 2.0, and those copies keep that licence.
+Copies obtained between 24 September and 28 October 2026 under the PolyForm
+Noncommercial License 1.0.0 may be used under the Apache License 2.0 from
+29 October 2026. Copies obtained before 24 September 2026 were already
+released under the Apache License 2.0.
 
 ------------------------------------------------------------------------
 Trained weights
 ------------------------------------------------------------------------
-The model weights distributed in `checkpoints/` and at
-https://huggingface.co/fxtdstudios/RUDRA are NON-COMMERCIAL under their own
-terms, because one of their training sources restricts commercial use. See
+Each model carries its own licence, separate from the code's. The weights
+distributed in `checkpoints/` (sdr2hdr_image_v8, sdr2hdr_shadow_v1) are
+NON-COMMERCIAL under their own terms, because one of their training sources
+restricts commercial use. Other models state their licence in the app's
+Model packages window and in their package. See
 `checkpoints/LICENSE`, and contact FXTD Studios for commercial licensing.
 
 ------------------------------------------------------------------------

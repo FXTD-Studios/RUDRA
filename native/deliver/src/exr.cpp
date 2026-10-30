@@ -1,5 +1,7 @@
 #include "rudra/deliver/exr.hpp"
 
+#include "rudra/core/timecode.hpp"
+
 #include <algorithm>
 #include <bit>
 #include <cerrno>
@@ -75,7 +77,7 @@ std::uint16_t float_to_half(float f) noexcept {
 
 Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
                                             const std::optional<Chromaticities>& chroma, const ExrAttributes& attributes,
-                                            const PlanarBuffer* reconstruction_mask) {
+                                            const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed) {
     const int n_ch = rgb.channels();
     if (n_ch != 3 && n_ch != 4) return make_error(ErrorCode::InvalidArgument, "expected a 3 or 4 channel image");
     const int w = rgb.width(), h = rgb.height();
@@ -123,6 +125,7 @@ Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
         attr(head, "chromaticities", "chromaticities", c);
     }
     for (const auto& [k, v] : attributes) attr(head, k, "string", std::vector<std::uint8_t>(v.begin(), v.end()));
+    for (const auto& t : typed) attr(head, t.name, t.type, t.payload);
     head.push_back(0);
 
     const int bpp = half ? 2 : 4;
@@ -166,8 +169,8 @@ Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
 
 Result<void> write_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, bool half,
                        const std::optional<Chromaticities>& chroma, const ExrAttributes& attributes,
-                       const PlanarBuffer* reconstruction_mask) {
-    auto bytes = exr_bytes(rgb, half, chroma, attributes, reconstruction_mask);
+                       const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed) {
+    auto bytes = exr_bytes(rgb, half, chroma, attributes, reconstruction_mask, typed);
     if (!bytes) return bytes.error();
     std::error_code ec;
     if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), ec);
@@ -211,13 +214,16 @@ namespace {
 
 Result<void> write_aces_like(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
                              Primaries dst, double exposure, const ExrAttributes& provenance, bool ap0, bool half,
-                             const PlanarBuffer* reconstruction_mask) {
+                             const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed) {
     PlanarBuffer scaled = rgb;
     const float k = static_cast<float>(exposure);
     for (float& v : scaled.span()) v = v * k;
     const PlanarBuffer out = convert_primaries(scaled, source, dst);
     ExrAttributes attrs;
-    if (ap0 && !reconstruction_mask) attrs.emplace_back("acesImageContainerFlag", "1");
+    ExrTypedAttributes all_typed = typed;
+    // SMPTE ST 2065-4 says acesImageContainerFlag is an int (= 1), only on a file
+    // that is the container: AP0, RGB(A), uncompressed scanlines (28 Oct 2026 review).
+    if (ap0 && !reconstruction_mask) all_typed.push_back({"acesImageContainerFlag", "int", {1, 0, 0, 0}});
     else attrs.emplace_back("rudra:container", ap0 ? "AP0 linear with reconstruction mask" : "ACEScg (AP1)");
     attrs.emplace_back("rudra:sourceSpace", primaries_name(source));
     attrs.emplace_back("rudra:exposureConvention", "0.18 = 18% grey (scene), diffuse white = 1.0");
@@ -227,19 +233,48 @@ Result<void> write_aces_like(const std::filesystem::path& path, const PlanarBuff
         for (const auto& [kk, v] : provenance) d.emplace_back(kk, v);
         attrs.emplace_back("rudra:provenance", pyjson::dumps(d, -1, true));
     }
-    return write_exr(path, out, half, ap0 ? kAp0Chromaticities : kAp1Chromaticities, attrs, reconstruction_mask);
+    return write_exr(path, out, half, ap0 ? kAp0Chromaticities : kAp1Chromaticities, attrs, reconstruction_mask, all_typed);
 }
 
 }  // namespace
 
 Result<void> write_aces_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
-                            double exposure, const ExrAttributes& provenance, bool half, const PlanarBuffer* reconstruction_mask) {
-    return write_aces_like(path, rgb, source, Primaries::Ap0, exposure, provenance, true, half, reconstruction_mask);
+                            double exposure, const ExrAttributes& provenance, bool half, const PlanarBuffer* reconstruction_mask,
+                            const ExrTypedAttributes& typed) {
+    return write_aces_like(path, rgb, source, Primaries::Ap0, exposure, provenance, true, half, reconstruction_mask, typed);
 }
 
 Result<void> write_acescg_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
-                              double exposure, const ExrAttributes& provenance, bool half, const PlanarBuffer* reconstruction_mask) {
-    return write_aces_like(path, rgb, source, Primaries::Ap1, exposure, provenance, false, half, reconstruction_mask);
+                              double exposure, const ExrAttributes& provenance, bool half, const PlanarBuffer* reconstruction_mask,
+                              const ExrTypedAttributes& typed) {
+    return write_aces_like(path, rgb, source, Primaries::Ap1, exposure, provenance, false, half, reconstruction_mask, typed);
+}
+
+ExrTypedAttributes exr_timecode_attributes(const std::string& timecode, double fps, const std::string& reel) {
+    ExrTypedAttributes out;
+    auto u32 = [](std::vector<std::uint8_t>& b, std::uint32_t v) {
+        for (int i = 0; i < 4; ++i) b.push_back(std::uint8_t(v >> (8 * i)));
+    };
+    if (fps > 0) {
+        // framesPerSecond as the exact rational for the NTSC rates (24000/1001 ...).
+        std::int32_t num = std::int32_t(std::lround(fps * 1000.0)), den = 1000;
+        if (std::abs(fps - std::round(fps)) < 1e-6) num = std::int32_t(std::lround(fps)), den = 1;
+        else if (std::abs(fps * 1.001 - std::round(fps * 1.001)) < 1e-3)
+            num = std::int32_t(std::lround(fps * 1.001)) * 1000, den = 1001;
+        std::vector<std::uint8_t> r;
+        u32(r, std::uint32_t(num));
+        u32(r, std::uint32_t(den));
+        out.push_back({"framesPerSecond", "rational", std::move(r)});
+    }
+    if (auto tc = parse_timecode(timecode)) {
+        const auto packed = exr_timecode(*tc);
+        std::vector<std::uint8_t> b;
+        u32(b, packed[0]);
+        u32(b, packed[1]);
+        out.push_back({"timeCode", "timecode", std::move(b)});
+    }
+    if (!reel.empty()) out.push_back({"reelName", "string", std::vector<std::uint8_t>(reel.begin(), reel.end())});
+    return out;
 }
 
 namespace {

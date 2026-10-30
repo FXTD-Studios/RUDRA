@@ -49,6 +49,7 @@ def write_exr(
     attributes: dict[str, str] | None = None,
     *,
     reconstruction_mask: np.ndarray | None = None,
+    int_attributes: dict[str, int] | None = None,
 ) -> Path:
     """Write an (H, W, 3) or (H, W, 4) linear float image as scanline EXR.
 
@@ -59,6 +60,8 @@ def write_exr(
         chromaticities: 8 floats (rx,ry,gx,gy,bx,by,wx,wy). Pass
             ``colorspace.AP0_CHROMATICITIES`` for an ACES container file.
         attributes: extra string attributes (e.g. provenance JSON).
+        int_attributes: int attributes, after the strings (acesImageContainerFlag:
+            SMPTE ST 2065-4 types it int; the native writer's order, 28 Oct 2026).
         reconstruction_mask: optional finite HxW values in [0, 1], stored as
             ``rudra.reconstructed``. The caller defines reconstruction support;
             this writer does not infer confidence or modify alpha/RGB.
@@ -96,6 +99,8 @@ def write_exr(
         header += _attr("chromaticities", "chromaticities", struct.pack("<8f", *chromaticities))
     for key, value in (attributes or {}).items():
         header += _attr(key, "string", value.encode("utf-8"))
+    for key, value in (int_attributes or {}).items():
+        header += _attr(key, "int", struct.pack("<i", int(value)))
     header += b"\0"
 
     bytes_per_px = 2 if half else 4
@@ -182,6 +187,8 @@ def read_exr(path: str | Path) -> tuple[np.ndarray, dict]:
             attrs["chromaticities"] = struct.unpack("<8f", payload)
         elif type_name == "string":
             attrs[name] = payload.decode("utf-8", "replace")
+        elif type_name == "int" and len(payload) == 4:
+            (attrs[name],) = struct.unpack("<i", payload)
         else:
             attrs.setdefault("_raw", {})[name] = (type_name, payload)
     pos += 1  # header terminator
