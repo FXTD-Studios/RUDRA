@@ -36,6 +36,16 @@ ACES EXR, HDR10, HLG, ProRes or DPX.
 You stay in control. Every step is live on screen, the original SDR is one key
 away, and RUDRA marks every pixel it had to invent.
 
+<p align="center">
+  <img src="docs/images/rudra_look.png" width="900" alt="RUDRA 1.0.1, the Look tab: a sunset opened in the Simple workspace, with Exposure, Strength and Display peak">
+  <br><sub><b>1 Look</b>: open a shot and shape its HDR. Hold B for the original SDR, W for a wipe.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/rudra_check.png" width="900" alt="RUDRA 1.0.1, the Check tab: peak 5,856 nits and average 56 nits, with the waveform, histogram, vectorscope and RGB parade beside the picture">
+  <br><sub><b>2 Check</b>: peak, average and light above SDR white, with the scopes beside the picture.</sub>
+</p>
+
 ## Download
 
 | | |
