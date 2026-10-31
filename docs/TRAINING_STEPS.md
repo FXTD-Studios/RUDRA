@@ -38,7 +38,7 @@ one pairs files by name and carries none of the measurements the gate reads,
 which is why the first `G:\corpus_v4` failed checks 1 and 3:
 
 ```
-powershell -ExecutionPolicy Bypass -File BUILD_CORPUS_V4.ps1 -Scan -Ingest -Manifest -Verify
+powershell -ExecutionPolicy Bypass -File scripts/BUILD_CORPUS_V4.ps1 -Scan -Ingest -Manifest -Verify
 ```
 
 `scan_sources.py` → `prepare_pairs.py --tonemap-ev 0` → `build_manifests.py

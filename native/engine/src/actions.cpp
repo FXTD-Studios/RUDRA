@@ -101,7 +101,7 @@ const std::vector<ActionSpec> kActions = {
     {"clip-fill", "Fill clipped highlights", "", "clipFill", O::Native, E::Always, ""},
     {"clip-peak", "Set the peak of a clipped region…", "", "", O::Native, E::AnyFrames, ""},
     {"clip-peaks-clear", "Clear clipped peaks", "", "", O::Native, E::AnyFrames, ""},
-    // Super-whites (21 Oct 2026, docs/SUPER_WHITES_REVIEW_2026-10-16.md): a
+    // Super-whites (21 Oct 2026, archive/docs/SUPER_WHITES_REVIEW_2026-10-16.md): a
     // limited-range BT.709 movie read with its detail above white kept
     // (bt1886-headroom-v1) instead of clipped and filled. Experimental.
     {"keep-super-whites", "Keep super-whites (experimental)", "", "superWhites", O::Native, E::Always, ""},

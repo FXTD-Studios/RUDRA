@@ -65,7 +65,6 @@ training/input.jpg
 # a test reads off disk.
 !/docs/*.md
 !/STATUS.md
-!/HF_MODEL_CARD.md
 # The native build guide, linked from the root README.
 !/native/README.md
 

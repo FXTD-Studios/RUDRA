@@ -2,7 +2,7 @@
 
 The corpus has plenty of rows and few independent scenes: without HdM the
 commercially clean train set is ~14k records, 48 % of them one film
-(claude/TASK_G_DRIVE_INVENTORY_2026_10_13.md). FXTD's own camera originals are
+(research notes TASK_G_DRIVE_INVENTORY_2026_10_13). FXTD's own camera originals are
 the independent, owned scenes docs/CORPUS.md asks for. This turns them into
 rendered pairs in the corpus's existing conventions -- nothing new is invented:
 

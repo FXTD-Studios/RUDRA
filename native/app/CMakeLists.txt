@@ -62,7 +62,7 @@ set_target_properties(RUDRA PROPERTIES
   MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
   MACOSX_BUNDLE_SHORT_VERSION_STRING "${RUDRA_VERSION_LABEL}"
   MACOSX_BUNDLE_ICON_FILE "rudra.icns"
-  MACOSX_BUNDLE_COPYRIGHT "Copyright 2026 FXTD Studios. PolyForm Noncommercial 1.0.0.")
+  MACOSX_BUNDLE_COPYRIGHT "Copyright 2026 FXTD Studios. Apache License 2.0.")
 
 # The window against the Studio page, offscreen (Phase 3): its menubar, keys
 # and actions (tests/golden/actions), and the look as it resolves.

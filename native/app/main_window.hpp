@@ -452,7 +452,7 @@ public:
     // legacy SDR engine: paused frames, playback, grade changes, undo/redo and
     // project restore all route through it. A refused grade or a failure is
     // shown as such; legacy pixels are never substituted. Exports refuse the
-    // policy until they support it (E2). See docs/HEADROOM_APP_INTEGRATION_2026-10-17.md.
+    // policy until they support it (E2). See archive/docs/HEADROOM_APP_INTEGRATION_2026-10-17.md.
     bool headroom_capable() const { return headroom_capable_; }
     bool headroom_routed() const;                       // frames come from the headroom driver
     Result<void> set_headroom_preview(bool on);         // the grade's policy: one undo step

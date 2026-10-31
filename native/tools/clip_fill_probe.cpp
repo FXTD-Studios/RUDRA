@@ -1,6 +1,6 @@
 // clip_fill_probe: the shipped clip fill (core/clip_fill.cpp) as a file-in /
 // file-out tool, so Python can train and score against the exact code the app
-// runs (PeakNet, claude/TASK_COMMERCIAL_MODEL_PLAN.md, 17 Oct 2026).
+// runs (PeakNet, research notes TASK_COMMERCIAL_MODEL_PLAN, 17 Oct 2026).
 //
 //   clip_fill_probe <in.f32> <out.f32> <regions.tsv> [--corpus-ev EV] [--glow K] [--overrides file]
 //

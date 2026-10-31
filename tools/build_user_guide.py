@@ -24,11 +24,18 @@ _ap.add_argument("--out", required=True, type=pathlib.Path, help="the rudra-docs
 _ap.add_argument("--source", type=pathlib.Path, help="the page to keep Train and Help from (default: <out>/index.html)")
 ARGS = _ap.parse_args()
 ARGS.label = ARGS.label or ARGS.version
+SRC_TAG = ARGS.tag or 'main'   # the source the training page clones and links to
 src = (ARGS.source or ARGS.out / "index.html").read_text(encoding="utf-8")
 _t = src.index('<section class="page" id="training"')
 training = src[_t:src.index('<section class="page"', _t + 10)]   # up to the next page, whichever it is
 # The training page keeps its content; its eyebrow number moves with the new order.
 training = training.replace('04 / Optional advanced workflow', '07 / Optional advanced workflow')
+training = re.sub(r'git clone --branch v[0-9][^ ]* ', f'git clone --branch {SRC_TAG} ', training)
+training = re.sub(r'/blob/v[0-9][^/"]*/', f'/blob/{SRC_TAG}/', training)
+training = training.replace('The desktop download already includes a model.', 'The app works without a model, and the learned ACES 2.0 model is a free download inside it.')
+training = training.replace('Keep the included model until the candidate proves useful.', 'Keep the learned ACES 2.0 model until the candidate proves useful.')
+training = training.replace('Compare against both the analytic baseline and the shipped model.', 'Compare against both the analytic baseline and the learned ACES 2.0 model.')
+training = training.replace('Keep the included model available for comparison', 'Keep the learned ACES 2.0 model available for comparison')
 
 VER = ARGS.label
 UPDATED = ARGS.updated
@@ -37,6 +44,8 @@ REL = (f'https://github.com/FXTD-Studios/RUDRA/releases/tag/{ARGS.tag}' if ARGS.
 SETUP = (f'https://github.com/FXTD-Studios/RUDRA/releases/download/{ARGS.tag}/RUDRA-{ARGS.version}-windows-x64-setup.exe'
          if ARGS.tag else REL)
 ZIP = (f'https://github.com/FXTD-Studios/RUDRA/releases/download/{ARGS.tag}/RUDRA-{ARGS.version}-windows-x64.zip'
+       if ARGS.tag else REL)
+DMG = (f'https://github.com/FXTD-Studios/RUDRA/releases/download/{ARGS.tag}/RUDRA-{ARGS.version}-macos-arm64.dmg'
        if ARGS.tag else REL)
 
 head = f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Learn to install RUDRA {VER}, turn SDR shots into HDR with the Look, Check, Deliver workflow, download models, and deliver ACES masters, HDR10 and HLG."><link rel="canonical" href="https://www.fxtdstudios.com/rudra-docs/"><title>RUDRA | User guide | FXTD Studios</title><link rel="stylesheet" href="style.css"><script src="guide.js" defer></script></head><body>
@@ -55,7 +64,7 @@ head = f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <a href="#whats-new" data-keywords="changes release notes version"><span>08</span>What’s new</a>
 <a href="#help" data-keywords="faq troubleshooting licence license support about"><span>09</span>Help &amp; answers</a>
 </nav><p id="empty" hidden>No matching topic.</p>
-<div class="sidebar-foot"><span class="dot"></span>Desktop {VER}<br>Windows x64<br><br>Apache 2.0 licence<br>Updated {UPDATED}<br><br><a class="textlink" href="https://www.fxtdstudios.com">www.fxtdstudios.com</a></div></aside>
+<div class="sidebar-foot"><span class="dot"></span>Desktop {VER}<br>Windows x64 · macOS<br><br>Apache 2.0 licence<br>Updated {UPDATED}<br><br><a class="textlink" href="https://www.fxtdstudios.com">www.fxtdstudios.com</a></div></aside>
 <main><div class="breadcrumb">FXTD TOOLS &nbsp;/&nbsp; RUDRA &nbsp;/&nbsp; <b id="crumb">INTRODUCTION</b></div>
 '''
 
@@ -81,22 +90,29 @@ intro = f'''<section class="page active" id="introduction" data-title="Introduct
 
 install = f'''<section class="page" id="installation" data-title="Installation">
 <div class="eyebrow">02 / Set up your workspace</div><h1>Install. Open.<br>Start creating.</h1>
-<p class="lede">Install the app, then download a model from inside it. Still images need nothing else; movies need FFmpeg, which the Windows package includes.</p>
+<p class="lede">Install the app, then download a model from inside it if you want one. Still images need nothing else; movies need FFmpeg, which both packages include.</p>
+<div class="actions"><a class="button" href="{SETUP}">Windows installer ↓</a><a class="button outline" href="{DMG}">macOS (Apple silicon) ↓</a></div>
 <p class="section-label">Windows 10 / 11 · x64</p>
 <div class="steps">
 <div class="step"><div><h3>Download the installer</h3><p>Get the {VER} setup file from the official release. A SHA-256 file sits beside each download.</p><a class="button" href="{SETUP}">Windows installer ↓</a></div></div>
-<div class="step"><div><h3>Install, then open RUDRA</h3><p>Follow the installer and launch RUDRA from the Start menu. The first-run check looks at your display and GPU.</p></div></div>
+<div class="step"><div><h3>Install, then open RUDRA</h3><p>Follow the installer and launch RUDRA from the Start menu. The builds are not code-signed yet: if SmartScreen appears, choose <strong>More info → Run anyway</strong>. The first-run check looks at your display and GPU.</p></div></div>
 <div class="step"><div><h3>Add the learned model (optional)</h3><p>RUDRA works without it. For more of the clipped highlights, choose <strong>Download the model…</strong> on the Look tab, or <strong>File → Model packages… → Download</strong>. See <a class="textlink" href="#models">Models</a>.</p></div></div>
 <div class="step"><div><h3>Follow the tips</h3><p>A welcome card explains the three steps; the first time you open a shot, four short tips point at each part. <strong>Help → Show tips</strong> brings them back.</p></div></div>
 </div>
 <h2>What your computer needs</h2>
 <table><thead><tr><th>Part</th><th>For</th><th>Notes</th></tr></thead><tbody>
-<tr><td>NVIDIA GPU with CUDA</td><td>The learned ACES 2.0 model</td><td>Fastest. CPU works, slowly. The GPU also draws the HDR viewer.</td></tr>
+<tr><td>NVIDIA GPU (CUDA) or any DirectX 12 GPU (DirectML)</td><td>The learned ACES 2.0 model</td><td>CUDA is fastest. Without a GPU it runs on the CPU, slowly. The GPU also draws the HDR viewer.</td></tr>
+<tr><td>16 GB GPU</td><td>AI fill (experimental)</td><td>Only for the optional generative pass; everything else runs without it.</td></tr>
 <tr><td>HDR display (optional)</td><td>Seeing HDR 1000 as it is</td><td>On an SDR screen, choose the <strong>SDR 100</strong> monitor; the master is unchanged.</td></tr>
-<tr><td>FFmpeg / FFprobe</td><td>Movies in and out</td><td>Placed beside RUDRA.exe by the Windows package; or install it and put it on the PATH.</td></tr>
+<tr><td>FFmpeg / FFprobe</td><td>Movies in and out</td><td>Included in both packages; or install it and put it on the PATH.</td></tr>
 </tbody></table>
 {RC_NOTE}
-<p class="small">macOS and Linux: the Beta 2 builds remain on the <a class="textlink" href="https://github.com/FXTD-Studios/RUDRA/releases/tag/v0.9.0-beta.2">Beta 2 release</a>; they do not have the learned ACES 2.0 model.</p>
+<p class="section-label">macOS · Apple silicon</p>
+<div class="steps">
+<div class="step"><div><h3>Download the DMG</h3><p>Get the {VER} DMG from the release, open it and drag <strong>RUDRA</strong> to Applications.</p><a class="button" href="{DMG}">macOS DMG ↓</a></div></div>
+<div class="step"><div><h3>Open it the first time</h3><p>The build is not notarised yet. If macOS blocks it, open <strong>System Settings → Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>.</p></div></div>
+</div>
+<p class="small">On macOS, 1.0 runs the analytic reconstruction with every Look, Check and Deliver tool. The learned ACES 2.0 model and AI fill are Windows features for now.</p>
 <p>Prefer a portable app? Download the <a class="textlink" href="{ZIP}">Windows ZIP</a>, extract the whole folder, and open <strong>RUDRA.exe</strong>.</p>
 <a class="button" href="#models">Next: models →</a>
 </section>
@@ -133,7 +149,8 @@ workspace = '''<section class="page" id="workspace" data-title="The workspace">
 <h2>The viewer bar</h2>
 <table><thead><tr><th>Control</th><th>What it does</th></tr></thead><tbody>
 <tr><td>Hold <strong>B</strong></td><td>Shows the original SDR while you hold the key; let go for the HDR.</td></tr>
-<tr><td>View ▾</td><td>HDR, Original SDR, Wipe (SDR left, HDR right), What changed, Invented pixels, False colour.</td></tr>
+<tr><td>View ▾</td><td>HDR, Original SDR, Wipe, What changed, Invented pixels, False colour.</td></tr>
+<tr><td>Wipe (<strong>W</strong>)</td><td>The original SDR on the left, RUDRA on the right; the bar says which side is which. Drag the seam, or move it with ← → (Shift for fine steps). It stays where you leave it while you change the peak or the exposure. <strong>W</strong> or <strong>Esc</strong> closes it.</td></tr>
 <tr><td>Fit / 100%</td><td>Fit the frame to the window, or see every pixel. Scroll to zoom, middle-drag to pan.</td></tr>
 <tr><td>Scopes</td><td>Show or hide the waveform, histogram, vectorscope and RGB parade beside the picture.</td></tr>
 </tbody></table>
@@ -154,7 +171,7 @@ first = '''<section class="page" id="first-render" data-title="Your first HDR">
 <div class="steps">
 <div class="step"><div><h3>Open a shot</h3><p>Drop a frame, a folder of frames or a movie on the window, or click <strong>Choose…</strong>. Stills: PNG, JPEG, TIFF, WebP, BMP. Movies: anything FFmpeg reads. Start from the original file; messaging apps recompress.</p></div></div>
 <div class="step"><div><h3>Pick the monitor</h3><p>On <strong>1 Look</strong>, choose <strong>HDR 1000</strong> on an HDR display, or <strong>SDR 100</strong> to judge the shot on an ordinary screen. The monitor changes what you see, never the master.</p></div></div>
-<div class="step"><div><h3>Compare with the SDR</h3><p>Hold <strong>B</strong> to see the original SDR; let go for the HDR. <strong>View ▾ → Wipe</strong> puts them side by side, and <strong>Invented pixels</strong> shows where RUDRA estimated what the SDR had lost.</p></div></div>
+<div class="step"><div><h3>Compare with the SDR</h3><p>Hold <strong>B</strong> to see the original SDR; let go for the HDR. <strong>W</strong> (or <strong>View ▾ → Wipe</strong>) puts them side by side, SDR left and RUDRA right, with a seam you can drag; and <strong>Invented pixels</strong> shows where RUDRA estimated what the SDR had lost.</p></div></div>
 <div class="step"><div><h3>Trim only what the shot needs</h3><p><strong>Strength</strong> — how far from the plain inverse (0 %) to the model (100 %). <strong>Peak</strong> — a soft limit on the rebuilt highlights. <strong>Exposure</strong> and <strong>Contrast</strong> — the whole master. The trims are remembered per shot; <strong>Copy look</strong> and <strong>Paste</strong> carry them to the next one.</p></div></div>
 <div class="step"><div><h3>Check it</h3><p>On <strong>2 Check</strong>, read the four numbers and the scopes. A peak far above your target, or a large share outside P3-D65, deserves a closer look. <strong>Grab still</strong> keeps a reference to compare shots.</p></div></div>
 <div class="step"><div><h3>Deliver</h3><p>On <strong>3 Deliver</strong>, pick what you need and click <strong>Render</strong>. <a class="textlink" href="#export">Choose the right delivery →</a></p></div></div>
@@ -194,6 +211,13 @@ export = '''<section class="page" id="export" data-title="Deliver & colour">
 
 news = f'''<section class="page" id="whats-new" data-title="What’s new">
 <div class="eyebrow">08 / Release notes</div><h1>What’s new<br>in {VER}.</h1>
+<h2>In 1.0.1</h2>
+<ul>
+<li><strong>The first published 1.0 build</strong>, for Windows and, again, macOS (Apple silicon).</li>
+<li><strong>Wipe</strong>: the seam stays where you leave it when you change the peak or the exposure, and the bar says which side is which: SDR left, RUDRA right.</li>
+<li><strong>Clipped highlights</strong>: a large blown area, like a sun in a hazy sky, now runs toward white at its centre instead of carrying the sky’s colour all the way in. Measured against HDR references, the colour is closer and the brightness unchanged.</li>
+<li>The model card, README and installers’ “Read me first” are rewritten for artists.</li>
+</ul>
 <h2>Since Beta 2</h2>
 <ul>
 <li><strong>Learned ACES 2.0 model</strong>, a free download inside the app: kept loaded on the GPU, in the viewer and every render. The analytic reconstruction needs no model.</li>
@@ -227,6 +251,15 @@ hlp = hlp.replace('Can I use Beta 2 commercially?', 'Can I use RUDRA commerciall
 hlp = re.sub(r'<p>The native code uses PolyForm Noncommercial 1.0.0.*?</p>', '<p>Yes. From 29 October 2026 the RUDRA code is licensed under the Apache License 2.0, which allows commercial use. Each model has its own licence, shown in Model packages before you download it; the Beta 2 weights stay non-commercial because of their training data. Questions: <a class="textlink" href="https://www.fxtdstudios.com">www.fxtdstudios.com</a>.</p>', hlp, flags=re.S)
 hlp = hlp.replace(f'<a class="button outline" href="https://github.com/FXTD-Studios/RUDRA/releases/tag/v0.9.0-beta.2">Release notes ↗</a>',
                   f'<a class="button outline" href="{REL}">Release notes ↗</a><a class="button outline" href="https://www.fxtdstudios.com">www.fxtdstudios.com ↗</a>')
+hlp = re.sub(r'/blob/v[0-9][^/"]*/STATUS\.md', f'/blob/{SRC_TAG}/docs/STATUS.md', hlp)
+hlp = re.sub(r'/blob/v[0-9][^/"]*/', f'/blob/{SRC_TAG}/', hlp)
+hlp = hlp.replace('https://huggingface.co/fxtdstudios/RUDRA"', 'https://huggingface.co/fxtdstudios/rudra-models"')
+hlp = re.sub(r'(?:\s*&nbsp;\s*/\s*&nbsp;\s*)?<a[^>]*paper/main\.pdf[^>]*>[^<]*</a>', '', hlp)
+hlp = hlp.replace(' The desktop app’s Core ML inference is a separate capability.', '')
+hlp = hlp.replace('<a class="button outline" href="https://github.com/FXTD-Studios/RUDRA/releases">Release notes ↗</a>', f'<a class="button outline" href="{REL}">Release notes ↗</a>')
+hlp = re.sub(r'<p[^>]*>The paper predates[^<]*</p>', '<p class="small">This guide does not claim independent HDR-display or clean-machine certification.</p>', hlp)
+if 'Can I use RUDRA on a Mac?' not in hlp:
+    hlp = hlp.replace('<details><summary>Can I train on a Mac?', '<details><summary>Can I use RUDRA on a Mac?</summary><p>Yes: the 1.0.1 DMG runs on Apple silicon with the analytic reconstruction and every Look, Check and Deliver tool. The learned ACES 2.0 model and AI fill are Windows features for now.</p></details><details><summary>Can I train on a Mac?', 1)
 foot = f'<footer><span>FXTD STUDIOS / RUDRA DOCUMENTATION · <a href="https://www.fxtdstudios.com">WWW.FXTDSTUDIOS.COM</a></span><span>{VER.upper()} · USER GUIDE</span></footer></main></div></body></html>'
 out = head + intro + install + models + workspace + first + export + training + news + hlp + foot
 (ARGS.out / 'index.html').write_text(out, encoding='utf-8')

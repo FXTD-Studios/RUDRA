@@ -27,7 +27,7 @@ for the family, then decodes the SAME latent under three conventions:
 
 and reports PSNR of each decode against the stored log_coded target. The
 correct convention is the one that reproduces (approximately) the training
-PSNR from STATUS.md; the wrong ones will be dramatically worse.
+PSNR from docs/STATUS.md; the wrong ones will be dramatically worse.
 
 RUN (Windows, training venv):
     python training/verify_latent_convention.py --pair_dir G:\\data\\flux_pairs ^
@@ -129,7 +129,7 @@ def main() -> None:
     for k, v in scores.items():
         mark = "  <-- WINNER" if k == best else ""
         print(f"{k:40s}  {np.mean(v):6.2f} dB{mark}")
-    print("\nCompare the winner against STATUS.md training PSNR_log "
+    print("\nCompare the winner against docs/STATUS.md training PSNR_log "
           "(flux full 29.77 / sdxl turbo 33.86 / wan full 32.45).")
     if best.startswith("A"):
         print("=> inference's '/ scale' division is a train/inference mismatch: "

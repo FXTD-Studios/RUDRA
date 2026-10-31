@@ -257,7 +257,7 @@ $log = @("RUDRA native Phase 3 exit, $Stamp", "package $Package", "frames $Frame
          "PATH for the app: $clean", "") + ($rows | Format-Table -AutoSize | Out-String) + $text
 $log | Set-Content -Encoding utf8 (Join-Path $Reports "native_phase3_exit_$Stamp.txt")
 
-Say "By hand, on the HDR display (tick in STATUS.md)"
+Say "By hand, on the HDR display (tick in docs/STATUS.md)"
 @(
     "  1. RUDRA.exe with no arguments: the first-run check shows the HDR card and names the display's peak.",
     "  2. File > Model packages: the package in use; switch to another and back; the grade stays.",

@@ -1,6 +1,6 @@
 #pragma once
 // Experimental, isolated headroom decoder. No app/default pipeline uses it.
-// See docs/SUPER_WHITES_REVIEW_2026-10-16.md before integrating this type.
+// See archive/docs/SUPER_WHITES_REVIEW_2026-10-16.md before integrating this type.
 
 #include <atomic>
 #include <filesystem>

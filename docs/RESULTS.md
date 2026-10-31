@@ -3,7 +3,7 @@
 Split out of the README on 10 Sep 2026, when the README became a page for the
 people who use the tool. Nothing here changed; it moved.
 
-Back to [the README](../README.md) . [STATUS.md](../STATUS.md) says what is
+Back to [the README](../README.md) . [STATUS.md](STATUS.md) says what is
 finished and what is open.
 
 ---

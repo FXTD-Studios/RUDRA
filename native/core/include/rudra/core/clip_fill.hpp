@@ -1,5 +1,5 @@
 #pragma once
-// The clip fill (claude/TASK_CLIPPED_HIGHLIGHTS.md, 12 Oct 2026): what the
+// The clip fill (research notes TASK_CLIPPED_HIGHLIGHTS, 12 Oct 2026): what the
 // analytic reconstruction puts where the SDR clipped, instead of the flat
 // ceiling inverse_aces_approx leaves there (every code at or above 0.995 is
 // the same value, about 1276 nits at corpus EV 0).
@@ -57,7 +57,7 @@ struct ClipFillOptions {
     // the glow's own slope to the centre. 0.5 was chosen on the clip benches'
     // first three scenes (bench/cp8_clip_ev0..2, mean error inside clipped
     // pixels over +0/+1/+2 EV) and holds on the other four; see
-    // claude/TASK_CLIPPED_HIGHLIGHTS.md. Where the SDR barely clipped (+0 EV)
+    // research notes TASK_CLIPPED_HIGHLIGHTS. Where the SDR barely clipped (+0 EV)
     // any dome overshoots: Strength, or a peak, is the artist's answer there.
     double glow_scale = 0.5;
     bool partial = true;                // stage 1 on

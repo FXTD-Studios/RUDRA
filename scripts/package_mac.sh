@@ -170,7 +170,7 @@ leaks=$(for f in "$APP/Contents/MacOS/"* "$APP/Contents/Frameworks/"*.dylib; do 
 rm -f "$OUT/theme-check.json"
 
 say "Disk image"
-cp docs/BETA.md "$OUT/Read me first.md" 2>/dev/null || true
+cp docs/READ_ME_FIRST.md "$OUT/Read me first.md" 2>/dev/null || true
 ln -s /Applications "$OUT/Applications"
 hdiutil create -volname "RUDRA $VERSION" -srcfolder "$OUT" -ov -format UDZO "dist/beta/$NAME.dmg" >/dev/null
 if [ -n "$IDENTITY" ]; then

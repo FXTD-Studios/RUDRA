@@ -315,7 +315,7 @@ $table | Write-Host
 @("RUDRA native Phase 4 exit, $Stamp", "package $Package", "clip $Clip", "backend $Backend", "ffmpeg $FfDir", "",
   $table) | Set-Content -Encoding utf8 (Join-Path $Reports "native_phase4_exit_$Stamp.txt")
 
-Say "By hand, on the HDR display (tick in STATUS.md)"
+Say "By hand, on the HDR display (tick in docs/STATUS.md)"
 @(
     "  1. Drop the movie on RUDRA.exe: the title, frame count and rate are the movie's; scrub with , and . and Space.",
     "  2. Grade a frame; Export (Ctrl+E or the toolbar): the HDR10 tile is live; Export queues it and the Queue window opens.",

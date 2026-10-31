@@ -776,7 +776,7 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
     #
     # Default ON here because a master goes onto someone's timeline next to a
     # graded SDR. The benchmark path leaves it off, so the measured numbers in
-    # the paper and STATUS.md still reproduce.
+    # the paper and docs/STATUS.md still reproduce.
     if bool(params.get("anchor", True)):
         from rudra.anchor import anchor_to_sdr
         nits = anchor_to_sdr(nits, sdr.astype(np.float64),

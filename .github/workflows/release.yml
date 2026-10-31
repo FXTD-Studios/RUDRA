@@ -149,5 +149,5 @@ jobs:
         with:
           prerelease: ${{ contains(github.ref_name, '-') }}
           name: RUDRA ${{ github.ref_name }}
-          body_path: docs/RELEASE_NOTES_1.0.0.md
+          body_path: docs/RELEASE_NOTES_1.0.1.md
           files: artifacts/*

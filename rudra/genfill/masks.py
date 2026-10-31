@@ -7,7 +7,7 @@ v1.1 (29 Oct 2026, after the v1 gates failed): the model still SEES those region
 BLENDED only where the source holds no information at all: max code >= blend_high (255, fully
 clipped) or, with shadows on, <= blend_low (0, fully crushed), with no outward feather. In codes
 250-254 and 1-4 the exact inverse is already within ~0.1 stop and v1's fill made them worse
-(claude/TASK_GENFILL_LAYER3_2026_10_27.md).
+(research notes TASK_GENFILL_LAYER3_2026_10_27).
 
 The user moves tau_high / tau_low in the app (the live mask overlay shows the result). Each
 mask is dilated a little (the model needs the context ring), then steadied in time with a
