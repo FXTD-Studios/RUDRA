@@ -1513,6 +1513,8 @@ void MainWindow::sync_ui() {
     regions_->sync();
     mask_panel_->sync();
     view_mode_->set_on(session_.wipe ? "#wipeBtn" : QString::fromStdString(session_.show));
+    // Which side is which while the wipe is up: the original on the left, RUDRA on the right.
+    hold_hint_->setText(session_.wipe ? QStringLiteral("Wipe: SDR left | RUDRA right") : QStringLiteral("Hold B for the original SDR"));
     view_layer_->set_on(QString::number(session_.view_layer));
     guide_btn_->setChecked(guides_on_);
     changes_btn_->setChecked(session_.show_changes);

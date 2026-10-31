@@ -5546,6 +5546,11 @@ TEST(AppSimple, LookCheckDeliverAndAdvancedGoesToFull) {
     EXPECT_EQ(w.findChild<QLabel*>("recReconTitle")->text(), "Look");
     EXPECT_FALSE(win.shown(win.get("emptyFull")));
     EXPECT_EQ(w.findChild<QLabel*>("holdHint")->text(), "Hold B for the original SDR");
+    // While the wipe is up the hint says which side is which (31 Oct 2026).
+    w.action("wipe")->trigger();
+    EXPECT_EQ(w.findChild<QLabel*>("holdHint")->text(), "Wipe: SDR left | RUDRA right");
+    w.action("wipe")->trigger();
+    EXPECT_EQ(w.findChild<QLabel*>("holdHint")->text(), "Hold B for the original SDR");
     // The viewer fills what the compare line and the pipeline left.
     const auto tools = win.box(win.get("viewerTools")), viewer = win.box(win.get("viewer")), time = win.box(win.get("transport"));
     EXPECT_EQ(viewer[1], tools[1] + tools[3]);

@@ -1080,6 +1080,7 @@ void ViewerWindow::mousePressEvent(QMouseEvent* e) {
         d_->wipe_dragging = true;
         d_->view.wipe = wipe_at(d_->placed(), e->position().x());
         d_->changed_view();
+        d_->notify();   // the session keeps the seam, so a peak or exposure change does not reset it
         return;
     }
     d_->flip_held_mouse = true;
@@ -1148,6 +1149,7 @@ void ViewerWindow::mouseReleaseEvent(QMouseEvent* e) {
         return;
     }
     if (e->button() == Qt::LeftButton) {
+        if (d_->wipe_dragging) d_->notify();   // where the seam was let go
         d_->wipe_dragging = false;
         if (d_->flip_held_mouse) {
             d_->flip_held_mouse = false;
@@ -1182,6 +1184,7 @@ void ViewerWindow::keyPressEvent(QKeyEvent* e) {
                 const double step = (e->modifiers() & Qt::ShiftModifier) ? 0.01 : 0.05;
                 d_->view.wipe = std::clamp(d_->view.wipe + (e->key() == Qt::Key_Right ? step : -step), 0.0, 1.0);
                 d_->changed_view();
+                d_->notify();
                 return;
             }
             break;
