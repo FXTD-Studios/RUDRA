@@ -66,7 +66,7 @@ intro = f'''<section class="page active" id="introduction" data-title="Introduct
 <div class="actions"><a href="#installation" class="button">Install RUDRA <span>↗</span></a><a href="#first-render" class="button outline">Make your first HDR →</a></div>
 <div class="meta"><span>DESKTOP {VER.upper()}</span><span>NO MODEL NEEDED TO START</span><span>ACES EXR · HDR10 · HLG</span></div></div>
 <h2>What is RUDRA?</h2>
-<p>SDR stores a limited brightness range: bright skies, lamps and reflections clip to white. RUDRA reads the SDR through the curve it was made with and inverts it, filling the clipped highlights; the optional learned ACES 2.0 model (a preview) rebuilds what the inverse alone cannot. Everything the SDR already holds is kept.</p>
+<p>SDR stores a limited brightness range: bright skies, lamps and reflections clip to white. RUDRA reads the SDR through the curve it was made with and inverts it, filling the clipped highlights; the learned ACES 2.0 model, a free download, rebuilds what the inverse alone cannot. Everything the SDR already holds is kept.</p>
 <div class="flow" aria-label="Workflow: Look, Check, Deliver"><div class="flow-box"><b>1 / Look</b><small>Open a shot, shape its HDR</small></div><div class="flow-arrow">→</div><div class="flow-box"><b>2 / Check</b><small>Read it on the scopes</small></div><div class="flow-arrow">→</div><div class="flow-box"><b>3 / Deliver</b><small>ACES master, HDR10 or HLG</small></div></div>
 <div class="callout"><strong>Estimation, not a perfect restoration.</strong>Once detail is clipped away there is no unique original to recover. RUDRA marks the pixels it invented, so you can see where it estimated and where it kept your source. Always compare.</div>
 <h2>Choose where to start.</h2>
@@ -111,14 +111,14 @@ models = '''<section class="page" id="models" data-title="Models">
 <div class="step"><div><h3>Use it</h3><p>Click <strong>Use</strong>. The model loads once and stays loaded; the status bar says when it is ready and on which device (for example “learned ACES 2.0 (cuda)”).</p></div></div>
 </div>
 <table><thead><tr><th>Model</th><th>What it does</th><th>Use it for</th></tr></thead><tbody>
-<tr><td>Learned ACES 2.0 <span class="small">(preview)</span></td><td>Inverts the ACES 2.0 SDR view and rebuilds clipped highlights</td><td>Most shots. The default. A preview until it passes the release checks.</td></tr>
+<tr><td>Learned ACES 2.0</td><td>Inverts the ACES 2.0 SDR view and rebuilds clipped highlights</td><td>Most shots, once downloaded (about 2 MB). Apache 2.0.</td></tr>
 <tr><td>Analytic (built in)</td><td>The inverse of the curve that made the SDR, with the clipped highlights filled</td><td>Every shot, out of the box. The default until a learned model is installed.</td></tr>
-<tr><td>AI fill (optional)</td><td>A generative pass for large blown regions (Wan2.1-VACE + the RUDRA LoRA)</td><td>Hero shots, reviewed frame by frame. Large download; needs a strong GPU.</td></tr>
+<tr><td>AI fill v3 (experimental)</td><td>A generative pass for large blown regions: the RUDRA LoRA on Wan2.1-VACE-1.3B draws the shape, a small estimator sets the brightness</td><td>Hero shots, reviewed frame by frame. Needs the Wan2.1-VACE-1.3B base (from Wan-AI) and a 16 GB GPU. Apache 2.0.</td></tr>
 </tbody></table>
 <details><summary>Where are the models kept?</summary><p>In your user folder (on Windows, <strong>%LOCALAPPDATA%\\FXTD Studios\\RUDRA\\models</strong>). <strong>Show in folder</strong> opens it. To move them, choose another folder in Model packages; RUDRA searches every folder listed there.</p></details>
 <details><summary>Can I use a model I trained?</summary><p>Yes. Export it as a package (a folder with <strong>manifest.json</strong>) and choose <strong>Add folder…</strong> in Model packages. See <a class="textlink" href="#training">Train your model</a>.</p></details>
 <details><summary>No internet on this computer?</summary><p>Download the package on another computer from the model page, copy the folder across, and use <strong>Add folder…</strong>.</p></details>
-<div class="callout"><strong>Model terms.</strong>The app is Apache 2.0; models have their own licence, separate from the app. Each one shows its licence in Model packages before you download it.</div>
+<div class="callout"><strong>Model terms.</strong>The app and the 1.0 models are Apache 2.0 (<a class="textlink" href="https://huggingface.co/fxtdstudios/rudra-models">fxtdstudios/rudra-models</a>); each model shows its licence before you download it. Each one shows its licence in Model packages before you download it.</div>
 </section>
 '''
 
@@ -196,7 +196,7 @@ news = f'''<section class="page" id="whats-new" data-title="What’s new">
 <div class="eyebrow">08 / Release notes</div><h1>What’s new<br>in {VER}.</h1>
 <h2>Since Beta 2</h2>
 <ul>
-<li><strong>Learned ACES 2.0 model (preview)</strong>, an optional download: kept loaded on the GPU, in the viewer and every render. The analytic reconstruction needs no model.</li>
+<li><strong>Learned ACES 2.0 model</strong>, a free download inside the app: kept loaded on the GPU, in the viewer and every render. The analytic reconstruction needs no model.</li>
 <li><strong>Simple workspace</strong>: Look, Check, Deliver, a first-run welcome and four tips. Full keeps every control.</li>
 <li><strong>Model downloads</strong> from inside the app, checked before they are used.</li>
 <li><strong>Delivery presets</strong>: Grading master, HDR10 movie, Broadcast HDR; Custom… for everything else.</li>

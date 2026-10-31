@@ -14,7 +14,7 @@
     rudra-native.exe (ACES v2) + its DLLs      build\native_aces_v2 (OCIO 2.5.2, ORT/DirectML, OpenCV, OpenEXR)
     LibTorch DLLs (CUDA included)              .venv torch\lib
     MSVC runtime                               Visual Studio's VC\Redist
-    models\<newest dist\models\aces_v2_*>      the model package
+    models\<newest dist\models\RUDRA_ACES_2 (or aces_v2_*)>  the model package
     ffmpeg\ (if tmp\native_deps has it)        movies in the app (GPL build, run as a separate program)
     INTERNAL USE.md, LICENSE, NOTICE, THIRD_PARTY_LICENSES.md
   Then it proves the folder stands alone: with PATH reduced to Windows' own folders it
@@ -50,9 +50,9 @@ $QtBin = (Resolve-Path (Join-Path $QtDir "..\..\..\bin")).Path
 $Deploy = Join-Path $QtBin "windeployqt.exe"
 if (-not (Test-Path $Deploy)) { Fail "no windeployqt in $QtBin" }
 if (-not $Package) {
-    $p = Get-ChildItem "dist\models" -Directory -Filter "aces_v2_*" -ErrorAction SilentlyContinue |
+    $p = Get-ChildItem "dist\models" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "RUDRA_ACES_2*" -or $_.Name -like "aces_v2_*" } |
          Where-Object { Test-Path (Join-Path $_.FullName "manifest.json") } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $p) { Fail "no dist\models\aces_v2_* package" }
+    if (-not $p) { Fail "no dist\models\RUDRA_ACES_2 (or aces_v2_*) package" }
     $Package = $p.FullName
 }
 $Manifest = Get-Content (Join-Path $Package "manifest.json") -Raw | ConvertFrom-Json

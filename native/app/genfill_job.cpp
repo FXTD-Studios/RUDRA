@@ -1,4 +1,5 @@
 #include "genfill_job.hpp"
+#include "model_downloads.hpp"
 #include "paths.hpp"
 
 #include <QCoreApplication>
@@ -96,6 +97,8 @@ std::optional<GenFillSetup> genfill_setup(QString* why) {
         loras.push_back(r / "rudra_genfill.safetensors");
     }
     bases.push_back("G:/datasets/models/Wan2.1-VACE-1.3B-diffusers");   // the training workstation
+    // Downloaded in the app (File > Model packages, 31 Oct 2026), then v3 on the training workstation.
+    loras.push_back(fs::path(default_download_root().toStdU16String()) / "rudra_genfill_v3" / "rudra_genfill.safetensors");
     // v3 (PASSED 30 Oct 2026): the v1 LoRA + brightness.json beside it (run.py --brightness-model auto)
     loras.push_back("G:/rudra_training/claude_genfill_v3_20261030/rudra_genfill.safetensors");
     loras.push_back("G:/rudra_training/claude_genfill_v1_20261027/rudra_genfill.safetensors");

@@ -1,5 +1,20 @@
 # RUDRA 1.0: what is left, and how to ship it
 
+## 31 Oct 2026: the final release
+
+The model and the AI fill v3 are done (Ahmed, 31 Oct). One script takes it from here,
+on Windows, after `hf auth login` (a write token for fxtdstudios):
+
+    powershell -ExecutionPolicy Bypass -File scripts\RELEASE_V1_FINAL.ps1 -DryRun
+    powershell -ExecutionPolicy Bypass -File scripts\RELEASE_V1_FINAL.ps1
+
+It publishes `dist\hf\rudra-models`, and only it: the final model RUDRA ACES 2 (`models/RUDRA_ACES_2`,
+the same files as `dist\models\RUDRA_ACES_2`, release_authorized) and the AI fill v3 (`models/rudra_genfill_v3`)
+to huggingface.co/fxtdstudios/rudra-models under Apache 2.0, tagged v1.0.0; writes
+`models.json` beside the user guide; sets the version to 1.0.0; rebuilds the guide; commits
+and pushes `aces-v2`; and tags v1.0.0, which publishes the release (unsigned). Then deploy
+the website so www.fxtdstudios.com/rudra-docs/ serves the 1.0 guide and models.json.
+
 ## The plan from 29 Oct 2026
 
 This replaces the steps of 12 Oct below (kept for their history and commands).

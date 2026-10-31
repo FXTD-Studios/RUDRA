@@ -92,8 +92,13 @@ and are not maintained.
 
 ## What's new
 
-### In `v1.0.0-rc.3` (27 to 30 Oct 2026)
+### In `v1.0.0` (27 to 31 Oct 2026)
 
+- **The models on Hugging Face.** The learned ACES 2.0 model and the AI fill
+  (LoRA + brightness estimator) are published at
+  [huggingface.co/fxtdstudios/rudra-models](https://huggingface.co/fxtdstudios/rudra-models)
+  under Apache 2.0, and download inside the app: File > Model packages, or
+  Look > Download the model. Every file is checked against its SHA-256.
 - **Apache 2.0.** The code is now licensed under the [Apache License 2.0](LICENSE):
   commercial use is allowed. Each model keeps its own licence (see [Licence](#licence)).
 - **Simple workspace.** New users start in *Simple*: three numbered tabs, **1 Look**
@@ -311,7 +316,7 @@ Full tables, the failure analysis, and how to recompute every number:
 
 **Desktop app (no Python).** From
 [Releases](https://github.com/FXTD-Studios/RUDRA/releases), the latest
-pre-release (`v1.0.0-rc.3` now, then 1.0): for Windows x64 `RUDRA-<version>-windows-x64-setup.exe`, which
+release (`v1.0.0`): for Windows x64 `RUDRA-<version>-windows-x64-setup.exe`, which
 installs for your user (no administrator prompt) with the model and the Visual
 C++ runtime included, or the portable ZIP beside it; for Apple silicon
 `RUDRA-<version>-macos-arm64.dmg`. Details: [`docs/BETA.md`](docs/BETA.md).
@@ -396,7 +401,7 @@ OpenVINO). It lives in [`native/`](native/README.md) on the `native` branch.
 The browser Studio and the Python CLI stay as they are and remain the
 reference every native module is tested against.
 
-In it today (`v1.0.0-rc.2` and the changes since, [`docs/BETA.md`](docs/BETA.md)):
+In it today (`v1.0.0` and the changes since, [`docs/BETA.md`](docs/BETA.md)):
 the Studio's layout, actions, undo and projects; the HDR viewer with scopes,
 wipe, Compare, the Changes tint and the Invented layer; Source, calibration,
 reference match, exposure, peak, knee, Region EV and painted masks, live on
@@ -681,10 +686,9 @@ promoting a different recovery policy.
   yet (trained on one generic prompt), it needs the base model (about 18 GB
   today; a slim ~4 GB pack is planned) and a 16 GB GPU, it runs in Python beside the app, and only EXR stills and
   sequences can be filled.
-- **Model licences differ from the code's.** The code is Apache 2.0; the
-  `sdr2hdr_image_v8` / Beta 2 weights stay non-commercial because of a training
-  source's terms, and the learned ACES 2.0 model is a preview whose licence is
-  confirmed with its training ancestry ([`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md)).
+- **The Beta 2 weights stay non-commercial.** The code and the 1.0 models are
+  Apache 2.0; `sdr2hdr_image_v8` / `sdr2hdr_shadow_v1` keep a training source's
+  academic-only term ([`docs/LEGAL_QUESTIONS.md`](docs/LEGAL_QUESTIONS.md)).
 
 ---
 
@@ -726,8 +730,8 @@ before a download:
 | Model | Licence |
 |---|---|
 | `sdr2hdr_image_v8`, `sdr2hdr_shadow_v1` (Beta 2) | non-commercial ([`checkpoints/LICENSE`](checkpoints/LICENSE)): one training source allows academic use only, a term FXTD Studios cannot waive |
-| Learned ACES 2.0 (preview) | set when its training ancestry is confirmed |
-| AI fill LoRA on Wan2.1-VACE | the base model's Apache 2.0, and the LoRA's own terms |
+| RUDRA ACES 2, the learned ACES 2.0 model (`RUDRA_ACES_2`, [Hugging Face](https://huggingface.co/fxtdstudios/rudra-models)) | Apache 2.0 |
+| AI fill v3 (`rudra_genfill_v3`: the LoRA and brightness.json, [Hugging Face](https://huggingface.co/fxtdstudios/rudra-models)) | Apache 2.0; its base, Wan2.1-VACE-1.3B, is Apache 2.0 from [Wan-AI](https://huggingface.co/Wan-AI/Wan2.1-VACE-1.3B-diffusers) |
 
 Training-data attributions are in [`NOTICE`](NOTICE). For anything else, contact
 [FXTD Studios](https://www.fxtdstudios.com).
