@@ -43,7 +43,7 @@ genfill = [
   "ftfy",
   "huggingface-hub>=0.25",
 ]
-test = ["pytest>=8"]
+test = ["pytest>=8", "scipy>=1.11", "OpenEXR>=3.2", "opencolorio>=2.4", "psutil>=5.9"]
 
 [tool.setuptools.packages.find]
 include = ["rudra*", "config*"]

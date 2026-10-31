@@ -31,7 +31,10 @@ def test_installed_recipe_is_monotone_and_preserves_hdr_headroom():
     assert np.allclose(decoded,hdr,rtol=.001,atol=.0001)
 
 
-def test_planner_excludes_pq_and_cross_split_flags_and_deduplicates(tmp_path):
+def test_planner_excludes_pq_and_cross_split_flags_and_deduplicates(tmp_path, monkeypatch):
+    # The real intake list lives in reports/ (local, not in git): the plan only hashes it.
+    monkeypatch.setattr(z, 'INTAKE', tmp_path)
+    (tmp_path/'intake_candidates_NOT_FOR_TRAINING.jsonl').write_text('')
     sources=[]
     for name,group,split,frames,curve in [
         ('A001C001_260101_a.mov','mataha','test',10,'ARRI LogC4'),

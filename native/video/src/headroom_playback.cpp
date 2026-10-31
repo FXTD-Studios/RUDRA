@@ -37,7 +37,7 @@ struct HeadroomPlayback::Impl {
     std::uint64_t decoded = 0, starts = 0; // lifetime totals, including superseded reads
     std::optional<Selection> selected;
     FloatFrameRange range;
-    std::stop_source stop;
+    rudra::stop_source stop;
     std::shared_ptr<HeadroomStream> active;
     std::deque<Frame> queue;
     std::optional<HeadroomDecodeReceipt> receipt;
@@ -100,7 +100,7 @@ struct HeadroomPlayback::Impl {
         }
         return false;
     }
-    void decode(Generation epoch, Selection selection, FloatFrameRange requested, std::stop_token token) {
+    void decode(Generation epoch, Selection selection, FloatFrameRange requested, rudra::stop_token token) {
         if (!selection.prepared) {
             auto prepared = PreparedHeadroomSource::prepare(selection.source, selection.policy,
                 selection.decoder, {token, selection.probe});
@@ -165,7 +165,7 @@ struct HeadroomPlayback::Impl {
             const auto selection = *selected;
             const auto requested = range;
             auto retired = std::move(active);
-            stop = std::stop_source{};
+            stop = rudra::stop_source{};
             const auto token = stop.get_token();
             active_generation = epoch; pending = false;
             lock.unlock();

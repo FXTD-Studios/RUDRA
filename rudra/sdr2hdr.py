@@ -17,15 +17,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .radiometry import ACES_A, ACES_B, ACES_C, ACES_D, ACES_E, LUMA_REC709
+from rudra.torch_compat import clamp_inclusive
 
 
 def srgb_to_linear(x: torch.Tensor) -> torch.Tensor:
-    x = x.clamp(0.0, 1.0)
+    x = clamp_inclusive(x, 0.0, 1.0)   # black keeps its gradient on torch >= 2.15
     return torch.where(x <= 0.04045, x / 12.92, ((x + 0.055) / 1.055).pow(2.4))
 
 
 def linear_to_srgb(x: torch.Tensor) -> torch.Tensor:
-    x = x.clamp(0.0, 1.0)
+    x = clamp_inclusive(x, 0.0, 1.0)   # black keeps its gradient on torch >= 2.15
     # Both branches participate in autograd. Avoid the unused power branch's
     # infinite derivative at zero without changing any forward code values.
     return torch.where(x <= 0.0031308, 12.92 * x, 1.055 * x.clamp_min(0.0031308).pow(1.0 / 2.4) - 0.055)

@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <span>
-#include <stop_token>
+#include "rudra/platform/stop_token.hpp"
 #include <string>
 
 #include "rudra/platform/result.hpp"
@@ -37,6 +37,6 @@ std::string sha256_hex(std::span<const std::byte> data);
 // (ui/sequence.py's video frame cache). Not for integrity.
 std::string sha1_hex(std::span<const std::byte> data);
 // Cooperative cancellation between 1 MiB reads/hash updates; no partial digest.
-Result<std::string> sha256_file(const std::filesystem::path& path, std::stop_token stop = {});
+Result<std::string> sha256_file(const std::filesystem::path& path, rudra::stop_token stop = {});
 
 }  // namespace rudra

@@ -469,10 +469,10 @@ def check_reconstruction_policy_args(args: argparse.Namespace) -> str:
 def train(args: argparse.Namespace, observer=None) -> Path:
     from training.preservation import validate_args
     validate_args(args)
+    from pipeline.commercial_preflight import training_preflight
+    commercial_provenance = training_preflight(args)   # rejects before the manifest is read
     policy = check_reconstruction_policy_args(args)
     configure_determinism(getattr(args, "deterministic", False))
-    from pipeline.commercial_preflight import training_preflight
-    commercial_provenance = training_preflight(args)
     if observer is not None:
         observer("ready", 0, {})
     seed_everything(args.seed)

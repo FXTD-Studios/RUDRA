@@ -253,7 +253,7 @@ Process::~Process() {
     CloseHandle(d_->pi.hProcess);
 }
 
-Result<ProcessOutput> run_process(const std::vector<std::string>& argv, std::stop_token stop) {
+Result<ProcessOutput> run_process(const std::vector<std::string>& argv, rudra::stop_token stop) {
     if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "Program was cancelled");
     if (argv.empty()) return make_error(ErrorCode::InvalidArgument, "No program to run.");
     SECURITY_ATTRIBUTES sa{sizeof sa, nullptr, TRUE};
@@ -284,7 +284,7 @@ Result<ProcessOutput> run_process(const std::vector<std::string>& argv, std::sto
     {
         // The handle stays valid until the callback has finished. Killing the
         // leaf child unblocks both pipe readers and the final exit wait.
-        std::stop_callback interrupt(stop, [&] { TerminateProcess(pi.hProcess, 1); });
+        rudra::stop_callback interrupt(stop, [&] { TerminateProcess(pi.hProcess, 1); });
         std::thread t([&] { r.err = drain(erd); });
         r.out = drain(ord);
         t.join();
@@ -465,7 +465,7 @@ Process::~Process() {
     }
 }
 
-Result<ProcessOutput> run_process(const std::vector<std::string>& argv, std::stop_token stop) {
+Result<ProcessOutput> run_process(const std::vector<std::string>& argv, rudra::stop_token stop) {
     if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "Program was cancelled");
     if (argv.empty()) return make_error(ErrorCode::InvalidArgument, "No program to run.");
     int o[2], e[2];
@@ -502,7 +502,7 @@ Result<ProcessOutput> run_process(const std::vector<std::string>& argv, std::sto
         std::mutex lifecycle;
         bool reaped = false, wait_failed = false;
         int wait_errno = 0;
-        std::stop_callback interrupt(stop, [&] {
+        rudra::stop_callback interrupt(stop, [&] {
             std::lock_guard lock(lifecycle);
             if (!reaped) ::kill(pid, SIGKILL);
         });
@@ -542,7 +542,7 @@ Result<std::filesystem::path> require_executable(const std::string& name) {
     return make_error(ErrorCode::NotFound, name + " is required on PATH");
 }
 
-Result<std::string> run_tool(const std::vector<std::string>& argv, std::stop_token stop) {
+Result<std::string> run_tool(const std::vector<std::string>& argv, rudra::stop_token stop) {
     auto r = run_process(argv, stop);
     if (!r) return r.error();
     if (r->exit_code != 0) {
