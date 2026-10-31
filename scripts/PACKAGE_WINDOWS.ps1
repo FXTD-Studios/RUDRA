@@ -315,7 +315,7 @@ if ($NoModels) {
         Set-Content -Encoding utf8 (Join-Path $Out "PACKAGE_MODE.txt")
     if (Get-ChildItem $OutModels -Force) { Fail "model-free package contains model files" }
 }
-if (Test-Path docs\BETA.md) { Copy-Item docs\BETA.md (Join-Path $Out "Read me first.md") }
+if (Test-Path docs\READ_ME_FIRST.md) { Copy-Item docs\READ_ME_FIRST.md (Join-Path $Out "Read me first.md") }
 if (Test-Path docs\USER_GUIDE.md) { Copy-Item docs\USER_GUIDE.md (Join-Path $Out "User guide.md") }
 if ($FfDir) {
     $OutFf = Join-Path $Out "ffmpeg"

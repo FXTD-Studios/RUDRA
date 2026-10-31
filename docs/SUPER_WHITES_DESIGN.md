@@ -1,7 +1,7 @@
 # Super-whites: design note (roadmap 1.2, audit P1-2)
 
 **Superseded implementation proposal:** read
-[the measured preservation review](SUPER_WHITES_REVIEW_2026-10-16.md).
+[the measured preservation review](../archive/docs/SUPER_WHITES_REVIEW_2026-10-16.md).
 The proposed limited-integer RGB decoding fails on pinned FFmpeg 7.1.1;
 the native endpoint slope also flattens. Keep this note as historical context,
 not an implementation prescription. Production preservation remains unimplemented.
@@ -79,7 +79,7 @@ graded as white.
 
 Review update, 16 October: the proposal above is not yet validated. Movie
 preview and playback use additional decoding paths; see
-[the source inspection review](SOURCE_INSPECTION_2026-10-16.md). The earlier
+[the source inspection review](../archive/docs/SOURCE_INSPECTION_2026-10-16.md). The earlier
 full-range workaround below is not a guarantee: range conversion can itself
 clip headroom, and changing tags alone does not preserve measured detail.
 

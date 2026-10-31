@@ -17,7 +17,7 @@ Folder layout (match files by name stem; .exr / .hdr / .png all OK)
 
 Usage
 -----
-  pip install -r requirements-metrics.txt    # cvvdp for the real HDR-VDP metric
+  pip install -r training/requirements-metrics.txt    # cvvdp for the real HDR-VDP metric
   python training/benchmark_hdr.py --gt gt --a rudra_preds --b baseline_preds \
       --name-a RUDRA --name-b BASELINE --color-space rec2020 --out bench.csv
 """
@@ -82,7 +82,7 @@ def main():
 
     if not colorvideovdp_available():
         print("[warn] ColorVideoVDP not installed — hdr_vdp3 will use the labeled proxy.")
-        print("       pip install -r requirements-metrics.txt  for the real metric.")
+        print("       pip install -r training/requirements-metrics.txt  for the real metric.")
 
     gt, A, B = _stems(Path(args.gt)), _stems(Path(args.a)), _stems(Path(args.b))
     common = sorted(set(gt) & set(A) & set(B))

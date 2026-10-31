@@ -78,4 +78,4 @@ $rc = $LASTEXITCODE; $ErrorActionPreference = "Stop"
 if ($rc -ne 0) { Fail "training (see $Out.train.log)" }
 $rep = Get-Content (Join-Path $Out "report.json") | ConvertFrom-Json
 Write-Host ("`nDone: {0} updates, frozen parts bit-exact {1}, checkpoint {2}" -f $rep.steps_done, $rep.frozen_parent_bit_exact, $rep.checkpoint_sha256) -ForegroundColor Green
-Write-Host "Tell Claude it finished: the gates and the fresh FXTD set run next."
+Write-Host "Done. Next: the gates and the fresh FXTD set."

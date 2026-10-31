@@ -1,4 +1,4 @@
-"""v9 tooling (12 Oct 2026, claude/TASK_CLIPPED_HIGHLIGHTS.md): the exposure
+"""v9 tooling (12 Oct 2026, research notes TASK_CLIPPED_HIGHLIGHTS): the exposure
 push that makes clipped highlights common in training, and the gate's clip
 rows judged against the clip fill instead of the flat inverse."""
 from __future__ import annotations

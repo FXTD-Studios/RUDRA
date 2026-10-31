@@ -85,13 +85,6 @@ All training data is commercial-clean:
 - procedurally generated scenes;
 - CC0 plates.
 
-No DiffHDR, no LTX models or outputs, no Netflix Open Content, and no
-academic-only or non-commercial datasets. RUDRA ACES 2's declared data
-ancestry, 527 rows, was audited against the source files:
-
-- 399 rows are CC0 receipt matches;
-- 128 rows are original procedural scenes.
-
 The base model, Wan2.1-VACE-1.3B, is Apache 2.0 from Wan-AI.
 
 Not covered here: the older Beta 2 weights (`sdr2hdr_image_v8`,

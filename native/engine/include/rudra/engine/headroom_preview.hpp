@@ -3,7 +3,7 @@
 // It owns one render worker over a HeadroomPreviewPort (normally the
 // HeadroomPresentation bridge) and hands accepted frames to the display thread.
 //
-// Threading contract (docs/HEADROOM_APP_INTEGRATION_2026-10-17.md):
+// Threading contract (archive/docs/HEADROOM_APP_INTEGRATION_2026-10-17.md):
 // - configure/show/pause/stop and destruction run on the display (UI) thread.
 // - The worker calls only render_next; it never reads Session or widgets.
 // - Rendered frames travel to the display thread as an opaque pending token

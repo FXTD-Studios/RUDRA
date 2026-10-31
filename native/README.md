@@ -96,7 +96,7 @@ JRSoftware.InnoSetup`): per-user by default, Start menu, uninstaller. The macOS 
 with Developer ID, notarized and stapled when the signing secrets are set
 ([`docs/MACOS_SIGNING.md`](../docs/MACOS_SIGNING.md)), ad hoc otherwise. ffmpeg is not bundled. Pushing a `v*` tag runs
 `.github/workflows/release.yml`, which builds both on GitHub's runners and
-attaches them to a pre-release with `docs/BETA.md` as its notes.
+attaches them to a pre-release with `archive/docs/BETA.md` as its notes.
 
 ## Model package
 
