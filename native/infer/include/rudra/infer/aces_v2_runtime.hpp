@@ -34,7 +34,7 @@ Result<std::unique_ptr<AcesView>> make_ocio_display_view(const char* display, co
                                                          bool require_exact_version = true, const char* config = nullptr);
 
 // Loads rudra_g1.ts (tools/export_native_v2.py). device: "cpu", "cuda", "cuda:N".
-// Loads rudra_g1.onnx through ONNX Runtime. device: "cpu", "cuda", "directml".
+// Loads rudra_g1.onnx through ONNX Runtime. device: "cpu", "cuda", "directml", "coreml" (macOS).
 // Tolerance contract vs LibTorch (manifest onnx_tolerance), not bit parity.
 Result<G1Fn> load_g1_onnxruntime(const std::filesystem::path& onnx, const std::string& device = "cpu");
 

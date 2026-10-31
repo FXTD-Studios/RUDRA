@@ -63,6 +63,7 @@ struct AcesRunTarget {
     std::string key, label, runtime, device;
 };
 const std::vector<AcesRunTarget>& aces_run_targets();
+QString default_aces_target();   // the first of them: CUDA on Windows and Linux, the CPU on macOS
 
 struct AcesRunSettings {
     std::filesystem::path cli, package, input, out;

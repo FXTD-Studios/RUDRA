@@ -144,14 +144,26 @@ std::optional<fs::path> aces_name_collision(const std::vector<fs::path>& stills)
 }
 
 const std::vector<AcesRunTarget>& aces_run_targets() {
+#ifdef __APPLE__
+    // macOS (31 Oct 2026): the engine carries ONNX Runtime with Core ML; no CUDA, no DirectML.
+    static const std::vector<AcesRunTarget> t = {
+        {"cpu-onnx", "CPU (ONNX Runtime, within the model's tolerance)", "onnxruntime", "cpu"},
+        {"coreml", "GPU / Neural Engine: Core ML (ONNX Runtime, faster)", "onnxruntime", "coreml"},
+    };
+#else
+    // An engine without LibTorch (the release packages) runs a LibTorch choice on ONNX Runtime
+    // instead: DirectML, else the CPU (cli/aces_v2_g1.hpp), and says so.
     static const std::vector<AcesRunTarget> t = {
         {"cuda", "GPU: CUDA (LibTorch, matches the reference exactly)", "libtorch", "cuda"},
         {"directml", "GPU: DirectML (ONNX Runtime, within 0.25 code)", "onnxruntime", "directml"},
         {"cpu", "CPU (LibTorch, matches the reference exactly)", "libtorch", "cpu"},
         {"cpu-onnx", "CPU (ONNX Runtime)", "onnxruntime", "cpu"},
     };
+#endif
     return t;
 }
+
+QString default_aces_target() { return QString::fromStdString(aces_run_targets().front().key); }
 
 const std::vector<AcesLogChoice>& aces_log_choices() {
     static const std::vector<AcesLogChoice> c = {
@@ -407,7 +419,7 @@ AcesMasterDialog::AcesMasterDialog(QWidget* parent, std::vector<fs::path> roots,
     target_ = new QComboBox(this);
     target_->setObjectName("acesTarget");
     for (const auto& t : aces_run_targets()) target_->addItem(q(t.label), q(t.key));
-    if (const int i = target_->findData(st.value("aces/target", "cuda").toString()); i >= 0) target_->setCurrentIndex(i);
+    if (const int i = target_->findData(st.value("aces/target", default_aces_target()).toString()); i >= 0) target_->setCurrentIndex(i);
     g->addWidget(target_, row++, 1, 1, 2);
 
     guard_ = new QCheckBox("No new negative luminance (recommended)", this);

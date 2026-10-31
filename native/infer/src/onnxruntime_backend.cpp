@@ -280,6 +280,14 @@ Result<G1Fn> load_g1_onnxruntime(const std::filesystem::path& onnx, const std::s
 #else
             return make_error(ErrorCode::Unsupported, "This build was compiled without the DirectML header.");
 #endif
+        } else if (device == "coreml") {
+#if RUDRA_ORT_HAS_COREML
+            // macOS: Core ML on the GPU / Neural Engine, the CPU for anything it does not take.
+            if (!offered("CoreMLExecutionProvider")) return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no Core ML provider.");
+            Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(so, 0));
+#else
+            return make_error(ErrorCode::Unsupported, "This build was compiled without the Core ML header.");
+#endif
         } else if (device != "cpu") {
             return make_error(ErrorCode::InvalidArgument, "Unknown device for the ACES model.", device);
         }

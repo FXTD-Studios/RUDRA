@@ -101,8 +101,8 @@ install = f'''<section class="page" id="installation" data-title="Installation">
 </div>
 <h2>What your computer needs</h2>
 <table><thead><tr><th>Part</th><th>For</th><th>Notes</th></tr></thead><tbody>
-<tr><td>NVIDIA GPU (CUDA) or any DirectX 12 GPU (DirectML)</td><td>The learned ACES 2.0 model</td><td>CUDA is fastest. Without a GPU it runs on the CPU, slowly. The GPU also draws the HDR viewer.</td></tr>
-<tr><td>16 GB GPU</td><td>AI fill (experimental)</td><td>Only for the optional generative pass; everything else runs without it.</td></tr>
+<tr><td>Any DirectX 12 GPU (DirectML) on Windows; Apple silicon on a Mac</td><td>The learned ACES 2.0 model</td><td>On Windows it runs on the GPU, else the CPU. On a Mac it runs on the CPU, or on the GPU / Neural Engine through Core ML. The GPU also draws the HDR viewer.</td></tr>
+<tr><td>16 GB GPU, or a Mac with 16 GB of memory or more</td><td>AI fill (experimental)</td><td>Only for the optional generative pass; everything else runs without it. On a Mac it runs on the GPU through Metal.</td></tr>
 <tr><td>HDR display (optional)</td><td>Seeing HDR 1000 as it is</td><td>On an SDR screen, choose the <strong>SDR 100</strong> monitor; the master is unchanged.</td></tr>
 <tr><td>FFmpeg / FFprobe</td><td>Movies in and out</td><td>Included in both packages; or install it and put it on the PATH.</td></tr>
 </tbody></table>
@@ -112,7 +112,7 @@ install = f'''<section class="page" id="installation" data-title="Installation">
 <div class="step"><div><h3>Download the DMG</h3><p>Get the {VER} DMG from the release, open it and drag <strong>RUDRA</strong> to Applications.</p><a class="button" href="{DMG}">macOS DMG ↓</a></div></div>
 <div class="step"><div><h3>Open it the first time</h3><p>The build is not notarised yet. If macOS blocks it, open <strong>System Settings → Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>.</p></div></div>
 </div>
-<p class="small">On macOS, 1.0 runs the analytic reconstruction with every Look, Check and Deliver tool. The learned ACES 2.0 model and AI fill are Windows features for now.</p>
+<p class="small">On a Mac the learned ACES 2.0 model runs as on Windows: download it in the app. For AI fill, run <strong>scripts/genfill_setup.sh</strong> from the RUDRA source once (Python, the packages and the Wan2.1 base model).</p>
 <p>Prefer a portable app? Download the <a class="textlink" href="{ZIP}">Windows ZIP</a>, extract the whole folder, and open <strong>RUDRA.exe</strong>.</p>
 <a class="button" href="#models">Next: models →</a>
 </section>
@@ -211,6 +211,11 @@ export = '''<section class="page" id="export" data-title="Deliver & colour">
 
 news = f'''<section class="page" id="whats-new" data-title="What’s new">
 <div class="eyebrow">08 / Release notes</div><h1>What’s new<br>in {VER}.</h1>
+<h2>In 1.0.2</h2>
+<ul>
+<li><strong>The learned ACES 2.0 model on every platform</strong>: its engine is now in the Windows and macOS packages, so the model you download runs straight away (DirectML or the CPU on Windows; the CPU or Core ML on a Mac).</li>
+<li><strong>AI fill on a Mac</strong>, on the GPU through Metal. Experimental, as on Windows.</li>
+</ul>
 <h2>In 1.0.1</h2>
 <ul>
 <li><strong>The first published 1.0 build</strong>, for Windows and, again, macOS (Apple silicon).</li>
@@ -258,8 +263,9 @@ hlp = re.sub(r'(?:\s*&nbsp;\s*/\s*&nbsp;\s*)?<a[^>]*paper/main\.pdf[^>]*>[^<]*</
 hlp = hlp.replace(' The desktop app’s Core ML inference is a separate capability.', '')
 hlp = hlp.replace('<a class="button outline" href="https://github.com/FXTD-Studios/RUDRA/releases">Release notes ↗</a>', f'<a class="button outline" href="{REL}">Release notes ↗</a>')
 hlp = re.sub(r'<p[^>]*>The paper predates[^<]*</p>', '<p class="small">This guide does not claim independent HDR-display or clean-machine certification.</p>', hlp)
+hlp = re.sub(r'(<summary>Can I use RUDRA on a Mac\?</summary><p>)Yes: the 1\.0\.1 DMG runs[^<]*(</p>)', r'\1Yes: the DMG runs on Apple silicon with every Look, Check and Deliver tool, the learned ACES 2.0 model (on the CPU or Core ML) and, set up with scripts/genfill_setup.sh, AI fill on the GPU.\2', hlp)
 if 'Can I use RUDRA on a Mac?' not in hlp:
-    hlp = hlp.replace('<details><summary>Can I train on a Mac?', '<details><summary>Can I use RUDRA on a Mac?</summary><p>Yes: the 1.0.1 DMG runs on Apple silicon with the analytic reconstruction and every Look, Check and Deliver tool. The learned ACES 2.0 model and AI fill are Windows features for now.</p></details><details><summary>Can I train on a Mac?', 1)
+    hlp = hlp.replace('<details><summary>Can I train on a Mac?', '<details><summary>Can I use RUDRA on a Mac?</summary><p>Yes: the DMG runs on Apple silicon with every Look, Check and Deliver tool, the learned ACES 2.0 model (on the CPU or Core ML) and, set up with scripts/genfill_setup.sh, AI fill on the GPU.</p></details><details><summary>Can I train on a Mac?', 1)
 foot = f'<footer><span>FXTD STUDIOS / RUDRA DOCUMENTATION · <a href="https://www.fxtdstudios.com">WWW.FXTDSTUDIOS.COM</a></span><span>{VER.upper()} · USER GUIDE</span></footer></main></div></body></html>'
 out = head + intro + install + models + workspace + first + export + training + news + hlp + foot
 (ARGS.out / 'index.html').write_text(out, encoding='utf-8')

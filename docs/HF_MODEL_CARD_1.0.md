@@ -23,12 +23,12 @@ commercial use permitted.**
 
 | Folder | What it is | Size |
 |---|---|---|
-| [`models/RUDRA_ACES_2/`](models/RUDRA_ACES_2) | **RUDRA ACES 2**: the learned ACES 2.0 reconstruction. 8-bit SDR in, an ACEScg master out, whose ACES 2.0 SDR view keeps the source's 8-bit codes. Ships as TorchScript and ONNX (DirectML/CPU). | 2.2 MB |
+| [`models/RUDRA_ACES_2/`](models/RUDRA_ACES_2) | **RUDRA ACES 2**: the learned ACES 2.0 reconstruction. 8-bit SDR in, an ACEScg master out, whose ACES 2.0 SDR view keeps the source's 8-bit codes. Ships as TorchScript and ONNX (DirectML, Core ML or CPU). | 2.2 MB |
 | [`models/rudra_genfill_v3/`](models/rudra_genfill_v3) | **RUDRA AI fill v3**: a LoRA for Wan2.1-VACE-1.3B that draws the *shape* inside fully clipped highlights, and a small brightness estimator (`brightness.json`) that sets *how bright* they are. | 271 MB |
 
 ## Use
 
-**In the RUDRA app** (Windows; macOS builds are unsigned for now):
+**In the RUDRA app** (Windows and macOS):
 
 - **RUDRA ACES 2:** File › Model packages, or Look › Download the model. Every
   file is checked against its SHA-256 before it is used.
@@ -36,8 +36,8 @@ commercial use permitted.**
   this LoRA and `brightness.json`. It also needs:
   - the base model [Wan2.1-VACE-1.3B-diffusers](https://huggingface.co/Wan-AI/Wan2.1-VACE-1.3B-diffusers)
     (set its folder in Deliver › AI fill › Setup…, or put it in `<RUDRA folder>/models/genfill/`);
-  - Python (`scripts\GENFILL.ps1 -Setup`);
-  - a 16 GB GPU.
+  - Python (`scripts\GENFILL.ps1 -Setup` on Windows, `scripts/genfill_setup.sh` on a Mac);
+  - a 16 GB GPU (on a Mac, 16 GB of memory or more: it runs on Metal).
 
   Then use Deliver › AI fill.
 

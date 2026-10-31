@@ -12,7 +12,9 @@
 #   ONNX Runtime, the release archive, as native_gate_a.sh (Core ML on a Mac);
 #   OpenCV core + imgproc + imgcodecs, built from source with its own PNG,
 #   JPEG, TIFF, WebP and OpenEXR (a few minutes, once): the still decoder the
-#   Python uses, without Homebrew's opencv and everything it pulls in.
+#   Python uses, without Homebrew's opencv and everything it pulls in;
+#   OpenColorIO 2.5.2 (scripts/build_ocio.sh, once): the learned ACES 2.0
+#   engine in rudra-native (aces-v2, aces-v2-serve) on ONNX Runtime.
 # The model packages are found in dist/models (native_gate_a.sh exports one).
 # Movies need ffmpeg and ffprobe on the PATH (brew install ffmpeg).
 # Needs CMake 3.24+, Ninja or Make, a C++20 compiler (Xcode CLT on macOS),
@@ -39,6 +41,7 @@ esac
 QT_ROOT=$PWD/$DEPS/Qt/$QT_VERSION/$QT_DIR
 ORT_ROOT=$PWD/$DEPS/$ORT_ARCHIVE
 CV_ROOT=$PWD/$DEPS/opencv-$CV_VERSION-install
+OCIO_ROOT=$PWD/$DEPS/ocio-${OCIO_VERSION:-2.5.2}
 
 if [ -z "${SKIP_BUILD:-}" ]; then
   # -------------------------------------------------------------------------
@@ -97,6 +100,10 @@ if [ -z "${SKIP_BUILD:-}" ]; then
   fi
 
   # -------------------------------------------------------------------------
+  say "OpenColorIO (the learned ACES 2.0 engine)"
+  scripts/build_ocio.sh || fail "OpenColorIO"
+
+  # -------------------------------------------------------------------------
   say "Configure and build RUDRA, rudra-native and the app tests (Release)"
   GEN=(); command -v ninja >/dev/null && GEN=(-G Ninja)
   TESTS=ON; [ -n "${SKIP_TESTS:-}" ] && TESTS=OFF
@@ -106,11 +113,15 @@ if [ -z "${SKIP_BUILD:-}" ]; then
     -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_RENDER=ON -DRUDRA_BUILD_CLI=ON -DRUDRA_BUILD_TESTS=$TESTS \
     -DRUDRA_WITH_ONNXRUNTIME=ON "-DONNXRUNTIME_ROOT=$ORT_ROOT" -DRUDRA_WITH_LIBTORCH=OFF \
     -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CV_ROOT/lib/cmake/opencv4" \
+    -DRUDRA_WITH_OCIO=ON "-DOpenColorIO_DIR=$OCIO_ROOT/lib/cmake/OpenColorIO" \
     "-DCMAKE_PREFIX_PATH=$QT_ROOT" "-DQt6_DIR=$QT_ROOT/lib/cmake/Qt6" \
-    "-DCMAKE_BUILD_RPATH=$ORT_ROOT/lib" >/dev/null || fail "cmake configure"
+    "-DCMAKE_BUILD_RPATH=$ORT_ROOT/lib;$OCIO_ROOT/lib" >/dev/null || fail "cmake configure"
   targets=(RUDRA rudra-native)
   [ "$TESTS" = ON ] && targets+=(rudra_app_tests)
   cmake --build "$BUILD" --target "${targets[@]}" --parallel "$JOBS" || fail "build"
+  aces_usage=$("$BUILD/cli/rudra-native" aces-v2 --help 2>&1 || true)   # it exits non-zero after the usage
+  grep -q "usage: rudra-native aces-v2 <package>" <<<"$aces_usage" ||
+    fail "rudra-native has no learned ACES 2.0 engine (aces-v2)"
 
   # -------------------------------------------------------------------------
   if [ "$TESTS" = ON ]; then

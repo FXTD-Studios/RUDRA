@@ -3,6 +3,7 @@
 // JSON sidecar per frame and a run provenance file. Same contract as
 // tools/rudra_aces_export.py --clipped-smoothing hybrid64 --colour-backtrack-all.
 
+#include "aces_v2_g1.hpp"
 #include "aces_v2_cmd.hpp"
 
 #include <algorithm>
@@ -38,7 +39,7 @@ int fail_v2(const Error& e) {
 
 int cmd_aces_v2(const std::vector<std::string>& args) {
     if (args.size() < 2) {
-        std::fprintf(stderr, "usage: rudra-native aces-v2 <package> <image|folder|video> --out <dir> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml] [--ocio-threads N] [--no-smoothing] [--luminance-guard|--no-luminance-guard] [--exr float|half|none] [--exr-gamut acescg|ap0] [--frame N]... [--fps F] [--name NAME [--start N]] [--padding N] [--into-existing [--no-create-dirs]] [--range FIRST:LAST] [--timecode HH:MM:SS:FF] [--reel NAME] [--source-display bt1886|srgb|gamma22] [--strength S] [--saturation S] [--peak-nits N] [--exposure EV] [--contrast C] [--log logc4|acescct|pq1000|pq2000|pq4000|hlg1000|sdr709] [--log-format tiff16,dpx10,prores4444xq|prores4444|prores422hq|mov16|hevc10]\n");
+        std::fprintf(stderr, "usage: rudra-native aces-v2 <package> <image|folder|video> --out <dir> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml|coreml] [--ocio-threads N] [--no-smoothing] [--luminance-guard|--no-luminance-guard] [--exr float|half|none] [--exr-gamut acescg|ap0] [--frame N]... [--fps F] [--name NAME [--start N]] [--padding N] [--into-existing [--no-create-dirs]] [--range FIRST:LAST] [--timecode HH:MM:SS:FF] [--reel NAME] [--source-display bt1886|srgb|gamma22] [--strength S] [--saturation S] [--peak-nits N] [--exposure EV] [--contrast C] [--log logc4|acescct|pq1000|pq2000|pq4000|hlg1000|sdr709] [--log-format tiff16,dpx10,prores4444xq|prores4444|prores422hq|mov16|hevc10]\n");
         return 64;
     }
     const fs::path pkg = args[0], input = args[1];
@@ -121,22 +122,14 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
     }
     const aces_v2::AcesView* copy_view = target_view ? target_view.get() : hdr_view.get();
     const aces_v2::AcesView* light_view = opts->copies.hdr10() && target_view ? target_view.get() : hdr_view.get();
-    Result<aces_v2::G1Fn> g1 = make_error(ErrorCode::Unsupported, "Unknown runtime (libtorch or onnxruntime).", runtime);
-    if (runtime == "libtorch") {
-#ifdef RUDRA_HAVE_LIBTORCH_ACES
-        g1 = aces_v2::load_g1_libtorch(m->g1, device);
-#else
-        g1 = make_error(ErrorCode::Unsupported, "This build has no LibTorch.");
-#endif
-    } else if (runtime == "onnxruntime") {
-        if (m->g1_onnx.empty()) return fail_v2(make_error(ErrorCode::Unsupported, "This package has no ONNX model; re-export it."));
-#ifdef RUDRA_HAVE_ORT_ACES
-        g1 = aces_v2::load_g1_onnxruntime(m->g1_onnx, device);
-#else
-        g1 = make_error(ErrorCode::Unsupported, "This build has no ONNX Runtime.");
-#endif
-    }
-    if (!g1) return fail_v2(g1.error());
+    // The runtime asked for, or the one this build has (cli/aces_v2_g1.hpp).
+    auto chosen = aces_v2::load_g1_choice(*m, runtime, device);
+    if (!chosen) return fail_v2(chosen.error());
+    if (chosen->runtime != runtime || chosen->device != device)
+        std::fprintf(stderr, "this build runs the model on %s (%s)\n", chosen->device.c_str(), chosen->runtime.c_str());
+    runtime = chosen->runtime;
+    device = chosen->device;
+    Result<aces_v2::G1Fn> g1 = std::move(chosen->fn);
 
     const bool guard = guard_override < 0 ? m->forbid_new_negative_y : guard_override == 1;
     const std::string movie_stem = (fs::is_directory(input) ? input.filename() : input.stem()).string();

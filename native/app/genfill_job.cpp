@@ -54,6 +54,13 @@ std::vector<fs::path> genfill_roots(const fs::path& repo) {
     return r;
 }
 
+// Where the Python and the base model come from (1 Nov 2026: macOS too, on Metal).
+#ifdef _WIN32
+const QString kSetupScript = QStringLiteral("scripts\\GENFILL.ps1 -Setup");
+#else
+const QString kSetupScript = QStringLiteral("scripts/genfill_setup.sh");
+#endif
+
 fs::path default_python(const fs::path& repo) {
 #ifdef _WIN32
     return repo / ".venv" / "Scripts" / "python.exe";
@@ -110,11 +117,11 @@ std::optional<GenFillSetup> genfill_setup(QString* why) {
     if (s.repo.empty() || !fs::exists(s.repo / "rudra" / "genfill" / "run.py", ec))
         return refuse(QStringLiteral("AI fill: the RUDRA repository (rudra/genfill) was not found; set it in Deliver > AI fill setup."));
     if (s.python.has_parent_path() && !fs::exists(s.python, ec))
-        return refuse(QStringLiteral("AI fill: no Python at %1 (run scripts\\GENFILL.ps1 -Setup).").arg(qp(s.python)));
+        return refuse(QStringLiteral("AI fill: no Python at %1 (run %2).").arg(qp(s.python), kSetupScript));
     if (!fs::exists(s.base / "transformer" / "config.json", ec))
-        return refuse(QStringLiteral("AI fill: no Wan2.1-VACE-1.3B model at %1 (run scripts\\GENFILL.ps1 -Setup).").arg(qp(s.base)));
+        return refuse(QStringLiteral("AI fill: no Wan2.1-VACE-1.3B model at %1 (run %2).").arg(qp(s.base), kSetupScript));
     if (!fs::exists(s.lora, ec))
-        return refuse(QStringLiteral("AI fill: no trained LoRA at %1 (train it with scripts\\GENFILL.ps1).").arg(qp(s.lora)));
+        return refuse(QStringLiteral("AI fill: no LoRA at %1 (File > Model packages > AI fill v3 > Download).").arg(qp(s.lora)));
     if (why) why->clear();
     return s;
 }

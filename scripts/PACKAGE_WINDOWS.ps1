@@ -71,7 +71,11 @@ param(
     [switch]$WithAcesEngine,
     [string]$AcesBuild = "build\native_aces_v2",
     [string]$TorchPython = ".venv\Scripts\python.exe",
-    [switch]$NoLibTorch
+    [switch]$NoLibTorch,
+    # 1 Nov 2026: the learned ACES 2.0 engine is in every package (rudra-native aces-v2 /
+    # aces-v2-serve on ONNX Runtime, DirectML or CPU), with OpenColorIO 2.5.2 built here once.
+    [string]$OcioVersion = "2.5.2",
+    [switch]$NoOcio
 )
 
 $ErrorActionPreference = "Stop"
@@ -170,6 +174,40 @@ if (-not $NoFfmpeg) {
     Write-Host "ffmpeg $FfmpegVersion (gyan.dev full build) at $FfRoot"
 }
 
+# OpenColorIO 2.5.2 (1 Nov 2026), for the learned ACES 2.0 engine: the model is pinned to its
+# built-in ACES configs, and no package manager ships exactly that version. One DLL with its
+# own dependencies inside (OCIO_INSTALL_EXT_PACKAGES=ALL), built once into tmp\native_deps.
+$OcioRoot = Join-Path $Deps "ocio-$OcioVersion"
+function Build-Ocio([string]$cmake, [string]$generator) {
+    if (Test-Path (Join-Path $OcioRoot "lib\cmake\OpenColorIO\OpenColorIOConfig.cmake")) { return $OcioRoot }
+    Say "OpenColorIO $OcioVersion (once)"
+    $src = Join-Path $Deps "OpenColorIO-$OcioVersion"
+    if (-not (Test-Path (Join-Path $src "CMakeLists.txt"))) {
+        $tgz = Join-Path $Deps "ocio-$OcioVersion.tar.gz"
+        $url = "https://github.com/AcademySoftwareFoundation/OpenColorIO/archive/refs/tags/v$OcioVersion.tar.gz"
+        Write-Host "download $url"
+        Invoke-WebRequest -Uri $url -OutFile $tgz -UseBasicParsing
+        tar -xzf $tgz -C $Deps | Out-Host   # into the console, not the return value
+        if ($LASTEXITCODE -ne 0) { Fail "OpenColorIO source" }
+        Remove-Item $tgz
+    }
+    $ob = Join-Path $Deps "ocio-$OcioVersion-build"
+    & $cmake -S $src -B $ob -G $generator -A x64 -Wno-dev "-DCMAKE_INSTALL_PREFIX=$OcioRoot" -DBUILD_SHARED_LIBS=ON `
+        -DOCIO_INSTALL_EXT_PACKAGES=ALL -DOCIO_BUILD_APPS=OFF -DOCIO_BUILD_PYTHON=OFF -DOCIO_BUILD_TESTS=OFF `
+        -DOCIO_BUILD_GPU_TESTS=OFF -DOCIO_BUILD_DOCS=OFF -DOCIO_BUILD_OPENFX=OFF | Out-Host   # into the console, not the return value
+    if ($LASTEXITCODE -ne 0) { Fail "OpenColorIO configure" }
+    & $cmake --build $ob --config Release --parallel | Out-Host   # into the console, not the return value
+    if ($LASTEXITCODE -ne 0) { Fail "OpenColorIO build" }
+    & $cmake --install $ob --config Release | Out-Host   # into the console, not the return value
+    if ($LASTEXITCODE -ne 0) { Fail "OpenColorIO install" }
+    return $OcioRoot
+}
+function Get-OcioDll {
+    $d = Get-ChildItem (Join-Path $OcioRoot "bin") -Filter "OpenColorIO*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $d) { Fail "no OpenColorIO DLL in $OcioRoot\bin" }
+    return $d.FullName
+}
+
 # Signing: signtool from the Windows SDK, with RUDRA_SIGN_PFX / RUDRA_SIGN_PASSWORD.
 function Find-SignTool {
     $c = Get-Command signtool.exe -ErrorAction SilentlyContinue
@@ -209,12 +247,17 @@ if (-not $SkipBuild) {
     }
     if (-not $tc) { Fail "no C++ toolchain (see above)" }
     $cmake = $tc.CMake
+    $OcioFlags = @()
+    if (-not $NoOcio) {
+        $OcioRoot = Build-Ocio $cmake $tc.Generator
+        $OcioFlags = @("-DRUDRA_WITH_OCIO=ON", "-DOpenColorIO_DIR=$OcioRoot\lib\cmake\OpenColorIO")
+    }
     Reset-StaleCMakeCache $Build $tc.Generator
     $testsFlag = if ($Tests) { "ON" } else { "OFF" }
     & $cmake -S native -B $Build -G $tc.Generator -A x64 `
         "-DRUDRA_BUILD_TESTS=$testsFlag" -DRUDRA_BUILD_CLI=ON -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_RENDER=ON `
         -DRUDRA_WITH_ONNXRUNTIME=ON "-DONNXRUNTIME_ROOT=$OrtRoot" -DRUDRA_WITH_LIBTORCH=OFF `
-        -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CvConfigDir" "-DCMAKE_PREFIX_PATH=$QtRoot"
+        -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CvConfigDir" "-DCMAKE_PREFIX_PATH=$QtRoot" @OcioFlags
     if ($LASTEXITCODE -ne 0) { Fail "cmake configure" }
     $targets = @("RUDRA", "rudra-native")
     if ($Tests) { $targets += "rudra_app_tests" }
@@ -233,6 +276,7 @@ if ($Tests) {
     New-Item -ItemType Directory -Force -Path $plat | Out-Null
     Copy-Item (Join-Path $QtRoot "plugins\platforms\qoffscreen.dll") $plat -Force
     Copy-Item "$OrtRoot\lib\*.dll", $DmlDll.FullName, $CvDll.FullName (Split-Path $AppTests) -Force
+    if (-not $NoOcio) { Copy-Item (Get-OcioDll) (Split-Path $AppTests) -Force }
     $env:QT_QPA_PLATFORM = "offscreen"
     & $AppTests
     $code = $LASTEXITCODE
@@ -280,6 +324,7 @@ Write-Host "MSVC runtime: $($crt.FullName)"
 # ONNX Runtime and DirectML beside the exe: Windows' own older onnxruntime.dll
 # in System32 would otherwise be loaded first.
 Copy-Item "$OrtRoot\lib\*.dll", $DmlDll.FullName, $CvDll.FullName $Out -Force
+if (-not $NoOcio) { Copy-Item (Get-OcioDll) $Out -Force }   # the learned ACES 2.0 engine's colour
 if ($WithAcesEngine) {
     Say "The learned ACES 2.0 engine (its model is downloaded in the app)"
     $AcesDir = Join-Path $Repo "$AcesBuild\cli\Release"
@@ -341,7 +386,7 @@ if (-not $NoModels) {
     & (Join-Path $Out "rudra-native.exe") info $pkg.FullName | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "rudra-native in the package cannot read its model" }
 }
-if ($WithAcesEngine) {
+if ($WithAcesEngine -or -not $NoOcio) {
     # On its own: PATH reduced to Windows' folders, so a DLL missing from the package shows here.
     $keepPath = $env:PATH
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
