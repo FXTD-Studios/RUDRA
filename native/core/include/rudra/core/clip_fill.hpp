@@ -13,7 +13,8 @@
 //   2. Fully clipped regions, large (sky, a blown window). Luminance is a
 //      smooth fill in log2 Y from the region's own edge, and a gentle dome
 //      that matches the falloff just outside it, capped at large_max_ev. Hue
-//      comes from the edge. No texture is made up.
+//      comes from the edge and runs halfway to white at the deepest point.
+//      No texture is made up.
 //   3. Fully clipped regions, small (practical lamps, the sun, speculars). The
 //      same fill with a peak-and-falloff profile: the peak from the region's
 //      size and the slope of the glow around it, at most source_max_nits.
