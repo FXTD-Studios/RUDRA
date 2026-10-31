@@ -1,6 +1,7 @@
 ---
 license: apache-2.0
 library_name: rudra
+inference: false
 pipeline_tag: image-to-image
 base_model:
   - Wan-AI/Wan2.1-VACE-1.3B-diffusers
