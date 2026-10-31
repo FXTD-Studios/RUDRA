@@ -165,6 +165,32 @@ TEST(ClipFill, ASunGetsAPeakAndAFalloff) {
     }
 }
 
+// 31 Oct 2026: a blown sun counted as a large region (a wide, low-contrast
+// shot) carried the blue sky's hue all the way in and came out cyan. Its core
+// now runs toward white like a source's: less colourful than its edge.
+TEST(ClipFill, ALargeRegionsCoreRunsTowardWhite) {
+    const int h = 96, w = 128;
+    const SdrImage sdr = render(sky(h, w, true));
+    ClipFillOptions o;
+    o.large_fraction = 0.001;   // the sun is a large region here
+    const ClipFill f = reconstruct_clipped(sdr, kEv, o);
+    const auto sun = std::max_element(f.regions.begin(), f.regions.end(),
+                                      [](const ClipRegion& a, const ClipRegion& b) { return a.pixels < b.pixels; });
+    ASSERT_NE(sun, f.regions.end());
+    ASSERT_TRUE(sun->large);
+    const PlanarBuffer out = filled(sdr, f);
+    auto spread = [&](int x, int y) {   // log2 of the brightest channel over the dimmest
+        const std::size_t i = std::size_t(y) * std::size_t(w) + std::size_t(x);
+        const float r = out.plane(0)[i], g = out.plane(1)[i], b = out.plane(2)[i];
+        return std::log2(std::max({r, g, b}) / std::min({r, g, b}));
+    };
+    int edge = sun->x;   // the last fully clipped pixel to the right of the deepest point
+    while (edge + 1 < w && sdr.buffer().plane(0)[std::size_t(sun->y) * std::size_t(w) + std::size_t(edge + 1)] >= 0.995f)
+        ++edge;
+    ASSERT_GT(edge, sun->x);
+    EXPECT_LT(spread(sun->x, sun->y), 0.75f * spread(edge, sun->y));
+}
+
 // Stage 2: a blown band across the top of the frame is a large region: its
 // dome is gentle and capped at large_max_ev.
 TEST(ClipFill, ALargeBlownSkyIsCappedAndSmooth) {
