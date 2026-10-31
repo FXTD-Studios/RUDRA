@@ -6,7 +6,8 @@
 // them. A model is installed only when every file is there and verified: a
 // failed or cancelled download leaves `.part` files, never a half model.
 //
-// The index:
+// The index (published beside the user guide: www.fxtdstudios.com/rudra-docs/models.json;
+// written by tools/make_models_json.py):
 //   {"version": 1, "models": [{
 //      "id": "aces_v2_gp600", "title": "Learned ACES 2.0", "version": "2.0",
 //      "channel": "preview" | "release" | "legacy", "kind": "aces_v2" | "package" | "genfill",
@@ -50,7 +51,7 @@ struct RemoteModel {
 // an unsafe path, no files or a bad checksum is refused with the rest).
 std::optional<std::vector<RemoteModel>> parse_model_index(const QByteArray& json, QString* why = nullptr);
 
-QString default_model_index_url();   // QSettings models/indexUrl, else https://www.fxtdstudios.com/rudra/models.json
+QString default_model_index_url();   // QSettings models/indexUrl, else https://www.fxtdstudios.com/rudra-docs/models.json
 QString default_download_root();     // QSettings models/downloadRoot, else <AppLocalData>/models
 
 // "12.4 MB", "2.1 GB".

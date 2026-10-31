@@ -11,7 +11,7 @@
   settings (HKCU\Software\FXTD Studios\RUDRA\aces) so the dialog opens ready:
     aces/cli           the ACES v2 rudra-native.exe
     aces/roots         dist\models (where the ACES v2 package is)
-    aces/package       the newest dist\models\aces_v2_* package
+    aces/package       the newest dist\models\RUDRA_ACES_2 (or aces_v2_*) package
     aces/path_prepend  LibTorch's lib\ from .venv (its DLLs are not beside that exe)
   Nothing is signed or released here.
 #>
@@ -111,9 +111,9 @@ Say "Point the app at the ACES v2 engine and package"
 $Cli = (Resolve-Path (Join-Path $AcesBuild "cli\Release\rudra-native.exe") -ErrorAction SilentlyContinue)
 if (-not $Cli) { Fail "no ACES v2 rudra-native in $AcesBuild (run NATIVE_ACES_V2.ps1 first)" }
 if (-not $Package) {
-    $p = Get-ChildItem (Join-Path $Repo "dist\models") -Directory -Filter "aces_v2_*" -ErrorAction SilentlyContinue |
+    $p = Get-ChildItem (Join-Path $Repo "dist\models") -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "RUDRA_ACES_2*" -or $_.Name -like "aces_v2_*" } |
          Where-Object { Test-Path (Join-Path $_.FullName "manifest.json") } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $p) { Fail "no dist\models\aces_v2_* package (run NATIVE_ACES_V2.ps1 first)" }
+    if (-not $p) { Fail "no dist\models\RUDRA_ACES_2 (or aces_v2_*) package (run NATIVE_ACES_V2.ps1 first)" }
     $Package = $p.FullName
 }
 $TorchLib = & $Python -c "import torch, os; print(os.path.join(os.path.dirname(torch.__file__), 'lib'))"

@@ -5969,3 +5969,36 @@ TEST(GenFill, TheArtistsBrightnessOffsetReachesTheFill) {
     EXPECT_DOUBLE_EQ(w.deliver_choice().ai.brightness, -0.5);
     QSettings().clear();
 }
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+// A downloaded AI fill LoRA is the one Deliver > AI fill uses (31 Oct 2026).
+TEST(AppModels, ADownloadedLoraBecomesTheAiFills) {
+    QSettings().clear();
+    QTemporaryDir tmp;
+    QSettings().setValue("models/indexUrl", QUrl::fromLocalFile(tmp.path() + "/none.json").toString());
+    QDir().mkpath(tmp.path() + "/src");
+    const QByteArray lora(2048, 'l'), bright("{\"w\":1}");
+    QJsonArray files;
+    for (const auto& [name, data] : std::vector<std::pair<QString, QByteArray>>{{"rudra_genfill.safetensors", lora}, {"brightness.json", bright}}) {
+        QFile f(tmp.path() + "/src/" + name);
+        ASSERT_TRUE(f.open(QIODevice::WriteOnly));
+        f.write(data);
+        f.close();
+        files.append(QJsonObject{{"path", name}, {"url", QUrl::fromLocalFile(f.fileName()).toString()}, {"size", data.size()},
+                                 {"sha256", QString::fromLatin1(QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex())}});
+    }
+    QJsonArray models;
+    models.append(QJsonObject{{"id", "fill"}, {"title", "AI fill"}, {"version", "3"}, {"kind", "genfill"},
+                              {"folder", "rudra_genfill_v3"}, {"files", files}});
+    app::MainWindow w(false);
+    auto* md = w.model_downloads();
+    md->set_root(tmp.path() + "/models");
+    md->set_models(*app::parse_model_index(QJsonDocument(QJsonObject{{"version", 1}, {"models", models}}).toJson()));
+    ASSERT_TRUE(md->download("fill"));
+    ASSERT_TRUE(wait_for([&] { return md->active().isEmpty(); }));
+    EXPECT_EQ(md->state("fill"), app::InstallState::Installed);
+    EXPECT_EQ(QDir::cleanPath(QSettings().value("genfill/lora").toString()),
+              QDir::cleanPath(tmp.path() + "/models/rudra_genfill_v3/rudra_genfill.safetensors"));
+    QSettings().clear();
+}
+#endif

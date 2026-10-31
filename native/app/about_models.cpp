@@ -8,6 +8,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDesktopServices>
+#include <QDir>
 #include <QDialog>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -56,6 +57,14 @@ ModelDownloads* MainWindow::model_downloads() {
             have_aces_package_.reset();
             log(QStringLiteral("model downloaded and checked: %1 %2 → %3").arg(m.title, m.version, folder));
             if (statusBar()) statusBar()->showMessage(m.title + QStringLiteral(" is downloaded and ready"), 6000);
+            // The AI fill's LoRA (with brightness.json beside it): what Deliver > AI fill uses from now on.
+            if (m.kind == "genfill") {
+                const auto loras = QDir(folder).entryList({QStringLiteral("*.safetensors")}, QDir::Files, QDir::Name);
+                if (!loras.isEmpty()) {
+                    QSettings().setValue("genfill/lora", QDir(folder).filePath(loras.front()));
+                    log(QStringLiteral("AI fill: using the downloaded LoRA ") + QDir(folder).filePath(loras.front()));
+                }
+            }
             // The learned model loads at once when nothing is loaded yet.
             if (m.kind == "aces_v2" && (!aces_engine_ || aces_engine_->state() != AcesEngine::State::Ready))
                 use_aces_package(std::filesystem::path(folder.toStdU16String()));

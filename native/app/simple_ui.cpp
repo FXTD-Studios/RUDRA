@@ -165,7 +165,7 @@ void MainWindow::sync_simple() {
         const bool routed = aces_routed();
         wait->setVisible(simple && !routed);
         if (simple && !routed)
-            wait->setText(!have_aces_package() ? QStringLiteral("Analytic reconstruction. The learned ACES 2.0 model (preview) "
+            wait->setText(!have_aces_package() ? QStringLiteral("Analytic reconstruction. The learned ACES 2.0 model "
                                                                 "rebuilds more of the clipped highlights: an optional download, "
                                                                 "checked before it is used.")
                           : frames_.empty() ? QStringLiteral("Open a shot: its look is shaped here.")

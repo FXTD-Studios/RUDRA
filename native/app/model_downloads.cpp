@@ -91,7 +91,7 @@ std::optional<std::vector<RemoteModel>> parse_model_index(const QByteArray& json
 }
 
 QString default_model_index_url() {
-    return QSettings().value("models/indexUrl", QStringLiteral("https://www.fxtdstudios.com/rudra/models.json")).toString();
+    return QSettings().value("models/indexUrl", QStringLiteral("https://www.fxtdstudios.com/rudra-docs/models.json")).toString();
 }
 
 QString default_download_root() {

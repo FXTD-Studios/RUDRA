@@ -24,6 +24,7 @@ param(
     [string]$OpenCvVersion = "4.10.0",
     [string]$OrtVersion = "1.22.0",   # ONNX Runtime DirectML package from tmp\native_deps (NATIVE_GATE_A.ps1 fetches it)
     [string]$Device = "cuda",
+    [string]$PackageName = "RUDRA_ACES_2",   # the package folder in dist\models (was aces_v2_<checkpoint folder>)
     [switch]$SkipBuild,
     [switch]$SkipExport,
     [switch]$InstallBuildTools,
@@ -39,7 +40,7 @@ $Out = Join-Path $Repo "reports\aces_v2_$Stamp"
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $Deps = Join-Path $Repo "tmp\native_deps"
 New-Item -ItemType Directory -Force -Path $Deps | Out-Null
-$Package = Join-Path $Repo "dist\models\aces_v2_$((Get-Item $Checkpoint).Directory.Name)"
+$Package = Join-Path $Repo "dist\models\$PackageName"
 function Say([string]$m) { Write-Host "`n== $m" -ForegroundColor Cyan }
 function Fail([string]$m) { Write-Host "`nFAILED: $m" -ForegroundColor Red; Write-Host "report folder: $Out"; exit 1 }
 Start-Transcript -Path (Join-Path $Out "log.txt") | Out-Null
@@ -75,6 +76,10 @@ if (-not $SkipExport) {
     if ($LASTEXITCODE -ne 0) { Fail "export_native_v2.py (TorchScript or staged parity failed)" }
 }
 if (-not (Test-Path (Join-Path $Package "manifest.json"))) { Fail "no package at $Package" }
+# name the package (the engine ignores these keys; the app and tools show them)
+$mp = Join-Path $Package "manifest.json"
+& $Python -c "import json,sys; p=sys.argv[1]; d=json.load(open(p,encoding='utf-8')); d={**{'name':sys.argv[2],'title':'RUDRA ACES 2'},**{k:v for k,v in d.items() if k not in ('name','title')}}; open(p,'w',encoding='utf-8').write(json.dumps(d,indent=2)+chr(10))" $mp $PackageName
+if ($LASTEXITCODE -ne 0) { Fail "naming the package" }
 
 # ---------------------------------------------------------------------------
 Say "OpenColorIO 2.5.2 (C++)"
