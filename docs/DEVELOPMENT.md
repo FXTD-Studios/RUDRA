@@ -4,7 +4,7 @@ Split out of the README on 16 Sep 2026, when the README became a page for the
 people who use RUDRA rather than the people who work on it. Nothing here
 changed; it moved.
 
-Back to [the README](../README.md). [`STATUS.md`](../STATUS.md) says what is
+Back to [the README](../README.md). [`STATUS.md`](STATUS.md) says what is
 finished and what is open.
 
 ---
@@ -26,8 +26,8 @@ training/         Trainers, evaluation, inference, the exporter that turns a
 ui/               RUDRA Studio: the page, its GPU compositor, the inference
                   server behind them, and sequence.py, which opens a folder
                   of frames or a video by path
-run_studio.bat    One-file launchers: set up on the first run, check and start
-run_studio.sh     on every run after that
+scripts/run_studio.bat    One-file launchers: set up on the first run, check and start
+scripts/run_studio.sh     on every run after that
 docs/             RESULTS.md, TRAINING.md, TRAINING_STEPS.md (the next run,
                   step by step), RETRAIN_RUNBOOK.md, INTERNALS.md and CORPUS.md;
                   the Studio screenshot, the comparison strips
@@ -39,7 +39,7 @@ checkpoints/      Every released SDR to HDR model as checkpoints/*.pt, plus
                   promoted by copying its best.pt up a level under a release
                   name. checkpoints/_invalid_corpus_v4/ is quarantine, not a
                   release
-BUILD_CORPUS_V4.ps1  The corpus build: scan → ingest at 0 EV → manifests (with
+scripts/BUILD_CORPUS_V4.ps1  The corpus build: scan → ingest at 0 EV → manifests (with
                   the previous manifest's test scenes held out) → the gate
 scripts/          AUDIT_REPO.ps1 (secrets and provenance over the full
                   history) and finalize_*.ps1 batches; scripts/archive/ holds

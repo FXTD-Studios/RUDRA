@@ -448,7 +448,7 @@ class SDRHDRDataset(Dataset):
         # per record, so the number is reproducible across steps and runs.
         self.deterministic_degradation = bool(deterministic_degradation)
         self.source_curve_dropout = float(source_curve_dropout)
-        # 12 Oct 2026 (v9, claude/TASK_CLIPPED_HIGHLIGHTS.md): the corpus at
+        # 12 Oct 2026 (v9, research notes TASK_CLIPPED_HIGHLIGHTS): the corpus at
         # 0 EV barely clips (v8: median clipped fraction ~0 %), so the model
         # never learned what is above a blown highlight. With this probability
         # a training sample is re-rendered from its own HDR at +E EV, E uniform

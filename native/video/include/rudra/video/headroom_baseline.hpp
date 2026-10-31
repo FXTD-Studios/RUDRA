@@ -1,6 +1,6 @@
 #pragma once
 // Opt-in CPU baseline for ExtendedVideoFrame. Not wired to app or delivery.
-// Policy and integration gates: docs/SUPER_WHITES_REVIEW_2026-10-16.md.
+// Policy and integration gates: archive/docs/SUPER_WHITES_REVIEW_2026-10-16.md.
 
 #include "rudra/core/headroom_policy.hpp"
 #include "rudra/deliver/master.hpp"

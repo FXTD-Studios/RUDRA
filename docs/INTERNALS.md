@@ -3,7 +3,7 @@
 Split out of the README on 10 Sep 2026, when the README became a page for the
 people who use the tool. Nothing here changed; it moved.
 
-Back to [the README](../README.md) . [STATUS.md](../STATUS.md) says what is
+Back to [the README](../README.md) . [STATUS.md](STATUS.md) says what is
 finished and what is open.
 
 ---
@@ -100,8 +100,8 @@ training/         Trainers, evaluation, inference, the exporter that turns a
 ui/               RUDRA Studio: the page, its GPU compositor, the inference
                   server behind them, and sequence.py, which opens a folder
                   of frames or a video by path
-run_studio.bat    One-file launchers: set up on the first run, check and start
-run_studio.sh     on every run after that
+scripts/run_studio.bat    One-file launchers: set up on the first run, check and start
+scripts/run_studio.sh     on every run after that
 docs/             The Studio screenshot, the comparison strips
                   and make_compare.py, which rebuilds them from a scored bench
 checkpoints/      Every SDR to HDR model, plus models.json, the registry the
@@ -189,7 +189,7 @@ decoders from
 The production decoders need no text conditioning. Stages 2 and 3 follow the
 original paper and target SDXL's U-Net cross-attention; porting them to Flux is
 the section 10 generalization experiment. Stage 3 has never been trained.
-[`STATUS.md`](../STATUS.md) says which lines of work are finished and which are
+[`STATUS.md`](STATUS.md) says which lines of work are finished and which are
 not.
 
 The temporal refiner exists and is not evaluated here. Its held-out set is 4
@@ -246,7 +246,7 @@ sky a temporal model would be asked to reconstruct.
 
 So RUDRA is a per-frame model by measurement, not for want of trying. No
 temporal model was trained because there is nothing measurable for one to
-learn. [`STATUS.md`](../STATUS.md) carries the full tables and what would have to
+learn. [`STATUS.md`](STATUS.md) carries the full tables and what would have to
 be true of a corpus to reopen the question.
 
 The viewer looks for a model in `RUDRA_CHECKPOINT_ROOTS` first, then in this

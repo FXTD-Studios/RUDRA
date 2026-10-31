@@ -1,7 +1,7 @@
 """How bright a clipped area was: a small, deterministic, gateable estimator (layer 3 v3, 30 Oct 2026).
 
 v1-v2 asked the generative model for both the SHAPE inside a clipped area and its BRIGHTNESS. The
-shape helped; the brightness was off by +-0.3..1.5 stops either way (claude/TASK_GENFILL_LAYER3).
+shape helped; the brightness was off by +-0.3..1.5 stops either way (research notes TASK_GENFILL_LAYER3).
 v3 splits them:
 
     fill log2 Y(x) = log2 Y_master(x) + max(0, b_c + alpha * s(x))

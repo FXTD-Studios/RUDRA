@@ -1,4 +1,4 @@
-"""v10 (13 Oct 2026, docs/MODEL_PLAN_V10.md): the residual on the Source picker's
+"""v10 (13 Oct 2026, archive/docs/MODEL_PLAN_V10.md): the residual on the Source picker's
 curve, the crushed hold, the live-action validation split, the bench-like
 selection and the gate."""
 from __future__ import annotations
