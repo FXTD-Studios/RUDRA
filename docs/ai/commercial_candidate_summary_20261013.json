@@ -1,0 +1,73 @@
+{
+  "training_ready": false,
+  "rights_status": "pending_review",
+  "initialization": "scratch",
+  "policy": {
+    "Nocturne": [
+      "netflix_nocturne",
+      "nocturne",
+      "train"
+    ],
+    "Sol Levante": [
+      "netflix_sol_levante",
+      "sol_levante",
+      "train"
+    ],
+    "Cosmos Laundromat": [
+      "netflix_cosmos",
+      "cosmos",
+      "train"
+    ],
+    "Sparks": [
+      "netflix_sparks",
+      "sparks",
+      "val"
+    ],
+    "Meridian": [
+      "netflix_meridian",
+      "meridian",
+      "test"
+    ]
+  },
+  "input_manifest": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\manifest.jsonl",
+  "input_sha256": "e534c88675a190ec465f0b666cacc4116a4724343e0de47aebcdb33b9ff51145",
+  "rows": 5944,
+  "splits": {
+    "train": 3297,
+    "test": 287,
+    "val": 2360
+  },
+  "titles": {
+    "Cosmos Laundromat": 163,
+    "Meridian": 287,
+    "Nocturne": 2053,
+    "Sol Levante": 1081,
+    "Sparks": 2360
+  },
+  "scenes": 36,
+  "excluded": {},
+  "media_files": 11888,
+  "media_bytes": 114013230104,
+  "hash_scope": "partial",
+  "limitations": [
+    "rights review pending",
+    "perceptual duplicates untested",
+    "Meridian is an existing regression test, not an untouched new test",
+    "title splits valid for scratch initialization only",
+    "real-only corpus: exposure/baseline recipe must be explicitly configured"
+  ],
+  "storage_sentinel": {
+    "path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\_ingest_config.json",
+    "sha256": "fc1f165066d368de0b721a4a7b328a081485f9643a5b3c8c3417d7184099790e"
+  },
+  "builder_sha256": "18ef710f90805933e0fb224caeef7ea010698b271fa273d373f9d8a850beff96",
+  "hashed_files": 908,
+  "hashed_bytes": 8588368527,
+  "hash_journal": "D:\\A.I\\Devlopments\\rudra\\reports\\commercial_candidate_v1.hashes.jsonl",
+  "hash_budget_seconds": 1e-06,
+  "hash_cache_policy": "size/mtime audit cache only; commercial preflight rehashes every file",
+  "duplicates": [],
+  "cross_split_duplicates": 0,
+  "elapsed_seconds": 1.642650699999649,
+  "candidate_sha256": "0da0979e8bb9d6ebca812d74cdb11a34ee6e7d3a11923a07f07302510ff0e8b4"
+}

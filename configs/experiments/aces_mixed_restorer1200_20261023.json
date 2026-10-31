@@ -1,0 +1,10 @@
+{
+  "purpose": "longer fixed training to test whether mixed300 undertrained procedural restoration",
+  "inherits": "configs/experiments/aces_mixed_restorer_20261023.json",
+  "output": "G:/rudra_training/aces_mixed_restorer1200_20261023",
+  "steps": 1200,
+  "initialization": "fresh local restorer with same seed, frozen lower_lr300 HDR predictor",
+  "changed_training_setting": "steps only; trainer exposes steps argument",
+  "acceptance": "unchanged mixed300 requirements on natural24, procedural8 and three ramp probes; evaluate final1200 only",
+  "release_authorized": false
+}

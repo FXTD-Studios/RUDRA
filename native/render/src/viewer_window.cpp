@@ -168,6 +168,7 @@ struct ViewerWindow::Impl {
     // What is shown, kept on the host so a lost device is rebuilt from it.
     bool has_frame = false;
     bool precomposited = false;   // set_composited: model_t is uploaded, not rendered
+    std::vector<float> pre_codes; // its SDR's largest code per pixel, when given (the Invented layer)
     NetworkLinearImage precomposite;
     ViewerFrame frame;
     NetworkLinearImage baseline;
@@ -590,7 +591,8 @@ struct ViewerWindow::Impl {
                     u->uploadTexture(t, QRhiTextureUploadDescription(QRhiTextureUploadEntry(
                         0, 0, QRhiTextureSubresourceUploadDescription(v.data(), quint32(v.size() * sizeof(float))))));
                 };
-                upload(base_t.get(), detail::baseline_rgba(baseline.buffer(), precomposited ? nullptr : &frame.sdr));
+                upload(base_t.get(), precomposited ? detail::baseline_rgba(baseline.buffer(), pre_codes)
+                                                   : detail::baseline_rgba(baseline.buffer(), &frame.sdr));
                 if (precomposited) {
                     upload(model_t.get(), detail::rgba_of(precomposite.buffer()));
                     composite_dirty = false;
@@ -890,6 +892,11 @@ void ViewerWindow::set_frame(ViewerFrame frame) {
 }
 
 void ViewerWindow::set_composited(NetworkLinearImage model, NetworkLinearImage baseline) {
+    set_composited(std::move(model), std::move(baseline), {});
+}
+
+void ViewerWindow::set_composited(NetworkLinearImage model, NetworkLinearImage baseline, std::vector<float> sdr_max_codes) {
+    d_->pre_codes = std::move(sdr_max_codes);
     d_->hold_last = -1;   // a card or a master: nothing held across it
     d_->hold_frame = -1;
     d_->hold_pending = true;
@@ -1073,6 +1080,7 @@ void ViewerWindow::mousePressEvent(QMouseEvent* e) {
         d_->wipe_dragging = true;
         d_->view.wipe = wipe_at(d_->placed(), e->position().x());
         d_->changed_view();
+        d_->notify();   // the session keeps the seam, so a peak or exposure change does not reset it
         return;
     }
     d_->flip_held_mouse = true;
@@ -1141,6 +1149,7 @@ void ViewerWindow::mouseReleaseEvent(QMouseEvent* e) {
         return;
     }
     if (e->button() == Qt::LeftButton) {
+        if (d_->wipe_dragging) d_->notify();   // where the seam was let go
         d_->wipe_dragging = false;
         if (d_->flip_held_mouse) {
             d_->flip_held_mouse = false;
@@ -1175,6 +1184,7 @@ void ViewerWindow::keyPressEvent(QKeyEvent* e) {
                 const double step = (e->modifiers() & Qt::ShiftModifier) ? 0.01 : 0.05;
                 d_->view.wipe = std::clamp(d_->view.wipe + (e->key() == Qt::Key_Right ? step : -step), 0.0, 1.0);
                 d_->changed_view();
+                d_->notify();
                 return;
             }
             break;

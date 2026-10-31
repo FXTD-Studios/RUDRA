@@ -1,0 +1,369 @@
+{
+  "v10_val_previously_trained": 728,
+  "samples": [
+    {
+      "asset_id": "0000000_A004C006_170212_R3W4.00577984_c0",
+      "source": "hdm",
+      "split": "train",
+      "hdr_sha256": "3b5ec9aa9ad213a26bd8b7e4a9ba942fc0ed83da9abba3fe71e8c021a5174dc5",
+      "sdr_sha256": "d9983777e71ee0e796354cd455d90d16b700aec1119a15523dd3e17d6320c56b",
+      "shape": [
+        720,
+        1280,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 655.5286254882812,
+      "hdr_min_nits": 0.005000000353902578,
+      "sdr_range": [
+        0.0,
+        1.0
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "0002748_Chimera_DCI4k2398p_HDR_P3PQ_00120_c0",
+      "source": "netflix_chimera",
+      "split": "train",
+      "hdr_sha256": "39b20c2fa7ae2cfad0b7856cf5c43a8b12808d050d929d0647c4295b896e76e4",
+      "sdr_sha256": "df64be221ea2c5fd108f5cf2fe1ff88ea37925aa9733dbf72e3b83ddb0fd6e8f",
+      "shape": [
+        720,
+        1280,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 1555.1806640625,
+      "hdr_min_nits": 0.0,
+      "sdr_range": [
+        0.0,
+        1.0
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "0003381_abandoned_bakery_2k_c0",
+      "source": "polyhaven",
+      "split": "train",
+      "hdr_sha256": "515c129b6c7e13af04b4fd96a52502590f7b8b2eafe2d15be737dea010ca44d1",
+      "sdr_sha256": "2b61569851ca4a10e471ec7463811228f4698e62cd6d56349484828262be1934",
+      "shape": [
+        720,
+        1280,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 4644.1982421875,
+      "hdr_min_nits": 0.557567298412323,
+      "sdr_range": [
+        0.0,
+        1.0
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "0005736_SPARKS_ACES_00136_c0",
+      "source": "netflix_sparks",
+      "split": "train",
+      "hdr_sha256": "ba7fbb4729641edcacb68bb7fa1e904e1466581c6f4c97e7a95ad4a64787cdf9",
+      "sdr_sha256": "687e9dd43a13b75071d33a618a6f13ee19ca4c86d9baff7d322035f18d3f0335",
+      "shape": [
+        720,
+        1280,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 1.1277151107788086,
+      "hdr_min_nits": 0.008178208023309708,
+      "sdr_range": [
+        0.0,
+        0.007843137718737125
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "0003384_abandoned_factory_canteen_01_2k_c0",
+      "source": "polyhaven",
+      "split": "val",
+      "hdr_sha256": "21646d54833141a996e6c99af9b054036c1f203d4c9aca40186a136d69228ab0",
+      "sdr_sha256": "fefb311155a821634c5315386a6f3e81687d94042a5fd0a9ed3e87624076ef92",
+      "shape": [
+        720,
+        1280,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 40000.0,
+      "hdr_min_nits": 5.303354740142822,
+      "sdr_range": [
+        0.0,
+        1.0
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "0004344_beerfest_lightshow_101976_c0",
+      "source": "hdm",
+      "split": "val",
+      "hdr_sha256": "627bb815eb2d80ac78f6c9145b1660f023d027e1f0d0f0ee6846ff85dacb92cd",
+      "sdr_sha256": "5020ea66780145f6efe18ff383c98607e4cd9be908c18247e808579206db1c24",
+      "shape": [
+        720,
+        1280,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 4124.365234375,
+      "hdr_min_nits": 0.005000000353902578,
+      "sdr_range": [
+        0.0,
+        0.9960784316062927
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "0003389_abandoned_greenhouse_2k_c0",
+      "source": "polyhaven",
+      "split": "test",
+      "hdr_sha256": "e680c810232e122f123be3bc85240aa00cacff6f17ebdef513441009a8b8d541",
+      "sdr_sha256": "fdcab5c820d13410484708170fdf77819388fd77aabb3b5b14a143cd984267fd",
+      "shape": [
+        720,
+        1280,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 113.85002136230469,
+      "hdr_min_nits": 4.752517223358154,
+      "sdr_range": [
+        0.019607843831181526,
+        0.6392157077789307
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "0005101_fireplace_092048_c0",
+      "source": "hdm",
+      "split": "test",
+      "hdr_sha256": "b9a9a6040a04f540d66da252efc28f509273ae277d00ed02b8de8cbf9e65b6fd",
+      "sdr_sha256": "34e66f34367654e44ea0389eb301bc95ab45ce94fae7fa68b66de2186489a937",
+      "shape": [
+        720,
+        1280,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 53.6765022277832,
+      "hdr_min_nits": 0.01643993891775608,
+      "sdr_range": [
+        0.0,
+        0.45098039507865906
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "nf_meridian_11872-12263_frame00000005",
+      "source": "netflix_meridian",
+      "split": "test",
+      "hdr_sha256": "f247b6244be8497711cb564e1e3d7014205ace7b75e00fdfa6494dc5ea38dee5",
+      "sdr_sha256": "8312ea23f4e1ed51be4f577be082252493336baa4a89c30c2989ecb824dc6063",
+      "shape": [
+        1080,
+        1920,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 1946.2032470703125,
+      "hdr_min_nits": 0.0,
+      "sdr_range": [
+        0.0,
+        0.9750362634658813
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_17140-17709_frame00000001",
+      "source": "netflix_nocturne",
+      "split": "train",
+      "hdr_sha256": "e47f300c8d0debb3391457d7e25fb348baaa277dc39daa89a8f06e0f7b29b12d",
+      "sdr_sha256": "9b0f2c5429d723be0c2076504f1112a83a93bfd2ff05c0f6380827f0ebcce965",
+      "shape": [
+        1080,
+        1920,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 1926.4371337890625,
+      "hdr_min_nits": 0.05848313495516777,
+      "sdr_range": [
+        0.019378958269953728,
+        0.965819776058197
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_23820-24322_frame00000001",
+      "source": "netflix_nocturne",
+      "split": "val",
+      "hdr_sha256": "2e7fa0f96ea2eabefaba5c289e67d2d390641d31bb2c74982dbeee396fb4bfa4",
+      "sdr_sha256": "492747a5be22bc156f5e47ba778ce139d6fec465a78fd06cb8d0e7dcee87010d",
+      "shape": [
+        1080,
+        1920,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 4074.150146484375,
+      "hdr_min_nits": 0.3985685110092163,
+      "sdr_range": [
+        0.05506981164216995,
+        0.9615472555160522
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_2268-2412_frame00000001",
+      "source": "netflix_sol_levante",
+      "split": "train",
+      "hdr_sha256": "f98c6e737514451e831ea0d22a04a879fc84ece8354d11a466b2ac420f8ce02c",
+      "sdr_sha256": "7a7198f3f9961a871d5f1bbada8a77199498889765d9a0eec20b36dc281c45ec",
+      "shape": [
+        1080,
+        1920,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 884.97802734375,
+      "hdr_min_nits": 0.0,
+      "sdr_range": [
+        0.010879682376980782,
+        0.9700617790222168
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "nf_sparks_8396-8941_frame00000001",
+      "source": "netflix_sparks",
+      "split": "val",
+      "hdr_sha256": "2a5e225ca52c8070bc65ee81cff0726c74def2c83d3b310e404998b2f6a22a15",
+      "sdr_sha256": "b178a4e99209edfc8c72fa578efe714bc6b941f145429ee207bf13ebe08495b3",
+      "shape": [
+        1080,
+        2048,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 1051.1539306640625,
+      "hdr_min_nits": 0.052931033074855804,
+      "sdr_range": [
+        0.01347371656447649,
+        0.9736171364784241
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_11589-11752_frame00000004",
+      "source": "netflix_cosmos",
+      "split": "train",
+      "hdr_sha256": "f08e4b06485c5597f89edaafed9d550080b4fb0dcb4f8dd2db77438f55c1e854",
+      "sdr_sha256": "966f8834b3cc2ceea24f53e520dd49c0b2fc95e1d948a03817422fbf7173b02a",
+      "shape": [
+        860,
+        2048,
+        3
+      ],
+      "finite": true,
+      "hdr_max_nits": 2453.365234375,
+      "hdr_min_nits": 0.005000000353902578,
+      "sdr_range": [
+        0.0,
+        0.9262683987617493
+      ],
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      }
+    }
+  ]
+}

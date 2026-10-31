@@ -105,6 +105,47 @@ TEST(SequenceEncode, FrameCodesAreThePythons) {
     }
 }
 
+TEST(SequenceEncode, Ffv1RetainsRgb16CodesAndHdrTags) {
+    if (!find_executable("ffmpeg") || !find_executable("ffprobe")) GTEST_SKIP();
+    const auto* target = find_sequence_target("ffv1rgb16");
+    ASSERT_NE(target, nullptr);
+    NitsFrame frame(32, 64);
+    for (int c = 0; c < 3; ++c)
+        for (std::size_t i = 0; i < frame.plane_size(); ++i)
+            frame.plane(c)[i] = 10000.0 * ((i * (c + 1)) % frame.plane_size()) / (frame.plane_size() - 1);
+    auto expected = encode_sequence_frame(frame, *target, 10000, Primaries::Rec2020, false);
+    ASSERT_TRUE(expected);
+    const fs::path work = fs::temp_directory_path() / "rudra-native-ffv1-rgb16-test";
+    fs::create_directories(work);
+    SequenceEncodeOptions options;
+    options.target = "ffv1rgb16";
+    options.peak_nits = 10000;
+    options.shoulder = false;
+    int n = 0;
+    auto out = encode_sequence([&]() -> std::optional<NitsFrame> {
+        return n++ < 2 ? std::optional<NitsFrame>(frame) : std::nullopt;
+    }, work / "ramp.mkv", options);
+    ASSERT_TRUE(out) << out.error().message;
+    auto probe = run_tool({"ffprobe", "-v", "error", "-select_streams", "v:0", "-show_streams", "-of", "json", out->string()});
+    ASSERT_TRUE(probe);
+    const auto stream = json::parse(*probe)["streams"][0];
+    EXPECT_EQ(stream["pix_fmt"], "gbrp16le");
+    EXPECT_EQ(stream["bits_per_raw_sample"], "16");
+    EXPECT_EQ(stream["color_range"], "pc");
+    EXPECT_EQ(stream["color_space"], "gbr");
+    EXPECT_EQ(stream["color_transfer"], "smpte2084");
+    EXPECT_EQ(stream["color_primaries"], "bt2020");
+    auto decoded = run_tool({"ffmpeg", "-v", "error", "-y", "-i", out->string(), "-f", "rawvideo", "-pix_fmt", "rgb48le", (work / "decoded.raw").string()});
+    ASSERT_TRUE(decoded);
+    std::ifstream input(work / "decoded.raw", std::ios::binary);
+    std::vector<std::uint16_t> actual(expected->size() * 2);
+    input.read(reinterpret_cast<char*>(actual.data()), actual.size() * sizeof(std::uint16_t));
+    ASSERT_EQ(input.gcount(), actual.size() * sizeof(std::uint16_t));
+    for (std::size_t i = 0; i < actual.size(); ++i) ASSERT_EQ(actual[i], (*expected)[i % expected->size()]) << i;
+    input.close();
+    fs::remove_all(work);
+}
+
 TEST(SequenceEncode, CommandsAreThePythons) {
     const json idx = index();
     for (const auto& r : idx["runs"]) {
@@ -213,7 +254,7 @@ TEST(SequenceEncode, LiveEncodesCarryTheirTags) {
     EXPECT_EQ(encode_sequence([] { return std::optional<NitsFrame>(); }, work / "x", o).error().message, "no frames to encode");
     o.target = "av1";
     EXPECT_EQ(encode_sequence([] { return std::optional<NitsFrame>(NitsFrame(72, 128)); }, work / "x", o).error().message,
-              "unknown target 'av1'. Choose from: hdr10, hlg, prores422hq, prores4444");
+              "unknown target 'av1'. Choose from: hdr10, hlg, prores422hq, prores4444, ffv1rgb16");
     o.target = "prores422hq";
     int n = 0;
     auto r = encode_sequence(
@@ -290,4 +331,39 @@ TEST(SequenceEncode, LinearDeliveryReportsAndStops) {
     }
     EXPECT_FALSE(deliver_linear_frames({}, work / "none", o, 203.0));
     fs::remove_all(work);
+}
+
+// Native only (27 Oct 2026): the 16-bit uncompressed RGB MOV ('b48r'), PQ,
+// lossless, for a folder of frames as for the export queue.
+TEST(SequenceEncode, SixteenBitRgbMovIsUncompressedPq) {
+    if (!find_executable("ffmpeg") || !find_executable("ffprobe")) GTEST_SKIP() << "ffmpeg is not on PATH";
+    const auto* t = find_sequence_target("rgb16mov");
+    ASSERT_NE(t, nullptr);
+    EXPECT_EQ(t->suffix, ".mov");
+    const fs::path work = fs::temp_directory_path() / "rudra_seq_rgb16mov";
+    fs::remove_all(work);
+    fs::create_directories(work);
+    SequenceEncodeOptions o;
+    o.target = "rgb16mov";
+    int n = 0;
+    auto out = encode_sequence(
+        [&]() -> std::optional<NitsFrame> {
+            if (n++ == 3) return std::nullopt;
+            NitsFrame f(36, 64);
+            for (int c = 0; c < 3; ++c)
+                for (std::size_t i = 0; i < f.plane_size(); ++i) f.plane(c)[i] = 0.5 + double(i % 997) * (c + 1);
+            return f;
+        },
+        work / "shot", o);
+    ASSERT_TRUE(out) << out.error().message;
+    EXPECT_EQ(out->extension(), ".mov");
+    auto tags = colour_tags(*out);
+    ASSERT_TRUE(tags);
+    EXPECT_EQ(tag_of(*tags, "color_space"), "gbr");
+    EXPECT_EQ(tag_of(*tags, "color_transfer"), "smpte2084");
+    EXPECT_EQ(tag_of(*tags, "color_primaries"), "bt2020");
+    const auto cmd = sequence_encode_command(*t, 64, 36, 24.0, 1000.0, std::nullopt, std::nullopt, 0.005, *out, true, false);
+    std::string all;
+    for (const auto& a : cmd) all += a + " ";
+    EXPECT_NE(all.find("-c:v rawvideo -pix_fmt rgb48be"), std::string::npos) << all;
 }

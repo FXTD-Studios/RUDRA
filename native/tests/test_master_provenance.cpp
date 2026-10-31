@@ -63,6 +63,23 @@ Written master(const fs::path& root, const MasterRequest& q) {
 
 }  // namespace
 
+TEST(MasterProvenance, Float32RequestSurvivesSerializationAndWritesFloatChannels) {
+    for (const std::string container : {"aces", "linear"}) {
+        MasterRequest q;
+        q.container = container;
+        q.exr_half = false;
+        auto restored = master_request_from_json(master_request_json(q));
+        ASSERT_TRUE(restored);
+        ASSERT_FALSE(restored->exr_half);
+        const auto w = master(fresh("float32-" + container), *restored);
+        for (int type : w.exr.pixel_types) EXPECT_EQ(type, 2);
+        EXPECT_EQ(attr(w.exr, "rudra:sampleType"), "float32");
+    }
+    auto legacy = master_request_from_json("{}");
+    ASSERT_TRUE(legacy);
+    EXPECT_TRUE(legacy->exr_half);
+}
+
 TEST(MasterProvenance, BuildIsAlwaysRecorded) {
     const fs::path root = fresh("build");
     MasterRequest q;

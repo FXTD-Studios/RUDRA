@@ -1,0 +1,21 @@
+{
+  "purpose": "deterministic confirmation of the registered shadow-scale comparison",
+  "inherits_acceptance": "configs/experiments/aces_shadow_scale_pair_20261023.json",
+  "training_report": "G:/datasets/corpora/run05_aces_spatial_train48_v2_20261023/report.json",
+  "development_report": "G:/datasets/corpora/run05_aces_spatial_dev24_v2_20261023/report.json",
+  "control_output": "G:/rudra_training/run05_aces_deterministic_control300_20261023",
+  "treatment_output": "G:/rudra_training/run05_aces_deterministic_scaled300_20261023",
+  "steps": 300,
+  "seed": 20261023,
+  "channels": 8,
+  "crop": 128,
+  "batch": 4,
+  "learning_rate": 0.001,
+  "deterministic": true,
+  "control_shadow_weight": 0,
+  "treatment_shadow_weight": 1,
+  "initialization": "fresh zero-head v3 pixel RMS in each arm",
+  "evaluation": "CPU full24 development, fixed final300 checkpoint; unchanged gates, no threshold tuning",
+  "limitations": "same-machine repeatability verified at60steps; development previously used in research, not independent release holdout",
+  "release_authorized": false
+}

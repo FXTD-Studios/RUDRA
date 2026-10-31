@@ -6,6 +6,7 @@
 
 #include <QMainWindow>
 #include <QString>
+#include <QStringList>
 
 #include <filesystem>
 #include <functional>
@@ -21,12 +22,15 @@
 #include <QImage>
 #include <QPointer>
 #include <QTimer>
+#include <QTemporaryDir>
+#include <QJsonObject>
 
 #include <thread>
 
 #include "rudra/core/composite.hpp"
 #include "rudra/core/model_manifest.hpp"
 #include "rudra/core/scopes.hpp"
+#include "rudra/engine/headroom_preview.hpp"
 #include "rudra/engine/master_job.hpp"
 #include "rudra/engine/measure.hpp"
 #include "rudra/engine/model_catalog.hpp"
@@ -35,6 +39,11 @@
 #include "rudra/infer/self_test.hpp"
 #include "rudra/engine/session.hpp"
 #include "rudra/media/sequence.hpp"
+#include "rudra/media/still_metadata.hpp"
+#include "batch_queue.hpp"
+#include "rudra/core/aces_v2_trims.hpp"
+#include "deliver_choice.hpp"
+#include "model_downloads.hpp"
 #include "video_queues.hpp"
 
 #include <atomic>
@@ -42,6 +51,7 @@
 
 class QAction;
 class QLabel;
+namespace rudra::app { class GenFillJob; }
 class QLineEdit;
 class QMenu;
 class QNetworkAccessManager;
@@ -61,6 +71,7 @@ class ViewerWindow;
 
 namespace rudra::app {
 
+class AcesEngine;
 class CheckRow;
 class IconButton;
 class RegionEditor;
@@ -71,11 +82,17 @@ class VectorscopeView;
 class ScrubBar;
 class Seg;
 
+// The Open dialog's filter: stills, every movie the reader opens, projects.
+QString open_file_filter();
+
 class MainWindow : public QMainWindow {
 public:
     // viewer: false builds the window without the QRhi viewer (tests, and
     // builds without Qt Shader Tools).
-    explicit MainWindow(bool viewer = true);
+    // headroom_capable: the session and project reader accept the experimental
+    // bt1886-headroom-v1 policy and movies preview through the headroom driver
+    // (E1). Off in every public entry point; the workflow check and tests opt in.
+    explicit MainWindow(bool viewer = true, bool headroom_capable = false);
     ~MainWindow() override;
 
     // A model package from a folder picker (or `preset`): use_model on it.
@@ -109,6 +126,116 @@ public:
     // package used last (on its backend), else the catalog's pick.
     void boot();
     void open_model_manager();
+    // Model downloads (29 Oct 2026, model_downloads.hpp): the list we publish, fetched
+    // on demand; a finished download is added to the model folders and, for the learned
+    // ACES 2.0 model, loaded when none is.
+    ModelDownloads* model_downloads();
+    // The learned ACES 2.0 package to load (remembered as aces/package); false and why when it cannot.
+    bool use_aces_package(const std::filesystem::path& package, QString* why = nullptr);
+    bool have_aces_package();           // a learned ACES 2.0 package and its engine are on this computer
+    // Help > About (29 Oct 2026): the version, the model, the GPU, the links.
+    void open_about();
+    QString update_state() const { return update_state_; }   // "Up to date", "RUDRA x is available", "" unchecked
+    // Deliver > Learned ACES 2.0 master… (aces_master.hpp): the learned ACES 2.0
+    // model's masters, run by the ACES v2 rudra-native as a child process.
+    void open_aces_master();
+    // The learned ACES 2.0 model kept loaded (aces_engine.hpp): started at
+    // launch when aces/preload is on (the default) and an engine and package are found.
+    void preload_aces_engine();
+    AcesEngine* aces_engine();
+    // The main viewer shows the learned ACES 2.0 master of each frame, through
+    // the kept-loaded engine, when it is ready and aces/viewer is on (default).
+    bool aces_routed() const;
+    void set_aces_viewer(bool on);
+    bool aces_viewer() const { return aces_view_; }
+    // The colorist's trims on the learned master (28 Oct 2026, core/aces_v2_trims.hpp):
+    // in every viewer frame, Deliver render and batch job; kept between runs.
+    const aces_v2::AcesTrims& aces_trims() const { return aces_trims_; }
+    void set_aces_trims(const aces_v2::AcesTrims& t);
+    // The Deliver tab's start timecode and reel for stills and sequences ("" = none;
+    // a movie carries its own timecode and reel unless these are set).
+    QString render_timecode() const;
+    // The monitoring transform on the learned route (28 Oct 2026): "scene" (the
+    // master's scene light, as before), "sdr100" or "hdr1000" (the ACES 2.0
+    // output, in display light, with the view peak set to it). Kept between runs.
+    QString aces_monitor() const { return aces_monitor_; }
+    void set_aces_monitor(const QString& m);
+    // The display the SDR was made for (28 Oct 2026 review): bt1886 (what the model
+    // reads), srgb or gamma22 (re-encoded to BT.1886 codes first, the same light).
+    QString aces_source_display() const { return aces_source_display_; }
+    void set_aces_source_display(const QString& s);
+    // The playback cache: how many frames are in, and whether it plays in real time now.
+    int aces_cached_frames() const;
+    bool aces_realtime_playing() const { return aces_rt_playing_; }
+    bool aces_playing() const { return aces_playing_; }   // through the model, frame by frame
+    QString aces_cache_key() const;   // the shot, trims, monitor and source display it was made with
+    void aces_rt_stop();
+    // Per-shot trims (28 Oct 2026 review): remembered with each shot (the movie, the
+    // folder or the still); a new shot keeps the trims in hand. Copy / paste between shots.
+    void copy_aces_trims();
+    void paste_aces_trims();
+    QString shot_trim_key() const;
+    std::optional<aces_v2::AcesTrims> remembered_trims(const QString& key) const;
+    // Reference stills (28 Oct 2026): the learned frame on screen kept (Ctrl+Alt+G),
+    // then compared in the baseline's place (Baseline, Wipe and B show it).
+    int grab_reference_still();                   // its index, -1 when there is no learned frame
+    void set_reference_compare(bool on, int index = -1);
+    bool reference_compare() const { return ref_compare_; }
+    bool reference_shown() const { return aces_ref_shown_; }   // the frame on screen is compared with it
+    int reference_count() const { return int(ref_stills_.size()); }
+    const NetworkLinearImage* reference_still() const;
+    const std::vector<float>& aces_codes() const { return aces_codes_; }
+    QString render_reel() const;
+    int aces_shown() const { return aces_shown_; }      // the frame the ACES route last showed (-1: none)
+    QString frame_info() const { return frame_info_; }
+    // The Deliver tab (27 Oct 2026, deliver_choice.hpp): the source (the learned
+    // ACES 2.0 model when it is ready, else the analytic reconstruction), still,
+    // sequence or MOV, EXR 32/16-bit or DPX 10-bit, ACES 2065-1 or ACEScg, LogC4,
+    // ACEScct or PQ, and a 10- or 16-bit movie. Render runs the choice.
+    const DeliverChoice& deliver_choice() const { return deliver_; }   // what was chosen
+    DeliverChoice deliver_effective() const;     // what Render writes for this shot and source
+    bool deliver_aces() const;                   // the learned model renders the files
+    // The learned model is chosen and set up (loading, failed or ready): the
+    // Deliver tab then never falls back to the analytic look (28 Oct 2026 review).
+    bool deliver_learned_wanted() const;
+    // One choice by its key ("source", "output", "image", "gamut", "encoding",
+    // "bits", "codec", "keep_exr", "fps"; the AI fill: "ai_fill", "ai_tau_high",
+    // "ai_tau_low", "ai_seed", "ai_steps", "ai_prompt_highlight", "ai_prompt_shadow"),
+    // as the controls set it.
+    void set_deliver(const QString& key, const QString& value);
+    void deliver_render();                       // the Render button (action "master")
+    bool aces_delivering() const { return aces_deliver_id_ != 0; }
+    // The AI fill (layer 3, genfill_job.hpp) of a learned EXR render: runs after the
+    // render when chosen, or on any master folder; a Render click while it runs stops it.
+    bool genfill_running() const;
+    bool start_genfill(const QString& master_dir, QString* why = nullptr);
+    // The same with its own options and output base (<base>_aifill) and a
+    // callback when it ends (true when done): the batch's AI fill (29 Oct 2026).
+    bool start_genfill_with(const QString& master_dir, const GenFillOptions& options, const QString& out_base,
+                            std::function<void(bool done, QString text)> finished, QString* why = nullptr);
+    QString genfill_last_out() const { return genfill_last_out_; }
+    // The review of an AI fill folder (the last one, else one picked); false and why when there is none.
+    bool review_genfill(const QString& dir = {}, QString* why = nullptr);
+    // The batch queue (28 Oct 2026, batch_queue.hpp): shots rendered one after
+    // another through the learned ACES 2.0 model. Its file is the setting
+    // batch/file, else batch_queue.json in the app's data folder.
+    BatchQueue& batch_queue();
+    BatchRunner& batch_runner();
+    bool batch_running() const { return batch_runner_ && batch_runner_->running(); }
+    void open_batch();                            // Deliver > Batch queue… (Ctrl+Shift+B)
+    // The shot on screen, with the Deliver tab's choice, name and start frame
+    // (Ctrl+B); `dir` overrides the Deliver tab's render folder.
+    bool batch_add_current(QString* why = nullptr, const QString& dir = {});
+    bool batch_start(QString* why = nullptr);
+    // An EDL into the batch (edl.hpp): one shot per matched video event, only its
+    // frames plus `handles`, named <event>_<reel>, as a sequence (or the Deliver
+    // tab's MOV). Returns the shots added; `report` says what did not match.
+    int batch_import_edl(const QString& edl, const QString& media_folder, int handles, const QString& render_dir,
+                         QString* report = nullptr);
+    QString render_dir() const;                   // the Deliver tab's render folder
+    int render_start() const;                     // its start frame
+    // What Render sends the learned engine now (empty with the reason when it cannot).
+    QJsonObject aces_deliver_request(QString* why = nullptr) const;
     // The export sheet (the Pro boards): format, frames, destination, then Master
     // EXR, or for a movie an HDR10, HLG or ProRes export as a queue job.
     void open_export_sheet();
@@ -170,8 +297,14 @@ public:
     // The page's shell (shell.js): the workspace and the inspector tab.
     void set_workspace(const QString& mode);     // "full" or "simple"
     QString workspace() const { return workspace_; }
-    void show_tab(const QString& tab);           // "rec", "grade", "deliver"
+    void show_tab(const QString& tab);           // "rec", "grade", "check" (Simple), "deliver"
     QString tab() const { return tab_; }
+    // The tab on screen: Simple has Look (rec), Check and Deliver; Full has Reconstruct (rec), Grade and Deliver.
+    QString shown_tab() const;
+    // Simple's Deliver (29 Oct 2026): "master" (ACES 2065-1 EXR), "hdr10" (HEVC 10-bit PQ 1000 nits),
+    // "hlg" (ProRes 422 HQ HLG) or "custom" (the full What to write card).
+    void apply_deliver_preset(const QString& key);
+    QString deliver_preset() const;
     // A line in the Log, as the page's log() writes it.
     void log(const QString& line);
     // The scopes of the frame on screen (drawScopes, drawVector); cleared
@@ -230,6 +363,8 @@ public:
     const Fields* frame_fields() const;
     const FrameScalars* frame_scalars() const;   // as shown (held while playing)
     int current_index() const { return current_; }
+    // Requested and delivered indices differ during asynchronous scrubbing.
+    int presented_index() const;
     std::size_t frame_count() const { return frames_.size(); }
 
     // Projects (engine/project.hpp): the shot, the model and the grade in a
@@ -276,7 +411,7 @@ public:
     // while playing (0: full size) with full size where it stops; a movie is
     // decoded in order by one ffmpeg (MovieFeeder); `realtime` keeps time by
     // skipping frames the model has not reached.
-    bool playing() const { return play_.isActive(); }
+    bool playing() const { return play_.isActive() || headroom_playing_ || aces_playing_; }
     void set_playback_side(int side);
     int playback_side() const { return play_state_->side.load(); }
     void set_playback_realtime(bool on);
@@ -297,12 +432,46 @@ public:
     static QString user_guide_url();
     void show_getting_started();
     void show_getting_started_once();   // once per edition of the steps (QSettings help/gettingStarted)
+    // The first-run tips (29 Oct 2026): the welcome card, then four coach marks
+    // the first time a shot is on screen (QSettings help/tipsWelcomed, help/tipsDone).
+    void show_tips_once();
+    void show_welcome_tips();
+    void start_tips();                  // the four tips now (Help > Show tips); switches to Simple
+    class CoachMarks* coach_marks() const { return coach_; }
+    bool tips_pending() const { return tips_pending_; }
 
     // The page's state: grade, undo, peak, wipe, container (engine/session).
     Session& session() { return session_; }
     const Session& session() const { return session_; }
     CompositeParams composite() const { return session_.composite_params(); }
     const std::string& container() const { return session_.container; }
+
+    // ---- Headroom preview (E1, 17 Oct 2026; experimental, capability-gated) ----
+    // When the window is capable, the grade's policy is bt1886-headroom-v1 and
+    // the shot is a movie, frames come from HeadroomPreviewDriver instead of the
+    // legacy SDR engine: paused frames, playback, grade changes, undo/redo and
+    // project restore all route through it. A refused grade or a failure is
+    // shown as such; legacy pixels are never substituted. Exports refuse the
+    // policy until they support it (E2). See docs/HEADROOM_APP_INTEGRATION_2026-10-17.md.
+    bool headroom_capable() const { return headroom_capable_; }
+    bool headroom_routed() const;                       // frames come from the headroom driver
+    Result<void> set_headroom_preview(bool on);         // the grade's policy: one undo step
+    // Reconstruct > Keep super-whites: checks the shot, says what it turns off
+    // (asked first when the window is visible), opens the window's headroom
+    // support if needed (remembered for the next start) and sets the policy;
+    // on again, back to the usual reading. Refusals are in problem().
+    void toggle_super_whites();
+    QString problem() const { return problem_; }
+    const HeadroomShown* headroom_frame() const { return headroom_shown_ ? &*headroom_shown_ : nullptr; }
+    QString headroom_problem() const { return headroom_problem_; }   // why nothing is shown, or empty
+    HeadroomPreviewStats headroom_stats() const;
+    using HeadroomPortFactory = std::function<Result<std::unique_ptr<HeadroomPreviewPort>>()>;
+    void set_headroom_port_factory(HeadroomPortFactory f) { headroom_factory_ = std::move(f); }   // tests
+    // E2: with the policy on, a movie export (HDR10, HLG, ProRes) runs the
+    // transactional headroom export (engine/headroom_export.hpp) off the UI
+    // thread instead of the legacy queue; asking again while it runs cancels it.
+    bool exporting_headroom() const { return headroom_export_running_; }
+    QString headroom_export_result() const { return headroom_export_result_; }   // the published file, or why not
 
 protected:
     // The keys the page's keydown takes before its map: the wipe nudge,
@@ -314,6 +483,14 @@ protected:
     void dragLeaveEvent(class QDragLeaveEvent* e) override;
     void dropEvent(class QDropEvent* e) override;
     void closeEvent(class QCloseEvent* e) override;
+public:
+    // What would be stopped by quitting now ("the Deliver render", "the batch", ...).
+    QStringList running_work() const;
+    // Asks each to stop after the frame in hand (written whole); the owners wait on destruction.
+    void stop_running_work();
+    // Tests answer the quit question here (true = stop and quit); else a dialog.
+    std::function<bool(const QString&)> quit_question;
+protected:
     bool eventFilter(QObject* o, QEvent* e) override;   // a shot row in the sidebar reopens its shot
 
 private:
@@ -377,10 +554,25 @@ private:
     QTimer autosave_timer_;
     QString updates_feed_ = default_updates_feed(), update_url_;
     QNetworkAccessManager* net_ = nullptr;
+    std::unique_ptr<ModelDownloads> downloads_;
+    std::optional<bool> have_aces_package_;   // cached: reset by a rescan and a download
+    QString update_state_;
     void bind_handlers();
     void show_sheet(const QString& title, const std::vector<std::pair<QString, QString>>& rows);
     void sync_checks();
     void sync_ui();
+    // Simple (29 Oct 2026): Look, Check, Deliver; what Full adds is hidden here.
+    void build_simple_parts();
+    void sync_simple();
+    void fill_empty_recent();
+    void sync_check_summary();   // Check's four numbers, from the HDR on screen
+    class CoachMarks* coach_ = nullptr;
+    bool tips_pending_ = false;
+    bool deliver_custom_ = false;                // Simple's Deliver: Custom… picked
+    std::optional<bool> simple_scopes_;          // Simple: the Scopes button's choice on this tab
+    QStringList empty_recent_;                   // the recent shots the empty viewer lists
+    QPushButton* view_menu_btn_ = nullptr;
+    QLabel* hold_hint_ = nullptr;
     void session_changed(std::uint32_t what);
     void build_ui(bool with_viewer);
     QWidget* build_left_rail();
@@ -404,6 +596,7 @@ private:
     void save_queues() const;
 
     void start_engine(std::vector<std::filesystem::path> frames, int at = 0);
+    void inspect_source();
     struct LoadedModel;
     void adopt_model(std::shared_ptr<LoadedModel> loaded, const std::function<void(bool, QString)>& done);
     void set_model_pills();
@@ -431,7 +624,8 @@ private:
     QString workspace_ = "full", tab_ = "rec";
     bool guides_on_ = false;
     // The widgets the state is drawn into (the page's ids).
-    QWidget *rail_left_ = nullptr, *rail_right_ = nullptr, *scopes_ = nullptr;
+    QWidget *rail_left_ = nullptr, *rail_right_ = nullptr, *scopes_ = nullptr, *scopes_dock_ = nullptr;
+    QPushButton* scopes_btn_ = nullptr;
     QStackedWidget* viewer_stack_ = nullptr;
     QWidget* panels_ = nullptr;          // the inspector's tab page (#ipanels)
     std::vector<QWidget*> pages_;        // Reconstruct, Grade, Deliver
@@ -456,6 +650,15 @@ private:
                *btn_play_ = nullptr, *btn_next_ = nullptr;
     ScrubBar* scrub_ = nullptr;
     ScopePlot *wave_ = nullptr, *hist_ = nullptr;
+    class ParadeView* parade_ = nullptr;
+    // The learned route's playback cache (28 Oct 2026 review): the first play renders
+    // and keeps each frame (at the playback size); once every frame of the shot is in,
+    // play runs in real time at the shot's rate, for judging flicker.
+    std::vector<std::shared_ptr<const NetworkLinearImage>> aces_cache_;
+    QString aces_cache_key_;
+    std::size_t aces_cache_bytes_ = 0;
+    QTimer* aces_rt_timer_ = nullptr;
+    bool aces_rt_playing_ = false;
     RegionEditor* regions_ = nullptr;
     VectorscopeView* vector_ = nullptr;
     QLineEdit* seq_path_ = nullptr;
@@ -502,6 +705,7 @@ private:
     QTimer play_;
     int current_ = 0;
     bool waiting_ = false;
+    bool frame_ready_ok_ = false;
     QString frame_info_;
     QString runtimes_;
     Catalog catalog_;
@@ -511,7 +715,8 @@ private:
     std::thread model_worker_;
     std::thread stats_worker_;   // the measurement off the UI thread; joined, never left running
     std::optional<BackendChoice> backend_choice_;
-    QPointer<QDialog> manager_, first_run_, sheet_;
+    QPointer<QDialog> manager_, first_run_, sheet_, aces_master_;
+    std::shared_ptr<AcesEngine> aces_engine_;   // shared_ptr: the type stays incomplete here
     QMenu* recent_menu_ = nullptr;
     void remember_source(const QString& path);
     void copy_text(const QString& label, const std::string& text);
@@ -525,9 +730,78 @@ private:
     struct SourceSizes {
         std::mutex mu;
         std::vector<std::pair<int, int>> size;
+        std::vector<std::optional<StillColour>> colour;
     };
     std::shared_ptr<SourceSizes> source_sizes_;
     int preview_max_side_ = 1600;                 // media/still.hpp kPreviewMaxSide
+
+    // Headroom preview (E1). The driver is destroyed before the engine.
+    bool headroom_capable_ = false;
+    bool headroom_playing_ = false;
+    // The learned ACES 2.0 route of the main viewer.
+    bool aces_view_ = true;
+    bool aces_busy_ = false, aces_playing_ = false;
+    int aces_next_ = -1;            // a frame asked for while one was running
+    int aces_shown_ = -1;
+    std::unique_ptr<QTemporaryDir> aces_tmp_;
+    void aces_request(int index);
+    DeliverChoice deliver_;
+    aces_v2::AcesTrims aces_trims_;
+    QString aces_monitor_ = "scene";
+    QString aces_source_display_ = "bt1886";
+    std::optional<aces_v2::AcesTrims> trims_clipboard_;
+    QString trims_shot_;   // the shot whose trims are in hand
+    std::vector<float> aces_codes_;
+    struct RefStill {
+        QString label;
+        std::shared_ptr<const NetworkLinearImage> image;
+    };
+    std::vector<RefStill> ref_stills_;
+    int ref_index_ = -1;
+    bool ref_compare_ = false, aces_ref_shown_ = false;
+    void sync_reference_ui();
+    QTimer* aces_trim_timer_ = nullptr;   // a slider drag asks for the frame again, once it settles
+    void sync_aces_trims();
+    // The ACES route's frame for the readouts and scopes (the viewer's convention).
+    std::shared_ptr<const NetworkLinearImage> aces_model_img_, aces_base_img_;
+    std::unique_ptr<BatchQueue> batch_;
+    std::unique_ptr<BatchRunner> batch_runner_;
+    QPointer<QDialog> batch_window_;
+    QString render_name_for_fill_;
+    // The Render card's Nuke-style path (29 Oct 2026): its padding and separator.
+    int render_padding_ = 4;
+    QString render_separator_ = ".";
+    bool syncing_render_file_ = false;
+    void render_file_edited();      // the path typed: the folder, name, padding follow
+    void browse_render_file();
+    void sync_render_file();        // the folder, name or file type changed: the path follows   // the Deliver render's name when it wrote into a shared folder
+    void batch_changed();
+    int aces_deliver_id_ = 0;       // the engine's master request running for the Deliver tab
+    std::shared_ptr<GenFillJob> genfill_;   // shared_ptr: the type stays incomplete here
+    QString genfill_last_out_;
+    void sync_deliver();            // the Deliver tab's controls and Signal card from deliver_
+    void load_deliver_settings();
+    void aces_deliver();
+    void aces_deliver_finished(const QJsonObject& o, const QString& out);
+    void aces_after_frame(const QJsonObject& o, int index, const QString& model_path, const QString& base_path);
+    HeadroomPortFactory headroom_factory_;
+    std::unique_ptr<HeadroomPreviewDriver> headroom_;
+    std::optional<HeadroomShown> headroom_shown_;
+    QString headroom_problem_;
+    void route_headroom();                       // after anything that decides or feeds the route
+    void headroom_request(int index, bool play);
+    void headroom_present(const HeadroomShown& f);   // inside the bridge's present: no driver calls
+    void headroom_after_present();
+    void headroom_failed(const Error& e);
+    void headroom_finished();
+    void stop_headroom();
+    void clear_legacy_frame();
+    bool refuse_headroom_export(const QString& what);
+    bool start_headroom_export(const QString& format);
+    std::thread headroom_export_worker_;
+    std::atomic<bool> headroom_export_cancel_{false};
+    bool headroom_export_running_ = false;
+    QString headroom_export_result_;
 };
 
 }  // namespace rudra::app

@@ -1,0 +1,37 @@
+{
+  "registered_before_measurement": true,
+  "checkpoint": "G:/rudra_training/aces_guarded_projected600_20261024/step600.pt",
+  "pilots": {
+    "motion": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+    "replay": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json"
+  },
+  "input_hashes": {
+    "G:/rudra_training/aces_guarded_projected600_20261024/step600.pt": "e83b997c315bf5cc26d3df0e6fa2ad357828feebc0d78384b378057ed4349709",
+    "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json": "9e410260e07304ec26e02106b094d11e25ef78e85e45aae914c6ffa5a85151c2",
+    "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json": "d2ac979f3d046c54c589acae20b905d47d96c1fbc1118c77322026de8e713836",
+    "training/aces_model.py": "c373f2f07a589da83ef9d43d48008d7765e92bceeb47f3fd5e9295ee7d88f5d0",
+    "training/aces_full_context_model.py": "c4b5b99855e7eeebd48e8bb06d1ae5ff04dccabbae87de4a2d9bd3f2b767bcf6",
+    "rudra/sdr2hdr.py": "40610dc5dc9b78225093e631fd9390e6f61450b136cac3de94f6926ce465bb5e"
+  },
+  "seed": 20261102,
+  "probe_shapes": [
+    [
+      256,
+      256
+    ],
+    [
+      320,
+      512
+    ],
+    [
+      321,
+      515
+    ],
+    [
+      512,
+      1024
+    ]
+  ],
+  "outside_tolerance": 1e-06,
+  "scope": "Read-only conservative structural dependency bounds for full_context branch, verified against numerical outside/inside perturbations. All TRAIN sources, no DEV-selected samples. Blind mask requires exact sourceRGB1 throughout a square containing structural reach, padded nonwhite; near-clipped is separately counted. Report target asinh RGB variation, not an irreducible-error lower bound: stride/resize phase and image boundaries may create positional variation. No training, architecture change, global quality or release claim."
+}

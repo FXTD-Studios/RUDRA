@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <span>
+#include "rudra/platform/stop_token.hpp"
 #include <string>
 
 #include "rudra/platform/result.hpp"
@@ -35,6 +36,7 @@ std::string sha256_hex(std::span<const std::byte> data);
 // SHA-1 (FIPS 180-4), for the names the Python derives with hashlib.sha1
 // (ui/sequence.py's video frame cache). Not for integrity.
 std::string sha1_hex(std::span<const std::byte> data);
-Result<std::string> sha256_file(const std::filesystem::path& path);
+// Cooperative cancellation between 1 MiB reads/hash updates; no partial digest.
+Result<std::string> sha256_file(const std::filesystem::path& path, rudra::stop_token stop = {});
 
 }  // namespace rudra

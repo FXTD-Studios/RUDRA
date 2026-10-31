@@ -38,6 +38,17 @@
   .\scripts\PACKAGE_WINDOWS.ps1 -Tests        # also build and run the app's Qt tests
   .\scripts\PACKAGE_WINDOWS.ps1 -SkipBuild    # package the last build
   .\scripts\PACKAGE_WINDOWS.ps1 -NoInstaller  # the ZIP alone, without Inno Setup
+  .\scripts\PACKAGE_WINDOWS.ps1 -NoModels -NoInstaller # isolated analytic evaluation ZIP; no clearance implied
+  .\scripts\PACKAGE_WINDOWS.ps1 -NoModels -WithAcesEngine   # 1.0: analytic, plus the learned ACES 2.0 engine;
+                                                            # its model is downloaded in the app (Model packages)
+
+  -WithAcesEngine (29 Oct 2026): rudra-native.exe from -AcesBuild (built by
+  NATIVE_ACES_V2.ps1: OCIO 2.5.2, the same commands plus aces-v2 and aces-v2-serve)
+  replaces the analytic-only one, with every DLL beside it; LibTorch's DLLs come
+  from -TorchPython's torch\lib unless -NoLibTorch (DirectML and CPU only, a much
+  smaller package). The package is refused when that engine cannot start on its
+  own (PATH reduced to Windows' folders).
+  # -BuildDirectory build\native_phase3 -SkipBuild reuses an explicitly selected build.
 #>
 [CmdletBinding()]
 param(
@@ -49,12 +60,18 @@ param(
     [switch]$SkipBuild,
     [switch]$Tests,
     [switch]$NoInstaller,
+    [switch]$NoModels,
+    [string]$BuildDirectory = "",
     [switch]$InstallBuildTools,
     [switch]$NoFfmpeg,
     [string]$FfmpegVersion = "7.1.1",
     # The pinned build's SHA-256 (GyanD/codexffmpeg release asset, checked 10 Oct 2026).
     # Another -FfmpegVersion needs its own: -FfmpegSha256 <hash>.
-    [string]$FfmpegSha256 = "d760e1b3574402ed18b4865851f87d87e73965a982e6453212df8621fed1c508"
+    [string]$FfmpegSha256 = "d760e1b3574402ed18b4865851f87d87e73965a982e6453212df8621fed1c508",
+    [switch]$WithAcesEngine,
+    [string]$AcesBuild = "build\native_aces_v2",
+    [string]$TorchPython = ".venv\Scripts\python.exe",
+    [switch]$NoLibTorch
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,6 +80,7 @@ Set-Location $Repo
 $Deps = Join-Path $Repo "tmp\native_deps"
 $QtRoot = Join-Path $Deps "Qt\$QtVersion\msvc2022_64"
 $Build = Join-Path $Repo "build\native_release"
+if ($BuildDirectory) { $Build = (Resolve-Path -LiteralPath $BuildDirectory).Path }
 New-Item -ItemType Directory -Force -Path $Deps | Out-Null
 
 function Say($m) { Write-Host "`n== $m" -ForegroundColor Cyan }
@@ -70,7 +88,7 @@ function Fail($m) { Write-Host "FAILED: $m" -ForegroundColor Red; exit 1 }
 . (Join-Path $PSScriptRoot "native_toolchain.ps1")
 
 $Models = Join-Path $Repo "dist\models"
-if (-not (Get-ChildItem $Models -Recurse -Filter manifest.json -ErrorAction SilentlyContinue)) {
+if (-not $NoModels -and -not (Get-ChildItem $Models -Recurse -Filter manifest.json -ErrorAction SilentlyContinue)) {
     Fail "no model package in dist\models (run NATIVE_GATE_A.ps1 first)"
 }
 
@@ -227,6 +245,10 @@ $Version = (Get-Item $App).VersionInfo.ProductVersion
 if (-not $Version) { Fail "RUDRA.exe has no version resource" }
 $Name = "RUDRA-$Version-windows-x64"
 $Out = Join-Path $Repo "dist\beta\$Name"
+if ($NoModels) {
+    # A new staging parent for every analytic build: never replace a beta.
+    $Out = Join-Path $Repo ("dist\analytic\" + [guid]::NewGuid().ToString('N') + "\$Name")
+}
 $Zip = "$Out.zip"
 Say "Package $Name"
 if (Test-Path $Out) { Remove-Item $Out -Recurse -Force }
@@ -258,12 +280,41 @@ Write-Host "MSVC runtime: $($crt.FullName)"
 # ONNX Runtime and DirectML beside the exe: Windows' own older onnxruntime.dll
 # in System32 would otherwise be loaded first.
 Copy-Item "$OrtRoot\lib\*.dll", $DmlDll.FullName, $CvDll.FullName $Out -Force
+if ($WithAcesEngine) {
+    Say "The learned ACES 2.0 engine (its model is downloaded in the app)"
+    $AcesDir = Join-Path $Repo "$AcesBuild\cli\Release"
+    $AcesExe = Join-Path $AcesDir "rudra-native.exe"
+    if (-not (Test-Path $AcesExe)) { Fail "no ACES engine at $AcesExe (run NATIVE_ACES_V2.ps1 first)" }
+    Copy-Item $AcesExe $Out -Force   # the same commands as the analytic CLI, plus aces-v2 and aces-v2-serve
+    Get-ChildItem $AcesDir -Filter "*.dll" | ForEach-Object {
+        $dest = Join-Path $Out $_.Name
+        if (-not (Test-Path $dest)) { Copy-Item $_.FullName $dest }
+        elseif ((Get-FileHash $dest).Hash -ne (Get-FileHash $_.FullName).Hash) {
+            Write-Host "  kept the app's $($_.Name) (the engine's differs)" -ForegroundColor Yellow
+        }
+    }
+    if (-not $NoLibTorch) {
+        if (-not (Test-Path $TorchPython)) { Fail "no $TorchPython for LibTorch's DLLs (or -NoLibTorch)" }
+        $TorchLib = & $TorchPython -c "import torch, os; print(os.path.join(os.path.dirname(torch.__file__), 'lib'))"
+        if (-not $TorchLib -or -not (Test-Path $TorchLib)) { Fail "torch\lib not found through $TorchPython" }
+        Copy-Item (Join-Path $TorchLib "*.dll") $Out -Force
+        Write-Host "LibTorch DLLs: $TorchLib"
+    }
+    Invoke-Sign @((Join-Path $Out "rudra-native.exe"))
+}
 $OutModels = Join-Path $Out "models"
 New-Item -ItemType Directory -Force -Path $OutModels | Out-Null
-Copy-Item "$Models\*" $OutModels -Recurse -Force
-Get-ChildItem $OutModels -Recurse -Include *.safetensors, *.config.json | Remove-Item -Force
+if (-not $NoModels) {
+    Copy-Item "$Models\*" $OutModels -Recurse -Force
+    Get-ChildItem $OutModels -Recurse -Include *.safetensors, *.config.json | Remove-Item -Force
+}
 Copy-Item LICENSE, NOTICE $Out
-if (Test-Path checkpoints\LICENSE) { Copy-Item checkpoints\LICENSE (Join-Path $Out "LICENSE-weights") }
+if (-not $NoModels -and (Test-Path checkpoints\LICENSE)) { Copy-Item checkpoints\LICENSE (Join-Path $Out "LICENSE-weights") }
+if ($NoModels) {
+    "Analytic evaluation package. No model weights bundled. This is not commercial or legal clearance." |
+        Set-Content -Encoding utf8 (Join-Path $Out "PACKAGE_MODE.txt")
+    if (Get-ChildItem $OutModels -Force) { Fail "model-free package contains model files" }
+}
 if (Test-Path docs\BETA.md) { Copy-Item docs\BETA.md (Join-Path $Out "Read me first.md") }
 if (Test-Path docs\USER_GUIDE.md) { Copy-Item docs\USER_GUIDE.md (Join-Path $Out "User guide.md") }
 if ($FfDir) {
@@ -285,16 +336,33 @@ if ($FfDir) {
 }
 
 Say "Check the package runs from where it is"
-$pkg = Get-ChildItem $OutModels -Directory | Where-Object { Test-Path (Join-Path $_.FullName "manifest.json") } | Select-Object -First 1
-& (Join-Path $Out "rudra-native.exe") info $pkg.FullName | Out-Null
-if ($LASTEXITCODE -ne 0) { Fail "rudra-native in the package cannot read its model" }
+if (-not $NoModels) {
+    $pkg = Get-ChildItem $OutModels -Directory | Where-Object { Test-Path (Join-Path $_.FullName "manifest.json") } | Select-Object -First 1
+    & (Join-Path $Out "rudra-native.exe") info $pkg.FullName | Out-Null
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native in the package cannot read its model" }
+}
+if ($WithAcesEngine) {
+    # On its own: PATH reduced to Windows' folders, so a DLL missing from the package shows here.
+    $keepPath = $env:PATH
+    $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+    $probe = (& (Join-Path $Out "rudra-native.exe") aces-v2 --help 2>&1 | Out-String)
+    $probeRc = $LASTEXITCODE
+    $env:PATH = $keepPath
+    if ($probe -notmatch "usage: rudra-native aces-v2 <package>") {
+        Fail ("the packaged ACES engine does not start on its own (exit {0}; -1073741515 = a DLL is missing)" -f $probeRc)
+    }
+    Write-Host "ACES engine starts on its own"
+}
 if ($FfDir) {
     & (Join-Path $Out "ffmpeg\ffmpeg.exe") -hide_banner -h encoder=prores_ks | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "the packaged ffmpeg does not run" }
 }
 $check = Join-Path $env:TEMP "rudra-theme-check.json"
-$p = Start-Process -FilePath (Join-Path $Out "RUDRA.exe") -ArgumentList @("--theme-check", "`"$check`"") -Wait -PassThru
+$p = Start-Process -FilePath (Join-Path $Out "RUDRA.exe") -ArgumentList @("--theme-check", "`"$check`"") -WindowStyle Hidden -Wait -PassThru
 if ($p.ExitCode -ne 0) { Fail "RUDRA.exe in the package does not start (exit $($p.ExitCode))" }
+if ($NoModels) {
+    & (Join-Path $PSScriptRoot "TEST_MODEL_FREE_PACKAGE.ps1") -Package $Out
+}
 
 Say "ZIP"
 Compress-Archive -Path $Out -DestinationPath $Zip -CompressionLevel Optimal
@@ -336,7 +404,8 @@ if (-not $NoInstaller) {
         Fail "Inno Setup 6 not found and could not be installed (https://jrsoftware.org/isdl.php, or -NoInstaller for the ZIP alone)"
     }
     $iss = Join-Path $Repo "native\app\windows\rudra.iss"
-    & $iscc /Q "/DAppVersion=$Version" "/DSourceDir=$Out" "/DOutputDir=$(Split-Path $Out)" $iss
+    $installerMode = @(); if ($NoModels) { $installerMode = @('/DModelFreeEvaluation=1') }
+    & $iscc /Q "/DAppVersion=$Version" "/DSourceDir=$Out" "/DOutputDir=$(Split-Path $Out)" @installerMode $iss
     if ($LASTEXITCODE -ne 0) { Fail "ISCC" }
     $Setup = Join-Path (Split-Path $Out) "$Name-setup.exe"
     if (-not (Test-Path $Setup)) { Fail "no installer at $Setup" }

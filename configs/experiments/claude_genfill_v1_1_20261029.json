@@ -1,0 +1,24 @@
+{
+  "id": "claude_genfill_v1_1_20261029",
+  "written": "2026-10-29, after claude_genfill_v1_20261027 FAILED, before any v1.1 output was produced or looked at",
+  "author": "Claude (Cowork session); approved by Ahmed ('yes go')",
+  "parent": "claude_genfill_v1_20261027 (FAIL: H log2 CI [-0.029, +0.007], S +20 % [17, 23])",
+  "what_changes": "Inference only. Same LoRA (rudra_genfill.safetensors, sha256 9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a), same base, same steps/seed/windows. The model still sees the dilated highlight region (tau_high 250, dilate 4, EMA 0.7) as context; the fill is BLENDED only where max SDR code >= 255 (fully clipped), with no feather. Shadows off by default (tau_low -1).",
+  "why": "Post-hoc analysis of the v1 evaluation (frame 0 of all 56 clips): at code 255 the fill lowered |dlog2| from 0.733 to 0.639 stops (better in 54 % of clips); at codes 250-254 and 1-4, where the exact inverse is within ~0.06-0.13 stop, it made them worse. This analysis used the v1 evaluation scenes, so v1.1 is evaluated on DIFFERENT scenes.",
+  "evaluation": {
+    "tool": "tools/evaluate_genfill.py (defaults = this registration)",
+    "scenes": "Poly Haven: the shuffled held-scene list (seed 20261029) entries 24-47, none of which v1 evaluated; FXTD: fresh grade set v2 scenes 8-17 (sorted), none of which v1 evaluated",
+    "clips": "each Poly Haven scene: one highlight clip and one shadow clip; each FXTD scene: one highlight clip; 33 frames, 512x288, steps 30, seed 0, window 33, overlap 8; exposure: the first offset (half stops from +1 up for a highlight clip, from -2 down for a shadow clip) giving >= 0.5 % of frame 0 at code 255 (highlight) or <= 4 (shadow)",
+    "master": "the exact (analytic) inverse of the 8-bit ACES 2.0 SDR codes"
+  },
+  "gates": {
+    "R": "rint(255*view(filled)) == rint(255*view(master)) on every pixel of every frame",
+    "H": "on the fully clipped pixels (max code 255): mean |log2 Y_filled - log2 Y_truth| - same for the master < 0, with the 95 % bootstrap CI over clips excluding 0; and the mean PU21 error (Y*203 nits) at -3 EV and at -6 EV lower than the master's",
+    "S": "on the shadow pixels (max code <= 4) at +3 EV: the relative change of the mean code error, CI upper bound <= +2 %",
+    "T": "mean flicker excess of the region over the truth <= 0.02 EV",
+    "A": "window-join step ratio <= 1.5",
+    "also_reported": "v1's dilated-region metrics (prefix v1region_), not gated"
+  },
+  "decision_rule": "PASS on every gate: the AI fill may be offered (still labelled experimental, still off by default) in the app and Radiance Studio. FAIL: no promotion; next is a v2 retrain (loss on code-255/0 pixels only, more FXTD footage).",
+  "release_authorized": false
+}

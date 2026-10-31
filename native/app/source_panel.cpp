@@ -166,11 +166,48 @@ void SourceCurvePlot::paintEvent(QPaintEvent*) {
     }
 }
 
+void SourcePanel::inspect_source(bool loaded, bool movie, const std::optional<VideoStreamInfo>& stream,
+                                 const std::optional<StillColour>& still) {
+    QString text = "Open a source to inspect its color information.";
+    if (loaded && !movie) {
+        text = "Still / frame sequence: color profile not available for this frame yet.";
+        if (still) {
+            text = "Still / frame sequence: " + QString::fromStdString(still->note());
+            text += "\nProfile primaries and orientation are inspected; this does not identify the original tone mapper.";
+        }
+    }
+    if (loaded && movie) {
+        text = "Movie color tags unavailable. Verify the source before delivery.";
+        if (stream) {
+            auto tag = [](const std::optional<std::string>& value) {
+                return value && !value->empty() ? QString::fromStdString(*value) : QStringLiteral("not reported");
+            };
+            text = QStringLiteral("Reported source: %1 x %2 | %3\nPrimaries: %4 | Transfer: %5\nMatrix: %6 | Range: %7")
+                .arg(stream->width).arg(stream->height).arg(QString::fromStdString(stream->pix_fmt))
+                .arg(tag(stream->color_primaries), tag(stream->color_transfer), tag(stream->color_space), tag(stream->color_range));
+            if (stream->color_range == "tv")
+                text += "\nLimited range: detail above nominal white is currently clipped during decoding. This warning does not mean such detail was detected.";
+            if (stream->color_transfer == "smpte2084" || stream->color_transfer == "arib-std-b67")
+                text += "\nHDR source detected. This SDR reconstruction workflow is not an HDR passthrough; use an SDR source.";
+            text += "\nTags do not identify the original tone mapper. Choose the reconstruction curve below.";
+        }
+    }
+    if (inspection_->text() != text) inspection_->setText(text);
+}
+
 SourcePanel::SourcePanel(QWidget* parent) : QWidget(parent) {
     setObjectName("sourcePanel");
     auto* v = new QVBoxLayout(this);
     v->setContentsMargins(0, 0, 0, 0);
     v->setSpacing(12);
+    inspection_ = new QLabel(this);
+    inspection_->setObjectName("sourceInspection");
+    inspection_->setTextFormat(Qt::PlainText);
+    inspection_->setTextFormat(Qt::PlainText);
+    inspection_->setWordWrap(true);
+    inspection_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    v->addWidget(inspection_);
+    inspect_source(false, false, {});
     std::vector<std::pair<QString, QString>> buttons;
     for (SourceCurve c : all_source_curves())
         buttons.push_back({QString::fromUtf8(source_curve_id(c).data(), int(source_curve_id(c).size())),

@@ -1,5 +1,7 @@
 #include "rudra/deliver/exr.hpp"
 
+#include "rudra/core/timecode.hpp"
+
 #include <algorithm>
 #include <bit>
 #include <cerrno>
@@ -74,20 +76,28 @@ std::uint16_t float_to_half(float f) noexcept {
 }
 
 Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
-                                            const std::optional<Chromaticities>& chroma, const ExrAttributes& attributes) {
+                                            const std::optional<Chromaticities>& chroma, const ExrAttributes& attributes,
+                                            const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed) {
     const int n_ch = rgb.channels();
     if (n_ch != 3 && n_ch != 4) return make_error(ErrorCode::InvalidArgument, "expected a 3 or 4 channel image");
     const int w = rgb.width(), h = rgb.height();
-    static const char* names[] = {"R", "G", "B", "A"};
-    std::vector<int> order(static_cast<std::size_t>(n_ch));
-    for (int i = 0; i < n_ch; ++i) order[std::size_t(i)] = i;
-    std::sort(order.begin(), order.end(), [](int a, int b) { return std::strcmp(names[a], names[b]) < 0; });
+    if (reconstruction_mask && (reconstruction_mask->channels() != 1 ||
+        reconstruction_mask->width() != w || reconstruction_mask->height() != h ||
+        !std::all_of(reconstruction_mask->span().begin(), reconstruction_mask->span().end(),
+            [](float v) { return std::isfinite(v) && v >= 0 && v <= 1; })))
+        return make_error(ErrorCode::InvalidArgument, "reconstruction mask must be finite HxW values in [0, 1]");
+    std::vector<std::string> names = {"R", "G", "B"};
+    if (n_ch == 4) names.push_back("A");
+    if (reconstruction_mask) names.push_back("rudra.reconstructed");
+    std::vector<int> order(names.size());
+    for (std::size_t i = 0; i < names.size(); ++i) order[i] = static_cast<int>(i);
+    std::sort(order.begin(), order.end(), [&](int a, int b) { return names[a] < names[b]; });
 
     std::vector<std::uint8_t> head;
     {
         std::vector<std::uint8_t> ch;
         for (int i : order) {
-            put_str(ch, names[i]);
+            put_str(ch, names[i].c_str());
             put_i32(ch, half ? 1 : 2);
             ch.insert(ch.end(), {0, 0, 0, 0});
             put_i32(ch, 1);
@@ -115,10 +125,11 @@ Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
         attr(head, "chromaticities", "chromaticities", c);
     }
     for (const auto& [k, v] : attributes) attr(head, k, "string", std::vector<std::uint8_t>(v.begin(), v.end()));
+    for (const auto& t : typed) attr(head, t.name, t.type, t.payload);
     head.push_back(0);
 
     const int bpp = half ? 2 : 4;
-    const std::int64_t row_size = std::int64_t(w) * bpp * n_ch;
+    const std::int64_t row_size = std::int64_t(w) * bpp * static_cast<std::int64_t>(names.size());
     const std::int64_t chunk = 8 + row_size;
     const std::int64_t data_start = 8 + std::int64_t(head.size()) + 8 * std::int64_t(h);
 
@@ -140,7 +151,7 @@ Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
         put_i32(out, y);
         put_i32(out, static_cast<std::int32_t>(row_size));
         for (int c : order) {
-            const float* row = rgb.plane(c) + std::size_t(y) * std::size_t(w);
+            const float* row = (c == n_ch ? reconstruction_mask->plane(0) : rgb.plane(c)) + std::size_t(y) * std::size_t(w);
             for (int x = 0; x < w; ++x) {
                 const float v = clean(row[x]);
                 if (half) {
@@ -157,8 +168,9 @@ Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
 }
 
 Result<void> write_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, bool half,
-                       const std::optional<Chromaticities>& chroma, const ExrAttributes& attributes) {
-    auto bytes = exr_bytes(rgb, half, chroma, attributes);
+                       const std::optional<Chromaticities>& chroma, const ExrAttributes& attributes,
+                       const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed) {
+    auto bytes = exr_bytes(rgb, half, chroma, attributes, reconstruction_mask, typed);
     if (!bytes) return bytes.error();
     std::error_code ec;
     if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), ec);
@@ -201,14 +213,18 @@ const char* primaries_name(Primaries p) noexcept {
 namespace {
 
 Result<void> write_aces_like(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
-                             Primaries dst, double exposure, const ExrAttributes& provenance, bool ap0) {
+                             Primaries dst, double exposure, const ExrAttributes& provenance, bool ap0, bool half,
+                             const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed) {
     PlanarBuffer scaled = rgb;
     const float k = static_cast<float>(exposure);
     for (float& v : scaled.span()) v = v * k;
     const PlanarBuffer out = convert_primaries(scaled, source, dst);
     ExrAttributes attrs;
-    if (ap0) attrs.emplace_back("acesImageContainerFlag", "1");
-    else attrs.emplace_back("rudra:container", "ACEScg (AP1)");
+    ExrTypedAttributes all_typed = typed;
+    // SMPTE ST 2065-4 says acesImageContainerFlag is an int (= 1), only on a file
+    // that is the container: AP0, RGB(A), uncompressed scanlines (28 Oct 2026 review).
+    if (ap0 && !reconstruction_mask) all_typed.push_back({"acesImageContainerFlag", "int", {1, 0, 0, 0}});
+    else attrs.emplace_back("rudra:container", ap0 ? "AP0 linear with reconstruction mask" : "ACEScg (AP1)");
     attrs.emplace_back("rudra:sourceSpace", primaries_name(source));
     attrs.emplace_back("rudra:exposureConvention", "0.18 = 18% grey (scene), diffuse white = 1.0");
     attrs.emplace_back("rudra:exposureScale", pyjson::repr(exposure));
@@ -217,19 +233,48 @@ Result<void> write_aces_like(const std::filesystem::path& path, const PlanarBuff
         for (const auto& [kk, v] : provenance) d.emplace_back(kk, v);
         attrs.emplace_back("rudra:provenance", pyjson::dumps(d, -1, true));
     }
-    return write_exr(path, out, true, ap0 ? kAp0Chromaticities : kAp1Chromaticities, attrs);
+    return write_exr(path, out, half, ap0 ? kAp0Chromaticities : kAp1Chromaticities, attrs, reconstruction_mask, all_typed);
 }
 
 }  // namespace
 
 Result<void> write_aces_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
-                            double exposure, const ExrAttributes& provenance) {
-    return write_aces_like(path, rgb, source, Primaries::Ap0, exposure, provenance, true);
+                            double exposure, const ExrAttributes& provenance, bool half, const PlanarBuffer* reconstruction_mask,
+                            const ExrTypedAttributes& typed) {
+    return write_aces_like(path, rgb, source, Primaries::Ap0, exposure, provenance, true, half, reconstruction_mask, typed);
 }
 
 Result<void> write_acescg_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
-                              double exposure, const ExrAttributes& provenance) {
-    return write_aces_like(path, rgb, source, Primaries::Ap1, exposure, provenance, false);
+                              double exposure, const ExrAttributes& provenance, bool half, const PlanarBuffer* reconstruction_mask,
+                              const ExrTypedAttributes& typed) {
+    return write_aces_like(path, rgb, source, Primaries::Ap1, exposure, provenance, false, half, reconstruction_mask, typed);
+}
+
+ExrTypedAttributes exr_timecode_attributes(const std::string& timecode, double fps, const std::string& reel) {
+    ExrTypedAttributes out;
+    auto u32 = [](std::vector<std::uint8_t>& b, std::uint32_t v) {
+        for (int i = 0; i < 4; ++i) b.push_back(std::uint8_t(v >> (8 * i)));
+    };
+    if (fps > 0) {
+        // framesPerSecond as the exact rational for the NTSC rates (24000/1001 ...).
+        std::int32_t num = std::int32_t(std::lround(fps * 1000.0)), den = 1000;
+        if (std::abs(fps - std::round(fps)) < 1e-6) num = std::int32_t(std::lround(fps)), den = 1;
+        else if (std::abs(fps * 1.001 - std::round(fps * 1.001)) < 1e-3)
+            num = std::int32_t(std::lround(fps * 1.001)) * 1000, den = 1001;
+        std::vector<std::uint8_t> r;
+        u32(r, std::uint32_t(num));
+        u32(r, std::uint32_t(den));
+        out.push_back({"framesPerSecond", "rational", std::move(r)});
+    }
+    if (auto tc = parse_timecode(timecode)) {
+        const auto packed = exr_timecode(*tc);
+        std::vector<std::uint8_t> b;
+        u32(b, packed[0]);
+        u32(b, packed[1]);
+        out.push_back({"timeCode", "timecode", std::move(b)});
+    }
+    if (!reel.empty()) out.push_back({"reelName", "string", std::vector<std::uint8_t>(reel.begin(), reel.end())});
+    return out;
 }
 
 namespace {
@@ -307,6 +352,8 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
     static const char* order[] = {"R", "G", "B", "A"};
     const int nout = int(std::count(channels.begin(), channels.end(), std::string("A"))) ? 4 : 3;
     img.pixels = PlanarBuffer(nout, h, w);
+    if (std::find(channels.begin(), channels.end(), "rudra.reconstructed") != channels.end())
+        img.reconstruction_mask.emplace(1, h, w);
     const bool all_half = std::all_of(img.pixel_types.begin(), img.pixel_types.end(), [](int t) { return t == 1; });
     if (all_half) img.half_bits.assign(std::size_t(nout) * std::size_t(w) * std::size_t(h), 0);
     for (int r = 0; r < h; ++r) {
@@ -320,18 +367,20 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
             const bool half = img.pixel_types[c] == 1;
             const std::size_t bytes = std::size_t(w) * (half ? 2 : 4);
             if (pos + bytes > raw.size()) return bad("truncated data");
-            if (plane >= 0) {
+            const bool is_mask = channels[c] == "rudra.reconstructed";
+            if (plane >= 0 || is_mask) {
                 for (int x = 0; x < w; ++x) {
                     float v;
                     if (half) {
                         std::uint16_t hv;
                         std::memcpy(&hv, raw.data() + pos + std::size_t(x) * 2, 2);
                         v = half_to_float(hv);
-                        if (all_half) img.half_bits[(std::size_t(plane) * std::size_t(h) + std::size_t(y)) * std::size_t(w) + std::size_t(x)] = hv;
+                        if (all_half && plane >= 0) img.half_bits[(std::size_t(plane) * std::size_t(h) + std::size_t(y)) * std::size_t(w) + std::size_t(x)] = hv;
                     } else {
                         std::memcpy(&v, raw.data() + pos + std::size_t(x) * 4, 4);
                     }
-                    img.pixels.at(plane, y, x) = v;
+                    if (is_mask) img.reconstruction_mask->at(0, y, x) = v;
+                    else img.pixels.at(plane, y, x) = v;
                 }
             }
             pos += bytes;

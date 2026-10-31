@@ -1,0 +1,28 @@
+{
+  "registered_before_training": true,
+  "parent": "G:/rudra_training/aces_guarded_projected600_20261024/step600.pt",
+  "parent_sha256": "e83b997c315bf5cc26d3df0e6fa2ad357828feebc0d78384b378057ed4349709",
+  "steps": 400,
+  "batch_frames": 4,
+  "seed": 20261025,
+  "crop": 192,
+  "border": 64,
+  "aligned_crops": true,
+  "paired_motion": true,
+  "temporal_weights": [
+    1
+  ],
+  "display_weight": 0.5,
+  "display_evs": [
+    -3,
+    0,
+    3
+  ],
+  "relative": true,
+  "domain_schedule": "Odd updates two adjacent motion pairs; even updates four still crops. 800 motion+800 still frame exposures per arm. Exactly matching pool identities and batch indices required.",
+  "scope": "Matched fixed TRAIN normalization versus saved EMA temporal1 control. Same parent, pools, schedule,400 updates and original quality limits. No best-step selection or holdout claim.",
+  "release_authorized": false,
+  "fixed_scale": "G:/rudra_training/partial_display_fixed_scale_20261025/report.json",
+  "fixed_scale_sha256": "d819700c655fae0197fb8b641e21af9b25264a67d0faa1bf453748005b91ea57",
+  "comparison_control": "G:/rudra_training/partial_temporal1_400_20261025"
+}

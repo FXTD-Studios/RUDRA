@@ -1,0 +1,18 @@
+{
+  "purpose": "paired fixed fine-tuning to test shadow error-consistency against extra training alone",
+  "initialization": "G:/rudra_training/aces_shadow_sqrt1200_20261023/step1200.pt",
+  "steps_each": 600,
+  "lr": 0.0001,
+  "seed": 20261023,
+  "optimizer": "fresh Adam, not resume",
+  "control_weight": 0,
+  "treatment_weight": 10,
+  "transform": "CPU bilinear subpixel translations uniform[-1,1]px, independent RNG20261030; exact ACES inverse on transformed source; signed asinh error difference; common source-shadow support;10px border",
+  "reference": "https://computergraphics.on.liu.se/temporally_stable_cnns/material/cvpr2019_paper.pdf Eq8; adaptation not a replication",
+  "outputs": [
+    "G:/rudra_training/aces_shadow_continue600_20261023",
+    "G:/rudra_training/aces_shadow_consistency600_20261023"
+  ],
+  "acceptance": "original five natural development gates, shadow target MSE no worse than coverage4800; ordinary/highlight frozen; zero negativeY/lift in full384 motion; every clip worst-transition mean excessEV<=.02; treatment natural shadow MSE and each dark-clip mean temporal excess no worse than matched control; visual/detail/release separate",
+  "release_authorized": false
+}

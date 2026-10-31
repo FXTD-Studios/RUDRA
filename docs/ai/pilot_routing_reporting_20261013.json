@@ -1,0 +1,1503 @@
+{
+  "checkpoint_sha256": "14feacccc8bb7c5dd711ee64ddd3303d52118888d445be5e9030c79e0ad1cfde",
+  "manifest_sha256": "e9177b9f9cf7375c87160ec7648515f307290e9b818dd6c173f9fb392d22ac02",
+  "code_sha256": {
+    "training/bench_val.py": "668db49092f0c2f5fc895ec41e8381d4593f51ac40c1ad18303f820da08853ba",
+    "training/train_sdr2hdr.py": "b0099753f2010e6023b13af6de8050a327ea0575e65337b7174422afc90c3c68",
+    "training/sdr2hdr_dataset.py": "3c75d68642e833bdb2cf00369005719dcb82265dd194c66acb5990ba6680c1ee"
+  },
+  "checkpoint_step": 200,
+  "elapsed_seconds": 27.38199159999931,
+  "metrics": {
+    "bench_real_gain_db": -2.031278313132593,
+    "bench_real_frames": 48,
+    "bench_rendered_gain_db": 0.0,
+    "bench_rendered_frames": 0,
+    "bench_clip_gain_stops": -0.07608200170042877,
+    "bench_clip_frames": 89,
+    "bench_crushed_gain_stops": 0.5468551995209256,
+    "bench_crushed_frames": 4,
+    "bench_gain": -2.3356063199343082
+  },
+  "delta_from_original_smoke": {
+    "bench_real_gain_db": 0.0,
+    "bench_real_frames": 0,
+    "bench_rendered_gain_db": 0.0,
+    "bench_rendered_frames": 0,
+    "bench_clip_gain_stops": 0.0,
+    "bench_clip_frames": 0,
+    "bench_crushed_gain_stops": 0.0,
+    "bench_crushed_frames": 0,
+    "bench_gain": 0.0
+  },
+  "report": {
+    "comparison": "picker analytic inverse; not shipping clip fill",
+    "frames": [
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000022",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 3.347900403896375,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000022",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.053798048206191273,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000022",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.142660022652345,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000027",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 3.353527852282042,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000027",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.05431283108399809,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000027",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.14184606776223774,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000045",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 3.3777929683363084,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000045",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.0561856640747217,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000045",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.1450870052102029,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000281",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 3.9782773267560145,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000281",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.10106033067047204,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000281",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.057135016503596314,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000339",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 4.155892110753268,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000339",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.10000654116143248,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000339",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.05152445520459825,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000353",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 4.1430491051186955,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000353",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.09832289576181064,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000353",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.05117934481308428,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000363",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 4.2272395503964795,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000363",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.10867076171534618,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_11198-11570_frame00000363",
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.04521493223777473,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000075",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -0.9961865454355383,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000075",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.07182276739881321,
+        "crushed_gain_stops": -4.5919015173191555
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000075",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.04795399078755147,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000182",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -0.8244397381687953,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000182",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.0421888600364404,
+        "crushed_gain_stops": -4.710678159315304
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000182",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.012842871285079105,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000229",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -0.7354943922574328,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000229",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.0017486114813841658,
+        "crushed_gain_stops": -4.547399800584652
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000229",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.07871562748466443,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000318",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -0.8488511641549721,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000318",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.0426730303413102,
+        "crushed_gain_stops": -4.604719919500326
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000318",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.04444851966522123,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000345",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -0.9030796535821999,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000345",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.07643043307186925,
+        "crushed_gain_stops": -4.900172144412835
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000345",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.008397371060312353,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000394",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -0.7905672689956411,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000394",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.07995311827576812,
+        "crushed_gain_stops": -4.7725402137678765
+      },
+      {
+        "asset_id": "nf_sparks_2024-2455_frame00000394",
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.09580687784770536,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000190",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -24.685272647397152,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000190",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": null,
+        "crushed_gain_stops": -0.18070881174404585
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000190",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": null,
+        "crushed_gain_stops": -0.2951376416768636
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000209",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -25.971500189184827,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000209",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": null,
+        "crushed_gain_stops": -0.15955104831544986
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000209",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": null,
+        "crushed_gain_stops": -0.3407469006258492
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000247",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -11.09754144983932,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000247",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": null,
+        "crushed_gain_stops": -0.14721232502058257
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000247",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": null,
+        "crushed_gain_stops": -0.4391649677124745
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000377",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 1.3734597162301263,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000377",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.0405312005516657,
+        "crushed_gain_stops": -0.36615327460155744
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000377",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.12384513145079917,
+        "crushed_gain_stops": -0.5048434413317371
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000385",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 1.727404629570291,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000385",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.03758628900303024,
+        "crushed_gain_stops": -0.3769944480145331
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000385",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.21664160713643998,
+        "crushed_gain_stops": -0.49094638473996133
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000393",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 2.054867500001155,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000393",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.023363905375890892,
+        "crushed_gain_stops": -0.3851663515752781
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000393",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.2510798525740506,
+        "crushed_gain_stops": -0.4817292878258237
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000461",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 2.6226247299551417,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000461",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.06824114767461881,
+        "crushed_gain_stops": -0.3861021020281157
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000461",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.17262586161385313,
+        "crushed_gain_stops": -0.4433260246106778
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000479",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 2.6535352002619064,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000479",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.0669918339008671,
+        "crushed_gain_stops": -0.385346944722222
+      },
+      {
+        "asset_id": "nf_sparks_30-511_frame00000479",
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.16782406478398773,
+        "crushed_gain_stops": -0.43597903163569773
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000001",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -6.19576219079379,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000001",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.36289719218179456,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000001",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.29350535885367796,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000033",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -5.449672527425946,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000033",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.3964028624760449,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000033",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.2323021537733559,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000082",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -5.645766563766795,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000082",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.3475223735927336,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000082",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.2387093832707995,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000138",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -5.80150053186604,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000138",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.43460319878370235,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000138",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.18165005129336043,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000161",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -5.028644020498806,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000161",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.3897407471269021,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000161",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.1737613615445271,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000231",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -4.489405450074685,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000231",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.3876511830563999,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000231",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.11246952983216729,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000377",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -3.2589707031213955,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000377",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.35695636983598455,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5363-5763_frame00000377",
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.022915771862640266,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5764-6024_frame00000013",
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -0.09978726096290558,
+        "crushed_gain_stops": 0.0003829851224885772
+      },
+      {
+        "asset_id": "nf_sparks_5764-6024_frame00000013",
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.012760934885882758,
+        "crushed_gain_stops": -5.154609279959999
+      },
+      {
+        "asset_id": "nf_sparks_5764-6024_frame00000013",
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.20240427198624178,
+        "crushed_gain_stops": -3.2957353066125394
+      },
+      {
+        "asset_id": "nf_sparks_5764-6024_frame00000063",
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 0.04467964788164025,
+        "crushed_gain_stops": 0.001965406352671728
+      },
+      {
+        "asset_id": "nf_sparks_5764-6024_frame00000063",
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.1423130632173982,
+        "crushed_gain_stops": -5.36935187375692
+      },
+      {
+        "asset_id": "nf_sparks_5764-6024_frame00000063",
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.1857285761142929,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5764-6024_frame00000071",
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 0.19834137423711695,
+        "crushed_gain_stops": 0.13687240042307725
+      },
+      {
+        "asset_id": "nf_sparks_5764-6024_frame00000071",
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.1358071882245011,
+        "crushed_gain_stops": -2.241578222047636
+      },
+      {
+        "asset_id": "nf_sparks_5764-6024_frame00000071",
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.1914379162616821,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5764-6024_frame00000175",
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 0.3997593790255891,
+        "crushed_gain_stops": 2.048200006185465
+      },
+      {
+        "asset_id": "nf_sparks_5764-6024_frame00000175",
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.061385394212475075,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_5764-6024_frame00000175",
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.20611460086635236,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_6026-6502_frame00000190",
+        "scene_id": "nf_sparks_6026-6502",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -4.9870448951452,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_6026-6502_frame00000190",
+        "scene_id": "nf_sparks_6026-6502",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.013992244206911086,
+        "crushed_gain_stops": -4.674779547201858
+      },
+      {
+        "asset_id": "nf_sparks_6026-6502_frame00000190",
+        "scene_id": "nf_sparks_6026-6502",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.1848723137142333,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_6026-6502_frame00000269",
+        "scene_id": "nf_sparks_6026-6502",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -4.159281116968948,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_6026-6502_frame00000269",
+        "scene_id": "nf_sparks_6026-6502",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.0012981758440623326,
+        "crushed_gain_stops": -4.493610105101211
+      },
+      {
+        "asset_id": "nf_sparks_6026-6502_frame00000269",
+        "scene_id": "nf_sparks_6026-6502",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.0929524620284149,
+        "crushed_gain_stops": -5.197846618082655
+      },
+      {
+        "asset_id": "nf_sparks_6026-6502_frame00000326",
+        "scene_id": "nf_sparks_6026-6502",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -5.513185121135617,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_6026-6502_frame00000326",
+        "scene_id": "nf_sparks_6026-6502",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.004833302057710487,
+        "crushed_gain_stops": -4.346286426442796
+      },
+      {
+        "asset_id": "nf_sparks_6026-6502_frame00000326",
+        "scene_id": "nf_sparks_6026-6502",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.15616214952256702,
+        "crushed_gain_stops": -5.340801667928056
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000126",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -1.998331821607394,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000126",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": null,
+        "crushed_gain_stops": -4.210864137917771
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000126",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.4739859751797549,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000221",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -2.1560722371994743,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000221",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.46958058340401543,
+        "crushed_gain_stops": -4.062459592039621
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000221",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.453219262553169,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000265",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -2.119540069947764,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000265",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.48007641653498084,
+        "crushed_gain_stops": -3.8580780853824024
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000265",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.435933528241152,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000307",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -2.1296510717412787,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000307",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.4750926740443566,
+        "crushed_gain_stops": -4.028509191121482
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000307",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.429601369647976,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000317",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -2.1357439807608998,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000317",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.4763878284101443,
+        "crushed_gain_stops": -3.844196543123704
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000317",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.4292906929332751,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000445",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -2.1223479476821616,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000445",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.4634876491596309,
+        "crushed_gain_stops": -3.9378130944594973
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000445",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.43090726472864643,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000453",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -2.125134346788677,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000453",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.46322796174503184,
+        "crushed_gain_stops": -4.008432979492813
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000453",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.43092941520098926,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000479",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -2.1216595014052473,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000479",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": -0.46299945993709885,
+        "crushed_gain_stops": -3.949808684714608
+      },
+      {
+        "asset_id": "nf_sparks_8396-8941_frame00000479",
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": -0.43085586007723053,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000053",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -1.2016595627219147,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000053",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.25781191546222826,
+        "crushed_gain_stops": -5.334780211585719
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000053",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.1988096082325077,
+        "crushed_gain_stops": -3.450351511338936
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000059",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": -1.1250158956928935,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000059",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.2693866275009894,
+        "crushed_gain_stops": -4.998223777860517
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000059",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.18029307115901294,
+        "crushed_gain_stops": -3.8448709467383453
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000217",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 0.6110965859123176,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000217",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.31248498009433545,
+        "crushed_gain_stops": -5.14985928944103
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000217",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.10610113653856856,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000231",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 0.4471444321512088,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000231",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.27496005614056673,
+        "crushed_gain_stops": -4.73556484581238
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000231",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.1118923857477907,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000286",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "real",
+        "ev": null,
+        "pu_gain_db": 0.4991583231935586,
+        "crushed_gain_stops": null
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000286",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "push",
+        "ev": 1.0,
+        "clip_gain_stops": 0.2653269791040702,
+        "crushed_gain_stops": -4.772371499174479
+      },
+      {
+        "asset_id": "nf_sparks_9774-10071_frame00000286",
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "push",
+        "ev": 2.0,
+        "clip_gain_stops": 0.014606917743710146,
+        "crushed_gain_stops": null
+      }
+    ],
+    "per_ev": [
+      {
+        "ev": 1.0,
+        "frames": 48,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.11863084643742977,
+        "clip_frames": 44,
+        "crushed_gain_stops": -3.4450249832593447,
+        "crushed_frames": 33
+      },
+      {
+        "ev": 2.0,
+        "frames": 48,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.03447868684647222,
+        "clip_frames": 45,
+        "crushed_gain_stops": -1.889344594681509,
+        "crushed_frames": 13
+      }
+    ],
+    "per_scene": [
+      {
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "real",
+        "ev": null,
+        "frames": 7,
+        "pu_gain_db": 3.797668473934169,
+        "pu_frames": 7,
+        "clip_gain_stops": null,
+        "clip_frames": 0,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 1.0,
+        "frames": 7,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.08176529609628178,
+        "clip_frames": 7,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_11198-11570",
+        "condition": "push",
+        "ev": 2.0,
+        "frames": 7,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": 0.09066383491197703,
+        "clip_frames": 7,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "real",
+        "ev": null,
+        "frames": 6,
+        "pu_gain_db": -0.8497697937657632,
+        "pu_frames": 6,
+        "clip_gain_stops": null,
+        "clip_frames": 0,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 1.0,
+        "frames": 6,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": 0.05246947010093089,
+        "clip_frames": 6,
+        "crushed_gain_stops": -4.687901959150024,
+        "crushed_frames": 6
+      },
+      {
+        "scene_id": "nf_sparks_2024-2455",
+        "condition": "push",
+        "ev": 2.0,
+        "frames": 6,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": 0.006972827305127105,
+        "clip_frames": 6,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_30-511",
+        "condition": "real",
+        "ev": null,
+        "frames": 8,
+        "pu_gain_db": -6.415302813800335,
+        "pu_frames": 8,
+        "clip_gain_stops": null,
+        "clip_frames": 0,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 1.0,
+        "frames": 8,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.006750317328979816,
+        "clip_frames": 5,
+        "crushed_gain_stops": -0.29840441325272304,
+        "crushed_frames": 8
+      },
+      {
+        "scene_id": "nf_sparks_30-511",
+        "condition": "push",
+        "ev": 2.0,
+        "frames": 8,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.18640330351182613,
+        "clip_frames": 5,
+        "crushed_gain_stops": -0.4289842100198856,
+        "crushed_frames": 8
+      },
+      {
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "real",
+        "ev": null,
+        "frames": 7,
+        "pu_gain_db": -5.124245998221064,
+        "pu_frames": 7,
+        "clip_gain_stops": null,
+        "clip_frames": 0,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 1.0,
+        "frames": 7,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.3822534181505089,
+        "clip_frames": 7,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_5363-5763",
+        "condition": "push",
+        "ev": 2.0,
+        "frames": 7,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": 0.1793305157757898,
+        "clip_frames": 7,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "real",
+        "ev": null,
+        "frames": 4,
+        "pu_gain_db": 0.13574828504536018,
+        "pu_frames": 4,
+        "clip_gain_stops": null,
+        "clip_frames": 0,
+        "crushed_gain_stops": 0.5468551995209256,
+        "crushed_frames": 4
+      },
+      {
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "push",
+        "ev": 1.0,
+        "frames": 4,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.08806664513506428,
+        "clip_frames": 4,
+        "crushed_gain_stops": -4.255179791921518,
+        "crushed_frames": 3
+      },
+      {
+        "scene_id": "nf_sparks_5764-6024",
+        "condition": "push",
+        "ev": 2.0,
+        "frames": 4,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": 0.19642134130714228,
+        "clip_frames": 4,
+        "crushed_gain_stops": -3.2957353066125394,
+        "crushed_frames": 1
+      },
+      {
+        "scene_id": "nf_sparks_6026-6502",
+        "condition": "real",
+        "ev": null,
+        "frames": 3,
+        "pu_gain_db": -4.886503711083255,
+        "pu_frames": 3,
+        "clip_gain_stops": null,
+        "clip_frames": 0,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_6026-6502",
+        "condition": "push",
+        "ev": 1.0,
+        "frames": 3,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": 0.0034857059977543106,
+        "clip_frames": 3,
+        "crushed_gain_stops": -4.504892026248622,
+        "crushed_frames": 3
+      },
+      {
+        "scene_id": "nf_sparks_6026-6502",
+        "condition": "push",
+        "ev": 2.0,
+        "frames": 3,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.1446623084217384,
+        "clip_frames": 3,
+        "crushed_gain_stops": -5.269324143005355,
+        "crushed_frames": 2
+      },
+      {
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "real",
+        "ev": null,
+        "frames": 8,
+        "pu_gain_db": -2.113560122141612,
+        "pu_frames": 8,
+        "clip_gain_stops": null,
+        "clip_frames": 0,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 1.0,
+        "frames": 8,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.4701217961764656,
+        "clip_frames": 7,
+        "crushed_gain_stops": -3.9875202885314875,
+        "crushed_frames": 8
+      },
+      {
+        "scene_id": "nf_sparks_8396-8941",
+        "condition": "push",
+        "ev": 2.0,
+        "frames": 8,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": -0.43934042107027416,
+        "clip_frames": 8,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "real",
+        "ev": null,
+        "frames": 5,
+        "pu_gain_db": -0.15385522343154462,
+        "pu_frames": 5,
+        "clip_gain_stops": null,
+        "clip_frames": 0,
+        "crushed_gain_stops": null,
+        "crushed_frames": 0
+      },
+      {
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "push",
+        "ev": 1.0,
+        "frames": 5,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": 0.27599411166043797,
+        "clip_frames": 5,
+        "crushed_gain_stops": -4.998159924774826,
+        "crushed_frames": 5
+      },
+      {
+        "scene_id": "nf_sparks_9774-10071",
+        "condition": "push",
+        "ev": 2.0,
+        "frames": 5,
+        "pu_gain_db": null,
+        "pu_frames": 0,
+        "clip_gain_stops": 0.12234062388431802,
+        "clip_frames": 5,
+        "crushed_gain_stops": -3.647611229038641,
+        "crushed_frames": 2
+      }
+    ]
+  },
+  "scope": "inference-only regression check; existing validation sample; no training or promotion"
+}

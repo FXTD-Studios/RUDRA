@@ -20,6 +20,8 @@
 #include "rudra/core/clip_fill.hpp"
 #include "rudra/core/composite.hpp"
 #include "rudra/core/js_format.hpp"
+#include "rudra/core/headroom_policy.hpp"
+#include "rudra/platform/result.hpp"
 
 namespace rudra {
 
@@ -36,6 +38,9 @@ inline constexpr std::string_view kDefaultSource = "bt1886";
 
 // The part of the state undo takes back (snapshot()).
 struct GradeSnapshot {
+    // Source decoding is part of the grade's identity, including undo/redo.
+    // Only explicitly capable sessions may accept the experimental policy.
+    HeadroomPolicy headroom_policy = HeadroomPolicy::Disabled;
     std::string mode = "all";
     double strength = 1.0;
     bool preserve = true;
@@ -78,7 +83,12 @@ std::vector<RegionState> default_regions();
 
 class Session {
 public:
-    Session();
+    enum class SourceSupport { LegacyOnly, HeadroomV1 };
+    explicit Session(SourceSupport support = SourceSupport::LegacyOnly);
+    Result<void> set_headroom_policy(HeadroomPolicy policy);
+    // Opens headroom preservation in a session made without it (the artist
+    // turns on Keep super-whites). Never closes it: a grade may hold the policy.
+    void allow_headroom() { source_support_ = SourceSupport::HeadroomV1; }
 
     // ---- the state (the page's names) -------------------------------------
     GradeSnapshot grade;              // mode, strength, preserve, regions
@@ -177,8 +187,8 @@ public:
     void clear_clip_peaks();
     // A saved project's state (engine/project): the grade as one undo step,
     // then the view peak and the Deliver settings, as if set by hand.
-    void load_state(const GradeSnapshot& g, double peak, bool anchor_on, bool carry, double knee,
-                    std::string_view container_kind);
+    Result<void> load_state(const GradeSnapshot& g, double peak, bool anchor_on, bool carry, double knee,
+                           std::string_view container_kind);
 
     // A Region EV value: press, move, release (the pointer's x in pixels),
     // and the double click that zeroes it.
@@ -196,6 +206,8 @@ public:
     void key_up(std::string_view key);
 
 private:
+    Result<void> accepts(HeadroomPolicy policy) const;
+    SourceSupport source_support_;
     void push_undo();
     void restore(const GradeSnapshot& s);
     void notify(std::uint32_t what) const;

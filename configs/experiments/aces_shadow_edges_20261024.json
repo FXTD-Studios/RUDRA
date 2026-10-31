@@ -1,0 +1,14 @@
+{
+  "purpose": "isolate inclusion of genuine full-image edges in shadow training loss",
+  "control": "G:/rudra_training/aces_shadow_mixed_local1200_20261023",
+  "output": "G:/rudra_training/aces_shadow_edges1200_20261024",
+  "pilot": "G:/datasets/corpora/aces_shadow_mixed144_20261023/report.json",
+  "steps": 1200,
+  "lr": 0.0001,
+  "seed": 20261023,
+  "wide": false,
+  "include_image_edges": true,
+  "changed_behavior": "exclude40px only at artificial crop boundaries; genuine full-image edges retained; same crop sampling and fresh initialization as mixed-local1200",
+  "acceptance": "original five natural gates; shadow MSE no worse than coverage4800 and mixed-local1200; originaldev24 shadow MSE no worse than mixed-local1200; all384 motion zero negativeY and shadow lift; each max transition meanEV<=.02 and both dark means no worse than mixed-local1200; visual/detail/release separate",
+  "release_authorized": false
+}

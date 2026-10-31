@@ -1,0 +1,13 @@
+{
+  "registered_before_evaluation": true,
+  "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/val/report.json",
+  "evaluation": "G:/rudra_training/aces_gradient_head_colour_backtrack_v2_20261024/report.json",
+  "parent": "G:/rudra_training/aces_consistent_gradient_head600_v2_20261024/paired_development/consistent/candidate_report.json",
+  "checks": [
+    "On common positive luminance support, mean interior highlight log-gradient RMSE no worse than analytic",
+    "Mean fully-clipped interior log-gradient RMSE no worse than analytic",
+    "Mean highlight display MSE at each of -3, 0, +3 EV no worse than analytic"
+  ],
+  "scope": "Previously used CC0 development24; original saved AP1 reference at recorded synthetic exposure, not physical camera exposure truth. Equal per-image means, two-pixel eroded interiors for detail, all highlight support for grades. Insufficient reference edges fails rather than passes. Numerical checks cannot establish visual or release quality.",
+  "release_authorized": false
+}

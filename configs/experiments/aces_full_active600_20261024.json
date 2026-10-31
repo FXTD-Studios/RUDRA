@@ -1,0 +1,27 @@
+{
+  "registered_before_training": true,
+  "parent": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+  "parent_sha256": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+  "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+  "replay_pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+  "seed": 20261030,
+  "steps": 600,
+  "learning_rate": 0.0001,
+  "loss": {
+    "equal_frame_highlight_asinh_mse": 1.0,
+    "highlight_gradient": 1.0,
+    "known_aligned_temporal_residual": 1.0
+  },
+  "include_fully_clipped": true,
+  "change": "Matched600 normalization comparison against full_temporal600. Same parent/seed/rate/data/sampler/photo/detail. Temporal residual averaged over valid highlight pairs depending on either first full pixel or any second-frame full bilinear neighbour. Log weighted component parameter-gradient norms on every motion update; no adaptive reweighting or clipping.",
+  "replay_geometry": "Origin multiple4; nominal320x512 crops may extend1..3 pixels to actual image edge. Exclude64px artificial boundaries,4px real boundaries. Select original interior highlights only; exclude and report replay rows without any. No motion objective on replay.",
+  "acceptance": "New DEV H at least5% better than registered parent and no worse than analytic; old coherent H<=0.3825248606569533; same aligned/detail/appearance/sign gates. Additionally require isolated outside-full exact and compare identical-weight shared route. No early stopping or best checkpoint selection.",
+  "old_coherent_control_max": 0.3825248606569533,
+  "aligned_residual_control_max": 0.010367255277136186,
+  "scope": "TRAIN-only active-union normalization comparison, motivated by completed support audit. Unchanged final development gates, no early stopping or best checkpoint selection; no independent holdout or release claim.",
+  "release_authorized": false,
+  "replay_sampling": "nonempty_phase_aligned_v2",
+  "training_region": "fully_clipped",
+  "temporal_support": "active_union_composed",
+  "log_gradient_balance": true
+}

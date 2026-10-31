@@ -101,18 +101,21 @@ Result<VideoQcFindings> evaluate_video_qc(std::string_view source_streams_json, 
     VideoQcFindings f;
     auto& errors = f.errors;
     const bool prores = profile->codec == "prores";
+    const bool rgb16 = profile->codec == "ffv1" || profile->codec == "rawvideo";
     const bool log = !profile->log.empty();
     // ProRes 4444 decodes as 12-bit whatever went in.
     const std::string pix = profile->prores_profile == 4 ? (r.alpha ? "yuva444p12le" : "yuv444p12le") : profile->pixel_format;
     const std::vector<std::pair<const char*, ojson>> expected_tags = {
         {"codec_name", profile->codec},   {"pix_fmt", pix},
         {"color_primaries", "bt2020"},    {"color_transfer", profile->transfer},
-        {"color_space", "bt2020nc"},      {"color_range", "tv"},
+        {"color_space", rgb16 ? "gbr" : "bt2020nc"}, {"color_range", rgb16 ? "pc" : "tv"},
         {"width", src_video->value("width", ojson())}, {"height", src_video->value("height", ojson())}};
     for (const auto& [k, want] : expected_tags) {
         const ojson* got = key(*video, k);
         // MOV's nclc atom carries primaries, transfer and matrix, not a range bit.
-        if (std::string(k) == "color_range" && prores && (!got || got->is_null())) continue;
+        if (std::string(k) == "color_range" && (prores || profile->codec == "rawvideo") &&
+            (!got || got->is_null() || (got->is_string() && got->get<std::string>() == "unknown")))
+            continue;
         // A log master says unknown primaries and transfer; ffprobe leaves them out or says so.
         if (log && (std::string(k) == "color_primaries" || std::string(k) == "color_transfer")) {
             if (!got || got->is_null() || (got->is_string() && (got->get<std::string>() == "unknown" ||
@@ -206,7 +209,8 @@ Result<VideoQcFindings> evaluate_video_qc(std::string_view source_streams_json, 
     f.audio_streams = static_cast<int>(target_audio.size());
     f.video = to_py(*video);
     f.side_data = to_py(side);
-    f.range_contract = prores ? "limited; ProRes MOV nclc may omit a separate range flag" : "limited, signalled";
+    f.range_contract = rgb16 ? "full RGB 16-bit, signalled" :
+        prores ? "limited; ProRes MOV nclc may omit a separate range flag" : "limited, signalled";
     return f;
 }
 

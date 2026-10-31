@@ -1,0 +1,24 @@
+{
+  "registered_before_training": true,
+  "pilot": "G:\\datasets\\corpora\\aces_temporal_context_pairs_20261024\\train\\report.json",
+  "pilot_sha256": "9e410260e07304ec26e02106b094d11e25ef78e85e45aae914c6ffa5a85151c2",
+  "parent": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+  "parent_sha256": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+  "group_id": "tif_0000041_urban_courtyard_02_4k_00000__context_2",
+  "asset_ids": [
+    "tif_0000041_urban_courtyard_02_4k_00000__context_2_f0",
+    "tif_0000041_urban_courtyard_02_4k_00000__context_2_f1",
+    "tif_0000041_urban_courtyard_02_4k_00000__context_2_f2"
+  ],
+  "selection": "Lowest salted group hash among TRAIN groups with at least128 highlight pixels in all3 frames. Frames0/1 fit; frame2 within-TRAIN phase probe only. No DEV use.",
+  "steps_per_arm": 600,
+  "seed": 20261029,
+  "learning_rate": 0.0001,
+  "arms": [
+    "shared_balanced",
+    "shared_full",
+    "isolated_full"
+  ],
+  "release_authorized": false,
+  "scope": "TRAIN-only architecture/region-objective fitting pilot on the previously fixed urban courtyard group. Frames0/1 fit; frame2 same-scene phase probe. Three arms start from identical sampler-v2 parent, fresh Adam1e-4,600 steps. Shared-balanced uses high photo/gradient/temporal; shared-full and isolated-full use full-region photo/gradient/temporal. Fixed final checkpoint only; no DEV or generalization claim. Require full fit error halved, report full/partial boundary and all-highlight temporal nonregression relative to initial. No inference checkpoint promotion."
+}

@@ -1,0 +1,15 @@
+{
+  "registered_before_building": true,
+  "author": "Claude (Cowork), asked by ahmed 27 Oct ('train it on all data we have'; chose commercial-clean only and an overnight GPU run)",
+  "builder": "tools/build_aces_scale_crops.py",
+  "out": "G:/datasets/corpora/claude_aces_scale_crops_20261027",
+  "sources": "G:/datasets/corpora/rudra_run05_sources_20261022/sources.jsonl, split == train and commercial_ok: FXTD Studios own footage (RED Dragon linear, ARRI LogC3/LogC4), Poly Haven CC0 camera moves (G:/rudra_v02/pairs_moves), CC0/authored highlight, fire and reflection renders",
+  "excluded": "every scene id in any validation/development/holdout/quarantine/test/candidate file or non-train row of the G:/datasets/corpora folders named aces/run05/ambientcg/holdout/temporal/fresh; every val scene of the registry; the 18 scenes the fresh FXTD grade set v2 kept (G:/rudra_training/claude_release_candidate_20261026/fresh_fxtd_grade_v2_20261026/report.json). Asserted disjoint in the builder.",
+  "not_used": "Netflix (licence pending counsel, Q1), HdM/HDRTV1K/DML/KAIST (non-commercial, quarantined), generated video, the frozen ambientCG prospective holdout.",
+  "render": "exact ACES 2.0 SDR 100-nit view (OCIO 2.5.2, cg-config-v4.0.0); 8-bit codes; consistent target as aces_consistent_exposures_v2 (view.inverse of the clean image held within 0.49 code, the true reference in highlight support, view.inverse(source) in shadow support); crops whose target misses the source by more than 1 code are dropped",
+  "exposure": "FXTD at native camera exposure; every other plate auto-exposed so median AP1 luminance = 0.18; offsets 0, +2, +4 stops",
+  "resolution": "area downsample in linear light to longest side <= 1920, cropped to a multiple of 4",
+  "inclusion": "median max code <= 0.9 and >= 64 partially clipped pixels (reconstruction weight > 0, max code > 0.5, min code < 254.5/255) inside the crop band",
+  "crops": "up to 4 per case, crop 192 at aligned origins with border 64 (the trainer's own geometry), seeded per asset (seed 20261027)",
+  "release_authorized": false
+}

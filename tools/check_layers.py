@@ -41,10 +41,13 @@ def violations() -> list[str]:
         if f.suffix not in {".hpp", ".h", ".cpp", ".cc", ".mm"} or "build" in f.parts:
             continue
         layer = layer_of(f)
-        if layer in {"tests", "cmake"}:
+        # Standalone diagnostics, like tests, exercise multiple production
+        # layers; they are not linked back into a shipped layer.
+        if layer in {"tests", "bench", "tools", "cmake"}:
             continue
         rel = f.relative_to(NATIVE)
-        is_backend_src = layer == "infer" and f.parent.name == "src" and f.stem.endswith("_backend")
+        # *_libtorch.cpp is a backend too: the TorchScript ACES 2.0 model (aces_g1_libtorch.cpp).
+        is_backend_src = layer == "infer" and f.parent.name == "src" and f.stem.endswith(("_backend", "_libtorch"))
         for inc in INCLUDE.findall(f.read_text(encoding="utf-8", errors="replace")):
             if inc.startswith("rudra/"):
                 target = inc.split("/")[1]

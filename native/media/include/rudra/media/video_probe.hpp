@@ -71,7 +71,8 @@ struct VideoSource {
 // Reads ffprobe -of json output: -show_streams (and -show_frames for v:0).
 Result<VideoProbe> parse_video_probe(std::string_view streams_json, std::string_view frames_json = {});
 // Runs ffprobe on the file (twice, as video.py does: streams, then frames).
-Result<VideoProbe> probe_video(const std::filesystem::path& file);
+Result<VideoProbe> probe_video(const std::filesystem::path& file, rudra::stop_token stop = {},
+                              const std::filesystem::path& probe_executable = {});
 
 bool has_alpha(std::string_view pix_fmt);
 Result<InputContract> input_contract(const VideoStreamInfo& stream, const VideoArgs& args);

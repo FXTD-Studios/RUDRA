@@ -1,10 +1,13 @@
 #include "export_sheet.hpp"
+#include "rudra/deliver/video_encode.hpp"
+#include "paths.hpp"
 
 #include <QComboBox>
 #include <QDir>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QSettings>
 #include <QLineEdit>
 #include <QMouseEvent>
 #include <QPushButton>
@@ -94,20 +97,23 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
     tg->setContentsMargins(0, 0, 0, 0);
     tg->setSpacing(8);
     const struct { const char* id; const char* name; const char* sub; bool offered; } formats[] = {
-        {"exr-aces", "EXR", "ACES 2065-1, half", true},
-        {"exr-linear", "EXR linear", "Rec.2020 linear, half", true},
+        {"exr-aces", "EXR", "ACES 2065-1, float32", true},
+        {"exr-linear", "EXR linear", "Rec.2020 linear, float32", true},
         {"hdr10", "HDR10", "HEVC 10-bit, streaming", false},
         {"hlg", "HLG", "HEVC 10-bit, broadcast", false},
         {"prores", "422 HQ", "ProRes, editorial", false},
-        {"prores4444", "4444", "ProRes, finishing", false}};
+        {"prores4444", "4444", "ProRes, finishing", false},
+        {"ffv1rgb16", "RGB 16-bit", "FFV1 .mkv, lossless PQ", false},
+        {"rgb16mov", "MOV 16-bit", "Uncompressed RGB, lossless PQ", false}};
     int col = 0;
     for (const auto& f : formats) {
         auto* t = new Tile(f.id, f.name, f.sub, f.offered, tiles);
         tiles_[f.id] = t;
         const QString id = f.id;
         t->picked = [this, id] { pick(id); };
-        tg->addWidget(t, 0, col++);
-        tg->setColumnStretch(col - 1, 1);
+        tg->addWidget(t, col / 4, col % 4);
+        tg->setColumnStretch(col % 4, 1);
+        ++col;
     }
     v->addWidget(tiles);
 
@@ -163,6 +169,26 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
         fps_->setCurrentIndex(1);
         h->addWidget(fps_);
         cv->addWidget(fps_row_);
+    }
+    {
+        // The HDR10 SEI's mastering display (28 Oct 2026 review): P3-D65 is what most specs and grading
+        // monitors are; Rec.2020 is the Python's. Kept between runs.
+        auto* md_row = new QWidget(card);
+        md_row->setObjectName("exportMasteringRow");
+        md_row->setProperty("role", "field");
+        auto* h = new QHBoxLayout(md_row);
+        h->setContentsMargins(0, 8, 0, 8);
+        h->addWidget(label("Mastering display", {}, "key", md_row));
+        h->addStretch(1);
+        auto* md = new Seg("exportMastering", {{"p3d65", "P3-D65"}, {"rec2020", "Rec.2020"}}, md_row);
+        md->setToolTip("The primaries HDR10 metadata (SMPTE ST 2086) names for the mastering display");
+        md->set_on(QString::fromStdString(mastering_display_primaries()));
+        md->clicked = [md](const QString& k) {
+            if (set_mastering_display_primaries(k.toStdString())) QSettings().setValue("deliver/masteringDisplay", k);
+            md->set_on(k);
+        };
+        h->addWidget(md);
+        cv->addWidget(md_row);
     }
     signal_ = label("", "exportSignal", {}, card);
     frames_ = label("", "exportFrames", {}, card);
@@ -220,7 +246,9 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
 }
 
 namespace {
-bool is_video_format(const QString& id) { return id == "hdr10" || id == "hlg" || id == "prores" || id == "prores4444"; }
+bool is_video_format(const QString& id) {
+    return id == "hdr10" || id == "hlg" || id == "prores" || id == "prores4444" || id == "ffv1rgb16" || id == "rgb16mov";
+}
 bool is_prores(const QString& id) { return id == "prores" || id == "prores4444"; }
 }  // namespace
 
@@ -255,10 +283,10 @@ void ExportSheet::refresh() {
     const bool folder = !w_->shot_is_video() && w_->shot_is_frame_folder();
     const bool movie = w_->shot_is_video() || folder;
     if (folder) encoding_ = "pq";   // from frames: the graded PQ targets only
-    for (const char* id : {"hdr10", "hlg", "prores", "prores4444"})
+    for (const char* id : {"hdr10", "hlg", "prores", "prores4444", "ffv1rgb16", "rgb16mov"})
         if (auto it = tiles_.find(id); it != tiles_.end()) static_cast<Tile*>(it->second)->set_offered(movie);
     if (!(movie && is_video_format(picked_))) picked_ = w_->container() == "linear" ? "exr-linear" : "exr-aces";
-    for (const char* id : {"exr-aces", "exr-linear", "hdr10", "hlg", "prores", "prores4444"})
+    for (const char* id : {"exr-aces", "exr-linear", "hdr10", "hlg", "prores", "prores4444", "ffv1rgb16", "rgb16mov"})
         if (auto* t = findChild<QWidget*>(id)) {
             t->setProperty("on", picked_ == id);
             t->style()->unpolish(t);
@@ -285,10 +313,12 @@ void ExportSheet::refresh() {
     if (is_video_format(picked_)) {
         signal_->setText(picked_ == "hdr10"  ? "PQ · Rec.2020 · HEVC 10-bit · HDR10 metadata"
                          : picked_ == "hlg" ? "HLG · Rec.2020 · HEVC 10-bit"
+                         : picked_ == "ffv1rgb16" ? "PQ · Rec.2020 · FFV1 · lossless 16-bit RGB"
+                         : picked_ == "rgb16mov" ? "PQ · Rec.2020 · uncompressed 16-bit RGB MOV"
                          : encoding_ == "acescct" ? "ACEScct · AP1 · " + pr + " · scene-referred"
                          : encoding_ == "logc4"   ? "LogC4 · ARRI Wide Gamut 4 · " + pr + " · scene-referred"
                                                   : "PQ · Rec.2020 · " + pr);
-        const QString ext = picked_.startsWith("prores") ? ".mov" : ".mp4";
+        const QString ext = picked_ == "ffv1rgb16" ? ".mkv" : picked_.startsWith("prores") || picked_ == "rgb16mov" ? ".mov" : ".mp4";
         if (folder) {
             frames_->setText(QStringLiteral("All %1, mastered as EXR, then as a movie (no audio)").arg(frames.size()));
             const QString base = w_->frames_movie_base(video_format());
@@ -296,7 +326,7 @@ void ExportSheet::refresh() {
                                          : QDir::toNativeSeparators(dir) + QDir::separator() + base + ext);
         } else {
             frames_->setText(QStringLiteral("All %1, as a movie with its audio").arg(frames.size()));
-            const QString file = (name.isEmpty() ? QString::fromStdString(w_->shot_video()->path.stem().string()) + "_" +
+            const QString file = (name.isEmpty() ? from_path(w_->shot_video()->path.stem()) + "_" +
                                                        video_format()
                                                  : name + (log ? "_" + encoding_ : QString())) +
                                  ext;
@@ -304,7 +334,7 @@ void ExportSheet::refresh() {
                                          : QDir::toNativeSeparators(dir) + QDir::separator() + file);
         }
     } else {
-        signal_->setText(picked_ == "exr-aces" ? "Scene linear · AP0 · half" : "Scene linear · Rec.2020 · half");
+        signal_->setText(picked_ == "exr-aces" ? "Scene linear · AP0 · float32" : "Scene linear · Rec.2020 · float32");
         auto* mode = w_->findChild<QComboBox*>("renderMode");
         const bool sequence = mode && mode->currentData().toString() == "sequence";
         frames_->setText(sequence ? QStringLiteral("All %1, as a sequence").arg(frames.size()) : QStringLiteral("The frame on screen"));
@@ -328,7 +358,7 @@ void ExportSheet::export_now() {
         return;
     }
     accept();
-    w_->run("master");
+    w_->master();   // the analytic Master EXR (the Deliver tab's Render may be set to a movie)
 }
 
 void MainWindow::open_export_sheet() {

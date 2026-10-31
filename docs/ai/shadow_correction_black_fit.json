@@ -1,0 +1,15 @@
+{
+ "black": 8.166061735755078e-05,
+ "black_nits_at_203": 0.016577105323582808,
+ "rmse_stops": 0.6639367231345337,
+ "observations": {
+  "Cosmos Laundromat": 39,
+  "Nocturne": 29,
+  "Sol Levante": 38
+ },
+ "per_title_black": {
+  "Cosmos Laundromat": 9.98415598825417e-05,
+  "Nocturne": 2.693795765047165e-05,
+  "Sol Levante": 0.000127254121196426
+ }
+}

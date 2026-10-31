@@ -104,19 +104,22 @@ Result<VideoProbe> parse_video_probe(std::string_view streams_json, std::string_
     return out;
 }
 
-Result<VideoProbe> probe_video(const fs::path& file) {
-    auto ffprobe = require_executable("ffprobe");
+Result<VideoProbe> probe_video(const fs::path& file, rudra::stop_token stop, const fs::path& probe_executable) {
+    if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "Video probing was cancelled");
+    auto ffprobe = probe_executable.empty() ? require_executable("ffprobe") : Result<fs::path>(probe_executable);
     if (!ffprobe) return ffprobe.error();
     const std::string exe = ffprobe->string();
     const std::string path = file.string();
-    auto streams = run_tool({exe, "-v", "error", "-show_streams", "-show_format", "-of", "json", path});
+    auto streams = run_tool({exe, "-v", "error", "-show_streams", "-show_format", "-of", "json", path}, stop);
     if (!streams) return streams.error();
     auto frames = run_tool({exe, "-v", "error", "-show_streams", "-show_format", "-select_streams", "v:0",
                             "-show_frames", "-show_entries",
                             "frame=best_effort_timestamp_time,duration_time,pkt_duration_time,width,height:frame_side_data",
-                            "-of", "json", path});
+                            "-of", "json", path}, stop);
     if (!frames) return frames.error();
-    return parse_video_probe(*streams, *frames);
+    auto parsed = parse_video_probe(*streams, *frames);
+    if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "Video probing was cancelled");
+    return parsed;
 }
 
 bool has_alpha(std::string_view pix_fmt) {

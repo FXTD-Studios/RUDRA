@@ -1,0 +1,41 @@
+{
+  "registered_before_training": true,
+  "parent": "G:/rudra_training/aces_guarded_projected600_20261024/step600.pt",
+  "parent_sha256": "e83b997c315bf5cc26d3df0e6fa2ad357828feebc0d78384b378057ed4349709",
+  "steps": 400,
+  "batch_frames": 4,
+  "seed": 20261025,
+  "crop": 192,
+  "border": 64,
+  "aligned_crops": true,
+  "paired_motion": true,
+  "temporal_weights": [
+    1
+  ],
+  "display_weight": 0.5,
+  "display_evs": [
+    -3,
+    0,
+    3
+  ],
+  "relative": true,
+  "domain_schedule": "Original temporal1 alternating motion/still batches, exact saved schedule required.",
+  "scope": "Matched deterministic PCGrad400 control/probe pair. Two-update identity passed. Same original recipe/data, deterministic torch algorithms/CUDA workspace enabled for BOTH runs. Probe8 predefined TRAIN updates; final400 model tensors and full histories must match. Earlier nondeterministic replay not exact.",
+  "release_authorized": false,
+  "comparison_control": "G:/rudra_training/partial_temporal1_400_20261025",
+  "pcgrad": true,
+  "projection_seed": 20261027,
+  "algorithm": "Yu et al arXiv2001.06782v4 Algorithm1; independent random other-task order, original reference gradients, sum projected weighted objectives. Float64 projection arithmetic, float32 optimizer gradient. Local implementation.",
+  "probe_steps": [
+    1,
+    2,
+    101,
+    102,
+    201,
+    202,
+    399,
+    400
+  ],
+  "comparison_checkpoint": "G:/rudra_training/partial_pcgrad_deterministic_control400_20261025/step400.pt",
+  "deterministic": true
+}

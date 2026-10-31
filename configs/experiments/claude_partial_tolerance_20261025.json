@@ -1,0 +1,44 @@
+{
+ "name": "claude_partial_tolerance_20261025",
+ "written_utc": "2026-10-25T07:59:51Z",
+ "written_before": "arms ft_rel3_w025 and ft_rel3_w035 were trained or evaluated",
+ "approved_by": "ahmed (chat, 25 Oct 2026: approved 0 EV allowance of 0.1 code RMS over analytic)",
+ "honesty_note": "The 0 EV allowance was chosen AFTER seeing development results of earlier arms (rel3_w05 0EV .0833). Development results under this registration are therefore exploratory; only the fresh holdout run with these frozen rules is confirmatory.",
+ "parent": "G:/rudra_training/aces_guarded_projected600_20261024/step600.pt",
+ "trainer": "tools/train_partial_display.py (highlight_context only, --display-evs -3 0 3 --relative, 400 steps, seed 20261025)",
+ "arms": {
+  "ft_rel3_w025": {
+   "display_weight": 0.25
+  },
+  "ft_rel3_w035": {
+   "display_weight": 0.35
+  }
+ },
+ "inference": {
+  "clipped_smoothing": "hybrid64",
+  "appearance_constraint": "1 code, include_fully_clipped"
+ },
+ "paired_gates": "unchanged from configs/experiments/aces_guarded_projected600_20261024.json except outside_full_exact",
+ "restated_gate": {
+  "removed": "outside_full_exact (assumed a fully-clipped-branch-only update)",
+  "replacement": [
+   "outside_highlight_exact: unchanged evaluator check (candidate == parent outside highlight support)",
+   "full_support_unchanged: inside fully clipped support the candidate raw output equals guarded_projected600 raw output bit-exactly (checked by tools/check_full_support_unchanged.py on new_motion and old_coherent DEV)",
+   "frozen_parent: every non highlight_context parameter bit-exact"
+  ]
+ },
+ "grade_gates": {
+  "highlight_detail": "<= analytic (unchanged)",
+  "fully_clipped_detail": "<= analytic (unchanged)",
+  "grade_-3": "<= analytic (unchanged)",
+  "grade_+3": "<= analytic (unchanged)",
+  "grade_0": {
+   "rule": "sqrt(constrained) <= sqrt(analytic) + 0.1 code",
+   "analytic_dev_old24": 0.06038138662864055,
+   "limit_code2": 0.11952663528144136
+  }
+ },
+ "video_gate": "Hunyuan48 max transition mean excess <= 0.02 EV (unchanged)",
+ "selection": "among arms passing every gate, the lowest 0 EV grade error; ties -> lower new_motion H. If none pass, nothing is frozen.",
+ "base_registration_steps": 400
+}

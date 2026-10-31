@@ -32,6 +32,9 @@ def write_aces_exr(
     source_space: str = "rec2020",
     exposure_scale: float = 1.0,
     provenance: dict | None = None,
+    *,
+    half: bool = True,
+    reconstruction_mask: np.ndarray | None = None,
 ) -> Path:
     """Write an (H, W, 3) linear frame as an ACES 2065-1 container EXR.
 
@@ -40,18 +43,27 @@ def write_aces_exr(
         source_space: 'rec2020' (RUDRA default), 'rec709', or 'p3d65'.
         exposure_scale: multiply before conversion (1.0 = shared 0.18 anchor).
         provenance: extra key/values recorded as string attributes.
+        half: False writes float32 RGB and mask; True retains legacy half storage.
+        reconstruction_mask: optional HxW reconstruction support. With this
+            extra layer the file is a general AP0 EXR, not a strict ACES container.
     """
     aces = convert(np.asarray(rgb_linear, dtype=np.float32) * float(exposure_scale),
                    source_space, "ap0")
     attrs = {
-        "acesImageContainerFlag": "1",
         "rudra:sourceSpace": source_space,
         "rudra:exposureConvention": "0.18 = 18% grey (scene), diffuse white = 1.0",
         "rudra:exposureScale": repr(float(exposure_scale)),
     }
     if provenance:
         attrs["rudra:provenance"] = json.dumps(provenance, sort_keys=True)
-    return write_exr(path, aces, half=True, chromaticities=AP0_CHROMATICITIES, attributes=attrs)
+    # SMPTE ST 2065-4: acesImageContainerFlag is an int 1, on the strict container only.
+    ints = {"acesImageContainerFlag": 1}
+    if reconstruction_mask is not None:
+        # An auxiliary layer is a general AP0 EXR, not a strict ACES container.
+        ints = {}
+        attrs['rudra:container'] = 'AP0 linear with reconstruction mask'
+    return write_exr(path, aces, half=half, chromaticities=AP0_CHROMATICITIES, attributes=attrs,
+                     reconstruction_mask=reconstruction_mask, int_attributes=ints)
 
 
 def write_acescg_exr(
@@ -60,6 +72,9 @@ def write_acescg_exr(
     source_space: str = "rec2020",
     exposure_scale: float = 1.0,
     provenance: dict | None = None,
+    *,
+    half: bool = True,
+    reconstruction_mask: np.ndarray | None = None,
 ) -> Path:
     """Write an (H, W, 3) linear frame as an ACEScg (AP1) EXR.
 
@@ -67,6 +82,8 @@ def write_acescg_exr(
     archival wrapper; AP1 is the space a comp is actually built in, so a
     pipeline handed AP0 usually converts straight out of it. Offering both
     saves that round trip and matches what competing tools emit.
+    ``half=False`` selects float32; an optional reconstruction mask is carried
+    unchanged as its own channel, outside color/exposure conversion.
     """
     cg = convert(np.asarray(rgb_linear, dtype=np.float32) * float(exposure_scale),
                  source_space, "ap1")
@@ -78,8 +95,8 @@ def write_acescg_exr(
     }
     if provenance:
         attrs["rudra:provenance"] = json.dumps(provenance, sort_keys=True)
-    return write_exr(path, cg, half=True, chromaticities=AP1_CHROMATICITIES,
-                     attributes=attrs)
+    return write_exr(path, cg, half=half, chromaticities=AP1_CHROMATICITIES,
+                     attributes=attrs, reconstruction_mask=reconstruction_mask)
 
 
 def _matrix_yaml(matrix: np.ndarray, indent: int = 8) -> str:

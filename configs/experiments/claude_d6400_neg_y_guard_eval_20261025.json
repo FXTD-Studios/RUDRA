@@ -1,0 +1,17 @@
+{
+  "parent": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+  "parent_sha256": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+  "steps": 6400,
+  "include_fully_clipped": true,
+  "old_coherent_control_max": 0.3825248606569533,
+  "aligned_residual_control_max": 0.010367255277136186,
+  "clipped_smoothing": {
+    "sigma": 64,
+    "mode": "hybrid",
+    "ramp": 1,
+    "start": 0
+  },
+  "scope": "Duration6400 step6400 re-evaluated with the colour constraint luminance guard (forbid_new_negative_y). Original limits retained. Claude, 25 Oct. No release qualification.",
+  "release_authorized": false,
+  "forbid_new_negative_y": true
+}

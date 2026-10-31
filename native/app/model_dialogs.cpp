@@ -1,6 +1,7 @@
 #include "model_dialogs.hpp"
 
 #include <QComboBox>
+#include <QDir>
 #include <QFileDialog>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -8,6 +9,10 @@
 #include <QLabel>
 #include <QPixmap>
 #include <QPointer>
+#include <QProgressBar>
+#include <QScrollArea>
+#include <QDesktopServices>
+#include <QUrl>
 #include <QStyle>
 #include <QPushButton>
 #include <QSettings>
@@ -15,6 +20,7 @@
 #include <QVBoxLayout>
 
 #include "main_window.hpp"
+#include "theme.hpp"
 #include "rudra/core/hdr_card.hpp"
 
 #ifdef RUDRA_APP_VIEWER
@@ -61,7 +67,7 @@ std::optional<BackendChoice> backend_from_combo(const QComboBox* c) {
 ModelManager::ModelManager(MainWindow* w) : QDialog(w), w_(w) {
     setObjectName("modelManager");
     setWindowTitle("Model packages");
-    resize(760, 460);
+    resize(820, 640);
     auto* v = new QVBoxLayout(this);
     v->addWidget(label("Model packages", "ckptHead", "plabel", this));
     list_ = new QTreeWidget(this);
@@ -72,6 +78,37 @@ ModelManager::ModelManager(MainWindow* w) : QDialog(w), w_(w) {
     v->addWidget(list_, 1);
     note_ = label("", "ckptNote", "note", this);
     v->addWidget(note_);
+    // Available to download (29 Oct 2026): the list we publish; each row downloads,
+    // pauses, resumes or cancels, and the files are checked before they are used.
+    {
+        auto* head = new QHBoxLayout;
+        head->addWidget(label("Available to download", "dlHead", "plabel", this));
+        head->addStretch(1);
+        auto* folder = button("Change folder\u2026", "dlFolder", this);
+        folder->setToolTip("Where downloaded models are kept");
+        auto* again = button("Check again", "dlRefresh", this);
+        head->addWidget(folder);
+        head->addWidget(again);
+        v->addLayout(head);
+        dl_list_ = new QWidget(this);
+        dl_list_->setObjectName("dlList");
+        auto* dv = new QVBoxLayout(dl_list_);
+        dv->setContentsMargins(0, 0, 0, 0);
+        dv->setSpacing(6);
+        v->addWidget(dl_list_);
+        dl_status_ = label("", "dlStatus", "note", this);
+        dl_status_->setWordWrap(true);
+        dl_status_->setOpenExternalLinks(true);
+        v->addWidget(dl_status_);
+        ModelDownloads* md = w_->model_downloads();
+        connect(again, &QPushButton::clicked, this, [md] { md->fetch_index(); });
+        connect(folder, &QPushButton::clicked, this, [this, md] {
+            const QString d = QFileDialog::getExistingDirectory(this, "Keep downloaded models in", md->root());
+            if (!d.isEmpty()) md->set_root(d);
+        });
+        md->listen(this, [this] { refresh_downloads(); });
+        if (md->models().empty() && !md->fetching()) md->fetch_index();
+    }
     auto* row = new QHBoxLayout;
     row->addWidget(label("Run on", "ckptBackendLabel", "value", this));
     backend_ = new QComboBox(this);
@@ -104,6 +141,7 @@ ModelManager::ModelManager(MainWindow* w) : QDialog(w), w_(w) {
     });
     connect(use_, &QPushButton::clicked, this, [this] { use_selected(); });
     refresh();
+    refresh_downloads();
 }
 
 void ModelManager::refresh() {
@@ -139,6 +177,132 @@ void ModelManager::refresh() {
                        ". Add a folder that holds one (tools/export_model.py writes them).");
     }
     use_->setEnabled(list_->currentItem() != nullptr && !w_->loading_model());
+}
+
+void ModelManager::refresh_downloads() {
+    if (!dl_list_) return;
+    ModelDownloads* md = w_->model_downloads();
+    // The rows' shape: rebuilt when a model or a state changes, otherwise updated in place.
+    QString shape = md->root() + "|" + md->active();
+    for (const auto& m : md->models()) shape += "|" + m.id + ":" + QString::number(int(md->state(m.id))) + ":" + md->error(m.id);
+    if (shape != dl_shape_) {
+        dl_shape_ = shape;
+        for (QWidget* old : dl_list_->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
+            old->hide();
+            old->deleteLater();
+        }
+        for (const auto& m : md->models()) {
+            const InstallState st = md->state(m.id);
+            const bool active = md->active() == m.id;
+            auto* row = new QWidget(dl_list_);
+            row->setObjectName("dl:" + m.id);
+            row->setProperty("role", "card");
+            row->setAttribute(Qt::WA_StyledBackground, true);
+            auto* h = new QHBoxLayout(row);
+            h->setContentsMargins(12, 10, 12, 10);
+            h->setSpacing(12);
+            auto* info = new QWidget(row);
+            auto* iv = new QVBoxLayout(info);
+            iv->setContentsMargins(0, 0, 0, 0);
+            iv->setSpacing(3);
+            QString title = "<b>" + m.title.toHtmlEscaped() + "</b>";
+            if (!m.version.isEmpty()) title += " · " + m.version.toHtmlEscaped();
+            if (m.channel == "preview") title += QStringLiteral(" &nbsp;<span style='color:%1'>PREVIEW</span>").arg(theme_colour("gold").name());
+            if (m.channel == "legacy") title += QStringLiteral(" &nbsp;LEGACY");
+            iv->addWidget(label(title, "dlTitle:" + m.id, {}, info));
+            QString sub = human_size(m.size());
+            if (!m.summary.isEmpty()) sub += " · " + m.summary.toHtmlEscaped();
+            if (!m.licence.isEmpty())
+                sub += " · Licence: " + m.licence.toHtmlEscaped() +
+                       (m.licence_url.isEmpty() ? QString() : " <a href='" + m.licence_url.toHtmlEscaped() + "'>Read</a>");
+            auto* subl = label(sub, "dlSub:" + m.id, "note", info);
+            subl->setWordWrap(true);
+            subl->setOpenExternalLinks(true);
+            iv->addWidget(subl);
+            auto* bar = new QProgressBar(info);
+            bar->setObjectName("dlBar:" + m.id);
+            bar->setTextVisible(false);
+            bar->setFixedHeight(5);
+            bar->setRange(0, 1000);
+            bar->setVisible(active);
+            iv->addWidget(bar);
+            const QString err = md->error(m.id);
+            auto* stl = label(active ? QStringLiteral("Starting…")
+                              : st == InstallState::Installed ? QStringLiteral("Installed and checked")
+                              : !err.isEmpty() ? err
+                              : st == InstallState::Partial ? QStringLiteral("Part downloaded")
+                                                            : QStringLiteral("Not installed"),
+                              "dlState:" + m.id, "note", info);
+            stl->setWordWrap(true);
+            iv->addWidget(stl);
+            h->addWidget(info, 1);
+            const QString id = m.id;
+            if (active) {
+                auto* pause = button("Pause", "dlPause:" + id, row);
+                auto* cancel = button("Cancel", "dlCancel:" + id, row);
+                connect(pause, &QPushButton::clicked, this, [md] { md->pause(); });
+                connect(cancel, &QPushButton::clicked, this, [md, id] { md->cancel(id); });
+                h->addWidget(pause);
+                h->addWidget(cancel);
+            } else if (st == InstallState::Installed) {
+                auto* show = button("Show in folder", "dlShow:" + id, row);
+                connect(show, &QPushButton::clicked, this, [md, m] {
+                    QDesktopServices::openUrl(QUrl::fromLocalFile(QDir(md->root()).filePath(m.folder)));
+                });
+                h->addWidget(show);
+                if (m.kind == "aces_v2" || m.kind == "package") {
+                    auto* use = button("Use", "dlUse:" + id, row);
+                    use->setProperty("role", "primary");
+                    connect(use, &QPushButton::clicked, this, [this, md, m] {
+                        const auto dir = std::filesystem::path(QDir(md->root()).filePath(m.folder).toStdU16String());
+                        if (m.kind == "aces_v2") {
+                            QString why;
+                            status_->setText(w_->use_aces_package(dir, &why) ? QStringLiteral("Loading ") + m.title + QStringLiteral("…") : why);
+                        } else {
+                            w_->add_model_root(std::filesystem::path(md->root().toStdU16String()));
+                            w_->use_model(dir, backend_from_combo(backend_));
+                        }
+                        refresh();
+                    });
+                    h->addWidget(use);
+                }
+            } else {
+                const bool part = st == InstallState::Partial;
+                auto* dl = button(part ? QStringLiteral("Resume") : QStringLiteral("Download"), "dlGet:" + id, row);
+                dl->setProperty("role", "primary");
+                dl->setEnabled(md->active().isEmpty());
+                connect(dl, &QPushButton::clicked, this, [this, md, id] {
+                    QString why;
+                    if (!md->download(id, &why)) status_->setText(why);
+                });
+                h->addWidget(dl);
+                if (part) {
+                    auto* discard = button("Discard", "dlCancel:" + id, row);
+                    connect(discard, &QPushButton::clicked, this, [md, id] { md->cancel(id); });
+                    h->addWidget(discard);
+                }
+            }
+            dl_list_->layout()->addWidget(row);
+        }
+    }
+    // In place: the progress of the one downloading.
+    if (const QString id = md->active(); !id.isEmpty()) {
+        if (auto* bar = dl_list_->findChild<QProgressBar*>("dlBar:" + id))
+            bar->setValue(md->total_bytes() > 0 ? int(1000.0 * double(md->done_bytes()) / double(md->total_bytes())) : 0);
+        if (auto* st = dl_list_->findChild<QLabel*>("dlState:" + id)) {
+            QString t = QStringLiteral("%1 of %2").arg(human_size(md->done_bytes()), human_size(md->total_bytes()));
+            if (md->bytes_per_second() > 0) {
+                t += QStringLiteral(" · %1/s").arg(human_size(qint64(md->bytes_per_second())));
+                const double left = double(md->total_bytes() - md->done_bytes()) / md->bytes_per_second();
+                t += left < 90 ? QStringLiteral(" · about %1 s left").arg(int(left) + 1)
+                               : QStringLiteral(" · about %1 min left").arg(int(left / 60) + 1);
+            }
+            st->setText(t);
+        }
+    }
+    QString note = md->fetching() ? QStringLiteral("Reading the model list…") : md->index_status();
+    if (note.isEmpty()) note = QStringLiteral("Every file is checked (SHA-256) before it is used · kept in %1").arg(md->root().toHtmlEscaped());
+    dl_status_->setText(note);
 }
 
 void ModelManager::select(std::size_t entry) {

@@ -47,4 +47,12 @@ FrameMeasure measure_frame(const SdrImage& sdr, const Fields& fields, const Fram
                            const ModelConstants& model, const CompositeParams& params,
                            const NetworkLinearImage* baseline = nullptr, double anchor_knee = 0.9);
 
+// The headroom preview's measurements (E2, 17 Oct 2026): the same readouts,
+// scopes, vectorscope, compare and probe from the graded master and its
+// baseline (the viewer's precomposited convention). There is no SDR or network
+// mask on this path: masks, clip coverage and the invented-pixel shares are
+// empty (the masks read 0 %, mask-limited headroom NaN), never borrowed from
+// the legacy path. Anchor hold is 1 (v1 requires the anchor off).
+FrameMeasure measure_headroom(const NetworkLinearImage& model, const NetworkLinearImage& baseline);
+
 }  // namespace rudra

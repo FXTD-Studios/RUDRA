@@ -173,6 +173,8 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
     const DeliveryProfile* profile = find_delivery_profile(a.format);
     if (!profile) return refuse("Unknown delivery format: " + a.format);
     if (profile->codec == "prores" && ext != ".mov") return refuse("ProRes delivery requires a .mov output");
+    if (profile->codec == "ffv1" && ext != ".mkv") return refuse("FFV1 RGB16 delivery requires a .mkv output");
+    if (profile->codec == "rawvideo" && ext != ".mov") return refuse("16-bit RGB MOV delivery requires a .mov output");
     std::error_code ec;
     if (!fs::is_regular_file(source, ec)) return make_error(ErrorCode::NotFound, source.string());
     if (a.dynamic_metadata != "on" && a.dynamic_metadata != "off") return refuse("Invalid dynamic metadata setting");

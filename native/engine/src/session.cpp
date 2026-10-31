@@ -56,7 +56,24 @@ std::vector<RegionState> default_regions() {
     return {{"highlights", 400.0, 2000.0, 0.0}, {"speculars", 2000.0, 8000.0, 0.0}, {"shadows", 0.05, 12.0, 0.0}};
 }
 
-Session::Session() { grade.regions = default_regions(); }
+Session::Session(SourceSupport support) : source_support_(support) { grade.regions = default_regions(); }
+
+Result<void> Session::accepts(HeadroomPolicy policy) const {
+    if (headroom_policy_id(policy).empty())
+        return make_error(ErrorCode::Unsupported, "Unknown headroom source policy");
+    if (policy != HeadroomPolicy::Disabled && source_support_ != SourceSupport::HeadroomV1)
+        return make_error(ErrorCode::Unsupported, "This session does not support headroom preservation yet");
+    return {};
+}
+
+Result<void> Session::set_headroom_policy(HeadroomPolicy policy) {
+    if (auto valid = accepts(policy); !valid) return valid.error();
+    if (grade.headroom_policy == policy) return {};
+    push_undo();
+    grade.headroom_policy = policy;
+    notify(Grade);
+    return {};
+}
 
 double Session::display_nits() const { return kPageDiffuseWhite * pow2(peak_ev); }
 
@@ -81,6 +98,10 @@ std::string Session::params_json() const {
         append_string(o, grade.source);
     }
     if (grade.exposure_ev != 0.0) o += ",\"exposure_ev\":" + js_number(grade.exposure_ev);
+    if (grade.headroom_policy != HeadroomPolicy::Disabled) {
+        o += ",\"headroom_policy\":";
+        append_string(o, headroom_policy_id(grade.headroom_policy));
+    }
     const auto cal = calibration_points();
     if (!cal.empty() && grade.reference.empty()) {
         o += ",\"calibration\":[";
@@ -385,8 +406,9 @@ void Session::set_anchor_knee(double knee) {
     notify(Delivery);
 }
 
-void Session::load_state(const GradeSnapshot& g, double peak, bool anchor_on, bool carry, double knee,
-                         std::string_view container_kind) {
+Result<void> Session::load_state(const GradeSnapshot& g, double peak, bool anchor_on, bool carry, double knee,
+                                std::string_view container_kind) {
+    if (auto valid = accepts(g.headroom_policy); !valid) return valid.error();
     push_undo();
     grade = g;
     peak_ev = peak;
@@ -395,6 +417,7 @@ void Session::load_state(const GradeSnapshot& g, double peak, bool anchor_on, bo
     anchor_knee = std::max(0.5, std::min(0.99, knee));
     container = container_kind == "linear" ? "linear" : "aces";
     notify(Grade | Peak | Delivery);
+    return {};
 }
 
 void Session::toggle_carry_chroma() {

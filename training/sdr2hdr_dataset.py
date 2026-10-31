@@ -22,7 +22,8 @@ from pipeline.hdr_io import HDRStorage, decode_hdr_u16  # noqa: E402
 
 
 def corpus_ev_of(manifest_path: str | Path, records: list[dict] | None = None,
-                 real_only_ev: float | None = None) -> float:
+                 real_only_ev: float | None = None,
+                 pipeline_only_ev: float | None = None) -> float:
     """The exposure the corpus applied before its tone curve, from its sidecars.
 
     prepare_training_data.py writes ``tonemap_ev`` into every pair's metadata
@@ -46,6 +47,19 @@ def corpus_ev_of(manifest_path: str | Path, records: list[dict] | None = None,
     from rudra.sdr2hdr import LEGACY_CORPUS_EV
 
     rows = records if records is not None else read_jsonl(manifest_path)
+    if pipeline_only_ev is not None:
+        # A display-rendered pair has no inverse scene-render exposure. This
+        # explicitly chooses the model baseline convention without inventing
+        # a tonemap_ev or relabelling the SDR as a real grade.
+        if (real_only_ev is not None or not math.isfinite(pipeline_only_ev)
+                or not rows or any(r.get("sdr_kind") != "rendered"
+                    or r.get("render_family") != "pipeline"
+                    or not r.get("pipeline_recipe")
+                    or r.get("tonemap_ev") is not None for r in rows)):
+            raise ValueError("pipeline_only_ev requires exclusively pipeline-rendered pairs with unknown tonemap_ev")
+        return float(pipeline_only_ev)
+    if any(r.get("render_family") == "pipeline" for r in rows):
+        raise ValueError("pipeline-rendered targets require an explicit pipeline_only_ev; mixed objectives are unsupported")
     # Real grades have no synthetic rendering EV. A scratch real-only run may
     # explicitly choose the analytic/exposure-augmentation convention without
     # inventing tonemap_ev values in source records. Never override mixed data.
@@ -203,9 +217,17 @@ def load_rgb(path: str | Path, hdr: bool,
     return np.ascontiguousarray(image)
 
 
-def _crop_params(height: int, width: int, size: int, training: bool) -> tuple[int, int, int, int]:
-    scale = max(size / height, size / width)
-    out_h, out_w = max(size, round(height * scale)), max(size, round(width * scale))
+def _crop_params(height: int, width: int, size: int, training: bool,
+                 native: bool = False) -> tuple[int, int, int, int]:
+    if native and min(height, width) < size:
+        raise ValueError('source-preserving pairs require native dimensions >= crop size')
+    # Interpolating source codes and scene radiance separately breaks their
+    # nonlinear view relationship. Preserve original samples for this contract.
+    if native:
+        out_h, out_w = height, width
+    else:
+        scale = max(size / height, size / width)
+        out_h, out_w = max(size, round(height * scale)), max(size, round(width * scale))
     if training:
         top = random.randint(0, out_h - size)
         left = random.randint(0, out_w - size)
@@ -216,7 +238,8 @@ def _crop_params(height: int, width: int, size: int, training: bool) -> tuple[in
 
 def _resize_crop(image: torch.Tensor, params: tuple[int, int, int, int], size: int) -> torch.Tensor:
     out_h, out_w, top, left = params
-    image = F.interpolate(image[None], size=(out_h, out_w), mode="bilinear", align_corners=False)[0]
+    if image.shape[-2:] != (out_h, out_w):
+        image = F.interpolate(image[None], size=(out_h, out_w), mode="bilinear", align_corners=False)[0]
     return image[:, top:top + size, left:left + size]
 
 
@@ -458,7 +481,8 @@ class SDRHDRDataset(Dataset):
         hdr = _to_tensor(load_rgb(record["hdr_path"], hdr=True))
         if sdr.shape[-2:] != hdr.shape[-2:]:
             raise ValueError(f"Pair geometry mismatch for {record['asset_id']}: {sdr.shape} vs {hdr.shape}")
-        params = _crop_params(sdr.shape[-2], sdr.shape[-1], self.crop_size, self.augment)
+        params = _crop_params(sdr.shape[-2], sdr.shape[-1], self.crop_size, self.augment,
+                              native=record.get('target_mode') == 'source_preserving')
         sdr = _resize_crop(sdr, params, self.crop_size)
         hdr = _resize_crop(hdr, params, self.crop_size)
         if self.augment and random.random() < 0.5:

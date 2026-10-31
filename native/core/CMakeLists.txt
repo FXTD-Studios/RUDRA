@@ -3,5 +3,6 @@
 rudra_library(rudra_core SOURCES src/baseline.cpp src/fields.cpp src/source_curve.cpp src/calibration.cpp src/reference_fit.cpp src/masks.cpp src/tiling.cpp src/model_manifest.cpp
               src/composite.cpp src/clip_fill.cpp src/gamut.cpp src/log_encode.cpp src/master.cpp src/measure.cpp src/compare.cpp
               src/grade.cpp src/hdr10.cpp src/metadata.cpp src/view.cpp src/scopes.cpp src/viewport.cpp src/guides.cpp
-              src/js_format.cpp src/scope_draw.cpp src/readouts.cpp src/hdr_card.cpp src/js_json.cpp src/copy_texts.cpp src/video_predict.cpp src/video_clock.cpp)
+              src/js_format.cpp src/scope_draw.cpp src/readouts.cpp src/hdr_card.cpp src/js_json.cpp src/copy_texts.cpp src/video_predict.cpp src/video_clock.cpp
+              src/aces_v2.cpp src/aces_v2_manifest.cpp src/timecode.cpp src/aces_v2_trims.cpp)
 target_link_libraries(rudra_core PUBLIC rudra::rudra_platform PRIVATE nlohmann_json::nlohmann_json)

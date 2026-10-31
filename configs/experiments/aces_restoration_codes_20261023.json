@@ -1,0 +1,22 @@
+{
+  "purpose": "direct ordinary-pixel dequantization supervision; separate from future detail-gradient trials",
+  "training_report": "G:/datasets/corpora/run05_aces_spatial_train48_v2_20261023/report.json",
+  "development_report": "G:/datasets/corpora/run05_aces_spatial_dev24_v2_20261023/report.json",
+  "output": "G:/rudra_training/run05_aces_restoration300_20261023",
+  "control": "G:/rudra_training/run05_aces_lower_lr300_20261023/step300.pt",
+  "steps": 300,
+  "learning_rate": 0.0001,
+  "seed": 20261023,
+  "shadow_weight": 0,
+  "restoration_weight": 1,
+  "deterministic": true,
+  "channels": 8,
+  "crop": 128,
+  "batch": 4,
+  "normalization": "pixel_rms",
+  "loss": "existing absolute reconstruction plus ordinary-pixel source-restoration MSE in 8bit code units; target codes from exact OCIO view",
+  "evaluation": "final300 CPU full24 unchanged development gates; three fixed grade ramps; no snapshot selection",
+  "additional_adoption_checks": "all three ramps must reduce 0EV plateau fraction at least25% relative to control and not worsen gradient RMSE at any tested exposure; numerical development pass still required; visual and release separate",
+  "comparison_limitation": "trainer/loss code hashes differ from prior control due to new opt-in term; previous default math unchanged",
+  "release_authorized": false
+}

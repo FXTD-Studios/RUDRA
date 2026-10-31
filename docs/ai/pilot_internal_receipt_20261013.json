@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "scope": "internal-pilot",
+  "release_authorized": false,
+  "manifest_sha256": "e9177b9f9cf7375c87160ec7648515f307290e9b818dd6c173f9fb392d22ac02",
+  "reviewed_by": "Ahmed (project owner, approval in this conversation)",
+  "reviewed_at": "2026-10-13",
+  "decoder_dependencies": {
+    "D:\\A.I\\Devlopments\\rudra\\pipeline\\hdr_io.py": "831e2e9357c0632b7cb821b8f53aadd1fcff7699c75a922e085d591d8fe86a75",
+    "D:\\A.I\\Devlopments\\rudra\\training\\sdr2hdr_dataset.py": "cfadfdd88b263621de734b3f19c02a4130c7315634a65c52872f19be6076ce4e",
+    "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\_ingest_config.json": "fc1f165066d368de0b721a4a7b328a081485f9643a5b3c8c3417d7184099790e"
+  },
+  "sources": {
+    "netflix_cosmos": {
+      "commercial_training": true,
+      "weight_distribution": false,
+      "evidence_path": "accepted_evidence.txt",
+      "evidence_sha256": "1856727c69d61f73b7c955ba923af3f025e87105a94739377938d236299c9f83"
+    },
+    "netflix_meridian": {
+      "commercial_training": true,
+      "weight_distribution": false,
+      "evidence_path": "accepted_evidence.txt",
+      "evidence_sha256": "1856727c69d61f73b7c955ba923af3f025e87105a94739377938d236299c9f83"
+    },
+    "netflix_nocturne": {
+      "commercial_training": true,
+      "weight_distribution": false,
+      "evidence_path": "accepted_evidence.txt",
+      "evidence_sha256": "1856727c69d61f73b7c955ba923af3f025e87105a94739377938d236299c9f83"
+    },
+    "netflix_sol_levante": {
+      "commercial_training": true,
+      "weight_distribution": false,
+      "evidence_path": "accepted_evidence.txt",
+      "evidence_sha256": "1856727c69d61f73b7c955ba923af3f025e87105a94739377938d236299c9f83"
+    },
+    "netflix_sparks": {
+      "commercial_training": true,
+      "weight_distribution": false,
+      "evidence_path": "accepted_evidence.txt",
+      "evidence_sha256": "1856727c69d61f73b7c955ba923af3f025e87105a94739377938d236299c9f83"
+    }
+  }
+}

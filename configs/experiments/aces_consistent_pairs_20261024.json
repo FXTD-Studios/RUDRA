@@ -1,0 +1,9 @@
+{
+  "purpose": "test view-consistent highlight supervision without fitting arbitrary-look HDR targets to an ACES inverse",
+  "registered_before_build": true,
+  "source": "Existing CC0 natural TRAIN48 and development24 parents only; preserve scene splits and each recorded render exposure",
+  "construction": "Original linear AP1 reference -> declared exact ACES2 SDR view -> rounded 8-bit input. Highlight targets retain original linear reference; ordinary targets use exact inverse of clean codes bounded within 0.49 source codes; v1 shadows remain analytic. Save original linear reference separately.",
+  "build_acceptance": "No train/development scene or content overlap; all target display RGB within one code of source; at least 1000 TRAIN and 100 development highlight pixels; hashes and CC0 origin evidence present",
+  "limits": "Same research-used scenes, not independent holdout. Single exact ACES rendering does not establish arbitrary-look or generator generalization. Relative reference exposure, not recovered camera metadata. No change to existing benchmark or product defaults.",
+  "release_authorized": false
+}

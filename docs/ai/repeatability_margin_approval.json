@@ -1,0 +1,9 @@
+{
+  "approved": true,
+  "approved_by": "Ahmed (project owner, explicit conversation approval)",
+  "approved_at": "2026-10-14T14:59:49.330131+00:00",
+  "release_authorized": false,
+  "recipe_sha256": "f08727353d57a09053c893beba3eeaaaffddf5888b4baf5db50ad938641efd3e",
+  "approval_text": "yes",
+  "scope": "Two fresh identical 200-step scratch runs; 900 seconds per arm after preflight, 1800 seconds combined; 1 GB storage with 900 MB stop; approximately 228 GB read-only verification; no retry, continuation or promotion."
+}

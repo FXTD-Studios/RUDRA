@@ -76,15 +76,14 @@ def test_the_readme_separates_the_two():
         "the README no longer says the weights are non-commercial")
 
 
-def test_the_code_is_non_commercial():
-    """24 Sep 2026: the code moved from Apache 2.0 to PolyForm Noncommercial 1.0.0."""
+def test_the_code_is_apache():
+    """31 Oct 2026 (1.0.0): the code is Apache 2.0 again (it was PolyForm Noncommercial
+    from 24 Sep). The older HdM-derived checkpoints keep their own licence (checkpoints/LICENSE)."""
     body = (REPO / "LICENSE").read_text(encoding="utf-8")
-    assert body.startswith("# PolyForm Noncommercial License 1.0.0"), "LICENSE is no longer PolyForm Noncommercial 1.0.0"
-    assert "https://polyformproject.org/licenses/noncommercial/1.0.0" in body
+    head = body.lstrip()[:200]
+    assert head.startswith("Apache License") and "Version 2.0" in head, "LICENSE is not Apache 2.0"
     notice = (REPO / "NOTICE").read_text(encoding="utf-8")
-    assert "Required Notice: Copyright 2026 FXTD Studios" in notice, "the licence's Required Notice line is gone"
-    for path in ("README.md", "docs/HUB_MODEL_CARD.md", "checkpoints/LICENSE"):
+    assert "Copyright 2026 FXTD Studios" in notice, "the NOTICE copyright line is gone"
+    for path in ("README.md", "checkpoints/LICENSE"):
         text = (REPO / path).read_text(encoding="utf-8")
-        assert "PolyForm Noncommercial" in text, f"{path} does not name the code's licence"
-    readme = (REPO / "README.md").read_text(encoding="utf-8")
-    assert "Code is Apache 2.0" not in readme
+        assert "Apache" in text, f"{path} does not name the code's licence"

@@ -11,7 +11,12 @@
 // Every control the Studio page names keeps that page's id as its object
 // name, so every action, handler and read-out behaves as before.
 
+#include <QCheckBox>
+#include <QSettings>
 #include <QComboBox>
+#include <QDoubleSpinBox>
+#include <initializer_list>
+#include <tuple>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -26,6 +31,7 @@
 #include <QVBoxLayout>
 
 #include "main_window.hpp"
+#include "genfill_review.hpp"
 #include "region_editor.hpp"
 #include "scope_widgets.hpp"
 #include "source_panel.hpp"
@@ -95,6 +101,27 @@ void MainWindow::build_ui(bool with_viewer) {
     rail_right_ = build_right_rail();
     h->addWidget(rail_left_);
     h->addWidget(build_centre(with_viewer), 1);
+    // The scopes beside the viewer (29 Oct 2026): their own column, shown or hidden
+    // with the Scopes button on the viewer bar, the toolbar's scope icon or S.
+    {
+        scopes_dock_ = styled("scopesDock", "rail-right");
+        scopes_dock_->setFixedWidth(300);
+        auto* dv = column(scopes_dock_);
+        auto* scroll = new QScrollArea(scopes_dock_);
+        scroll->setObjectName("scopesScroll");
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        auto* inner = new QWidget(scroll);
+        inner->setObjectName("scopesInner");
+        auto* iv = column(inner, 12, 12);
+        scopes_->setParent(inner);
+        iv->addWidget(scopes_);
+        iv->addStretch(1);
+        scroll->setWidget(inner);
+        dv->addWidget(scroll, 1);
+        h->addWidget(scopes_dock_);
+    }
     h->addWidget(rail_right_);
     v->addWidget(body, 1);
     setCentralWidget(app);
@@ -120,9 +147,12 @@ QWidget* MainWindow::build_toolbar() {
     title->setMinimumWidth(200);
     h->addWidget(title);
     h->addStretch(1);
-    tabs_ = new Seg("itabs", {{"rec", "Reconstruct"}, {"grade", "Grade"}, {"deliver", "Deliver"}}, bar);
+    // Check is Simple's (29 Oct 2026): Look, Check, Deliver; Full keeps Reconstruct, Grade, Deliver.
+    tabs_ = new Seg("itabs", {{"rec", "Reconstruct"}, {"grade", "Grade"}, {"check", "Check"}, {"deliver", "Deliver"}}, bar);
     tabs_->button("rec")->setObjectName("tabRec");
     tabs_->button("grade")->setObjectName("tabGrade");
+    tabs_->button("check")->setObjectName("tabCheck");
+    tabs_->button("check")->hide();
     tabs_->button("deliver")->setObjectName("tabDeliver");
     tabs_->clicked = [this](const QString& k) {
         if (!session_.rail_right) run("rail-right");   // a tab brings its inspector back
@@ -147,7 +177,7 @@ QWidget* MainWindow::build_toolbar() {
     ws_ = new Seg("wsswitch", {{"simple", "Simple"}, {"full", "Full"}}, bar);
     ws_->button("simple")->setObjectName("wsSimple");
     ws_->button("full")->setObjectName("wsFull");
-    ws_->button("simple")->setToolTip("Hide the scopes and the advanced groups");
+    ws_->button("simple")->setToolTip("Look, Check, Deliver: the controls most shots need");
     ws_->button("full")->setToolTip("Everything");
     ws_->clicked = [this](const QString& k) { set_workspace(k); };
     ws_->setFixedHeight(26);
@@ -238,7 +268,10 @@ QWidget* MainWindow::build_left_rail() {
     v->addWidget(frames_empty_);
 
     // Collections: the frames the clipping lane has marked.
-    v->addWidget(label("Collections", {}, "section"));
+    auto* collections = new QWidget(rail);
+    collections->setObjectName("collections");
+    auto* colv = column(collections, 0, 4);
+    colv->addWidget(label("Collections", {}, "section"));
     const struct { const char* id; const char* dot; const char* text; } cols[] = {
         {"colHighlights", "dot-gold", "Clipped highlights"},
         {"colShadows", "dot-violet", "Crushed shadows"},
@@ -254,8 +287,9 @@ QWidget* MainWindow::build_left_rail() {
         rh->addWidget(label(c.text, {}, {}, r));
         rh->addStretch(1);
         rh->addWidget(label("0", c.id, "count", r));
-        v->addWidget(r);
+        colv->addWidget(r);
     }
+    v->addWidget(collections);
     v->addStretch(1);
 
     // The probe, as a card.
@@ -342,6 +376,16 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     auto* hudh = new QHBoxLayout(hud);
     hudh->setContentsMargins(5, 4, 5, 4);
     hudh->setSpacing(8);
+    // Simple's viewer bar (29 Oct 2026): the hint and one View menu in place of the compare controls.
+    hold_hint_ = label("Hold B for the original SDR", "holdHint", "vstatic", hud);
+    hold_hint_->setToolTip("Hold B to see the SDR you opened; let go for the HDR");
+    hold_hint_->hide();
+    hudh->addWidget(hold_hint_);
+    view_menu_btn_ = new QPushButton("View \u25be", hud);
+    view_menu_btn_->setObjectName("viewMenuBtn");
+    view_menu_btn_->setToolTip("What the viewer shows: the HDR, the original SDR, a wipe, what changed, false colour");
+    view_menu_btn_->hide();
+    hudh->addWidget(view_menu_btn_);
     view_mode_ = new Seg("viewMode", {{"model", "RUDRA"}, {"baseline", "Baseline"}, {"#wipeBtn", "Wipe"}}, hud, false);
     view_mode_->button("model")->setToolTip("The reconstruction (1)");
     view_mode_->button("baseline")->setToolTip("The analytic baseline (2)");
@@ -379,6 +423,19 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     zoom_val_ = label("100%", "zoomVal", "vstatic", hud);
     zoom_val_->setToolTip("Scroll to zoom, middle-drag to pan, double-click to fit");
     hudh->addWidget(zoom_val_);
+    scopes_btn_ = new QPushButton("Scopes", hud);
+    scopes_btn_->setObjectName("scopesBtn");
+    scopes_btn_->setCheckable(true);
+    scopes_btn_->setToolTip("Show or hide the scopes beside the viewer: waveform, histogram, vectorscope, RGB parade");
+    connect(scopes_btn_, &QPushButton::clicked, this, [this] {
+        if (workspace_ == "simple") {   // Simple: shown on Check, hidden elsewhere, unless the button says otherwise
+            simple_scopes_ = !scopes_dock_->isVisible();
+            sync_ui();
+        } else {
+            run("scopes");
+        }
+    });
+    hudh->addWidget(scopes_btn_);
     guide_btn_ = new QPushButton("Guides", hud);
     guide_btn_->setObjectName("guideBtn");
     guide_btn_->setCheckable(true);
@@ -435,8 +492,38 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     empty->setObjectName("empty");
     auto* ev = column(empty, 0, 6);
     ev->addStretch(1);
-    ev->addWidget(label("Drop an SDR frame", {}, "empty-b"), 0, Qt::AlignHCenter);
-    ev->addWidget(label("PNG, JPEG or TIFF \u2014 one, or a whole sequence", {}, "empty-t"), 0, Qt::AlignHCenter);
+    auto* empty_full = new QWidget(empty);
+    empty_full->setObjectName("emptyFull");
+    auto* efv = column(empty_full, 0, 6);
+    efv->addWidget(label("Drop an SDR frame", {}, "empty-b"), 0, Qt::AlignHCenter);
+    efv->addWidget(label("PNG, JPEG or TIFF \u2014 one, or a whole sequence", {}, "empty-t"), 0, Qt::AlignHCenter);
+    ev->addWidget(empty_full, 0, Qt::AlignHCenter);
+    {   // Simple's empty viewer (29 Oct 2026): one target, a button, the recent shots.
+        auto* es = styled("emptySimple", "empty-target");
+        es->setFixedWidth(440);
+        auto* esv = column(es, 28, 10);
+        esv->addWidget(label("Open a shot", "emptyTitle", "empty-title", es), 0, Qt::AlignHCenter);
+        auto* sub = label("Drop a frame, a folder of frames or a movie here", "emptySub", "empty-t", es);
+        sub->setAlignment(Qt::AlignHCenter);
+        sub->setWordWrap(true);
+        esv->addWidget(sub);
+        auto* choose = new QPushButton("Choose\u2026", es);
+        choose->setObjectName("emptyChoose");
+        choose->setProperty("role", "primary");
+        choose->setMinimumWidth(140);
+        connect(choose, &QPushButton::clicked, this, [this] { run("open"); });
+        esv->addWidget(choose, 0, Qt::AlignHCenter);
+        esv->addSpacing(8);
+        auto* recent = new QWidget(es);
+        recent->setObjectName("emptyRecent");
+        column(recent, 0, 2);
+        esv->addWidget(recent);
+        auto* none = label("Your recent shots will appear here.", "emptyRecentNone", "empty-t", es);
+        none->setAlignment(Qt::AlignHCenter);
+        esv->addWidget(none);
+        es->hide();
+        ev->addWidget(es, 0, Qt::AlignHCenter);
+    }
     ev->addStretch(1);
     viewer_stack_->addWidget(empty);
 #ifdef RUDRA_APP_VIEWER
@@ -529,10 +616,169 @@ QWidget* MainWindow::build_right_rail() {
     // Reconstruct
     auto* rec = ctl();
     auto* recv = column(rec, 0, 12);
+    // The learned ACES 2.0 master's trims (28 Oct 2026, core/aces_v2_trims.hpp):
+    // shown while the viewer runs the model, the same in the viewer and the renders.
+    {
+        auto [tc, tcv] = card(rec, 12, 6);
+        tc->setObjectName("acesTrimsCard");
+        auto* head = new QWidget(tc);
+        auto* hh = new QHBoxLayout(head);
+        hh->setContentsMargins(0, 0, 0, 0);
+        hh->addWidget(label("Learned ACES 2.0", "acesTrimsHead", "card-head"));
+        hh->addStretch(1);
+        auto* reset = new QPushButton("Reset", head);
+        reset->setObjectName("acesTrimsReset");
+        reset->setToolTip("Back to the model's own master: strength 100 %, saturation 100 %, no peak limit");
+        connect(reset, &QPushButton::clicked, this, [this] { set_aces_trims({}); });
+        hh->addWidget(reset);
+        tcv->addWidget(head);
+        // What the monitor is shown: the master's scene light, or an ACES 2.0 output in display light.
+        tcv->addWidget(label("Monitor", {}, "note", tc));
+        auto* mon = new Seg("acesMonitor", {{"scene", "Scene"}, {"sdr100", "SDR 100"}, {"hdr1000", "HDR 1000"}}, tc);
+        mon->setToolTip("What the viewer shows: the master's scene light (RUDRA's view, to the view peak), or the ACES 2.0 "
+                        "output a deliverable gets, SDR 100 nits Rec.709 or HDR 1000 nits P3 D65 on Rec.2100 PQ, in "
+                        "display light (an HDR swapchain shows the nits as they are)");
+        mon->clicked = [this](const QString& k) { set_aces_monitor(k); };
+        tcv->addWidget(mon);
+        // What the SDR was made for: the model reads Rec.709 on BT.1886 (2.4).
+        auto* sdrow = new QWidget(tc);
+        sdrow->setObjectName("acesSourceDisplayRow");
+        auto* sdv = column(sdrow, 0, 6);
+        sdv->addWidget(label("Source display", {}, "note", sdrow));
+        auto* sd = new Seg("acesSourceDisplay", {{"bt1886", "BT.1886 2.4"}, {"srgb", "sRGB"}, {"gamma22", "Gamma 2.2"}}, sdrow);
+        sd->setToolTip("The display the SDR was mastered for. The model reads every frame as the ACES 2.0 SDR 100 nits "
+                       "(Rec.709) output on a BT.1886 2.4 display; an sRGB or gamma 2.2 master is re-encoded to BT.1886 "
+                       "code values first, so the same display light reaches the model. Broadcast Rec.709: BT.1886");
+        sd->clicked = [this](const QString& k) { set_aces_source_display(k); };
+        sdv->addWidget(sd);
+        tcv->addWidget(sdrow);
+        // Reference stills: grab the frame, then compare it in the baseline's place.
+        {
+            auto* row = new QWidget(tc);
+            row->setObjectName("refRow");
+            auto* rh = new QHBoxLayout(row);
+            rh->setContentsMargins(0, 4, 0, 0);
+            rh->setSpacing(6);
+            auto* grab = new QPushButton("Grab still", row);
+            grab->setObjectName("refGrab");
+            grab->setToolTip("Keep the frame on screen as a reference still (Ctrl+Alt+G)");
+            connect(grab, &QPushButton::clicked, this, [this] { run("still-grab"); });
+            auto* box = new QComboBox(row);
+            box->setObjectName("refStills");
+            box->setToolTip("The reference still to compare with");
+            box->setEnabled(false);
+            connect(box, &QComboBox::activated, this, [this](int i) { set_reference_compare(ref_compare_, i); });
+            auto* cmp = new QPushButton("Compare", row);
+            cmp->setObjectName("refCompare");
+            cmp->setCheckable(true);
+            cmp->setEnabled(false);
+            cmp->setToolTip("Show the still in the baseline's place: Baseline, Wipe and B compare it with this frame (Ctrl+Alt+W)");
+            connect(cmp, &QPushButton::toggled, this, [this](bool on) { set_reference_compare(on); });
+            rh->addWidget(grab);
+            rh->addWidget(box, 1);
+            rh->addWidget(cmp);
+            tcv->addWidget(row);
+            auto* rn = label("", "refNote", "small", tc);
+            rn->hide();
+            tcv->addWidget(rn);
+        }
+        auto slider = [&](const char* id, const char* name, const char* unit, int lo, int hi, const char* tip) {
+            auto* w = new QWidget(tc);
+            w->setObjectName(QString(id) + "Row");
+            w->setProperty("role", "slider");
+            auto* sv = column(w, 0, 6);
+            auto* top = new QWidget(w);
+            auto* th = new QHBoxLayout(top);
+            th->setContentsMargins(0, 0, 0, 0);
+            th->setSpacing(4);
+            th->addWidget(label(name, {}, "slider-lab"));
+            th->addStretch(1);
+            th->addWidget(label("", QString(id) + "Val", "slider-val"));
+            th->addWidget(label(unit, {}, "unit"));
+            sv->addWidget(top);
+            auto* s = new QSlider(Qt::Horizontal, w);
+            s->setObjectName(id);
+            s->setRange(lo, hi);
+            s->setToolTip(QString::fromUtf8(tip));
+            sv->addWidget(s);
+            tcv->addWidget(w);
+            return s;
+        };
+        auto* strength = slider("acesStrength", "Strength", "%", 0, 150,
+                                "How far the master moves from the plain ACES inverse (0 %) to the model (100 %) or past it");
+        auto* sat = slider("acesSaturation", "Highlight saturation", "%", 0, 200,
+                           "The colour of the rebuilt pixels about their own luminance; the rest of the frame is untouched");
+        auto* peak = slider("acesPeak", "Peak limit", "nits", 3, 41,
+                            "A soft limit on the rebuilt pixels' brightness (rolls off from 75 % of it); far right is no limit");
+        auto* expo = slider("acesExposure", "Exposure", "EV", -30, 30,
+                            "The whole master up or down, in tenths of a stop (after the strength)");
+        auto* con = slider("acesContrast", "Contrast", "%", 50, 150,
+                           "About 18 % grey, on luminance: the hue stays (100 % = as the model made it)");
+        auto changed = [this, strength, sat, peak, expo, con] {
+            aces_v2::AcesTrims t;
+            t.strength = strength->value() / 100.0;
+            t.saturation = sat->value() / 100.0;
+            t.peak_nits = peak->value() >= peak->maximum() ? 0.0 : peak->value() * 250.0;   // 750 .. 10000 by 250
+            t.exposure_ev = expo->value() / 10.0;
+            t.contrast = con->value() / 100.0;
+            if (!(t == aces_trims_)) set_aces_trims(t);
+        };
+        for (auto* s : {strength, sat, peak, expo, con}) connect(s, &QSlider::valueChanged, this, changed);
+        {   // Per shot: the trims are remembered with each shot; copy one shot's onto another.
+            auto* row = new QWidget(tc);
+            auto* rh = new QHBoxLayout(row);
+            rh->setContentsMargins(0, 4, 0, 0);
+            rh->setSpacing(6);
+            auto* copy = new QPushButton("Copy trims", row);
+            copy->setObjectName("acesTrimsCopy");
+            copy->setToolTip("Keep this shot's trims to paste onto another shot (Batch: Apply puts them on the selected jobs)");
+            connect(copy, &QPushButton::clicked, this, [this] { copy_aces_trims(); });
+            auto* paste = new QPushButton("Paste", row);
+            paste->setObjectName("acesTrimsPaste");
+            paste->setEnabled(false);
+            paste->setToolTip("The copied trims onto this shot");
+            connect(paste, &QPushButton::clicked, this, [this] { paste_aces_trims(); });
+            rh->addWidget(copy);
+            rh->addWidget(paste);
+            rh->addStretch(1);
+            tcv->addWidget(row);
+        }
+        auto* note = label("Applied after the model, the same in the viewer, Deliver and the batch; written into each "
+                           "render's provenance. Remembered per shot: a shot opened again gets its own back.",
+                           "acesTrimsNote", "small", tc);
+        note->setWordWrap(true);
+        tcv->addWidget(note);
+        tc->hide();   // until the viewer runs the learned model
+        recv->addWidget(tc);
+    }
+    {   // Simple: what the Look page says before the learned model runs, and the way to everything else.
+        auto* wait = label("", "lookWaiting", "small", rec);
+        wait->setWordWrap(true);
+        wait->hide();
+        recv->addWidget(wait);
+        auto* get = new QPushButton("Download the model\u2026", rec);
+        get->setObjectName("lookDownload");
+        get->setProperty("role", "primary");
+        get->setToolTip("File > Model packages: download the learned ACES 2.0 model, checked before it is used");
+        connect(get, &QPushButton::clicked, this, [this] { open_model_manager(); });
+        get->hide();
+        recv->addWidget(get, 0, Qt::AlignLeft);
+        auto* adv = new QPushButton("Advanced \u2192", rec);
+        adv->setObjectName("lookAdvanced");
+        adv->setFlat(true);
+        adv->setToolTip("Full: the analytic route, Source curves, calibration, region exposure and every option");
+        connect(adv, &QPushButton::clicked, this, [this] { set_workspace("full"); });
+        adv->hide();
+        recv->addWidget(adv, 0, Qt::AlignLeft);
+    }
+    // Full's analytic reconstruction, under one parent so Simple hides it at once.
+    auto* analytic = new QWidget(rec);
+    analytic->setObjectName("recAnalytic");
+    auto* anv = column(analytic, 0, 12);
     // Source (roadmap 3.1): the curve that made the SDR, before anything is
     // reconstructed from it. The baseline is its inverse; the masks and the
     // residual do not depend on it, so the picker runs no inference.
-    recv->addWidget(label("Source", {}, "title", rec));
+    anv->addWidget(label("Source", "recSourceTitle", "title", rec));
     {
         auto scard = card(rec, 12, 12);
         source_panel_ = new SourcePanel(scard.first);
@@ -545,15 +791,16 @@ QWidget* MainWindow::build_right_rail() {
         source_panel_->load_reference = [this] { load_reference({}); };
         source_panel_->reference_cleared = [this] { session_.clear_reference(); };
         scard.second->addWidget(source_panel_);
-        recv->addWidget(scard.first);
+        scard.first->setObjectName("recSourceCard");
+        anv->addWidget(scard.first);
         auto* n0 = label("The baseline is the analytic inverse of this curve. Unknown is the ACES inverse every "
                          "master so far used. The masks and the residual are unchanged by the choice.",
                          {}, "note", rec);   // "note", not "note-p": the page's three note-p are compared in order
         n0->setWordWrap(true);
         notes_.push_back(n0);
-        recv->addWidget(n0);
+        anv->addWidget(n0);
     }
-    recv->addWidget(label("Reconstruction", {}, "title", rec));
+    anv->addWidget(label("Reconstruction", "recReconTitle", "title", rec));
     // Not a structured binding: the lambdas below use both, and Apple clang 15
     // cannot capture a structured binding (C++20 allows it, from clang 16).
     auto rcard_rcv = card(rec, 12, 14);
@@ -612,13 +859,23 @@ QWidget* MainWindow::build_right_rail() {
     preserve_ = new CheckRow("preserve", "Preserve outside masks", "preserveHint", "do-no-harm", rcard);
     preserve_->clicked = [this] { session_.toggle_preserve(); };
     rcv->addWidget(preserve_);
-    recv->addWidget(rcard);
+    rcard->setObjectName("recReconCard");
+    anv->addWidget(rcard);
+    {   // Shown on the learned route: these grade the analytic reconstruction only.
+        auto* rn = label("Learned ACES 2.0 is rendering: these controls are the analytic reconstruction's and do not "
+                         "reach its frames or renders. Its trims are in the Learned ACES 2.0 card above.",
+                         "routeNoteRec", "small", rec);
+        rn->setWordWrap(true);
+        rn->hide();
+        anv->addWidget(rn);
+    }
     auto* n1 = label("The reconstruction is applied where clipping or crushed shadows made the SDR mapping "
                      "non-invertible. Everywhere else the analytic baseline is preserved unchanged.",
                      {}, "note-p", rec);
     n1->setWordWrap(true);
     notes_.push_back(n1);
-    recv->addWidget(n1);
+    anv->addWidget(n1);
+    recv->addWidget(analytic);
     pages->addWidget(rec);
     pages_.push_back(rec);
 
@@ -636,6 +893,13 @@ QWidget* MainWindow::build_right_rail() {
     mask_panel_->done = [this] { arm_mask(-1); };
     gcv->addWidget(mask_panel_);
     gv->addWidget(gcard);
+    {
+        auto* rn = label("Learned ACES 2.0 is rendering: region exposure is the analytic master's and does not reach "
+                         "the learned frames or renders.", "routeNoteGrade", "small", grade);
+        rn->setWordWrap(true);
+        rn->hide();
+        gv->addWidget(rn);
+    }
     auto* n2 = label("A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to "
                      "scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file.",
                      {}, "note-p", grade);
@@ -649,18 +913,210 @@ QWidget* MainWindow::build_right_rail() {
     auto* del = ctl();
     auto* dv = column(del, 0, 12);
     dv->addWidget(label("Delivery", {}, "title", del));
+    // Simple's Deliver (29 Oct 2026): four choices; Custom… opens the full What to write card.
+    {
+        auto [pc, pcv] = card(del, 12, 8);
+        pc->setObjectName("deliverPresets");
+        pcv->addWidget(label("What do you need?", {}, "card-head", pc));
+        auto* presets = new Seg("deliverPreset",
+                                {{"master", "Grading master\nACES 2065-1 EXR, for the colourist"},
+                                 {"hdr10", "HDR10 movie\nHEVC 10-bit, PQ 1000 nits, with metadata"},
+                                 {"hlg", "Broadcast HDR\nHLG, ProRes 422 HQ"},
+                                 {"custom", "Custom\u2026\nEvery format, colour and codec"}},
+                                pc, true, 1);
+        presets->clicked = [this](const QString& k) { apply_deliver_preset(k); };
+        pcv->addWidget(presets);
+        pc->hide();
+        dv->addWidget(pc);
+    }
+    // Full's cards (and Simple's Custom…), under one parent so Simple hides them at once.
+    auto* full_cards = new QWidget(del);
+    full_cards->setObjectName("deliverFullCards");
+    auto* fcv_outer = column(full_cards, 0, 12);
+    // What renders the files and what they are (27 Oct 2026, deliver_choice.hpp):
+    // each control under its name, as the Render card's fields are.
+    {
+        auto [kc, kcv] = card(del, 12, 4);
+        kc->setObjectName("deliverCard");
+        kcv->addWidget(label("What to write", {}, "card-head", kc));
+        auto field = [&](const QString& key, QWidget* control, const char* id, const char* tip) {
+            auto* w = new QWidget(kc);
+            w->setObjectName(id);
+            auto* fv = column(w, 0, 4);
+            fv->setContentsMargins(0, 4, 0, 2);
+            fv->addWidget(label(key, {}, "note", w));
+            control->setParent(w);
+            control->setToolTip(QString::fromUtf8(tip));
+            fv->addWidget(control);
+            kcv->addWidget(w);
+        };
+        auto* src = new Seg("deliverSource", {{"aces", "Learned ACES 2.0"}, {"analytic", "Analytic"}});
+        src->clicked = [this](const QString& k) { set_deliver("source", k); };
+        field("Source", src, "deliverSourceRow",
+              "What renders the files: the learned ACES 2.0 model (what the viewer shows when it is loaded) "
+              "or the analytic reconstruction");
+        auto* out = new Seg("deliverOutput", {{"still", "Still"}, {"sequence", "Sequence"}, {"movie", "MOV"}});
+        out->clicked = [this](const QString& k) { set_deliver("output", k); };
+        field("Output", out, "deliverOutputRow",
+              "Still: the frame on screen. Sequence: every loaded frame, one file each. MOV: one QuickTime movie");
+        auto* image = new QComboBox;
+        image->setObjectName("deliverImage");
+        image->addItem("EXR · 32-bit float", "exr32");
+        image->addItem("EXR · 16-bit half", "exr16");
+        image->addItem("DPX · 10-bit", "dpx10");
+        connect(image, &QComboBox::activated, this, [this, image](int i) { set_deliver("image", image->itemData(i).toString()); });
+        field("Format", image, "deliverImageRow", "The file type of a still or a sequence");
+        auto* gamut = new Seg("deliverGamut", {{"ap0", "ACES 2065-1"}, {"acescg", "ACEScg"}, {"linear", "Rec.2020 linear"}});
+        gamut->clicked = [this](const QString& k) { set_deliver("gamut", k); };
+        field("Colour", gamut, "deliverGamutRow",
+              "The EXR's primaries: ACES 2065-1 (AP0, the archive and interchange master) or ACEScg (AP1, for compositing)");
+        auto* bits = new Seg("deliverBits", {{"10", "10-bit"}, {"16", "16-bit"}});
+        bits->clicked = [this](const QString& k) { set_deliver("bits", k); };
+        field("Bit depth", bits, "deliverBitsRow",
+              "10-bit: ProRes. 16-bit: uncompressed RGB QuickTime, 'b48r' (lossless, 6 bytes a pixel a frame)");
+        auto* codec = new QComboBox;
+        codec->setObjectName("deliverCodec");
+        codec->addItem("ProRes 422 HQ \u00b7 10-bit 4:2:2", "prores422hq");
+        codec->addItem("ProRes 4444 \u00b7 4:4:4 (12-bit)", "prores4444");
+        codec->addItem("ProRes 4444 XQ \u00b7 4:4:4 (12-bit, highest rate)", "prores4444xq");
+        codec->addItem("HEVC HDR10 \u00b7 Main 10 MP4 (PQ, metadata in the file)", "hevc10");
+        connect(codec, &QComboBox::activated, this, [this, codec](int i) { set_deliver("codec", codec->itemData(i).toString()); });
+        field("Codec", codec, "deliverCodecRow",
+              "ProRes 422 HQ is 10-bit 4:2:2 (review, editorial); ProRes 4444 / 4444 XQ keep full chroma and store up "
+              "to 12 bits (XQ: the HDR master rate). HEVC HDR10: a Main 10 MP4 with the measured MaxCLL / MaxFALL and "
+              "the P3 D65 1000-nit mastering display in the file (the learned model, PQ)");
+        auto* enc = new Seg("deliverEncoding",
+                            {{"logc4", "LogC4"}, {"acescct", "ACEScct"}, {"pq", "PQ"}, {"hlg", "HLG"}, {"sdr", "SDR"}});
+        enc->clicked = [this](const QString& k) { set_deliver("encoding", k); };
+        enc->button("logc4")->setToolTip("ARRI LogC4 in ARRI Wide Gamut 4: the scene-linear master, no peak or knee");
+        enc->button("acescct")->setToolTip("ACEScct in ACES AP1: the scene-linear master, no peak or knee");
+        field("Encoding", enc, "deliverEncodingRow",
+              "How a DPX or a movie holds the master: a camera log (scene-referred), or an ACES 2.0 output "
+              "(PQ, HLG, or the SDR Rec.709 trim pass of the same master)");
+        auto* pk = new Seg("deliverPqPeak", {{"1000", "1000"}, {"2000", "2000"}, {"4000", "4000"}});
+        pk->clicked = [this](const QString& k) { set_deliver("pq_peak", k); };
+        field("PQ peak", pk, "deliverPqPeakRow",
+              "The ACES 2.0 HDR output's peak, in nits (P3 D65): 1000 for HDR10 and most streaming, 2000 / 4000 "
+              "for Dolby Vision mastering and theatrical HDR");
+        auto* fps = new QComboBox;
+        fps->setObjectName("deliverFps");
+        for (const auto& [text, value] : std::initializer_list<std::pair<const char*, double>>{
+                 {"23.976", 24000.0 / 1001.0}, {"24", 24.0}, {"25", 25.0}, {"29.97", 30000.0 / 1001.0},
+                 {"30", 30.0}, {"48", 48.0}, {"50", 50.0}, {"59.94", 60000.0 / 1001.0}, {"60", 60.0}})
+            fps->addItem(text, value);
+        fps->setCurrentIndex(1);
+        connect(fps, &QComboBox::activated, this,
+                [this, fps](int i) { set_deliver("fps", QString::number(fps->itemData(i).toDouble(), 'g', 12)); });
+        field("Frame rate", fps, "deliverFpsRow", "A movie made from stills has no clock of its own: its frame rate");
+        auto* keep = new CheckRow("deliverKeepExr", "Keep the EXR masters", "deliverKeepExrHint", "beside the movie", kc);
+        keep->setToolTip("Also write the EXR master of every frame: ACEScg float32 with the mask channel, or ACES 2065-1 "
+                         "half (ST 2065-4) with the mask in mask/");
+        keep->clicked = [this] { set_deliver("keep_exr", deliver_.keep_exr ? "0" : "1"); };
+        kcv->addWidget(keep);
+        // The AI fill (layer 3, genfill_job.hpp): an AI-filled copy of a learned EXR render.
+        auto* ai = new CheckRow("deliverAiFill", "AI fill (experimental)", "deliverAiFillHint",
+                                "clipped highlights, crushed shadows", kc);
+        ai->setToolTip("After the render, a Wan2.1-VACE model trained on RUDRA's own footage fills only what the "
+                       "8-bit source cannot know: fully clipped highlights and fully crushed shadows. It writes a "
+                       "copy beside the master (<name>_aifill); no 8-bit code of the SDR view changes, and "
+                       "rudra.generated marks every pixel it invented");
+        ai->clicked = [this] { set_deliver("ai_fill", deliver_.ai_fill ? "0" : "1"); };
+        kcv->addWidget(ai);
+        {
+            auto* box = new QWidget(kc);
+            box->setObjectName("deliverAiFillOptions");
+            auto* bv = column(box, 0, 2);
+            bv->setContentsMargins(14, 0, 0, 4);
+            auto spin = [&](const char* id, const QString& key, int lo, int hi, const QString& special, const char* tip) {
+                auto* sb = new QSpinBox(box);
+                sb->setObjectName(id);
+                sb->setRange(lo, hi);
+                if (!special.isEmpty()) sb->setSpecialValueText(special);
+                connect(sb, &QSpinBox::valueChanged, this, [this, key](int value) { set_deliver(key, QString::number(value)); });
+                auto* r = new QWidget(box);
+                auto* rcol = column(r, 0, 2);
+                rcol->addWidget(label(QString::fromUtf8(tip).section('|', 0, 0), {}, "note", r));
+                sb->setToolTip(QString::fromUtf8(tip).section('|', 1));
+                sb->setParent(r);
+                rcol->addWidget(sb);
+                bv->addWidget(r);
+            };
+            spin("deliverAiTauHigh", "ai_tau_high", 128, 256, {},
+                 "Highlight threshold (8-bit code)|Codes at or above it are filled; 256 fills no highlights. "
+                 "The ACES window's \"AI fill regions\" view shows them");
+            spin("deliverAiTauLow", "ai_tau_low", -1, 64, "off",
+                 "Shadow threshold (8-bit code)|Codes at or below it are filled; off fills no shadows");
+            auto line = [&](const char* id, const QString& key, const QString& head, const QString& placeholder) {
+                auto* le = new QLineEdit(box);
+                le->setObjectName(id);
+                le->setPlaceholderText(placeholder);
+                connect(le, &QLineEdit::editingFinished, this, [this, le, key] { set_deliver(key, le->text()); });
+                bv->addWidget(label(head, {}, "note", box));
+                bv->addWidget(le);
+            };
+            line("deliverAiPromptHighlight", "ai_prompt_highlight", "Highlight prompt (optional)",
+                 "e.g. warm sunset sun with soft halo");
+            line("deliverAiPromptShadow", "ai_prompt_shadow", "Shadow prompt (optional)", "e.g. dark wood grain");
+            spin("deliverAiSeed", "ai_seed", 0, 999999, {}, "Seed|Another seed gives another plausible fill");
+            spin("deliverAiSteps", "ai_steps", 1, 100, {}, "Steps|Denoising steps: more is slower, often cleaner (30)");
+            {   // v3 (30 Oct 2026): the AI draws the shape; how bright it is comes from RUDRA's estimate plus this
+                auto* r = new QWidget(box);
+                auto* rcol = column(r, 0, 2);
+                rcol->addWidget(label("Highlight brightness (stops)", {}, "note", r));
+                auto* bs = new QDoubleSpinBox(r);
+                bs->setObjectName("deliverAiBrightness");
+                bs->setRange(-3.0, 3.0);
+                bs->setSingleStep(0.25);
+                bs->setDecimals(2);
+                bs->setSuffix(" stops");
+                bs->setToolTip("How much brighter (or darker) than RUDRA's estimate the filled highlights are. "
+                               "0 = the estimate. The AI draws the shape inside a clipped area; its brightness is yours to set");
+                connect(bs, &QDoubleSpinBox::valueChanged, this, [this](double v) { set_deliver("ai_brightness", QString::number(v, 'g', 6)); });
+                rcol->addWidget(bs);
+                bv->addWidget(r);
+            }
+            auto* setup = label("", "deliverAiSetup", "small", box);
+            setup->setWordWrap(true);
+            bv->addWidget(setup);
+            {   // Where the model is, and the last fill's review before it goes to a client (28 Oct 2026 review).
+                auto* row = new QWidget(box);
+                auto* rh = new QHBoxLayout(row);
+                rh->setContentsMargins(0, 4, 0, 0);
+                auto* su = new QPushButton("Setup…", row);
+                su->setObjectName("deliverAiSetupButton");
+                su->setToolTip("Where the Python, the repository, Wan2.1-VACE and the RUDRA LoRA are; checks them");
+                connect(su, &QPushButton::clicked, this, [this] { GenFillSetupDialog(this).exec(); sync_deliver(); });
+                auto* review = new QPushButton("Review fill…", row);
+                review->setObjectName("deliverAiReview");
+                review->setToolTip("Page through the last AI fill (or one you pick): A master, B fill, the invented pixels, "
+                               "and the frames where the fill flickers");
+                connect(review, &QPushButton::clicked, this, [this] { review_genfill(); });
+                rh->addWidget(su);
+                rh->addWidget(review);
+                rh->addStretch(1);
+                bv->addWidget(row);
+            }
+            kcv->addWidget(box);
+        }
+        auto* note = label("", "deliverNote", "small", kc);
+        note->setWordWrap(true);
+        kcv->addWidget(note);
+        fcv_outer->addWidget(kc);
+    }
     auto [fcard, fcv] = card(del, 12, 0);
     container_field_ = label("OpenEXR \u2014 ACES 2065-1", "containerField", "value");
     primaries_field_ = label("AP0 (ST 2065-4)", "primariesField", "value");
     for (auto* r : {row("Container", container_field_, "field"),
-                    row("Transfer", label("linear (scene-referred)", {}, "value"), "field"),
+                    row("Transfer", label("linear (scene-referred)", "transferField", "value"), "field"),
                     row("Primaries", primaries_field_, "field"),
-                    row("White", label("diffuse 1.0 = 203 nits", {}, "value"), "field")}) {
+                    row("White", label("diffuse 1.0 = 203 nits", "whiteField", "value"), "field")}) {
         r->layout()->setContentsMargins(0, 9, 0, 9);
         fcv->addWidget(r);
     }
-    dv->addWidget(fcard);
+    if (auto* wf = fcard->findChild<QLabel*>("whiteField")) wf->parentWidget()->setObjectName("whiteRow");
+    fcv_outer->addWidget(fcard);
     auto [ocard, ocv] = card(del, 12, 10);
+    ocard->setObjectName("deliverAnalyticOptions");   // the analytic master's own; hidden for the learned source
     anchor_ = new CheckRow("anchor", "Anchor to source exposure", "anchorHint", "conform", ocard);
     anchor_->clicked = [this] {
         session_.toggle_anchor();
@@ -702,7 +1158,9 @@ QWidget* MainWindow::build_right_rail() {
         ocv->addWidget(w);
     }
     ocv->addWidget(carry_chroma_);
-    dv->addWidget(ocard);
+    fcv_outer->addWidget(ocard);
+
+    dv->addWidget(full_cards);
 
     auto [rendc, form] = card(del, 12, 4);
     form->addWidget(label("Render", {}, "card-head", rendc));
@@ -719,16 +1177,73 @@ QWidget* MainWindow::build_right_rail() {
     start->setObjectName("renderStart");
     start->setRange(0, 9999999);
     start->setValue(1);
+    // The timecode and reel a render carries (28 Oct 2026): a movie's own by
+    // default; for stills and sequences, a start timecode typed here.
+    auto* tcode = new QLineEdit(rendc);
+    tcode->setObjectName("renderTimecode");
+    tcode->setPlaceholderText("from the movie, else none (e.g. 01:00:00:00)");
+    tcode->setToolTip("The first frame's timecode (HH:MM:SS:FF, ;FF for drop frame). Empty: a movie keeps its own; "
+                      "stills and sequences get none. Written into the EXR header and the MOV");
+    auto* reel = new QLineEdit(rendc);
+    reel->setObjectName("renderReel");
+    reel->setPlaceholderText("from the movie, else its file name");
+    reel->setToolTip("The reel name written into the EXR header (reelName) and the MOV, for the conform");
+    // The file, as Nuke's Write takes it (29 Oct 2026): one path with the frame
+    // number as ####, a Browse… beside it, and Create directories. The folder and
+    // name fields stay (hidden) as what Master EXR, the settings and projects read.
+    auto* file_row = new QWidget(rendc);
+    auto* frh = new QHBoxLayout(file_row);
+    frh->setContentsMargins(0, 0, 0, 0);
+    frh->setSpacing(6);
+    auto* file = new QLineEdit(file_row);
+    file->setObjectName("renderFile");
+    file->setPlaceholderText("D:\\Renders\\SH010\\SH010_hdr.####.exr");
+    file->setToolTip("Where the render goes, as in Nuke's Write: folder, name, #### for the frame number (or %04d), "
+                     "extension. The files are written into that folder; nothing there is ever replaced");
+    auto* browse = new QPushButton("Browse\u2026", file_row);
+    browse->setObjectName("renderBrowse");
+    browse->setToolTip("Choose the folder and the name");
+    frh->addWidget(file, 1);
+    frh->addWidget(browse);
+    auto* mkdirs = new QCheckBox("Create directories", rendc);
+    mkdirs->setObjectName("renderCreateDirs");
+    mkdirs->setChecked(QSettings().value("deliver/createDirs", true).toBool());
+    mkdirs->setToolTip("Make the folder in the path when it is not there yet (Nuke's create directories); off: a "
+                       "missing folder stops the render");
+    connect(mkdirs, &QCheckBox::toggled, this, [](bool on) { QSettings().setValue("deliver/createDirs", on); });
     for (const auto& [text, field] : std::vector<std::pair<QString, QWidget*>>{
-             {"Render folder", dir}, {"Output", mode}, {"Render name", name}, {"Start frame", start}}) {
-        form->addWidget(label(text, {}, "note", rendc));
+             {"File", file_row}, {"Render folder", dir}, {"Output", mode}, {"Render name", name}, {"Start frame", start},
+             {"Start timecode", tcode}, {"Reel", reel}}) {
+        auto* l = label(text, {}, "note", rendc);
+        l->setObjectName((field == file_row ? QStringLiteral("renderFile") : field->objectName()) + "Label");
+        form->addWidget(l);
         form->addWidget(field);
         form->addSpacing(2);
+        if (field == mode || field == dir || field == name) {
+            l->hide();
+            field->hide();
+        }
+        if (field == file_row) {
+            form->addWidget(mkdirs);
+            form->addSpacing(2);
+        }
     }
+    // The path and the hidden fields follow each other.
+    connect(file, &QLineEdit::editingFinished, this, [this] { render_file_edited(); });
+    connect(browse, &QPushButton::clicked, this, [this] { browse_render_file(); });
+    // The folder or name changed (a project, a test, the settings): the path and the note follow.
+    for (auto* e : {dir, name}) connect(e, &QLineEdit::textChanged, this, [this] { sync_deliver(); });
+    connect(start, &QSpinBox::valueChanged, this, [this] { sync_deliver(); });
+    connect(mode, &QComboBox::currentIndexChanged, this, [this, mode](int) {
+        const QString m = mode->currentData().toString();
+        if (m == "image" && deliver_.output != "still") set_deliver("output", "still");
+        else if (m == "sequence" && deliver_.output == "still") set_deliver("output", "sequence");
+    });
     auto* small = label("Sequence uses loaded frame order and the current grade for every frame. Nothing is ever "
                         "replaced.",
                         {}, "small", rendc);
     small->setWordWrap(true);
+    small->setObjectName("renderHint");
     form->addWidget(small);
     auto* status = label("", "renderStatus", "render-status", rendc);
     status->setWordWrap(true);
@@ -750,16 +1265,75 @@ QWidget* MainWindow::build_right_rail() {
     ah->addWidget(btn_reprocess_, 1);
     ah->addWidget(btn_master_, 1);
     form->addWidget(acts);
+    auto* batch_add = new QPushButton("Add to batch queue", rendc);
+    batch_add->setObjectName("btnBatchAdd");
+    batch_add->setToolTip("Queue this shot with these settings, to render with others through the learned ACES 2.0 "
+                          "model (Ctrl+B; Deliver > Batch queue… shows the queue)");
+    connect(batch_add, &QPushButton::clicked, this, [this] { run("batch-add"); });
+    form->addWidget(batch_add);
     dv->addWidget(rendc);
-    auto* n3 = label("ProRes, HDR10 and HLG are written by <span style=\"font-family:'Geist Mono'\">rudra deliver</span> "
-                     "from the command line until video delivery arrives in the app.",
+    auto* n3 = label("Stills, sequences and MOVs render here. HDR10 and HLG movies are on the toolbar's Export sheet; "
+                     "the learned ACES 2.0 master window (Ctrl+Shift+E) adds 16-bit TIFFs and a preview.",
                      {}, "note-p", del);
     n3->setTextFormat(Qt::RichText);
     n3->setWordWrap(true);
     notes_.push_back(n3);
     dv->addWidget(n3);
+    dv->addStretch(1);   // the Output card's rows come and go: spare height goes below, not between the cards
     pages->addWidget(del);
     pages_.push_back(del);
+
+    // Check (Simple, 29 Oct 2026): the frame in four numbers, the reference stills;
+    // the scopes show in their column beside the picture while this tab is on.
+    {
+        auto* chk = ctl();
+        chk->setObjectName("checkPage");
+        auto* cv = column(chk, 0, 12);
+        cv->addWidget(label("Check", {}, "title", chk));
+        auto [sc, scv] = card(chk, 12, 4);
+        sc->setObjectName("checkSummary");
+        auto* head = new QWidget(sc);
+        auto* hh = new QHBoxLayout(head);
+        hh->setContentsMargins(0, 0, 0, 4);
+        hh->addWidget(label("This frame", {}, "card-head"));
+        hh->addStretch(1);
+        hh->addWidget(label("measured", "checkSource", "note"));
+        scv->addWidget(head);
+        for (const auto& [k, id, tip] : std::vector<std::tuple<QString, QString, QString>>{
+                 {"Peak", "checkPeak", "The brightest pixel of the HDR, in nits"},
+                 {"Average", "checkAverage", "The frame's average light (what MaxFALL counts), in nits"},
+                 {"Brighter than SDR white", "checkAbove", "The share of the frame above diffuse white (203 nits): the light the SDR could not hold"},
+                 {"Outside P3-D65", "checkGamut", "The share of pixels outside the P3-D65 gamut an HDR10 or Dolby Vision master is graded in"}}) {
+            auto* val = label("\u2014", id, "value");
+            auto* r = row(k, val);
+            r->setToolTip(tip);
+            scv->addWidget(r);
+        }
+        cv->addWidget(sc);
+        auto* rrow = new QWidget(chk);
+        auto* rh = new QHBoxLayout(rrow);
+        rh->setContentsMargins(0, 0, 0, 0);
+        rh->setSpacing(8);
+        auto* grab = new QPushButton("Grab still", rrow);
+        grab->setObjectName("checkGrab");
+        grab->setToolTip("Keep this frame as a reference, to compare other frames and shots with (Ctrl+Alt+G)");
+        connect(grab, &QPushButton::clicked, this, [this] { run("still-grab"); });
+        auto* cmp = new QPushButton("Compare", rrow);
+        cmp->setObjectName("checkCompare");
+        cmp->setCheckable(true);
+        cmp->setToolTip("Hold B or use View \u25be Wipe to see the last still beside this frame");
+        connect(cmp, &QPushButton::clicked, this, [this](bool on) { set_reference_compare(on); });
+        rh->addWidget(grab, 1);
+        rh->addWidget(cmp, 1);
+        cv->addWidget(rrow);
+        auto* note = label("The scopes are beside the picture. Hold B for the original SDR; View \u25be has the wipe, "
+                           "what changed and false colour.", "checkNote", "small", chk);
+        note->setWordWrap(true);
+        cv->addWidget(note);
+        cv->addStretch(1);
+        pages->addWidget(chk);
+        pages_.push_back(chk);
+    }
     v->addWidget(panels_);
 
     // ── this frame ──
@@ -813,10 +1387,25 @@ QWidget* MainWindow::build_right_rail() {
         scv->addWidget(plot);
         sv->addWidget(sc);
     }
-    v->addWidget(scopes_);
+    {   // The colorist's QC of the learned frame: RGB parade on the PQ scale, and gamut (28 Oct 2026 review).
+        auto [pc, pcv] = card(scopes_, 12, 8);
+        pc->setObjectName("paradeCard");
+        auto* head = new QWidget(pc);
+        auto* hh = new QHBoxLayout(head);
+        hh->setContentsMargins(0, 0, 0, 0);
+        hh->addWidget(label("RGB parade", {}, "card-head"));
+        hh->addStretch(1);
+        hh->addWidget(label("Rec.2020 \u00b7 PQ \u00b7 gamut", {}, "note"));
+        pcv->addWidget(head);
+        parade_ = new ParadeView(pc);
+        pcv->addWidget(parade_);
+        sv->addWidget(pc);
+    }
+    // (the scopes go in their own column beside the viewer: build_ui)
 
     // ── log ──
     auto [lcard, lcv] = card(col, 12, 6);
+    lcard->setObjectName("logCard");
     lcv->addWidget(label("Log", {}, "card-head", lcard));
     log_ = new QPlainTextEdit(lcard);
     log_->setObjectName("log");
@@ -851,7 +1440,7 @@ QWidget* MainWindow::build_pipe() {
     arrow();
     view_transform_ = seg("viewTransform", "exposure + clip \u00b7 203 nits");
     arrow();
-    seg("pipeMaster", "ACES 2065-1 EXR, half");
+    seg("pipeMaster", "ACES 2065-1 EXR, float32");
     auto* warn = label("", "pipeWarn", {}, pipe);
     warn->hide();
     h->addWidget(warn);

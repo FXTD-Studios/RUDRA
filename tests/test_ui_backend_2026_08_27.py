@@ -196,7 +196,7 @@ def test_master_exr_round_trips_with_its_delivery_metadata():
                               provenance={"rudra:checkpoint": "image_v4/best.pt"})
         pixels, attrs = read_exr(path)
 
-    assert attrs.get("acesImageContainerFlag") == "1"
+    assert int(attrs.get("acesImageContainerFlag")) == 1
     assert "chromaticities" in attrs, "an ACES container must carry ST 2065-4 primaries"
     assert "image_v4/best.pt" in attrs.get("rudra:provenance", "")
     assert pixels.shape == (32, 48, 3)

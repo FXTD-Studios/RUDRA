@@ -34,6 +34,17 @@ check again; Help > Getting started shows the steps.
 
 ### Source: open the shot
 
+The Source card reports movie dimensions, pixel format, primaries, transfer,
+matrix and range from the file headers. Missing tags say "not reported";
+these are reported tags, not a measured tone curve. Limited-range movies
+show the current super-white decoding limitation (not a claim that such
+pixels were detected), and PQ/HLG inputs show an HDR-source warning.
+Still/sequence inspection shows the current decoded frame's recognised profile
+and primaries, any Rec.709 fallback, and applied EXIF orientation. It updates
+when you change frames; unavailable information stays explicit. Profile names
+are displayed as plain text. This inspection does not override decoding or your
+grade and does not identify the original tone mapper.
+
 - **File > Open frames…** (O) adds stills; **File > Open folder of frames…**
   opens a numbered sequence; a movie (`.mov`, `.mp4`, `.mxf`, `.mkv`, …)
   opens as a shot of its own. Dropping files or a folder on the window does
@@ -48,8 +59,9 @@ check again; Help > Getting started shows the steps.
   picture as Rec.709; the master converts correctly.
 - **Limited-range video above white** (codes 236–254, "super-whites") is
   clipped at decode in 1.0, and Fill clipped highlights rebuilds it. If that
-  detail matters, export the clip with data levels and the super-whites kept
-  before opening it (docs/SUPER_WHITES_DESIGN.md).
+  detail matters, keep the original and validate a preprocessing workflow
+  that maps headroom into the supported range. Merely switching the range
+  tag to full does not guarantee preservation (docs/SUPER_WHITES_DESIGN.md).
 - **Reconstruct > Source** says how the SDR was made. This matters more than
   anything else: the baseline is the inverse of that curve.
   - *BT.1886* (the default): SDR as a display shows it, each code to the
@@ -251,6 +263,7 @@ the PATH.
 | P | Preserve outside masks |
 | B (hold) | Flip to the baseline |
 | W | Wipe |
+| F | Fit image to window (while not typing in a text field) |
 | Z / Y | Undo / redo |
 | G / Shift+G | Action / title safe guides |
 | F1 | This guide |

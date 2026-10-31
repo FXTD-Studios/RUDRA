@@ -1,0 +1,19 @@
+{
+  "registered_before_evaluation": true,
+  "iterations": 200,
+  "edge_guard": "max RGB adjacent code jump<=2.01 within5x5, max code strictly3..254.5",
+  "max_change_codes": 0.49,
+  "datasets": {
+    "new_motion": {
+      "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/val/report.json",
+      "predictions": "G:/rudra_training/aces_context_balanced1800_20261024/paired_development/new_motion/candidate_report.json"
+    },
+    "old_coherent": {
+      "pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/val/report.json",
+      "predictions": "G:/rudra_training/aces_context_balanced1800_20261024/paired_development/old_coherent/candidate_report.json"
+    }
+  },
+  "selection": "New motion frame0 per scene/exposure (24). All old coherent24. Centre crop at most320x512; exclude32px crop border. Fixed before scores. Compare original continuous ACES rendering and reference grading, never hybrid bounded target.",
+  "checks": "<=0.49code change, unchanged guarded pixels, ordinary source-code MSE and -3/0/+3EV reference MSE no worse than learned restorer on each dataset; no release inference from diagnostic crops.",
+  "release_authorized": false
+}

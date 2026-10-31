@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <thread>
 
 #ifdef _WIN32
@@ -252,7 +253,8 @@ Process::~Process() {
     CloseHandle(d_->pi.hProcess);
 }
 
-Result<ProcessOutput> run_process(const std::vector<std::string>& argv) {
+Result<ProcessOutput> run_process(const std::vector<std::string>& argv, rudra::stop_token stop) {
+    if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "Program was cancelled");
     if (argv.empty()) return make_error(ErrorCode::InvalidArgument, "No program to run.");
     SECURITY_ATTRIBUTES sa{sizeof sa, nullptr, TRUE};
     HANDLE ord = nullptr, owr = nullptr, erd = nullptr, ewr = nullptr;
@@ -279,10 +281,15 @@ Result<ProcessOutput> run_process(const std::vector<std::string>& argv) {
         return make_error(ErrorCode::NotFound, "Could not start the program.", argv[0]);
     }
     ProcessOutput r;
-    std::thread t([&] { r.err = drain(erd); });
-    r.out = drain(ord);
-    t.join();
-    WaitForSingleObject(pi.hProcess, INFINITE);
+    {
+        // The handle stays valid until the callback has finished. Killing the
+        // leaf child unblocks both pipe readers and the final exit wait.
+        rudra::stop_callback interrupt(stop, [&] { TerminateProcess(pi.hProcess, 1); });
+        std::thread t([&] { r.err = drain(erd); });
+        r.out = drain(ord);
+        t.join();
+        WaitForSingleObject(pi.hProcess, INFINITE);
+    }
     DWORD code = 0;
     GetExitCodeProcess(pi.hProcess, &code);
     r.exit_code = int(code);
@@ -290,6 +297,7 @@ Result<ProcessOutput> run_process(const std::vector<std::string>& argv) {
     CloseHandle(erd);
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
+    if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "Program was cancelled");
     return r;
 }
 
@@ -457,7 +465,8 @@ Process::~Process() {
     }
 }
 
-Result<ProcessOutput> run_process(const std::vector<std::string>& argv) {
+Result<ProcessOutput> run_process(const std::vector<std::string>& argv, rudra::stop_token stop) {
+    if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "Program was cancelled");
     if (argv.empty()) return make_error(ErrorCode::InvalidArgument, "No program to run.");
     int o[2], e[2];
     if (::pipe(o) != 0) return make_error(ErrorCode::IoError, "Could not create a pipe.");
@@ -487,14 +496,41 @@ Result<ProcessOutput> run_process(const std::vector<std::string>& argv) {
         return make_error(ErrorCode::NotFound, "Could not start the program.", argv[0] + ": " + std::strerror(rc));
     }
     ProcessOutput r;
-    std::thread t([&] { r.err = drain(e[0]); });
-    r.out = drain(o[0]);
-    t.join();
-    ::close(o[0]);
-    ::close(e[0]);
     int status = 0;
-    while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+    {
+        // Serialize reaping and cancellation so a reused PID cannot be killed.
+        std::mutex lifecycle;
+        bool reaped = false, wait_failed = false;
+        int wait_errno = 0;
+        rudra::stop_callback interrupt(stop, [&] {
+            std::lock_guard lock(lifecycle);
+            if (!reaped) ::kill(pid, SIGKILL);
+        });
+        std::thread t([&] { r.err = drain(e[0]); });
+        r.out = drain(o[0]);
+        t.join();
+        ::close(o[0]); ::close(e[0]);
+        if (!stop.stop_possible()) {
+            for (;;) {
+                if (::waitpid(pid, &status, 0) >= 0) break;
+                if (errno != EINTR) { wait_failed = true; wait_errno = errno; break; }
+            }
+        } else for (;;) {
+            {
+                std::lock_guard lock(lifecycle);
+                const auto got = ::waitpid(pid, &status, WNOHANG);
+                if (got == pid) { reaped = true; break; }
+                // A lost child (ECHILD: SIGCHLD ignored, another reaper) is an
+                // error, never a run that exited 0.
+                if (got < 0 && errno != EINTR) { reaped = true; wait_failed = true; wait_errno = errno; break; }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        if (wait_failed)
+            return make_error(ErrorCode::IoError, "Could not read the program's exit status.",
+                              argv[0] + ": " + std::strerror(wait_errno));
     }
+    if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "Program was cancelled");
     r.exit_code = exit_code_of(status);
     return r;
 }
@@ -506,8 +542,8 @@ Result<std::filesystem::path> require_executable(const std::string& name) {
     return make_error(ErrorCode::NotFound, name + " is required on PATH");
 }
 
-Result<std::string> run_tool(const std::vector<std::string>& argv) {
-    auto r = run_process(argv);
+Result<std::string> run_tool(const std::vector<std::string>& argv, rudra::stop_token stop) {
+    auto r = run_process(argv, stop);
     if (!r) return r.error();
     if (r->exit_code != 0) {
         const std::string& err = r->err;

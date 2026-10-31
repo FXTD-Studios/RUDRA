@@ -1,6 +1,7 @@
 #include "rudra/deliver/video_encode.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <random>
@@ -22,9 +23,26 @@ std::string lower(std::string s) {
 long long py_round(double v) { return static_cast<long long>(std::nearbyint(v)); }   // round half to even
 }  // namespace
 
+namespace {
+std::atomic<bool> g_p3d65{false};
+}  // namespace
+
+bool set_mastering_display_primaries(const std::string& name) {
+    if (name != "rec2020" && name != "p3d65") return false;
+    g_p3d65 = name == "p3d65";
+    return true;
+}
+
+std::string mastering_display_primaries() { return g_p3d65 ? "p3d65" : "rec2020"; }
+
+std::string mastering_display_primaries_text() {
+    return g_p3d65 ? "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)"
+                   : "G(8500,39850)B(6550,2300)R(35400,14600)WP(15635,16450)";
+}
+
 std::string mastering_display(double peak_nits, double min_nits) {
-    return "G(8500,39850)B(6550,2300)R(35400,14600)WP(15635,16450)L(" + std::to_string(py_round(peak_nits * 10000)) +
-           "," + std::to_string(py_round(min_nits * 10000)) + ")";
+    return mastering_display_primaries_text() + "L(" + std::to_string(py_round(peak_nits * 10000)) + "," +
+           std::to_string(py_round(min_nits * 10000)) + ")";
 }
 
 std::string x265_param_path(const std::filesystem::path& path) {
@@ -41,6 +59,12 @@ Result<std::vector<std::string>> encode_command(const std::string& ffmpeg, const
                                                 const fs::path& output, int max_cll, int max_fall) {
     const DeliveryProfile* profile = find_profile(r.format);
     if (!profile) return make_error(ErrorCode::InvalidArgument, "Unknown delivery format: " + r.format);
+    const bool raw16 = profile->codec == "rawvideo";   // uncompressed 16-bit RGB QuickTime
+    const bool rgb16 = profile->codec == "ffv1" || raw16;
+    if (profile->codec == "ffv1" && (lower(output.extension().string()) != ".mkv" || r.alpha))
+        return make_error(ErrorCode::InvalidArgument, "FFV1 RGB16 requires .mkv output without alpha");
+    if (raw16 && (lower(output.extension().string()) != ".mov" || r.alpha))
+        return make_error(ErrorCode::InvalidArgument, "16-bit RGB MOV requires .mov output without alpha");
     const std::string& transfer = profile->transfer;
     // Log masters are spooled already encoded: zscale only changes the matrix
     // and range (linear in, linear out leaves the code values alone), and the
@@ -59,20 +83,28 @@ Result<std::vector<std::string>> encode_command(const std::string& ffmpeg, const
     if (r.audio != "none") cmd.insert(cmd.end(), {"-map", "1:a?", "-c:a", r.audio});
     if (r.audio == "aac") cmd.insert(cmd.end(), {"-b:a", "320k"});
     const std::string pix = r.alpha ? "yuva444p10le" : profile->pixel_format;
-    cmd.insert(cmd.end(), {"-map_metadata", "1", "-map_chapters", "-1", "-vf",
-                           "zscale=matrixin=gbr:transferin=" + zs_transfer + ":primariesin=2020:rangein=full:"
-                           "matrix=2020_ncl:transfer=" + zs_transfer + ":primaries=2020:range=limited,format=" + pix,
+    const std::string filter = rgb16
+        ? std::string("format=") + profile->pixel_format +
+              ",setparams=range=full:color_primaries=bt2020:color_trc=smpte2084:colorspace=gbr"
+        : "zscale=matrixin=gbr:transferin=" + zs_transfer + ":primariesin=2020:rangein=full:"
+                           "matrix=2020_ncl:transfer=" + zs_transfer + ":primaries=2020:range=limited,format=" + pix +
+                           (log ? ",setparams=color_primaries=unknown:color_trc=unknown" : "");
+    cmd.insert(cmd.end(), {"-map_metadata", "1", "-map_chapters", "-1", "-vf", filter,
                            "-c:v", profile->encoder});
     if (profile->codec == "hevc") {
         if (r.format == "hlg") params = "repeat-headers=1:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc";
         cmd.insert(cmd.end(), {"-preset", r.preset, "-crf", std::to_string(r.crf), "-x265-params", params,
                                "-tag:v", "hvc1"});
+    } else if (raw16) {
+        cmd.insert(cmd.end(), {"-pix_fmt", "rgb48be"});
+    } else if (rgb16) {
+        cmd.insert(cmd.end(), {"-level", "3", "-pix_fmt", "gbrp16le"});
     } else {
         cmd.insert(cmd.end(), {"-profile:v", std::to_string(profile->prores_profile), "-tag:v", profile->tag,
                                "-alpha_bits", r.alpha ? "16" : "0"});
     }
-    cmd.insert(cmd.end(), {"-color_primaries", tag_primaries, "-color_trc", transfer, "-colorspace", "bt2020nc",
-                           "-color_range", "tv", "-fps_mode", "passthrough", "-frames:v", std::to_string(clock.frames),
+    cmd.insert(cmd.end(), {"-color_primaries", tag_primaries, "-color_trc", transfer, "-colorspace", rgb16 ? "rgb" : "bt2020nc",
+                           "-color_range", rgb16 ? "pc" : "tv", "-fps_mode", "passthrough", "-frames:v", std::to_string(clock.frames),
                            "-t", pyjson::repr(clock.duration), "-avoid_negative_ts", "disabled"});
     const std::string ext = lower(output.extension().string());
     if (ext == ".mp4" || ext == ".mov") cmd.insert(cmd.end(), {"-movflags", "+faststart+write_colr"});

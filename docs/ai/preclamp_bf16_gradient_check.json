@@ -1,0 +1,28 @@
+{
+  "device": "NVIDIA GeForce RTX 4080 SUPER",
+  "autocast": "bfloat16",
+  "batch": 4,
+  "size": 32,
+  "optimizer_steps": 0,
+  "old_hold_head_bias_gradient": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "new_hold_head_bias_gradient": [
+    -0.302734375,
+    -0.302734375,
+    -0.302734375,
+    0.0,
+    0.0
+  ],
+  "diagnostics": {
+    "held_channels": 12288.0,
+    "negative_held_channels": 12288.0,
+    "negative_held_fraction": 1.0,
+    "hold_preclamp": 0.09102511405944824,
+    "hold_postclamp": 0.0004175543144810945
+  }
+}

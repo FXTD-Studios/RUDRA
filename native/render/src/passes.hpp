@@ -194,6 +194,18 @@ inline std::vector<float> baseline_rgba(const PlanarBuffer& rgb, const SdrImage*
     return out;
 }
 
+// The same with the codes given (a precomposited picture's own); empty: as above with no SDR.
+inline std::vector<float> baseline_rgba(const PlanarBuffer& rgb, const std::vector<float>& codes) {
+    if (codes.size() != rgb.plane_size()) return baseline_rgba(rgb, nullptr);
+    const std::size_t n = rgb.plane_size();
+    std::vector<float> out(n * 4);
+    for (std::size_t i = 0; i < n; ++i) {
+        for (int c = 0; c < 3; ++c) out[i * 4 + std::size_t(c)] = rgb.plane(c)[i];
+        out[i * 4 + 3] = codes[i];
+    }
+    return out;
+}
+
 // A composite target as an RGBA32F upload: rgb, alpha 1.
 inline std::vector<float> rgba_of(const PlanarBuffer& rgb) {
     const std::size_t n = rgb.plane_size();

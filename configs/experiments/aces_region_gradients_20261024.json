@@ -1,0 +1,8 @@
+{
+  "registered_before_evaluation": true,
+  "checkpoint": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+  "checkpoint_sha256": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+  "selection": "configs/experiments/aces_context_lr_comparison_fit_20261024.json",
+  "seed": 20261028,
+  "scope": "Fixed48 TRAIN rows. One fixed-seed sampler-v2 replay crop per row; full motion frames. Compare gradients of region-normalized photo+gradient losses at final checkpoint. Excludes temporal objective and cross-region edges; local interference diagnostic only, not causal proof or training acceptance. No optimizer or parameter changes."
+}

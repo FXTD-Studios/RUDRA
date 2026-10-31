@@ -14,6 +14,7 @@
 #include "rudra/deliver/video_encode.hpp"
 #include "rudra/media/video_probe.hpp"
 #include "rudra/platform/process.hpp"
+#include "rudra/video/qc.hpp"
 
 using namespace rudra;
 using nlohmann::json;
@@ -134,4 +135,79 @@ TEST(VideoEncode, PublishingNeverReplaces) {
     EXPECT_FALSE(publish_video(work / "staged.mp4", work / "staged.json", work / "out.mp4", work / "out.mp4.json").ok());
     EXPECT_FALSE(fs::exists(work / "out.mp4"));
     fs::remove_all(work);
+}
+
+TEST(VideoEncode, Ffv1MoviePreservesEveryRgb16CodeAndPassesQc) {
+    if (!find_executable("ffmpeg") || !find_executable("ffprobe")) GTEST_SKIP();
+    auto work = StagingDir::create(fs::temp_directory_path(), "rudra-ffv1-movie-");
+    ASSERT_TRUE(work);
+    const auto root = work->path();
+    fs::create_directory(root / "spool");
+    std::string codes;
+    for (int i = 0; i < 64 * 32 * 3; ++i) {
+        const unsigned value = (i * 103 + 17) % 65536;
+        codes.push_back(char(value & 255));
+        codes.push_back(char(value >> 8));
+    }
+    { std::ofstream f(root / "ramp.raw", std::ios::binary); f.write(codes.data(), codes.size()); }
+    auto png = run_tool({"ffmpeg", "-v", "error", "-f", "rawvideo", "-pixel_format", "rgb48le",
+        "-video_size", "64x32", "-i", (root / "ramp.raw").string(), "-frames:v", "1",
+        (root / "spool/00000000.png").string()});
+    ASSERT_TRUE(png) << png.error().message;
+    fs::copy_file(root / "spool/00000000.png", root / "spool/00000001.png");
+    VideoEncodeRequest request;
+    request.format = "ffv1rgb16";
+    request.audio = "none";
+    VideoClock clock{"24/1", 2, 0, 2.0 / 24, 0.001};
+    const auto source = root / "spool/00000000.png";
+    const auto output = root / "master.mkv";
+    auto command = encode_command("ffmpeg", request, clock, root / "spool", source, output, 1000, 100);
+    ASSERT_TRUE(command);
+    auto encoded = run_tool(*command);
+    ASSERT_TRUE(encoded) << encoded.error().message;
+    auto probe = probe_video(source);
+    ASSERT_TRUE(probe);
+    VideoQcRequest qc;
+    qc.format = request.format;
+    qc.audio_mode = "none";
+    auto checked = run_quality_check(probe->streams_json, clock, output, qc);
+    ASSERT_TRUE(checked) << checked.error().message;
+    auto decoded = run_tool({"ffmpeg", "-v", "error", "-i", output.string(), "-f", "rawvideo",
+        "-pix_fmt", "rgb48le", (root / "decoded.raw").string()});
+    ASSERT_TRUE(decoded);
+    std::ifstream f(root / "decoded.raw", std::ios::binary);
+    const std::string actual{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+    EXPECT_EQ(actual, codes + codes);
+    f.close();
+    EXPECT_FALSE(encode_command("ffmpeg", request, clock, root, source, root / "bad.mp4", 1, 1));
+    request.alpha = true;
+    EXPECT_FALSE(encode_command("ffmpeg", request, clock, root, source, output, 1, 1));
+}
+
+// Native only (27 Oct 2026): a movie's 16-bit uncompressed RGB QuickTime master.
+TEST(VideoEncode, SixteenBitRgbMovIsRawRgb48InAMov) {
+    VideoEncodeRequest r;
+    r.format = "rgb16mov";
+    r.audio = "none";
+    const VideoClock clock{"24/1", 2, 0, 2.0 / 24, 0.001};
+    auto cmd = encode_command("ffmpeg", r, clock, "spool", "in.mov", "out.mov", 1000, 100);
+    ASSERT_TRUE(cmd) << cmd.error().message;
+    std::string all;
+    for (const auto& a : *cmd) all += a + " ";
+    EXPECT_NE(all.find("-c:v rawvideo -pix_fmt rgb48be"), std::string::npos) << all;
+    EXPECT_NE(all.find("format=rgb48be,setparams=range=full"), std::string::npos) << all;
+    EXPECT_NE(all.find("-colorspace rgb -color_range pc"), std::string::npos) << all;
+    EXPECT_EQ(all.find("x265"), std::string::npos);
+    EXPECT_FALSE(encode_command("ffmpeg", r, clock, "spool", "in.mov", "out.mp4", 1, 1));   // MOV only
+    r.alpha = true;
+    EXPECT_FALSE(encode_command("ffmpeg", r, clock, "spool", "in.mov", "out.mov", 1, 1));
+}
+
+TEST(VideoEncode, TheMasteringDisplayCanBeP3D65) {
+    // Review 28 Oct: most HDR10 specs name a P3-D65 mastering display.
+    ASSERT_TRUE(set_mastering_display_primaries("p3d65"));
+    EXPECT_EQ(mastering_display(1000, 0.0001), "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)");
+    EXPECT_FALSE(set_mastering_display_primaries("dci"));
+    ASSERT_TRUE(set_mastering_display_primaries("rec2020"));   // back to the Python's for the other tests
+    EXPECT_EQ(mastering_display_primaries(), "rec2020");
 }

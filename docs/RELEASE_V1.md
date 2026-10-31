@@ -1,5 +1,79 @@
 # RUDRA 1.0: what is left, and how to ship it
 
+## 31 Oct 2026: the final release
+
+The model and the AI fill v3 are done (Ahmed, 31 Oct). One script takes it from here,
+on Windows, after `hf auth login` (a write token for fxtdstudios):
+
+    powershell -ExecutionPolicy Bypass -File scripts\RELEASE_V1_FINAL.ps1 -DryRun
+    powershell -ExecutionPolicy Bypass -File scripts\RELEASE_V1_FINAL.ps1
+
+It publishes `dist\hf\rudra-models`, and only it: the final model RUDRA ACES 2 (`models/RUDRA_ACES_2`,
+the same files as `dist\models\RUDRA_ACES_2`, release_authorized) and the AI fill v3 (`models/rudra_genfill_v3`)
+to huggingface.co/fxtdstudios/rudra-models under Apache 2.0, tagged v1.0.0; writes
+`models.json` beside the user guide; sets the version to 1.0.0; rebuilds the guide; commits
+and pushes `aces-v2`; and tags v1.0.0, which publishes the release (unsigned). Then deploy
+the website so www.fxtdstudios.com/rudra-docs/ serves the 1.0 guide and models.json.
+
+## The plan from 29 Oct 2026
+
+This replaces the steps of 12 Oct below (kept for their history and commands).
+
+**What 1.0 is.** The analytic reconstruction with the artist in the loop, as
+re-scoped on 7 Oct, now in the Simple workspace (Look, Check, Deliver) with
+first-run tips; Full keeps every control. Windows x64 only. The code is Apache
+2.0. The learned ACES 2.0 model is an optional "preview" download, listed by
+`models.json` on www.fxtdstudios.com and fetched from Hugging Face inside the
+app; it is not release-qualified (0 EV grading check .121 against .0604) and
+its weights licence waits on its training ancestry. The Beta 2 weights stay
+non-commercial and are not bundled.
+
+**Decisions** (D1 assumed as above until confirmed):
+
+- D1 what 1.0 runs on; D2 the ACES 2.0 weights licence; D3 Windows only;
+  D4 signed or unsigned.
+
+**On the Windows machine and accounts**, in order:
+
+1. Delete the leftover transfer files in `tmp\claude_xfer`.
+2. `scripts\COMMIT_PUSH_ACES_V2.ps1 -DryRun`, then without `-DryRun`; merge
+   `aces-v2` into the release branch; CI green (Gate B's GPU parity included).
+3. `scripts\RUN_APP_ACES.ps1` (build, app tests, start); `scripts\NATIVE_ACES_V2.ps1`
+   (OCIO 2.5.2, parity, video smoke); `NATIVE_GATE_B.ps1 -Machine rtx4080s-win`
+   and `NATIVE_PHASE3_EXIT.ps1`.
+4. By hand on the HDR display: Simple, the tips over the GPU viewer, Hold B, the
+   View menu, Open a .mov/.mp4, every Deliver preset, a model download, About.
+5. Python: `== "1"` to `== 1` in `tests/test_delivery_2026_08_22.py:83` and
+   `tests/test_ui_backend_2026_08_27.py:199`; `pytest tests/test_genfill_run.py
+   tests/test_make_models_json.py` in the `.venv`.
+6. Upload the model folder to Hugging Face `fxtdstudios/RUDRA` under `models/`,
+   then `python tools/make_models_json.py --repo fxtdstudios/RUDRA --revision
+   <tag or commit> --out models.json --model dist/models/<folder> --id ... --title
+   "Learned ACES 2.0" --channel preview --kind aces_v2 --licence ...` and publish it
+   at https://www.fxtdstudios.com/rudra/models.json.
+7. Package: `scripts\PACKAGE_WINDOWS.ps1 -NoModels -WithAcesEngine` (add
+   `-NoLibTorch` for a DirectML/CPU-only engine and a much smaller package). The
+   script refuses a package whose engine cannot start on its own.
+8. A clean PC that never had RUDRA or Python: install, open a clip, download the
+   model, export HDR10 and ProRes, play them elsewhere, uninstall.
+9. Sign (`RUDRA_SIGN_PFX`, `RUDRA_SIGN_PASSWORD`) or say "unsigned" in the notes.
+10. `scripts\release_v1_rc.ps1 -Rc 3`, then `-Rc 3 -Tag`; a few days of use.
+11. `scripts\release_v1_rc.ps1 -Final`, then `-Final -Tag`; paste
+    `docs/RELEASE_NOTES_1.0.0.md` into the release; rebuild the guide for 1.0:
+    `python tools/build_user_guide.py --version 1.0.0 --tag v1.0.0 --release
+    --out ..\website\rudra-docs` and deploy it.
+
+**Done when** CI is green, the clean-PC test passes, a new user can download
+the model from inside the app, and `v1.0.0` is tagged with its notes.
+
+**After 1.0:** the learned model passing its grading check; the Mac build and
+Apple signing; the commercial-tools table (R3); OFX; Dolby Vision RPU; AI fill
+out of experimental; audio in learned masters.
+
+---
+
+## The 12 Oct 2026 plan (history)
+
 As of 12 Oct 2026. The release definition is STATUS.md's (re-scoped 7 Oct
 2026): RUDRA 1.0 ships on the **analytic inverse with the artist in the loop**,
 and the model is optional. Not part of 1.0 (later, by decision of 12 Oct): the

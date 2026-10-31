@@ -1,0 +1,25 @@
+{
+  "prior_checkpoint": "reports\\routing_ab_20261013\\corrected\\step_0000200.pt",
+  "control_checkpoint": "reports\\preservation_ab_20261013\\control\\step_0000200.pt",
+  "prior_checkpoint_sha256": "dc524fc09b21005e62c9714b04be7d44d87e5e4369aca87e8dbbce7e584812e5",
+  "control_checkpoint_sha256": "68eb2f44d6add3fc80b51c012e4e1652c8a5f22ddd4c65a17994c2ff3e66c45b",
+  "prior_model_tensor_sha256": "50ae489ac007ec5f0480965b8970871a406b4bffb20f16243519cb8b295dc0d8",
+  "control_model_tensor_sha256": "50ae489ac007ec5f0480965b8970871a406b4bffb20f16243519cb8b295dc0d8",
+  "all_model_tensors_equal": true,
+  "replay_bytes_equal": true,
+  "benchmark_fields_compared": [
+    "bench_real_gain_db",
+    "bench_real_frames",
+    "bench_rendered_gain_db",
+    "bench_rendered_frames",
+    "bench_clip_gain_stops",
+    "bench_clip_frames",
+    "bench_crushed_gain_stops",
+    "bench_crushed_frames",
+    "bench_gain"
+  ],
+  "benchmark_fields_exact": true,
+  "per_ev_exact": true,
+  "current_code_matches_pins": true,
+  "snapshots_match_pins": true
+}

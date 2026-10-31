@@ -16,6 +16,22 @@ if(NOT nlohmann_json_FOUND)
   FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
+# A Windows executable must carry the runtime matching the headers/import
+# library it was built with. PATH cannot override Windows' System32 copy, which
+# can expose an older C API even when the correct SDK is first on PATH.
+function(rudra_stage_onnxruntime target)
+  if(WIN32 AND RUDRA_WITH_ONNXRUNTIME)
+    find_file(RUDRA_ORT_RUNTIME_DLL NAMES onnxruntime.dll
+              PATHS "${ONNXRUNTIME_ROOT}/lib" "${ONNXRUNTIME_ROOT}/bin"
+              NO_DEFAULT_PATH NO_CACHE REQUIRED)
+    get_filename_component(_ort_runtime_dir "${RUDRA_ORT_RUNTIME_DLL}" DIRECTORY)
+    file(GLOB _ort_runtime_dlls CONFIGURE_DEPENDS "${_ort_runtime_dir}/*.dll")
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${_ort_runtime_dlls} "$<TARGET_FILE_DIR:${target}>"
+      COMMENT "Stage the configured ONNX Runtime beside ${target}" VERBATIM)
+  endif()
+endfunction()
+
 if(RUDRA_BUILD_TESTS)
   find_package(GTest 1.14 CONFIG QUIET)
   if(NOT GTest_FOUND)
@@ -61,6 +77,16 @@ if(RUDRA_WITH_LIBTORCH)
     # LibTorch: the official archive, or the pip torch package
     # (python -c "import torch; print(torch.utils.cmake_prefix_path)").
     find_package(Torch REQUIRED CONFIG)
+  endif()
+endif()
+
+if(RUDRA_WITH_OCIO)
+  # The ACES v2 checkpoints pin OCIO 2.5.2 (built-in cg-config-v4.0.0_aces-v2.0_ocio-v2.5).
+  # Another version is refused at run time too (aces_v2::make_ocio_view).
+  find_package(OpenColorIO CONFIG REQUIRED)
+  set(RUDRA_OCIO_ALLOW_VERSION_MISMATCH OFF CACHE BOOL "Configure even if OpenColorIO is not 2.5.2 (research only)")
+  if(NOT OpenColorIO_VERSION VERSION_EQUAL 2.5.2 AND NOT RUDRA_OCIO_ALLOW_VERSION_MISMATCH)
+    message(FATAL_ERROR "RUDRA_WITH_OCIO needs OpenColorIO 2.5.2, found ${OpenColorIO_VERSION}")
   endif()
 endif()
 

@@ -1,0 +1,22 @@
+{
+  "registered_before_audit": true,
+  "parent": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+  "models": {
+    "sequential": "G:/rudra_training/aces_balanced_sequential600_20261024/step600.pt",
+    "accumulated": "G:/rudra_training/aces_balanced_accum6600_20261024/step600.pt"
+  },
+  "schedule": "G:/rudra_training/aces_balanced_sequential600_20261024/sample_schedule.json",
+  "pilots": {
+    "motion": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+    "replay": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json"
+  },
+  "input_hashes": {
+    "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+    "G:/rudra_training/aces_balanced_sequential600_20261024/sample_schedule.json": "01035eaf180d31c08a2f1a9313812a2d3391a5ffc0a65093bc0389f7ac8e6b3c",
+    "G:/rudra_training/aces_balanced_sequential600_20261024/step600.pt": "81ca770c6e29e5f15fd4bda9e545e58920adc5815919cdafbe810a85b94342ad",
+    "G:/rudra_training/aces_balanced_accum6600_20261024/step600.pt": "cdd401e41077cf2f33bf2cb759ae565747e192fff4d65e683dda33988a565665",
+    "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json": "9e410260e07304ec26e02106b094d11e25ef78e85e45aae914c6ffa5a85151c2",
+    "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json": "d2ac979f3d046c54c589acae20b905d47d96c1fbc1118c77322026de8e713836"
+  },
+  "scope": "Read-only full100 windows/600 exposures at copied initial full branch and both final balanced checkpoints. Exact registered crops and full-frame frozen-parent cache. Domain means equally weight three samples; total mean weights domains one-half. Component norms, cosine and plain-gradient directional derivatives; NOT actual Adam trajectory, causal proof or new training. All data TRAIN, no score-selected subsets. Retain scene/exposure/clipping metadata. No gate changes or promotion."
+}

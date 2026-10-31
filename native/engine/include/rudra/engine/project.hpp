@@ -21,15 +21,19 @@
 #include <vector>
 
 #include "rudra/core/masks.hpp"
+#include "rudra/core/headroom_policy.hpp"
 #include "rudra/engine/session.hpp"
 #include "rudra/platform/result.hpp"
 
 namespace rudra {
 
-inline constexpr int kProjectVersion = 1;
+inline constexpr int kProjectVersion = 2; // maximum readable; legacy writes remain version 1
 inline constexpr const char* kProjectSuffix = ".rudra";
 
 struct Project {
+    // Version 2 policy lives in grade, shared with session undo/restore.
+    // Storage support does not enable this in legacy consumers.
+    bool settle_grain = true; // explicit in v2; v1 retains its historical default
     // "folder" (a folder of frames), "movie" or "files" (stills); "" for none.
     std::string source_kind;
     std::vector<std::filesystem::path> sources;   // one folder or movie, or the stills in order
@@ -53,9 +57,13 @@ Project project_from_session(const Session& s);
 // The project as JSON, with paths relative to `project_file`'s folder where they can be.
 std::string project_json(const Project& p, const std::filesystem::path& project_file);
 
-// Parse; paths resolved against `project_file`'s folder. ParseError on a file
-// that is not a project or is from a newer version.
-Result<Project> parse_project(const std::string& json, const std::filesystem::path& project_file);
+// Parse; paths resolved against `project_file`'s folder. Malformed projects and
+// unsupported versions/policies are refused before a caller changes its state.
+// Default consumers (including the current app) reject a headroom project.
+// An integration that understands the full path must explicitly opt in.
+enum class ProjectReadSupport { LegacyOnly, HeadroomV1 };
+Result<Project> parse_project(const std::string& json, const std::filesystem::path& project_file,
+    ProjectReadSupport support = ProjectReadSupport::LegacyOnly);
 
 // Write <path> (and <path>.masks.png when the grade has masks; a stale one is
 // removed when it has none). The project and its masks are each replaced
@@ -63,9 +71,10 @@ Result<Project> parse_project(const std::string& json, const std::filesystem::pa
 // written is returned.
 Result<std::filesystem::path> save_project(const std::filesystem::path& path, const Project& p);
 
-// Read a project and its masks. Masks that are missing or unreadable do not
-// refuse the project: the grade opens without them and `notes` says so.
-Result<Project> load_project(const std::filesystem::path& path);
+// Read a project and its masks. Legacy missing/unreadable masks produce notes;
+// headroom projects refuse them so the intended grade cannot silently change.
+Result<Project> load_project(const std::filesystem::path& path,
+    ProjectReadSupport support = ProjectReadSupport::LegacyOnly);
 
 // Where a project's masks live.
 std::filesystem::path project_masks_path(const std::filesystem::path& project_file);

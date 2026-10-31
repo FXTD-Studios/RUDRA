@@ -101,6 +101,10 @@ const std::vector<ActionSpec> kActions = {
     {"clip-fill", "Fill clipped highlights", "", "clipFill", O::Native, E::Always, ""},
     {"clip-peak", "Set the peak of a clipped region…", "", "", O::Native, E::AnyFrames, ""},
     {"clip-peaks-clear", "Clear clipped peaks", "", "", O::Native, E::AnyFrames, ""},
+    // Super-whites (21 Oct 2026, docs/SUPER_WHITES_REVIEW_2026-10-16.md): a
+    // limited-range BT.709 movie read with its detail above white kept
+    // (bt1886-headroom-v1) instead of clipped and filled. Experimental.
+    {"keep-super-whites", "Keep super-whites (experimental)", "", "superWhites", O::Native, E::Always, ""},
     // Playback with the model (10 Oct 2026): the size the model runs at
     // while playing (full where the playhead stops), and whether playback
     // keeps time by skipping frames the model has not reached.
@@ -120,6 +124,17 @@ const std::vector<ActionSpec> kActions = {
     {"user-guide", "User guide", "", "", O::Native, E::Always, "F1"},
     {"check-updates", "Check for updates…", "", "", O::Native, E::Always, ""},
     {"open-log-folder", "Open log folder", "", "", O::Native, E::Always, ""},
+    // 26 Oct 2026: the learned ACES 2.0 model's masters (app/aces_master.hpp).
+    {"aces-master", "Learned ACES 2.0 master…", "", "", O::Native, E::Always, "Ctrl+Shift+E"},
+    // 28 Oct 2026: the batch queue (app/batch_queue.hpp).
+    {"batch-queue", "Batch queue…", "", "", O::Native, E::Always, "Ctrl+Shift+B"},
+    {"batch-add", "Add shot to batch", "", "", O::Native, E::AnyFrames, "Ctrl+B"},
+    // 28 Oct 2026: monitoring and reference stills on the learned ACES 2.0 route.
+    {"monitor-scene", "Scene light (RUDRA view)", "", "monitor:scene", O::Native, E::Always, ""},
+    {"monitor-sdr100", "ACES 2.0 SDR 100 nits (Rec.709)", "", "monitor:sdr100", O::Native, E::Always, ""},
+    {"monitor-hdr1000", "ACES 2.0 HDR 1000 nits (P3 D65, PQ)", "", "monitor:hdr1000", O::Native, E::Always, ""},
+    {"still-grab", "Grab reference still", "", "", O::Native, E::AnyFrames, "Ctrl+Alt+G"},
+    {"still-compare", "Compare with reference still", "", "stillCompare", O::Native, E::Always, "Ctrl+Alt+W"},
 };
 
 const std::vector<MenuSpec> kMenus = {
@@ -131,14 +146,15 @@ const std::vector<MenuSpec> kMenus = {
      {"first", "prev", "next", "last", "-", "play", "-", ">While playing", "playback-side-0", "playback-side-960",
       "playback-side-640", "-", "playback-realtime", "<", "steady-shots"}},
     {"Reconstruct",
-     {"use-model", "-", "clip-fill", "clip-peak", "clip-peaks-clear", "-", ">Source", "source-bt1886", "source-bt1886_shadows", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
+     {"use-model", "-", "clip-fill", "clip-peak", "clip-peaks-clear", "keep-super-whites", "-", ">Source", "source-bt1886", "source-bt1886_shadows", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
       "exposure-down", "exposure-up", "exposure-reset", "-", "mode-all", "mode-highlights", "mode-shadows", "mode-off", "-", "preserve", "-", "strength-down", "strength-up"}},
     {"Measure", {"copy-metrics", "copy-scopes", "-", "remeasure"}},
-    {"Deliver", {"master", "-", "container-aces", "container-linear", "-", "copy-delivery"}},
+    {"Deliver", {"master", "aces-master", "-", "batch-add", "batch-queue", "-", "container-aces", "container-linear", "-", "copy-delivery"}},
     {"View",
      {"view-image", "view-false-colour", "view-difference", "-", "wipe", "-", ">Guides", "guides-action",
       "guides-title", "guides-centre", "-", "aspect-none", "aspect-2.39", "aspect-1.85", "aspect-16:9", "aspect-4:3",
-      "aspect-1:1", "<"}},
+      "aspect-1:1", "<", "-", ">Monitor (learned ACES 2.0)", "monitor-scene", "monitor-sdr100", "monitor-hdr1000", "<",
+      "-", "still-grab", "still-compare"}},
     {"Window", {"rail-left", "rail-right", "scopes", "-", "zoom-fit", "zoom-actual"}},
     {"Help",
      {"getting-started", "user-guide", "-", "shortcuts", "about", "first-run", "-", "check-updates", "open-log-folder"}},

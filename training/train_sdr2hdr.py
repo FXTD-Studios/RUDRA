@@ -454,12 +454,25 @@ def check_source_curve_args(args: argparse.Namespace) -> None:
           + f"; dropout {args.source_curve_dropout:g}, degraded samples train as unknown")
 
 
+def check_reconstruction_policy_args(args: argparse.Namespace) -> str:
+    policy = getattr(args, 'reconstruction_policy', 'legacy_nearwhite')
+    from rudra.reconstruction_policy import reconstruction_bands
+    reconstruction_bands(policy)
+    if policy != 'legacy_nearwhite' and not getattr(args, 'bounded_source', False):
+        raise ValueError('observed clipping requires --bounded-source')
+    policies = {r.get('reconstruction_policy', 'legacy_nearwhite') for r in read_jsonl(args.manifest) if not r.get('excluded')}
+    if policies != {policy}:
+        raise ValueError(f'dataset reconstruction policies {policies} do not match model {policy}')
+    return policy
+
+
 def train(args: argparse.Namespace, observer=None) -> Path:
     from training.preservation import validate_args
     validate_args(args)
-    configure_determinism(getattr(args, "deterministic", False))
     from pipeline.commercial_preflight import training_preflight
-    commercial_provenance = training_preflight(args)
+    commercial_provenance = training_preflight(args)   # rejects before the manifest is read
+    policy = check_reconstruction_policy_args(args)
+    configure_determinism(getattr(args, "deterministic", False))
     if observer is not None:
         observer("ready", 0, {})
     seed_everything(args.seed)
@@ -472,7 +485,8 @@ def train(args: argparse.Namespace, observer=None) -> Path:
     # corpus's own render, exposure included. Read from the manifest, never
     # assumed: until 16 Sep 2026 this constructor took the class default, the
     # legacy -1 EV, whatever the corpus said.
-    corpus_ev = corpus_ev_of(args.manifest, real_only_ev=getattr(args, "real_corpus_ev", None))
+    corpus_ev = corpus_ev_of(args.manifest, real_only_ev=getattr(args, "real_corpus_ev", None),
+                             pipeline_only_ev=getattr(args, "pipeline_corpus_ev", None))
     if getattr(args, "exposure_push", 0.0) > 0.0 and abs(float(corpus_ev)) > 1e-6:
         raise SystemExit(f"--exposure-push re-renders at the corpus exposure + E and needs a 0 EV corpus; "
                          f"{args.manifest} is at {corpus_ev:+.2f} EV")
@@ -502,7 +516,8 @@ def train(args: argparse.Namespace, observer=None) -> Path:
             gate_conditioning=args.gate_conditioning,
             curve_head=args.curve_head,
             source_curve=args.source_curve,
-            baseline_source=args.baseline_source,
+            baseline_source=args.baseline_source, bounded_source=args.bounded_source,
+            reconstruction_policy=policy,
             corpus_ev=corpus_ev).to(device)
     else:
         if not args.image_checkpoint:
@@ -786,6 +801,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=("image", "temporal"), default="image")
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--commercial-evidence", help="Reviewed evidence JSON bound to this manifest; requires scratch image training")
+    parser.add_argument("--pipeline-corpus-ev", type=float, default=None,
+                        help="Explicit model baseline EV for exclusively display-rendered pipeline pairs; does not change source tonemap metadata")
     parser.add_argument("--real-corpus-ev", type=float, default=None,
                         help="Explicit analytic/augmentation EV for an all-real corpus; rejected for mixed/rendered data")
     parser.add_argument("--output-dir", default="hdrdata/checkpoints/sdr2hdr_image")
@@ -846,6 +863,8 @@ def parse_args() -> argparse.Namespace:
                              "and its target scaled by 2^E, so clipped highlights are common; needs a 0 EV corpus. "
                              "0 = as before")
     parser.add_argument("--exposure-push-max-ev", type=float, default=2.0)
+    parser.add_argument('--bounded-source', action='store_true', help='experimental source-bounded dequantisation head')
+    parser.add_argument('--reconstruction-policy', choices=('legacy_nearwhite', 'observed_clip_v1'), default='legacy_nearwhite')
     parser.add_argument("--baseline-source", action="store_true",
                         help="v10 (13 Oct 2026): the residual rides on the Source picker's curve "
                              "(rudra/source_baseline.py; BT.1886 for real SDR, the app's default) instead "

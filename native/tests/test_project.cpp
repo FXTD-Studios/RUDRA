@@ -112,7 +112,7 @@ TEST(Project, WhatIsSavedComesBack) {
     EXPECT_EQ(q->container, "linear");
     // Into a session: the grade and the Deliver settings, with undo behind them.
     Session s;
-    s.load_state(q->grade, q->peak_ev, q->anchor, q->carry_chroma, q->anchor_knee, q->container);
+    ASSERT_TRUE(s.load_state(q->grade, q->peak_ev, q->anchor, q->carry_chroma, q->anchor_knee, q->container));
     EXPECT_EQ(s.grade.mode, p.grade.mode);
     EXPECT_EQ(s.container, "linear");
     EXPECT_DOUBLE_EQ(s.peak_ev, 1.5);

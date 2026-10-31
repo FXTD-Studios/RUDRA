@@ -1,0 +1,35 @@
+{
+  "retrieved_date": "2026-10-13",
+  "entries": [
+    {
+      "url": "https://opencontent.netflix.com/home",
+      "local_file": "netflix_home.html",
+      "status": 200,
+      "sha256": "31b4da6a5099cd059cabd71e455fc4dad35c75cd19babf416d9519555f1ee9e1",
+      "bytes": 166960
+    },
+    {
+      "url": "https://gooseberry.blender.org/sharing/",
+      "error": "HTTP Error 403: Forbidden"
+    },
+    {
+      "url": "https://gooseberry.blender.org/license/",
+      "error": "HTTP Error 403: Forbidden"
+    },
+    {
+      "url": "https://s3.amazonaws.com/download.opencontent.netflix.com/TechblogAssets/Sparks/sparks_license.txt",
+      "status": 404,
+      "interpretation": "Unavailable on retrieval; not evidence of revoked or superseded rights."
+    },
+    {
+      "url": "https://s3.amazonaws.com/download.opencontent.netflix.com/SolLevante/sollevante-cclicense.txt",
+      "status": 404,
+      "interpretation": "Unavailable on retrieval; not evidence of revoked or superseded rights."
+    },
+    {
+      "url": "https://s3.amazonaws.com/download.opencontent.netflix.com/Nocturne/nocturne_license.txt",
+      "status": 404,
+      "interpretation": "Unavailable on retrieval; not evidence of revoked or superseded rights."
+    }
+  ]
+}

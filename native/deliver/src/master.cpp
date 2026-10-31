@@ -84,6 +84,16 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
     MasterRequest r;
     try {
         const auto j = nlohmann::json::parse(text);
+        // A project is not a master-params file. Neither this reader nor its
+        // legacy consumers may silently drop an unsupported input policy.
+        if (j.contains("rudra_project"))
+            return make_error(ErrorCode::Unsupported, "A RUDRA project cannot be read as legacy master parameters");
+        if (j.contains("decode") && !j.at("decode").is_object())
+            return make_error(ErrorCode::ParseError, "Invalid decode settings in master parameters");
+        for (const auto* where : {&j, j.contains("decode") ? &j.at("decode") : &j}) {
+            if (where->contains("headroom_policy") && where->at("headroom_policy") != "disabled")
+                return make_error(ErrorCode::Unsupported, "This master-parameters path does not yet support headroom_policy");
+        }
         r.checkpoint = j.value("checkpoint", std::string());
         r.analytic = j.value("analytic", false);
         r.preserve_outside = j.value("preserve_outside", true);
@@ -97,6 +107,7 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
         r.settle_grain = j.value("settle_grain", true);
         r.source_space = j.value("source_space", std::string("rec709"));
         r.container = j.value("container", std::string("aces"));
+        r.exr_half = j.value("exr_half", true);
         r.source_curve = j.value("source_curve", std::string("unknown"));
         if (j.contains("calibration"))
             for (const auto& c : j.at("calibration"))
@@ -142,6 +153,7 @@ std::string master_request_json(const MasterRequest& q) {
         regions.push_back({{"label", b.label}, {"low_nits", b.low_nits}, {"high_nits", b.high_nits}, {"ev", b.ev}});
     j["regions"] = regions;
     if (q.source_curve != "unknown") j["source_curve"] = q.source_curve;
+    if (!q.exr_half) j["exr_half"] = false;
     if (q.exposure_ev != 0.0) j["exposure_ev"] = q.exposure_ev;
     if (q.analytic) j["analytic"] = true;
     if (!q.calibration.empty()) {
@@ -280,6 +292,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         provenance.emplace_back("rudra:exposureEV", b);
     }
     if (q.analytic) provenance.emplace_back("rudra:reconstruction", "analytic (no model)");
+    if (!q.exr_half) provenance.emplace_back("rudra:sampleType", "float32");
     if (q.analytic) provenance.emplace_back("rudra:clipFill", clip_fill_text(q));
     if (!cp.reference.empty()) provenance.emplace_back("rudra:reference", cp.reference.file);
     if (cp.masks) provenance.emplace_back("rudra:masks", masks_path.filename().string());
@@ -287,8 +300,8 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     // The linear container is scene-linear Rec.2020, converted from the
     // plate's primaries and stamped so (it carried the plate's primaries
     // untagged until 9 Oct 2026, as the Studio did).
-    auto w = aces ? write_aces_exr(out, linear, *src, 1.0, provenance)
-                  : write_exr(out, convert_primaries(linear, *src, Primaries::Rec2020), true, kRec2020Chromaticities,
+    auto w = aces ? write_aces_exr(out, linear, *src, 1.0, provenance, q.exr_half)
+                  : write_exr(out, convert_primaries(linear, *src, Primaries::Rec2020), q.exr_half, kRec2020Chromaticities,
                               provenance);
     if (!w) return w.error();
 

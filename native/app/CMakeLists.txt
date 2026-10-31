@@ -7,7 +7,7 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets Network)
 qt_standard_project_setup()
 
 # The window and the look as a library: RUDRA and the app's Qt tests link it.
-add_library(rudra_app_ui STATIC getting_started.cpp getting_started.hpp main_window.cpp main_window.hpp layout.cpp widgets.cpp widgets.hpp source_panel.cpp source_panel.hpp scope_widgets.cpp scope_widgets.hpp region_editor.cpp region_editor.hpp model_dialogs.cpp model_dialogs.hpp export_sheet.cpp export_sheet.hpp video_queues.cpp video_queues.hpp queue_window.cpp queue_window.hpp workflow_check.cpp workflow_check.hpp theme.cpp theme.hpp startup.cpp startup.hpp updates.cpp updates.hpp playback.cpp playback.hpp)
+add_library(rudra_app_ui STATIC getting_started.cpp getting_started.hpp main_window.cpp main_window.hpp layout.cpp widgets.cpp widgets.hpp source_panel.cpp source_panel.hpp scope_widgets.cpp scope_widgets.hpp region_editor.cpp region_editor.hpp model_dialogs.cpp model_dialogs.hpp export_sheet.cpp export_sheet.hpp video_queues.cpp video_queues.hpp queue_window.cpp queue_window.hpp workflow_check.cpp workflow_check.hpp headroom_check.cpp headroom_check.hpp theme.cpp theme.hpp startup.cpp startup.hpp updates.cpp updates.hpp playback.cpp playback.hpp aces_master.cpp aces_master.hpp aces_engine.cpp aces_engine.hpp deliver_choice.cpp deliver_choice.hpp deliver_tab.cpp genfill_job.cpp genfill_job.hpp genfill_review.cpp genfill_review.hpp batch_queue.cpp batch_queue.hpp batch_window.cpp batch_window.hpp batch_tab.cpp colorist_tab.cpp export_tab.cpp project_tab.cpp headroom_tab.cpp edl.cpp edl.hpp json_lines.hpp paths.hpp splash.cpp splash.hpp simple_ui.cpp coach_marks.cpp coach_marks.hpp model_downloads.cpp model_downloads.hpp about_models.cpp)
 target_include_directories(rudra_app_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(rudra_app_ui PUBLIC Qt6::Widgets Qt6::Network rudra::rudra_engine rudra::rudra_infer rudra::rudra_video
                       PRIVATE nlohmann_json::nlohmann_json)
@@ -32,7 +32,10 @@ file(GLOB rudra_fonts CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/fonts/*.ttf
 qt_add_resources(rudra_app_ui fonts PREFIX / FILES ${rudra_fonts} BASE "${CMAKE_CURRENT_SOURCE_DIR}")
 # The lockup's mark, the page's own asset.
 set_source_files_properties("${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark-256.png" PROPERTIES QT_RESOURCE_ALIAS rudra-mark.png)
-qt_add_resources(rudra_app_ui assets PREFIX /assets FILES "${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark-256.png")
+# The full-size mark for the start screen (splash.cpp), sharp on HiDPI.
+set_source_files_properties("${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark.png" PROPERTIES QT_RESOURCE_ALIAS rudra-mark-large.png)
+qt_add_resources(rudra_app_ui assets PREFIX /assets FILES "${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark-256.png"
+                 "${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark.png")
 
 # The executable and its identity: the icon, the version, and on macOS the
 # bundle's Info.plist (HiDPI, the EDR display, the minimum system).
@@ -49,6 +52,7 @@ qt_add_executable(RUDRA main.cpp ${_rudra_icon_sources})
 target_link_libraries(RUDRA PRIVATE rudra_app_ui)
 target_compile_definitions(RUDRA PRIVATE RUDRA_VERSION_LABEL="${RUDRA_VERSION_LABEL}")
 rudra_warnings(RUDRA)
+rudra_stage_onnxruntime(RUDRA)
 set_target_properties(RUDRA PROPERTIES
   WIN32_EXECUTABLE ON
   MACOSX_BUNDLE ON
@@ -72,6 +76,7 @@ if(RUDRA_BUILD_TESTS)
                              $<TARGET_PROPERTY:GTest::gtest,INTERFACE_INCLUDE_DIRECTORIES>)
   target_compile_definitions(rudra_app_tests PRIVATE RUDRA_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/tests/golden")
   rudra_warnings(rudra_app_tests)
+  rudra_stage_onnxruntime(rudra_app_tests)
   include(GoogleTest)
   gtest_discover_tests(rudra_app_tests TEST_PREFIX "app." PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
                        DISCOVERY_MODE PRE_TEST)

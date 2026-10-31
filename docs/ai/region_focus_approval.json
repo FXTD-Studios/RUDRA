@@ -1,0 +1,9 @@
+{
+  "approved": true,
+  "approved_by": "Ahmed (project owner, explicit conversation approval)",
+  "approved_at": "2026-10-13T21:51:51.877801+00:00",
+  "release_authorized": false,
+  "recipe_sha256": "ca1a68c78519f28126e81fa554722f536816eff45975d555411f54e06362201d",
+  "approval_text": "approved",
+  "scope": "Two 200-step scratch runs; 600 seconds per arm after preflight, 1200 seconds combined, 1 GB artifacts with 900 MB stop; approximately 228 GB read-only preflight traffic; no automatic retry, continuation or promotion."
+}

@@ -11,6 +11,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "rudra/deliver/video_encode.hpp"
+
 #include "rudra/core/gamut.hpp"
 #include "rudra/core/hdr10.hpp"
 #include "rudra/deliver/exr.hpp"
@@ -132,6 +134,10 @@ std::string tag_of(const ColourTags& tags, const std::string& key) {
 
 const std::vector<SequenceTarget>& sequence_targets() {
     static const std::vector<SequenceTarget> t = {
+        {"ffv1rgb16", {"-c:v", "ffv1", "-level", "3"}, "gbrp16le", ".mkv", "pq",
+         "16-bit lossless RGB FFV1, Rec.2020 PQ."},
+        {"rgb16mov", {"-c:v", "rawvideo"}, "rgb48be", ".mov", "pq",
+         "16-bit uncompressed RGB QuickTime (b48r), Rec.2020 PQ. Lossless, large."},
         {"prores4444", {"-c:v", "prores_ks", "-profile:v", "4444", "-qscale:v", "5"}, "yuv444p12le", ".mov", "pq",
          "12-bit ProRes 4444, Rec.2020 PQ. The finishing format."},
         {"prores422hq", {"-c:v", "prores_ks", "-profile:v", "3", "-qscale:v", "9"}, "yuv422p10le", ".mov", "pq",
@@ -153,7 +159,7 @@ const SequenceTarget* find_sequence_target(const std::string& name) {
 Result<ColourTags> expected_tags(const std::string& target) {
     const SequenceTarget* t = find_sequence_target(target);
     if (!t) return encode_error("unknown target " + py_repr_str(target));
-    return ColourTags{{"color_primaries", kPrimaries}, {"color_space", kMatrix}, {"color_transfer", transfer_name(t->transfer)}};
+    return ColourTags{{"color_primaries", kPrimaries}, {"color_space", target == "ffv1rgb16" || target == "rgb16mov" ? "gbr" : kMatrix}, {"color_transfer", transfer_name(t->transfer)}};
 }
 
 Result<NitsFrame> shoulder_to_peak(const NitsFrame& rgb, double peak) {
@@ -239,12 +245,16 @@ Result<std::vector<std::uint16_t>> encode_sequence_frame(const NitsFrame& in, co
 std::vector<std::string> sequence_encode_command(const SequenceTarget& t, int width, int height, double fps, double peak,
                                                  std::optional<int> maxcll, std::optional<int> maxfall, double min_nits,
                                                  const fs::path& output, bool write_colr, bool prores_metadata) {
+    const bool rgb16 = t.name == "ffv1rgb16" || t.name == "rgb16mov";
+    const std::string filter = rgb16
+        ? "setparams=range=full:color_primaries=bt2020:color_trc=smpte2084:colorspace=0"
+        : std::string("scale=out_color_matrix=") + kSwsMatrix + ":out_range=tv";
     std::vector<std::string> a = {"ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb48le",
                                   "-s", std::to_string(width) + "x" + std::to_string(height), "-r", pyjson::repr(fps),
-                                  "-i", "-", "-vf", std::string("scale=out_color_matrix=") + kSwsMatrix + ":out_range=tv"};
+                                  "-i", "-", "-vf", filter};
     a.insert(a.end(), t.codec.begin(), t.codec.end());
-    a.insert(a.end(), {"-pix_fmt", t.pix_fmt, "-color_primaries", kPrimaries, "-colorspace", kMatrix, "-color_trc",
-                       transfer_name(t.transfer), "-color_range", "tv"});
+    a.insert(a.end(), {"-pix_fmt", t.pix_fmt, "-color_primaries", kPrimaries, "-colorspace", rgb16 ? "rgb" : kMatrix, "-color_trc",
+                       transfer_name(t.transfer), "-color_range", rgb16 ? "pc" : "tv"});
     const bool prores = std::find(t.codec.begin(), t.codec.end(), "prores_ks") != t.codec.end();
     const bool x265 = std::find(t.codec.begin(), t.codec.end(), "libx265") != t.codec.end();
     // MOV and MP4 both take the colr atom from this flag: ffmpeg 6.1 wrote it
@@ -257,7 +267,7 @@ std::vector<std::string> sequence_encode_command(const SequenceTarget& t, int wi
         std::string params = std::string("repeat-headers=1:colorprim=") + kPrimaries + ":transfer=" +
                              transfer_name(t.transfer) + ":colormatrix=" + kMatrix + ":range=limited";
         if (t.transfer == "pq") {
-            params += ":hdr10-opt=1:master-display=G(8500,39850)B(6550,2300)R(35400,14600)WP(15635,16450)L(" +
+            params += ":hdr10-opt=1:master-display=" + mastering_display_primaries_text() + "L(" +
                       std::to_string(py_round(peak * 10000)) + "," + std::to_string(py_round(min_nits * 10000)) + ")";
             if (maxcll && maxfall) params += ":max-cll=" + std::to_string(*maxcll) + "," + std::to_string(*maxfall);
         }
@@ -393,7 +403,7 @@ Result<void> verify_sequence_tags(const fs::path& path, const std::string& targe
 Result<fs::path> encode_sequence(const std::function<std::optional<NitsFrame>()>& next, const fs::path& output_in,
                                  const SequenceEncodeOptions& o) {
     const SequenceTarget* spec = find_sequence_target(o.target);
-    if (!spec) return encode_error("unknown target " + py_repr_str(o.target) + ". Choose from: hdr10, hlg, prores422hq, prores4444");
+    if (!spec) return encode_error("unknown target " + py_repr_str(o.target) + ". Choose from: hdr10, hlg, prores422hq, prores4444, ffv1rgb16");
     std::optional<NitsFrame> frame = next();
     if (!frame) return encode_error("no frames to encode");
     const int height = frame->height(), width = frame->width();

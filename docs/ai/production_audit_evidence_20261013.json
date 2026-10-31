@@ -1,0 +1,719 @@
+{
+  "scope": "Metadata inventory; no source writes; no full-media hash scan",
+  "roots": {
+    "G:/datasets/sources": {
+      "counts": {
+        "files": 69863,
+        "bytes": 2331301774091,
+        ".py": 4,
+        ".json": 18,
+        ".zip": 21,
+        ".log": 4,
+        ".html": 1,
+        ".hdr": 539,
+        ".db": 1,
+        ".tif": 38035,
+        "": 1,
+        ".md": 3,
+        ".png": 2704,
+        ".sha256": 1,
+        ".txt": 4,
+        ".b2c10b0a": 1,
+        ".fc5bc8ea": 1,
+        ".fd530c47": 1,
+        ".c27fabcb": 1,
+        ".e6dfe038": 1,
+        ".yuv": 2,
+        ".csv": 1,
+        ".exr": 28515,
+        ".part": 4
+      },
+      "errors": [],
+      "license_files": [
+        "G:\\datasets\\sources\\liu_hdrv\\licence.txt",
+        "G:\\datasets\\sources\\netflix_sol_levante\\licence.txt",
+        "G:\\datasets\\sources\\netflix_sparks\\licence.txt",
+        "G:\\datasets\\sources\\pandora\\licence.txt"
+      ]
+    },
+    "G:/datasets/corpora": {
+      "counts": {
+        "files": 168958,
+        "bytes": 280928428836,
+        ".gz": 5,
+        ".tgz": 3,
+        ".jsonl": 32,
+        ".bak_20260923_160003": 2,
+        ".bak_20260923_160309": 2,
+        ".bak_20260923_160744": 2,
+        ".json": 51438,
+        ".png": 114912,
+        ".jpg": 10,
+        ".html": 1,
+        ".md": 6,
+        ".out": 2,
+        ".npz": 30,
+        ".py": 758,
+        ".so": 130,
+        ".pxd": 62,
+        ".pyi": 288,
+        ".typed": 13,
+        ".pyc": 738,
+        ".c": 53,
+        ".h": 29,
+        ".txt": 22,
+        "": 192,
+        ".rst": 2,
+        ".0": 26,
+        ".101": 7,
+        ".11": 2,
+        ".5": 2,
+        ".1": 14,
+        ".2": 6,
+        ".16": 2,
+        ".165": 1,
+        ".216": 1,
+        ".pem": 1,
+        ".3": 3,
+        ".6": 1,
+        ".8": 1,
+        ".17": 1,
+        ".4": 3,
+        ".10": 1,
+        ".7": 1,
+        ".cfg": 1,
+        ".f90": 60,
+        ".f": 24,
+        ".pyf": 7,
+        ".inc": 1,
+        ".f95": 1,
+        ".template": 1,
+        ".npy": 5,
+        ".a": 2,
+        ".csv": 30,
+        ".pyx": 4,
+        ".build": 3,
+        ".ini": 3,
+        ".pc": 1,
+        ".pkl": 1,
+        ".cpp": 1,
+        ".fits": 1,
+        ".sh": 1,
+        ".js": 1,
+        ".mp4": 5
+      },
+      "errors": [],
+      "license_files": [
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\av-17.1.0.dist-info\\licenses\\LICENSE.txt",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\beautifulsoup4-4.15.0.dist-info\\licenses\\LICENSE",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\certifi-2026.7.22.dist-info\\licenses\\LICENSE",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\charset_normalizer-3.5.2.dist-info\\licenses\\LICENSE",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\filelock-4.0.8.dist-info\\licenses\\LICENSE",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\gdown-6.4.1.dist-info\\licenses\\LICENSE",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\idna-3.20.dist-info\\licenses\\LICENSE.md",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-aom",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-bcdec",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-bitshuffle",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-blosc",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-blosc2",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-brotli",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-brunsli",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-bzip2",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-cfitsio",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-charls",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-dav1d",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-fastlz",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-giflib",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-hdf5",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-heif",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-highway",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-jetraw",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-jpeg",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-jpg_0xc3",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-jxrlib",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-lcms2",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-lerc",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libaec",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libaivf",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libdeflate",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libjpeg",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libjpeg-turbo",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libjxl",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libjxs",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-liblj92",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-liblzma",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libmng",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libpng",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libspng",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libtiff",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libultrahdr",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libwebp",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libxml2",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-libyuv",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-lz4",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-lzf",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-lzfse",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-lzham",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-lzokay",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-mozjpeg",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-netcdf-c",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-openjpeg",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-pcodec",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-postgresql",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-qoi",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-rav1e",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-snappy",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-sperr",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-svt-av1",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-sz3",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-zfp",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-zlib",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-zlib-ng",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-zopfli",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs\\licenses\\LICENSE-zstd",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\imagecodecs-2025.3.30.dist-info\\licenses\\LICENSE",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\numpy\\ma\\LICENSE",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\numpy\\random\\LICENSE.md",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\numpy\\_core\\include\\numpy\\random\\LICENSE.txt",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\numpy-2.2.6.dist-info\\LICENSE.txt",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\PySocks-1.7.1.dist-info\\LICENSE",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\requests-2.34.2.dist-info\\licenses\\LICENSE",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\soupsieve-2.10.dist-info\\licenses\\LICENSE.md",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\tifffile-2025.5.10.dist-info\\licenses\\LICENSE",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\tqdm-4.70.1.dist-info\\licenses\\LICENCE",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\typing_extensions-4.16.0.dist-info\\licenses\\LICENSE",
+        "G:\\datasets\\corpora\\rudra_upgrade_20260930\\_tools\\pylib\\urllib3-2.8.0.dist-info\\licenses\\LICENSE.txt"
+      ]
+    },
+    "G:/data": {
+      "counts": {
+        "files": 1,
+        "bytes": 429,
+        ".log": 1
+      },
+      "errors": [],
+      "license_files": []
+    },
+    "G:/corpus_v4c": {
+      "counts": {
+        "files": 3,
+        "bytes": 29675874,
+        ".jsonl": 2,
+        ".json": 1
+      },
+      "errors": [],
+      "license_files": []
+    },
+    "G:/rudra_v02": {
+      "counts": {
+        "files": 66419,
+        "bytes": 156123149533,
+        ".log": 1,
+        ".txt": 8,
+        ".jsonl": 2,
+        ".py": 1,
+        ".tgz": 1,
+        ".json": 21832,
+        ".png": 43581,
+        ".exr": 993
+      },
+      "errors": [],
+      "license_files": []
+    }
+  },
+  "manifests": [
+    {
+      "path": "G:\\datasets\\corpora\\corpus_v4b\\sdr_hdr_manifest.jsonl",
+      "sha256": "87a32f1614fbec1318ac56507df7836a6593fc8236f3ef3bb30f58115f514998",
+      "rows": 20433,
+      "splits": {
+        "train": 19513,
+        "val": 383,
+        "test": 537
+      },
+      "sources_heuristic": {
+        "hdm": 11217,
+        "netflix_chimera": 1899,
+        "polyhaven": 2887,
+        "netflix_sparks": 4430
+      },
+      "train_sources_heuristic": {
+        "hdm": 10968,
+        "netflix_chimera": 1899,
+        "polyhaven": 2311,
+        "netflix_sparks": 4335
+      },
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    },
+    {
+      "path": "G:\\datasets\\corpora\\corpus_v4b\\video_manifest_9f.jsonl",
+      "sha256": "526b22001cdcfb0f2febe4bf330a6c8926e4f490194b9777901313afa41b74a3",
+      "rows": 634,
+      "splits": {
+        "train": 624,
+        "test": 8,
+        "val": 2
+      },
+      "sources_heuristic": {
+        "hdm": 402,
+        "netflix_chimera": 67,
+        "netflix_sparks": 165
+      },
+      "train_sources_heuristic": {
+        "hdm": 394,
+        "netflix_chimera": 67,
+        "netflix_sparks": 163
+      },
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    },
+    {
+      "path": "G:\\datasets\\corpora\\corpus_v4c\\sdr_hdr_manifest.jsonl",
+      "sha256": "34b0abb824204dd036d544688a1a537d97de21be3a34232567f6367ab6d03662",
+      "rows": 20482,
+      "splits": {
+        "train": 19597,
+        "val": 375,
+        "test": 510
+      },
+      "sources_heuristic": {
+        "hdm": 11328,
+        "netflix_chimera": 1899,
+        "polyhaven": 2889,
+        "netflix_sparks": 4366
+      },
+      "train_sources_heuristic": {
+        "hdm": 11019,
+        "netflix_chimera": 1899,
+        "polyhaven": 2313,
+        "netflix_sparks": 4366
+      },
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    },
+    {
+      "path": "G:\\datasets\\corpora\\corpus_v4c\\video_manifest_9f.jsonl",
+      "sha256": "ff44d4f56dc8155597f0de2d594f4d1fbd6001e7566aa9be11060be485e6fc78",
+      "rows": 638,
+      "splits": {
+        "train": 628,
+        "val": 3,
+        "test": 7
+      },
+      "sources_heuristic": {
+        "hdm": 407,
+        "netflix_chimera": 67,
+        "netflix_sparks": 164
+      },
+      "train_sources_heuristic": {
+        "hdm": 397,
+        "netflix_chimera": 67,
+        "netflix_sparks": 164
+      },
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    },
+    {
+      "path": "G:\\datasets\\corpora\\rudra_kaist_eval_20261001\\manifest.jsonl",
+      "sha256": "e0504d22fb7c0449b2bc08348bfbae0cf60fd46d775a2faae2cf88ddc54bf4b4",
+      "rows": 20,
+      "splits": {
+        "val": 20
+      },
+      "sources_heuristic": {
+        "unknown": 20
+      },
+      "train_sources_heuristic": {},
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    },
+    {
+      "path": "G:\\datasets\\corpora\\rudra_mix_v10_20261013\\sdr_hdr_manifest.jsonl",
+      "sha256": "fca0da6405a139bbef4d80b119fb77a488ad3a36ca6d73a0db645a9fb6864a1a",
+      "rows": 25373,
+      "splits": {
+        "train": 23473,
+        "val": 1103,
+        "test": 797
+      },
+      "sources_heuristic": {
+        "hdm": 10275,
+        "netflix_chimera": 1899,
+        "polyhaven": 2889,
+        "netflix_sparks": 6726,
+        "netflix_meridian": 287,
+        "netflix_nocturne": 2053,
+        "netflix_sol_levante": 1081,
+        "netflix_cosmos": 163
+      },
+      "train_sources_heuristic": {
+        "hdm": 9966,
+        "netflix_chimera": 1899,
+        "polyhaven": 2313,
+        "netflix_sparks": 6317,
+        "netflix_nocturne": 1734,
+        "netflix_sol_levante": 1081,
+        "netflix_cosmos": 163
+      },
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    },
+    {
+      "path": "G:\\datasets\\corpora\\rudra_mix_v4c_netflix_20261001\\sdr_hdr_manifest.jsonl",
+      "sha256": "58b3155428aa64c31b2711c90d5cdfc24df832faf577d366ef77c0b1e35bd7e9",
+      "rows": 21709,
+      "splits": {
+        "train": 20374,
+        "val": 538,
+        "test": 797
+      },
+      "sources_heuristic": {
+        "hdm": 10275,
+        "netflix_chimera": 1899,
+        "polyhaven": 2889,
+        "netflix_sparks": 5152,
+        "netflix_meridian": 287,
+        "netflix_nocturne": 683,
+        "netflix_sol_levante": 361,
+        "netflix_cosmos": 163
+      },
+      "train_sources_heuristic": {
+        "hdm": 9966,
+        "netflix_chimera": 1899,
+        "polyhaven": 2313,
+        "netflix_sparks": 5152,
+        "netflix_nocturne": 683,
+        "netflix_sol_levante": 361
+      },
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    },
+    {
+      "path": "G:\\datasets\\corpora\\rudra_mix_v4c_netflix_20261008\\sdr_hdr_manifest.jsonl",
+      "sha256": "1bf05381da90b4319d72280b87e4b89b052954832e62fade66f837e6ad88e5fc",
+      "rows": 25373,
+      "splits": {
+        "train": 24038,
+        "val": 538,
+        "test": 797
+      },
+      "sources_heuristic": {
+        "hdm": 10275,
+        "netflix_chimera": 1899,
+        "polyhaven": 2889,
+        "netflix_sparks": 6726,
+        "netflix_meridian": 287,
+        "netflix_nocturne": 2053,
+        "netflix_sol_levante": 1081,
+        "netflix_cosmos": 163
+      },
+      "train_sources_heuristic": {
+        "hdm": 9966,
+        "netflix_chimera": 1899,
+        "polyhaven": 2313,
+        "netflix_sparks": 6726,
+        "netflix_nocturne": 2053,
+        "netflix_sol_levante": 1081
+      },
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    },
+    {
+      "path": "G:\\datasets\\corpora\\rudra_mix_v4c_netflix_20261008b\\sdr_hdr_manifest.jsonl",
+      "sha256": "1bf05381da90b4319d72280b87e4b89b052954832e62fade66f837e6ad88e5fc",
+      "rows": 25373,
+      "splits": {
+        "train": 24038,
+        "val": 538,
+        "test": 797
+      },
+      "sources_heuristic": {
+        "hdm": 10275,
+        "netflix_chimera": 1899,
+        "polyhaven": 2889,
+        "netflix_sparks": 6726,
+        "netflix_meridian": 287,
+        "netflix_nocturne": 2053,
+        "netflix_sol_levante": 1081,
+        "netflix_cosmos": 163
+      },
+      "train_sources_heuristic": {
+        "hdm": 9966,
+        "netflix_chimera": 1899,
+        "polyhaven": 2313,
+        "netflix_sparks": 6726,
+        "netflix_nocturne": 2053,
+        "netflix_sol_levante": 1081
+      },
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    },
+    {
+      "path": "G:\\datasets\\corpora\\rudra_netflix_eval_20261001\\manifest.jsonl",
+      "sha256": "3273cddbf0cb383a444cbf835cc6a5b56add9aa2212af51733da8d9ea8fc5128",
+      "rows": 78,
+      "splits": {
+        "val": 78
+      },
+      "sources_heuristic": {
+        "netflix_sol_levante": 38,
+        "netflix_sparks": 40
+      },
+      "train_sources_heuristic": {},
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    },
+    {
+      "path": "G:\\datasets\\corpora\\rudra_netflix_realsdr_20261001\\manifest.jsonl",
+      "sha256": "e534c88675a190ec465f0b666cacc4116a4724343e0de47aebcdb33b9ff51145",
+      "rows": 5944,
+      "splits": {
+        "test": 287,
+        "train": 5494,
+        "val": 163
+      },
+      "sources_heuristic": {
+        "netflix_meridian": 287,
+        "netflix_nocturne": 2053,
+        "netflix_sol_levante": 1081,
+        "netflix_sparks": 2360,
+        "netflix_cosmos": 163
+      },
+      "train_sources_heuristic": {
+        "netflix_nocturne": 2053,
+        "netflix_sol_levante": 1081,
+        "netflix_sparks": 2360
+      },
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    },
+    {
+      "path": "G:\\datasets\\corpora\\rudra_realsdr_pilot_20261001\\manifest.jsonl",
+      "sha256": "1e17ab4a129fab6402826fc07a5d4b2b5412f5c1fef7ed97244fdcb6c59e6227",
+      "rows": 1400,
+      "splits": {
+        "train": 1175,
+        "val": 225
+      },
+      "sources_heuristic": {
+        "netflix_sparks": 109,
+        "unknown": 1192,
+        "polyhaven": 99
+      },
+      "train_sources_heuristic": {
+        "netflix_sparks": 109,
+        "unknown": 991,
+        "polyhaven": 75
+      },
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    },
+    {
+      "path": "G:\\datasets\\corpora\\rudra_upgrade_20260930\\manifest.jsonl",
+      "sha256": "9fc9e89d58d9ea19d7e11bd10aa014128b39349f5e3088fd4f1af773807ecb62",
+      "rows": 1333,
+      "splits": {
+        "test": 117,
+        "train": 1015,
+        "val": 201
+      },
+      "sources_heuristic": {
+        "unknown": 1309,
+        "polyhaven": 24
+      },
+      "train_sources_heuristic": {
+        "unknown": 991,
+        "polyhaven": 24
+      },
+      "scene_overlap": 0,
+      "hdr_path_overlap": 0
+    }
+  ],
+  "checkpoints": [
+    {
+      "path": "checkpoints\\sdr2hdr_image_v8\\best.pt",
+      "sha256": "201301718cc027f4e423e03a487b857c8f991dcbb4aae11b776c9813f24acbb1",
+      "file_bytes": 4817999,
+      "step": 48000,
+      "parameters": 1196197,
+      "parameter_bytes": 4784788,
+      "config": {
+        "mode": "image",
+        "manifest": "G:\\datasets\\corpora\\rudra_mix_v4c_netflix_20261008b\\sdr_hdr_manifest.jsonl",
+        "output_dir": "checkpoints\\sdr2hdr_image_v8",
+        "image_checkpoint": null,
+        "best_eval": "hard",
+        "resume": null,
+        "init_checkpoint": null,
+        "reset_best": false,
+        "device": null,
+        "steps": 50000,
+        "batch_size": 4,
+        "crop_size": 256,
+        "workers": 2,
+        "base_channels": 32,
+        "temporal_channels": 24,
+        "lr": 0.0002,
+        "weight_decay": 0.0001,
+        "grad_accum": 1,
+        "max_grad_norm": 1.0,
+        "augmentation_strength": 1.0,
+        "degradation_probability": 0.65,
+        "video_sample_fraction": 0.25,
+        "scene_balanced_sampling": true,
+        "temporal_weight": 0.5,
+        "shadow_chroma_weight": 0.15,
+        "shadow_smoothness_weight": 0.02,
+        "curve_head": false,
+        "source_curve": false,
+        "source_curve_dropout": 0.3,
+        "region_focus": 0.5,
+        "baseline_weight": 0.25,
+        "gate_conditioning": false,
+        "freeze_except_gate": false,
+        "best_smoothing": 1,
+        "best_metric": "composite_gain",
+        "val_fraction": 0.1,
+        "eval_every": 2000,
+        "eval_batches": 0,
+        "save_every": 2000,
+        "log_every": 20,
+        "max_items": null,
+        "max_val_items": null,
+        "seed": 20260715,
+        "manifest_sha256": "1bf05381da90b4319d72280b87e4b89b052954832e62fade66f837e6ad88e5fc",
+        "corpus_ev": 0.0,
+        "architecture": "SDR2HDRNet",
+        "input_contract": "8-bit normalized sRGB RGB",
+        "output_contract": "scene-linear RGB normalized to 10000 nits"
+      }
+    },
+    {
+      "path": "checkpoints\\sdr2hdr_image_v9\\step_0020000.pt",
+      "sha256": "37b5890a098a652db22ef4996d6d956aa89a5f35fdd25cab820cffa2f042eaed",
+      "file_bytes": 14469071,
+      "step": 20000,
+      "parameters": 1196197,
+      "parameter_bytes": 4784788,
+      "config": {
+        "mode": "image",
+        "manifest": "G:\\datasets\\corpora\\rudra_mix_v4c_netflix_20261008b\\sdr_hdr_manifest.jsonl",
+        "output_dir": "checkpoints\\sdr2hdr_image_v9",
+        "image_checkpoint": null,
+        "best_eval": "hard",
+        "resume": null,
+        "init_checkpoint": "checkpoints\\sdr2hdr_image_v8\\best.pt",
+        "reset_best": false,
+        "device": null,
+        "steps": 20000,
+        "batch_size": 4,
+        "crop_size": 256,
+        "workers": 2,
+        "base_channels": 32,
+        "temporal_channels": 24,
+        "lr": 0.0001,
+        "weight_decay": 0.0001,
+        "grad_accum": 1,
+        "max_grad_norm": 1.0,
+        "augmentation_strength": 1.0,
+        "degradation_probability": 0.65,
+        "video_sample_fraction": 0.25,
+        "scene_balanced_sampling": true,
+        "temporal_weight": 0.5,
+        "shadow_chroma_weight": 0.15,
+        "shadow_smoothness_weight": 0.02,
+        "curve_head": false,
+        "source_curve": false,
+        "source_curve_dropout": 0.3,
+        "region_focus": 0.5,
+        "exposure_push": 0.5,
+        "exposure_push_max_ev": 2.0,
+        "baseline_weight": 0.25,
+        "gate_conditioning": false,
+        "freeze_except_gate": false,
+        "best_smoothing": 1,
+        "best_metric": "composite_gain",
+        "val_fraction": 0.1,
+        "eval_every": 2000,
+        "eval_batches": 0,
+        "save_every": 2000,
+        "log_every": 20,
+        "max_items": null,
+        "max_val_items": null,
+        "seed": 20261012,
+        "manifest_sha256": "1bf05381da90b4319d72280b87e4b89b052954832e62fade66f837e6ad88e5fc",
+        "corpus_ev": 0.0,
+        "architecture": "SDR2HDRNet",
+        "input_contract": "8-bit normalized sRGB RGB",
+        "output_contract": "scene-linear RGB normalized to 10000 nits"
+      }
+    },
+    {
+      "path": "checkpoints\\sdr2hdr_image_v10\\best.pt",
+      "sha256": "bc7157c09b54e2edde66a9280c30c86be413b64e4cc9b396c87d96afebed32f6",
+      "file_bytes": 4818319,
+      "step": 20000,
+      "parameters": 1196197,
+      "parameter_bytes": 4784788,
+      "config": {
+        "mode": "image",
+        "manifest": "G:\\datasets\\corpora\\rudra_mix_v10_20261013\\sdr_hdr_manifest.jsonl",
+        "output_dir": "checkpoints\\sdr2hdr_image_v10",
+        "image_checkpoint": null,
+        "best_eval": "hard",
+        "resume": null,
+        "init_checkpoint": "checkpoints\\sdr2hdr_image_v9\\step_0020000.pt",
+        "reset_best": false,
+        "device": null,
+        "steps": 20000,
+        "batch_size": 4,
+        "crop_size": 256,
+        "workers": 2,
+        "base_channels": 32,
+        "temporal_channels": 24,
+        "lr": 0.0001,
+        "weight_decay": 0.0001,
+        "grad_accum": 1,
+        "max_grad_norm": 1.0,
+        "augmentation_strength": 1.0,
+        "degradation_probability": 0.65,
+        "video_sample_fraction": 0.25,
+        "scene_balanced_sampling": true,
+        "temporal_weight": 0.5,
+        "shadow_chroma_weight": 0.15,
+        "shadow_smoothness_weight": 0.02,
+        "curve_head": false,
+        "source_curve": false,
+        "source_curve_dropout": 0.3,
+        "region_focus": 0.5,
+        "exposure_push": 0.5,
+        "exposure_push_max_ev": 2.0,
+        "baseline_source": true,
+        "baseline_dropout": 0.5,
+        "crushed_hold": 1.0,
+        "bench_val_frames": 48,
+        "bench_val_max_side": 960,
+        "bench_val_push": "1,2",
+        "baseline_weight": 0.25,
+        "gate_conditioning": false,
+        "freeze_except_gate": false,
+        "best_smoothing": 3,
+        "best_metric": "bench_gain",
+        "val_fraction": 0.1,
+        "eval_every": 2000,
+        "eval_batches": 0,
+        "save_every": 2000,
+        "log_every": 20,
+        "max_items": null,
+        "max_val_items": null,
+        "seed": 20261013,
+        "manifest_sha256": "fca0da6405a139bbef4d80b119fb77a488ad3a36ca6d73a0db645a9fb6864a1a",
+        "corpus_ev": 0.0,
+        "architecture": "SDR2HDRNet",
+        "input_contract": "8-bit normalized sRGB RGB",
+        "output_contract": "scene-linear RGB normalized to 10000 nits"
+      }
+    }
+  ]
+}

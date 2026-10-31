@@ -35,10 +35,14 @@ public:
     void select(std::size_t entry);
     void use_selected();
     QTreeWidget* list() const { return list_; }
+    void refresh_downloads();               // the Available to download rows (29 Oct 2026)
 
 private:
     MainWindow* w_;
     QTreeWidget* list_ = nullptr;
+    QWidget* dl_list_ = nullptr;
+    QLabel* dl_status_ = nullptr;
+    QString dl_shape_;                       // the rows' ids and states: rebuilt only when it changes
     QLabel *note_ = nullptr, *status_ = nullptr;
     QComboBox* backend_ = nullptr;
     QPushButton* use_ = nullptr;

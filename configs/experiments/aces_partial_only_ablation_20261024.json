@@ -1,0 +1,10 @@
+{
+  "registered_before_evaluation": true,
+  "purpose": "Isolate unstable fully-clipped predictions after Hunyuan transition40 failure. Measure reconstruction cost of analytic fallback where no source colour channel survives.",
+  "parent": "G:/rudra_training/aces_consistent_head_equal600_v2_20261024/step600.pt",
+  "fully_clipped_analytic": true,
+  "policy": "Same partial-highlight colour constraint; fully-clipped source minRGB>=254.5/255 uses exact analytic inverse. Ordinary and shadow predictions unchanged. No claim of recovering fully-clipped texture.",
+  "acceptance": "Retain existing coherent and legacy five-gate scores and parent highlight nonregression. Zero partial colour errors/new negativeY and unchanged outside all highlight support. Separate motion/grade/detail assessment required. Do not count baseline identity as learned detail recovery.",
+  "scope": "research ablation, no default changes",
+  "release_authorized": false
+}

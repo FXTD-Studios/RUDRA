@@ -1,0 +1,4014 @@
+{
+  "samples": [
+    {
+      "asset_id": "nf_cosmos_11589-11752_frame00000004",
+      "scene_id": "nf_cosmos_11589-11752",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 2453.365234375,
+      "luma_p99_nits": 795.52490234375,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0010974972747093024,
+      "recorded_peak_nits": 2453.312699317932,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.1724221578083558,
+          0.04108525042991573
+        ],
+        "response": 0.7777166466953026,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_11589-11752_frame00000084",
+      "scene_id": "nf_cosmos_11589-11752",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 5137.33349609375,
+      "luma_p99_nits": 298.9386291503906,
+      "sdr_clip_fraction": 3.406613372093023e-06,
+      "sdr_crushed_fraction": 0.0001129860101744186,
+      "recorded_peak_nits": 5137.264696121216,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.08738486402776857,
+          0.01791831325442672
+        ],
+        "response": 0.878096837653882,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_11589-11752_frame00000156",
+      "scene_id": "nf_cosmos_11589-11752",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 9922.619140625,
+      "luma_p99_nits": 3932.873779296875,
+      "sdr_clip_fraction": 0.0105712890625,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 9921.344673156738,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.00947230768508689,
+          0.05293194280352509
+        ],
+        "response": 0.8498657714161608,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_12025-12075_frame00000004",
+      "scene_id": "nf_cosmos_12025-12075",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 9592.5244140625,
+      "luma_p99_nits": 87.12516021728516,
+      "sdr_clip_fraction": 0.0001203670058139535,
+      "sdr_crushed_fraction": 0.385926144622093,
+      "recorded_peak_nits": 9592.827167510986,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.027185970802150905,
+          -0.023119863950896047
+        ],
+        "response": 0.5246045924205747,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_12025-12075_frame00000028",
+      "scene_id": "nf_cosmos_12025-12075",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1953.02685546875,
+      "luma_p99_nits": 81.85700988769531,
+      "sdr_clip_fraction": 8.913971656976745e-05,
+      "sdr_crushed_fraction": 0.23811546148255813,
+      "recorded_peak_nits": 1953.0725450515747,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.06247043854281742,
+          -0.19858917383672292
+        ],
+        "response": 0.48941732280784184,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_12025-12075_frame00000044",
+      "scene_id": "nf_cosmos_12025-12075",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1510.9176025390625,
+      "luma_p99_nits": 69.1273193359375,
+      "sdr_clip_fraction": 4.939589389534884e-05,
+      "sdr_crushed_fraction": 0.21853424781976744,
+      "recorded_peak_nits": 1510.7962574958801,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.2358944312127278,
+          -0.22645209064245364
+        ],
+        "response": 0.5294714535896977,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_12149-12330_frame00000004",
+      "scene_id": "nf_cosmos_12149-12330",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 4441.509765625,
+      "luma_p99_nits": 2266.364501953125,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.003174395893895349,
+      "recorded_peak_nits": 4441.751340866089,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.08359757905743948,
+          -0.025803268345413244
+        ],
+        "response": 0.8095957522487475,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_12149-12330_frame00000092",
+      "scene_id": "nf_cosmos_12149-12330",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3265.09912109375,
+      "luma_p99_nits": 1862.2347412109375,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.00021404887354651162,
+      "recorded_peak_nits": 3265.325283050537,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.03285477955083138,
+          -0.00831932616436859
+        ],
+        "response": 0.8706369010421137,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_12149-12330_frame00000180",
+      "scene_id": "nf_cosmos_12149-12330",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 5919.6787109375,
+      "luma_p99_nits": 2419.667236328125,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.00020553234011627908,
+      "recorded_peak_nits": 5920.063854217529,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.025500827460263054,
+          -0.06360547692185037
+        ],
+        "response": 0.8306971006095409,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_12916-13078_frame00000004",
+      "scene_id": "nf_cosmos_12916-13078",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 9830.4404296875,
+      "luma_p99_nits": 347.3153381347656,
+      "sdr_clip_fraction": 0.0004298010537790698,
+      "sdr_crushed_fraction": 0.042747320130813955,
+      "recorded_peak_nits": 9829.59493637085,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.043522617092804694,
+          -0.06385616790106496
+        ],
+        "response": 0.7290146461067101,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_12916-13078_frame00000084",
+      "scene_id": "nf_cosmos_12916-13078",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 9864.9072265625,
+      "luma_p99_nits": 418.64996337890625,
+      "sdr_clip_fraction": 0.0005768531976744186,
+      "sdr_crushed_fraction": 0.024812068495639536,
+      "recorded_peak_nits": 9864.593975067139,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.17231167204536746,
+          -0.024316682283171076
+        ],
+        "response": 0.767564550249113,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_12916-13078_frame00000156",
+      "scene_id": "nf_cosmos_12916-13078",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 9890.8359375,
+      "luma_p99_nits": 400.1032409667969,
+      "sdr_clip_fraction": 0.0006029705668604651,
+      "sdr_crushed_fraction": 0.027228492914244187,
+      "recorded_peak_nits": 9890.638816833496,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.1990757659874589,
+          -0.0499571238402865
+        ],
+        "response": 0.7431369385578566,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_13446-13649_frame00000004",
+      "scene_id": "nf_cosmos_13446-13649",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 2195.340576171875,
+      "luma_p99_nits": 498.5035705566406,
+      "sdr_clip_fraction": 0.010268100472383721,
+      "sdr_crushed_fraction": 0.0009061591569767442,
+      "recorded_peak_nits": 2195.5703649520874,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.025477042529473692,
+          -0.16616988213965556
+        ],
+        "response": 0.863054583573507,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_13446-13649_frame00000100",
+      "scene_id": "nf_cosmos_13446-13649",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 4568.96044921875,
+      "luma_p99_nits": 288.87371826171875,
+      "sdr_clip_fraction": 0.006935864825581396,
+      "sdr_crushed_fraction": 0.0001419422238372093,
+      "recorded_peak_nits": 4568.634859085083,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.040065296582639576,
+          -0.15974196347720238
+        ],
+        "response": 0.8396541415196326,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_13446-13649_frame00000196",
+      "scene_id": "nf_cosmos_13446-13649",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 9902.3818359375,
+      "luma_p99_nits": 413.47760009765625,
+      "sdr_clip_fraction": 0.00849609375,
+      "sdr_crushed_fraction": 0.0002151844113372093,
+      "recorded_peak_nits": 9903.249652862549,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.042460292490346774,
+          -0.08761103035084261
+        ],
+        "response": 0.8096691212720342,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_1573-1749_frame00000004",
+      "scene_id": "nf_cosmos_1573-1749",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3066.640380859375,
+      "luma_p99_nits": 118.92887878417969,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.14983137263808138,
+      "recorded_peak_nits": 3066.6852560043335,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.059303167193633044,
+          0.0698551241957972
+        ],
+        "response": 0.703306326125231,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_1573-1749_frame00000092",
+      "scene_id": "nf_cosmos_1573-1749",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 7651.83447265625,
+      "luma_p99_nits": 517.336181640625,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.08103992550872093,
+      "recorded_peak_nits": 7651.422840118408,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.07782947624355074,
+          0.20158670595367312
+        ],
+        "response": 0.8001430129839314,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_1573-1749_frame00000172",
+      "scene_id": "nf_cosmos_1573-1749",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 7629.55029296875,
+      "luma_p99_nits": 510.626708984375,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.06182946493459302,
+      "recorded_peak_nits": 7629.129112243652,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.16106026344050406,
+          0.2968872343484463
+        ],
+        "response": 0.7458505166901482,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_8686-8826_frame00000004",
+      "scene_id": "nf_cosmos_8686-8826",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 2243.237548828125,
+      "luma_p99_nits": 719.5469970703125,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.004171398074127907,
+      "recorded_peak_nits": 2243.4696655273438,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.0481918029823305,
+          -0.05467703695343573
+        ],
+        "response": 0.8428741802668406,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_8686-8826_frame00000076",
+      "scene_id": "nf_cosmos_8686-8826",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1741.0096435546875,
+      "luma_p99_nits": 306.75433349609375,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.08562749818313954,
+      "recorded_peak_nits": 1740.9795398712158,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.042638666690905325,
+          -0.07170961387622299
+        ],
+        "response": 0.7204306119432052,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_8686-8826_frame00000140",
+      "scene_id": "nf_cosmos_8686-8826",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1834.853271484375,
+      "luma_p99_nits": 87.88677978515625,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.01366165515988372,
+      "recorded_peak_nits": 1834.9457559585571,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.015106371852823486,
+          -0.051848060455128575
+        ],
+        "response": 0.7170400998244683,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_9561-9789_frame00000004",
+      "scene_id": "nf_cosmos_9561-9789",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 2563.080810546875,
+      "luma_p99_nits": 15.200546264648438,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.012594817405523255,
+      "recorded_peak_nits": 2563.3516330718994,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.16652989510085092,
+          -0.0472433023066543
+        ],
+        "response": 0.8021895720416473,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_9561-9789_frame00000116",
+      "scene_id": "nf_cosmos_9561-9789",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 2304.2451171875,
+      "luma_p99_nits": 14.034730911254883,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.013084234193313954,
+      "recorded_peak_nits": 2304.0467863082886,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.26218666098711196,
+          0.07373340712270249
+        ],
+        "response": 0.8136792322362049,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_cosmos_9561-9789_frame00000228",
+      "scene_id": "nf_cosmos_9561-9789",
+      "split": "train",
+      "sdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        860,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3288.034423828125,
+      "luma_p99_nits": 22.51274871826172,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.013586141896802326,
+      "recorded_peak_nits": 3287.7982807159424,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.027562114689601458,
+          -0.0269342245859292
+        ],
+        "response": 0.8187573657681545,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_11872-12263_frame00000005",
+      "scene_id": "nf_meridian_11872-12263",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1946.2032470703125,
+      "luma_p99_nits": 89.92015075683594,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.025929783950617284,
+      "recorded_peak_nits": 1946.0035848617554,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.1745200909743545,
+          -0.12020151689975478
+        ],
+        "response": 0.7927542302964462,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_11872-12263_frame00000195",
+      "scene_id": "nf_meridian_11872-12263",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1300.56982421875,
+      "luma_p99_nits": 82.99760437011719,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.013690200617283951,
+      "recorded_peak_nits": 1300.6556668281555,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.020631832494004243,
+          -0.1024120334419365
+        ],
+        "response": 0.7825317445418073,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_11872-12263_frame00000385",
+      "scene_id": "nf_meridian_11872-12263",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1242.720703125,
+      "luma_p99_nits": 80.42997741699219,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.04148582175925926,
+      "recorded_peak_nits": 1242.612329006195,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.11709475837653827,
+          0.057072865213939394
+        ],
+        "response": 0.7316313134765046,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_12264-12745_frame00000005",
+      "scene_id": "nf_meridian_12264-12745",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1869.970458984375,
+      "luma_p99_nits": 237.6497344970703,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.1270090663580247,
+      "recorded_peak_nits": 1869.716157913208,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.045868191043027196,
+          -0.04220934694997425
+        ],
+        "response": 0.7946569967187114,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_12264-12745_frame00000245",
+      "scene_id": "nf_meridian_12264-12745",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1906.8714599609375,
+      "luma_p99_nits": 247.1051483154297,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.12271797839506172,
+      "recorded_peak_nits": 1906.6616096496582,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.028322160962346743,
+          -0.07216407683105786
+        ],
+        "response": 0.7989145294866629,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_12264-12745_frame00000475",
+      "scene_id": "nf_meridian_12264-12745",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1840.212646484375,
+      "luma_p99_nits": 258.7834167480469,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.11603877314814814,
+      "recorded_peak_nits": 1840.052041053772,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.007994029003640435,
+          -0.008291364742134988
+        ],
+        "response": 0.8214470122216476,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_15932-16309_frame00000005",
+      "scene_id": "nf_meridian_15932-16309",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 371.6178894042969,
+      "luma_p99_nits": 49.31916046142578,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.16863811728395062,
+      "recorded_peak_nits": 371.65759015083313,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.12326413695265614,
+          -0.06201255479292911
+        ],
+        "response": 0.7656056920273436,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_15932-16309_frame00000195",
+      "scene_id": "nf_meridian_15932-16309",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1910,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1910,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 374.1191711425781,
+      "luma_p99_nits": 50.545536041259766,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.13395239480318014,
+      "recorded_peak_nits": 374.11376535892487,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.059897852788509454,
+          -0.07298128914361257
+        ],
+        "response": 0.7644609528490238,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_15932-16309_frame00000375",
+      "scene_id": "nf_meridian_15932-16309",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1892,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1892,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1026.01318359375,
+      "luma_p99_nits": 94.89081573486328,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.07051914493774959,
+      "recorded_peak_nits": 1025.9338116645813,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.06259253596982717,
+          0.039233508205199996
+        ],
+        "response": 0.7983630493076311,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_1782-2163_frame00000005",
+      "scene_id": "nf_meridian_1782-2163",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1735.432861328125,
+      "luma_p99_nits": 1460.3175048828125,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.009419849537037037,
+      "recorded_peak_nits": 1735.1896677017212,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.01903299596239094,
+          -0.042565087121886336
+        ],
+        "response": 0.8433308234024379,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_1782-2163_frame00000195",
+      "scene_id": "nf_meridian_1782-2163",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1694.420166015625,
+      "luma_p99_nits": 1461.8662109375,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.009709201388888889,
+      "recorded_peak_nits": 1694.2377490997314,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.023564261612506243,
+          0.0157377642372154
+        ],
+        "response": 0.8533818306297891,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_1782-2163_frame00000375",
+      "scene_id": "nf_meridian_1782-2163",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1986.345947265625,
+      "luma_p99_nits": 1461.6353759765625,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.009342689043209876,
+      "recorded_peak_nits": 1986.1704721450806,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.05206867196721987,
+          -0.0876974266953141
+        ],
+        "response": 0.8281722380262282,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_20988-21412_frame00000005",
+      "scene_id": "nf_meridian_20988-21412",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 144.48423767089844,
+      "luma_p99_nits": 19.237361907958984,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.013276427469135802,
+      "recorded_peak_nits": 144.47261196374893,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.02313556092636304,
+          0.14791370586073072
+        ],
+        "response": 0.7506232467583485,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_20988-21412_frame00000215",
+      "scene_id": "nf_meridian_20988-21412",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1480.3828125,
+      "luma_p99_nits": 27.923263549804688,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.01320457175925926,
+      "recorded_peak_nits": 1480.223111152649,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.08235388481463701,
+          0.08778317872044283
+        ],
+        "response": 0.734284758878251,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_20988-21412_frame00000415",
+      "scene_id": "nf_meridian_20988-21412",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 140.1674041748047,
+      "luma_p99_nits": 24.09578514099121,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.012542920524691359,
+      "recorded_peak_nits": 140.18596345186234,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.09750767376114311,
+          0.10350667119870138
+        ],
+        "response": 0.7791678338415093,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_22412-22738_frame00000005",
+      "scene_id": "nf_meridian_22412-22738",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1058.537841796875,
+      "luma_p99_nits": 60.923274993896484,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.010583043981481481,
+      "recorded_peak_nits": 1058.6286721229553,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.03731789713609146,
+          0.007890755995930476
+        ],
+        "response": 0.9054430614018606,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_22412-22738_frame00000165",
+      "scene_id": "nf_meridian_22412-22738",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 4267.53564453125,
+      "luma_p99_nits": 286.6139831542969,
+      "sdr_clip_fraction": 9.35570987654321e-05,
+      "sdr_crushed_fraction": 0.010525173611111112,
+      "recorded_peak_nits": 4267.891006469727,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.02606665487741111,
+          0.015345419419560358
+        ],
+        "response": 0.8782407172645131,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_22412-22738_frame00000325",
+      "scene_id": "nf_meridian_22412-22738",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 630.218994140625,
+      "luma_p99_nits": 58.943878173828125,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.010960648148148148,
+      "recorded_peak_nits": 630.2212066650391,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.09501677981168655,
+          0.0575040232986197
+        ],
+        "response": 0.9054479253374867,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_24058-24550_frame00000005",
+      "scene_id": "nf_meridian_24058-24550",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1585.4075927734375,
+      "luma_p99_nits": 129.34262084960938,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.026782889660493827,
+      "recorded_peak_nits": 1585.1953501701355,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.03220062992326689,
+          0.06745607313598612
+        ],
+        "response": 0.8652634428193172,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_24058-24550_frame00000245",
+      "scene_id": "nf_meridian_24058-24550",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 204.91236877441406,
+      "luma_p99_nits": 56.26373291015625,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.027251157407407408,
+      "recorded_peak_nits": 204.93477308750153,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.08515536711581717,
+          -0.016791410833590703
+        ],
+        "response": 0.8603227626946237,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_meridian_24058-24550_frame00000485",
+      "scene_id": "nf_meridian_24058-24550",
+      "split": "test",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 181.07611083984375,
+      "luma_p99_nits": 57.95121765136719,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.026673900462962963,
+      "recorded_peak_nits": 181.08195704221725,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.09893318955002428,
+          -0.0170649074546958
+        ],
+        "response": 0.8895581103861332,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_17140-17709_frame00000001",
+      "scene_id": "nf_nocturne_17140-17709",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1926.4371337890625,
+      "luma_p99_nits": 190.18359375,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1926.3574743270874,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.08460863590455858,
+          0.14362777101246138
+        ],
+        "response": 0.7747088103658624,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_17140-17709_frame00000261",
+      "scene_id": "nf_nocturne_17140-17709",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 746.1600952148438,
+      "luma_p99_nits": 115.60533905029297,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 746.0829238891602,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.038702949769742645,
+          0.15755140073132168
+        ],
+        "response": 0.8193325843248103,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_17140-17709_frame00000521",
+      "scene_id": "nf_nocturne_17140-17709",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1.046275019645691,
+      "luma_p99_nits": 1.0072962045669556,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1.0462130601517856,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.027928934084371804,
+          0.0780031736552047
+        ],
+        "response": 0.33126490511414075,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_18013-18315_frame00000001",
+      "scene_id": "nf_nocturne_18013-18315",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3976.70751953125,
+      "luma_p99_nits": 3.361755609512329,
+      "sdr_clip_fraction": 3.375771604938272e-06,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3976.9098072052,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.2882319425783919,
+          -0.24139377468165435
+        ],
+        "response": 0.5916025200858712,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_18013-18315_frame00000151",
+      "scene_id": "nf_nocturne_18013-18315",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3331.47412109375,
+      "luma_p99_nits": 1.3410398960113525,
+      "sdr_clip_fraction": 4.822530864197531e-06,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3331.6744651794434,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.15281294313255955,
+          -0.10430741469848215
+        ],
+        "response": 0.6392625150943382,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_18013-18315_frame00000302",
+      "scene_id": "nf_nocturne_18013-18315",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 4059.915771484375,
+      "luma_p99_nits": 85.35890197753906,
+      "sdr_clip_fraction": 7.71604938271605e-06,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 4060.3407287597656,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.12698103415313255,
+          -0.24090909775755165
+        ],
+        "response": 0.5728071286446519,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_2370-2539_frame00000001",
+      "scene_id": "nf_nocturne_2370-2539",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 754.255859375,
+      "luma_p99_nits": 477.9198913574219,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.00019917052469135802,
+      "recorded_peak_nits": 754.1735863685608,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.05606455346099892,
+          -0.11913969154811355
+        ],
+        "response": 0.9119109429626001,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_2370-2539_frame00000085",
+      "scene_id": "nf_nocturne_2370-2539",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 630.218994140625,
+      "luma_p99_nits": 427.1136169433594,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 1.9290123456790124e-06,
+      "recorded_peak_nits": 630.2608454227448,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.19665294477033513,
+          -0.06337395359319942
+        ],
+        "response": 0.9380295364600089,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_2370-2539_frame00000169",
+      "scene_id": "nf_nocturne_2370-2539",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 709.651611328125,
+      "luma_p99_nits": 421.1130676269531,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.00022087191358024691,
+      "recorded_peak_nits": 709.596536397934,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.011429602447535103,
+          -0.127795545685359
+        ],
+        "response": 0.8544971518632438,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_23820-24322_frame00000001",
+      "scene_id": "nf_nocturne_23820-24322",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 4074.150146484375,
+      "luma_p99_nits": 434.2167053222656,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 4074.4980087280273,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.03301812755705669,
+          0.033957097431851935
+        ],
+        "response": 0.9800744427678486,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_23820-24322_frame00000290",
+      "scene_id": "nf_nocturne_23820-24322",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 187.3618927001953,
+      "luma_p99_nits": 139.5047149658203,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 187.33621734380722,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.012479669567127871,
+          -0.022761989389636028
+        ],
+        "response": 0.8562776037077937,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_23820-24322_frame00000502",
+      "scene_id": "nf_nocturne_23820-24322",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3161.0859375,
+      "luma_p99_nits": 474.3998718261719,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3160.639081954956,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.04217105546115363,
+          -0.004155376706975744
+        ],
+        "response": 0.8916312758293417,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_27740-28109_frame00000001",
+      "scene_id": "nf_nocturne_27740-28109",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3632.92724609375,
+      "luma_p99_nits": 773.4328002929688,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0035325038580246914,
+      "recorded_peak_nits": 3632.7540130615234,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.05708168579133144,
+          0.021447511600101166
+        ],
+        "response": 0.9764883820898831,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_27740-28109_frame00000185",
+      "scene_id": "nf_nocturne_27740-28109",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3613.904296875,
+      "luma_p99_nits": 772.53369140625,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.033050250771604936,
+      "recorded_peak_nits": 3613.382034301758,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.04480078164070278,
+          0.0700831919269973
+        ],
+        "response": 0.9440519123131202,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_27740-28109_frame00000369",
+      "scene_id": "nf_nocturne_27740-28109",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3633.987060546875,
+      "luma_p99_nits": 807.1575317382812,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.06466097608024692,
+      "recorded_peak_nits": 3633.958179473877,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.05449941069844044,
+          0.03466568001296366
+        ],
+        "response": 0.9111452665593889,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_32660-32799_frame00000001",
+      "scene_id": "nf_nocturne_32660-32799",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3819.82568359375,
+      "luma_p99_nits": 1027.90478515625,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 1.0127314814814815e-05,
+      "recorded_peak_nits": 3819.707624435425,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.02326344503201483,
+          -0.011367550154901096
+        ],
+        "response": 0.9761464283284214,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_32660-32799_frame00000070",
+      "scene_id": "nf_nocturne_32660-32799",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3827.632080078125,
+      "luma_p99_nits": 1745.9599609375,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3828.119752883911,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.05470090570776165,
+          -0.04859980167233857
+        ],
+        "response": 0.964523248322722,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_32660-32799_frame00000139",
+      "scene_id": "nf_nocturne_32660-32799",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3852.271484375,
+      "luma_p99_nits": 1584.843994140625,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.003543113425925926,
+      "recorded_peak_nits": 3852.491539001465,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.004015198629332417,
+          -0.007089201201921469
+        ],
+        "response": 0.967898780402417,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_8540-9009_frame00000001",
+      "scene_id": "nf_nocturne_8540-9009",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 919.9818725585938,
+      "luma_p99_nits": 122.85714721679688,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 919.848783493042,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.08763764849884126,
+          0.2381743450976046
+        ],
+        "response": 0.6485125561141305,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_8540-9009_frame00000235",
+      "scene_id": "nf_nocturne_8540-9009",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1367.07958984375,
+      "luma_p99_nits": 122.63145446777344,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1367.223515510559,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.05080257871810545,
+          0.1845108268924065
+        ],
+        "response": 0.6353078505231274,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_8540-9009_frame00000469",
+      "scene_id": "nf_nocturne_8540-9009",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1035.030029296875,
+      "luma_p99_nits": 133.13291931152344,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1035.0533394813538,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.038617324453184665,
+          0.15028949740707276
+        ],
+        "response": 0.6628157023547424,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_9010-9349_frame00000001",
+      "scene_id": "nf_nocturne_9010-9349",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 85.99613952636719,
+      "luma_p99_nits": 17.268112182617188,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.00828125,
+      "recorded_peak_nits": 85.99632114171982,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.2658923471049377,
+          0.02625651665192663
+        ],
+        "response": 0.7081183112329907,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_9010-9349_frame00000170",
+      "scene_id": "nf_nocturne_9010-9349",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 86.75189971923828,
+      "luma_p99_nits": 22.615222930908203,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.023975212191358026,
+      "recorded_peak_nits": 86.75135114789009,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.12655813349957157,
+          0.09263999979373239
+        ],
+        "response": 0.6955485785276525,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_nocturne_9010-9349_frame00000339",
+      "scene_id": "nf_nocturne_9010-9349",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 86.49923706054688,
+      "luma_p99_nits": 25.860239028930664,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.038314043209876546,
+      "recorded_peak_nits": 86.50253203511238,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.18471263078930633,
+          0.09084674966085515
+        ],
+        "response": 0.7062224386673834,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_2268-2412_frame00000001",
+      "scene_id": "nf_sol_levante_2268-2412",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 884.97802734375,
+      "luma_p99_nits": 651.7774047851562,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 884.9215688705444,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.19750042020439196,
+          0.303684667752961
+        ],
+        "response": 0.5698941060238414,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_2268-2412_frame00000073",
+      "scene_id": "nf_sol_levante_2268-2412",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 885.4944458007812,
+      "luma_p99_nits": 564.8763427734375,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 885.4194006919861,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.3453572955747717,
+          -0.2502035174989743
+        ],
+        "response": 0.6194096038945847,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_2268-2412_frame00000143",
+      "scene_id": "nf_sol_levante_2268-2412",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1022.1302490234375,
+      "luma_p99_nits": 594.357177734375,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1022.0614099502563,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.22253810430399312,
+          -0.3208841031584768
+        ],
+        "response": 0.6885330594248242,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_289-453_frame00000001",
+      "scene_id": "nf_sol_levante_289-453",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 754.255859375,
+      "luma_p99_nits": 470.3818054199219,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 754.2956485748291,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.021816906011338233,
+          0.007707252769620254
+        ],
+        "response": 0.9530844695917848,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_289-453_frame00000082",
+      "scene_id": "nf_sol_levante_289-453",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 732.7884521484375,
+      "luma_p99_nits": 494.696533203125,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 732.8338022232056,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.026530639787239352,
+          0.051522295350338254
+        ],
+        "response": 0.9228787241607077,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_289-453_frame00000163",
+      "scene_id": "nf_sol_levante_289-453",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 754.255859375,
+      "luma_p99_nits": 349.44970703125,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 754.3228003978729,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.0025219740249440292,
+          0.036846495642862465
+        ],
+        "response": 0.9460045258618064,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_3282-3874_frame00000001",
+      "scene_id": "nf_sol_levante_3282-3874",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1035.3319091796875,
+      "luma_p99_nits": 118.27037048339844,
+      "sdr_clip_fraction": 0.00027054398148148147,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1035.2942695617676,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.005998033483422205,
+          0.029778322009633484
+        ],
+        "response": 0.9450560925114486,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_3282-3874_frame00000297",
+      "scene_id": "nf_sol_levante_3282-3874",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1078.7969970703125,
+      "luma_p99_nits": 528.9052124023438,
+      "sdr_clip_fraction": 0.0005314429012345679,
+      "sdr_crushed_fraction": 0.00012393904320987653,
+      "recorded_peak_nits": 1078.705436706543,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.007203057421179437,
+          -0.013835907092641264
+        ],
+        "response": 0.9790345141922848,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_3282-3874_frame00000591",
+      "scene_id": "nf_sol_levante_3282-3874",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1051.460693359375,
+      "luma_p99_nits": 901.11669921875,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1051.535318851471,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.0429312685219827,
+          -0.07777207149622711
+        ],
+        "response": 0.3328425439281596,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_4123-4545_frame00000001",
+      "scene_id": "nf_sol_levante_4123-4545",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1033.8232421875,
+      "luma_p99_nits": 776.5414428710938,
+      "sdr_clip_fraction": 0.00016589506172839507,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1033.7802529335022,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.0016785744158767102,
+          -0.019571208376078175
+        ],
+        "response": 0.9583012048775951,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_4123-4545_frame00000206",
+      "scene_id": "nf_sol_levante_4123-4545",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1073.1483154296875,
+      "luma_p99_nits": 655.8096923828125,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1073.2279314994812,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.028553631907328736,
+          0.05057306903505321
+        ],
+        "response": 0.9685920644034114,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_4123-4545_frame00000410",
+      "scene_id": "nf_sol_levante_4123-4545",
+      "split": "train",
+      "sdr_shape": [
+        832,
+        1450,
+        3
+      ],
+      "hdr_shape": [
+        832,
+        1450,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 711.9320068359375,
+      "luma_p99_nits": 296.3097229003906,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.687992374005305,
+      "recorded_peak_nits": 711.8318428993225,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.058647180455380976,
+          -0.20421330058255194
+        ],
+        "response": 0.6017661647250255,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_519-649_frame00000001",
+      "scene_id": "nf_sol_levante_519-649",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1054.2242431640625,
+      "luma_p99_nits": 868.57177734375,
+      "sdr_clip_fraction": 0.006694637345679012,
+      "sdr_crushed_fraction": 5.401234567901235e-05,
+      "recorded_peak_nits": 1054.3311338424683,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.03289867114058609,
+          0.015211211701398497
+        ],
+        "response": 0.8614558544423845,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_519-649_frame00000066",
+      "scene_id": "nf_sol_levante_519-649",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1075.968994140625,
+      "luma_p99_nits": 882.6375122070312,
+      "sdr_clip_fraction": 0.008069540895061728,
+      "sdr_crushed_fraction": 0.0001306905864197531,
+      "recorded_peak_nits": 1076.1161885261536,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.06050394395529679,
+          -0.02010596607242121
+        ],
+        "response": 0.871099677350786,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sol_levante_519-649_frame00000130",
+      "scene_id": "nf_sol_levante_519-649",
+      "split": "train",
+      "sdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1074.401123046875,
+      "luma_p99_nits": 861.8654174804688,
+      "sdr_clip_fraction": 0.006916473765432099,
+      "sdr_crushed_fraction": 0.00032214506172839505,
+      "recorded_peak_nits": 1074.3612418174744,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.038831415114657375,
+          -0.03690793723809804
+        ],
+        "response": 0.8763874470152788,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_11198-11570_frame00000001",
+      "scene_id": "nf_sparks_11198-11570",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3940.9140625,
+      "luma_p99_nits": 1581.7113037109375,
+      "sdr_clip_fraction": 1.3563368055555556e-06,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3941.4724674224854,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.007152090352889218,
+          0.02106732754486984
+        ],
+        "response": 0.9697766381626328,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_11198-11570_frame00000186",
+      "scene_id": "nf_sparks_11198-11570",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3695.984130859375,
+      "luma_p99_nits": 1581.8477783203125,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3695.4632053375244,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.0073432158854842555,
+          0.014437261128421142
+        ],
+        "response": 0.9774997460448908,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_11198-11570_frame00000371",
+      "scene_id": "nf_sparks_11198-11570",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3474.3740234375,
+      "luma_p99_nits": 1519.024169921875,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3474.531192779541,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.0024956867965642004,
+          0.023985647826123113
+        ],
+        "response": 0.9836085216245718,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_2024-2455_frame00000001",
+      "scene_id": "nf_sparks_2024-2455",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3400.18994140625,
+      "luma_p99_nits": 575.20166015625,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 4.5211226851851854e-07,
+      "recorded_peak_nits": 3400.095510482788,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.07669332727883216,
+          0.044414124646323216
+        ],
+        "response": 0.9016338162020676,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_2024-2455_frame00000217",
+      "scene_id": "nf_sparks_2024-2455",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3388.310302734375,
+      "luma_p99_nits": 699.0663452148438,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 1.8084490740740741e-06,
+      "recorded_peak_nits": 3388.1374797821045,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.005776197434215646,
+          -0.0009522637369769882
+        ],
+        "response": 0.9117831885814667,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_2024-2455_frame00000431",
+      "scene_id": "nf_sparks_2024-2455",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3396.225341796875,
+      "luma_p99_nits": 631.9595947265625,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 9.042245370370371e-07,
+      "recorded_peak_nits": 3396.275089263916,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.0016114002491747215,
+          0.010268544901620658
+        ],
+        "response": 0.9211870923431383,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_30-511_frame00000118",
+      "scene_id": "nf_sparks_30-511",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1.017979621887207,
+      "luma_p99_nits": 0.3199639320373535,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1.018006479833275,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.00835581516662387,
+          0.08754998770518796
+        ],
+        "response": 0.975906319450587,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_30-511_frame00000299",
+      "scene_id": "nf_sparks_30-511",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 442.9456481933594,
+      "luma_p99_nits": 36.45086669921875,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 442.88282346725464,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.04041082811323804,
+          0.32081582983407486
+        ],
+        "response": 0.8163970070373681,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_30-511_frame00000481",
+      "scene_id": "nf_sparks_30-511",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3015.2001953125,
+      "luma_p99_nits": 515.1656494140625,
+      "sdr_clip_fraction": 0.001182273582175926,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3015.505666732788,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.01939413268547696,
+          0.26023070375357804
+        ],
+        "response": 0.906528858260976,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_5363-5763_frame00000001",
+      "scene_id": "nf_sparks_5363-5763",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3471.33544921875,
+      "luma_p99_nits": 519.1587524414062,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3471.481283187866,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.0817136374091092,
+          0.0069837497224511935
+        ],
+        "response": 0.9504374419339001,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_5363-5763_frame00000201",
+      "scene_id": "nf_sparks_5363-5763",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3542.935791015625,
+      "luma_p99_nits": 474.3945007324219,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3542.5406532287598,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.023737638148674023,
+          -0.00639181964585589
+        ],
+        "response": 0.9421430606032826,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_5363-5763_frame00000399",
+      "scene_id": "nf_sparks_5363-5763",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3548.106201171875,
+      "luma_p99_nits": 368.39556884765625,
+      "sdr_clip_fraction": 2.0345052083333332e-05,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3548.521604537964,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.019063102419437428,
+          -0.0002720247873497783
+        ],
+        "response": 0.9859350877037892,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_5764-6024_frame00000001",
+      "scene_id": "nf_sparks_5764-6024",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3869.161865234375,
+      "luma_p99_nits": 3171.655029296875,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.11266321252893519,
+      "recorded_peak_nits": 3869.275915145874,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.08597871686393432,
+          -0.008274213550762965
+        ],
+        "response": 0.895665369513962,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_5764-6024_frame00000130",
+      "scene_id": "nf_sparks_5764-6024",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3855.6435546875,
+      "luma_p99_nits": 2288.231201171875,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.041829879195601855,
+      "recorded_peak_nits": 3855.544933319092,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.0371333548698658,
+          0.010023518914238139
+        ],
+        "response": 0.9252189658064809,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_5764-6024_frame00000259",
+      "scene_id": "nf_sparks_5764-6024",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3863.523681640625,
+      "luma_p99_nits": 2965.16064453125,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 2.2605613425925925e-05,
+      "recorded_peak_nits": 3863.1729984283447,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.040483132200279215,
+          0.011623010089621744
+        ],
+        "response": 0.9052163515136473,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_6026-6502_frame00000001",
+      "scene_id": "nf_sparks_6026-6502",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3408.133056640625,
+      "luma_p99_nits": 130.23281860351562,
+      "sdr_clip_fraction": 2.7126736111111112e-06,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3407.799852371216,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.003524652957935359,
+          0.005482664561114348
+        ],
+        "response": 0.9256374062194178,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_6026-6502_frame00000238",
+      "scene_id": "nf_sparks_6026-6502",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3411.1162109375,
+      "luma_p99_nits": 166.09799194335938,
+      "sdr_clip_fraction": 9.042245370370371e-07,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3411.5436096191406,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.010885245166662116,
+          -0.07468143649774106
+        ],
+        "response": 0.8585470181682872,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_6026-6502_frame00000475",
+      "scene_id": "nf_sparks_6026-6502",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 3415.09814453125,
+      "luma_p99_nits": 233.0443878173828,
+      "sdr_clip_fraction": 1.3563368055555556e-06,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 3415.256004333496,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.011154652366315077,
+          0.020341401870553
+        ],
+        "response": 0.9117540672111014,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_8396-8941_frame00000001",
+      "scene_id": "nf_sparks_8396-8941",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1051.1539306640625,
+      "luma_p99_nits": 252.83193969726562,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1051.0545234680176,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.0421926596807225,
+          0.07221169966989294
+        ],
+        "response": 0.9137542180510031,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_8396-8941_frame00000273",
+      "scene_id": "nf_sparks_8396-8941",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1410.004638671875,
+      "luma_p99_nits": 262.4585266113281,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1409.8864345550537,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.0017335717754889401,
+          0.09693852243400158
+        ],
+        "response": 0.8995597113130821,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_8396-8941_frame00000545",
+      "scene_id": "nf_sparks_8396-8941",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 1016.7783203125,
+      "luma_p99_nits": 262.8173522949219,
+      "sdr_clip_fraction": 0.0,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 1016.7160339355469,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.06835815303966797,
+          0.11082702793896715
+        ],
+        "response": 0.8990500655232204,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_9774-10071_frame00000001",
+      "scene_id": "nf_sparks_9774-10071",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 2658.249755859375,
+      "luma_p99_nits": 1866.0230712890625,
+      "sdr_clip_fraction": 0.00030879267939814815,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 2658.2124557495117,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          0.02218116764889544,
+          0.06437150065399067
+        ],
+        "response": 0.866300689522177,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_9774-10071_frame00000149",
+      "scene_id": "nf_sparks_9774-10071",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 2655.150390625,
+      "luma_p99_nits": 1866.2606201171875,
+      "sdr_clip_fraction": 0.00031150535300925925,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 2654.9993448257446,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.05439109780735407,
+          0.018325593310137833
+        ],
+        "response": 0.8795972648594115,
+        "review_flag": false
+      }
+    },
+    {
+      "asset_id": "nf_sparks_9774-10071_frame00000297",
+      "scene_id": "nf_sparks_9774-10071",
+      "split": "val",
+      "sdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "hdr_shape": [
+        1080,
+        2048,
+        3
+      ],
+      "shape_matches": true,
+      "finite": true,
+      "hdr_peak_nits": 2647.41748046875,
+      "luma_p99_nits": 1814.302978515625,
+      "sdr_clip_fraction": 0.00036530671296296295,
+      "sdr_crushed_fraction": 0.0,
+      "recorded_peak_nits": 2647.1149587631226,
+      "storage": {
+        "mode": "log2_extended",
+        "diffuse_white_nits": 203.0,
+        "floor_nits": 0.005,
+        "ceiling_nits": 1000000.0,
+        "version": 3
+      },
+      "alignment_proxy": {
+        "shift_at_256x144": [
+          -0.08864460057850465,
+          -0.08216622636459192
+        ],
+        "response": 0.9091233912234505,
+        "review_flag": false
+      }
+    }
+  ],
+  "scenes": 36,
+  "elapsed_seconds": 158.2189236999984,
+  "limitations": [
+    "first/middle/last frame per shot only",
+    "phase correlation of edge maps is a review aid, not registration certification",
+    "no HDR source media or ingest metadata changed"
+  ],
+  "manifest_sha256": "0da0979e8bb9d6ebca812d74cdb11a34ee6e7d3a11923a07f07302510ff0e8b4",
+  "algorithm_sha256": "90d84f2cbf61bbb72b8f24c02f2c64fb0712022395388061fa6a0941f4074daa",
+  "reproducer_check": {
+    "selected_samples": "identical",
+    "first_sample_scalars": "exact",
+    "phase_correlation_absolute_tolerance": 1e-06
+  }
+}

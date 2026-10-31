@@ -1,0 +1,41 @@
+{
+  "id": "claude_genfill_v1_20261027",
+  "written": "2026-10-27, before any data was built, any model trained or any output looked at",
+  "author": "Claude (Cowork session), approved direction by Ahmed: layer 3 generative fill",
+  "what": "RUDRA layer 3: a Wan2.1-VACE-1.3B (Apache-2.0) LoRA that fills only fully clipped highlights and fully crushed shadows of a RUDRA master; composited so that no 8-bit code of the master's SDR view changes.",
+  "not_used": ["DiffHDR code or weights", "LTX models, weights or outputs", "Netflix", "non-commercial data", "generated video", "any development, validation, holdout or fresh-grade scene"],
+  "base_model": {"repo": "Wan-AI/Wan2.1-VACE-1.3B-diffusers", "licence": "Apache-2.0", "local": "G:/datasets/models/Wan2.1-VACE-1.3B-diffusers"},
+  "data": {
+    "builder": "tools/build_genfill_clips.py",
+    "out": "G:/datasets/corpora/claude_genfill_clips_20261027",
+    "sources": ["Poly Haven HDRIs G:/datasets/sources/polyhaven/*_2k.exr whose ph:<name> is a commercial train scene of the run05 registry", "the other commercial train plates of the run05 registry (FXTD own footage, CC0/authored renders)"],
+    "exclusions": "tools/build_aces_scale_crops.evaluation_scenes (same as claude_scale_crops_20261027) plus every non-train registry scene; asserted",
+    "clip": {"frames": 33, "size": [288, 512], "clips_per_hdri": 5, "clips_per_plate": 1, "kinds": {"highlight": 0.5, "shadow": 0.25, "random": 0.25}},
+    "view": "ACES 2.0 SDR 100 nits (Rec.709), OCIO built-in cg-config-v4.0.0_aces-v2.0_ocio-v2.5, 8-bit",
+    "exposure": "FXTD native; others median AP1 luminance 0.18; offsets highlight {0,1,2,3}, shadow {-4,-3,-2}, random {-1..3}",
+    "noise": "30 % of clips: signal-dependent Gaussian, AR(1) rho 0.5 in time, before the view",
+    "mask": "codes >= tau_high (U{240..254}) or <= tau_low (U{1..10}), dilate 2, EMA 0.7; keep clips with 0.2 %..60 % masked",
+    "encoding": "normalised ACEScct, 0 -> -1, 2^14 -> +1 (rudra/genfill/encoding.py); VAE float32",
+    "dev_split": "3 % of training scenes by hash (validation-loss monitor only)",
+    "seed": 20261027
+  },
+  "training": {
+    "trainer": "training/genfill_train.py",
+    "out": "G:/rudra_training/claude_genfill_v1_20261027",
+    "lora": {"rank": 32, "alpha": 32, "targets": ["to_q", "to_k", "to_v", "to_out.0", "ffn.net.0.proj", "ffn.net.2"]},
+    "objective": "rectified flow matching, logit-normal sigma shifted 3; loss weight 1 + 4 inside the mask",
+    "optimiser": "AdamW lr 1e-4 (200 warm-up), betas 0.9/0.999, wd 0.01, grad clip 1, batch 1 x accumulate 4, bf16 transformer, float32 LoRA",
+    "length": "8000 updates or 9.5 h (stop at the first 1000-update save after 9.5 h); THE LAST LoRA IS THE RESULT, no selection on the dev loss",
+    "seed": 20261028
+  },
+  "inference_defaults": {"steps": 30, "guidance": 1.0, "window": 33, "overlap": 8, "max_area": 399360, "tau_high": 250, "tau_low": 4, "dilate": 4, "feather": 6, "ema": 0.7},
+  "gates": {
+    "R": "every frame of every evaluated master: rint(255*view(filled)) == rint(255*view(master)) on 100 % of pixels (float32 masters); untouched pixels bit-identical",
+    "H": "Poly Haven / FXTD truth clips not used in training (the frozen PH holdout and the fresh FXTD grade set v2 scenes): inside the highlight fill mask, mean |log2 Y_filled - log2 Y_truth| < the same for the unfilled master, 95 % bootstrap CI over clips excludes 0; and at -3 and -6 EV the PU21-encoded error inside the mask is lower than the master's",
+    "S": "the same clips at +3 EV: shadow-mask error no worse than the master's (CI upper bound <= +2 %); no shadow pixel lifted above its code edge (guaranteed by R)",
+    "T": "flicker excess of the filled region <= 0.02 EV over the truth on the competitor-pack clips (bright and dark) and the 2 generated clips",
+    "A": "the generated-clip review set: no visible seams between windows (frame-to-frame step at window joins <= 1.5x the median step)",
+    "release": "nothing is promoted to the app's default unless every gate passes; the app option stays labelled experimental"
+  },
+  "release_authorized": false
+}

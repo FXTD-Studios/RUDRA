@@ -1,0 +1,38 @@
+{
+  "registered_before_training": true,
+  "parent": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+  "parent_sha256": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+  "pilot": "G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json",
+  "replay_pilot": "G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json",
+  "seed": 20261101,
+  "steps": 600,
+  "learning_rate": 0.0001,
+  "loss": {
+    "equal_frame_highlight_asinh_mse": 1.0,
+    "highlight_gradient": 1.0,
+    "known_aligned_temporal_residual": 1.0
+  },
+  "include_fully_clipped": true,
+  "change": "Balanced100 windows, each3 distinct motion scenes at desired clipping .001/.01/.05 plus3 distinct replay scenes. Frozen shared sampling algorithm/seed; materialize and hash full600-exposure schedule before first update. Compare sequential Adam600 updates versus mean-gradient accumulation100 updates, same600 sample exposures and lr1e-4. Different update counts are deliberate and disclosed; not identical optimizer budget. No panel constraints or loss changes.",
+  "replay_geometry": "Origin multiple4; nominal320x512 crops may extend1..3 pixels to actual image edge. Exclude64px artificial boundaries,4px real boundaries. Select original interior highlights only; exclude and report replay rows without any. No motion objective on replay.",
+  "acceptance": "All existing gates unchanged; compare independent sequential/accumulation trajectories, preserve parent and outside-full outputs. No shared-route qualification required.",
+  "old_coherent_control_max": 0.3825248606569533,
+  "aligned_residual_control_max": 0.010367255277136186,
+  "scope": "Full eligible TRAIN pool. Research checkpoints, final only, no best-step selection. Unchanged complete new/old/legacy DEV, detail, aligned, appearance, grade and Hunyuan48 gates. Parent/initial full branch identical. steps names sample exposures; optimizer_updates records actual updates.",
+  "release_authorized": false,
+  "replay_sampling": "nonempty_phase_aligned_v2",
+  "training_region": "fully_clipped",
+  "temporal_support": "active_union_composed",
+  "log_gradient_balance": false,
+  "update_mode": "adam",
+  "search_scales": [
+    1,
+    0.5,
+    0.25,
+    0.125
+  ],
+  "relative_tolerance": 1e-06,
+  "absolute_tolerance": 1e-09,
+  "balanced_windows": true,
+  "accumulation_steps": 1
+}

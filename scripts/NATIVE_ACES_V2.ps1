@@ -1,0 +1,265 @@
+<#
+.SYNOPSIS
+  ACES v2 staged pipeline on Windows: export the package, build the native
+  stages with LibTorch + OpenColorIO 2.5.2 + OpenCV, run the unit tests, prove
+  C++ == Python stage by stage, then time and run the native master.
+
+    powershell -ExecutionPolicy Bypass -File scripts\NATIVE_ACES_V2.ps1
+    powershell -ExecutionPolicy Bypass -File scripts\NATIVE_ACES_V2.ps1 -OcioPrefix C:\deps\ocio-2.5.2
+    powershell -ExecutionPolicy Bypass -File scripts\NATIVE_ACES_V2.ps1 -Checkpoint <frozen.pt> -SkipBuild
+
+  OpenColorIO 2.5.2 (the checkpoint contract pins it; configure refuses others):
+    -OcioPrefix <install prefix with lib\cmake\OpenColorIO and bin\*.dll>, or
+    VCPKG_ROOT set: `vcpkg install opencolorio:x64-windows` is run (classic mode).
+  Output: reports\aces_v2_<stamp>\ (parity.json, master\, timing, log). Exit 1 on any failure.
+  Signing is NOT part of this script (release step, last).
+#>
+param(
+    [string]$Checkpoint = "G:\rudra_training\partial_pcgrad_duration6400_retry1_20261025\step6400.pt",
+    [string]$Frames = "G:\datasets\corpora\aces_consistent_exposures_v2_20261024\val",
+    [int]$ParityFrames = 6,
+    [string]$Build = "build\native_aces_v2",
+    [string]$Python = ".venv\Scripts\python.exe",
+    [string]$OcioPrefix = "",
+    [string]$OpenCvVersion = "4.10.0",
+    [string]$OrtVersion = "1.22.0",   # ONNX Runtime DirectML package from tmp\native_deps (NATIVE_GATE_A.ps1 fetches it)
+    [string]$Device = "cuda",
+    [string]$PackageName = "RUDRA_ACES_2",   # the package folder in dist\models (was aces_v2_<checkpoint folder>)
+    [switch]$SkipBuild,
+    [switch]$SkipExport,
+    [switch]$InstallBuildTools,
+    [switch]$NoLuminanceGuard          # default: appearance constraint also forbids new negative luminance
+)
+$Guard = @(); if (-not $NoLuminanceGuard) { $Guard = @('--forbid-new-negative-y') }
+$ErrorActionPreference = "Stop"
+$Repo = Split-Path $PSScriptRoot -Parent   # the repo this script sits in
+Set-Location -LiteralPath $Repo
+. (Join-Path $PSScriptRoot "native_toolchain.ps1")
+$Stamp = Get-Date -Format "yyyy-MM-dd_HHmm"
+$Out = Join-Path $Repo "reports\aces_v2_$Stamp"
+New-Item -ItemType Directory -Force -Path $Out | Out-Null
+$Deps = Join-Path $Repo "tmp\native_deps"
+New-Item -ItemType Directory -Force -Path $Deps | Out-Null
+$Package = Join-Path $Repo "dist\models\$PackageName"
+function Say([string]$m) { Write-Host "`n== $m" -ForegroundColor Cyan }
+function Fail([string]$m) { Write-Host "`nFAILED: $m" -ForegroundColor Red; Write-Host "report folder: $Out"; exit 1 }
+Start-Transcript -Path (Join-Path $Out "log.txt") | Out-Null
+
+# ---------------------------------------------------------------------------
+Say "Python, torch, OCIO"
+$info = & $Python -c "import torch, PyOpenColorIO as o; print(torch.__version__); print(torch.utils.cmake_prefix_path); print(o.__version__); print(int(torch.cuda.is_available()))"
+if ($LASTEXITCODE -ne 0) { Fail "python with torch and opencolorio not found ($Python)" }
+$TorchVersion, $TorchCMake, $PyOcio, $CudaAvail = $info
+if ($PyOcio -ne "2.5.2") { Fail "Python OpenColorIO is $PyOcio; the checkpoint contract needs 2.5.2 (pip install opencolorio==2.5.2)" }
+$TorchRoot = Split-Path (Split-Path $TorchCMake)
+$TorchLib = Join-Path $TorchRoot "lib"
+if (-not (Test-Path (Join-Path $TorchRoot "include\torch\script.h"))) { Fail "torch headers not found under $TorchRoot" }
+if ($Device -eq "cuda" -and $CudaAvail -ne "1") { Write-Host "no CUDA GPU visible to torch: timing on CPU" -ForegroundColor Yellow; $Device = "cpu" }
+Write-Host "torch $TorchVersion ($TorchRoot), Python OCIO $PyOcio, device $Device"
+
+# ---------------------------------------------------------------------------
+if (-not $SkipExport) {
+    Say "Export the ACES v2 package (G1 TorchScript + manifest; Python staged parity inside)"
+    if (Test-Path $Package) { Remove-Item -Recurse -Force $Package }
+    # The ONNX export needs onnx (writing) and onnxruntime (CPU check). Install them into this Python if missing;
+    # if that is impossible, export without ONNX (the DirectML route is then skipped).
+    $NoOnnx = @()
+    & $Python -c "import onnx, onnxruntime" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "onnx / onnxruntime missing in ${Python}; installing" -ForegroundColor Yellow
+        & $Python -m pip install --disable-pip-version-check onnx onnxruntime
+        & $Python -c "import onnx, onnxruntime" 2>$null
+        if ($LASTEXITCODE -ne 0) { Write-Host "onnx / onnxruntime unavailable: exporting without ONNX (DirectML route skipped)" -ForegroundColor Yellow; $NoOnnx = @('--no-onnx') }
+    }
+    $vals = Get-ChildItem $Frames -Filter "*_source.png" | Sort-Object Name | Select-Object -First 2
+    & $Python tools\export_native_v2.py --checkpoint $Checkpoint --out $Package --frames @($vals.FullName) @Guard @NoOnnx
+    if ($LASTEXITCODE -ne 0) { Fail "export_native_v2.py (TorchScript or staged parity failed)" }
+}
+if (-not (Test-Path (Join-Path $Package "manifest.json"))) { Fail "no package at $Package" }
+# name the package (the engine ignores these keys; the app and tools show them)
+$mp = Join-Path $Package "manifest.json"
+& $Python -c "import json,sys; p=sys.argv[1]; d=json.load(open(p,encoding='utf-8')); d={**{'name':sys.argv[2],'title':'RUDRA ACES 2'},**{k:v for k,v in d.items() if k not in ('name','title')}}; open(p,'w',encoding='utf-8').write(json.dumps(d,indent=2)+chr(10))" $mp $PackageName
+if ($LASTEXITCODE -ne 0) { Fail "naming the package" }
+
+# ---------------------------------------------------------------------------
+Say "OpenColorIO 2.5.2 (C++)"
+if (-not $OcioPrefix) {
+    if (-not $env:VCPKG_ROOT) { Fail "pass -OcioPrefix <OCIO 2.5.2 install> or set VCPKG_ROOT" }
+    $vcpkg = Join-Path $env:VCPKG_ROOT "vcpkg.exe"
+    & $vcpkg install "opencolorio:x64-windows"
+    if ($LASTEXITCODE -ne 0) { Fail "vcpkg install opencolorio" }
+    $OcioPrefix = Join-Path $env:VCPKG_ROOT "installed\x64-windows"
+}
+if (-not (Test-Path (Join-Path $OcioPrefix "share\opencolorio")) -and -not (Test-Path (Join-Path $OcioPrefix "lib\cmake\OpenColorIO"))) {
+    Fail "no OpenColorIO CMake config under $OcioPrefix"
+}
+
+# OpenCV (still decode for the aces-v2 command), same pack as the phase 4 gate.
+$CvRoot = Join-Path $Deps "opencv-$OpenCvVersion"
+$CvBuild = Join-Path $CvRoot "opencv\build"
+if (-not (Test-Path (Join-Path $CvBuild "OpenCVConfig.cmake"))) {
+    $exe = Join-Path $Deps "opencv-$OpenCvVersion-windows.exe"
+    Invoke-WebRequest -Uri "https://github.com/opencv/opencv/releases/download/$OpenCvVersion/opencv-$OpenCvVersion-windows.exe" -OutFile $exe -UseBasicParsing
+    $p = Start-Process -FilePath $exe -ArgumentList @("-o`"$CvRoot`"", "-y") -WindowStyle Hidden -Wait -PassThru
+    if ($p.ExitCode -ne 0) { Fail "OpenCV extract" }
+    Remove-Item $exe
+}
+$CvLib = Get-ChildItem (Join-Path $CvBuild "x64") -Directory | Where-Object { $_.Name -match "^vc\d+$" } |
+         Sort-Object { [int]($_.Name.Substring(2)) } -Descending | Select-Object -First 1
+$CvConfigDir = Join-Path $CvLib.FullName "lib"
+$CvDll = Get-ChildItem (Join-Path $CvBuild "x64") -Recurse -Filter "opencv_world*.dll" | Where-Object { $_.Name -notmatch "d\.dll$" } | Select-Object -First 1
+
+$OrtRoot = Join-Path $Deps "ort-root-$OrtVersion"
+$OrtArgs = @()
+if (Test-Path (Join-Path $OrtRoot "include\onnxruntime_cxx_api.h")) {
+    $OrtArgs = @("-DRUDRA_WITH_ONNXRUNTIME=ON", "-DONNXRUNTIME_ROOT=$OrtRoot")
+    Write-Host "ONNX Runtime $OrtVersion (DirectML) found: the DirectML route is built and timed too"
+} else { Write-Host "no $OrtRoot (run NATIVE_GATE_A.ps1 once to fetch it): DirectML route skipped" -ForegroundColor Yellow }
+
+# ---------------------------------------------------------------------------
+if (-not $SkipBuild) {
+    Say "Configure and build (Release): rudra_tests, rudra-native, aces_v2_parity"
+    $tc = Find-NativeToolchain
+    if (-not $tc -and $InstallBuildTools) { if (-not (Install-NativeBuildTools)) { Fail "Build Tools install" }; $tc = Find-NativeToolchain }
+    if (-not $tc) { Fail "no C++ toolchain" }
+    $cmake = $tc.CMake
+    Reset-StaleCMakeCache $Build $tc.Generator
+    & $cmake -S native -B $Build -G $tc.Generator -A x64 `
+        -DRUDRA_BUILD_TESTS=ON -DRUDRA_BUILD_CLI=ON -DRUDRA_BUILD_APP=OFF `
+        -DRUDRA_WITH_LIBTORCH=ON "-DRUDRA_TORCH_ROOT=$TorchRoot" -DRUDRA_WITH_OCIO=ON `
+        -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CvConfigDir" "-DCMAKE_PREFIX_PATH=$OcioPrefix" @OrtArgs
+    if ($LASTEXITCODE -ne 0) { Fail "cmake configure (OpenColorIO must be exactly 2.5.2)" }
+    & $cmake --build $Build --config Release --parallel --target rudra_tests rudra-native aces_v2_parity aces_v2_constraint_parity
+    if ($LASTEXITCODE -ne 0) { Fail "build" }
+}
+$Tests = Join-Path $Build "tests\Release\rudra_tests.exe"
+$Cli = Join-Path $Build "cli\Release\rudra-native.exe"
+$Par = Get-ChildItem $Build -Recurse -Filter "aces_v2_parity.exe" | Select-Object -First 1
+if (-not (Test-Path $Cli) -or -not $Par) { Fail "binaries not built" }
+foreach ($d in @((Split-Path $Cli), (Split-Path $Tests), $Par.DirectoryName)) {
+    Copy-Item (Join-Path $OcioPrefix "bin\*.dll") $d -Force -ErrorAction SilentlyContinue
+    if ($CvDll) { Copy-Item $CvDll.FullName $d -Force }
+    if ($OrtArgs.Count -and (Test-Path (Join-Path $Package "rudra_g1.onnx"))) {
+        Copy-Item "$OrtRoot\lib\*.dll" $d -Force   # beside the exe: System32 has an older onnxruntime.dll
+        $dml = Get-ChildItem $Deps -Recurse -Filter DirectML.dll | Where-Object { $_.FullName -match "x64-win" } | Select-Object -First 1
+        if ($dml) { Copy-Item $dml.FullName $d -Force }
+    }
+}
+$env:PATH = "$TorchLib;$env:PATH"
+
+# ---------------------------------------------------------------------------
+Say "Unit tests (AcesV2.* and the full suite)"
+& $Tests "--gtest_filter=AcesV2.*" | Tee-Object -FilePath (Join-Path $Out "tests_aces_v2.txt")
+if ($LASTEXITCODE -ne 0) { Fail "AcesV2 unit tests" }
+& $Tests | Out-File (Join-Path $Out "tests_all.txt")
+if ($LASTEXITCODE -ne 0) {
+    # Re-run only the failed tests once, to separate timing-sensitive tests from real failures.
+    # Both results stay in the report folder; a test that fails twice stops the run.
+    $failed = Select-String -Path (Join-Path $Out "tests_all.txt") -Pattern '^\[  FAILED  \] (\S+\.\S+) \(' |
+              ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object -Unique
+    if (-not $failed) { Fail "native test suite failed: see tests_all.txt" }
+    Write-Host "re-running $($failed.Count) failed test(s) once: $($failed -join ', ')" -ForegroundColor Yellow
+    & $Tests "--gtest_filter=$($failed -join ':')" | Tee-Object -FilePath (Join-Path $Out "tests_rerun.txt")
+    if ($LASTEXITCODE -ne 0) { Fail "native test suite failed twice: see tests_all.txt and tests_rerun.txt" }
+    Write-Host "passed on re-run (timing-sensitive): $($failed -join ', ')" -ForegroundColor Yellow
+}
+
+Say "C++ vs Python, stage by stage ($ParityFrames frames)"
+$pf = Get-ChildItem $Frames -Filter "*_source.png" | Sort-Object Name | Select-Object -First $ParityFrames
+& $Python native\tools\aces_v2_parity\parity_check.py --exe $Par.FullName --checkpoint $Checkpoint `
+    --g1 (Join-Path $Package "rudra_g1.ts") --out (Join-Path $Out "parity.json") @Guard @($pf.FullName)
+if ($LASTEXITCODE -ne 0) { Fail "native parity (see parity.json)" }
+
+Say "Native master: rudra-native aces-v2 ($Device)"
+& $Cli aces-v2 $Package $Frames --out (Join-Path $Out "master") --device $Device --ocio-threads 8
+if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 (exit $LASTEXITCODE; 3 = appearance constraint errors)" }
+
+if ($OrtArgs.Count -and (Test-Path (Join-Path $Package "rudra_g1.onnx"))) {
+    Say "Native master through ONNX Runtime + DirectML (tolerance route)"
+    & $Cli aces-v2 $Package $Frames --out (Join-Path $Out "master_directml") --runtime onnxruntime --device directml --ocio-threads 8
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --runtime onnxruntime --device directml" }
+}
+
+Say "Native master of a video (every frame, <stem>_<NNNNNN>.exr)"
+# ffmpeg and ffprobe: the PATH first, then the pack the app bundles (tmp\native_deps).
+if (-not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+    $ffd = Get-ChildItem "tmp\native_deps" -Directory -Filter "ffmpeg-*-full_build" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($ffd) { $env:PATH = "$(Join-Path $ffd.FullName 'bin');$env:PATH" }
+}
+if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
+    $first = Get-ChildItem $Frames -Filter "*_source.png" | Sort-Object Name | Select-Object -First 1
+    $clip = Join-Path $Out "video_smoke.mp4"
+    & ffmpeg -v error -y -loop 1 -i $first.FullName -frames:v 12 -r 24 -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" `
+        -c:v libx264 -crf 12 -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 $clip
+    if ($LASTEXITCODE -ne 0) { Fail "ffmpeg could not make the smoke clip" }
+    $vout = Join-Path $Out "master_video"
+    & $Cli aces-v2 $Package $clip --out $vout --device $Device --ocio-threads 8
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 on a video (exit $LASTEXITCODE)" }
+    $n = (Get-ChildItem $vout -Filter "video_smoke_*.exr").Count
+    if ($n -ne 12) { Fail "video master wrote $n EXRs, expected 12" }
+    Write-Host "video: 12 frames mastered"
+    # ARRI LogC4 copies: 16-bit TIFF, 10-bit DPX and a ProRes 422 HQ movie of the same frames.
+    $lout = Join-Path $Out "master_video_logc4"
+    & $Cli aces-v2 $Package $clip --out $lout --device $Device --ocio-threads 8 --log logc4 --log-format tiff16,dpx10,prores422hq
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --log logc4 (exit $LASTEXITCODE)" }
+    $nt = (Get-ChildItem (Join-Path $lout "log_logc4") -Filter "*.tif").Count
+    $nd = (Get-ChildItem (Join-Path $lout "log_logc4_dpx") -Filter "*.dpx").Count
+    $mov = Join-Path $lout "video_smoke_logc4.mov"
+    if ($nt -ne 12 -or $nd -ne 12 -or -not (Test-Path $mov)) { Fail "LogC4 copies: $nt TIFF, $nd DPX, movie $(Test-Path $mov); expected 12, 12, True" }
+    Write-Host "LogC4: 12 TIFF (16-bit), 12 DPX (10-bit), ProRes 422 HQ movie"
+    # The Deliver tab (27 Oct 2026): a 16-bit uncompressed RGB MOV in PQ through the ACES 2.0 HDR
+    # 1000-nit output, no EXR; a half-float ACES 2065-1 still of one frame, numbered; 10-bit PQ DPX.
+    $dout = Join-Path $Out "deliver_mov16_pq"
+    & $Cli aces-v2 $Package $clip --out $dout --device $Device --ocio-threads 8 --exr none --log pq1000 --log-format mov16 --name SH010 --fps 25
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --log pq1000 --log-format mov16 (exit $LASTEXITCODE)" }
+    $m16 = Join-Path $dout "SH010.mov"
+    $tag = (& ffprobe -v error -select_streams v:0 -show_entries stream=codec_tag_string,pix_fmt,color_transfer -of csv=p=0 $m16) -join ","
+    if ($tag -notmatch "b48r" -or $tag -notmatch "rgb48be") { Fail "16-bit MOV: $tag" }
+    if ($tag -notmatch "smpte2084") { Write-Host "note: this ffmpeg leaves the 16-bit MOV's colr transfer unknown ($tag); set the clip to Rec.2100 PQ on import" -ForegroundColor Yellow }
+    if ((Get-ChildItem $dout -Filter "*.exr").Count -ne 0) { Fail "--exr none wrote EXRs" }
+    Write-Host "Deliver: 16-bit RGB MOV (b48r) in PQ, ACES 2.0 HDR 1000 nits: $tag"
+    $sout = Join-Path $Out "deliver_still_half_ap0"
+    & $Cli aces-v2 $Package $clip --out $sout --device $Device --ocio-threads 8 --exr half --exr-gamut ap0 --frame 5 --name SH010 --start 1006
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --exr half --exr-gamut ap0 --frame 5 (exit $LASTEXITCODE)" }
+    if (-not (Test-Path (Join-Path $sout "SH010.001006.exr")) -or (Get-ChildItem $sout -Filter "*.exr").Count -ne 1) { Fail "the half AP0 still is not SH010.001006.exr alone" }
+    Write-Host "Deliver: one half-float ACES 2065-1 still, SH010.001006.exr"
+    $pout = Join-Path $Out "deliver_dpx_pq"
+    & $Cli aces-v2 $Package $clip --out $pout --device $Device --ocio-threads 8 --exr none --log pq1000 --log-format dpx10
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --log pq1000 --log-format dpx10 (exit $LASTEXITCODE)" }
+    $np = (Get-ChildItem (Join-Path $pout "pq1000_dpx") -Filter "*.dpx").Count
+    if ($np -ne 12) { Fail "PQ DPX: $np, expected 12" }
+    Write-Host "Deliver: 12 DPX (10-bit) in PQ"
+    # The conform and the trims (28 Oct 2026): a typed start timecode and reel in the EXR and the MOV, trimmed.
+    $tout = Join-Path $Out "deliver_timecode_trims"
+    & $Cli aces-v2 $Package $clip --out $tout --device $Device --ocio-threads 8 --name SH010 --timecode 01:00:00:00 --reel A001 `
+        --strength 0.8 --peak-nits 1000 --log logc4 --log-format prores422hq
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --timecode --reel --strength --peak-nits (exit $LASTEXITCODE)" }
+    $tmov = Join-Path $tout "SH010.mov"
+    $ttc = (& ffprobe -v error -show_entries stream_tags=timecode -of csv=p=0 $tmov) -join ","
+    if ($ttc -notmatch "01:00:00:00") { Fail "MOV timecode: $ttc" }
+    $prov = Get-Content (Join-Path $tout "provenance.json") -Raw | ConvertFrom-Json
+    if ($prov.frames[11].timecode -ne "01:00:00:11" -or $prov.frames[0].reel -ne "A001" -or $prov.trims.strength -ne 0.8) {
+        Fail "provenance: timecode $($prov.frames[11].timecode), reel $($prov.frames[0].reel), strength $($prov.trims.strength)"
+    }
+    Write-Host "Deliver: timecode 01:00:00:00 to 01:00:00:11, reel A001, trims in the provenance and the MOV"
+    # A shot's in and out (28 Oct 2026): frames 3-7 only, still on their own timecode, with the light level.
+    $rout = Join-Path $Out "deliver_range"
+    & $Cli aces-v2 $Package $clip --out $rout --device $Device --ocio-threads 8 --name SH020 --timecode 01:00:00:00 --range 3:7
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --range 3:7 (exit $LASTEXITCODE)" }
+    $rp = Get-Content (Join-Path $rout "provenance.json") -Raw | ConvertFrom-Json
+    if ($rp.frames.Count -ne 5 -or $rp.frames[0].timecode -ne "01:00:00:03" -or -not ($rp.maxcll -gt 0)) {
+        Fail "range: $($rp.frames.Count) frames, first $($rp.frames[0].timecode), MaxCLL $($rp.maxcll)"
+    }
+    Write-Host "Deliver: frames 3-7 only (01:00:00:03 on), MaxCLL $([math]::Round($rp.maxcll)) nits"
+} else {
+    Write-Host "no ffmpeg on the PATH or in tmp\native_deps: video check skipped" -ForegroundColor Yellow
+}
+
+Say "Python export of the same frames (reference timing and EXRs)"
+& $Python tools\rudra_aces_export.py $Frames --checkpoint $Checkpoint --out (Join-Path $Out "python_master") `
+    --colour-backtrack-all --clipped-smoothing hybrid64 --device $Device --ocio-threads 8 @Guard
+if ($LASTEXITCODE -ne 0) { Fail "python reference export" }
+
+Stop-Transcript | Out-Null
+Write-Host "`nALL PASSED. Report: $Out" -ForegroundColor Green
+Write-Host "Next: open master\*.exr in Resolve and Nuke (ACEScg, float32, rudra.reconstructed channel)."

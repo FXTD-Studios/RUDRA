@@ -1,0 +1,10 @@
+{
+  "reviewed_by": "Ahmed (project owner, approval in this conversation)",
+  "reviewed_at": "2026-10-13",
+  "user_response": "yes",
+  "accepted_scope": "Documented licensing interpretation and internal scratch pilot; 200-step smoke, up to 1000 total if checks pass, at most 90 GPU-minutes and 1 GB checkpoints/logs",
+  "release_authorized": false,
+  "source_candidate_sha256": "93b0e5eebb42d9bb9f1df6c901fd913ce953bffa4caee4a97fe6ab65aa14fcf5",
+  "approved_manifest_sha256": "e9177b9f9cf7375c87160ec7648515f307290e9b818dd6c173f9fb392d22ac02",
+  "license_decision_sha256": "ec82939145e588f7a2c0756fe8a5c77a83a53576027bb86fb58d0fd6de26efcd"
+}

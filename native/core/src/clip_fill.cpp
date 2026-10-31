@@ -443,9 +443,14 @@ ClipFill reconstruct_crop(const SdrImage& sdr, float corpus_ev, const ClipFillOp
             const float bv[3] = {b[0][i], b[1][i], b[2][i]};
             const double ly = std::max(double(f[0][i]), double(std::log2(std::max(luma_of(bv), kTiny)))) +
                               dome[r] * (2.0 * u - u * u);
-            // A source's core runs toward white; a sky keeps its edge's hue.
+            // The core runs halfway toward white, a sky's as a source's: inside a
+            // fully clipped region every channel was at least at the ceiling, and
+            // carrying the edge's hue all the way in turned a blown sun in a blue
+            // sky cyan (31 Oct 2026). On the cp8 clip benches (ev1, ev2) it lowers
+            // the chroma error in fully clipped pixels, 0.0276 -> 0.0270 and
+            // 0.0280 -> 0.0270, and leaves the luminance error as it was.
             // The chroma is renormalised so the luma is the one asked for.
-            const double keep = reg[r].large ? 1.0 : 1.0 - 0.5 * u;
+            const double keep = 1.0 - 0.5 * u;
             double cq[3], norm = 0.0;
             for (int c = 0; c < 3; ++c) {
                 cq[c] = keep * f[std::size_t(c) + 1][i];
