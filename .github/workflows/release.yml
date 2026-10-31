@@ -21,7 +21,7 @@ permissions:
 jobs:
   macos:
     name: macOS (Apple silicon)
-    runs-on: macos-14
+    runs-on: macos-15   # macos-14 images retire on 2 Nov 2026
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
