@@ -469,14 +469,15 @@ TEST(AcesDeliver, IntoAnExistingFolderNothingIsReplaced) {
     ASSERT_FALSE(r);
     EXPECT_NE(r.error().detail.find("SH010_hdr_1002.dpx"), std::string::npos);
     EXPECT_EQ(aces_provenance_file(*o, d / "new").filename(), "SH010_hdr_provenance.json");
-    // The copies go beside the EXRs.
+    // The old way still refuses an existing folder.
+    auto plain = aces_deliver_from_json({{"name", "x"}});
+    EXPECT_FALSE(aces_prepare_out(*plain, d / "new", 1, ""));
+    // The copies go beside the EXRs (DPX is written through ffmpeg).
+    if (!have("ffmpeg")) GTEST_SKIP() << "ffmpeg is not on the PATH";
     auto w = AcesLogWriter::open(o->copies, d / "flat", d / "flat" / "x.mov", 24);
     ASSERT_TRUE(w);
     EXPECT_TRUE(fs::exists(d / "flat"));
     EXPECT_FALSE(fs::exists(d / "flat" / "log_logc4_dpx"));
-    // The old way still refuses an existing folder.
-    auto plain = aces_deliver_from_json({{"name", "x"}});
-    EXPECT_FALSE(aces_prepare_out(*plain, d / "new", 1, ""));
 }
 
 TEST(AcesDeliver, FilesAppearOnlyWhenWhole) {

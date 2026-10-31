@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
         if (mode == "cancel") {
             if (argc != 4) throw std::runtime_error("Cancellation benchmark takes no additional options");
             auto ffmpeg = checked(require_executable("ffmpeg"));
-            std::stop_source stop;
+            rudra::stop_source stop;
             auto work = std::async(std::launch::async, [&] {
                 return PreparedHeadroomSource::prepare(file, HeadroomPolicy::Bt1886V1, ffmpeg, {stop.get_token()});
             });

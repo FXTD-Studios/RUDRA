@@ -164,7 +164,7 @@ std::string sha256_hex(std::span<const std::byte> data) {
     return to_hex(d);
 }
 
-Result<std::string> sha256_file(const std::filesystem::path& path, std::stop_token stop) {
+Result<std::string> sha256_file(const std::filesystem::path& path, rudra::stop_token stop) {
     if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "File hashing was cancelled");
     std::ifstream in(path, std::ios::binary);
     if (!in) return make_error(ErrorCode::NotFound, "The file could not be opened.", path.string());

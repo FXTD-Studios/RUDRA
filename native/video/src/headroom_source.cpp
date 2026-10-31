@@ -17,7 +17,7 @@ std::string utf8(const std::filesystem::path& path) {
 
 Result<std::string> headroom_source_cache_id(const std::filesystem::path& source,
     const VideoSource& video, HeadroomPolicy policy, const std::filesystem::path& decoder_executable,
-    std::stop_token stop) {
+    rudra::stop_token stop) {
     if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "Headroom preparation was cancelled");
     if (policy != HeadroomPolicy::Bt1886V1)
         return make_error(ErrorCode::Unsupported, "A float source cache requires an explicit supported headroom policy");

@@ -104,7 +104,7 @@ Result<VideoProbe> parse_video_probe(std::string_view streams_json, std::string_
     return out;
 }
 
-Result<VideoProbe> probe_video(const fs::path& file, std::stop_token stop, const fs::path& probe_executable) {
+Result<VideoProbe> probe_video(const fs::path& file, rudra::stop_token stop, const fs::path& probe_executable) {
     if (stop.stop_requested()) return make_error(ErrorCode::Cancelled, "Video probing was cancelled");
     auto ffprobe = probe_executable.empty() ? require_executable("ffprobe") : Result<fs::path>(probe_executable);
     if (!ffprobe) return ffprobe.error();

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <stop_token>
+#include "rudra/platform/stop_token.hpp"
 
 #include "rudra/core/headroom_policy.hpp"
 #include "rudra/media/video_decode_float.hpp"
@@ -14,10 +14,10 @@ namespace rudra {
 // Unprotected helper: use PreparedHeadroomSource for lifetime-safe reuse.
 Result<std::string> headroom_source_cache_id(const std::filesystem::path& source,
     const VideoSource& video, HeadroomPolicy policy, const std::filesystem::path& decoder_executable,
-    std::stop_token stop = {});
+    rudra::stop_token stop = {});
 
 struct HeadroomPrepareOptions {
-    std::stop_token stop;
+    rudra::stop_token stop;
     // Empty resolves ffprobe on PATH; explicit path supports pinned tooling.
     std::filesystem::path probe_executable;
 };

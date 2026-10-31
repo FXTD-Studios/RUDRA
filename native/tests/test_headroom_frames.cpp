@@ -659,7 +659,7 @@ TEST_F(HeadroomFrames, PreparedSourceReusesProbeIdentityAndLeasesThroughLastOwne
 }
 
 TEST_F(HeadroomFrames, SharedPreparationDoesNotShareRangeCancellationOrReceiptIdentity) {
-    std::stop_source stop;
+    rudra::stop_source stop;
     auto prepared = PreparedHeadroomSource::prepare(movie, kPolicy, RUDRA_HEADROOM_PRODUCER_PATH, {stop.get_token()});
     ASSERT_TRUE(prepared);
     auto first = HeadroomStream::open(*prepared, kFrameBytes); ASSERT_TRUE(first);
@@ -703,7 +703,7 @@ TEST_F(HeadroomFrames, SharedIdentityFailureInvalidatesAllOwnersAndCannotBeReset
 TEST_F(HeadroomFrames, PreparationCancellationInterruptsBothProbePassesBeforeEofAndAfterEof) {
     for (const std::string pass : {"stream", "frame"}) for (const std::string phase : {"before", "after"}) {
         const auto file = probe_fixture("probe-wait-" + pass + "-" + phase);
-        std::stop_source stop;
+        rudra::stop_source stop;
         auto work = std::async(std::launch::async, [&] {
             return PreparedHeadroomSource::prepare(file, kPolicy, RUDRA_HEADROOM_PRODUCER_PATH,
                                                    {stop.get_token(), RUDRA_HEADROOM_PRODUCER_PATH});
@@ -725,7 +725,7 @@ TEST_F(HeadroomFrames, PreparationCancellationInterruptsBothProbePassesBeforeEof
 }
 
 TEST_F(HeadroomFrames, CancelledPreparationAndInvalidSharedInputsNeverCreateOwners) {
-    std::stop_source stop; stop.request_stop();
+    rudra::stop_source stop; stop.request_stop();
     auto prepared = PreparedHeadroomSource::prepare(movie, kPolicy, RUDRA_HEADROOM_PRODUCER_PATH, {stop.get_token()});
     ASSERT_FALSE(prepared); EXPECT_EQ(prepared.error().code, ErrorCode::Cancelled);
     EXPECT_EQ(HeadroomStream::open(movie, kPolicy, ffmpeg, kFrameBytes, {}, {stop.get_token()}).error().code,
@@ -757,7 +757,7 @@ TEST_F(HeadroomFrames, FileHashCancellationNeverReturnsPartialIdentity) {
     const auto file = dir / "hash-cancel.bin";
     { std::ofstream out(file, std::ios::binary); const std::string chunk(1 << 20, 'x');
       for (int i = 0; i < 64; ++i) out.write(chunk.data(), std::streamsize(chunk.size())); }
-    std::stop_source stop;
+    rudra::stop_source stop;
     auto work = std::async(std::launch::async, [&] { return sha256_file(file, stop.get_token()); });
     EXPECT_EQ(work.wait_for(20ms), std::future_status::timeout);
     const auto before = std::chrono::steady_clock::now(); stop.request_stop();
@@ -767,7 +767,7 @@ TEST_F(HeadroomFrames, FileHashCancellationNeverReturnsPartialIdentity) {
         std::chrono::steady_clock::now() - before).count());
     EXPECT_EQ(sha256_file(dir / "absent.bin", stop.get_token()).error().code, ErrorCode::Cancelled);
     auto normal = sha256_file(movie); ASSERT_TRUE(normal);
-    auto uncancelled = sha256_file(movie, std::stop_source{}.get_token()); ASSERT_TRUE(uncancelled);
+    auto uncancelled = sha256_file(movie, rudra::stop_source{}.get_token()); ASSERT_TRUE(uncancelled);
     EXPECT_EQ(*normal, *uncancelled);
 }
 

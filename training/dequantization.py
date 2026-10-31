@@ -9,6 +9,7 @@ import math
 import torch
 from torch import nn
 from torch.nn import functional as F
+from rudra.torch_compat import clamp_inclusive
 
 
 class DequantizationLoss(nn.Module):
@@ -31,17 +32,18 @@ class DequantizationLoss(nn.Module):
     def source_code(self, canonical):
         from rudra.sdr2hdr import srgb_to_linear
         linear = torch.einsum('ij,bjhw->bihw', self.to_source, srgb_to_linear(canonical.float()))
-        linear = linear.clamp(0, 1)
+        linear = clamp_inclusive(linear, 0.0, 1.0)
         # torch.where evaluates both branches: pow(0, 1/2.4) has an infinite
         # derivative even when the linear branch is selected. Bound ONLY the
         # unused nonlinear branch to keep exact black and finite derivatives.
-        return torch.where(linear <= .0031308, 12.92 * linear,
-                           1.055 * linear.clamp_min(.0031308).pow(1 / 2.4) - .055).clamp(0, 1)
+        code = torch.where(linear <= .0031308, 12.92 * linear,
+                           1.055 * linear.clamp_min(.0031308).pow(1 / 2.4) - .055)
+        return clamp_inclusive(code, 0.0, 1.0)
 
     def forward_view(self, radiance):
         # Invert the same sampled inverse-view used by the independent numpy
         # contract checker. Interpolation remains differentiable in radiance.
-        x = radiance.float().clamp(self.values[0], self.values[-1])
+        x = clamp_inclusive(radiance.float(), self.values[0], self.values[-1])
         index = torch.searchsorted(self.values, x.contiguous()).clamp(1, self.values.numel() - 1)
         lo, hi = self.values[index - 1], self.values[index]
         frac = (x - lo) / (hi - lo).clamp_min(1e-12)

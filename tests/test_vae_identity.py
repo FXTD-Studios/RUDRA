@@ -3,6 +3,7 @@ from pipeline.generator_vae import wan_vae_identity
 
 
 def test_identity_changes_with_weights_and_config(tmp_path):
+    pytest.importorskip('diffusers')   # the identity records the diffusers version
     root = tmp_path / 'wan'
     root.mkdir()
     weights = root / 'model.safetensors'

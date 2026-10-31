@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+from rudra.torch_compat import clamp_inclusive
 
 LUMA2020 = (0.2627, 0.6780, 0.0593)
 FLOOR = 1e-7          # 0.001 nit in network units (nits / 10,000)
@@ -83,9 +84,9 @@ def near_black_log_loss(pred: torch.Tensor, target: torch.Tensor, sdr: torch.Ten
     if float(mask.sum()) == 0.0:
         return pred.sum() * 0.0
     w = torch.tensor(LUMA2020, device=pred.device, dtype=pred.dtype).view(1, 3, 1, 1)
-    lp = torch.log(pred.clamp_min(0) + FLOOR)
+    lp = torch.log(clamp_inclusive(pred, 0.0) + FLOOR)
     lt = torch.log(target.clamp_min(0) + FLOOR)
-    lum = (torch.log((pred.clamp_min(0) * w).sum(1, keepdim=True) + FLOOR)
+    lum = (torch.log((clamp_inclusive(pred, 0.0) * w).sum(1, keepdim=True) + FLOOR)
            - torch.log((target.clamp_min(0) * w).sum(1, keepdim=True) + FLOOR)).abs()
     opp_p = torch.cat((lp[:, 0:1] - lp[:, 1:2], lp[:, 2:3] - lp[:, 1:2]), 1)
     opp_t = torch.cat((lt[:, 0:1] - lt[:, 1:2], lt[:, 2:3] - lt[:, 1:2]), 1)

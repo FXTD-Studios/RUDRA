@@ -11,7 +11,7 @@
 #include <memory>
 #include <optional>
 #include <span>
-#include <stop_token>
+#include "rudra/platform/stop_token.hpp"
 #include <string>
 #include <vector>
 
@@ -31,12 +31,12 @@ struct ProcessOutput {
 // it could not be started or was cancelled; a non-zero exit is in exit_code.
 // Cancellation terminates/reaps the direct child, including pipe/exit waits.
 // Intended for leaf tools such as ffprobe, not shells that spawn descendants.
-Result<ProcessOutput> run_process(const std::vector<std::string>& argv, std::stop_token stop = {});
+Result<ProcessOutput> run_process(const std::vector<std::string>& argv, rudra::stop_token stop = {});
 
 // video.executable: shutil.which or "<name> is required on PATH".
 Result<std::filesystem::path> require_executable(const std::string& name);
 // video.run: stdout, or "<program> failed: <last 4000 bytes of stderr>".
-Result<std::string> run_tool(const std::vector<std::string>& argv, std::stop_token stop = {});
+Result<std::string> run_tool(const std::vector<std::string>& argv, rudra::stop_token stop = {});
 
 // A running program whose stdout is read as it comes.
 class Process {

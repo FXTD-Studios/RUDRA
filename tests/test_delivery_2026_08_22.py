@@ -80,7 +80,7 @@ def test_exr_aces_container_attributes(tmp_path):
     path = aces.write_aces_exr(img, tmp_path / "a.exr", source_space="rec2020")
     back, attrs = exr.read_exr(path)
     assert attrs["chromaticities"] == pytest.approx(colorspace.AP0_CHROMATICITIES, abs=1e-6)
-    assert attrs["acesImageContainerFlag"] == "1"
+    assert int(attrs["acesImageContainerFlag"]) == 1
     # 0.18 grey is exposure-invariant under the matrix (white row-sums to 1)
     assert np.allclose(back, 0.18, atol=2e-3)
 

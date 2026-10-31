@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="ui/assets/brand/rudra_lockup_dark.png">
-    <img src="ui/assets/brand/rudra_lockup_light.png" width="420" alt="RUDRA by FXTD Studios">
+    <source media="(prefers-color-scheme: dark)" srcset="ui/assets/brand/rudra_logo_dark.png">
+    <img src="ui/assets/brand/rudra_logo_light.png" width="240" alt="RUDRA">
   </picture>
 </p>
 
@@ -17,7 +17,8 @@
   <a href="LICENSE"><img alt="Licence: Apache 2.0" src="https://img.shields.io/badge/licence-Apache%202.0-blue"></a>
   <a href="https://www.fxtdstudios.com"><img alt="www.fxtdstudios.com" src="https://img.shields.io/badge/www-fxtdstudios.com-111"></a>
   <img src="https://github.com/FXTD-Studios/RUDRA/actions/workflows/tests.yml/badge.svg">
-  <a href="https://github.com/FXTD-Studios/RUDRA/releases"><img alt="Desktop beta" src="https://img.shields.io/github/v/release/FXTD-Studios/RUDRA?include_prereleases&label=desktop%20beta"></a>
+  <a href="https://github.com/FXTD-Studios/RUDRA/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/FXTD-Studios/RUDRA?label=release"></a>
+  <a href="https://huggingface.co/fxtdstudios/rudra-models"><img alt="Models on Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20models-rudra--models-yellow"></a>
   <a href="https://github.com/FXTD-Studios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="Windows build" src="https://img.shields.io/github/check-runs/FXTD-Studios/RUDRA/native?nameFilter=core%2C%20windows-2022&label=Windows&logo=windows"></a>
   <a href="https://github.com/FXTD-Studios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="macOS build" src="https://img.shields.io/github/check-runs/FXTD-Studios/RUDRA/native?nameFilter=core%2C%20macos-14&label=macOS&logo=apple"></a>
   <a href="https://github.com/FXTD-Studios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="Linux build" src="https://img.shields.io/github/check-runs/FXTD-Studios/RUDRA/native?nameFilter=core%2C%20ubuntu-24.04&label=Linux&logo=linux"></a>

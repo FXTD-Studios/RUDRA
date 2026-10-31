@@ -7,6 +7,8 @@ TEXT_DIM = 32
 
 
 def tiny_components(seed=0):
+    import pytest
+    pytest.importorskip('diffusers')   # the optional genfill extra; CI runs without it
     from diffusers import AutoencoderKLWan, WanVACETransformer3DModel
     from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
     torch.manual_seed(seed)
