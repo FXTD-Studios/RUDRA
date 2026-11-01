@@ -107,8 +107,10 @@ def test_full_only_arm_end_to_end(tmp_path, monkeypatch, ev):
         sp, rp = corpus / f"s{i}.npy", corpus / f"r{i}.npy"
         np.save(sp, src)
         np.save(rp, ref)
+        # Case 0 is recorded where it was built (a cloud path), as the real report is.
+        spr, rpr = (f"/root/data/set/{sp.name}", f"/root/data/set/{rp.name}") if i == 0 else (str(sp), str(rp))
         rows.append({"case_id": f"c{i}", "scene_id": f"sc{i}", "project": "p", "clip_target": 0, "kept": True,
-                     "source_path": str(sp), "source_sha256": _sha(sp), "reference_path": str(rp), "reference_sha256": _sha(rp)})
+                     "source_path": spr, "source_sha256": _sha(sp), "reference_path": rpr, "reference_sha256": _sha(rp)})
     (corpus / "report.json").write_text(json.dumps({"registration_sha256": _sha(grade_reg), "rows": rows}))
     reg = tmp_path / "arms.json"
     reg.write_text(json.dumps({"grade_set_registration_sha256": _sha(grade_reg), "limits": "test",
