@@ -40,6 +40,11 @@ def main():
         n,p=spec.split('=',1);st=torch.load(p,map_location='cpu',weights_only=True);models[n]=(model_from_checkpoint(st).eval(),sha(p))
     rows=[]
     for c in [r for r in corpus['rows'] if r['kept']]:
+        # The report records where the set was built (a cloud /root/data path);
+        # on another machine the same files sit in --corpus. The hashes below
+        # still decide that they are the registered cases.
+        for k in ('source_path','reference_path'):
+            if not Path(c[k]).exists():c[k]=str(a.corpus/Path(c[k].replace('\\','/')).name)
         if sha(c['source_path'])!=c['source_sha256'] or sha(c['reference_path'])!=c['reference_sha256']:raise ValueError('case identity')
         src=np.load(c['source_path']);ref=np.load(c['reference_path']).astype(np.float64)
         x=torch.from_numpy(src).permute(2,0,1)[None]
