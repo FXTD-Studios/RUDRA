@@ -705,8 +705,19 @@ void MainWindow::session_changed(std::uint32_t what) {
             v.mode = session_.view_layer == 1   ? ViewMode::FalseColour
                      : session_.view_layer == 2 ? ViewMode::Difference
                      : session_.view_layer == 3 ? ViewMode::Invented
+                     : session_.view_layer == 4 ? ViewMode::Range
                                                 : ViewMode::Image;
-            v.show = session_.show == "baseline" ? ViewSource::Baseline : ViewSource::Model;
+            auto source = [](const std::string& s) {
+                return s == "baseline" ? ViewSource::Baseline : s == "sdr" ? ViewSource::Sdr : ViewSource::Model;
+            };
+            v.show = source(session_.show);
+            // Revision 6: the viewer's own controls (viewer_toolbar.cpp).
+            v.view_ev = session_.view_ev;
+            v.view_gamma = session_.view_gamma;
+            v.wipe_left = source(session_.wipe_left);
+            v.wipe_right = source(session_.wipe_right);
+            v.clamp_zebra = session_.clamp_zebra;
+            v.clip_zebra = session_.clip_zebra;
             v.show_changes = session_.show_changes;
             // The mask being painted (3.3), tinted in its band's colour.
             static const std::array<float, 3> kBandTints[kMaxMaskBands] = {
@@ -1212,8 +1223,18 @@ void MainWindow::toggle_play() {
                     current_ = (current_ + 1) % int(frames_.size());
                     aces_shown_ = current_;
                     aces_model_img_ = aces_cache_[std::size_t(current_)];
+                    // View revision 6: the cached baseline and SDR, so A | B, the
+                    // zebras and Range work while playing (it showed the model twice).
+                    const AcesCachedSide side = current_ < int(aces_cache_side_.size()) ? aces_cache_side_[std::size_t(current_)]
+                                                                                        : AcesCachedSide{};
+                    if (side.base) aces_base_img_ = side.base;
+                    aces_sdr_img_ = side.sdr;
+                    aces_codes_ = side.codes;
 #ifdef RUDRA_APP_VIEWER
-                    if (viewer_) viewer_->set_composited(*aces_model_img_, *aces_model_img_, {});
+                    if (viewer_) {
+                        viewer_->set_composited(*aces_model_img_, side.base ? *side.base : *aces_model_img_, side.codes);
+                        if (side.sdr) viewer_->set_source_sdr(*side.sdr);
+                    }
 #endif
                     sync_ui();
                 });
@@ -1519,6 +1540,7 @@ void MainWindow::sync_ui() {
     guide_btn_->setChecked(guides_on_);
     changes_btn_->setChecked(session_.show_changes);
     invented_btn_->setChecked(session_.view_layer == 3);
+    sync_viewer_toolbar();
     // Window
     rail_left_->setVisible(session_.rail_left);
     rail_right_->setVisible(session_.rail_right);
@@ -1673,11 +1695,12 @@ void MainWindow::run_stats() {
         stats_running_ = true;
         const int gen = ++stats_gen_;
         auto model = aces_model_img_, baseline = aces_base_img_;
+        auto sdr = aces_sdr_img_;   // view revision 6: the range readout
         const int index = aces_shown_;
         QPointer<MainWindow> self(this);
         if (stats_worker_.joinable()) stats_worker_.join();
-        stats_worker_ = std::thread([self, model, baseline, gen, index] {
-            auto m = std::make_shared<const FrameMeasure>(measure_headroom(*model, *baseline));
+        stats_worker_ = std::thread([self, model, baseline, sdr, gen, index] {
+            auto m = std::make_shared<const FrameMeasure>(measure_headroom(*model, *baseline, sdr.get()));
             QMetaObject::invokeMethod(qApp, [self, m, gen, index] {
                 if (!self) return;
                 self->stats_running_ = false;
@@ -1954,6 +1977,43 @@ void MainWindow::probe_pixel(std::optional<std::pair<double, double>> px, QPoint
         grid->addWidget(k, r, 0);
         grid->addWidget(v, r, 1);
         ++r;
+    }
+    // View revision 6: the original's codes, which are clamped, and how far
+    // the result goes over the SDR white here.
+    {
+        std::optional<std::array<int, 3>> codes = p->sdr;
+        if (!codes && aces_routed() && aces_sdr_img_ && p->x < aces_sdr_img_->width() && p->y < aces_sdr_img_->height()) {
+            std::array<int, 3> c{};
+            for (int k = 0; k < 3; ++k) c[std::size_t(k)] = int(std::lround(aces_sdr_img_->buffer().at(k, p->y, p->x) * 255.0f));
+            codes = c;
+        }
+        auto add = [&](const QString& k, const QString& val, const char* state) {
+            auto* kl = new QLabel(k, probe_box_);
+            kl->setProperty("role", "key");
+            auto* vl = new QLabel(val, probe_box_);
+            vl->setProperty("role", "value");
+            if (*state) vl->setProperty("state", state);
+            grid->addWidget(kl, r, 0);
+            grid->addWidget(vl, r, 1);
+            ++r;
+        };
+        if (codes) {
+            QString clamped;
+            const char* names[3] = {"R", "G", "B"};
+            for (int k = 0; k < 3; ++k)
+                if ((*codes)[std::size_t(k)] >= 254) clamped += (clamped.isEmpty() ? "" : " ") + QString(names[k]);
+            const bool crushed = std::max({(*codes)[0], (*codes)[1], (*codes)[2]}) <= 1;
+            add("Original", QStringLiteral("%1 %2 %3").arg((*codes)[0]).arg((*codes)[1]).arg((*codes)[2]), "");
+            add("Clamped", clamped.isEmpty() ? (crushed ? QStringLiteral("crushed") : QStringLiteral("no")) : clamped,
+                clamped.isEmpty() && !crushed ? "" : "warn");
+        }
+        const NetworkLinearImage* shown = aces_routed() ? aces_model_img_.get() : (measure_ ? &measure_->model : nullptr);
+        if (shown && p->x < shown->width() && p->y < shown->height()) {
+            const auto& b = shown->buffer();
+            const double mx = std::max({b.at(0, p->y, p->x), b.at(1, p->y, p->x), b.at(2, p->y, p->x)}) * 10000.0;
+            add("Over SDR white", mx > 0.0 ? QString::number(std::log2(mx / 203.0), 'f', 2) + QStringLiteral(" st")
+                                           : QStringLiteral("black"), "");
+        }
     }
     probe_box_->adjustSize();
     // showProbe's placing: 16 px right of and below the cursor, flipped to the

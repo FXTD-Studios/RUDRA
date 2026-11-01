@@ -244,7 +244,9 @@ public:
         auto model = tex(QRhiTexture::RGBA32F, QRhiTexture::RenderTarget);
         auto pic = tex(QRhiTexture::RGBA16F, QRhiTexture::RenderTarget);
         std::unique_ptr<QRhiTexture> tm(rhi_->newTexture(QRhiTexture::RGBA8, QSize(1, 1)));   // no masks: bound, unread
-        if (!ta->create() || !tb->create() || !tbase->create() || !model->create() || !pic->create() || !tm->create())
+        std::unique_ptr<QRhiTexture> tl(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(1, 1)));   // no SDR light: bound, unread
+        if (!ta->create() || !tb->create() || !tbase->create() || !model->create() || !pic->create() || !tm->create() ||
+            !tl->create())
             return make_error(ErrorCode::BackendError, "GPU texture creation failed.");
         std::unique_ptr<QRhiTextureRenderTarget> mrt(rhi_->newTextureRenderTarget({QRhiColorAttachment(model.get())}));
         std::unique_ptr<QRhiRenderPassDescriptor> mrp(mrt->newCompatibleRenderPassDescriptor());
@@ -265,6 +267,7 @@ public:
             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, model.get(), sampler_.get()),
             QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, tbase.get(), sampler_.get()),
             QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, tm.get(), linear_.get()),
+            QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage, tl.get(), sampler_.get()),
         });
         if (!csrb->create() || !dsrb->create()) return make_error(ErrorCode::BackendError, "GPU resource bindings failed.");
         auto pipeline = [&](const QShader& frag, QRhiShaderResourceBindings* srb, QRhiRenderPassDescriptor* rp) {
@@ -592,12 +595,18 @@ private:
             return make_error(ErrorCode::InvalidArgument, "The two composite targets differ in size.");
         const std::vector<float> a = detail::model_rgba(model.buffer(), sdr, params.anchor_knots), b = detail::baseline_rgba(baseline.buffer(), sdr);
         const std::vector<std::uint8_t> mask_bytes = detail::view_masks_rgba8(params, w, h);
+        // Revision 6: the SDR as light and its clamp flags (binding 4), the
+        // same floats core's render_view reads; 1 x 1 and unread without one.
+        const bool have_sdr = sdr && sdr->width() == w && sdr->height() == h && view_needs_sdr_light(params);
+        std::vector<float> light = have_sdr ? sdr_light_rgba(sdr, params.anchor_knots) : std::vector<float>(4, 0.0f);
+        const QSize light_size = have_sdr ? QSize(w, h) : QSize(1, 1);
+        std::unique_ptr<QRhiTexture> tl(rhi_->newTexture(QRhiTexture::RGBA32F, light_size));
         std::unique_ptr<QRhiTexture> ta(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
         std::unique_ptr<QRhiTexture> tb(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
         std::unique_ptr<QRhiTexture> tm(rhi_->newTexture(QRhiTexture::RGBA8, QSize(w, h)));
         std::unique_ptr<QRhiTexture> out(rhi_->newTexture(fmt, QSize(w, h), 1,
                                                           QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
-        if (!ta->create() || !tb->create() || !tm->create() || !out->create())
+        if (!ta->create() || !tb->create() || !tm->create() || !tl->create() || !out->create())
             return make_error(ErrorCode::BackendError, "GPU texture creation failed.");
         std::unique_ptr<QRhiTextureRenderTarget> rt(rhi_->newTextureRenderTarget({QRhiColorAttachment(out.get())}));
         std::unique_ptr<QRhiRenderPassDescriptor> rp(rt->newCompatibleRenderPassDescriptor());
@@ -609,6 +618,7 @@ private:
             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, ta.get(), sampler_.get()),
             QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, tb.get(), sampler_.get()),
             QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, tm.get(), sampler_.get()),
+            QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage, tl.get(), sampler_.get()),
         });
         if (!srb->create()) return make_error(ErrorCode::BackendError, "GPU resource bindings failed.");
         std::unique_ptr<QRhiGraphicsPipeline> pipe(rhi_->newGraphicsPipeline());
@@ -618,13 +628,15 @@ private:
         pipe->setRenderPassDescriptor(rp.get());
         if (!pipe->create()) return make_error(ErrorCode::BackendError, "GPU pipeline creation failed.");
 
-        const ViewUbo u = detail::view_ubo(params, w);
+        const ViewUbo u = detail::view_ubo(params, w, have_sdr);
 
         QRhiCommandBuffer* cb = nullptr;
         if (rhi_->beginOffscreenFrame(&cb) != QRhi::FrameOpSuccess)
             return make_error(ErrorCode::BackendError, "GPU frame could not start.");
         QRhiResourceUpdateBatch* up = rhi_->nextResourceUpdateBatch();
         up->updateDynamicBuffer(vbuf_.get(), 0, sizeof(ViewUbo), &u);
+        up->uploadTexture(tl.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
+            0, 0, QRhiTextureSubresourceUploadDescription(light.data(), quint32(light.size() * sizeof(float))))));
         up->uploadTexture(ta.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
             0, 0, QRhiTextureSubresourceUploadDescription(a.data(), quint32(a.size() * sizeof(float))))));
         up->uploadTexture(tb.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(

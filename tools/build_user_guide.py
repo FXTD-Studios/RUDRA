@@ -216,6 +216,16 @@ news = f'''<section class="page" id="whats-new" data-title="What’s new">
 <li><strong>No model inside the package</strong>: every model is a download in <strong>File › Model packages</strong> that shows its licence first. Packages up to 1.0.1 carried the Beta 2 model <strong>sdr2hdr_image_v8</strong>, which is non-commercial; if you installed one of them, update or delete <strong>models/sdr2hdr_image_v8</strong> from the install before commercial work.</li>
 <li><strong>The learned ACES 2.0 model is a preview</strong>: in the last published test it graded better at −3 and +3 EV, but at the delivered exposure its highlights sat further from the reference than the analytic result. Compare the two before delivery.</li>
 </ul>
+<h2>Compare SDR and HDR like in Nuke</h2>
+<p>The bar under the viewer is the viewer's own: none of it changes the master, a render or a saved project. An amber <strong>VIEW</strong> badge shows whenever the view is gained, so a screenshot never passes for the grade.</p>
+<ul>
+<li><strong>f/stop and γ</strong>: stop the view down or up as in Nuke (Alt+[ and Alt+] half a stop, Alt+E toggles 0 and the last value, Alt+0 resets). The buttons <strong>−6 −4 −2 0 +2</strong> jump straight there (Alt+B steps through them).</li>
+<li><strong>A | B</strong>: pick <strong>SDR (original)</strong>, Baseline or RUDRA for each side of the wipe; <strong>A ⇄ B</strong> swaps them (Alt+X). Wipe SDR | RUDRA and stop down to −3 EV: where the original clipped it goes flat grey, RUDRA keeps a gradient.</li>
+<li><strong>Clamped</strong> (Alt+K): stripes where the original is clamped: red all channels at code 254 or above, thin orange only some (a sky clipping in blue first), blue crushed at code 1 or below. They mark the same pixels on both sides at any exposure.</li>
+<li><strong>Clipping</strong> (Alt+L): yellow stripes where the picture clips on the screen at this exposure and peak.</li>
+<li><strong>Range</strong> (Alt+R): every pixel coloured by stops above the SDR white (203 nits): grey is the SDR's own range, then blue, green, yellow, orange and red for each stop up to +4 and over. White hatching marks what the original clamped.</li>
+<li>The line under the bar reads the frame in nits: how much of the original is clamped (per channel) and crushed, RUDRA's peak and how much goes over the SDR white and 1,000 nits, and, inside the clamped area, how far RUDRA took it and how much it left as the plain inverse. Hover a pixel for its original codes, which channels are clamped, and its stops over the SDR white.</li>
+</ul>
 <h2>In 1.0.2</h2>
 <ul>
 <li><strong>The learned ACES 2.0 model on every platform</strong>: its engine is now in the Windows and macOS packages, so the model you download runs straight away (DirectML or the CPU on Windows; the CPU or Core ML on a Mac).</li>

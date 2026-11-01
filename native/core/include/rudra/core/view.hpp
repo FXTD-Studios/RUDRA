@@ -19,7 +19,10 @@ namespace rudra {
 // Invented: the invented-pixel map (core/compare.hpp, roadmap 3.5), a graphic
 // over a dimmed picture: magenta where the network made up values the SDR has
 // no information for, cyan where it reinterpreted SDR detail.
-enum class ViewMode : std::uint8_t { Image = 0, FalseColour = 1, Difference = 2, Invented = 3 };
+// Range (revision 6, 1 Nov 2026): stops of max(R, G, B) over the SDR white
+// (203 nits) on a fixed legend, with the pixels the SOURCE clamped hatched;
+// independent of the view exposure, like false colour.
+enum class ViewMode : std::uint8_t { Image = 0, FalseColour = 1, Difference = 2, Invented = 3, Range = 4 };
 
 // Which path the picture takes to the glass. The pipe bar shows it verbatim.
 enum class OutputPath {
@@ -42,7 +45,9 @@ struct DisplayTarget {
     // EDR: 1.0 is the SDR white, which RUDRA holds at diffuse white (203 nits).
     static DisplayTarget edr(double peak, Primaries p = Primaries::P3D65) { return {OutputPath::Edr, p, peak, 203.0}; }
 };
-enum class ViewSource : std::uint8_t { Model, Baseline };
+// Sdr (revision 6): the source plate as light, per channel, the reading the
+// composite uses (sdr_light_rgba), so a clamped code stays flat at its white.
+enum class ViewSource : std::uint8_t { Model = 0, Baseline = 1, Sdr = 2 };
 
 struct ViewParams {
     ViewMode mode = ViewMode::Image;
@@ -81,7 +86,61 @@ struct ViewParams {
     int paint_band = -1;
     std::array<float, 3> paint_tint{1.0f, 0.7f, 0.25f};
     std::shared_ptr<const MaskSet> masks;
+    // ---- revision 6 (1 Nov 2026): the viewer's own controls, as in Nuke's ----
+    // Viewer exposure in stops and viewer gamma, on the Image picture only, in
+    // scene-linear after the anchor: h * 2^view_ev, then x^(1/view_gamma) with
+    // the view peak as 1.0, then the usual exposure to the peak and clip. Never
+    // in a master, a render, a measurement, false colour, Difference, Invented
+    // or Range. 0 and 1 reproduce revision 5 exactly.
+    double view_ev = 0.0;
+    double view_gamma = 1.0;
+    // The wipe's sides (A left, B right). Revision 5 was Baseline | Model.
+    ViewSource wipe_left = ViewSource::Baseline;
+    ViewSource wipe_right = ViewSource::Model;
+    // Image overlays. clamp_zebra: where the SOURCE is clamped (a property of
+    // the plate, the same pixels on both sides, at any exposure): red stripes
+    // where all three channels are at code 254 or above, thin orange ones where
+    // only some are, blue where max(R, G, B) is at code 1 or below.
+    // clip_zebra: where the picture clips ON SCREEN at this view exposure,
+    // gamma and peak (yellow, the other diagonal).
+    bool clamp_zebra = false;
+    bool clip_zebra = false;
 };
+
+// Revision 6 overlays: stripe period and mix, colours as SDR codes (graphics
+// at the SDR white on the HDR paths).
+inline constexpr int kZebraPeriod = 8;
+inline constexpr float kZebraMix = 0.6f;
+inline constexpr std::array<float, 3> kClampAllColour{0.95f, 0.20f, 0.20f};
+inline constexpr std::array<float, 3> kClampSomeColour{0.98f, 0.55f, 0.15f};
+inline constexpr std::array<float, 3> kCrushColour{0.20f, 0.45f, 0.98f};
+inline constexpr std::array<float, 3> kScreenClipColour{0.98f, 0.90f, 0.15f};
+inline constexpr float kRangeHatchMix = 0.7f;
+
+// Range legend: stops = log2(max(R, G, B) nits / 203). Below -6 one colour,
+// -6..0 a grey ramp (the SDR's own range), then one colour per stop above
+// the SDR white, the last for +4 and above.
+inline constexpr float kSdrWhiteNits = 203.0f;
+std::array<float, 3> range_colour(float stops) noexcept;
+
+// The SDR flags packed into the light texture's alpha: bit 0..2 the R, G, B
+// code at kSdrClipCode or above, bit 3 max(R, G, B) at kSdrCrushCode or below.
+inline constexpr int kFlagClipR = 1, kFlagClipG = 2, kFlagClipB = 4, kFlagCrush = 8;
+
+// The Sdr source and the clamp flags, interleaved RGBA, image order, what the
+// display pass reads (binding 4): rgb the SDR's light per channel in network
+// units, the anchor's reading (sRGB decode times the Source picker's knots,
+// composite.hpp anchor_target_knots) with the code's white at 203 nits; a the
+// flags above, as a small integer. Empty without an SDR.
+std::vector<float> sdr_light_rgba(const SdrImage* sdr, std::span<const float> target_knots = {});
+
+// Whether a view reads the SDR light (the Sdr source on any side, the clamp
+// zebra, the Range layer): the CPU pass and the GPU's binding 4 both ask this.
+inline bool view_needs_sdr_light(const ViewParams& p) noexcept {
+    const bool wiping = p.wipe >= 0.0;
+    return p.show == ViewSource::Sdr || (wiping && (p.wipe_left == ViewSource::Sdr || p.wipe_right == ViewSource::Sdr)) ||
+           (p.mode == ViewMode::Image && p.clamp_zebra) || p.mode == ViewMode::Range;
+}
 inline constexpr float kMaskTintMix = 0.35f;
 
 // A view with the SDR target, for tools and tests: the positional form of

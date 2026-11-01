@@ -345,6 +345,8 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     wrote = wrote && write_planes(req["model_out"].get<std::string>(), aces_monitor_planes(k.master, mview, monitor));
                 if (req.contains("baseline_out"))
                     wrote = wrote && write_planes(req["baseline_out"].get<std::string>(), aces_monitor_planes(k.baseline, mview, monitor));
+                if (req.contains("sdr_out"))   // the SDR's codes, 3 planes (view revision 6: Sdr source, zebras, Range)
+                    wrote = wrote && write_planes(req["sdr_out"].get<std::string>(), k.codes);
                 if (req.contains("codes_out")) {   // the SDR's largest code per pixel: the Invented layer
                     const PlanarBuffer cp = aces_code_plane(k.codes);
                     std::ofstream o(req["codes_out"].get<std::string>(), std::ios::binary);

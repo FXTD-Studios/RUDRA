@@ -59,6 +59,9 @@ class QPlainTextEdit;
 class QPushButton;
 class QSlider;
 class QStackedWidget;
+class QVBoxLayout;
+class QComboBox;
+class QDoubleSpinBox;
 
 namespace rudra {
 class FrameEngine;
@@ -614,6 +617,11 @@ private:
     // The compare line under the Compare bar: what RUDRA changed and how much
     // of it the view peak shows (core/readouts compare_text).
     void update_compare();
+    // The viewer toolbar (view revision 6, viewer_toolbar.cpp).
+    void build_viewer_toolbar(QVBoxLayout* v, QWidget* parent);
+    void sync_viewer_toolbar();
+    bool viewer_has_sdr() const;
+    QString range_readout_text() const;
     void fill_rows(QWidget* ms, const std::vector<MetricRow>& rows);
 
     std::map<std::string, QAction*, std::less<>> actions_;
@@ -655,6 +663,13 @@ private:
     // and keeps each frame (at the playback size); once every frame of the shot is in,
     // play runs in real time at the shot's rate, for judging flicker.
     std::vector<std::shared_ptr<const NetworkLinearImage>> aces_cache_;
+    // Beside each cached model frame (view revision 6): what playback compares it with.
+    struct AcesCachedSide {
+        std::shared_ptr<const NetworkLinearImage> base;
+        std::shared_ptr<const SdrImage> sdr;
+        std::vector<float> codes;
+    };
+    std::vector<AcesCachedSide> aces_cache_side_;
     QString aces_cache_key_;
     std::size_t aces_cache_bytes_ = 0;
     QTimer* aces_rt_timer_ = nullptr;
@@ -681,6 +696,15 @@ private:
     };
     std::shared_ptr<const Current> current_frame_;
     std::shared_ptr<const FrameMeasure> measure_;
+    // View revision 6 (viewer_toolbar.cpp).
+    QWidget* vtool_ = nullptr;
+    QPushButton *vt_stop_ = nullptr, *vt_reset_ = nullptr, *vt_flip_ = nullptr, *vt_clamp_ = nullptr,
+                *vt_clip_ = nullptr, *vt_range_ = nullptr;
+    std::vector<QPushButton*> vt_brackets_;
+    QSlider* vt_ev_slider_ = nullptr;
+    QDoubleSpinBox *vt_ev_ = nullptr, *vt_gamma_ = nullptr;
+    QComboBox *vt_a_ = nullptr, *vt_b_ = nullptr;
+    QLabel *vt_badge_ = nullptr, *range_line_ = nullptr;
     QTimer stats_timer_;
     int stats_gen_ = 0;
     bool stats_running_ = false, stats_again_ = false;
@@ -764,6 +788,7 @@ private:
     void sync_aces_trims();
     // The ACES route's frame for the readouts and scopes (the viewer's convention).
     std::shared_ptr<const NetworkLinearImage> aces_model_img_, aces_base_img_;
+    std::shared_ptr<const SdrImage> aces_sdr_img_;   // view revision 6
     std::unique_ptr<BatchQueue> batch_;
     std::unique_ptr<BatchRunner> batch_runner_;
     QPointer<QDialog> batch_window_;

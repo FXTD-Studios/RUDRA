@@ -1041,7 +1041,12 @@ TEST(AppMeasure, TheProbeReadsThePixelUnderThePointer) {
         ASSERT_TRUE(w.probe_box()->isVisible());
         const auto rows = probe_box(*probe);
         const auto labels = w.probe_box()->findChildren<QLabel*>();
-        ASSERT_EQ(labels.size(), qsizetype(rows.size() * 2));
+        // The page's rows first, then view revision 6's native ones: the
+        // original's codes, which are clamped, and the stops over the SDR white.
+        ASSERT_EQ(labels.size(), qsizetype(rows.size() * 2 + 6));
+        EXPECT_EQ(labels[qsizetype(rows.size() * 2)]->text().toStdString(), "Original");
+        EXPECT_EQ(labels[qsizetype(rows.size() * 2 + 2)]->text().toStdString(), "Clamped");
+        EXPECT_EQ(labels[qsizetype(rows.size() * 2 + 4)]->text().toStdString(), "Over SDR white");
         for (std::size_t r = 0; r < rows.size(); ++r) {
             EXPECT_EQ(labels[qsizetype(r * 2)]->text().toStdString(), rows[r].k);
             EXPECT_EQ(labels[qsizetype(r * 2 + 1)]->text().toStdString(), rows[r].v);
@@ -6045,3 +6050,48 @@ TEST(AppModels, ADownloadedLoraBecomesTheAiFills) {
     QSettings().clear();
 }
 #endif
+
+// ---- view revision 6: the viewer toolbar (app/viewer_toolbar.cpp) ----
+TEST(AppViewerToolbar, ControlsDriveTheSessionAndNeverTheGrade) {
+    app::MainWindow w(false);
+    w.show();
+    const std::string params = w.session().params_json();
+    auto* tool = w.findChild<QWidget*>("viewerToolbar");
+    ASSERT_NE(tool, nullptr);
+    // Inside the viewer's box, so the Pro boards' frame keeps its geometry.
+    EXPECT_EQ(tool->parentWidget(), w.findChild<QWidget*>("viewer"));
+    auto* badge = w.findChild<QLabel*>("vtBadge");
+    EXPECT_FALSE(badge->isVisibleTo(&w));
+    w.findChild<QPushButton*>("vtBracket-2")->click();
+    EXPECT_DOUBLE_EQ(w.session().view_ev, -2.0);
+    EXPECT_TRUE(badge->isVisibleTo(&w));
+    EXPECT_TRUE(badge->text().startsWith("VIEW"));
+    EXPECT_EQ(w.findChild<QSlider*>("vtEvSlider")->value(), -20);
+    w.findChild<QPushButton*>("vtStop")->click();   // 0 <-> the last value
+    EXPECT_DOUBLE_EQ(w.session().view_ev, 0.0);
+    w.findChild<QPushButton*>("vtStop")->click();
+    EXPECT_DOUBLE_EQ(w.session().view_ev, -2.0);
+    w.findChild<QPushButton*>("vtRange")->click();
+    EXPECT_EQ(w.session().view_layer, 4);
+    w.findChild<QPushButton*>("vtClip")->click();
+    EXPECT_TRUE(w.session().clip_zebra);
+    w.findChild<QPushButton*>("vtReset")->click();
+    EXPECT_TRUE(w.session().viewer_neutral());
+    EXPECT_FALSE(badge->isVisibleTo(&w));
+    EXPECT_EQ(w.session().params_json(), params);   // the master's settings never moved
+}
+
+TEST(AppViewerToolbar, AltKeysReachTheViewer) {
+    app::MainWindow w(false);
+    w.show();
+    w.activateWindow();
+    ASSERT_TRUE(QTest::qWaitForWindowActive(&w));
+    QTest::keyClick(&w, Qt::Key_BracketLeft, Qt::AltModifier);
+    EXPECT_DOUBLE_EQ(w.session().view_ev, -0.5);
+    QTest::keyClick(&w, Qt::Key_B, Qt::AltModifier);   // the next bracket up: 0
+    EXPECT_DOUBLE_EQ(w.session().view_ev, 0.0);
+    QTest::keyClick(&w, Qt::Key_K, Qt::AltModifier);
+    EXPECT_TRUE(w.session().clamp_zebra);
+    QTest::keyClick(&w, Qt::Key_R, Qt::AltModifier);
+    EXPECT_EQ(w.session().view_layer, 4);
+}

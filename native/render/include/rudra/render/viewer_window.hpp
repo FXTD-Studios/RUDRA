@@ -85,6 +85,10 @@ public:
     // so the Invented layer tells invented (clipped or crushed) from reinterpreted
     // pixels on a precomposited picture too (the learned ACES 2.0 route, 28 Oct 2026).
     void set_composited(NetworkLinearImage model, NetworkLinearImage baseline, std::vector<float> sdr_max_codes);
+    // Revision 6: the SDR of a precomposited frame (the learned ACES route), for
+    // the Sdr source, the clamp zebra and the Range layer. Call after
+    // set_composited, which forgets the previous one. set_frame needs none.
+    void set_source_sdr(SdrImage sdr);
     void clear_frame();
     void set_composite(const CompositeParams& params);
     // Mode, view peak, source, wipe and difference gain; the target is the
