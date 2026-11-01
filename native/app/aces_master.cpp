@@ -1125,6 +1125,7 @@ void MainWindow::aces_request(int index) {
     if (aces_monitor_ != "scene") req["display"] = aces_monitor_;
     if (aces_source_display_ != "bt1886") req["source_display"] = aces_source_display_;   // an sRGB / 2.2 master
     req["codes_out"] = aces_tmp_->filePath(QStringLiteral("codes_%1.f32").arg(index % 2));
+    req["sdr_out"] = aces_tmp_->filePath(QStringLiteral("sdr_%1.f32").arg(index % 2));   // view revision 6
     if (aces_playing_ && play_state_->side.load() > 0) req["max_side"] = play_state_->side.load();
     // The colorist's trims: the viewer shows what a render writes.
     if (const QJsonObject t = aces_trims_fields(aces_trims_.strength, aces_trims_.saturation, aces_trims_.peak_nits,
@@ -1178,11 +1179,22 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
         if (!in.read(reinterpret_cast<char*>(codes.data()), std::streamsize(codes.size() * sizeof(float)))) codes.clear();
     }
     aces_codes_ = codes;
+    // The SDR's codes (view revision 6): the Sdr source, the clamp zebra and
+    // the Range layer. An older engine writes none: those then fall back.
+    aces_sdr_img_.reset();
+    {
+        QString sp = model_path;
+        sp.replace(QStringLiteral("model_"), QStringLiteral("sdr_"));
+        if (auto s = read_planes(sp, w, h)) aces_sdr_img_ = std::make_shared<const SdrImage>(std::move(*s));
+    }
     // A reference still compared: it takes the baseline's place (Baseline, Wipe, B), when it is the same size.
     const auto* ref = ref_compare_ ? reference_still() : nullptr;
     aces_ref_shown_ = ref && ref->width() == aces_model_img_->width() && ref->height() == aces_model_img_->height();
 #ifdef RUDRA_APP_VIEWER
-    if (viewer_) viewer_->set_composited(*aces_model_img_, aces_ref_shown_ ? *ref : *aces_base_img_, codes);
+    if (viewer_) {
+        viewer_->set_composited(*aces_model_img_, aces_ref_shown_ ? *ref : *aces_base_img_, codes);
+        if (aces_sdr_img_) viewer_->set_source_sdr(*aces_sdr_img_);
+    }
 #endif
     sync_reference_ui();
     show_mode();   // the status bar says the learned model, not the analytic reconstruction
@@ -1200,13 +1212,17 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
     if (aces_playing_ && play_state_->side.load() > 0) {
         if (const QString key = aces_cache_key(); key != aces_cache_key_ || aces_cache_.size() != frames_.size()) {
             aces_cache_.assign(frames_.size(), nullptr);
+            aces_cache_side_.assign(frames_.size(), {});
             aces_cache_bytes_ = 0;
             aces_cache_key_ = key;
         }
-        const std::size_t bytes = std::size_t(w) * std::size_t(h) * 3 * sizeof(float);
+        // The model, and since view revision 6 its baseline, SDR and max codes too,
+        // so playback compares what a paused frame compares.
+        const std::size_t bytes = std::size_t(w) * std::size_t(h) * (3 + 3 + 3 + 1) * sizeof(float);
         const std::size_t budget = std::size_t(QSettings().value("aces/playCacheMB", 2048).toInt()) * 1024 * 1024;
         if (!aces_cache_[std::size_t(index)] && aces_cache_bytes_ + bytes <= budget) {
             aces_cache_[std::size_t(index)] = aces_model_img_;
+            aces_cache_side_[std::size_t(index)] = {aces_base_img_, aces_sdr_img_, codes};
             aces_cache_bytes_ += bytes;
         }
     }

@@ -140,6 +140,9 @@ struct ViewerWindow::Impl {
     // Frame-sized resources, rebuilt when the frame size changes.
     QSize frame_size;
     std::unique_ptr<QRhiTexture> in_a, in_b, model_t, base_t, picture, mask_t;
+    std::unique_ptr<QRhiTexture> light_t;   // revision 6: the SDR as light and its clamp flags (binding 4)
+    bool light_dirty = true, light_bound = false;
+    std::vector<float> light_knots;         // the anchor knots light_t was made with
     std::shared_ptr<const MaskSet> uploaded_masks;   // what mask_t holds (3.3); null for none
     bool masks_dirty = false;
     std::unique_ptr<QRhiTextureRenderTarget> model_rt, picture_rt;
@@ -169,6 +172,7 @@ struct ViewerWindow::Impl {
     bool has_frame = false;
     bool precomposited = false;   // set_composited: model_t is uploaded, not rendered
     std::vector<float> pre_codes; // its SDR's largest code per pixel, when given (the Invented layer)
+    std::optional<SdrImage> pre_sdr;   // revision 6: its SDR, when given (the Sdr source, zebras, Range)
     NetworkLinearImage precomposite;
     ViewerFrame frame;
     NetworkLinearImage baseline;
@@ -483,6 +487,9 @@ struct ViewerWindow::Impl {
         in_a.reset(rhi->newTexture(QRhiTexture::RGBA32F, size));
         in_b.reset(rhi->newTexture(QRhiTexture::RGBA32F, size));
         mask_t.reset(rhi->newTexture(QRhiTexture::RGBA8, size));
+        light_t.reset(rhi->newTexture(QRhiTexture::RGBA32F, size));
+        light_dirty = true;
+        light_bound = false;
         uploaded_masks.reset();
         masks_dirty = true;
         base_t.reset(rhi->newTexture(QRhiTexture::RGBA32F, size));
@@ -491,7 +498,7 @@ struct ViewerWindow::Impl {
                                       QRhiTexture::RenderTarget | QRhiTexture::MipMapped |
                                           QRhiTexture::UsedWithGenerateMips));
         if (!in_a->create() || !in_b->create() || !mask_t->create() || !base_t->create() || !model_t->create() ||
-            !picture->create())
+            !light_t->create() || !picture->create())
             return false;
         model_rt.reset(rhi->newTextureRenderTarget({QRhiColorAttachment(model_t.get())}));
         model_rp.reset(model_rt->newCompatibleRenderPassDescriptor());
@@ -514,6 +521,7 @@ struct ViewerWindow::Impl {
             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, model_t.get(), fetch.get()),
             QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, base_t.get(), fetch.get()),
             QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, mask_t.get(), fetch.get()),
+            QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage, light_t.get(), fetch.get()),
         });
         if (!composite_srb->create() || !display_srb->create()) return false;
         auto pipeline = [&](const QShader& frag, QRhiShaderResourceBindings* srb, QRhiRenderPassDescriptor* rp) {
@@ -604,6 +612,7 @@ struct ViewerWindow::Impl {
                     composite_dirty = true;
                 }
                 view_dirty = true;
+                light_dirty = true;
             }
             upload_dirty = false;
         }
@@ -660,7 +669,22 @@ struct ViewerWindow::Impl {
             }
             if (view_dirty) {
                 if (!u) u = rhi->nextResourceUpdateBatch();
-                const detail::ViewUbo vu = detail::view_ubo(effective_view(), frame_size.width());
+                const ViewParams ev = effective_view();
+                const bool needs_light = view_needs_sdr_light(ev);
+                if (needs_light && (light_dirty || ev.anchor_knots != light_knots)) {
+                    // Revision 6: made on the host by core's own function, so the
+                    // pass reads what render_view reads; only when a view needs it.
+                    const SdrImage* s = precomposited ? (pre_sdr ? &*pre_sdr : nullptr) : &frame.sdr;
+                    light_bound = s && s->width() == frame_size.width() && s->height() == frame_size.height();
+                    if (light_bound) {
+                        const std::vector<float> l = sdr_light_rgba(s, ev.anchor_knots);
+                        u->uploadTexture(light_t.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
+                            0, 0, QRhiTextureSubresourceUploadDescription(l.data(), quint32(l.size() * sizeof(float))))));
+                    }
+                    light_knots = ev.anchor_knots;
+                    light_dirty = false;
+                }
+                const detail::ViewUbo vu = detail::view_ubo(ev, frame_size.width(), needs_light && light_bound);
                 u->updateDynamicBuffer(view_ubo.get(), 0, sizeof(vu), &vu);
                 cb->beginPass(picture_rt.get(), Qt::black, {1.0f, 0}, u);
                 u = nullptr;
@@ -789,6 +813,7 @@ struct ViewerWindow::Impl {
         in_a.reset();
         in_b.reset();
         mask_t.reset();
+        light_t.reset();
         base_t.reset();
         model_t.reset();
         picture.reset();
@@ -897,6 +922,7 @@ void ViewerWindow::set_composited(NetworkLinearImage model, NetworkLinearImage b
 
 void ViewerWindow::set_composited(NetworkLinearImage model, NetworkLinearImage baseline, std::vector<float> sdr_max_codes) {
     d_->pre_codes = std::move(sdr_max_codes);
+    d_->pre_sdr.reset();   // set_source_sdr after this gives it again
     d_->hold_last = -1;   // a card or a master: nothing held across it
     d_->hold_frame = -1;
     d_->hold_pending = true;
@@ -906,6 +932,12 @@ void ViewerWindow::set_composited(NetworkLinearImage model, NetworkLinearImage b
     d_->has_frame = true;
     d_->upload_dirty = true;
     d_->moved();
+}
+
+void ViewerWindow::set_source_sdr(SdrImage sdr) {
+    d_->pre_sdr = std::move(sdr);
+    d_->light_dirty = true;
+    d_->changed_view();
 }
 
 void ViewerWindow::clear_frame() {

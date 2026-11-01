@@ -99,8 +99,14 @@ public:
     std::optional<double> wipe;       // off, or 0..1 across the plate
     bool flip_held = false;
     int region_sel = -1;
-    std::string show = "model";       // Compare: "model" (RUDRA) or "baseline"
-    int view_layer = 0;               // Layer: 0 image, 1 false colour, 2 difference
+    std::string show = "model";       // Compare: "model" (RUDRA), "baseline" or "sdr" (the plate, revision 6)
+    int view_layer = 0;               // Layer: 0 image, 1 false colour, 2 difference, 3 invented, 4 range
+    // The viewer's own controls (docs/view.spec.md revision 6, 1 Nov 2026),
+    // as Nuke's viewer: never in params(), never undone, never in a master.
+    double view_ev = 0.0;             // f-stops, -10 to +10
+    double view_gamma = 1.0;          // 0.2 to 5
+    std::string wipe_left = "baseline", wipe_right = "model";   // the wipe's A | B
+    bool clamp_zebra = false, clip_zebra = false;
     bool show_changes = false;        // Changes: tint what the model changed (view only, not in params())
     bool rail_left = true, rail_right = true, scopes_open = true;   // Window
 
@@ -176,6 +182,17 @@ public:
     void set_show(std::string_view source);      // the Compare buttons: also ends a wipe
     void set_view_layer(int layer);              // the Layer buttons
     void toggle_changes();                       // the Changes button
+    // Revision 6, the viewer toolbar. Each notifies View; none is undone.
+    void set_view_ev(double ev);                 // clamped -10..10
+    void nudge_view_ev(double delta);
+    void toggle_view_ev();                       // Nuke's f/stop click: 0 <-> the last value that was not 0
+    void set_view_gamma(double gamma);           // clamped 0.2..5
+    void reset_viewer();                         // exposure 0, gamma 1
+    void set_wipe_sources(std::string_view left, std::string_view right);   // "model", "baseline" or "sdr"; starts the wipe at 0.5 when off
+    void flip_ab();                              // swaps the wipe's sides; without a wipe, A <-> B as the shown source
+    void toggle_clamp_zebra();
+    void toggle_clip_zebra();
+    bool viewer_neutral() const { return view_ev == 0.0 && view_gamma == 1.0; }
     void toggle_anchor();                        // Deliver: anchor to the source exposure
     void set_anchor_knee(double knee);           // Deliver: the knee, 0.5 to 0.99; not undone (a delivery setting)
     void toggle_carry_chroma();                  // Deliver: carry the source chroma
@@ -206,6 +223,7 @@ public:
     void key_up(std::string_view key);
 
 private:
+    double last_view_ev_ = -2.0;   // toggle_view_ev's other value; -2 until one is set
     Result<void> accepts(HeadroomPolicy policy) const;
     SourceSupport source_support_;
     void push_undo();

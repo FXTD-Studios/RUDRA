@@ -394,6 +394,73 @@ void Session::toggle_changes() {
     notify(View);
 }
 
+namespace {
+bool viewer_source(std::string_view s) { return s == "model" || s == "baseline" || s == "sdr"; }
+}  // namespace
+
+void Session::set_view_ev(double ev) {
+    ev = std::max(-10.0, std::min(10.0, ev));
+    if (ev == view_ev) return;
+    if (ev != 0.0) last_view_ev_ = ev;
+    view_ev = ev;
+    notify(View);
+}
+
+void Session::nudge_view_ev(double delta) { set_view_ev(std::round((view_ev + delta) * 10.0) / 10.0); }
+
+void Session::toggle_view_ev() {
+    if (view_ev != 0.0) {
+        last_view_ev_ = view_ev;
+        view_ev = 0.0;
+    } else {
+        view_ev = last_view_ev_;
+    }
+    notify(View);
+}
+
+void Session::set_view_gamma(double gamma) {
+    gamma = std::max(0.2, std::min(5.0, gamma));
+    if (gamma == view_gamma) return;
+    view_gamma = gamma;
+    notify(View);
+}
+
+void Session::reset_viewer() {
+    if (viewer_neutral()) return;
+    if (view_ev != 0.0) last_view_ev_ = view_ev;
+    view_ev = 0.0;
+    view_gamma = 1.0;
+    notify(View);
+}
+
+void Session::set_wipe_sources(std::string_view left, std::string_view right) {
+    if (!viewer_source(left) || !viewer_source(right)) return;
+    wipe_left = std::string(left);
+    wipe_right = std::string(right);
+    if (!wipe) wipe = 0.5;
+    notify(View | Wipe);
+}
+
+void Session::flip_ab() {
+    if (wipe) {
+        std::swap(wipe_left, wipe_right);
+        notify(View | Wipe);
+        return;
+    }
+    show = show == wipe_right ? wipe_left : wipe_right;
+    notify(View);
+}
+
+void Session::toggle_clamp_zebra() {
+    clamp_zebra = !clamp_zebra;
+    notify(View);
+}
+
+void Session::toggle_clip_zebra() {
+    clip_zebra = !clip_zebra;
+    notify(View);
+}
+
 void Session::toggle_anchor() {
     anchor = !anchor;
     notify(Delivery);

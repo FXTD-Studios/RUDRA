@@ -17,11 +17,14 @@ layout(std140, binding = 0) uniform View {
     vec4 gfx[3];  // rows of Rec.709 -> swapchain primaries, for the overlays
     vec4 anchor;  // roadmap 3.3: x 1 to anchor the model's picture, y knee (SDR max code), z softness, w hold gain
     vec4 paint;   // roadmap 3.3: x the painted mask's channel (< 0 none), yzw its tint (sRGB)
+    vec4 look;    // revision 6: x 2^view_ev, y 1 / view gamma, z 1 when the gamma is on, w 1 when sdrLight is bound
+    vec4 ab;      // revision 6: x the shown source, y the wipe's left, z its right (0 model, 1 baseline, 2 sdr), w zebras (1 clamp + 2 clip)
 };
 
 layout(binding = 3) uniform sampler2D masks;      // painted masks (3.3), RGBA8, a band per channel
 layout(binding = 1) uniform sampler2D model;      // rgb reconstruction, network units; a the SDR's Rec.2020 luma, linearised (the anchor's target)
 layout(binding = 2) uniform sampler2D baseline;   // rgb analytic baseline, a the SDR's max code (Invented)
+layout(binding = 4) uniform sampler2D sdrLight;   // revision 6: rgb the SDR as light (core/view.cpp sdr_light_rgba), a its clamp flags
 
 const float kPeak = 10000.0;
 // core/compare.hpp change_weight() and core/view.hpp kChange*.
@@ -67,6 +70,24 @@ float changeWeight(vec3 m, vec3 b) {
     return d < 0.0 ? -w : w;
 }
 
+// core/view.hpp revision 6.
+const vec3 kClampAllColour = vec3(0.95, 0.20, 0.20);
+const vec3 kClampSomeColour = vec3(0.98, 0.55, 0.15);
+const vec3 kCrushColour = vec3(0.20, 0.45, 0.98);
+const vec3 kScreenClipColour = vec3(0.98, 0.90, 0.15);
+const float kZebraMix = 0.6;
+const float kRangeHatchMix = 0.7;
+
+vec3 rangeColour(float s) {
+    if (!(s >= -6.0)) return vec3(0.08, 0.08, 0.10);
+    if (s < 0.0) return vec3(0.15 + 0.45 * (s + 6.0) / 6.0);
+    if (s < 1.0) return vec3(0.20, 0.55, 0.85);
+    if (s < 2.0) return vec3(0.25, 0.75, 0.45);
+    if (s < 3.0) return vec3(0.95, 0.85, 0.25);
+    if (s < 4.0) return vec3(0.95, 0.55, 0.20);
+    return vec3(0.90, 0.25, 0.25);
+}
+
 vec3 falseColour(float n) {
     if (n <     0.1) return vec3(0.169, 0.122, 0.239);
     if (n <     1.0) return vec3(0.184, 0.294, 0.561);
@@ -88,11 +109,19 @@ void main() {
     vec3 b = b4.rgb;
     vec4 m4 = texelFetch(model, p, 0);
     vec3 m = m4.rgb;
-    vec3 src = (!wiping && extra.z > 0.5) ? b : m;
-    bool left = wiping && u < view.z;
-    vec3 h = left ? b : src;
+    // Revision 6: sources 0 model, 1 baseline, 2 the SDR as light (the
+    // baseline when no SDR is bound), the wipe's A | B.
+    bool haveSdr = look.w > 0.5;
+    vec4 l4 = haveSdr ? texelFetch(sdrLight, p, 0) : vec4(0.0);
+    int flags = int(l4.a + 0.5);
+    int shown = int(ab.x + 0.5);
+    int which = wiping ? (u < view.z ? int(ab.y + 0.5) : int(ab.z + 0.5)) : shown;
+    if (which == 2 && !haveSdr) which = 1;
+    if (shown == 2 && !haveSdr) shown = 1;
+    vec3 src = wiping ? m : (shown == 0 ? m : shown == 1 ? b : l4.rgb);
+    vec3 h = which == 0 ? m : which == 1 ? b : l4.rgb;
     // The anchor (core/view.cpp anchor_gain_f) on the model's picture only.
-    if (anchor.x > 0.5 && !left && !(!wiping && extra.z > 0.5)) {
+    if (anchor.x > 0.5 && which == 0) {
         float eps = 1e-4;
         float target = m4.a * 203.0;
         float actual = lum2020(m) * kPeak;
@@ -104,7 +133,11 @@ void main() {
     }
     int mode = int(view.x + 0.5);
     vec3 c;
-    if (mode == 1) {
+    bool screenClip = false;
+    if (mode == 4) {
+        c = rangeColour(log2(max(max(h.r, h.g), h.b) * kPeak / 203.0));
+        if ((flags & 7) != 0 && ((p.x + p.y) & 7) == 0) c = c * (1.0 - kRangeHatchMix) + vec3(kRangeHatchMix);
+    } else if (mode == 1) {
         c = falseColour(lum2020(h) * kPeak);
     } else if (mode == 2) {
         float d = lum2020(abs(src - b));
@@ -115,10 +148,22 @@ void main() {
         float a = kMapMix * abs(changeWeight(m, b));
         vec3 col = (b4.a >= kSdrClipCode || b4.a <= kSdrCrushCode) ? kInventedColour : kReinterpretedColour;
         c = vec3(g) * (1.0 - a) + col * a;
-    } else if (target.x < 0.5) {
-        c = vec3(linearToSrgb(h.r * view.y), linearToSrgb(h.g * view.y), linearToSrgb(h.b * view.y));
     } else {
-        c = clamp(h * kPeak, 0.0, target.y);
+        // Revision 6: the viewer exposure, then the gamma on the view peak, then the clip.
+        vec3 hv = h * look.x;
+        bool sdrPath = target.x < 0.5;
+        vec3 v = sdrPath ? hv * view.y : hv * kPeak;
+        if (look.z > 0.5) {
+            float pivot = sdrPath ? 1.0 : target.y;
+            v = sign(v) * pivot * pow(abs(v) / pivot, vec3(look.y));
+        }
+        if (sdrPath) {
+            screenClip = v.r >= 1.0 || v.g >= 1.0 || v.b >= 1.0;
+            c = vec3(linearToSrgb(v.r), linearToSrgb(v.g), linearToSrgb(v.b));
+        } else {
+            screenClip = v.r >= target.y || v.g >= target.y || v.b >= target.y;
+            c = clamp(v, 0.0, target.y);
+        }
     }
     if (extra.w > 0.5 && mode == 0) {
         // Model against baseline at this pixel, whichever side is shown.
@@ -138,6 +183,31 @@ void main() {
         if (a > 0.0) {
             vec3 t = target.x < 0.5 ? paint.yzw : 203.0 * vec3(srgbToLinear(paint.y), srgbToLinear(paint.z), srgbToLinear(paint.w));
             c = c * (1.0 - a) + t * a;
+        }
+    }
+    int zebras = int(ab.w + 0.5);
+    if (mode == 0 && zebras != 0) {
+        // Revision 6: the source's clamp on one diagonal, the screen's clip on the other.
+        int d1 = (p.x + p.y) & 7;
+        int d2 = (p.x - p.y) & 7;
+        bool hdrPath = target.x >= 0.5;
+        vec3 col = vec3(0.0);
+        bool on = false;
+        if ((zebras & 1) != 0) {
+            int clip = flags & 7;
+            if (clip == 7) { on = d1 < 3; col = kClampAllColour; }
+            else if (clip != 0) { on = d1 < 1; col = kClampSomeColour; }
+            else if ((flags & 8) != 0) { on = d1 < 3; col = kCrushColour; }
+            if (on) {
+                vec3 t = hdrPath ? 203.0 * vec3(srgbToLinear(col.r), srgbToLinear(col.g), srgbToLinear(col.b)) : col;
+                c = c * (1.0 - kZebraMix) + t * kZebraMix;
+            }
+        }
+        if ((zebras & 2) != 0 && screenClip && d2 < 2) {
+            vec3 t = hdrPath ? 203.0 * vec3(srgbToLinear(kScreenClipColour.r), srgbToLinear(kScreenClipColour.g),
+                                            srgbToLinear(kScreenClipColour.b))
+                             : kScreenClipColour;
+            c = c * (1.0 - kZebraMix) + t * kZebraMix;
         }
     }
     bool handle = wiping && abs(u - view.z) < view.w;

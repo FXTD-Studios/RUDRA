@@ -1,10 +1,13 @@
 # The viewer: specification
 
-Status: revision 5, 2 Oct 2026. Normative for every implementation. Revision 2
+Status: revision 6, 1 Nov 2026. Normative for every implementation. Revision 2
 added the HDR output paths (section 9), revision 3 the viewport (section 10),
 revision 4 the guides (section 11), revision 5 the Changes tint (section 2,
-step 4a) and the compare line (section 12). The browser oracle has neither:
-both are native only and held to `core/view.cpp` and `core/compare.cpp`.
+step 4a) and the compare line (section 12), revision 6 the viewer's own
+controls and the range inspection (section 14). The browser oracle has none
+of revisions 5 and 6: they are native only and held to `core/view.cpp`,
+`core/compare.cpp` and `core/range.cpp`. Revision 6 at its defaults is
+revision 5 bit for bit, so every oracle golden still holds.
 
 The viewer takes the two float pictures the composite produces, the
 reconstruction and its analytic baseline (docs/composite.spec.md), and turns
@@ -336,7 +339,110 @@ Under the Compare bar, from `core/compare.cpp` over every pixel of `M` and `B`
   at or above it (capped at the display's peak and the slider's top), which
   keeps an A/B flip at one exposure; nothing changes in the master.
 
-## 13. Not in revision 5
+## 13. Not in revision 6
 
 Nothing the viewer draws is left unspecified; the rest of Phase 2 is the
 backend matrix and the budgets (steps 12 and 13).
+
+## 14. Viewer controls and range inspection (revision 6)
+
+A compositor's way of checking a reconstruction, as in Nuke's viewer: the SDR
+original beside the HDR result, stopped down and up, with what the original
+clamped marked. **None of it reaches a master, a render, a still, a log copy,
+a measurement or a saved project**; `engine::Session` keeps it out of
+`params()` and out of undo.
+
+### 14.1 Parameters (`ViewParams`)
+
+| Field | Default | Meaning |
+|---|---|---|
+| `view_ev` | 0 | viewer exposure, stops, −10..+10 |
+| `view_gamma` | 1 | viewer gamma, 0.2..5 |
+| `show` | Model | adds `Sdr` (2) to Model (0) and Baseline (1) |
+| `wipe_left`, `wipe_right` | Baseline, Model | the wipe's A and B; revision 5 was fixed to these |
+| `clamp_zebra`, `clip_zebra` | off | the two overlays of 14.4 |
+| `mode` | Image | adds `Range` (4) |
+
+### 14.2 The Sdr source
+
+Per channel, the source's code `v` as light in network units:
+`srgb_to_linear(v) · 2^anchor_target_log2(v, knots) · 203 / 10000`, the
+reading the anchor and the composite use (the Source picker's knots, empty
+for sRGB). Code 1.0 is the 203-nit SDR white and stays there, so a clamped
+area is flat at its white at every exposure. `sdr_light_rgba` computes it once
+on the host for both the CPU pass and the GPU (binding 4, RGBA32F, alpha the
+flags of 14.4); without an SDR the Sdr source falls back to the baseline.
+
+### 14.3 Exposure and gamma (Image only)
+
+After the anchor (section 2, step 3), per channel of the picture sample `h`:
+
+1. `h' = h · 2^view_ev`
+2. SDR path: `x = h' · 10000 / displayNits`; HDR paths: `x = h' · 10000` nits.
+3. When `view_gamma ≠ 1`: `x = sign(x) · P · (|x| / P)^(1 / view_gamma)` with
+   `P` 1.0 on the SDR path and the HDR path's ceiling (section 9) otherwise.
+4. The clip and encoding of section 2 and 9, unchanged.
+
+False colour, Difference, Invented and Range, the probe, the reductions,
+measurements, scopes and the compare line read absolute nits and ignore both.
+
+### 14.4 Overlays (Image only)
+
+Stripes in frame pixels; `d1 = (x + y) & 7`, `d2 = (x − y) & 7` (two's
+complement). Each is mixed at 0.6 over the picture; colours are SDR codes,
+graphics at the SDR white on the HDR paths.
+
+| Overlay | Where | Stripe | Colour |
+|---|---|---|---|
+| clamp, all | R, G and B codes all ≥ 254/255 | `d1 < 3` | 0.95 0.20 0.20 |
+| clamp, some | at least one, not all, ≥ 254/255 | `d1 < 1` | 0.98 0.55 0.15 |
+| crushed | max(R, G, B) ≤ 1/255, nothing clamped | `d1 < 3` | 0.20 0.45 0.98 |
+| screen clip | any channel at or over the clip after 14.3 (`x ≥ 1`, or `≥` the ceiling) | `d2 < 2` | 0.98 0.90 0.15 |
+
+The clamp overlays are the source's and do not move with the exposure. The
+screen clip does: stopping down clears it from a reconstructed highlight
+**and** from the SDR's flat white alike. The evidence of recovered range is
+the SDR side going flat grey where RUDRA's keeps a gradient, under the clamp
+stripes that stay.
+
+### 14.5 The Range layer
+
+`s = log2(max(R, G, B) · 10000 / 203)` of the picture sample after the
+anchor. NaN and −∞ take the first row.
+
+| Stops | Colour |
+|---|---|
+| < −6 | 0.08 0.08 0.10 |
+| −6 .. 0 (the SDR's own range) | grey `0.15 + 0.45 (s + 6) / 6` |
+| 0 .. 1 | 0.20 0.55 0.85 |
+| 1 .. 2 | 0.25 0.75 0.45 |
+| 2 .. 3 | 0.95 0.85 0.25 |
+| 3 .. 4 | 0.95 0.55 0.20 |
+| ≥ 4 | 0.90 0.25 0.25 |
+
+Pixels any channel of which the source clamped are hatched white at 0.7 where
+`d1 == 0`. Graphics on the HDR paths.
+
+### 14.6 The range readout (`core/range.hpp`)
+
+From the source's codes and the result, in absolute nits, per frame:
+
+- **Source:** clamped (max(R, G, B) ≥ 254/255, the Invented layer's "clipped"),
+  all-channel and per-channel clamped, crushed (max ≤ 1/255), all as shares
+  of the frame; range `log2(p99.5 / p0.5)` of max(R, G, B) light, zeros left
+  out. Percentiles are numpy's linear method.
+- **Result:** peak of max(R, G, B) and its stops over 203 nits, shares above
+  203 and above 1 000 nits, range as above.
+- **In the clamped area:** median and 99th percentile of the stops over
+  203 nits, and the share left within 0.1 stop of the plain inverse (the
+  compare line's "changed" threshold, floor 0.05 nits): what was not
+  rebuilt. Absent without a baseline.
+
+The SDR probe adds the source's 8-bit codes, which channels are clamped, and
+the result's stops over the SDR white at the pixel.
+
+### 14.7 Tolerances
+
+Defaults: revision 5 exactly (the oracle goldens). Revision 6 cases in
+`rudra-gpu-parity` hold the GPU to `core/view.cpp` at section 8's bounds;
+gamma goes through `pow` on both and is inside them.

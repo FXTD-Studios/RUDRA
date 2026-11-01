@@ -12,6 +12,7 @@
 #include <optional>
 #include <vector>
 
+#include "rudra/core/range.hpp"
 #include "rudra/core/compare.hpp"
 #include "rudra/core/composite.hpp"
 #include "rudra/core/fields.hpp"
@@ -34,6 +35,9 @@ struct FrameMeasure {
     double compose_ms = 0.0;                     // the grade's cost, as the page times it
     double anchor_hold = 1.0;                    // the anchor's hold gain at anchor_knee (core/view.hpp anchor_hold), roadmap 3.3
     double anchor_knee = 0.9;                    // the knee it was computed for
+    // View revision 6: where the source is clamped and what the result made
+    // of it (core/range.hpp). Absent when the frame came without its SDR.
+    std::optional<RangeStats> range;
 
     FrameMetrics frame_metrics() const;          // showMetrics' input
     // The probe at a frame pixel (probeAt, floor of the position): nullopt
@@ -54,5 +58,7 @@ FrameMeasure measure_frame(const SdrImage& sdr, const Fields& fields, const Fram
 // empty (the masks read 0 %, mask-limited headroom NaN), never borrowed from
 // the legacy path. Anchor hold is 1 (v1 requires the anchor off).
 FrameMeasure measure_headroom(const NetworkLinearImage& model, const NetworkLinearImage& baseline);
+// The same with the frame's SDR (the learned ACES route): adds the range readout.
+FrameMeasure measure_headroom(const NetworkLinearImage& model, const NetworkLinearImage& baseline, const SdrImage* sdr);
 
 }  // namespace rudra

@@ -61,6 +61,42 @@ float linear_to_srgb(float x) noexcept {
     return x > 0.0031308f ? 1.055f * std::pow(x, 1.0f / 2.4f) - 0.055f : 12.92f * x;
 }
 
+std::array<float, 3> range_colour(float stops) noexcept {
+    if (!(stops >= -6.0f)) return {0.08f, 0.08f, 0.10f};   // NaN and -inf (black) land here
+    if (stops < 0.0f) {
+        const float g = 0.15f + 0.45f * (stops + 6.0f) / 6.0f;
+        return {g, g, g};
+    }
+    if (stops < 1.0f) return {0.20f, 0.55f, 0.85f};
+    if (stops < 2.0f) return {0.25f, 0.75f, 0.45f};
+    if (stops < 3.0f) return {0.95f, 0.85f, 0.25f};
+    if (stops < 4.0f) return {0.95f, 0.55f, 0.20f};
+    return {0.90f, 0.25f, 0.25f};
+}
+
+std::vector<float> sdr_light_rgba(const SdrImage* sdr, std::span<const float> target_knots) {
+    if (!sdr) return {};
+    const PlanarBuffer& c = sdr->buffer();
+    const std::size_t n = c.plane_size();
+    std::vector<float> out(n * 4);
+    const float white = kSdrWhiteNits / kPeak;   // network units of the code's white
+    for (std::size_t i = 0; i < n; ++i) {
+        int flags = 0;
+        float mx = 0.0f;
+        for (int k = 0; k < 3; ++k) {
+            const float v = c.plane(k)[i];
+            float light = srgb_to_linear(v);
+            if (!target_knots.empty()) light *= std::exp2(anchor_target_log2(v, target_knots));
+            out[i * 4 + std::size_t(k)] = light * white;
+            if (v >= kSdrClipCode) flags |= (1 << k);
+            mx = std::max(mx, v);
+        }
+        if (mx <= kSdrCrushCode) flags |= kFlagCrush;
+        out[i * 4 + 3] = float(flags);
+    }
+    return out;
+}
+
 std::vector<float> sdr_max_codes(const SdrImage* sdr, int width, int height) {
     const std::size_t n = std::size_t(width) * std::size_t(height);
     std::vector<float> out(n, 0.5f);
@@ -138,7 +174,26 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
     const PlanarBuffer& b = baseline.buffer();
     const bool wiping = p.wipe >= 0.0;
     const bool painting = p.paint_band >= 0 && p.masks && p.masks->has(p.paint_band);
-    const PlanarBuffer& source = (!wiping && p.show == ViewSource::Baseline) ? b : m;
+    // Revision 6: the Sdr source (the plate as light) and the wipe's A | B.
+    const bool have_sdr = sdr && sdr->width() == w && sdr->height() == h;
+    const bool needs_light = view_needs_sdr_light(p);
+    const std::vector<float> light = (needs_light && have_sdr) ? sdr_light_rgba(sdr, p.anchor_knots) : std::vector<float>{};
+    PlanarBuffer sdr_pic;
+    if (!light.empty()) {
+        sdr_pic = PlanarBuffer(3, h, w);
+        for (std::size_t i = 0; i < sdr_pic.plane_size(); ++i)
+            for (int k = 0; k < 3; ++k) sdr_pic.plane(k)[i] = light[i * 4 + std::size_t(k)];
+    }
+    // Without an SDR the Sdr source falls back to the baseline (the app disables it).
+    auto pick = [&](ViewSource s) -> const PlanarBuffer& {
+        return s == ViewSource::Model ? m : (s == ViewSource::Sdr && !light.empty()) ? sdr_pic : b;
+    };
+    const PlanarBuffer& source = wiping ? m : pick(p.show);
+    const PlanarBuffer& left_pic = pick(p.wipe_left);
+    const PlanarBuffer& right_pic = pick(p.wipe_right);
+    const float view_gain = float(std::exp2(p.view_ev));
+    const bool gamma_on = p.view_gamma != 1.0;
+    const float inv_gamma = float(1.0 / std::clamp(p.view_gamma, 0.2, 5.0));
     // Uniforms reach the shader as fp32.
     const float scale = float(double(kPeak) / std::max(p.display_nits, 1e-3));
     const float wipe = wiping ? float(std::clamp(p.wipe, 0.0, 1.0)) : -1.0f;
@@ -163,7 +218,9 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const float u = (float(x) + 0.5f) / float(w);
-            const PlanarBuffer& pic = (wiping && u < wipe) ? b : source;
+            const PlanarBuffer& pic = wiping ? (u < wipe ? left_pic : right_pic) : source;
+            const std::size_t pix = std::size_t(y) * std::size_t(w) + std::size_t(x);
+            const int flags = light.empty() ? 0 : int(light[pix * 4 + 3]);
             float hr = pic.at(0, y, x), hg = pic.at(1, y, x), hb = pic.at(2, y, x);
             // The anchor (3.3) on the model's picture only: the baseline is the
             // inverse as it is, on its own or on the wipe's left.
@@ -181,6 +238,7 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                 hr *= gain, hg *= gain, hb *= gain;
             }
             float c[3];
+            bool screen_clip = false;
             switch (p.mode) {
                 case ViewMode::FalseColour: {
                     const auto fc = false_colour(false_colour_zone(lum2020(hr, hg, hb) * kPeak));
@@ -205,18 +263,36 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                     for (int k = 0; k < 3; ++k) c[k] = g * (1.0f - a) + col[std::size_t(k)] * a;
                     break;
                 }
+                case ViewMode::Range: {
+                    const float mx = std::max(std::max(hr, hg), hb) * kPeak;
+                    const auto rc = range_colour(std::log2(mx / kSdrWhiteNits));
+                    c[0] = rc[0], c[1] = rc[1], c[2] = rc[2];
+                    if ((flags & (kFlagClipR | kFlagClipG | kFlagClipB)) && ((x + y) & (kZebraPeriod - 1)) == 0)
+                        for (float& v : c) v = v * (1.0f - kRangeHatchMix) + kRangeHatchMix;
+                    break;
+                }
                 case ViewMode::Image:
-                default:
-                    if (hdr) {
-                        c[0] = std::clamp(hr * kPeak, 0.0f, ceiling);
-                        c[1] = std::clamp(hg * kPeak, 0.0f, ceiling);
-                        c[2] = std::clamp(hb * kPeak, 0.0f, ceiling);
-                    } else {
-                        c[0] = linear_to_srgb(hr * scale);
-                        c[1] = linear_to_srgb(hg * scale);
-                        c[2] = linear_to_srgb(hb * scale);
+                default: {
+                    // Revision 6: the viewer exposure, then the viewer gamma
+                    // pivoting on the view peak, then the clip.
+                    const float hv[3] = {hr * view_gain, hg * view_gain, hb * view_gain};
+                    for (int k = 0; k < 3; ++k) {
+                        float v = hdr ? hv[k] * kPeak : hv[k] * scale;
+                        if (gamma_on) {
+                            const float pivot = hdr ? ceiling : 1.0f;
+                            const float a = std::abs(v) / pivot;
+                            v = std::copysign(pivot * std::pow(a, inv_gamma), v);
+                        }
+                        if (hdr) {
+                            screen_clip = screen_clip || v >= ceiling;
+                            c[k] = std::clamp(v, 0.0f, ceiling);
+                        } else {
+                            screen_clip = screen_clip || v >= 1.0f;
+                            c[k] = linear_to_srgb(v);
+                        }
                     }
                     break;
+                }
             }
             if (p.show_changes && p.mode == ViewMode::Image) {
                 // Model against baseline at this pixel, whichever side is shown.
@@ -240,6 +316,28 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                         const float t = hdr ? graphics_white * srgb_to_linear(p.paint_tint[std::size_t(k)]) : p.paint_tint[std::size_t(k)];
                         c[k] = c[k] * (1.0f - a) + t * a;
                     }
+            }
+            if (p.mode == ViewMode::Image && (p.clamp_zebra || p.clip_zebra)) {
+                // Revision 6 overlays, in frame pixels: the source's clamp on one
+                // diagonal, the screen's clip on the other.
+                auto mix_in = [&](const std::array<float, 3>& col) {
+                    for (int k = 0; k < 3; ++k) {
+                        const float t = hdr ? graphics_white * srgb_to_linear(col[std::size_t(k)]) : col[std::size_t(k)];
+                        c[k] = c[k] * (1.0f - kZebraMix) + t * kZebraMix;
+                    }
+                };
+                const int d1 = (x + y) & (kZebraPeriod - 1), d2 = (x - y) & (kZebraPeriod - 1);
+                if (p.clamp_zebra) {
+                    const int clip = flags & (kFlagClipR | kFlagClipG | kFlagClipB);
+                    if (clip == (kFlagClipR | kFlagClipG | kFlagClipB)) {
+                        if (d1 < 3) mix_in(kClampAllColour);
+                    } else if (clip != 0) {
+                        if (d1 < 1) mix_in(kClampSomeColour);
+                    } else if ((flags & kFlagCrush) && d1 < 3) {
+                        mix_in(kCrushColour);
+                    }
+                }
+                if (p.clip_zebra && screen_clip && d2 < 2) mix_in(kScreenClipColour);
             }
             const bool handle = wiping && std::abs(u - wipe) < half_width;
             if (!hdr) {

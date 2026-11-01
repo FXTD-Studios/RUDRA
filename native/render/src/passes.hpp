@@ -46,8 +46,10 @@ struct ViewUbo {
     float gfx[12];
     float anchor[4];   // x on, y knee, z softness, w hold (roadmap 3.3)
     float paint[4];    // x the painted mask's channel (< 0 none), yzw its tint (3.3)
+    float look[4];     // revision 6: x 2^view_ev, y 1 / gamma, z gamma on, w the SDR light bound
+    float ab[4];       // revision 6: x shown, y wipe left, z wipe right (0 model, 1 baseline, 2 sdr), w zebras
 };
-static_assert(sizeof(ViewUbo) == 44 * sizeof(float));
+static_assert(sizeof(ViewUbo) == 52 * sizeof(float));
 
 // The Hold block of shaders/hold.frag (the static hold while playing).
 struct HoldUbo {
@@ -132,7 +134,7 @@ inline std::vector<std::uint8_t> masks_rgba8(const CompositeParams& params, int 
 }
 
 // The uniforms as core/view.cpp rounds them to fp32.
-inline ViewUbo view_ubo(const ViewParams& params, int width) {
+inline ViewUbo view_ubo(const ViewParams& params, int width, bool have_sdr = false) {
     ViewUbo u{};
     u.view[0] = float(int(params.mode));
     u.view[1] = float(10000.0 / std::max(params.display_nits, 1e-3));
@@ -154,8 +156,18 @@ inline ViewUbo view_ubo(const ViewParams& params, int width) {
     const bool painting = params.paint_band >= 0 && params.masks && params.masks->has(params.paint_band);
     u.paint[0] = painting ? float(params.paint_band) : -1.0f;
     for (int k = 0; k < 3; ++k) u.paint[1 + k] = params.paint_tint[std::size_t(k)];
+    u.look[0] = float(std::exp2(params.view_ev));
+    u.look[1] = float(1.0 / std::clamp(params.view_gamma, 0.2, 5.0));
+    u.look[2] = params.view_gamma != 1.0 ? 1.0f : 0.0f;
+    u.look[3] = have_sdr ? 1.0f : 0.0f;
+    u.ab[0] = float(int(params.show));
+    u.ab[1] = float(int(params.wipe_left));
+    u.ab[2] = float(int(params.wipe_right));
+    u.ab[3] = float((params.clamp_zebra ? 1 : 0) | (params.clip_zebra ? 2 : 0));
     return u;
 }
+
+
 
 // The masks texture for the display pass, from the view's set (see
 // masks_rgba8 above for the composite's).

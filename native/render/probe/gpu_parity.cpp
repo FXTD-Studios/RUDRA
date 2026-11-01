@@ -280,6 +280,37 @@ int main(int argc, char** argv) {
              v.show_changes = true;
              return v;
          }()},
+        // Revision 6 (1 Nov 2026): the viewer exposure and gamma, the Sdr
+        // source, the A | B wipe, both zebras and the Range layer.
+        {"view -2 EV gamma 2.2", [] {
+             auto v = view_params(ViewMode::Image, 203.0);
+             v.view_ev = -2.0;
+             v.view_gamma = 2.2;
+             return v;
+         }()},
+        {"sdr source -1 EV", [] {
+             auto v = view_params(ViewMode::Image, 203.0, ViewSource::Sdr);
+             v.view_ev = -1.0;
+             return v;
+         }()},
+        {"wipe sdr | model -3 EV zebras", [] {
+             auto v = view_params(ViewMode::Image, 203.0, ViewSource::Model, 0.5, 0.02);
+             v.wipe_left = ViewSource::Sdr;
+             v.view_ev = -3.0;
+             v.clamp_zebra = v.clip_zebra = true;
+             return v;
+         }()},
+        {"zebras 203", [] {
+             auto v = view_params(ViewMode::Image, 203.0);
+             v.clamp_zebra = v.clip_zebra = true;
+             return v;
+         }()},
+        {"range", view_params(ViewMode::Range, 203.0)},
+        {"range wipe sdr | model", [] {
+             auto v = view_params(ViewMode::Range, 203.0, ViewSource::Model, 0.5, 0.02);
+             v.wipe_left = ViewSource::Sdr;
+             return v;
+         }()},
     };
     for (const auto& [name, f] : idx.at("frames").items()) {
         const SdrImage sdr(load(dir, f.at("sdr")));
@@ -359,6 +390,20 @@ int main(int argc, char** argv) {
         {"wipe", view_params(ViewMode::Image, 10000.0, ViewSource::Model, 0.37, 0.02)},
         {"changes", [] { auto v = view_params(ViewMode::Image, 600.0); v.show_changes = true; return v; }()},
         {"invented", view_params(ViewMode::Invented, 600.0)},
+        // Revision 6.
+        {"view -2 EV gamma 1.8", [] {
+             auto v = view_params(ViewMode::Image, 1000.0);
+             v.view_ev = -2.0;
+             v.view_gamma = 1.8;
+             return v;
+         }()},
+        {"wipe sdr | model zebras", [] {
+             auto v = view_params(ViewMode::Image, 1000.0, ViewSource::Model, 0.5, 0.02);
+             v.wipe_left = ViewSource::Sdr;
+             v.clamp_zebra = v.clip_zebra = true;
+             return v;
+         }()},
+        {"range", view_params(ViewMode::Range, 203.0)},
     };
     for (const auto& [name, f] : idx.at("frames").items()) {
         const SdrImage sdr(load(dir, f.at("sdr")));
@@ -473,8 +518,8 @@ int main(int argc, char** argv) {
                                 {"fp16_max_ulp", r.f16_ulp}, {"pass", r.ok()}});
     }
     all = all && hdr_ok;
-    out << QString("  %1 cases (scRGB, HDR10, EDR P3, EDR 709 x 7 views x %2 frames): fp32 max rel %3, fp16 max %4 ulp  %5\n")
-               .arg(hrows.size()).arg(idx.at("frames").size()).arg(worst_hdr_rel, 0, 'e', 2).arg(worst_hdr_ulp)
+    out << QString("  %1 cases (scRGB, HDR10, EDR P3, EDR 709 x %2 views x %3 frames): fp32 max rel %4, fp16 max %5 ulp  %6\n")
+               .arg(hrows.size()).arg(hdr_views.size()).arg(idx.at("frames").size()).arg(worst_hdr_rel, 0, 'e', 2).arg(worst_hdr_ulp)
                .arg(hdr_ok ? "pass" : "FAIL");
     out << "  bound: fp32 1e-5 + " << kRtol << " |ref|; fp16 " << kMaxHalfUlp << " half ulp; HDR10 codes also pass within 1/20 of a 10-bit step\n";
     out << "Reductions (peak, fp32 sum of max RGB), against core/view.cpp reduce_ladder\n";

@@ -486,8 +486,16 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     v->addWidget(compare_bar_);
 
     // ── the viewer ──
-    viewer_stack_ = new QStackedWidget(centre);
-    viewer_stack_->setObjectName("viewer");
+    // The viewer's box (the Pro boards' frame) holds, since view revision 6,
+    // the viewer toolbar over the picture: the frame keeps its geometry.
+    auto* viewer_box = new QWidget(centre);
+    viewer_box->setObjectName("viewer");
+    auto* vbox = new QVBoxLayout(viewer_box);
+    vbox->setContentsMargins(0, 0, 0, 0);
+    vbox->setSpacing(0);
+    build_viewer_toolbar(vbox, viewer_box);
+    viewer_stack_ = new QStackedWidget(viewer_box);
+    viewer_stack_->setObjectName("viewerStack");
     auto* empty = new QWidget(viewer_stack_);
     empty->setObjectName("empty");
     auto* ev = column(empty, 0, 6);
@@ -537,7 +545,8 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
 #else
     (void)with_viewer;
 #endif
-    v->addWidget(viewer_stack_, 1);
+    vbox->addWidget(viewer_stack_, 1);
+    v->addWidget(viewer_box, 1);
     v->addWidget(build_pipe());
 
     // ── the timeline ──
