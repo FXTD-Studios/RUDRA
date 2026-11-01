@@ -1,5 +1,11 @@
 # checkpoints/
 
+> **1 Nov 2026:** these are the research and Beta 2 checkpoints, all
+> **non-commercial** (`LICENSE`). None of them ships in a RUDRA package from 1.0.3
+> on, and none is the 1.0 model: the learned ACES 2.0 model (RUDRA ACES 2) and AI
+> fill v3 are downloaded in the app. Every model, its licence and its status:
+> [docs/MODELS.md](../docs/MODELS.md). "Shipped" below means the Beta 2 web app.
+
 Every model this project trained on the SDR→HDR path, committed so the paper's
 tables can be reproduced without asking anyone for a file. 38 MB total. The
 training pairs and HDR sources stay out of the repo, as the root README says.
