@@ -211,6 +211,11 @@ export = '''<section class="page" id="export" data-title="Deliver & colour">
 
 news = f'''<section class="page" id="whats-new" data-title="What’s new">
 <div class="eyebrow">08 / Release notes</div><h1>What’s new<br>in {VER}.</h1>
+<h2>In 1.0.3</h2>
+<ul>
+<li><strong>No model inside the package</strong>: every model is a download in <strong>File › Model packages</strong> that shows its licence first. Packages up to 1.0.1 carried the Beta 2 model <strong>sdr2hdr_image_v8</strong>, which is non-commercial; if you installed one of them, update or delete <strong>models/sdr2hdr_image_v8</strong> from the install before commercial work.</li>
+<li><strong>The learned ACES 2.0 model is a preview</strong>: in the last published test it graded better at −3 and +3 EV, but at the delivered exposure its highlights sat further from the reference than the analytic result. Compare the two before delivery.</li>
+</ul>
 <h2>In 1.0.2</h2>
 <ul>
 <li><strong>The learned ACES 2.0 model on every platform</strong>: its engine is now in the Windows and macOS packages, so the model you download runs straight away (DirectML or the CPU on Windows; the CPU or Core ML on a Mac).</li>

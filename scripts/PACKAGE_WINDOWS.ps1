@@ -41,6 +41,13 @@
   .\scripts\PACKAGE_WINDOWS.ps1 -NoModels -NoInstaller # isolated analytic evaluation ZIP; no clearance implied
   .\scripts\PACKAGE_WINDOWS.ps1 -NoModels -WithAcesEngine   # 1.0: analytic, plus the learned ACES 2.0 engine;
                                                             # its model is downloaded in the app (Model packages)
+  .\scripts\PACKAGE_WINDOWS.ps1 -PublicRelease -Tests      # 1.0.3+: what release.yml builds. No model weights
+                                                            # at all (every model is a download with its licence),
+                                                            # the normal RUDRA installer, dist\beta; refused if
+                                                            # tools\check_package_weights.py finds any weight.
+
+  Beta 2 weights (sdr2hdr_*, non-commercial) are refused in every package unless
+  -AllowNonCommercialWeights is given, which is for internal builds only.
 
   -WithAcesEngine (29 Oct 2026): rudra-native.exe from -AcesBuild (built by
   NATIVE_ACES_V2.ps1: OCIO 2.5.2, the same commands plus aces-v2 and aces-v2-serve)
@@ -75,7 +82,11 @@ param(
     # 1 Nov 2026: the learned ACES 2.0 engine is in every package (rudra-native aces-v2 /
     # aces-v2-serve on ONNX Runtime, DirectML or CPU), with OpenColorIO 2.5.2 built here once.
     [string]$OcioVersion = "2.5.2",
-    [switch]$NoOcio
+    [switch]$NoOcio,
+    # 1 Nov 2026 (1.0.3): the public package. 1.0.0 to 1.0.2 bundled sdr2hdr_image_v8
+    # (non-commercial) from dist\models; a public package now carries no weights.
+    [switch]$PublicRelease,
+    [switch]$AllowNonCommercialWeights
 )
 
 $ErrorActionPreference = "Stop"
@@ -92,8 +103,14 @@ function Fail($m) { Write-Host "FAILED: $m" -ForegroundColor Red; exit 1 }
 . (Join-Path $PSScriptRoot "native_toolchain.ps1")
 
 $Models = Join-Path $Repo "dist\models"
-if (-not $NoModels -and -not (Get-ChildItem $Models -Recurse -Filter manifest.json -ErrorAction SilentlyContinue)) {
+if ($PublicRelease -and $NoModels) { Fail "-PublicRelease already bundles no models; drop -NoModels" }
+$BundleModels = -not $NoModels -and -not $PublicRelease
+if ($BundleModels -and -not (Get-ChildItem $Models -Recurse -Filter manifest.json -ErrorAction SilentlyContinue)) {
     Fail "no model package in dist\models (run NATIVE_GATE_A.ps1 first)"
+}
+if ($BundleModels -and -not $AllowNonCommercialWeights) {
+    $nc = Get-ChildItem $Models -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^sdr2hdr_|shadow_v1|shadow_s[23]|temporal_v1' }
+    if ($nc) { Fail ("dist\models holds non-commercial Beta 2 weights ({0}); the package is Apache 2.0. -AllowNonCommercialWeights for an internal build only" -f (($nc | Select-Object -First 3 | ForEach-Object Name) -join ', ')) }
 }
 
 # ---------------------------------------------------------------------------
@@ -349,12 +366,12 @@ if ($WithAcesEngine) {
 }
 $OutModels = Join-Path $Out "models"
 New-Item -ItemType Directory -Force -Path $OutModels | Out-Null
-if (-not $NoModels) {
+if ($BundleModels) {
     Copy-Item "$Models\*" $OutModels -Recurse -Force
     Get-ChildItem $OutModels -Recurse -Include *.safetensors, *.config.json | Remove-Item -Force
 }
 Copy-Item LICENSE, NOTICE $Out
-if (-not $NoModels -and (Test-Path checkpoints\LICENSE)) { Copy-Item checkpoints\LICENSE (Join-Path $Out "LICENSE-weights") }
+if ($BundleModels -and $AllowNonCommercialWeights -and (Test-Path checkpoints\LICENSE)) { Copy-Item checkpoints\LICENSE (Join-Path $Out "LICENSE-weights") }
 if ($NoModels) {
     "Analytic evaluation package. No model weights bundled. This is not commercial or legal clearance." |
         Set-Content -Encoding utf8 (Join-Path $Out "PACKAGE_MODE.txt")
@@ -381,7 +398,7 @@ if ($FfDir) {
 }
 
 Say "Check the package runs from where it is"
-if (-not $NoModels) {
+if ($BundleModels) {
     $pkg = Get-ChildItem $OutModels -Directory | Where-Object { Test-Path (Join-Path $_.FullName "manifest.json") } | Select-Object -First 1
     & (Join-Path $Out "rudra-native.exe") info $pkg.FullName | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "rudra-native in the package cannot read its model" }
@@ -407,6 +424,11 @@ $p = Start-Process -FilePath (Join-Path $Out "RUDRA.exe") -ArgumentList @("--the
 if ($p.ExitCode -ne 0) { Fail "RUDRA.exe in the package does not start (exit $($p.ExitCode))" }
 if ($NoModels) {
     & (Join-Path $PSScriptRoot "TEST_MODEL_FREE_PACKAGE.ps1") -Package $Out
+}
+if ($PublicRelease) {
+    Say "No model weights in the public package"
+    & $Python (Join-Path $Repo "tools\check_package_weights.py") $Out
+    if ($LASTEXITCODE -ne 0) { Fail "the public package carries model weights" }
 }
 
 Say "ZIP"

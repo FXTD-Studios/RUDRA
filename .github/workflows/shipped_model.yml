@@ -1,0 +1,104 @@
+name: shipped model
+
+# The model users download (RUDRA_ACES_2, Hugging Face) through the native
+# engine on every platform CI can run: scripts/ci_shipped_model.sh. Added in
+# 1.0.3: native.yml's Gate A still tests the retired sdr2hdr_shadow_v1 for the
+# v1 contract; this is the 1.0 model. It also proves the learned engine
+# (OpenColorIO 2.5.2) builds on Linux and macOS in CI.
+#
+# Linux: LibTorch CPU vs ONNX Runtime CPU. macOS: ONNX Runtime CPU vs Core ML.
+# Windows DirectML needs a GPU the hosted runners do not have: run
+# scripts/ci_shipped_model.sh by hand there (docs/MODELS.md).
+
+on:
+  push:
+    branches: [aces-v2, main]
+    paths: ["native/**", "tools/check_aces_masters.py", "scripts/ci_shipped_model.sh", "scripts/build_ocio.sh",
+            ".github/workflows/shipped_model.yml"]
+  pull_request:
+    paths: ["native/**", "tools/check_aces_masters.py", "scripts/ci_shipped_model.sh", "scripts/build_ocio.sh"]
+  schedule:
+    - cron: "17 3 * * 1"   # weekly: the published files have not changed under us
+  workflow_dispatch:
+    inputs:
+      hf_revision: { description: "Hugging Face revision of fxtdstudios/rudra-models", default: "main" }
+
+env:
+  ORT_VERSION: "1.22.0"
+  OCIO_VERSION: "2.5.2"
+  HF_REVISION: ${{ inputs.hf_revision || 'main' }}
+
+jobs:
+  linux:
+    name: RUDRA_ACES_2, LibTorch vs ONNX Runtime (Linux CPU)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: Tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev ffmpeg
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e . "opencolorio==${OCIO_VERSION}" openexr opencv-python-headless huggingface_hub
+      - uses: actions/cache@v4
+        with: { path: "tmp/native_deps/ocio-${{ env.OCIO_VERSION }}", key: "ocio-${{ env.OCIO_VERSION }}-ubuntu-24.04" }
+      - name: OpenColorIO
+        run: tools/ci_run.sh "OCIO" scripts/build_ocio.sh
+      - name: ONNX Runtime C API
+        run: |
+          curl -sSL -o ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          tar xzf ort.tgz
+          echo "ORT_ROOT=$PWD/onnxruntime-linux-x64-${ORT_VERSION}" >> "$GITHUB_ENV"
+      - name: Configure and build the learned engine
+        run: |
+          OCIO_PREFIX="$PWD/tmp/native_deps/ocio-${OCIO_VERSION}"
+          cmake -S native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF \
+            -DRUDRA_WITH_LIBTORCH=ON -DRUDRA_WITH_ONNXRUNTIME=ON -DONNXRUNTIME_ROOT="$ORT_ROOT" \
+            -DRUDRA_WITH_OPENCV=ON -DRUDRA_WITH_OCIO=ON \
+            -DCMAKE_PREFIX_PATH="$(python -c 'import torch; print(torch.utils.cmake_prefix_path)');$OCIO_PREFIX"
+          tools/ci_run.sh "Build" cmake --build build --parallel --target rudra-native
+          echo "LD_LIBRARY_PATH=$ORT_ROOT/lib:$OCIO_PREFIX/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+      - name: The shipped model
+        run: PYTHON=python tools/ci_run.sh "Shipped model" scripts/ci_shipped_model.sh build/cli/rudra-native libtorch:cpu onnxruntime:cpu
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with: { name: shipped-model-linux, path: "reports/shipped_model/*.json", if-no-files-found: ignore }
+
+  macos:
+    name: RUDRA_ACES_2, ONNX Runtime CPU vs Core ML (macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: Tools
+        run: |
+          brew install nlohmann-json ninja opencv ffmpeg@6
+          echo "$(brew --prefix ffmpeg@6)/bin" >> "$GITHUB_PATH"
+          python -m pip install --upgrade pip
+          pip install torch numpy
+          pip install -e . "opencolorio==${OCIO_VERSION}" openexr opencv-python-headless huggingface_hub
+      - uses: actions/cache@v4
+        with: { path: "tmp/native_deps/ocio-${{ env.OCIO_VERSION }}", key: "ocio-${{ env.OCIO_VERSION }}-macos-15" }
+      - name: OpenColorIO
+        run: tools/ci_run.sh "OCIO" scripts/build_ocio.sh
+      - name: ONNX Runtime C API (with Core ML)
+        run: |
+          curl -sSL -o ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-osx-arm64-${ORT_VERSION}.tgz"
+          tar xzf ort.tgz
+          echo "ORT_ROOT=$PWD/onnxruntime-osx-arm64-${ORT_VERSION}" >> "$GITHUB_ENV"
+      - name: Configure and build the learned engine
+        run: |
+          OCIO_PREFIX="$PWD/tmp/native_deps/ocio-${OCIO_VERSION}"
+          cmake -S native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF \
+            -DRUDRA_WITH_ONNXRUNTIME=ON -DONNXRUNTIME_ROOT="$ORT_ROOT" \
+            -DRUDRA_WITH_OPENCV=ON -DRUDRA_WITH_OCIO=ON -DCMAKE_PREFIX_PATH="$OCIO_PREFIX"
+          tools/ci_run.sh "Build" cmake --build build --parallel --target rudra-native
+          echo "DYLD_LIBRARY_PATH=$ORT_ROOT/lib:$OCIO_PREFIX/lib" >> "$GITHUB_ENV"
+      - name: The shipped model
+        run: PYTHON=python tools/ci_run.sh "Shipped model" scripts/ci_shipped_model.sh build/cli/rudra-native onnxruntime:cpu onnxruntime:coreml
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with: { name: shipped-model-macos, path: "reports/shipped_model/*.json", if-no-files-found: ignore }

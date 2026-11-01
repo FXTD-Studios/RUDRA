@@ -101,8 +101,8 @@ void RudraFactory::describe(OFX::ImageEffectDescriptor& desc) {
     desc.setLabels("RUDRA SDR to HDR", "RUDRA SDR to HDR", "RUDRA SDR to HDR");
     desc.setPluginGrouping("RUDRA");
     desc.setPluginDescription(
-        "SDR to scene-linear or PQ HDR by RUDRA's analytic reconstruction (FXTD Studios). Non-commercial use "
-        "under the PolyForm Noncommercial License 1.0.0.");
+        "SDR to scene-linear or PQ HDR by RUDRA's analytic reconstruction (FXTD Studios). Licensed under "
+        "the Apache License 2.0.");
     desc.addSupportedContext(OFX::eContextFilter);
     desc.addSupportedContext(OFX::eContextGeneral);
     desc.addSupportedBitDepth(OFX::eBitDepthFloat);

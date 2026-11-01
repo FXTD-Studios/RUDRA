@@ -100,7 +100,12 @@ does not depend on anyone's permission.
 Every .pt file in this directory, and the corresponding weight files
 published at https://huggingface.co/fxtdstudios/RUDRA. The .json files, the
 checksums and README.md in this directory are under the repository's
-licence (PolyForm Noncommercial 1.0.0).
+licence (Apache License 2.0, from 29 October 2026).
+
+None of these weights is in a RUDRA package from 1.0.3 on. Packages 1.0.0 to
+1.0.2 carried sdr2hdr_image_v8 by mistake; it stayed under this licence there
+too. The 1.0 models (RUDRA ACES 2, AI fill v3) are separate, Apache 2.0, and
+listed in docs/MODELS.md.
 
 
 7. NO WARRANTY
