@@ -1,0 +1,26 @@
+{
+ "registered_before_evaluation": true,
+ "source_registration": "configs/experiments/aces_constrained_generated_review_20261024.json",
+ "clip": "hunyuan_demo",
+ "candidate": "G:\\rudra_training\\partial_pcgrad_duration6400_retry1_20261025\\step6400.pt",
+ "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+ "frames": 48,
+ "feather_radius": 0,
+ "all_highlight_appearance": true,
+ "policy": "Deterministic uncapped PCGrad control; original Hunyuan48 gates",
+ "checks": "48frames; max transition mean excess<=0.02EV; ordinary >=99.9% within1code; all highlight appearance<=1code; zero shadow lift/new negativeY; exact outside constraint support",
+ "scope": "The 0 EV arm (training/aces_partial_tighten.py, 2 Nov 2026): after the shipped constraint, partially clipped support pixels more than half a code from the source move toward the analytic baseline until within it. 'bisect' (primary): the largest blend in [0,1] by bisection, the hypothesis being that a continuous blend keeps the aligned-residual motion gate that 25 Oct's discrete halving broke. 'halving': that 25 Oct method on d6400, the control. Registered before any run. Original limits. No release qualification. Arm: halving. Hunyuan48 video (evaluate_aces_feather_video.py).",
+ "release_authorized": false,
+ "include_fully_clipped": true,
+ "clipped_smoothing": {
+  "start": 0,
+  "mode": "hybrid",
+  "ramp": 1,
+  "sigma": 64
+ },
+ "forbid_new_negative_y": true,
+ "partial_tighten": {
+  "mode": "halving",
+  "tol_codes": 0.5
+ }
+}
