@@ -21,7 +21,8 @@ function Fail($m) { Write-Host "FAILED: $m" -ForegroundColor Red; exit 1 }
 if (-not (Test-Path $Python)) { $Python = "python" }
 $ckpt = Join-Path $RunRoot "step6400.pt"
 $anc = Join-Path $RunRoot "training_ancestry.json"
-foreach ($p in $ckpt, $anc) { if (-not (Test-Path $p)) { Fail "missing $p" } }
+$rep = Join-Path $RunRoot "report.json"
+foreach ($p in $ckpt, $anc, $rep) { if (-not (Test-Path $p)) { Fail "missing $p" } }
 if ((Get-FileHash $ckpt -Algorithm SHA256).Hash.ToLower() -ne "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e") { Fail "step6400.pt is not the registered checkpoint" }
 New-Item -ItemType Directory -Force $Out | Out-Null
 
@@ -41,7 +42,9 @@ foreach ($arm in "bisect", "halving") {
         Say "2. Development gates, $arm (CUDA)"
         $root = Join-Path $Out "dev_$arm"
         New-Item -ItemType Directory -Force $root | Out-Null
-        Copy-Item $ckpt, $anc $root -Force   # the evaluator reads them from its root and writes root\paired_development
+        Copy-Item $ckpt, $anc, $rep $root -Force
+        $pd = Join-Path $root "paired_development"
+        if (Test-Path $pd) { Remove-Item -Recurse -Force $pd }   # the evaluator reads them from its root and writes root\paired_development
         & $Python tools/evaluate_aces_context_motion.py --registration "configs/experiments/claude_partial_tighten_${arm}_dev_20261102.json" --root $root
         if ($LASTEXITCODE -ne 0) { Fail "development gates ($arm)" }
     }
