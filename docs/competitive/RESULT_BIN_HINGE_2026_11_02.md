@@ -37,3 +37,29 @@ Next, in order of cost:
   before more data, since on every set every other number beats the analytic inverse;
 - real-footage training data like the fresh set's (FXTD footage kept out of every
   evaluation set), the only lever the fresh 0 EV has not been tried with.
+
+## Addendum: the hinge-free control w0 (same recipe, seed and schedule; registered after w4)
+
+| | w0 (no hinge) | w4 (hinge 4) | limit |
+|---|---|---|---|
+| aligned residual | 0.00783 | 0.00906 | ≤ 0.010367 |
+| old24 grade −3 EV | 11.47 | **9.51** | ≤ 18.62 |
+| old24 grade 0 EV | 0.0642 fail | **0.0537 pass** | ≤ 0.0604 |
+| old24 grade +3 EV | 0.00281 fail | **0.00241 pass** | ≤ 0.00250 |
+| Hunyuan48 | pass | pass | |
+| fresh 0 EV RMS | 0.456 | 0.453 | ≤ 0.338 |
+| fresh −3 / +3 / H | 485.6 / 0.317 / 0.0768 | 490.4 / 0.319 / 0.0774 | ≤ analytic |
+
+- **On the development sets the hinge is what made the difference.** Training longer
+  without it (w0) fails old24 0 EV and +3 EV like d6400 did; with it (w4) both pass.
+  The cost is motion consistency: aligned residual 0.0078 → 0.0091, still inside its
+  limit. The rising training diagnostic does not contradict this: it is measured on
+  training crops, and w0 (which logs none) may have drifted further.
+  One seed each and old24 is 14 frames, so the size of the effect is uncertain.
+- **On the fresh set the hinge changes nothing** (0.456 vs 0.453). Every variant tried
+  lands at 0.45-0.47 code there, 42 of 42 cases worse than the analytic inverse at 0 EV
+  and better at −3 EV and on H.
+- **The fresh set is 41 of 42 cases from one project** (IRAH Manchale song; one ELMATAREED
+  case). Its verdict is about one production's footage, which limits how far it
+  generalises in either direction. The confirmatory holdout must be stratified across
+  projects and cameras (HOLDOUT_KIT.md does this) to say anything general.
