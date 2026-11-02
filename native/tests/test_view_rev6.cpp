@@ -8,6 +8,8 @@
 #include <random>
 
 #include "rudra/core/compare.hpp"
+#include "rudra/core/baseline.hpp"
+#include "rudra/core/composite.hpp"
 #include "rudra/core/measure.hpp"
 #include "rudra/core/range.hpp"
 #include "rudra/core/view.hpp"
@@ -370,4 +372,32 @@ TEST(ViewerSession, WipeSourcesAndFlip) {
     s.set_show("model");
     s.flip_ab();
     EXPECT_EQ(s.show, "model" == s.wipe_right ? s.wipe_left : s.wipe_right);
+}
+
+TEST(ViewRev6, SdrSourceReadsTheSourceCurve) {
+    // With the Source picker's knots the Sdr source is that curve's light (here
+    // BT.1886, gamma 2.4 at diffuse white), not the sRGB reading the app left
+    // the viewer with before 1 Nov 2026.
+    CompositeParams bt;
+    bt.source = SourceCurve::Bt1886;
+    const std::vector<float> knots = anchor_target_knots(bt);
+    ASSERT_FALSE(knots.empty());
+    SdrImage sdr(1, 3);
+    const float codes[3] = {0.25f, 0.5f, 0.9f};
+    for (int x = 0; x < 3; ++x)
+        for (int k = 0; k < 3; ++k) sdr.buffer().at(k, 0, x) = codes[x];
+    const auto plain = sdr_light_rgba(&sdr);
+    const auto read = sdr_light_rgba(&sdr, knots);
+    // The masters' own BT.1886 reading of the same codes: the composite's baseline
+    // at 0 EV (what anchor_target_knots samples), so the viewer and the master agree.
+    CompositeParams curve_only;
+    curve_only.source = SourceCurve::Bt1886;
+    const NetworkLinearImage base =
+        corrected_baseline(SdrImage(sdr.buffer()), 0.0f, baseline_curve_params(FrameScalars{}, curve_only, 0.0f));
+    for (int x = 0; x < 3; ++x) {
+        const double want = base.buffer().at(1, 0, x);
+        EXPECT_NEAR(read[std::size_t(x) * 4 + 1], want, want * 0.01) << codes[x];   // knot interpolation only
+        EXPECT_NE(read[std::size_t(x) * 4], plain[std::size_t(x) * 4]);
+    }
+    EXPECT_NEAR(read[2 * 4 + 3], plain[2 * 4 + 3], 0.0f);   // the flags do not depend on the reading
 }

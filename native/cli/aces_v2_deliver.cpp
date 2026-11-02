@@ -1,3 +1,5 @@
+#include "rudra/core/aces_amf.hpp"
+#include <random>
 #include "aces_v2_deliver.hpp"
 
 #include <cctype>
@@ -151,7 +153,33 @@ Result<void> aces_prepare_out(const AcesDeliverOptions& o, const fs::path& out, 
         if (auto r = taken(aces_dovi_xml_file(o, out)); !r) return r;
         if (auto r = taken(aces_dovi_generate_file(o, out)); !r) return r;
     }
+    if (o.writes_exr())
+        if (auto r = taken(aces_amf_file(o, out)); !r) return r;
     return taken(aces_provenance_file(o, out));
+}
+
+fs::path aces_amf_file(const AcesDeliverOptions& o, const fs::path& out) {
+    return o.into_existing ? out / (o.name + ".amf") : out / "rudra.amf";
+}
+
+Result<std::string> aces_write_amf(const AcesDeliverOptions& o, const fs::path& out, std::size_t frames) {
+    if (!o.writes_exr()) return std::string();
+    std::mt19937_64 rng(std::random_device{}());
+    AmfRequest r;
+    r.description = std::string("RUDRA learned ACES 2.0 master (") + (o.exr_gamut == "ap0" ? "ACES2065-1" : "ACEScg") +
+                    ", scene-linear); the output transform is the view its appearance constraint holds it to";
+    r.created_utc = amf_now_utc();
+    r.amf_uuid = make_amf_uuid(rng);
+    r.pipeline_uuid = make_amf_uuid(rng);
+    r.acescg = o.exr_gamut != "ap0";
+    if (!o.name.empty() && frames > 0) {
+        r.clip_name = o.name;
+        r.sequence = AmfSequence{o.name + o.separator + std::string(std::size_t(o.padding), '#') + ".exr",
+                                 std::int64_t(o.start), std::int64_t(o.start) + std::int64_t(frames) - 1};
+    }
+    const fs::path p = aces_amf_file(o, out);
+    if (auto w = aces_write_whole(p, aces_amf_xml(r)); !w) return w.error();
+    return p.filename().string();
 }
 
 fs::path aces_provenance_file(const AcesDeliverOptions& o, const fs::path& out) {

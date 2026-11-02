@@ -657,3 +657,44 @@ TEST(AcesDeliver, ADpxCarriesItsTimecodeRateAndReel) {
     EXPECT_EQ(std::string(reinterpret_cast<const char*>(&b[1556])), "A001C003");
     EXPECT_EQ(b[801], 0);   // a log: user-defined transfer (named in the provenance)
 }
+
+// The ACES Metadata File beside the masters (core/aces_amf.hpp, 1 Nov 2026).
+TEST(AcesDeliver, WritesAnAmfThatNamesTheFramesItWrote) {
+    const auto dir = std::filesystem::temp_directory_path() / "rudra_amf_deliver";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    auto o = aces_deliver_from_json({{"name", "SH010_rudra"}, {"start", 1001}, {"into_existing", true}});
+    ASSERT_TRUE(o);
+    auto f = aces_write_amf(*o, dir, 24);
+    ASSERT_TRUE(f);
+    EXPECT_EQ(*f, "SH010_rudra.amf");   // beside the frames in an existing folder
+    std::ifstream in(dir / *f);
+    const std::string xml((std::istreambuf_iterator<char>(in)), {});
+    // The sequence pattern names exactly the frames aces_frame_stem writes.
+    EXPECT_EQ(aces_frame_stem(*o, 0, "x.exr") + ".exr", "SH010_rudra.001001.exr");
+    EXPECT_NE(xml.find("<aces:sequence idx=\"#\" min=\"1001\" max=\"1024\">SH010_rudra.######.exr</aces:sequence>"),
+              std::string::npos);
+    EXPECT_NE(xml.find("CSC.Academy.ACEScg_to_ACES.a2.v1"), std::string::npos);
+    // AP0 masters are already ACES: no input transform.
+    auto ap0 = aces_deliver_from_json({{"exr", "half"}, {"exr_gamut", "ap0"}});
+    ASSERT_TRUE(ap0);
+    const auto d2 = dir / "ap0";
+    std::filesystem::create_directories(d2);
+    auto g = aces_write_amf(*ap0, d2, 3);
+    ASSERT_TRUE(g);
+    std::ifstream in2(d2 / *g);
+    const std::string x2((std::istreambuf_iterator<char>(in2)), {});
+    EXPECT_EQ(x2.find("inputTransform"), std::string::npos);
+    EXPECT_EQ(x2.find("clipId"), std::string::npos);   // unnamed: no sequence to name
+    // No EXRs, no AMF.
+    auto none = aces_deliver_from_json({{"exr", "none"}, {"log", "logc4"}, {"log_formats", "mov16"}});
+    ASSERT_TRUE(none);
+    auto n = aces_write_amf(*none, dir / "none", 3);
+    ASSERT_TRUE(n);
+    EXPECT_TRUE(n->empty());
+    // Into an existing folder, a delivery refuses to overwrite its AMF, as it does its provenance.
+    EXPECT_FALSE(aces_prepare_out(*o, dir, 24, "").ok());
+    std::filesystem::remove(dir / "SH010_rudra.amf");
+    EXPECT_TRUE(aces_prepare_out(*o, dir, 24, "").ok());
+    std::filesystem::remove_all(dir);
+}

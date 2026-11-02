@@ -692,9 +692,21 @@ void MainWindow::session_changed(std::uint32_t what) {
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         if (what & Session::Grade) viewer_->set_composite(session_.composite_params());
-        if (what & (Session::Peak | Session::Wipe | Session::View | Session::Delivery)) {
+        if (what & (Session::Peak | Session::Wipe | Session::View | Session::Delivery | Session::Grade)) {
             auto v = viewer_->view();
             v.display_nits = session_.display_nits();
+            // The SDR's reading (1 Nov 2026): the anchor and the Sdr source read each
+            // code as the masters do, through the Source picker's curve
+            // (composite.hpp anchor_target_knots); the app left these empty, so the
+            // viewer read every code as sRGB. The learned ACES route's server feeds
+            // the model BT.1886 codes: that curve there.
+            if (aces_routed()) {
+                CompositeParams bt;
+                bt.source = SourceCurve::Bt1886;
+                v.anchor_knots = anchor_target_knots(bt);
+            } else {
+                v.anchor_knots = anchor_target_knots(session_.composite_params());
+            }
             // The anchor (3.3): the Deliver setting, live, with the hold the
             // last measure computed for this knee (a stale hold until the
             // measure after a knee move lands; the per-pixel part is current).

@@ -78,6 +78,13 @@ Result<void> aces_prepare_out(const AcesDeliverOptions& o, const std::filesystem
                               const std::string& movie);
 // Where the run's provenance goes: out/provenance.json, or out/<name>_provenance.json into an existing folder.
 std::filesystem::path aces_provenance_file(const AcesDeliverOptions& o, const std::filesystem::path& out);
+// The ACES Metadata File (AMF v2.0, core/aces_amf.hpp) beside the EXR masters:
+// <name>.amf in an existing folder, rudra.amf in a new one.
+std::filesystem::path aces_amf_file(const AcesDeliverOptions& o, const std::filesystem::path& out);
+// Writes it when the delivery writes EXRs (ACEScg: with the Academy's ACEScg to
+// ACES input transform; AP0: none); frames is how many EXRs were written. The
+// file name, or empty when there are no EXRs.
+Result<std::string> aces_write_amf(const AcesDeliverOptions& o, const std::filesystem::path& out, std::size_t frames);
 // The HDR10 sidecar of a render with PQ copies: out/hdr10.json or out/<name>_hdr10.json (28 Oct 2026).
 std::filesystem::path aces_hdr10_file(const AcesDeliverOptions& o, const std::filesystem::path& out);
 nlohmann::json aces_hdr10_json(double maxcll, double maxfall, double peak_nits = 1000);
