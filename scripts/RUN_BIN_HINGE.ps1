@@ -58,7 +58,7 @@ foreach ($arm in $Arms) {
         $g = Get-Content "$E\claude_bin_hinge_grade_template_20261102.json" -Raw | ConvertFrom-Json
         $g.evaluation = ("$out\paired_development\old_coherent\candidate_report.json" -replace "\\", "/")
         $g.parent = ("$out\paired_development\old_coherent\parent_report.json" -replace "\\", "/")
-        $g | ConvertTo-Json -Depth 20 | Set-Content "$out\grade_registration.json" -Encoding utf8
+        [IO.File]::WriteAllText("$out\grade_registration.json", ($g | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding $false))
         & $Python tools/audit_aces_consistent_detail_grade.py --registration "$out\grade_registration.json" --out "$out\grade.json"
         if ($LASTEXITCODE -ne 0) { Fail "grades ($arm)" }
     }
@@ -66,7 +66,7 @@ foreach ($arm in $Arms) {
         Say "Hunyuan48 video, $arm"
         $v = Get-Content "$E\claude_bin_hinge_video_template_20261102.json" -Raw | ConvertFrom-Json
         $v.candidate = ($ck -replace "\\", "/"); $v.checkpoint_sha256 = $sha
-        $v | ConvertTo-Json -Depth 20 | Set-Content "$out\video_registration.json" -Encoding utf8
+        [IO.File]::WriteAllText("$out\video_registration.json", ($v | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding $false))
         & $Python tools/evaluate_aces_feather_video.py --registration "$out\video_registration.json" --out "$out\video.json"
         if ($LASTEXITCODE -ne 0) { Fail "video ($arm)" }
     }
