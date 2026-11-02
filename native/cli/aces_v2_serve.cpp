@@ -580,6 +580,12 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                 run["light_level"] = kAcesLightLevelNote;
                 run["appearance_constraint_pass"] = all_ok;
                 run["cancelled"] = stopped;
+                // The ACES Metadata File beside the masters (core/aces_amf.hpp).
+                if (auto amf = aces_write_amf(*opts, out, run.contains("frames") ? run["frames"].size() : 0); !amf) {
+                    if (!failure) failure = amf.error();
+                } else if (!amf->empty()) {
+                    run["amf"] = *amf;
+                }
                 if (auto pw = aces_write_whole(aces_provenance_file(*opts, out), run.dump(1)); !pw && !failure) failure = pw.error();
                 in.forget(id);
                 if (failure) send(err(id, *failure));

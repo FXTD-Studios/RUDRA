@@ -242,6 +242,9 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
     run["scene_peak_nits"] = run_scene_peak;
     run["light_level"] = kAcesLightLevelNote;
     run["appearance_constraint_pass"] = all_ok;
+    // The ACES Metadata File beside the masters (core/aces_amf.hpp).
+    if (auto amf = aces_write_amf(*opts, out, run.contains("frames") ? run["frames"].size() : 0); !amf) return fail_v2(amf.error());
+    else if (!amf->empty()) run["amf"] = *amf;
     if (auto pw = aces_write_whole(aces_provenance_file(*opts, out), run.dump(1)); !pw) return fail_v2(pw.error());
     return all_ok ? 0 : 3;
 }
