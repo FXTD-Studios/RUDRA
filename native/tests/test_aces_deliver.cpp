@@ -791,3 +791,81 @@ TEST(AcesAlpha, AnAlphaMovieCarriesItsAlpha) {
     ASSERT_TRUE(g);
     EXPECT_FALSE(g->alpha.has_value());
 }
+
+namespace {
+PlanarBuffer alpha_ramp(int h, int w) {
+    PlanarBuffer a(1, h, w);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) a.at(0, y, x) = float(x) / float(w - 1);
+    return a;
+}
+std::vector<std::uint16_t> movie_alpha(const fs::path& mov, int n) {   // frame 1's alpha as 16-bit, via ffmpeg
+    const fs::path raw = mov.parent_path() / "alpha.raw";
+    run("ffmpeg -v error -y -i \"" + mov.string() + "\" -frames:v 1 -vf alphaextract,format=gray16le -f rawvideo \"" + raw.string() + "\"");
+    std::ifstream in(raw, std::ios::binary);
+    std::vector<std::uint16_t> a(static_cast<std::size_t>(n));
+    in.read(reinterpret_cast<char*>(a.data()), std::streamsize(a.size() * 2));
+    return in ? a : std::vector<std::uint16_t>{};
+}
+}  // namespace
+
+TEST(AcesLogAlpha, MoviesThatCanHoldAlphaHoldIt) {
+    if (!have("ffmpeg") || !have("ffprobe")) GTEST_SKIP() << "ffmpeg and ffprobe are not on the PATH";
+    const int h = 6, w = 8;
+    const PlanarBuffer px = ramp(h, w), a = alpha_ramp(h, w);
+    struct Case { const char* fmt; const char* pix; int tol; };
+    for (const Case& c : {Case{"prores4444", "yuva444p", 96}, Case{"prores4444xq", "yuva444p", 96}}) {
+        const auto d = tmp(std::string("log_alpha_") + c.fmt);
+        auto o = parse_aces_log("logc4", c.fmt);
+        ASSERT_TRUE(o) << c.fmt;
+        auto wr = AcesLogWriter::open(*o, d, d / "shot.mov", 24.0);
+        ASSERT_TRUE(wr) << c.fmt;
+        ASSERT_TRUE((*wr)->write(px, "f1.exr", {}, &a)) << c.fmt;
+        ASSERT_TRUE((*wr)->write(px, "f2.exr", {}, &a)) << c.fmt;
+        EXPECT_TRUE((*wr)->movie_has_alpha()) << c.fmt;
+        ASSERT_TRUE((*wr)->finish()) << c.fmt;
+        const auto info = probe(d / "shot.mov", "pix_fmt");
+        EXPECT_NE(info.find(c.pix), std::string::npos) << c.fmt << " " << info;
+        const auto back = movie_alpha(d / "shot.mov", h * w);
+        ASSERT_EQ(back.size(), std::size_t(h * w)) << c.fmt;
+        // Straight, as given, to 10 bits: prores_ks takes alpha only as yuva444p10le
+        // (one 10-bit step is 64 in 16-bit; the decoder's 10-to-16-bit expansion adds a little).
+        for (int x = 0; x < w; ++x)
+            EXPECT_NEAR(back[std::size_t(2 * w + x)], std::lround(a.at(0, 2, x) * 65535.0f), c.tol) << c.fmt << " x " << x;
+    }
+}
+
+TEST(AcesLogAlpha, TiffsCarryItAndFormatsWithoutAlphaSaySo) {
+    if (!have("ffmpeg") || !have("ffprobe")) GTEST_SKIP() << "ffmpeg and ffprobe are not on the PATH";
+    const int h = 6, w = 8;
+    const PlanarBuffer px = ramp(h, w), a = alpha_ramp(h, w);
+    const auto d = tmp("log_alpha_tiff");
+    auto o = parse_aces_log("logc4", "tiff16,prores422hq");
+    ASSERT_TRUE(o);
+    auto wr = AcesLogWriter::open(*o, d, d / "shot.mov", 24.0);
+    ASSERT_TRUE(wr);
+    ASSERT_TRUE((*wr)->write(px, "f1.exr", {}, &a));
+    EXPECT_FALSE((*wr)->movie_has_alpha());   // ProRes 422 has no alpha
+    ASSERT_TRUE((*wr)->finish());
+    fs::path tif;
+    for (const auto& e : fs::recursive_directory_iterator(d))
+        if (e.path().extension() == ".tif") tif = e.path();
+    ASSERT_FALSE(tif.empty());
+    auto still = decode_sdr_file(tif);
+    ASSERT_TRUE(still);
+    ASSERT_TRUE(still->alpha.has_value());
+    EXPECT_NEAR(still->alpha->at(0, 3, 5), a.at(0, 3, 5), 1.0f / 65535.0f);
+    const std::string prov = (*wr)->provenance().dump();
+    EXPECT_NE(prov.find("not in the movie (this format has no alpha)"), std::string::npos) << prov;
+    EXPECT_NE(prov.find("in the 16-bit TIFFs (RGBA)"), std::string::npos);
+    // The 16-bit QuickTime: ffmpeg writes no 16-bit RGBA there, so RGB and a note.
+    const auto d2 = tmp("log_alpha_mov16");
+    auto o2 = parse_aces_log("logc4", "mov16");
+    ASSERT_TRUE(o2);
+    auto w2 = AcesLogWriter::open(*o2, d2, d2 / "shot.mov", 24.0);
+    ASSERT_TRUE(w2);
+    ASSERT_TRUE((*w2)->write(px, "f1.exr", {}, &a));
+    EXPECT_FALSE((*w2)->movie_has_alpha());
+    ASSERT_TRUE((*w2)->finish());
+    EXPECT_NE(probe(d2 / "shot.mov", "pix_fmt").find("rgb48be"), std::string::npos);
+}

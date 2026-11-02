@@ -21,6 +21,7 @@ Result<MasterResult> render_master(const ModelManifest& pkg, InferenceBackend& b
         qa.checkpoint_sha256.clear();
         qa.source_file = image;
         qa.source_space = space;
+        qa.alpha = decoded->alpha;   // an RGBA still keeps its alpha in the master
         return write_master(decoded->rgb, decoded->bits, analytic_fields_for(decoded->rgb, qa), FrameScalars{}, kAnalyticConstants, qa,
                             out);
     }
@@ -31,6 +32,7 @@ Result<MasterResult> render_master(const ModelManifest& pkg, InferenceBackend& b
     qm.source_file = image;
     qm.tiled = fr->tiled;
     qm.source_space = space;
+    qm.alpha = decoded->alpha;
     return write_master(decoded->rgb, decoded->bits, fr->fields, fr->scalars,
                         ModelConstants{pkg.log_scale, pkg.max_hdr, pkg.corpus_ev}, qm, out);
 }

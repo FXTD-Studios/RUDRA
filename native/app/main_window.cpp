@@ -2117,13 +2117,13 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
             if (!backend) {   // the analytic reconstruction: no network, the clip fill unless it is off
                 Fields fields = analytic_fields_for(d->rgb, q);
                 return MasterFrame{std::move(d->rgb), d->bits, std::move(fields), FrameScalars{}, *file, false,
-                                   primaries_id(d->colour.primaries)};
+                                   primaries_id(d->colour.primaries), std::move(d->alpha)};
             }
             std::lock_guard lock(*mu);
             auto fr = infer_frame(*backend, d->rgb, TileConfig{0, 0});   // full resolution, untiled
             if (!fr) return fr.error();
             return MasterFrame{std::move(d->rgb), d->bits, std::move(fr->fields), std::move(fr->scalars), *file, fr->tiled,
-                               primaries_id(d->colour.primaries)};
+                               primaries_id(d->colour.primaries), std::move(d->alpha)};
         };
 #else
         say("This build has no still decode (RUDRA_WITH_OPENCV=OFF).");

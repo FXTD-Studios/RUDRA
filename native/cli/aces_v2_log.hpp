@@ -101,7 +101,15 @@ public:
     ~AcesLogWriter();
     // One frame in order; `name` is the frame's file name (its stem names the copies).
     // `timecode` (the frame's own, "" for none) goes into the DPX's TV header with the rate and the reel.
-    Result<void> write(const PlanarBuffer& acescg, const std::string& name, const std::string& timecode = {});
+    // `alpha` (1 Nov 2026): the frame's straight alpha (AcesFrameIn::alpha) or null.
+    // It goes, straight (log codes are not premultiplied), into the formats that
+    // carry one: 16-bit TIFF (RGBA) and ProRes 4444 / 4444 XQ (yuva444p10le,
+    // 16-bit alpha). HEVC, ProRes 422 HQ, DPX and the 16-bit QuickTime (ffmpeg's
+    // QuickTime writer has no 16-bit RGBA) do not: provenance() says it was dropped. The movie decides on its first
+    // frame; a later frame without alpha is written opaque.
+    Result<void> write(const PlanarBuffer& acescg, const std::string& name, const std::string& timecode = {},
+                       const PlanarBuffer* alpha = nullptr);
+    bool movie_has_alpha() const { return alpha_; }
     // The movie's start timecode and reel (before the first frame; "" for none).
     void set_movie_stamp(const std::string& timecode, const std::string& reel) {
         timecode_ = timecode;
@@ -115,11 +123,16 @@ public:
     // The code values each file holds, in [0, 1]: the log curve in its gamut, or PQ.
     PlanarBuffer codes(const PlanarBuffer& acescg) const;
     // The ffmpeg arguments of the movie (from "-c:v" on), for these options.
-    static std::vector<std::string> movie_arguments(const AcesLogOptions& o);
+    static std::vector<std::string> movie_arguments(const AcesLogOptions& o, bool alpha = false);
+    // Whether this writer's movie can hold an alpha channel.
+    static bool movie_takes_alpha(const AcesLogOptions& o) {
+        return !o.hevc10 && !o.mov16 && (o.prores == "4444" || o.prores == "4444xq");
+    }
     // The x265 HDR10 arguments of the HEVC pass (P3 D65 1000-nit mastering display).
     static std::vector<std::string> hevc_arguments(double maxcll, double maxfall, double peak_nits = 1000);
 
 private:
+    bool alpha_ = false, alpha_seen_ = false;   // the movie carries alpha; some frame had one
     AcesLogWriter() = default;
     AcesLogOptions o_;
     const aces_v2::AcesView* display_ = nullptr;

@@ -152,3 +152,34 @@ TEST(MasterProvenance, NotInTheRequestJson) {
     EXPECT_EQ(j.find("source_file"), std::string::npos);
     EXPECT_EQ(j.find("tiled"), std::string::npos);
 }
+
+TEST(MasterProvenance, AnalyticMastersCarryTheSourceAlpha) {
+    // 1 Nov 2026: an RGBA still's alpha reaches the analytic route's master as A,
+    // RGB premultiplied, in both containers; none without one.
+    const fs::path root = fs::temp_directory_path() / "rudra_master_alpha";
+    for (const std::string container : {"aces", "linear"}) {
+        fs::remove_all(root);
+        fs::create_directories(root);
+        MasterRequest q;
+        q.container = container;
+        q.exr_half = false;
+        q.analytic = true;
+        PlanarBuffer a(1, 12, 16);
+        for (int y = 0; y < 12; ++y)
+            for (int x = 0; x < 16; ++x) a.at(0, y, x) = float(x) / 15.0f;
+        q.alpha = a;
+        const Written w = master(root, q);
+        ASSERT_EQ(w.exr.pixels.channels(), 4) << container;
+        EXPECT_FLOAT_EQ(w.exr.pixels.at(3, 5, 0), 0.0f) << container;
+        EXPECT_FLOAT_EQ(w.exr.pixels.at(3, 5, 15), 1.0f) << container;
+        EXPECT_FLOAT_EQ(w.exr.pixels.at(0, 5, 0), 0.0f) << container;   // premultiplied: alpha 0 is black
+        EXPECT_GT(w.exr.pixels.at(1, 5, 15), 0.0f) << container;
+        EXPECT_EQ(attr(w.exr, "rudra:alpha").rfind("the source's straight alpha", 0), 0u) << container;
+        MasterRequest none = q;
+        none.alpha.reset();
+        fs::remove_all(root);
+        fs::create_directories(root);
+        EXPECT_EQ(master(root, none).exr.pixels.channels(), 3) << container;
+    }
+    fs::remove_all(root);
+}

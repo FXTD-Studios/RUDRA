@@ -153,7 +153,7 @@ PlanarBuffer AcesLogWriter::codes(const PlanarBuffer& acescg) const {
     return out;
 }
 
-std::vector<std::string> AcesLogWriter::movie_arguments(const AcesLogOptions& o) {
+std::vector<std::string> AcesLogWriter::movie_arguments(const AcesLogOptions& o, bool alpha) {
     // PQ is BT.2020 / SMPTE 2084; a camera log has no codes for its gamut or curve.
     // The tags go on the frames too (setparams), and for ProRes into its frame
     // headers (prores_metadata), which Resolve and FCP read: some ffmpeg builds
@@ -176,13 +176,15 @@ std::vector<std::string> AcesLogWriter::movie_arguments(const AcesLogOptions& o)
     // HEVC: a ProRes 4444 XQ intermediate first (the light level is known only at the end).
     const std::string prores = o.hevc10 ? std::string("4444xq") : o.prores;
     const std::string profile = prores == "4444xq" ? "5" : prores == "422hq" ? "3" : "4";
-    const std::string pix = prores == "422hq" ? "yuv422p10le" : "yuv444p12le";   // ProRes 4444 is 12-bit
+    // ProRes 4444 is 12-bit; with alpha, prores_ks takes yuva444p10le only (every build).
+    const std::string pix = prores == "422hq" ? "yuv422p10le" : alpha && prores != "422hq" ? "yuva444p10le" : "yuv444p12le";
     std::string vf = std::string("scale=out_color_matrix=") + (o.pq && !sdr ? "bt2020" : "bt709") +
                      ":out_range=tv:flags=accurate_rnd+full_chroma_int";
     if (o.pq) vf += ",setparams=range=tv:color_primaries=" + prim + ":color_trc=" + trc + ":colorspace=" + matrix;
     std::vector<std::string> a = {"-vf", vf, "-c:v", "prores_ks", "-profile:v", profile, "-qscale:v", "1", "-vendor", "apl0",
                                   "-pix_fmt", pix, "-colorspace", matrix, "-color_range", "tv",
                                   "-color_primaries", prim, "-color_trc", trc, "-movflags", "+write_colr"};
+    if (alpha && pix == "yuva444p10le") a.insert(a.end(), {"-alpha_bits", "16"});
     if (o.pq)
         a.insert(a.end(), {"-bsf:v", "prores_metadata=color_primaries=" + prim + ":color_trc=" + trc + ":colorspace=" + matrix});
     return a;
@@ -246,14 +248,29 @@ Result<void> stamp_dpx_header(const fs::path& dpx, const std::string& timecode, 
     return {};
 }
 
-Result<void> AcesLogWriter::write(const PlanarBuffer& acescg, const std::string& name, const std::string& timecode) {
+Result<void> AcesLogWriter::write(const PlanarBuffer& acescg, const std::string& name, const std::string& timecode,
+                                  const PlanarBuffer* alpha) {
     const PlanarBuffer codes = this->codes(acescg);
     const int h = codes.height(), w = codes.width();
+    if (alpha && (alpha->channels() != 1 || alpha->height() != h || alpha->width() != w))
+        return make_error(ErrorCode::InvalidArgument, "The alpha must be one plane the size of the picture.", name);
+    if (alpha) alpha_seen_ = true;
+    // RGB(A) interleaved 16-bit in `order`, with the alpha (opaque when none) as the fourth.
+    auto with_alpha = [&](const int (&order)[3], const PlanarBuffer* a) {
+        const auto px = to_u16(codes, order);
+        std::vector<std::uint16_t> out(std::size_t(w) * std::size_t(h) * 4);
+        for (std::size_t i = 0; i < std::size_t(w) * std::size_t(h); ++i) {
+            for (int c = 0; c < 3; ++c) out[i * 4 + std::size_t(c)] = px[i * 3 + std::size_t(c)];
+            const float v = a ? std::clamp(a->plane(0)[i], 0.0f, 1.0f) : 1.0f;
+            out[i * 4 + 3] = std::uint16_t(std::lround(v * 65535.0f));
+        }
+        return out;
+    };
     if (o_.tiff16) {
         const fs::path tif = dir_ / (fs::path(name).stem().string() + ".tif");
-        const int bgr[3] = {2, 1, 0};   // OpenCV writes BGR
-        const auto px = to_u16(codes, bgr);
-        if (auto r = write_png16(tif, px, w, h, 3); !r)
+        const int bgr[3] = {2, 1, 0};   // OpenCV writes BGR(A)
+        const auto px = alpha ? with_alpha(bgr, alpha) : to_u16(codes, bgr);
+        if (auto r = write_png16(tif, px, w, h, alpha ? 4 : 3); !r)
             return make_error(ErrorCode::IoError, "The 16-bit TIFF could not be written.", tif.string());
     }
     if (o_.dpx10) {
@@ -291,10 +308,11 @@ Result<void> AcesLogWriter::write(const PlanarBuffer& acescg, const std::string&
             log_ = movie_.parent_path() / (movie_.stem().string() + "_ffmpeg.log");
             // Written beside as <stem>.part.<ext> (an intermediate .mov for HEVC), renamed when whole.
             part_ = movie_.parent_path() / (movie_.stem().string() + ".part" + (o_.hevc10 ? std::string(".mov") : movie_.extension().string()));
+            alpha_ = alpha && movie_takes_alpha(o_);   // decided on the first frame
             std::vector<std::string> argv = {
-                ff->string(), "-hide_banner", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb48le",
+                ff->string(), "-hide_banner", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", alpha_ ? "rgba64le" : "rgb48le",
                 "-s", std::to_string(w) + "x" + std::to_string(h), "-r", fps_text(fps_), "-i", "pipe:0"};
-            for (auto& a : movie_arguments(o_)) argv.push_back(std::move(a));
+            for (auto& a : movie_arguments(o_, alpha_)) argv.push_back(std::move(a));
             // The source's timecode and reel (a QuickTime tmcd track), for the conform.
             if (!timecode_.empty()) argv.insert(argv.end(), {"-timecode", timecode_});
             if (!reel_.empty()) argv.insert(argv.end(), {"-metadata:s:v:0", "reel_name=" + reel_});
@@ -307,7 +325,7 @@ Result<void> AcesLogWriter::write(const PlanarBuffer& acescg, const std::string&
         if (w != width_ || h != height_)
             return make_error(ErrorCode::InvalidArgument, "Frames of different sizes cannot share one movie.", name);
         const int rgb[3] = {0, 1, 2};
-        const auto px = to_u16(codes, rgb);
+        const auto px = alpha_ ? with_alpha(rgb, alpha) : to_u16(codes, rgb);
         if (!ffmpeg_->write({reinterpret_cast<const std::uint8_t*>(px.data()), px.size() * 2}))
             return make_error(ErrorCode::IoError, "ffmpeg stopped while writing the movie.", log_.string());
     }
@@ -352,6 +370,12 @@ Result<void> AcesLogWriter::finish(double maxcll, double maxfall) {
 
 nlohmann::json AcesLogWriter::provenance() const {
     nlohmann::json files = nlohmann::json::array();
+    if (alpha_seen_)
+        files.push_back({{"kind", "alpha"},
+                         {"note", std::string("the source's alpha, straight (log codes are not premultiplied): ") +
+                                      (o_.tiff16 ? "in the 16-bit TIFFs (RGBA); " : "") +
+                                      (o_.movie() ? (alpha_ ? "in the movie (10-bit: ffmpeg's ProRes encoder takes alpha as yuva444p10le)" : "not in the movie (this format has no alpha)") : "") +
+                                      (o_.dpx10 ? "; not in the DPX (RGB only)" : "")}});
     if (o_.tiff16) files.push_back({{"kind", "16-bit TIFF per frame (lossless)"}, {"folder", dir_.filename().string()}});
     if (o_.dpx10) files.push_back({{"kind", "10-bit DPX per frame (RGB)"}, {"folder", dpx_dir_.filename().string()}});
     const std::string tf = o_.pq ? o_.display_target().transfer : "";

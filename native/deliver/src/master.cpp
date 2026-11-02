@@ -300,9 +300,23 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     // The linear container is scene-linear Rec.2020, converted from the
     // plate's primaries and stamped so (it carried the plate's primaries
     // untagged until 9 Oct 2026, as the Studio did).
-    auto w = aces ? write_aces_exr(out, linear, *src, 1.0, provenance, q.exr_half)
-                  : write_exr(out, convert_primaries(linear, *src, Primaries::Rec2020), q.exr_half, kRec2020Chromaticities,
-                              provenance);
+    const PlanarBuffer* alpha = q.alpha && q.alpha->height() == linear.height() && q.alpha->width() == linear.width()
+                                    ? &*q.alpha : nullptr;
+    if (q.alpha && !alpha) return make_error(ErrorCode::InvalidArgument, "The alpha is not the size of the picture.");
+    if (alpha && !aces) provenance.emplace_back("rudra:alpha", "the source's straight alpha as A; RGB premultiplied by it (OpenEXR associated alpha)");
+    auto rec2020_rgba = [&] {   // the linear container with A: RGB premultiplied, as the ACES writers do
+        PlanarBuffer rgb = convert_primaries(linear, *src, Primaries::Rec2020);
+        if (!alpha) return rgb;
+        PlanarBuffer rgba(4, rgb.height(), rgb.width());
+        for (std::size_t i = 0; i < rgb.plane_size(); ++i) {
+            const float a = std::clamp(alpha->plane(0)[i], 0.0f, 1.0f);
+            for (int c = 0; c < 3; ++c) rgba.plane(c)[i] = rgb.plane(c)[i] * a;
+            rgba.plane(3)[i] = a;
+        }
+        return rgba;
+    };
+    auto w = aces ? write_aces_exr(out, linear, *src, 1.0, provenance, q.exr_half, nullptr, {}, alpha)
+                  : write_exr(out, rec2020_rgba(), q.exr_half, kRec2020Chromaticities, provenance);
     if (!w) return w.error();
 
     pyjson::List regions_json;
