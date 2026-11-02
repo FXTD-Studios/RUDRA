@@ -531,7 +531,7 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                             break;
                         }
                     if (logw)
-                        if (auto lw = logw->write(master, stem + ".exr", stamp.timecode); !lw) {
+                        if (auto lw = logw->write(master, stem + ".exr", stamp.timecode, f->alpha ? &*f->alpha : nullptr); !lw) {
                             failure = lw.error();
                             break;
                         }

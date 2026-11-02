@@ -201,7 +201,7 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
                                                           exr_timecode_attributes(stamp.timecode, stamp.fps, stamp.reel),
                                                           f->alpha ? &*f->alpha : nullptr); !w) return fail_v2(w.error());
         if (logw)
-            if (auto lw = logw->write(master, stem + ".exr", stamp.timecode); !lw) return fail_v2(lw.error());
+            if (auto lw = logw->write(master, stem + ".exr", stamp.timecode, f->alpha ? &*f->alpha : nullptr); !lw) return fail_v2(lw.error());
         std::size_t reconstructed = 0;
         for (float v : r->mask.span()) reconstructed += v > 0;
         const bool ok = r->constraint.remaining_display_errors == 0 &&

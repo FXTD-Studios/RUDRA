@@ -7,6 +7,7 @@
 // are the caller's (the CLI, the app's master job): deliver sees neither media
 // nor infer, as the layer rule says.
 
+#include <optional>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -29,6 +30,10 @@ struct MasterBand {
 // The Studio's master parameters, with its defaults.
 struct MasterRequest {
     std::string checkpoint;                 // recorded, not loaded: the package is the model
+    // The source's straight alpha in [0, 1] (1 Nov 2026), from an RGBA still or an
+    // alpha movie's frame; empty for none. Written as EXR A with RGB premultiplied
+    // (deliver/exr.hpp), in either container. The reconstruction never sees it.
+    std::optional<PlanarBuffer> alpha;
     // The analytic reconstruction: no model ran (the fields were
     // analytic_fields()). Recorded in the EXR (rudra:reconstruction) and the
     // sidecar ("reconstruction"); left out of both when a model ran, so
