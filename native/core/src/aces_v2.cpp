@@ -361,8 +361,54 @@ PlanarBuffer constrain_colour_v2(const PlanarBuffer& source, const PlanarBuffer&
     return result;
 }
 
+float user_band_weight(float top, const UserBand& band) noexcept {
+    const float code = top * 255.0f;
+    const float ramp = float(UserBand::kRampCodes);
+    float hi = 0.0f, lo = 0.0f;
+    if (band.tau_high <= 255) {   // 1 at tau_high and above, 0 at tau_high - ramp and below
+        const float t = std::clamp((code - (float(band.tau_high) - ramp)) / ramp, 0.0f, 1.0f);
+        hi = t * t * (3.0f - 2.0f * t);
+    }
+    if (band.tau_low >= 0) {      // 1 at tau_low and below, 0 at tau_low + ramp and above
+        const float t = std::clamp((code - float(band.tau_low)) / ramp, 0.0f, 1.0f);
+        lo = 1.0f - t * t * (3.0f - 2.0f * t);
+    }
+    return std::max(hi, lo);
+}
+
+PlanarBuffer apply_user_band(const PlanarBuffer& prediction, const PlanarBuffer& baseline, const PlanarBuffer& source,
+                             const UserBand& band, BandStats* stats, PlanarBuffer* weight_out) {
+    PlanarBuffer out = prediction;
+    const std::size_t n = source.plane_size();
+    if (weight_out) *weight_out = PlanarBuffer(1, source.height(), source.width());
+    BandStats s;
+    for (std::size_t i = 0; i < n; ++i) {
+        const float top = std::max(std::max(source.plane(0)[i], source.plane(1)[i]), source.plane(2)[i]);
+        const float w = user_band_weight(top, band);
+        if (weight_out) weight_out->plane(0)[i] = w;
+        if (w >= 1.0f) {
+            ++s.learned_pixels;
+            continue;
+        }
+        if (w <= 0.0f) {
+            ++s.analytic_pixels;
+            for (int c = 0; c < 3; ++c) out.plane(c)[i] = baseline.plane(c)[i];
+            continue;
+        }
+        ++s.ramp_pixels;
+        for (int c = 0; c < 3; ++c) {
+            const float b = baseline.plane(c)[i];
+            out.plane(c)[i] = b + w * (prediction.plane(c)[i] - b);
+        }
+    }
+    if (stats) *stats = s;
+    return out;
+}
+
 Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, const G1Fn& g1, bool smoothing,
-                              bool constrain, bool forbid_new_negative_y) {
+                              bool constrain, bool forbid_new_negative_y, const UserBand& band) {
+    if (band.on && !band.valid())
+        return make_error(ErrorCode::InvalidArgument, "tau_high must be 128..256 and tau_low -1..64.");
     if (source.channels() != 3) return make_error(ErrorCode::InvalidArgument, "The frame must be RGB.");
     for (float v : source.span())
         if (!std::isfinite(v) || v < 0.0f || v > 1.0f)
@@ -378,6 +424,15 @@ Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, 
     out.mask = std::move(composed.mask);
     out.acescg = smoothing ? smooth_clipped_hybrid(composed.acescg, source, 64.0, &out.smoothing)
                            : std::move(composed.acescg);
+    // Stage 5b: the user's bands; before the constraint, which still holds the 1-code round trip.
+    if (band.on) {
+        out.acescg = apply_user_band(out.acescg, baseline, source, band, &out.band);
+        // The mask channel says what was reconstructed: none of the analytic band.
+        for (std::size_t i = 0; i < out.mask.plane_size(); ++i) {
+            const float top = std::max(std::max(source.plane(0)[i], source.plane(1)[i]), source.plane(2)[i]);
+            out.mask.plane(0)[i] *= user_band_weight(top, band);
+        }
+    }
     if (constrain) out.acescg = constrain_colour_v2(source, out.acescg, baseline, g.weight, view, true, &out.constraint,
                                                     forbid_new_negative_y);
     for (float v : out.acescg.span())

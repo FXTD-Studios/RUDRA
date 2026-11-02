@@ -282,3 +282,87 @@ TEST(AcesV2Job, StopsOnDecodeFailureAndOnCancel) {
     while (!done) std::this_thread::yield();
     std::filesystem::remove_all(dir);
 }
+
+// ---- the user's tau bands (stage 5b, 1 Nov 2026) ----
+namespace {
+bool same_buf(const PlanarBuffer& a, const PlanarBuffer& b) {
+    for (int c = 0; c < a.channels(); ++c)
+        for (std::size_t i = 0; i < a.plane_size(); ++i)
+            if (a.plane(c)[i] != b.plane(c)[i]) return false;
+    return true;
+}
+}  // namespace
+
+TEST(AcesV2Band, OffIsTheModelBitForBit) {
+    MockView v;
+    PlanarBuffer s = test_frame();
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    auto a = run_frame(s, v, g1, true, true, true);
+    UserBand off;   // on = false, whatever the taus say
+    off.tau_high = 130;
+    auto b = run_frame(s, v, g1, true, true, true, off);
+    ASSERT_TRUE(a.ok() && b.ok());
+    EXPECT_TRUE(same_buf(a->acescg, b->acescg));
+    EXPECT_TRUE(same_buf(a->mask, b->mask));
+    EXPECT_EQ(b->band.learned_pixels + b->band.analytic_pixels + b->band.ramp_pixels, 0u);
+}
+
+TEST(AcesV2Band, BetweenTheTausIsTheExactAnalyticInverse) {
+    MockView v;
+    PlanarBuffer s = test_frame();
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    UserBand band;
+    band.on = true;   // 254 and 5: the model's own bands
+    auto off = run_frame(s, v, g1, true, true, true);
+    auto on = run_frame(s, v, g1, true, true, true, band);
+    ASSERT_TRUE(off.ok() && on.ok());
+    const PlanarBuffer base = view_inverse(v, s);
+    // The grey background (codes ~0.4) is mid band: the analytic inverse, bit-exact.
+    for (int c = 0; c < 3; ++c) EXPECT_EQ(on->acescg.at(c, 30, 5), base.at(c, 30, 5));
+    // The fully clipped block (code 255) and the crushed strip (max code 2) keep the learned result.
+    for (int c = 0; c < 3; ++c) {
+        EXPECT_EQ(on->acescg.at(c, 15, 20), off->acescg.at(c, 15, 20));
+        EXPECT_EQ(on->acescg.at(c, 2, 10), off->acescg.at(c, 2, 10));
+    }
+    EXPECT_EQ(on->mask.at(0, 30, 5), 0.0f);
+    EXPECT_EQ(on->constraint.remaining_display_errors, 0u);
+    EXPECT_GT(on->band.analytic_pixels, 0u);
+    EXPECT_GT(on->band.learned_pixels, 0u);
+}
+
+TEST(AcesV2Band, BothOffIsTheAnalyticInverseEverywhere) {
+    MockView v;
+    PlanarBuffer s = test_frame();
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    UserBand band;
+    band.on = true;
+    band.tau_high = 256;
+    band.tau_low = -1;
+    auto r = run_frame(s, v, g1, true, true, true, band);
+    ASSERT_TRUE(r.ok());
+    EXPECT_TRUE(same_buf(r->acescg, view_inverse(v, s)));
+    EXPECT_EQ(r->band.analytic_pixels, s.plane_size());
+}
+
+TEST(AcesV2Band, WeightRampsAndLimits) {
+    UserBand b;
+    b.on = true;
+    b.tau_high = 200;
+    b.tau_low = 10;
+    EXPECT_FLOAT_EQ(user_band_weight(200.0f / 255.0f, b), 1.0f);
+    EXPECT_FLOAT_EQ(user_band_weight(198.0f / 255.0f, b), 0.0f);
+    EXPECT_NEAR(user_band_weight(199.0f / 255.0f, b), 0.5f, 1e-4f);
+    EXPECT_FLOAT_EQ(user_band_weight(10.0f / 255.0f, b), 1.0f);
+    EXPECT_FLOAT_EQ(user_band_weight(12.0f / 255.0f, b), 0.0f);
+    EXPECT_FLOAT_EQ(user_band_weight(0.5f, b), 0.0f);
+    b.tau_high = 256;
+    b.tau_low = -1;
+    EXPECT_FLOAT_EQ(user_band_weight(1.0f, b), 0.0f);
+    EXPECT_FLOAT_EQ(user_band_weight(0.0f, b), 0.0f);
+    UserBand bad;
+    bad.on = true;
+    bad.tau_high = 100;
+    MockView v;
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    EXPECT_FALSE(run_frame(test_frame(), v, g1, true, true, true, bad).ok());
+}

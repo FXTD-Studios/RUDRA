@@ -16,6 +16,7 @@
 #include <QStringList>
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -25,6 +26,9 @@
 
 class QCheckBox;
 class QComboBox;
+class QGroupBox;
+class QJsonObject;
+class QSpinBox;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
@@ -69,6 +73,10 @@ struct AcesRunSettings {
     std::filesystem::path cli, package, input, out;
     std::string runtime = "libtorch", device = "cuda";
     bool luminance_guard = true;
+    // The tau bands (core/aces_v2.hpp UserBand): learned only at or above
+    // tau_high and at or below tau_low, the exact analytic inverse between.
+    bool band_on = false;
+    int tau_high = 254, tau_low = 5;
     int ocio_threads = 8;
     // Camera-log copies beside the EXRs (cli/aces_v2_log.hpp): "" for none, else
     // "logc4"/"acescct", and the formats ("tiff16", "dpx10", "prores4444xq"...).
@@ -151,7 +159,13 @@ private:
     void on_finished(int code, bool crashed);
     void show_package();
     AcesRunSettings settings() const;
+    void add_band(QJsonObject& request) const;   // band_tau_high / band_tau_low when the band is on
+public:
+    std::function<void()> band_changed;          // the main viewer re-runs its frame
+private:
 
+    QGroupBox* band_ = nullptr;
+    QSpinBox *tau_high_ = nullptr, *tau_low_ = nullptr;
     std::vector<std::filesystem::path> roots_;
     std::vector<AcesPackageInfo> packages_;
     std::vector<std::filesystem::path> stills_;   // the stills, or the one video

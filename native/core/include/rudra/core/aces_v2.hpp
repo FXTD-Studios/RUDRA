@@ -82,14 +82,42 @@ PlanarBuffer constrain_colour_v2(const PlanarBuffer& source, const PlanarBuffer&
                                  bool include_fully_clipped = true, ConstraintStats* stats = nullptr,
                                  bool forbid_new_negative_y = false);
 
+// Stage 5b (1 Nov 2026, the user's tau controls, as SwitchHDR's): keep the
+// learned result only where the source's brightest channel is at or above
+// tau_high (highlights) or at or below tau_low (shadows), in 8-bit codes, with
+// a 2-code ramp; everywhere between is the exact analytic inverse, which the
+// ACES view returns to the source pixel for pixel. Off by default: then the
+// frame is bit-exact with the model's own output (which also restores the mid
+// band). tau_high 128..256 (256: no highlights), tau_low -1..64 (-1: no shadows).
+struct UserBand {
+    bool on = false;
+    int tau_high = 254;
+    int tau_low = 5;
+    static constexpr int kRampCodes = 2;
+    bool valid() const noexcept { return tau_high >= 128 && tau_high <= 256 && tau_low >= -1 && tau_low <= 64; }
+};
+struct BandStats {
+    std::size_t learned_pixels = 0;   // weight 1: the learned result as it was
+    std::size_t ramp_pixels = 0;      // 0 < weight < 1
+    std::size_t analytic_pixels = 0;  // weight 0: the exact analytic inverse
+};
+// The band's weight for one pixel's brightest channel (a code in 0..1).
+float user_band_weight(float top, const UserBand& band) noexcept;
+// prediction where the weight is 1, baseline where it is 0 (both bit-exact), a
+// linear mix between. 1 channel weight returned in `weight_out` when given.
+PlanarBuffer apply_user_band(const PlanarBuffer& prediction, const PlanarBuffer& baseline, const PlanarBuffer& source,
+                             const UserBand& band, BandStats* stats = nullptr, PlanarBuffer* weight_out = nullptr);
+
 struct FrameResult {
     PlanarBuffer acescg;   // the master: ACEScg scene-linear, signed, unclamped
     PlanarBuffer mask;     // rudra.reconstructed
     SmoothingStats smoothing;
     ConstraintStats constraint;
+    BandStats band;        // all zero when the band is off
 };
 // Stages 1-7 for one frame of display codes in [0,1].
 Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, const G1Fn& g1,
-                              bool smoothing = true, bool constrain = true, bool forbid_new_negative_y = false);
+                              bool smoothing = true, bool constrain = true, bool forbid_new_negative_y = false,
+                              const UserBand& band = {});
 
 }  // namespace rudra::aces_v2

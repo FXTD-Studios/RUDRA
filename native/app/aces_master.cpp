@@ -21,7 +21,9 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QPixmap>
+#include <QGroupBox>
 #include <QSettings>
+#include <QSpinBox>
 #include <QSlider>
 #include <QTemporaryDir>
 #include <QUrl>
@@ -184,6 +186,7 @@ QStringList aces_cli_arguments(const AcesRunSettings& s) {
     QStringList a = {"aces-v2", qp(s.package), qp(s.input), "--out", qp(s.out), "--runtime", q(s.runtime),
                      "--device", q(s.device), "--ocio-threads", QString::number(s.ocio_threads)};
     a << (s.luminance_guard ? "--luminance-guard" : "--no-luminance-guard");
+    if (s.band_on) a << "--tau-high" << QString::number(s.tau_high) << "--tau-low" << QString::number(s.tau_low);
     if (!s.log_curve.empty() && !s.log_formats.empty()) a << "--log" << q(s.log_curve) << "--log-format" << q(s.log_formats);
     return a;
 }
@@ -429,6 +432,48 @@ AcesMasterDialog::AcesMasterDialog(QWidget* parent, std::vector<fs::path> roots,
     guard_->setChecked(true);
     g->addWidget(guard_, row++, 1, 1, 2);
 
+    // The tau bands, as SwitchHDR's thresholds (core/aces_v2.hpp UserBand).
+    {
+        QSettings bst;
+        band_ = new QGroupBox("Rebuild only highlights and shadows", this);
+        band_->setObjectName("acesBand");
+        band_->setCheckable(true);
+        band_->setChecked(bst.value("aces/bandOn", false).toBool());
+        band_->setToolTip("The model's result is kept only where the brightest channel of the original is at or above "
+                          "\u03c4 high, or at or below \u03c4 low (8-bit codes). Everything between is the plain ACES inverse, "
+                          "which gives the original back pixel for pixel. Off: the model's own result everywhere. "
+                          "In the viewer, Changes shows what was rebuilt.");
+        auto* bl = new QHBoxLayout(band_);
+        tau_high_ = new QSpinBox(band_);
+        tau_high_->setObjectName("acesTauHigh");
+        tau_high_->setRange(128, 256);
+        tau_high_->setPrefix(QStringLiteral("\u03c4 high "));
+        tau_high_->setSpecialValueText(QStringLiteral("highlights off"));
+        tau_high_->setToolTip("Codes at or above this are rebuilt (254: the model's own band; 256: no highlights)");
+        tau_high_->setValue(bst.value("aces/tauHigh", 254).toInt());
+        tau_low_ = new QSpinBox(band_);
+        tau_low_->setObjectName("acesTauLow");
+        tau_low_->setRange(-1, 64);
+        tau_low_->setPrefix(QStringLiteral("\u03c4 low "));
+        tau_low_->setSpecialValueText(QStringLiteral("shadows off"));
+        tau_low_->setToolTip("Codes at or below this are rebuilt (5: the model's own band; -1: no shadows)");
+        tau_low_->setValue(bst.value("aces/tauLow", 5).toInt());
+        bl->addWidget(tau_high_);
+        bl->addWidget(tau_low_);
+        g->addWidget(band_, row++, 1, 1, 2);
+        auto changed = [this] {
+            QSettings st;
+            st.setValue("aces/bandOn", band_->isChecked());
+            st.setValue("aces/tauHigh", tau_high_->value());
+            st.setValue("aces/tauLow", tau_low_->value());
+            request_preview();
+            if (band_changed) band_changed();
+        };
+        connect(band_, &QGroupBox::toggled, this, changed);
+        connect(tau_high_, &QSpinBox::valueChanged, this, changed);
+        connect(tau_low_, &QSpinBox::valueChanged, this, changed);
+    }
+
     g->addWidget(label("Also write", "acesLogLabel", "value", this), row, 0);
     log_format_ = new QComboBox(this);
     log_format_->setObjectName("acesLog");
@@ -565,6 +610,12 @@ AcesMasterDialog::AcesMasterDialog(QWidget* parent, std::vector<fs::path> roots,
     on_engine_change();
 }
 
+void AcesMasterDialog::add_band(QJsonObject& r) const {
+    if (!band_ || !band_->isChecked()) return;
+    r["band_tau_high"] = tau_high_->value();
+    r["band_tau_low"] = tau_low_->value();
+}
+
 AcesMasterDialog::~AcesMasterDialog() {
     if (proc_ && proc_->state() != QProcess::NotRunning) {
         proc_->kill();
@@ -695,6 +746,9 @@ AcesRunSettings AcesMasterDialog::settings() const {
     s.runtime = t.runtime;
     s.device = t.device;
     s.luminance_guard = guard_->isChecked();
+    s.band_on = band_->isChecked();
+    s.tau_high = tau_high_->value();
+    s.tau_low = tau_low_->value();
     s.log_formats = log_format_->currentData().toString().toStdString();
     if (!s.log_formats.empty()) s.log_curve = "logc4";
     return s;
@@ -860,8 +914,10 @@ void AcesMasterDialog::request_preview() {
     const QVariant frame = preview_frame_->currentData(Qt::UserRole + 1);
     preview_stats_->setText(QStringLiteral("Running the model on %1…").arg(preview_frame_->currentText()));
     const QPointer<QObject> self(this);
-    engine_->request(QJsonObject{{"op", "preview"}, {"source", path}, {"frame", frame.isValid() ? frame.toInt() : 0},
-                                 {"guard", guard_->isChecked()}},
+    QJsonObject preview_req{{"op", "preview"}, {"source", path}, {"frame", frame.isValid() ? frame.toInt() : 0},
+                            {"guard", guard_->isChecked()}};
+    add_band(preview_req);
+    engine_->request(preview_req,
                      [this, self](const QJsonObject& o) {
                          if (!self) return;
                          preview_busy_ = false;
@@ -903,6 +959,7 @@ void AcesMasterDialog::request_view() {
     const QPointer<QObject> self(this);
     QJsonObject view_req{{"op", "view"}, {"ev", ev_->value() / 2.0}, {"mode", mode_->currentData().toString()},
                          {"max_side", 1600}, {"out", out}};
+    add_band(view_req);
     if (mode_->currentData().toString() == "fill") {   // the Deliver tab's AI fill thresholds (genfill_job.hpp)
         QSettings st;
         view_req["tau_high"] = st.value("deliver/aiTauHigh", 250).toInt();
@@ -951,8 +1008,15 @@ void AcesMasterDialog::start_with_engine(const AcesRunSettings& s) {
     const QPointer<QObject> self(this);
     const fs::path out = s.out;
     engine_master_id_ = engine_->request(
-        QJsonObject{{"op", "master"}, {"sources", sources}, {"out", qp(s.out)}, {"guard", s.luminance_guard},
-                    {"log", q(s.log_curve)}, {"log_formats", q(s.log_formats)}},
+        [&] {
+            QJsonObject r{{"op", "master"}, {"sources", sources}, {"out", qp(s.out)}, {"guard", s.luminance_guard},
+                          {"log", q(s.log_curve)}, {"log_formats", q(s.log_formats)}};
+            if (s.band_on) {
+                r["band_tau_high"] = s.tau_high;
+                r["band_tau_low"] = s.tau_low;
+            }
+            return r;
+        }(),
         [this, self, out](const QJsonObject& o) {
             if (!self) return;
             engine_master_ = false;
@@ -992,7 +1056,13 @@ void MainWindow::open_aces_master() {
         input = shot_sources_.size() == 1 ? shot_sources_.front() : shot_sources_.front().parent_path();
         if (fs::is_directory(shot_sources_.front(), ec)) input = shot_sources_.front();
     }
-    if (!aces_master_) aces_master_ = new AcesMasterDialog(this, model_roots(), input, aces_engine());
+    if (!aces_master_) {
+        aces_master_ = new AcesMasterDialog(this, model_roots(), input, aces_engine());
+        // The tau bands drive the learned viewer too: re-run the frame shown.
+        static_cast<AcesMasterDialog*>(aces_master_.data())->band_changed = [this] {
+            if (aces_routed() && !frames_.empty()) aces_request(current_);
+        };
+    }
     else if (!static_cast<AcesMasterDialog*>(aces_master_.data())->running()) {
         auto* d = static_cast<AcesMasterDialog*>(aces_master_.data());
         d->refresh_packages();
@@ -1126,6 +1196,13 @@ void MainWindow::aces_request(int index) {
     if (aces_source_display_ != "bt1886") req["source_display"] = aces_source_display_;   // an sRGB / 2.2 master
     req["codes_out"] = aces_tmp_->filePath(QStringLiteral("codes_%1.f32").arg(index % 2));
     req["sdr_out"] = aces_tmp_->filePath(QStringLiteral("sdr_%1.f32").arg(index % 2));   // view revision 6
+    {   // the tau bands, as the Learned ACES dialog set them (aces/bandOn, aces/tauHigh, aces/tauLow)
+        QSettings st;
+        if (st.value("aces/bandOn", false).toBool()) {
+            req["band_tau_high"] = st.value("aces/tauHigh", 254).toInt();
+            req["band_tau_low"] = st.value("aces/tauLow", 5).toInt();
+        }
+    }
     if (aces_playing_ && play_state_->side.load() > 0) req["max_side"] = play_state_->side.load();
     // The colorist's trims: the viewer shows what a render writes.
     if (const QJsonObject t = aces_trims_fields(aces_trims_.strength, aces_trims_.saturation, aces_trims_.peak_nits,
