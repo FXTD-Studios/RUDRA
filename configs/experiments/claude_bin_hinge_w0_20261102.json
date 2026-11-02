@@ -1,0 +1,41 @@
+{
+ "registered_before_training": true,
+ "author": "Claude (claude.ai), 2 Nov 2026, after the w4/w16 results (RESULT_BIN_HINGE_2026_11_02.md)",
+ "parent": "G:/rudra_training/partial_pcgrad_duration6400_retry1_20261025/step6400.pt",
+ "parent_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+ "steps": 1600,
+ "batch_frames": 4,
+ "seed": 20261102,
+ "crop": 192,
+ "border": 64,
+ "aligned_crops": true,
+ "paired_motion": true,
+ "temporal_weights": [
+  1
+ ],
+ "display_weight": 0.5,
+ "display_evs": [
+  -3,
+  0,
+  3
+ ],
+ "display_ev_weights": [
+  1,
+  1,
+  1
+ ],
+ "relative": true,
+ "pcgrad": true,
+ "deterministic": true,
+ "lr": 0.0001,
+ "optimizer_state": "fresh Adam (the parent checkpoint stores no optimizer state)",
+ "rationale": "Attribution control for w4: identical recipe, seed and schedule, bin weight 0. w4 passed every original development gate (old24 0 EV .0537, +3 EV .00241) but its hinge diagnostic rose during training, so its gains may come from 1600 more steps of the 25 Oct recipe rather than the hinge. Registered AFTER seeing w4: it attributes, it does not select. If w0 matches w4 on the development gates, the gains are the recipe's; if not, the hinge's.",
+ "gates": "original limits, unchanged: every paired gate of claude_d6400_neg_y_guard_eval_20261025 including aligned residual <= 0.010367; grade -3/0/+3 EV <= 18.6199 / 0.060382 / 0.0025029 on old_coherent; Hunyuan48 <= 0.02 EV and all video checks; no new negative Y with the luminance guard; plus fresh FXTD v2 (rebuilt): 0 EV RMS <= analytic RMS + 0.1 code (0.338), -3 / +3 EV and H no worse than analytic.",
+ "selection": "Attribution only. A w0 that passes every gate is still development evidence registered after a look, and may only go forward as a release candidate through a new registration and the confirmatory holdout.",
+ "compute": "FXTD's RTX 4080 SUPER, CUDA, deterministic",
+ "release_authorized": false,
+ "bin_weight": 0.0,
+ "bin_tol_codes": 0.5,
+ "out": "G:/rudra_training/claude_bin_hinge_w0_20261102",
+ "arms": "w0 only (control)."
+}
