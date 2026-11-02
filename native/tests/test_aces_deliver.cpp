@@ -698,3 +698,96 @@ TEST(AcesDeliver, WritesAnAmfThatNamesTheFramesItWrote) {
     EXPECT_TRUE(aces_prepare_out(*o, dir, 24, "").ok());
     std::filesystem::remove_all(dir);
 }
+
+// ---- alpha pass-through (1 Nov 2026) ----
+#include "aces_v2_inputs.hpp"
+#include "rudra/media/still.hpp"
+
+TEST(AcesAlpha, TheMasterExrHoldsPremultipliedRgbAndA) {
+    const auto d = tmp("alpha_exr");
+    PlanarBuffer px(3, 2, 4), mask(1, 2, 4), alpha(1, 2, 4);
+    for (std::size_t i = 0; i < px.plane_size(); ++i) {
+        for (int c = 0; c < 3; ++c) px.plane(c)[i] = 0.5f + 0.25f * float(c) + float(i);   // scene-linear, > 1 too
+        alpha.plane(0)[i] = float(i) / 7.0f;
+        mask.plane(0)[i] = 0.5f;
+    }
+    for (const char* gamut : {"acescg", "ap0"}) {
+        auto o = aces_deliver_from_json({{"exr", gamut == std::string("ap0") ? "half" : "float"}, {"exr_gamut", gamut}});
+        ASSERT_TRUE(o) << gamut;
+        const auto f = d / (std::string(gamut) + ".exr");
+        auto w = write_aces_master_exr(f, px, mask, *o, {}, {}, &alpha);
+        ASSERT_TRUE(w) << gamut << ": " << w.error().message;
+        auto r = read_exr(f);
+        ASSERT_TRUE(r) << gamut << ": " << r.error().message;
+        ASSERT_EQ(r->pixels.channels(), 4) << gamut;   // R, G, B, A
+        // RGB premultiplied by A (OpenEXR associated alpha); A as given. For ACEScg the
+        // primaries are unchanged, so RGB is px * a exactly in float.
+        for (std::size_t i = 0; i < px.plane_size(); ++i) {
+            EXPECT_NEAR(r->pixels.plane(3)[i], alpha.plane(0)[i], 1e-3f) << gamut;
+            if (std::string(gamut) == "acescg")
+                for (int c = 0; c < 3; ++c) EXPECT_FLOAT_EQ(r->pixels.plane(c)[i], px.plane(c)[i] * alpha.plane(0)[i]);
+        }
+        EXPECT_EQ(r->pixels.plane(0)[0], 0.0f);   // alpha 0: premultiplied to black
+        bool noted = false;
+        for (const auto& [k, v] : r->attributes) noted |= k == "rudra:alpha";
+        EXPECT_TRUE(noted) << gamut;
+        if (std::string(gamut) == "acescg") {
+            ASSERT_TRUE(r->reconstruction_mask.has_value());
+            EXPECT_FLOAT_EQ(r->reconstruction_mask->plane(0)[3], 0.5f);   // the mask is not premultiplied
+        }
+    }
+    // No alpha: the master stays RGB, as before.
+    auto o = aces_deliver_from_json(nlohmann::json::object());
+    ASSERT_TRUE(o);
+    auto wr = write_aces_master_exr(d / "rgb.exr", px, mask, *o, {});
+    ASSERT_TRUE(wr) << wr.error().message;
+    auto rr = read_exr(d / "rgb.exr");
+    ASSERT_TRUE(rr) << rr.error().message;
+    EXPECT_EQ(rr->pixels.channels(), 3);
+    // A wrong-sized alpha is refused, not stretched.
+    PlanarBuffer bad(1, 1, 4);
+    EXPECT_FALSE(write_aces_master_exr(d / "bad.exr", px, mask, *o, {}, {}, &bad));
+}
+
+TEST(AcesAlpha, AnRgbaStillCarriesItsAlpha) {
+    if (!have("ffmpeg")) GTEST_SKIP() << "ffmpeg is not on the PATH (it makes the test PNGs)";
+    const auto d = tmp("alpha_png");
+    const auto p = d / "rgba.png", q = d / "rgb.png";
+    ASSERT_EQ(std::system(("ffmpeg -v error -y -f lavfi -i \"color=c=black:s=4x2:d=0.04,format=rgba,"
+                           "geq=r='200':g='90':b='30':a='X*85'\" -frames:v 1 -pix_fmt rgba \"" + p.string() + "\"").c_str()), 0);
+    ASSERT_EQ(std::system(("ffmpeg -v error -y -f lavfi -i \"color=c=black:s=4x2:d=0.04,format=rgb24,"
+                           "geq=r='200':g='90':b='30'\" -frames:v 1 -pix_fmt rgb24 \"" + q.string() + "\"").c_str()), 0);
+    auto f = aces_read_one(p, 0, d / "log.txt");
+    ASSERT_TRUE(f);
+    ASSERT_TRUE(f->alpha.has_value());
+    EXPECT_FLOAT_EQ(f->alpha->at(0, 0, 3), 1.0f);
+    EXPECT_NEAR(f->alpha->at(0, 1, 1), 85.0f / 255.0f, 1e-6f);
+    EXPECT_NEAR(f->codes.at(0, 0, 0), 200.0f / 255.0f, 1e-6f);   // RGB untouched by the alpha
+    auto g = aces_read_one(q, 0, d / "log.txt");
+    ASSERT_TRUE(g);
+    EXPECT_FALSE(g->alpha.has_value());
+}
+
+TEST(AcesAlpha, AnAlphaMovieCarriesItsAlpha) {
+    if (!have("ffmpeg") || !have("ffprobe")) GTEST_SKIP() << "ffmpeg and ffprobe are not on the PATH";
+    const auto d = tmp("alpha_mov");
+    const auto mov = d / "alpha.mov";
+    // ProRes 4444 with a left-to-right alpha ramp on a flat grey.
+    const std::string cmd = "ffmpeg -v error -y -f lavfi -i \"color=c=gray:s=32x16:d=0.08:r=25,format=rgba,"
+                            "geq=r='128':g='128':b='128':a='X*8'\" -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le "
+                            "-alpha_bits 16 \"" + mov.string() + "\"";
+    ASSERT_EQ(std::system(cmd.c_str()), 0);
+    auto f = aces_read_one(mov, 0, d / "log.txt");
+    ASSERT_TRUE(f) << f.error().message;
+    ASSERT_TRUE(f->alpha.has_value());
+    EXPECT_NEAR(f->alpha->at(0, 8, 0), 0.0f, 2e-3f);
+    EXPECT_NEAR(f->alpha->at(0, 8, 16), 128.0f / 255.0f, 4e-3f);
+    EXPECT_NEAR(f->alpha->at(0, 8, 31), 248.0f / 255.0f, 4e-3f);
+    // A movie without alpha has none.
+    const auto rgb = d / "rgb.mov";
+    ASSERT_EQ(std::system(("ffmpeg -v error -y -f lavfi -i \"color=c=gray:s=32x16:d=0.08:r=25\" -c:v prores_ks -profile:v 3 \"" +
+                           rgb.string() + "\"").c_str()), 0);
+    auto g = aces_read_one(rgb, 0, d / "log.txt");
+    ASSERT_TRUE(g);
+    EXPECT_FALSE(g->alpha.has_value());
+}

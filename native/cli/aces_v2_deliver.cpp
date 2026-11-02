@@ -224,13 +224,13 @@ std::string aces_exr_label(const AcesDeliverOptions& o) {
 
 Result<void> write_aces_master_exr(const fs::path& path, const PlanarBuffer& acescg, const PlanarBuffer& mask,
                                    const AcesDeliverOptions& o, const ExrAttributes& provenance,
-                                   const ExrTypedAttributes& typed) {
+                                   const ExrTypedAttributes& typed, const PlanarBuffer* alpha) {
     const bool half = o.exr == "half";
     const fs::path part = aces_part_file(path);
     // ST 2065-4: the AP0 file is RGB only, so its mask is a file of its own (mask/<frame>.exr, R=G=B).
     const bool ap0 = o.exr_gamut == "ap0";
-    auto w = ap0 ? write_aces_exr(part, acescg, Primaries::Ap1, 1.0, provenance, true, nullptr, typed)
-                 : write_acescg_exr(part, acescg, Primaries::Ap1, 1.0, provenance, half, &mask, typed);
+    auto w = ap0 ? write_aces_exr(part, acescg, Primaries::Ap1, 1.0, provenance, true, nullptr, typed, alpha)
+                 : write_acescg_exr(part, acescg, Primaries::Ap1, 1.0, provenance, half, &mask, typed, alpha);
     std::error_code ec;
     if (!w) {
         fs::remove(part, ec);

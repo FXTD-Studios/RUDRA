@@ -105,9 +105,11 @@ std::string aces_movie_file(const AcesDeliverOptions& o, const std::string& stem
 // What provenance.json says the EXR is ("ACEScg scene-linear, signed, unclamped, float32", ...).
 std::string aces_exr_label(const AcesDeliverOptions& o);
 // The EXR in the chosen gamut and depth, with the rudra.reconstructed mask.
+// `alpha`: the source's straight alpha (AcesFrameIn::alpha), written as A with
+// RGB premultiplied (deliver/exr.hpp); null for none.
 Result<void> write_aces_master_exr(const std::filesystem::path& path, const PlanarBuffer& acescg, const PlanarBuffer& mask,
                                    const AcesDeliverOptions& o, const ExrAttributes& provenance,
-                                   const ExrTypedAttributes& typed = {});
+                                   const ExrTypedAttributes& typed = {}, const PlanarBuffer* alpha = nullptr);
 
 // Frame `i` of the run: its timecode (`timecode` + i, or + the movie's frame
 // number, at the rate; else the movie's own; "" when neither) and reel

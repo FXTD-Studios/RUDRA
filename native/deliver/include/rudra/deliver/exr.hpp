@@ -53,14 +53,20 @@ Result<void> write_exr(const std::filesystem::path& path, const PlanarBuffer& rg
 
 // write_aces_exr / write_acescg_exr: scene linear in `source`, diffuse white
 // 1.0; `provenance` goes in as one sorted-keys JSON string attribute.
+// `alpha` (1 Nov 2026): a matching one-plane straight alpha in [0, 1] (the
+// source's), written as channel A with RGB premultiplied by it: OpenEXR's
+// associated alpha, what Nuke and Resolve expect from an EXR. The header says so
+// (rudra:alpha). The reconstruction mask is not premultiplied.
 Result<void> write_aces_exr(const std::filesystem::path& path, const PlanarBuffer& rgb_linear,
                             Primaries source = Primaries::Rec2020, double exposure_scale = 1.0,
                             const ExrAttributes& provenance = {}, bool half = true,
-                            const PlanarBuffer* reconstruction_mask = nullptr, const ExrTypedAttributes& typed = {});
+                            const PlanarBuffer* reconstruction_mask = nullptr, const ExrTypedAttributes& typed = {},
+                            const PlanarBuffer* alpha = nullptr);
 Result<void> write_acescg_exr(const std::filesystem::path& path, const PlanarBuffer& rgb_linear,
                               Primaries source = Primaries::Rec2020, double exposure_scale = 1.0,
                               const ExrAttributes& provenance = {}, bool half = true,
-                              const PlanarBuffer* reconstruction_mask = nullptr, const ExrTypedAttributes& typed = {});
+                              const PlanarBuffer* reconstruction_mask = nullptr, const ExrTypedAttributes& typed = {},
+                              const PlanarBuffer* alpha = nullptr);
 
 // read_exr for uncompressed scanline files (exr.py's reader): the planes in
 // R, G, B(, A) order, and the header's attributes in file order as raw bytes.
