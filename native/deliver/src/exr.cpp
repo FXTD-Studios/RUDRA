@@ -214,11 +214,23 @@ namespace {
 
 Result<void> write_aces_like(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
                              Primaries dst, double exposure, const ExrAttributes& provenance, bool ap0, bool half,
-                             const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed) {
+                             const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed,
+                             const PlanarBuffer* alpha) {
+    if (alpha && (alpha->channels() != 1 || alpha->height() != rgb.height() || alpha->width() != rgb.width()))
+        return make_error(ErrorCode::InvalidArgument, "The alpha must be one plane the size of the picture.");
     PlanarBuffer scaled = rgb;
     const float k = static_cast<float>(exposure);
     for (float& v : scaled.span()) v = v * k;
-    const PlanarBuffer out = convert_primaries(scaled, source, dst);
+    PlanarBuffer out = convert_primaries(scaled, source, dst);
+    if (alpha) {   // RGB premultiplied by A, then A: OpenEXR's associated alpha
+        PlanarBuffer rgba(4, rgb.height(), rgb.width());
+        for (std::size_t i = 0; i < out.plane_size(); ++i) {
+            const float a = std::clamp(alpha->plane(0)[i], 0.0f, 1.0f);
+            for (int c = 0; c < 3; ++c) rgba.plane(c)[i] = out.plane(c)[i] * a;
+            rgba.plane(3)[i] = a;
+        }
+        out = std::move(rgba);
+    }
     ExrAttributes attrs;
     ExrTypedAttributes all_typed = typed;
     // SMPTE ST 2065-4 says acesImageContainerFlag is an int (= 1), only on a file
@@ -228,6 +240,7 @@ Result<void> write_aces_like(const std::filesystem::path& path, const PlanarBuff
     attrs.emplace_back("rudra:sourceSpace", primaries_name(source));
     attrs.emplace_back("rudra:exposureConvention", "0.18 = 18% grey (scene), diffuse white = 1.0");
     attrs.emplace_back("rudra:exposureScale", pyjson::repr(exposure));
+    if (alpha) attrs.emplace_back("rudra:alpha", "the source's straight alpha as A; RGB premultiplied by it (OpenEXR associated alpha)");
     if (!provenance.empty()) {
         pyjson::Dict d;
         for (const auto& [kk, v] : provenance) d.emplace_back(kk, v);
@@ -240,14 +253,14 @@ Result<void> write_aces_like(const std::filesystem::path& path, const PlanarBuff
 
 Result<void> write_aces_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
                             double exposure, const ExrAttributes& provenance, bool half, const PlanarBuffer* reconstruction_mask,
-                            const ExrTypedAttributes& typed) {
-    return write_aces_like(path, rgb, source, Primaries::Ap0, exposure, provenance, true, half, reconstruction_mask, typed);
+                            const ExrTypedAttributes& typed, const PlanarBuffer* alpha) {
+    return write_aces_like(path, rgb, source, Primaries::Ap0, exposure, provenance, true, half, reconstruction_mask, typed, alpha);
 }
 
 Result<void> write_acescg_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
                               double exposure, const ExrAttributes& provenance, bool half, const PlanarBuffer* reconstruction_mask,
-                              const ExrTypedAttributes& typed) {
-    return write_aces_like(path, rgb, source, Primaries::Ap1, exposure, provenance, false, half, reconstruction_mask, typed);
+                              const ExrTypedAttributes& typed, const PlanarBuffer* alpha) {
+    return write_aces_like(path, rgb, source, Primaries::Ap1, exposure, provenance, false, half, reconstruction_mask, typed, alpha);
 }
 
 ExrTypedAttributes exr_timecode_attributes(const std::string& timecode, double fps, const std::string& reel) {

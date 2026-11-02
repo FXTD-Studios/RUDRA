@@ -525,7 +525,8 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                                                 {"source", f->source}, {"view", (*view)->identity()}};
                     if (opts->writes_exr())
                         if (auto w = write_aces_master_exr(exr, master, r->mask, *opts, prov,
-                                                                      exr_timecode_attributes(stamp.timecode, stamp.fps, stamp.reel)); !w) {
+                                                                      exr_timecode_attributes(stamp.timecode, stamp.fps, stamp.reel),
+                                                          f->alpha ? &*f->alpha : nullptr); !w) {
                             failure = w.error();
                             break;
                         }

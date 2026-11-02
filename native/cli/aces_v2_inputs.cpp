@@ -22,6 +22,11 @@ std::string lower(std::string s) {
 Result<AcesFrameIn> from_raw(const RawFrame16& raw, const fs::path& video, const VideoSource& vs, int index) {
     AcesFrameIn f;
     f.codes = rgb_from_frame(raw).buffer();
+    if (raw.channels == 4) {   // an alpha movie: the decoder asked for rgba64le
+        PlanarBuffer a(1, raw.height, raw.width);
+        for (std::size_t i = 0; i < a.plane_size(); ++i) a.plane(0)[i] = float(raw.data[i * 4 + 3]) / 65535.0f;
+        f.alpha = std::move(a);
+    }
     f.bits = aces_video_bits(vs.stream.pix_fmt);
     if (f.bits == 8) {
         // An 8-bit video's code values, as the model was made for (the stills and
@@ -45,6 +50,7 @@ Result<AcesFrameIn> from_still(const fs::path& p) {
     if (!still) return still.error();
     AcesFrameIn f;
     f.codes = still->rgb.buffer();
+    f.alpha = still->alpha;
     f.bits = still->bits;
     f.source = p.filename().string();
     f.source_path = p.string();

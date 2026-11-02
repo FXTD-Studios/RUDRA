@@ -198,7 +198,8 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
                                     {"source", f->source}, {"view", (*view)->identity()}};
         if (opts->writes_exr())
             if (auto w = write_aces_master_exr(exr, master, r->mask, *opts, prov,
-                                                          exr_timecode_attributes(stamp.timecode, stamp.fps, stamp.reel)); !w) return fail_v2(w.error());
+                                                          exr_timecode_attributes(stamp.timecode, stamp.fps, stamp.reel),
+                                                          f->alpha ? &*f->alpha : nullptr); !w) return fail_v2(w.error());
         if (logw)
             if (auto lw = logw->write(master, stem + ".exr", stamp.timecode); !lw) return fail_v2(lw.error());
         std::size_t reconstructed = 0;

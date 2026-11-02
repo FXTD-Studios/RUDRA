@@ -93,6 +93,14 @@ Result<DecodedStill> decode_sdr(std::span<const std::uint8_t> bytes) {
             }
         out.bits = 32;
         out.distinct_codes = static_cast<int>(distinct_green<float>(m));
+        if (ch == 4) {
+            PlanarBuffer a(1, h, w);
+            for (int y = 0; y < h; ++y) {
+                const float* row = m.ptr<float>(y);
+                for (int x = 0; x < w; ++x) a.at(0, y, x) = std::clamp(row[x * ch + 3], 0.0f, 1.0f);
+            }
+            out.alpha = std::move(a);
+        }
     } else if (depth == CV_16U) {
         for (int c = 0; c < 3; ++c)
             for (int y = 0; y < h; ++y) {
@@ -101,6 +109,14 @@ Result<DecodedStill> decode_sdr(std::span<const std::uint8_t> bytes) {
             }
         out.bits = padded_8bit(m) ? 8 : 16;
         out.distinct_codes = static_cast<int>(distinct_green<std::uint16_t>(m));
+        if (ch == 4) {
+            PlanarBuffer a(1, h, w);
+            for (int y = 0; y < h; ++y) {
+                const std::uint16_t* row = m.ptr<std::uint16_t>(y);
+                for (int x = 0; x < w; ++x) a.at(0, y, x) = float(row[x * ch + 3]) / 65535.0f;
+            }
+            out.alpha = std::move(a);
+        }
     } else {
         for (int c = 0; c < 3; ++c)
             for (int y = 0; y < h; ++y) {
@@ -108,6 +124,14 @@ Result<DecodedStill> decode_sdr(std::span<const std::uint8_t> bytes) {
                 for (int x = 0; x < w; ++x) rgb.at(c, y, x) = float(row[x * ch + channel_of(c)]) / 255.0f;
             }
         out.bits = 8;
+        if (ch == 4) {
+            PlanarBuffer a(1, h, w);
+            for (int y = 0; y < h; ++y) {
+                const std::uint8_t* row = m.ptr<std::uint8_t>(y);
+                for (int x = 0; x < w; ++x) a.at(0, y, x) = float(row[x * ch + 3]) / 255.0f;
+            }
+            out.alpha = std::move(a);
+        }
         out.distinct_codes = static_cast<int>(distinct_green<std::uint8_t>(m));
     }
     out.colour = read_still_colour(bytes);
