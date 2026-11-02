@@ -39,7 +39,7 @@ int fail_v2(const Error& e) {
 
 int cmd_aces_v2(const std::vector<std::string>& args) {
     if (args.size() < 2) {
-        std::fprintf(stderr, "usage: rudra-native aces-v2 <package> <image|folder|video> --out <dir> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml|coreml] [--ocio-threads N] [--no-smoothing] [--luminance-guard|--no-luminance-guard] [--exr float|half|none] [--exr-gamut acescg|ap0] [--frame N]... [--fps F] [--name NAME [--start N]] [--padding N] [--into-existing [--no-create-dirs]] [--range FIRST:LAST] [--timecode HH:MM:SS:FF] [--reel NAME] [--source-display bt1886|srgb|gamma22] [--strength S] [--saturation S] [--peak-nits N] [--exposure EV] [--contrast C] [--log logc4|acescct|pq1000|pq2000|pq4000|hlg1000|sdr709] [--log-format tiff16,dpx10,prores4444xq|prores4444|prores422hq|mov16|hevc10]\n");
+        std::fprintf(stderr, "usage: rudra-native aces-v2 <package> <image|folder|video> --out <dir> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml|coreml] [--ocio-threads N] [--no-smoothing] [--luminance-guard|--no-luminance-guard] [--tau-high N] [--tau-low N] [--exr float|half|none] [--exr-gamut acescg|ap0] [--frame N]... [--fps F] [--name NAME [--start N]] [--padding N] [--into-existing [--no-create-dirs]] [--range FIRST:LAST] [--timecode HH:MM:SS:FF] [--reel NAME] [--source-display bt1886|srgb|gamma22] [--strength S] [--saturation S] [--peak-nits N] [--exposure EV] [--contrast C] [--log logc4|acescct|pq1000|pq2000|pq4000|hlg1000|sdr709] [--log-format tiff16,dpx10,prores4444xq|prores4444|prores422hq|mov16|hevc10]\n");
         return 64;
     }
     const fs::path pkg = args[0], input = args[1];
@@ -48,6 +48,7 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
     int threads = 4;
     bool smoothing = true;
     int guard_override = -1;   // -1: the package's appearance_constraint.forbid_new_negative_y
+    aces_v2::UserBand band;    // --tau-high / --tau-low turn it on (core/aces_v2.hpp)
     std::string log_curve, log_formats;
     nlohmann::json deliver = nlohmann::json::object();   // aces_v2_deliver.hpp, as aces-v2-serve takes it
     for (std::size_t i = 2; i < args.size(); ++i) {
@@ -56,6 +57,11 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
         else if (args[i] == "--runtime" && i + 1 < args.size()) runtime = args[++i];
         else if (args[i] == "--ocio-threads" && i + 1 < args.size()) threads = std::atoi(args[++i].c_str());
         else if (args[i] == "--no-smoothing") smoothing = false;
+        else if ((args[i] == "--tau-high" || args[i] == "--tau-low") && i + 1 < args.size()) {
+            band.on = true;
+            (args[i] == "--tau-high" ? band.tau_high : band.tau_low) = std::atoi(args[i + 1].c_str());
+            ++i;
+        }
         else if (args[i] == "--luminance-guard") guard_override = 1;
         else if (args[i] == "--no-luminance-guard") guard_override = 0;
         else if (args[i] == "--log" && i + 1 < args.size()) log_curve = args[++i];
@@ -132,6 +138,8 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
     Result<aces_v2::G1Fn> g1 = std::move(chosen->fn);
 
     const bool guard = guard_override < 0 ? m->forbid_new_negative_y : guard_override == 1;
+    if (band.on && !band.valid())
+        return fail_v2(make_error(ErrorCode::InvalidArgument, "--tau-high must be 128..256 and --tau-low -1..64."));
     const std::string movie_stem = (fs::is_directory(input) ? input.filename() : input.stem()).string();
     if (auto ready = aces_prepare_out(*opts, out, (*frames)->total(),
                                       opts->copies.any() && opts->copies.movie() ? aces_movie_file(*opts, movie_stem) : "");
@@ -145,6 +153,9 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
                           {"appearance_constraint", guard ? "1 code, include fully clipped, no new negative luminance"
                                                            : "1 code, include fully clipped"},
                           {"luminance_guard", guard}, {"luminance_guard_package_default", m->forbid_new_negative_y},
+                          {"user_band", band.on ? nlohmann::json{{"tau_high", band.tau_high}, {"tau_low", band.tau_low},
+                                             {"rule", "learned only at or above tau_high / at or below tau_low (brightest channel, 8-bit codes, 2-code ramp); exact analytic inverse between"}}
+                                     : nlohmann::json(nullptr)},
                           {"master", aces_exr_label(*opts)}, {"trims", aces_trims_json(opts->trims)},
                           {"source_display", aces_source_display_label(opts->source_display)},
                           {"mask", "rudra.reconstructed = highlight reconstruction weight; 0 = from source (incl. analytic shadows)"},
@@ -168,7 +179,7 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
         if (!f) return fail_v2(f.error());
         aces_adapt_source(f->codes, opts->source_display);   // an sRGB or 2.2 source, as BT.1886 codes
         const auto t0 = std::chrono::steady_clock::now();
-        auto r = aces_v2::run_frame(f->codes, **view, *g1, smoothing, true, guard);
+        auto r = aces_v2::run_frame(f->codes, **view, *g1, smoothing, true, guard, band);
         if (!r) return fail_v2(r.error());
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         // The colorist's trims, then the frame's timecode and reel (28 Oct 2026).

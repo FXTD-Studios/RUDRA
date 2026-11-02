@@ -24,6 +24,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QGroupBox>
 #include <QSlider>
 #include <QStackedWidget>
 #include <QImage>
@@ -6094,4 +6095,48 @@ TEST(AppViewerToolbar, AltKeysReachTheViewer) {
     EXPECT_TRUE(w.session().clamp_zebra);
     QTest::keyClick(&w, Qt::Key_R, Qt::AltModifier);
     EXPECT_EQ(w.session().view_layer, 4);
+}
+
+// ---- the tau bands of the learned ACES route (core/aces_v2.hpp UserBand, 1 Nov 2026) ----
+TEST(AcesBand, CommandArgumentsOnlyWhenOn) {
+    app::AcesRunSettings s;
+    s.package = "pkg";
+    s.input = "in";
+    s.out = "out";
+    EXPECT_FALSE(app::aces_cli_arguments(s).contains("--tau-high"));   // off: the model as it is
+    s.band_on = true;
+    s.tau_high = 250;
+    s.tau_low = -1;
+    const QStringList a = app::aces_cli_arguments(s);
+    EXPECT_EQ(a.at(a.indexOf("--tau-high") + 1), "250");
+    EXPECT_EQ(a.at(a.indexOf("--tau-low") + 1), "-1");
+}
+
+TEST(AcesBand, DialogControlsPersistAndTellTheViewer) {
+    QSettings().remove("aces/bandOn");
+    QSettings().remove("aces/tauHigh");
+    QSettings().remove("aces/tauLow");
+    const auto root = aces_tmp("band_dialog");
+    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    app::AcesMasterDialog d(nullptr, {root}, root / "frames");
+    auto* band = d.findChild<QGroupBox*>("acesBand");
+    auto* hi = d.findChild<QSpinBox*>("acesTauHigh");
+    auto* lo = d.findChild<QSpinBox*>("acesTauLow");
+    ASSERT_TRUE(band && hi && lo);
+    EXPECT_FALSE(band->isChecked());   // off by default
+    EXPECT_EQ(hi->value(), 254);       // the model's own bands when switched on
+    EXPECT_EQ(lo->value(), 5);
+    EXPECT_EQ(hi->minimum(), 128);
+    EXPECT_EQ(hi->maximum(), 256);
+    EXPECT_EQ(lo->minimum(), -1);
+    EXPECT_EQ(lo->maximum(), 64);
+    int told = 0;
+    d.band_changed = [&] { ++told; };
+    band->setChecked(true);
+    hi->setValue(240);
+    EXPECT_GE(told, 2);
+    EXPECT_TRUE(QSettings().value("aces/bandOn").toBool());
+    EXPECT_EQ(QSettings().value("aces/tauHigh").toInt(), 240);
+    band->setChecked(false);
+    EXPECT_FALSE(QSettings().value("aces/bandOn").toBool());
 }

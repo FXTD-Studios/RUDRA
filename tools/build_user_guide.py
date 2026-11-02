@@ -226,6 +226,8 @@ news = f'''<section class="page" id="whats-new" data-title="What’s new">
 <li><strong>Range</strong> (Alt+R): every pixel coloured by stops above the SDR white (203 nits): grey is the SDR's own range, then blue, green, yellow, orange and red for each stop up to +4 and over. White hatching marks what the original clamped.</li>
 <li>The line under the bar reads the frame in nits: how much of the original is clamped (per channel) and crushed, RUDRA's peak and how much goes over the SDR white and 1,000 nits, and, inside the clamped area, how far RUDRA took it and how much it left as the plain inverse. Hover a pixel for its original codes, which channels are clamped, and its stops over the SDR white.</li>
 </ul>
+<h2>Rebuild only highlights and shadows</h2>
+<p>In <strong>Deliver › Learned ACES 2.0</strong>, <strong>Rebuild only highlights and shadows</strong> keeps the model's result only where the brightest channel of the original is at or above <strong>τ high</strong> or at or below <strong>τ low</strong> (8-bit codes; 254 and 5 are the model's own bands). Everything between is the plain ACES inverse, which gives the original back pixel for pixel. 256 turns highlights off, −1 shadows. The viewer follows the setting; turn on <strong>Changes</strong> to see what was rebuilt. Off, the model's own result is used everywhere, as before.</p>
 <h2>In 1.0.2</h2>
 <ul>
 <li><strong>The learned ACES 2.0 model on every platform</strong>: its engine is now in the Windows and macOS packages, so the model you download runs straight away (DirectML or the CPU on Windows; the CPU or Core ML on a Mac).</li>
