@@ -19,6 +19,7 @@ from training.aces_reference import reference_view
 from training.aces_clipped_smoothing import smooth_clipped
 from training.aces_colour_backtrack import constrain_colour
 from training.aces_full_only import route_full_only
+from training.aces_partial_tighten import tighten_partial
 
 LUMA=np.array([.2722287168,.6740817658,.0536895174])
 def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
@@ -33,7 +34,8 @@ def main():
     reg=json.loads(a.registration.read_text());corpus=json.loads((a.corpus/'report.json').read_text())
     # The grading set keeps its own registration; this one registers the arms.
     if corpus['registration_sha256']!=reg['grade_set_registration_sha256']:raise ValueError('not the registered grading set')
-    feathers=[float(f) for f in reg['arms']['full_only_feathers_px']];primary_arm=reg['arms']['primary']
+    feathers=[float(f) for f in reg['arms'].get('full_only_feathers_px',[])];primary_arm=reg['arms']['primary']
+    tightens=reg['arms'].get('partial_tighten',[])   # [{"name":..,"mode":..,"tol_codes":..,"iters":..}]
     torch.set_num_threads(2);view=reference_view();view.set_threads(4)
     models={}
     for spec in a.candidate:
@@ -59,6 +61,11 @@ def main():
                 routed=route_full_only(sm,base,src,feather_px=f)
                 out,diag=constrain_colour(src,routed,base,w,view,include_fully_clipped=True,forbid_new_negative_y=True)
                 preds[f'{n}:full_only_f{f:g}']=(out,diag)
+            if tightens:
+                learned,_=preds[f'{n}:learned']
+                for t in tightens:   # after the shipped pipeline's own constraint
+                    tout,tdiag=tighten_partial(src,learned,base,w,view,mode=t['mode'],tol_codes=t['tol_codes'],iters=t.get('iters',12))
+                    preds[f"{n}:{t['name']}"]=(tout,preds[f'{n}:learned'][1])
         analytic=base.astype(np.float64)  # exact ACES 2.0 inverse (stage 1), same for all candidates
         high=(w>0)&(src.max(-1)>.5);full=high&(src.min(-1)>=254.5/255);part=high&~full
         row={'case_id':c['case_id'],'scene_id':c['scene_id'],'project':c['project'],'clip_target':c['clip_target'],
