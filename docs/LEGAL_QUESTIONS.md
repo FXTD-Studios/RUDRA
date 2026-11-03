@@ -1,5 +1,10 @@
 # Questions for counsel before RUDRA 1.0 is sold (roadmap 0.3)
 
+> **3 Nov 2026: not being sent.** RUDRA is released free and open source
+> (Apache 2.0), not sold, so these questions no longer gate a release. They are
+> kept for reference. Two still matter for any distribution: the HEVC patent
+> pools (question 8) and the Dolby Vision / HDR10+ names (question 9).
+
 16 October 2026. Prepared by FXTD Studios. This is not legal advice: these
 are the questions to send to counsel. Evidence sits in the repository's local
 audits (docs/ai/).
@@ -35,6 +40,9 @@ audits (docs/ai/).
 9. **Dolby Vision and HDR10+ names.** RUDRA writes metadata files labelled
    for Dolby Vision (for `dovi_tool generate`) and HDR10+. May a commercial
    product name them so without certification or a licence?
-10. **Code licence.** The code is PolyForm Noncommercial 1.0.0; copies taken
-    before 24 Sep 2026 are Apache 2.0. Is the commercial licence we sell
-    alongside it worded correctly?
+10. **Code licence.** Since 29 Oct 2026 the code is Apache 2.0 (it was
+    PolyForm Noncommercial 1.0.0 from 24 Sep to 29 Oct, Apache 2.0 before).
+    Copies taken between 24 Sep and 29 Oct carry the PolyForm terms. Is
+    anything owed to, or required of, people holding those copies, and do the
+    LICENSE and NOTICE files cover the 1.0 models (RUDRA ACES 2, AI fill v3)
+    being Apache 2.0 too?

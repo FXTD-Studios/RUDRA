@@ -38,6 +38,9 @@ public:
     // Ends the decoder and releases anyone waiting in take() (who get nullopt).
     void stop();
     bool covers(int index) const noexcept { return index >= start_ && index < count_; }
+    // ffmpeg made the frames at the preview's size (its resampling, not the
+    // paused path's): the frames this decoder fed are decoded again where it stops.
+    bool scaled() const noexcept { return scaled_; }
 
 private:
     MovieFeeder() = default;
@@ -50,7 +53,7 @@ private:
     std::map<int, SdrImage> ready_;
     int next_ = 0;            // the next frame the decoder will produce
     int floor_ = 0;           // frames below it are not wanted any more (a skip ahead): decoded and dropped
-    bool stop_ = false, failed_ = false;
+    bool stop_ = false, failed_ = false, scaled_ = false;
     std::thread worker_;
 };
 

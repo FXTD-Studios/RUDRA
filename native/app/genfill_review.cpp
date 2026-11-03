@@ -17,7 +17,13 @@
 #include <QLineEdit>
 #include <QPalette>
 #include <QPixmap>
+#include <QMessageBox>
+#include <QPlainTextEdit>
+#include <QProcess>
+#include <QProgressBar>
 #include <QPushButton>
+#include <QProcessEnvironment>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QTreeWidget>
 #include <QUrl>
@@ -28,6 +34,7 @@
 #include "theme.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <tuple>
 #include <utility>
 
@@ -229,7 +236,7 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         auto* le = new QLineEdit(this);
         le->setObjectName(QStringLiteral("genfillSetup_") + row.key);
         le->setText(row.now);
-        le->setPlaceholderText("found automatically (beside the app, the repository, RUDRA_GENFILL_DIR)");
+        le->setPlaceholderText("found automatically (the app, the repository, the model folder, the Hugging Face cache)");
         auto* b = new QPushButton("Browse…", this);
         const bool folder = row.folder;
         connect(b, &QPushButton::clicked, this, [this, le, folder] {
@@ -247,7 +254,104 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
     status->setObjectName("genfillSetupStatus");
     status->setWordWrap(true);
     v->addWidget(status);
+    // One click (4 Nov 2026): rudra/genfill/setup.py checks the GPU and the disk,
+    // installs the packages into the Python above and downloads the base model,
+    // with its log here. Closing the window stops it; run again, it resumes.
+    auto* log_view = new QPlainTextEdit(this);
+    log_view->setObjectName("genfillSetupLog");
+    log_view->setReadOnly(true);
+    log_view->setMaximumBlockCount(2000);
+    log_view->setVisible(false);
+    v->addWidget(log_view, 1);
+    auto* busy = new QProgressBar(this);
+    busy->setObjectName("genfillSetupBusy");
+    busy->setRange(0, 0);   // steps, not bytes: the download's own progress is in the log
+    busy->setVisible(false);
+    v->addWidget(busy);
+
     auto* box = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    auto* automatic = box->addButton("Set up automatically…", QDialogButtonBox::ActionRole);
+    automatic->setObjectName("genfillSetupAuto");
+    connect(automatic, &QPushButton::clicked, this, [this, status, log_view, busy, automatic] {
+        GenFillInstall plan = genfill_install_plan();
+        if (const QString b = findChild<QLineEdit*>("genfillSetup_base")->text().trimmed(); !b.isEmpty()) plan.base = to_path(b);
+        if (const QString p = findChild<QLineEdit*>("genfillSetup_python")->text().trimmed(); !p.isEmpty()) plan.python = to_path(p);
+        if (plan.repo.empty() || !QFileInfo::exists(from_path(plan.repo / "rudra" / "genfill" / "setup.py"))) {
+            status->setText("AI fill setup: the RUDRA repository (rudra/genfill/setup.py) was not found; set it above.");
+            return;
+        }
+        if (!QFileInfo::exists(from_path(plan.python))) {
+            status->setText(QStringLiteral("AI fill setup: no Python at %1. Set the Python above (one with PyTorch for your GPU).")
+                                .arg(from_path(plan.python)));
+            return;
+        }
+        const bool have_model = QFileInfo::exists(from_path(plan.base / "transformer" / "config.json"));
+        const QString what = have_model
+            ? QStringLiteral("The base model is already at\n%1\n\nThis installs the missing Python packages into\n%2")
+                  .arg(from_path(plan.base), from_path(plan.python))
+            : QStringLiteral("This downloads Wan2.1-VACE-1.3B (Apache 2.0, about 25 GB) into\n%1\n\n"
+                             "and installs the Python packages the fill needs into\n%2\n\n"
+                             "It needs a 16 GB GPU. A download that stops resumes when you run this again.")
+                  .arg(from_path(plan.base), from_path(plan.python));
+        if (QMessageBox::question(this, "Set up AI fill", what) != QMessageBox::Yes) return;
+        auto* proc = new QProcess(this);   // the dialog's: closing it ends the setup
+        proc->setWorkingDirectory(from_path(plan.repo));
+        proc->setProgram(from_path(plan.python));
+        proc->setArguments({"-m", "rudra.genfill.setup", "--base", from_path(plan.base), "--json"});
+        auto env = QProcessEnvironment::systemEnvironment();
+        env.insert("PYTHONUNBUFFERED", "1");
+        proc->setProcessEnvironment(env);
+        log_view->setVisible(true);
+        log_view->clear();
+        busy->setVisible(true);
+        automatic->setEnabled(false);
+        status->setText("Setting up the AI fill…");
+        auto out_buf = std::make_shared<QByteArray>();
+        connect(proc, &QProcess::readyReadStandardOutput, this, [proc, out_buf, status, log_view] {
+            out_buf->append(proc->readAllStandardOutput());
+            for (int nl; (nl = out_buf->indexOf('\n')) >= 0;) {
+                const QByteArray line = out_buf->left(nl).trimmed();
+                out_buf->remove(0, nl + 1);
+                const QJsonObject o = QJsonDocument::fromJson(line).object();
+                const QString ev = o.value("event").toString();
+                if (ev == "step") status->setText(o.value("text").toString());
+                else if (ev == "check")
+                    log_view->appendPlainText(QStringLiteral("%1 %2 GB on %3 · %4 GB free · model %5")
+                                                  .arg(o.value("gpu").toString(o.value("device").toString()))
+                                                  .arg(o.value("memory_gb").toDouble(), 0, 'f', 1)
+                                                  .arg(o.value("device").toString())
+                                                  .arg(o.value("free_gb").toDouble(), 0, 'f', 0)
+                                                  .arg(o.value("model").toBool() ? "found" : "to download"));
+                else if (ev == "done" && !o.value("ok").toBool()) status->setText("AI fill setup: " + o.value("error").toString());
+                else if (!line.isEmpty()) log_view->appendPlainText(o.isEmpty() ? QString::fromUtf8(line) : o.value("text").toString());
+            }
+        });
+        // The download's progress bars (tqdm, on stderr): the latest line only.
+        connect(proc, &QProcess::readyReadStandardError, this, [proc, log_view] {
+            const QString chunk = QString::fromUtf8(proc->readAllStandardError());
+            const QStringList parts = chunk.split(QRegularExpression("[\r\n]"), Qt::SkipEmptyParts);
+            if (!parts.isEmpty()) log_view->appendPlainText(parts.back().trimmed());
+        });
+        connect(proc, &QProcess::finished, this, [this, proc, status, busy, automatic, plan](int code, QProcess::ExitStatus) {
+            busy->setVisible(false);
+            automatic->setEnabled(true);
+            proc->deleteLater();
+            if (code != 0) return;   // the reason is on the status line already
+            QSettings s;
+            s.setValue("genfill/base", from_path(plan.base));
+            if (auto* le = findChild<QLineEdit*>("genfillSetup_base")) le->setText(from_path(plan.base));
+            QString w;
+            const auto ok = genfill_setup(&w);
+            status->setText(ok ? QStringLiteral("Ready: %1 + %2").arg(from_path(ok->base), from_path(ok->lora))
+                               : QStringLiteral("Packages and base model are set up. ") + w);
+        });
+        connect(proc, &QProcess::errorOccurred, this, [status, busy, automatic](QProcess::ProcessError) {
+            busy->setVisible(false);
+            automatic->setEnabled(true);
+            status->setText("AI fill setup: the Python could not be started.");
+        });
+        proc->start();
+    });
     auto* check = box->addButton("Save and check", QDialogButtonBox::ApplyRole);
     connect(check, &QPushButton::clicked, this, [this, status] {
         QSettings s;

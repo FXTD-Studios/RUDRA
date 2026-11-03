@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <vector>
 
 class QObject;
 class QProcess;
@@ -50,7 +51,23 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
 // A new folder beside the master: <master>_aifill, else _aifill_2, _3 ... (nothing replaced).
 QString genfill_out_dir(const QString& master);
 
-// The setup from QSettings and the defaults; nullopt and `why` when a part is missing.
+// Every place the base model and the LoRA are looked for, in order (4 Nov 2026):
+// beside the app, the repository, RUDRA_GENFILL_DIR, the model download folder,
+// the Hugging Face caches (HF_HUB_CACHE, HF_HOME, ~/.cache/huggingface), then
+// the training workstation's folders.
+std::vector<std::filesystem::path> genfill_base_candidates(const std::filesystem::path& repo);
+std::vector<std::filesystem::path> genfill_lora_candidates(const std::filesystem::path& repo);
+
+// What the automatic setup (rudra/genfill/setup.py, 4 Nov 2026) runs with: the
+// repository, its Python (the saved one, else the repo's .venv), and where the
+// base model goes when none is found (the model download folder).
+struct GenFillInstall {
+    std::filesystem::path repo, python, base;
+};
+GenFillInstall genfill_install_plan();
+
+// The setup: the saved paths while they exist, else the first candidate that
+// does (and it is saved); nullopt and `why` when a part is missing.
 std::optional<GenFillSetup> genfill_setup(QString* why = nullptr);
 
 class GenFillJob {

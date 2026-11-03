@@ -1206,7 +1206,10 @@ void MainWindow::step_to(int i) {
     waiting_ = true;
     frame_ready_ok_ = false;
     engine_->show(current_);
-    sync_ui();
+    // Playing: only the playhead moves, so only it is drawn again. sync_ui()
+    // rebuilt every panel for every frame (4 Nov 2026); the stop calls it.
+    if (play_.isActive()) sync_playhead();
+    else sync_ui();
 }
 
 void MainWindow::toggle_play() {
@@ -1312,7 +1315,10 @@ void MainWindow::start_feeder(int at) {
 #ifdef RUDRA_HAVE_STILL_DECODE
     if (!shot_video_ || at >= int(frames_.size())) return;
     auto f = MovieFeeder::start(shot_video_->path, play_fps(), at, int(frames_.size()), preview_max_side_);
-    if (f) feeder_slot_->feeder = std::move(*f);
+    if (f) {
+        if ((*f)->scaled()) played_scaled_ = true;
+        feeder_slot_->feeder = std::move(*f);
+    }
     else log("playback decodes frame by frame: " + qs(f.error().message));
 #else
     (void)at;
@@ -1369,6 +1375,12 @@ void MainWindow::stop_playback() {
                 .arg(st.shown / st.seconds, 0, 'f', 1)
                 .arg(play_fps(), 0, 'f', 3)
                 .arg(st.skipped ? QStringLiteral(", %1 skipped to keep time").arg(st.skipped) : QString()));
+    // The frames ffmpeg made small while playing are not the paused path's
+    // pixels: dropped, so where it stopped (and any scrub back) decodes as before.
+    if (played_scaled_ && engine_) {
+        played_scaled_ = false;
+        engine_->set_sequence(int(frames_.size()));
+    }
     // Where it stopped: the frame again, at full size if it was a playback proxy.
     step_to(current_);
 }
@@ -1382,7 +1394,12 @@ MainWindow::PlaybackStats MainWindow::playback_stats() const {
 }
 
 void MainWindow::play_tick() {
-    if (waiting_ || frames_.empty()) return;   // the frame asked for is not here yet: held
+    if (frames_.empty()) return;
+    if (waiting_) {   // the frame asked for is not here yet: held, and stepped as soon as it is shown
+        play_tick_missed_ = true;
+        return;
+    }
+    play_tick_missed_ = false;
     const int n = int(frames_.size());
     int next = current_ + 1;
     if (realtime_) {
@@ -1461,6 +1478,17 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
         pixel = play_hold_.pixel_step();
     }
     present_frame(*f.sdr, f.fields->fields, scalars, model, header, own, pixel);
+    // A tick came while this frame was on its way: the next step now, not a
+    // whole tick later (that halved the rate whenever a frame ran a little long).
+    if (play_.isActive() && play_tick_missed_) {
+        play_tick_missed_ = false;
+        QPointer<MainWindow> self(this);
+        QMetaObject::invokeMethod(this, [self] {
+            if (self && self->play_.isActive()) self->play_tick();
+        }, Qt::QueuedConnection);
+    }
+    // Playing: the source panel and the status line every few frames, not every frame.
+    if (play_.isActive() && (play_shown_ % 6) != 1) return;
     inspect_source();
     const auto st = engine_->stats();
     frame_info_ = QStringLiteral("%1  %2/%3  ·  %4")
@@ -1499,6 +1527,12 @@ static QString timecode(int frame, double fps) {
     auto pad = [](long long v) { return QString::number(v).rightJustified(2, '0'); };
     return pad((f / (rate * 3600LL)) % 24) + ":" + pad((f / (rate * 60LL)) % 60) + ":" + pad((f / rate) % 60) + ":" +
            pad(f % rate);
+}
+
+void MainWindow::sync_playhead() {
+    const int n = int(frames_.size());
+    tc_->setText(timecode(n ? current_ : 0, 24.0));
+    scrub_->set_position(n > 1 ? double(current_) / double(n - 1) : 0.0);
 }
 
 void MainWindow::inspect_source() {
@@ -1665,6 +1699,11 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
     if (!play_.isActive())
         cur->baseline = std::make_shared<const NetworkLinearImage>(corrected_baseline(
             sdr, model.corpus_ev, baseline_curve_params(scalars, session_.composite_params(), model.corpus_ev)));
+    // Into the frame first, then one copy for the viewer (it was copied twice: 4 Nov 2026).
+    cur->sdr = std::move(sdr);
+    cur->fields = std::move(fields);
+    cur->scalars = std::move(scalars);
+    cur->model = model;
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         ViewerHold hold;
@@ -1672,14 +1711,10 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
         hold.strength = pixel.strength;
         hold.reset = pixel.reset;
         hold.frame = current_;
-        viewer_->set_frame({sdr, fields, scalars, model, hold});
+        viewer_->set_frame({cur->sdr, cur->fields, cur->scalars, model, hold});
         viewer_->set_composite(session_.composite_params());
     }
 #endif
-    cur->sdr = std::move(sdr);
-    cur->fields = std::move(fields);
-    cur->scalars = std::move(scalars);
-    cur->model = model;
     cur->header = std::move(header);
     cur->index = current_;
     frame_ready_ok_ = true;

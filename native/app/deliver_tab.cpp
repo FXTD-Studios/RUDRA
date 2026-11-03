@@ -271,7 +271,20 @@ void MainWindow::sync_deliver() {
     set_line("deliverAiPromptShadow", c.ai.prompt_shadow);
     if (auto* st = findChild<QLabel*>("deliverAiSetup"); st && ai_possible && c.ai_fill) {
         QString why;
-        st->setText(genfill_setup(&why) ? QStringLiteral("Ready: Wan2.1-VACE-1.3B + the RUDRA fill LoRA") : why);
+        // Where each part was found (4 Nov 2026); missing: Setup… > Set up automatically.
+        if (const auto s = genfill_setup(&why))
+            st->setText(QStringLiteral("Ready: Wan2.1-VACE-1.3B (%1) + %2")
+                            .arg(from_path(s->base), from_path(s->lora.filename())));
+        else
+            st->setText(why + QStringLiteral(" Setup… > Set up automatically does it for you."));
+    }
+    // The preview's buttons: the views once there is one; a setting changed since, it says so.
+    for (const char* id : {"deliverAiShowFill", "deliverAiShowMaster", "deliverAiShowMask"})
+        if (auto* b = findChild<QPushButton*>(id)) b->setEnabled(genfill_preview_.has_value() && !genfill_preview_busy_);
+    if (auto* ps = findChild<QLabel*>("deliverAiPreviewStatus");
+        ps && genfill_preview_ && !genfill_preview_busy_ && !(genfill_preview_->options == c.ai)) {
+        const QString stale = QStringLiteral(" · settings changed since: Preview AI fill again");
+        if (!ps->text().endsWith(stale)) ps->setText(ps->text() + stale);
     }
     show("deliverAnalyticOptions", !aces);
     // The Signal card says what the file is.

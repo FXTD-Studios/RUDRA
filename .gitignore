@@ -153,3 +153,6 @@ SCRUB_TRAILERS.txt
 /paper_*/
 /research/
 /docs/figures/
+
+# Ad hoc output at the repo root (3 Nov 2026)
+/result.json

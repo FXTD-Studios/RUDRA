@@ -1105,6 +1105,34 @@ QWidget* MainWindow::build_right_rail() {
                 rh->addStretch(1);
                 bv->addWidget(row);
             }
+            {   // Before the whole shot (4 Nov 2026): the frames around the playhead, filled and shown in the viewer.
+                auto* row = new QWidget(box);
+                auto* rh = new QHBoxLayout(row);
+                rh->setContentsMargins(0, 4, 0, 0);
+                auto* pv = new QPushButton("Preview AI fill", row);
+                pv->setObjectName("deliverAiPreview");
+                pv->setToolTip("Fills the 9 frames around the playhead with these settings and shows the result here, "
+                               "before you render the whole shot. The fill model stays loaded, so the next preview is quicker");
+                connect(pv, &QPushButton::clicked, this, [this] { preview_genfill(); });
+                rh->addWidget(pv);
+                for (auto [id, text, which, tip] :
+                     {std::tuple{"deliverAiShowFill", "AI fill", "fill", "The previewed frame with the AI fill"},
+                      std::tuple{"deliverAiShowMaster", "Master", "master", "The same frame without it"},
+                      std::tuple{"deliverAiShowMask", "Invented", "mask", "White where the AI fill invented the pixels"}}) {
+                    auto* b = new QPushButton(QString::fromUtf8(text), row);
+                    b->setObjectName(id);
+                    b->setCheckable(true);
+                    b->setToolTip(QString::fromUtf8(tip));
+                    const QString w = QString::fromUtf8(which);
+                    connect(b, &QPushButton::clicked, this, [this, w] { show_genfill_preview(w); });
+                    rh->addWidget(b);
+                }
+                rh->addStretch(1);
+                bv->addWidget(row);
+                auto* ps = label("", "deliverAiPreviewStatus", "small", box);
+                ps->setWordWrap(true);
+                bv->addWidget(ps);
+            }
             kcv->addWidget(box);
         }
         auto* note = label("", "deliverNote", "small", kc);
