@@ -1,0 +1,696 @@
+{
+  "schema": "rudra_model_provenance_v1",
+  "written": "2026-11-01T22:05:14",
+  "package": "RUDRA_ACES_2",
+  "manifest": {
+    "contract": "rudra_native_aces_v2_staged",
+    "contract_major": 2,
+    "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+    "g1_file": "rudra_g1.ts",
+    "g1_sha256": "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b",
+    "onnx_file": "rudra_g1.onnx",
+    "onnx_sha256": "8ba97cb0ed36f5033958e752afad95d585d50bcefefc3bc66a61b27a6618f237",
+    "onnx_tolerance": {
+      "final_max_display_code_diff": 0.10628391802310944,
+      "final_max_rel": 0.0007460270426236093,
+      "mask_exact": true,
+      "limit_display_codes": 0.25,
+      "limit_rel": 0.005
+    },
+    "parity_pass": true,
+    "release_authorized": true,
+    "model_contract": {
+      "id": "aces2_ap1_reconstruction_v9_full_context_experimental",
+      "config": "cg-config-v4.0.0_aces-v2.0_ocio-v2.5",
+      "display": "Rec.1886 Rec.709 - Display",
+      "view": "ACES 2.0 - SDR 100 nits (Rec.709)",
+      "working_space": "ACEScg",
+      "ocio_version": "2.5.2",
+      "config_sha256": "24ec81841048fc5db160a7bad882263246183385c5d49d0e86e11464917ead15",
+      "input": "Rec709 Rec1886 display RGB codes",
+      "output": "ACEScg linear",
+      "source_code_bound": 0.0019215686274509803,
+      "reconstruction_policy": "observed_clip_v1",
+      "residual": "signed_linear_shared_rgb_scale",
+      "residual_scale_floor": 0.001,
+      "radiance_clamp": false,
+      "scene_exposure_recovered": false,
+      "release_authorized": false,
+      "normalization": "pixel_rms",
+      "restoration": "local_codes",
+      "restoration_support": "source reconstruction_weight == 0",
+      "restoration_context_kernels": [
+        5,
+        17,
+        65
+      ],
+      "shadow": "analytic",
+      "shadow_support": "source reconstruction_weight > 0 and max source <= .5",
+      "shadow_output": "w*exact source inverse + (1-w)*exact inverse of bounded restored source",
+      "shadow_reconstructed": false,
+      "shadow_reason": "5-seed study 24 Oct 2026: no trained shadow branch reliably beat the analytic inverse",
+      "highlight_context": "independent_pixel_rms",
+      "highlight_support": "source reconstruction_weight>0 and max source>.5",
+      "frozen_parent_fields": true,
+      "temporal_inference": false,
+      "temporal_training": "known subpixel planar-motion residual consistency; no recurrent inference",
+      "full_context": "independent_pixel_rms",
+      "full_support": "reconstruction_weight>0 and min source>=254.5/255",
+      "full_transition": "hard source support; boundary and temporal qualification required"
+    },
+    "clipped_smoothing": {
+      "name": "hybrid64",
+      "sigma": 64.0,
+      "ramp": 1.0,
+      "start": 0.0,
+      "mode": "hybrid",
+      "erode": "cross 3x3 x2, border 0",
+      "components": 8,
+      "gaussian": "k=int(4*sigma)|1, BORDER_REFLECT_101"
+    },
+    "appearance_constraint": {
+      "max_display_error_codes": 1,
+      "include_fully_clipped": true,
+      "method": "halving backtrack toward baseline",
+      "forbid_new_negative_y": true
+    }
+  },
+  "manifest_sha256": "aade83bb28cbd5607226484daf9f331dc9a9a21ced77be236ba5d777c96c47da",
+  "files": [
+    {
+      "file": "manifest.json",
+      "bytes": 3934,
+      "sha256": "aade83bb28cbd5607226484daf9f331dc9a9a21ced77be236ba5d777c96c47da",
+      "declared_sha256": null,
+      "matches": null
+    },
+    {
+      "file": "parity.json",
+      "bytes": 1408,
+      "sha256": "ef1295d85c93000df4c44be7615830e8d23d3d107b8a1a17f8c66b9e454682a1",
+      "declared_sha256": null,
+      "matches": null
+    },
+    {
+      "file": "rudra_g1.onnx",
+      "bytes": 1157294,
+      "sha256": "8ba97cb0ed36f5033958e752afad95d585d50bcefefc3bc66a61b27a6618f237",
+      "declared_sha256": "8ba97cb0ed36f5033958e752afad95d585d50bcefefc3bc66a61b27a6618f237",
+      "matches": true
+    },
+    {
+      "file": "rudra_g1.ts",
+      "bytes": 1037772,
+      "sha256": "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b",
+      "declared_sha256": "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b",
+      "matches": true
+    }
+  ],
+  "files_match_manifest": true,
+  "reports_searched": [
+    "reports",
+    "G:\\rudra_training"
+  ],
+  "reports_naming_this_checkpoint": [
+    {
+      "path": "G:\\rudra_training\\partial_pcgrad_duration6400_retry1_20261025\\report.json",
+      "sha256": "9cfb0d3b6187ff9e771a9a7e2e76869d633061cb61cd465340f62edb3d05b1b2",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-25T18:04:18",
+      "verdict_fields": {
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\partial_pcgrad_duration6400_retry1_20261025\\paired_development\\new_motion\\candidate_raw_report.json",
+      "sha256": "40c9ddd751d7d1f3dda09a791501100b455da2d2724f7f632d4156c3b7a511fa",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-25T18:06:31",
+      "verdict_fields": {
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\partial_pcgrad_duration6400_retry1_20261025\\paired_development\\new_motion\\candidate_report.json",
+      "sha256": "4cdd2017d7cefe1fb0f53ca78346d2917d565ad440b2565ff40fbe54bac3369f",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-25T18:06:31",
+      "verdict_fields": {
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\partial_pcgrad_duration6400_retry1_20261025\\paired_development\\old_coherent\\candidate_raw_report.json",
+      "sha256": "fa77254637db92bc452e93701317cc4d2d9584adb1a1c25b776eb5cd0672aded",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-25T18:08:26",
+      "verdict_fields": {
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\partial_pcgrad_duration6400_retry1_20261025\\paired_development\\old_coherent\\candidate_report.json",
+      "sha256": "431b011d1453c20a182294b7bf13ce381d87288a0ef59419681b4d5c3117d7b7",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-25T18:08:26",
+      "verdict_fields": {
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\partial_pcgrad_duration6400_retry1_20261025\\paired_development\\legacy_natural\\candidate_raw_report.json",
+      "sha256": "32bd278fe2e626fb4889e470ec8f1dc2e8dee6301e9b94b0f10acf9290b3739a",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-25T18:10:09",
+      "verdict_fields": {
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\partial_pcgrad_duration6400_retry1_20261025\\paired_development\\legacy_natural\\candidate_report.json",
+      "sha256": "9a9dae4e76824cdc25ac84393ee007636c7b25f5142a14eafffc8ef9c6c946cf",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-25T18:10:09",
+      "verdict_fields": {
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\partial_pcgrad_duration6400_retry1_20261025\\hunyuan48.json",
+      "sha256": "43536ffab4fb6c9462eaa0d02060d0d2c061419222eff484467dcd94a3334286",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-25T18:15:01",
+      "verdict_fields": {
+        "numerical_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "registration_sha256": "6bcbfa4f52db11beb77fc4ccff6c129b0f5490c0eab0e86fec3ef924cfc5f1f5",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\partial_pcgrad_duration6400_retry1_20261025\\preservation.json",
+      "sha256": "86f946f50efe082232e39b91ab8a022174a74e9539d27089c174dca5b531a774",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-25T18:16:15",
+      "verdict_fields": {
+        "candidate_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\partial_duration6400_retry1_training_fit_20261025\\registration.json",
+      "sha256": "25af263088714e19c2d172e196205c2a4645838f1ff4dccd82ca5f9baba8c4a5",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-25T18:16:19",
+      "verdict_fields": {
+        "checkpoints": {
+          "G:\\rudra_training\\aces_guarded_projected600_20261024\\step600.pt": "e83b997c315bf5cc26d3df0e6fa2ad357828feebc0d78384b378057ed4349709",
+          "G:\\rudra_training\\partial_pcgrad_deterministic_control400_20261025\\step400.pt": "2aea25ef951231fa6cd5975bcecdfdb77cbf7a0a7f23f79c74bcde5d672aa5ea",
+          "G:\\rudra_training\\partial_pcgrad_cap400_20261025\\step400.pt": "6deb3988f2dd8c80532cea0931db1c24c3e6919c6d93dac8a160b2e2e3804b4c",
+          "G:\\rudra_training\\partial_pcgrad_direct400_20261025\\step400.pt": "c05c734ebe82934ea7ca932273537f03e800ca9b25e1f044bbe3d9ff1f1f2b46",
+          "G:\\rudra_training\\partial_pcgrad_duration6400_retry1_20261025\\step6400.pt": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+        },
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\claude_d6400_plus3x16_1600_20261025\\preservation.json",
+      "sha256": "2ddf413c53aa8dd63b70e9f565999eae4c4ad28a40a95e6463ae13b29ace5127",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-26T00:06:23",
+      "verdict_fields": {
+        "candidate_sha256": "741ad7418acd2175cd55e0d8e402580c95665279bae2bc68300acf99a5d819ef",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\claude_release_candidate_20261026\\hunyuan48_d6400_guard.json",
+      "sha256": "549aabe217ef2309018a3233342d505230f93a42290b85b230210dc2c10fa865",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-26T00:45:24",
+      "verdict_fields": {
+        "numerical_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "registration_sha256": "9c642e09e90310c398e074c106c722755b3d3dd5077c952e294fd7bc9df99f76",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\claude_release_candidate_20261026\\fresh_fxtd_grade_20261026\\evaluation.json",
+      "sha256": "abdfdab5fb184cf736a198d976d8b93a6905af956db6e3697a6d49a71927e1cc",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-26T00:45:24",
+      "verdict_fields": {
+        "gates": {
+          "grade_-3": true,
+          "grade_0": true,
+          "grade_+3": true,
+          "highlight_H": true,
+          "no_new_negativeY": true,
+          "appearance": true
+        },
+        "numerical_pass": true,
+        "candidates": {
+          "d6400_guard": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+          "plus3x16": "741ad7418acd2175cd55e0d8e402580c95665279bae2bc68300acf99a5d819ef"
+        },
+        "registration_sha256": "9e84a94ad47a97b1280ec0f7081a816f27d68f7299f9eacc309f62fb9624c218",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\claude_release_candidate_20261026\\rudra_aces_v2_d6400_guard_20261026\\manifest.json",
+      "sha256": "6788617e5eb1dc9a2579e6dbf4c195d863d2da4d1350747e33512e6179a51738",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-26T00:45:24",
+      "verdict_fields": {
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "parity_pass": true,
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-26_0101\\master\\provenance.json",
+      "sha256": "c9127a174eb0061adbcc434724d27441841a0fd0a1054b53e2237fdd18e1a351",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-26T01:03:17",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-26_0101\\master_directml\\provenance.json",
+      "sha256": "9135e5632afdd9a6445922252f4114a57fd929d175ebbd128212f1ca4cd6625e",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-26T01:03:26",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-26_0101\\python_master\\report.json",
+      "sha256": "2f3ab3bf7db39b7ae0fc17823ddeb239805e88b8540f237479c6cb55577f4e89",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-26T01:03:44",
+      "verdict_fields": null
+    },
+    {
+      "path": "G:\\rudra_training\\claude_release_candidate_20261026\\fresh_fxtd_grade_v2_20261026\\claude_fresh_fxtd_grade_v2_20261026.json",
+      "sha256": "14ad2c7a00b1e9d1105ba1ec78fc7aa98e79466549f688637836bf85527bc0e9",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-26T14:16:11",
+      "verdict_fields": {
+        "candidates": {
+          "primary": "G:/rudra_training/partial_pcgrad_duration6400_retry1_20261025/step6400.pt (sha f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e) with hybrid64 smoothing, constraint include_fully_clipped, forbid_new_negative_y",
+          "secondary_report_only": [
+            "G:/rudra_training/claude_d6400_plus3x16_1600_20261025/step1600.pt (same pipeline)"
+          ]
+        },
+        "gates_primary": {
+          "grade_-3": "mean model <= mean analytic",
+          "grade_0": "mean model <= mean analytic",
+          "grade_+3": "mean model <= mean analytic",
+          "highlight_H": "mean model <= mean analytic",
+          "no_new_negativeY": "0 pixels",
+          "appearance": "0 remaining display errors > 1 code"
+        },
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "G:\\rudra_training\\claude_release_candidate_20261026\\fresh_fxtd_grade_v2_20261026\\evaluation.json",
+      "sha256": "a44139986c52b9c5e4fafdf407499d64b5d9e89abdc26dcc1da7fab6df80236c",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-26T14:16:11",
+      "verdict_fields": {
+        "gates": {
+          "grade_-3": true,
+          "grade_0": false,
+          "grade_+3": true,
+          "highlight_H": true,
+          "no_new_negativeY": true,
+          "appearance": true
+        },
+        "numerical_pass": false,
+        "candidates": {
+          "d6400_guard": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+        },
+        "registration_sha256": "14ad2c7a00b1e9d1105ba1ec78fc7aa98e79466549f688637836bf85527bc0e9",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0056\\master\\provenance.json",
+      "sha256": "07bbd2fdac0ab2060f4746c369872863bb71ea6dbd9b7856c98bff09aa52b99c",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T01:00:02",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0056\\master_directml\\provenance.json",
+      "sha256": "bf2c50ef2b84087e5610826da5e5e608d495c209598e46ef3e27b6c0128b3222",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T01:00:19",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0056\\master_video\\provenance.json",
+      "sha256": "202ba2772adc1e2125ca58eaaa5b68433c2ff23923731ce35737f5d87cd9f625",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T01:00:33",
+      "verdict_fields": {
+        "appearance_constraint_pass": false,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0119\\master\\provenance.json",
+      "sha256": "19eb6969346c0ca54f3c8576d77c6b742b84c2cf11d918360c249762932524e2",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T01:21:36",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0119\\master_directml\\provenance.json",
+      "sha256": "6a289e55daf75947df6536bc01ad228f772bc1212b333de83b6a1cabb29e32ab",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T01:21:44",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0119\\master_video\\provenance.json",
+      "sha256": "0fae28d347012e8140e6c71a77984e9342e72912c66645f535840b0c2ec66da8",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T01:21:51",
+      "verdict_fields": {
+        "appearance_constraint_pass": false,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0129\\master\\provenance.json",
+      "sha256": "9e4cf784a1f84d27428c944822de4fe77a8950eefdc5c3792e6213a0be183ab0",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T01:32:34",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0129\\master_directml\\provenance.json",
+      "sha256": "5efa70a61b65e6be8c805974af49eb01fa5a63665b8cae142344525424a14e8b",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T01:32:43",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0129\\master_video\\provenance.json",
+      "sha256": "0665c000de266a7a764eb3c65adc108b771d9453da25d3e376b7af3ac928694f",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T01:32:49",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0129\\python_master\\report.json",
+      "sha256": "54afa8ed8c5866a1da5d95b6f6c46c487e28355f3f7ed849308797f4dce256c4",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-27T01:33:08",
+      "verdict_fields": null
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0816\\master\\provenance.json",
+      "sha256": "c05e340246d9b966ceef1314b1255f1cd1a9b525b1ff6b285796a71838dc36bd",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T08:20:00",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0816\\master_directml\\provenance.json",
+      "sha256": "be8db358a0d048d90bcdb5325cf3c1cca7e1693de6cf738fa5a9e85be3935cbc",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T08:20:16",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0816\\master_video\\provenance.json",
+      "sha256": "a5542e6c1495cce91e6a7cacfc3ba6efd2f228f865b8bd14b595316c1ba26233",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T08:20:28",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0816\\master_video_logc4\\provenance.json",
+      "sha256": "44d76c4c70ab568a27fdc4cd30154fb989f250c08956ebfae23d8b59a605f292",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T08:20:42",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_0816\\python_master\\report.json",
+      "sha256": "e64d8a87eab36ff4e796358fe7db5ad4bae096b929382ee4fcd2017236b3a6d6",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-27T08:21:20",
+      "verdict_fields": null
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_1927\\master\\provenance.json",
+      "sha256": "257a78db35e36826f0157c26e21cd0dbab5861ad6faa88308ef7d95b146db939",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T19:30:07",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_1927\\master_directml\\provenance.json",
+      "sha256": "162c461da56ac92c5bc83f87b317129e2e7edf551ab88fa71f904e0aa56df649",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T19:30:16",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_1927\\master_video\\provenance.json",
+      "sha256": "7e7151a7009e17055c8c16ddd577ed4f136a4c1c719178088da6254b71dd9398",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T19:30:23",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_1927\\master_video_logc4\\provenance.json",
+      "sha256": "d5baf62fe275372afa1cb778976d66ad29e20a536d147c4469c821889db203d7",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T19:30:39",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_1927\\deliver_mov16_pq\\provenance.json",
+      "sha256": "b7cc3f0b6da96ebda35590b2351b194ece560b62eb621fe6f91126f44d200f08",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T19:30:53",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_1927\\deliver_still_half_ap0\\provenance.json",
+      "sha256": "a0a257c518c0a0202feb9855328c35a0a7264fbe71d4e28a84870c6c733ff907",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T19:30:55",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_1927\\deliver_dpx_pq\\provenance.json",
+      "sha256": "47baaabcd517acd9336dfc8206f8e8e255dad6868481a6110f4d0e61fb504d6f",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
+      ],
+      "modified": "2026-10-27T19:31:11",
+      "verdict_fields": {
+        "appearance_constraint_pass": true,
+        "checkpoint_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
+        "release_authorized": false
+      }
+    },
+    {
+      "path": "reports\\aces_v2_2026-10-27_1927\\python_master\\report.json",
+      "sha256": "5b1a0dfd4a49e3f3963072729f859f9407efbb7119cac6485a63f0c5a099e6d8",
+      "names": [
+        "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
+      ],
+      "modified": "2026-10-27T19:31:49",
+      "verdict_fields": null
+    }
+  ],
+  "evidence": "found",
+  "note": "release_authorized is not written by tools/export_native_v2.py; a true value needs a gate report below that names this checkpoint. Without one, label the model preview."
+}
