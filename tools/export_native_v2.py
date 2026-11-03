@@ -68,19 +68,29 @@ def staged_compose(source, baseline, restored, hl, full, weight):
     return out, torch.where(high, weight, torch.zeros_like(weight))
 
 
-def staged_reference(g1, source_hwc, smoothing='hybrid64', constrain=True, forbid_new_negative_y=False):
-    """Full staged pipeline on one HxWx3 frame -> (acescg HxWx3, mask HxW, pre_smoothing HxWx3)."""
+def staged_reference(g1, source_hwc, smoothing='hybrid64', constrain=True, forbid_new_negative_y=False, ceiling=True):
+    """Full staged pipeline on one HxWx3 frame -> (acescg HxWx3, mask HxW, pre_smoothing HxWx3).
+    ceiling (3 Nov 2026): the native engine's highlight ceiling (training/aces_ceiling.py) on the
+    baseline and the restored source after their inverses and on the master before the constraint."""
+    from training.aces_ceiling import cap_luminance_np, cap_luminance_torch, inverse_white_luma
+    limit = inverse_white_luma() if ceiling else None
     x = torch.from_numpy(np.ascontiguousarray(source_hwc, np.float32)).permute(2, 0, 1)[None]
     with torch.inference_mode():
         baseline = inverse_aces2_reference(x)                       # stage 1 (OCIO)
+        if limit is not None:
+            baseline, _ = cap_luminance_torch(baseline, limit)
         restored_source, hl, full, weight = g1(x, baseline)         # stage 2
         restored = inverse_aces2_reference(restored_source)          # stage 3 (OCIO)
+        if limit is not None:
+            restored, _ = cap_luminance_torch(restored, limit)
         acescg, mask = staged_compose(x, baseline, restored, hl, full, weight)  # stage 4
     pre = acescg[0].permute(1, 2, 0).numpy().astype(np.float32)
     out = pre
     if smoothing != 'none':                                          # stage 5
         from training.aces_clipped_smoothing import smooth_clipped
         out, _ = smooth_clipped(out, source_hwc, **CLIPPED_SMOOTHING[smoothing])
+    if limit is not None:                                            # the master, before the constraint
+        out, _ = cap_luminance_np(np.asarray(out, np.float32), limit)
     if constrain:                                                    # stage 6 (OCIO forward)
         from training.aces_colour_backtrack import constrain_colour
         out, _ = constrain_colour(source_hwc, out, baseline[0].permute(1, 2, 0).numpy(), weight[0, 0].numpy(),
@@ -172,7 +182,8 @@ def main():
             base = inverse_aces2_reference(x)
             e = g1(x, base); t = loaded(x, base)
         g1_err = max(float((p - q).abs().max()) for p, q in zip(e, t))
-        _, _, pre = staged_reference(g1, src, smoothing='none', constrain=False)
+        # Against the unmodified model: the ceiling off (it is not part of model(x)).
+        _, _, pre = staged_reference(g1, src, smoothing='none', constrain=False, ceiling=False)
         staged_err = float(np.abs(pre - ref).max())
         staged_rel = float((np.abs(pre - ref) / (np.abs(ref) + 1e-3)).max())
         parity.append({'probe': i, 'shape': list(src.shape), 'torchscript_vs_eager_max_abs': g1_err,
