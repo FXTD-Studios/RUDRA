@@ -380,11 +380,46 @@ PlanarBuffer constrain_colour_v2(const PlanarBuffer& source, const PlanarBuffer&
             }
         if (!idx.empty()) {
             display_error(idx, err);
-            for (float e : err) s.remaining_display_errors += e > 1.0f;
+            std::vector<std::size_t> failing;
+            for (std::size_t j = 0; j < idx.size(); ++j)
+                if (err[j] > 1.0f) failing.push_back(idx[j]);
+            if (!failing.empty()) {   // the view's own limit, or the reconstruction's
+                std::vector<float> rgb(failing.size() * 3);
+                for (std::size_t j = 0; j < failing.size(); ++j)
+                    for (int c = 0; c < 3; ++c) rgb[j * 3 + std::size_t(c)] = baseline.plane(c)[failing[j]];
+                view.forward(rgb.data(), failing.size());
+                for (std::size_t j = 0; j < failing.size(); ++j) {
+                    float e = 0.0f;
+                    for (int c = 0; c < 3; ++c)
+                        e = std::max(e, std::abs(rgb[j * 3 + std::size_t(c)] - source.plane(c)[failing[j]]) * 255.0f);
+                    if (e > 1.0f) ++s.inverse_limit_pixels;
+                    else ++s.remaining_display_errors;
+                }
+            }
         }
         *stats = s;
     }
     return result;
+}
+
+float inverse_white_luma(const AcesView& view) {
+    float w[3] = {1.0f, 1.0f, 1.0f};
+    view.inverse(w, 1);
+    return float(kLumaAp1[0] * w[0] + kLumaAp1[1] * w[1] + kLumaAp1[2] * w[2]);
+}
+
+std::size_t cap_luminance(PlanarBuffer& acescg, float luma_max) {
+    if (!(luma_max > 0.0f)) return 0;
+    std::size_t n = 0;
+    for (std::size_t i = 0; i < acescg.plane_size(); ++i) {
+        const float y = float(kLumaAp1[0] * acescg.plane(0)[i] + kLumaAp1[1] * acescg.plane(1)[i] + kLumaAp1[2] * acescg.plane(2)[i]);
+        if (y > luma_max) {
+            const float k = luma_max / y;
+            for (int c = 0; c < 3; ++c) acescg.plane(c)[i] *= k;
+            ++n;
+        }
+    }
+    return n;
 }
 
 float user_band_weight(float top, const UserBand& band) noexcept {
@@ -449,13 +484,20 @@ Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, 
         return ms;
     };
     FrameResult out;
-    const PlanarBuffer baseline = view_inverse(view, source);
+    // The highlight ceiling (3 Nov 2026): nothing brighter than the inverse of display
+    // white. Near-white tinted codes (253,255,255) invert up to 7x past it (09V: 969x,
+    // about 197,000 nits); the master and the baseline the constraint falls back to both
+    // stop there, hue kept.
+    const float ceiling = inverse_white_luma(view);
+    PlanarBuffer baseline = view_inverse(view, source);
+    cap_luminance(baseline, ceiling);
     out.ms.inverse = lap();
     auto net = g1(source, baseline);
     if (!net) return net.error();
     const G1Output& g = net.value();
     out.ms.network = lap();
-    const PlanarBuffer restored = view_inverse(view, g.restored_source);
+    PlanarBuffer restored = view_inverse(view, g.restored_source);
+    cap_luminance(restored, ceiling);
     out.ms.inverse += lap();
     Composed composed = compose_v2(source, baseline, restored, g);
     out.ms.compose = lap();
@@ -472,6 +514,7 @@ Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, 
             out.mask.plane(0)[i] *= user_band_weight(top, band);
         }
     }
+    out.ceiling_pixels = cap_luminance(out.acescg, ceiling);
     out.ms.band = lap();
     if (constrain) out.acescg = constrain_colour_v2(source, out.acescg, baseline, g.weight, view, true, &out.constraint,
                                                     forbid_new_negative_y);

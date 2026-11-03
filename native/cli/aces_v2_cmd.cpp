@@ -216,9 +216,12 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
                                  {"constraint_changed", r->constraint.changed_pixels},
                                  {"constraint_baseline_fallback", r->constraint.baseline_fallback_pixels},
                                  {"remaining_display_errors", r->constraint.remaining_display_errors},
+                                 {"aces_inverse_limit_pixels", r->constraint.inverse_limit_pixels},
+                                 {"highlight_ceiling_pixels", r->ceiling_pixels},
                                  {"new_negative_luminance", r->constraint.new_negative_luminance}});
-        std::printf("%s -> %s  %.0f ms  remaining_display_errors=%zu\n", f->source.c_str(),
-                    (opts->writes_exr() ? exr.filename().string() : stem).c_str(), ms, r->constraint.remaining_display_errors);
+        std::printf("%s -> %s  %.0f ms  remaining_display_errors=%zu  aces_inverse_limit=%zu  ceiling=%zu\n", f->source.c_str(),
+                    (opts->writes_exr() ? exr.filename().string() : stem).c_str(), ms, r->constraint.remaining_display_errors,
+                    r->constraint.inverse_limit_pixels, r->ceiling_pixels);
         std::fflush(stdout);   // one line per frame reaches a pipe (the app's progress) as it happens
     }
     if (logw) {
