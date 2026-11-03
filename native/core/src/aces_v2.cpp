@@ -6,6 +6,9 @@
 #include "rudra/core/aces_v2.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <thread>
 #include <cmath>
 #include <cstdint>
 #include <numeric>
@@ -36,6 +39,26 @@ std::vector<double> gaussian_kernel(int ksize, double sigma) {
     }
     for (auto& v : k) v *= 1.0 / sum;
     return k;
+}
+
+// f(y) for y in [0, h) on every core, rows split in contiguous blocks (3 Nov 2026).
+// RUDRA_SMOOTH_THREADS=1 forces one thread (the bit-exactness test compares the two).
+template <class F>
+void parallel_rows(int h, F&& f) {
+    unsigned t = std::max(1u, std::thread::hardware_concurrency());
+    if (const char* e = std::getenv("RUDRA_SMOOTH_THREADS")) t = std::max(1, std::atoi(e));
+    t = std::min<unsigned>(t, unsigned(std::max(1, h / 8)));
+    if (t <= 1) {
+        for (int y = 0; y < h; ++y) f(y);
+        return;
+    }
+    std::vector<std::thread> pool;
+    const int step = (h + int(t) - 1) / int(t);
+    for (int y0 = 0; y0 < h; y0 += step)
+        pool.emplace_back([&f, y0, y1 = std::min(h, y0 + step)] {
+            for (int y = y0; y < y1; ++y) f(y);
+        });
+    for (auto& th : pool) th.join();
 }
 
 // cv2.erode with a 3x3 cross, border constant 0, applied `iterations` times.
@@ -208,10 +231,12 @@ PlanarBuffer smooth_clipped_hybrid(const PlanarBuffer& prediction, const PlanarB
                 x1 = std::max(x1, x);
             }
     const int bw = x1 - x0 + 1;
-    // Horizontal pass for every row (zero rows skipped), columns x0..x1.
+    // Horizontal pass for every row (zero rows skipped), columns x0..x1. Rows run on
+    // every core (3 Nov 2026): each output is written by one row only and summed in
+    // the same order, so the result is bit-identical to one thread.
     std::vector<double> hn(static_cast<std::size_t>(h) * bw, 0.0), hd(hn.size(), 0.0);
-    for (int y = 0; y < h; ++y) {
-        if (!row_has[y]) continue;
+    parallel_rows(h, [&](int y) {
+        if (!row_has[y]) return;
         const std::size_t base = static_cast<std::size_t>(y) * w;
         for (int x = x0; x <= x1; ++x) {
             double sn = 0.0, sd = 0.0;
@@ -225,9 +250,9 @@ PlanarBuffer smooth_clipped_hybrid(const PlanarBuffer& prediction, const PlanarB
             hn[static_cast<std::size_t>(y) * bw + (x - x0)] = sn;
             hd[static_cast<std::size_t>(y) * bw + (x - x0)] = sd;
         }
-    }
+    });
     std::vector<double> ls = ly;
-    for (int y = 0; y < h; ++y)
+    parallel_rows(h, [&](int y) {
         for (int x = x0; x <= x1; ++x) {
             const std::size_t i = static_cast<std::size_t>(y) * w + x;
             if (!ok[i]) continue;
@@ -240,6 +265,7 @@ PlanarBuffer smooth_clipped_hybrid(const PlanarBuffer& prediction, const PlanarB
             }
             ls[i] = sd > 1e-6 ? sn / std::max(sd, 1e-6) : ly[i];
         }
+    });
 
     // Flat log luminance per connected component of the eroded interior.
     auto interior = erode_cross(full, h, w, 2);
@@ -414,16 +440,29 @@ Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, 
         if (!std::isfinite(v) || v < 0.0f || v > 1.0f)
             return make_error(ErrorCode::InvalidArgument, "Frame codes must be finite and within 0..1.",
                               "aces_v2::run_frame source outside [0,1]");
+    using clock = std::chrono::steady_clock;
+    auto t = clock::now();
+    auto lap = [&t] {
+        const auto now = clock::now();
+        const double ms = std::chrono::duration<double, std::milli>(now - t).count();
+        t = now;
+        return ms;
+    };
+    FrameResult out;
     const PlanarBuffer baseline = view_inverse(view, source);
+    out.ms.inverse = lap();
     auto net = g1(source, baseline);
     if (!net) return net.error();
     const G1Output& g = net.value();
+    out.ms.network = lap();
     const PlanarBuffer restored = view_inverse(view, g.restored_source);
+    out.ms.inverse += lap();
     Composed composed = compose_v2(source, baseline, restored, g);
-    FrameResult out;
+    out.ms.compose = lap();
     out.mask = std::move(composed.mask);
     out.acescg = smoothing ? smooth_clipped_hybrid(composed.acescg, source, 64.0, &out.smoothing)
                            : std::move(composed.acescg);
+    out.ms.smoothing = lap();
     // Stage 5b: the user's bands; before the constraint, which still holds the 1-code round trip.
     if (band.on) {
         out.acescg = apply_user_band(out.acescg, baseline, source, band, &out.band);
@@ -433,8 +472,10 @@ Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, 
             out.mask.plane(0)[i] *= user_band_weight(top, band);
         }
     }
+    out.ms.band = lap();
     if (constrain) out.acescg = constrain_colour_v2(source, out.acescg, baseline, g.weight, view, true, &out.constraint,
                                                     forbid_new_negative_y);
+    out.ms.constraint = lap();
     for (float v : out.acescg.span())
         if (!std::isfinite(v)) return make_error(ErrorCode::BackendError, "The reconstruction produced a non-finite value.");
     return out;

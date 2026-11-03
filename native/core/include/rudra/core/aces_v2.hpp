@@ -114,6 +114,10 @@ struct FrameResult {
     SmoothingStats smoothing;
     ConstraintStats constraint;
     BandStats band;        // all zero when the band is off
+    // Wall time of each stage, ms (3 Nov 2026): where a frame's time goes.
+    struct StageMs {
+        double inverse = 0, network = 0, compose = 0, smoothing = 0, band = 0, constraint = 0;
+    } ms;
 };
 // Stages 1-7 for one frame of display codes in [0,1].
 Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, const G1Fn& g1,
