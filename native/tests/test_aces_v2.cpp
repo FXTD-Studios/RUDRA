@@ -406,3 +406,84 @@ TEST(AcesV2Smoothing, ThreadedIsBitIdenticalToOneThread) {
     for (std::size_t i = 0; i < one.plane_size(); ++i) changed += one.plane(0)[i] != pred.plane(0)[i];
     EXPECT_GT(changed, 1000u);
 }
+
+// ---- the highlight ceiling and the view's own limit (3 Nov 2026, 09V) ----
+namespace {
+// As ACES 2.0 near display white: a slightly tinted near-white code inverts far past
+// pure white (09V: 253,255,255 -> 296x, 255,255,253 -> 969x, white -> 128x), and the
+// forward view sends such values back to white, so the round trip is codes off.
+class NearWhiteView final : public AcesView {
+public:
+    void forward(float* rgb, std::size_t n) const override {
+        for (std::size_t p = 0; p < n; ++p) {
+            float* c = rgb + p * 3;
+            // ACES 2.0 desaturates very bright light to display white: past ~50 in every
+            // channel, a slight tint is gone (253,255,255 cannot come back).
+            const bool white = std::min({c[0], c[1], c[2]}) > 50.0f;
+            for (int k = 0; k < 3; ++k) {
+                const float x = std::max(c[k], 0.0f);
+                c[k] = white ? 1.0f : x / (1.0f + x);
+            }
+        }
+    }
+    void inverse(float* rgb, std::size_t n) const override {
+        for (std::size_t p = 0; p < n; ++p) {
+            float* c = rgb + p * 3;
+            const float mx = std::max({c[0], c[1], c[2]}), mn = std::min({c[0], c[1], c[2]});
+            const bool tinted_white = mx >= 1.0f && mn < 1.0f && mn > 0.97f;
+            for (int k = 0; k < 3; ++k) {
+                const float y = std::min(c[k], 0.999f);
+                c[k] = y / (1.0f - y) * (tinted_white ? 7.0f : 1.0f);
+            }
+        }
+    }
+    std::string identity() const override { return "near-white"; }
+};
+}  // namespace
+
+TEST(AcesV2Ceiling, NearWhiteCodesStopAtTheInverseOfWhite) {
+    NearWhiteView v;
+    PlanarBuffer s = test_frame();
+    for (int y = 30; y < 34; ++y)
+        for (int x = 30; x < 40; ++x) {
+            s.at(0, y, x) = 253.0f / 255.0f;   // the 09V doorway: 253, 255, 255
+            s.at(1, y, x) = 1.0f;
+            s.at(2, y, x) = 1.0f;
+        }
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    auto r = run_frame(s, v, g1, true, true, true);
+    ASSERT_TRUE(r.ok());
+    const float ceiling = inverse_white_luma(v);
+    float peak = 0.0f;
+    for (std::size_t i = 0; i < r->acescg.plane_size(); ++i)
+        peak = std::max(peak, float(kLumaAp1[0] * r->acescg.plane(0)[i] + kLumaAp1[1] * r->acescg.plane(1)[i] +
+                                    kLumaAp1[2] * r->acescg.plane(2)[i]));
+    EXPECT_LE(peak, ceiling * 1.0001f);   // was ~7x past it
+    EXPECT_GT(r->ceiling_pixels, 0u);
+    // The tinted near-white pixels cannot display 253 exactly at any sane value: the
+    // view's limit, not the reconstruction's.
+    EXPECT_GT(r->constraint.inverse_limit_pixels, 0u);
+    EXPECT_EQ(r->constraint.remaining_display_errors, 0u);
+}
+
+TEST(AcesV2Ceiling, OnlyPixelsAboveTheCeilingChange) {
+    MockView v;
+    PlanarBuffer s = test_frame();
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    auto r = run_frame(s, v, g1, true, true, true);
+    ASSERT_TRUE(r.ok());
+    const float ceiling = inverse_white_luma(v);
+    const PlanarBuffer base = view_inverse(v, s);
+    for (std::size_t i = 0; i < r->acescg.plane_size(); ++i) {
+        const double y = kLumaAp1[0] * r->acescg.plane(0)[i] + kLumaAp1[1] * r->acescg.plane(1)[i] + kLumaAp1[2] * r->acescg.plane(2)[i];
+        EXPECT_LE(y, ceiling * 1.0001);
+    }
+    for (int c = 0; c < 3; ++c) EXPECT_EQ(r->acescg.at(c, 30, 5), base.at(c, 30, 5));   // the grey: untouched
+    EXPECT_EQ(r->constraint.inverse_limit_pixels, 0u);   // this view round-trips everywhere
+    PlanarBuffer b(3, 1, 3);
+    for (int c = 0; c < 3; ++c) b.at(c, 0, 0) = 10.0f, b.at(c, 0, 1) = 1000.0f, b.at(c, 0, 2) = -5.0f;
+    EXPECT_EQ(cap_luminance(b, 100.0f), 1u);
+    EXPECT_NEAR(kLumaAp1[0] * b.at(0, 0, 1) + kLumaAp1[1] * b.at(1, 0, 1) + kLumaAp1[2] * b.at(2, 0, 1), 100.0, 1e-3);
+    EXPECT_EQ(b.at(0, 0, 0), 10.0f);
+    EXPECT_EQ(b.at(0, 0, 2), -5.0f);
+}

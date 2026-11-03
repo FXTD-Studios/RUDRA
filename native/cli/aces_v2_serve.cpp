@@ -375,6 +375,7 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                       {"stage_ms", {{"inverse", r->ms.inverse}, {"network", r->ms.network}, {"compose", r->ms.compose},
                                     {"smoothing", r->ms.smoothing}, {"band", r->ms.band}, {"constraint", r->ms.constraint}}},
                       {"fully_clipped_pixels", r->smoothing.full_pixels}, {"remaining_display_errors", r->constraint.remaining_display_errors},
+                      {"aces_inverse_limit_pixels", r->constraint.inverse_limit_pixels}, {"highlight_ceiling_pixels", r->ceiling_pixels},
                       {"new_negative_luminance", r->constraint.new_negative_luminance}, {"luminance_guard", guard}});
                 if (req.value("keep", true)) kept = std::move(k);
             } else if (op == "probe") {
@@ -549,6 +550,8 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                                         {"constraint_changed", r->constraint.changed_pixels},
                                         {"constraint_baseline_fallback", r->constraint.baseline_fallback_pixels},
                                         {"remaining_display_errors", r->constraint.remaining_display_errors},
+                                        {"aces_inverse_limit_pixels", r->constraint.inverse_limit_pixels},
+                                        {"highlight_ceiling_pixels", r->ceiling_pixels},
                                         {"new_negative_luminance", r->constraint.new_negative_luminance}};
                     run["frames"].push_back(frame);
                     send({{"id", id}, {"progress", {{"index", i + 1}, {"total", total}, {"source", f->source},

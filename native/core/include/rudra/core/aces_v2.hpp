@@ -71,6 +71,11 @@ PlanarBuffer smooth_clipped_hybrid(const PlanarBuffer& prediction, const PlanarB
 struct ConstraintStats {
     std::size_t support_pixels = 0, changed_pixels = 0, baseline_fallback_pixels = 0, remaining_display_errors = 0;
     std::size_t new_negative_luminance = 0;  // support pixels with Y<0 where the baseline has Y>=0
+    // 3 Nov 2026: of the pixels still more than 1 code off, those where the plain ACES
+    // inverse ITSELF is more than 1 code off (near-white tinted codes such as 253,255,255:
+    // ACES 2.0 sends them to white, so no sane scene value displays them exactly). They
+    // are the view's limit, not the reconstruction's, and are not in remaining_display_errors.
+    std::size_t inverse_limit_pixels = 0;
 };
 // Stage 6 (aces_colour_backtrack.py::constrain_colour, tolerance 1 code): on highlight
 // support, halve toward the baseline until the displayed codes are within 1 code of the
@@ -101,6 +106,12 @@ struct BandStats {
     std::size_t ramp_pixels = 0;      // 0 < weight < 1
     std::size_t analytic_pixels = 0;  // weight 0: the exact analytic inverse
 };
+// The AP1 luminance of the view's inverse of display white (1, 1, 1): RUDRA's highlight
+// ceiling (128 in ACEScg for ACES 2.0 SDR 100 nits, about 26,000 nits at 203 per unit).
+float inverse_white_luma(const AcesView& view);
+// Scale every pixel brighter than `luma_max` (AP1 luminance) down to it, hue kept.
+std::size_t cap_luminance(PlanarBuffer& acescg, float luma_max);
+
 // The band's weight for one pixel's brightest channel (a code in 0..1).
 float user_band_weight(float top, const UserBand& band) noexcept;
 // prediction where the weight is 1, baseline where it is 0 (both bit-exact), a
@@ -114,6 +125,9 @@ struct FrameResult {
     SmoothingStats smoothing;
     ConstraintStats constraint;
     BandStats band;        // all zero when the band is off
+    // 3 Nov 2026: pixels brought down to the luminance of the inverse of display white
+    // (inverse_white_luma): near-white tinted codes invert up to 7x brighter than white.
+    std::size_t ceiling_pixels = 0;
     // Wall time of each stage, ms (3 Nov 2026): where a frame's time goes.
     struct StageMs {
         double inverse = 0, network = 0, compose = 0, smoothing = 0, band = 0, constraint = 0;
