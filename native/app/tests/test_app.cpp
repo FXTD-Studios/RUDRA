@@ -6167,3 +6167,43 @@ TEST(AcesBand, DialogControlsPersistAndTellTheViewer) {
     band->setChecked(false);
     EXPECT_FALSE(QSettings().value("aces/bandOn").toBool());
 }
+
+// ---- AI fill: which LoRA (4 Nov 2026, on the automatic setup) ----
+TEST(GenFillIdentity, TheLoraIsIdentifiedByItsHash) {
+    const auto dir = std::filesystem::temp_directory_path() / "rudra_genfill_identity";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    const auto lora = dir / "rudra_genfill.safetensors";
+    { std::ofstream(lora, std::ios::binary) << "not really a LoRA"; }
+    const QString sha = app::genfill_file_sha256(lora);
+    EXPECT_EQ(sha, QString::fromLatin1(QCryptographicHash::hash("not really a LoRA", QCryptographicHash::Sha256).toHex()));
+    EXPECT_TRUE(app::genfill_lora_is_v3(lora, sha));
+    EXPECT_FALSE(app::genfill_lora_is_v3(lora));   // not the published v3
+    { std::ofstream(lora, std::ios::binary) << "another version, a different size"; }
+    EXPECT_NE(app::genfill_file_sha256(lora), sha);   // the cache follows the file
+    EXPECT_TRUE(app::genfill_file_sha256(dir / "missing.safetensors").isEmpty());
+    std::filesystem::remove_all(dir);
+}
+
+TEST(GenFillIdentity, ASavedLoraThatIsNotV3IsUsedButSaysSo) {
+    const auto dir = std::filesystem::temp_directory_path() / "rudra_genfill_saved_v1";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir / "repo" / "rudra" / "genfill");
+    std::filesystem::create_directories(dir / "wan" / "transformer");
+    { std::ofstream(dir / "repo" / "rudra" / "genfill" / "run.py") << "#"; }
+    { std::ofstream(dir / "wan" / "transformer" / "config.json") << "{}"; }
+    { std::ofstream(dir / "v1.safetensors", std::ios::binary) << "an older LoRA"; }
+    QSettings st;
+    st.setValue("genfill/repo", app::from_path(dir / "repo"));
+    st.setValue("genfill/python", "python");
+    st.setValue("genfill/base", app::from_path(dir / "wan"));
+    st.setValue("genfill/lora", app::from_path(dir / "v1.safetensors"));
+    QString why;
+    const auto s = app::genfill_setup(&why);
+    ASSERT_TRUE(s.has_value()) << why.toStdString();
+    EXPECT_EQ(s->lora, dir / "v1.safetensors");   // kept: the artist chose it
+    EXPECT_FALSE(s->lora_is_v3);
+    EXPECT_TRUE(app::genfill_ready_text(*s).contains("NOT the published AI fill v3"));
+    for (const char* k : {"repo", "python", "base", "lora"}) st.remove(QStringLiteral("genfill/") + k);
+    std::filesystem::remove_all(dir);
+}

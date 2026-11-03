@@ -32,7 +32,21 @@ namespace rudra::app {
 
 struct GenFillSetup {
     std::filesystem::path python, repo, base, lora;
+    // 4 Nov 2026: which LoRA this is. A saved path is kept while it exists, so an
+    // older LoRA (genfill v1, v2) could run as "Ready"; the identity says so.
+    bool lora_is_v3 = false;
+    std::filesystem::path v3_found;   // a verified v3 among the candidates, when there is one
 };
+
+// The published AI fill v3 LoRA (docs/MODELS.md; PUBLISH_HF_MODELS.ps1).
+inline constexpr const char* kGenFillV3Sha256 = "9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a";
+// SHA-256 of a file, cached in QSettings by path, size and modification time
+// (a LoRA is ~100 MB and the setup is asked often). Empty when unreadable.
+QString genfill_file_sha256(const std::filesystem::path& file);
+// Whether `file` is the published v3 LoRA (or `expected`, for tests).
+bool genfill_lora_is_v3(const std::filesystem::path& file, const QString& expected = QString::fromLatin1(kGenFillV3Sha256));
+// The setup's one-line status, with the LoRA's identity (the dialog and Deliver use it).
+QString genfill_ready_text(const GenFillSetup& s);
 
 struct GenFillOptions {
     int tau_high = 250;   // 8-bit code: >= is a clipped highlight to fill (256 = none)

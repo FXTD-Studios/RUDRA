@@ -273,8 +273,10 @@ void MainWindow::sync_deliver() {
         QString why;
         // Where each part was found (4 Nov 2026); missing: Setup… > Set up automatically.
         if (const auto s = genfill_setup(&why))
-            st->setText(QStringLiteral("Ready: Wan2.1-VACE-1.3B (%1) + %2")
-                            .arg(from_path(s->base), from_path(s->lora.filename())));
+            st->setText(QStringLiteral("Ready: Wan2.1-VACE-1.3B (%1) + %2 · %3")
+                            .arg(from_path(s->base), from_path(s->lora.filename()),
+                                 s->lora_is_v3 ? QStringLiteral("AI fill v3, verified")
+                                               : QStringLiteral("NOT AI fill v3: Setup… to switch")));
         else
             st->setText(why + QStringLiteral(" Setup… > Set up automatically does it for you."));
     }

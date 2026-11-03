@@ -250,10 +250,27 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         ++r;
     }
     v->addLayout(grid);
-    auto* status = new QLabel(found ? QStringLiteral("Ready: %1").arg(from_path(found->lora)) : why, this);
+    auto* status = new QLabel(found ? genfill_ready_text(*found) : why, this);
     status->setObjectName("genfillSetupStatus");
     status->setWordWrap(true);
     v->addWidget(status);
+    // 4 Nov 2026: a saved LoRA that is not v3 stays (the artist chose it); one click
+    // switches to the verified v3 the search found (File > Model packages, the repo ...).
+    auto* use_v3 = new QPushButton("Use AI fill v3", this);
+    use_v3->setObjectName("genfillUseV3");
+    use_v3->setToolTip("Switch the LoRA to the published AI fill v3 found on this computer (SHA-256 verified)");
+    use_v3->setVisible(found && !found->lora_is_v3 && !found->v3_found.empty());
+    v->addWidget(use_v3, 0, Qt::AlignLeft);
+    connect(use_v3, &QPushButton::clicked, this, [this, status, use_v3] {
+        QString w;
+        const auto now = genfill_setup(&w);
+        if (!now || now->v3_found.empty()) return;
+        QSettings().setValue("genfill/lora", from_path(now->v3_found));
+        if (auto* le = findChild<QLineEdit*>(QStringLiteral("genfillSetup_lora"))) le->setText(from_path(now->v3_found));
+        const auto ok = genfill_setup(&w);
+        status->setText(ok ? genfill_ready_text(*ok) : w);
+        use_v3->setVisible(ok && !ok->lora_is_v3 && !ok->v3_found.empty());
+    });
     // One click (4 Nov 2026): rudra/genfill/setup.py checks the GPU and the disk,
     // installs the packages into the Python above and downloads the base model,
     // with its log here. Closing the window stops it; run again, it resumes.
@@ -342,7 +359,7 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
             if (auto* le = findChild<QLineEdit*>("genfillSetup_base")) le->setText(from_path(plan.base));
             QString w;
             const auto ok = genfill_setup(&w);
-            status->setText(ok ? QStringLiteral("Ready: %1 + %2").arg(from_path(ok->base), from_path(ok->lora))
+            status->setText(ok ? genfill_ready_text(*ok)
                                : QStringLiteral("Packages and base model are set up. ") + w);
         });
         connect(proc, &QProcess::errorOccurred, this, [status, busy, automatic](QProcess::ProcessError) {
@@ -362,7 +379,8 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         }
         QString w;
         const auto ok = genfill_setup(&w);
-        status->setText(ok ? QStringLiteral("Ready: %1").arg(from_path(ok->lora)) : w);
+        status->setText(ok ? genfill_ready_text(*ok) : w);
+        if (auto* u = findChild<QPushButton*>(QStringLiteral("genfillUseV3"))) u->setVisible(ok && !ok->lora_is_v3 && !ok->v3_found.empty());
     });
     connect(box, &QDialogButtonBox::rejected, this, &QDialog::reject);
     v->addWidget(box);
