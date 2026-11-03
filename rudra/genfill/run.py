@@ -362,10 +362,87 @@ def pick_device(requested: str = 'auto'):
     return 'cpu', torch.float32
 
 
+def brightness_settings(a, offset: float):
+    """The v3 brightness split (brightness.json beside the LoRA, or --brightness-model), or None."""
+    bm = a.brightness_model
+    if bm == 'auto':
+        cand = Path(a.lora).parent / 'brightness.json'
+        bm = str(cand) if cand.exists() else 'none'
+    if bm == 'none':
+        return None
+    from .brightness import BrightnessEstimator, BrightnessSettings
+    from .model import sha256_file
+    return BrightnessSettings(BrightnessEstimator.load(bm), offset, a.shape_gain,
+                              identity={'estimator': bm, 'estimator_sha256': sha256_file(bm)})
+
+
+def serve(model, view, a, emit, FillSettings) -> int:
+    """The app's AI fill preview (4 Nov 2026): the model stays loaded, so a setting changed and
+    previewed again costs the fill, not the 1-2 minutes of loading. One JSON object per stdin line:
+        {"id": 3, "master": <EXR folder>, "out": <new folder>, "glob": "*.exr",
+         "tau_high": 250, "tau_low": -1, "seed": 0, "steps": 30, "brightness_offset": 0.0,
+         "prompt_highlight": "", "prompt_shadow": "", "window": 33, "overlap": 8}
+    (any field left out takes the command line's value). Every event of a request carries its
+    id; it ends with {"event": "done", "ok": true, "id": ..., ...} or an "error". 'cancel'
+    stops the request running at its next step; 'quit' or the end of stdin ends the server."""
+    import queue
+    requests: queue.Queue = queue.Queue()
+    stop = threading.Event()
+
+    def reader():
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            if line == 'cancel':
+                stop.set()
+                continue
+            if line == 'quit':
+                break
+            try:
+                requests.put(json.loads(line))
+            except ValueError as e:
+                emit(event='error', ok=False, error='ValueError', detail=f'not a JSON request: {e}')
+        requests.put(None)
+    threading.Thread(target=reader, daemon=True).start()
+    emit(event='serving')
+    while True:
+        r = requests.get()
+        if r is None:
+            return 0
+        stop.clear()
+        rid = r.get('id')
+        tagged = lambda **o: emit(id=rid, **o)   # noqa: E731
+        try:
+            s = FillSettings(steps=int(r.get('steps', a.steps)), seed=int(r.get('seed', a.seed)),
+                             guidance=float(r.get('guidance', a.guidance)),
+                             prompt_highlight=str(r.get('prompt_highlight', a.prompt_highlight)),
+                             prompt_shadow=str(r.get('prompt_shadow', a.prompt_shadow)))
+            for text in {s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative} - {''}:
+                model.prompts.get(text)
+            model.prompts.release()
+            ms = MaskSettings(tau_high=int(r.get('tau_high', a.tau_high)), tau_low=int(r.get('tau_low', a.tau_low)),
+                              blend_high=a.blend_high, blend_low=a.blend_low, feather=a.feather,
+                              max_gain_stops=a.max_gain_stops).check()
+            out = Path(r['out'])
+            if out.exists():
+                raise FileExistsError(f'{out} exists: the fill writes a new folder')
+            rep = fill_master(Path(r['master']), out, model, view, s, ms, int(r.get('window', a.window)),
+                              int(r.get('overlap', a.overlap)), a.max_area, tagged, cancel=stop.is_set,
+                              pattern=str(r.get('glob', '*.exr')),
+                              brightness=brightness_settings(a, float(r.get('brightness_offset', a.brightness_offset))))
+            tagged(event='done', ok=True, out=str(out), **rep['stats'])
+        except Exception as e:  # noqa: BLE001 - one failed request does not end the server
+            tagged(event='error', ok=False, error=type(e).__name__, detail=str(e))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--master', required=True)
-    ap.add_argument('--out', required=True)
+    ap.add_argument('--master', default='', help='required unless --serve')
+    ap.add_argument('--out', default='', help='required unless --serve')
+    ap.add_argument('--serve', action='store_true',
+                    help='load the model once, then fill one JSON request per stdin line (the app\'s preview); '
+                         "'cancel' stops the request running, 'quit' or end of input ends")
     ap.add_argument('--base', required=True, help='Wan2.1-VACE-1.3B-diffusers folder')
     ap.add_argument('--lora', required=True, help='RUDRA genfill LoRA (.safetensors)')
     ap.add_argument('--prompt-cache', default='', help='prompt embeddings folder (default: beside the LoRA)')
@@ -394,13 +471,15 @@ def main(argv=None):
     ap.add_argument('--shape-gain', type=float, default=1.0, help='how strongly the generated shape varies the brightness inside a clipped area')
     ap.add_argument('--glob', default='*.exr', help="the master folder's frames to fill (fnmatch, e.g. 'SH010.*.exr')")
     a = ap.parse_args(argv)
-    emit = Emitter(a.json)
+    if not a.serve and (not a.master or not a.out):
+        ap.error('--master and --out are required (or --serve)')
+    emit = Emitter(a.json or a.serve)
     try:
         import torch
         from rudra.aces_view import ACES2View
         from .model import FillSettings, WanFill
-        out = Path(a.out)
-        if out.exists():
+        out = Path(a.out) if a.out else None
+        if out is not None and not a.serve and out.exists():
             raise FileExistsError(f'{out} exists: the fill writes a new folder')
         device, dtype = pick_device(a.device)
         t0 = time.time()
@@ -413,22 +492,15 @@ def main(argv=None):
         model.prompts.release()
         view = ACES2View(threads=max(1, min(16, a.ocio_threads)))
         emit(event='ready', device=device, load_seconds=round(time.time() - t0, 1), model=model.identity)
+        if a.serve:
+            return serve(model, view, a, emit, FillSettings)
         ms = MaskSettings(tau_high=a.tau_high, tau_low=a.tau_low, blend_high=a.blend_high,
                           blend_low=a.blend_low, feather=a.feather,
                           max_gain_stops=a.max_gain_stops).check()
         stop = threading.Event()
         if a.json:
             watch_stdin(stop)
-        brightness = None
-        bm = a.brightness_model
-        if bm == 'auto':
-            cand = Path(a.lora).parent / 'brightness.json'
-            bm = str(cand) if cand.exists() else 'none'
-        if bm != 'none':
-            from .brightness import BrightnessEstimator, BrightnessSettings
-            from .model import sha256_file
-            brightness = BrightnessSettings(BrightnessEstimator.load(bm), a.brightness_offset, a.shape_gain,
-                                            identity={'estimator': bm, 'estimator_sha256': sha256_file(bm)})
+        brightness = brightness_settings(a, a.brightness_offset)
         rep = fill_master(Path(a.master), out, model, view, s, ms, a.window, a.overlap, a.max_area, emit,
                           cancel=stop.is_set, pattern=a.glob, brightness=brightness)
         emit(event='done', ok=True, out=str(out), **rep['stats'])

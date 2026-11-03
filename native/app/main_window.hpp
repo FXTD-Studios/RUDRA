@@ -51,7 +51,7 @@
 
 class QAction;
 class QLabel;
-namespace rudra::app { class GenFillJob; }
+namespace rudra::app { class GenFillJob; class GenFillServer; }
 class QLineEdit;
 class QMenu;
 class QNetworkAccessManager;
@@ -219,6 +219,13 @@ public:
     QString genfill_last_out() const { return genfill_last_out_; }
     // The review of an AI fill folder (the last one, else one picked); false and why when there is none.
     bool review_genfill(const QString& dir = {}, QString* why = nullptr);
+    // The AI fill preview (genfill_preview.hpp, 4 Nov 2026): the learned master of a
+    // few frames around the playhead, filled with Deliver's AI fill settings by a fill
+    // model kept loaded, and shown in the viewer: "fill", "master" or "mask" (the
+    // invented pixels). A second click on Preview stops it.
+    void preview_genfill();
+    void show_genfill_preview(const QString& which);
+    bool genfill_previewing() const;
     // The batch queue (28 Oct 2026, batch_queue.hpp): shots rendered one after
     // another through the learned ACES 2.0 model. Its file is the setting
     // batch/file, else batch_queue.json in the app's data folder.
@@ -564,6 +571,7 @@ private:
     void show_sheet(const QString& title, const std::vector<std::pair<QString, QString>>& rows);
     void sync_checks();
     void sync_ui();
+    void sync_playhead();   // playing: the timecode and the scrub bar only
     // Simple (29 Oct 2026): Look, Check, Deliver; what Full adds is hidden here.
     void build_simple_parts();
     void sync_simple();
@@ -729,6 +737,8 @@ private:
     QTimer play_;
     int current_ = 0;
     bool waiting_ = false;
+    bool play_tick_missed_ = false;   // a tick came while waiting_: step when the frame is shown
+    bool played_scaled_ = false;      // a MovieFeeder made preview-size frames: the cache goes at the stop
     bool frame_ready_ok_ = false;
     QString frame_info_;
     QString runtimes_;
@@ -803,6 +813,18 @@ private:
     void batch_changed();
     int aces_deliver_id_ = 0;       // the engine's master request running for the Deliver tab
     std::shared_ptr<GenFillJob> genfill_;   // shared_ptr: the type stays incomplete here
+    struct GenFillPreviewFrame {
+        int index = -1;
+        GenFillOptions options;   // what it was filled with: changed since, the preview is stale
+        std::shared_ptr<const NetworkLinearImage> master, fill, mask;
+        double changed = 0;       // share of the frame's pixels the fill invented
+    };
+    std::shared_ptr<GenFillServer> genfill_server_;
+    std::optional<GenFillPreviewFrame> genfill_preview_;
+    std::unique_ptr<QTemporaryDir> genfill_preview_tmp_;
+    QString genfill_preview_show_ = "fill";
+    int genfill_preview_master_id_ = 0;   // the engine's master request while the preview's master renders
+    bool genfill_preview_busy_ = false;
     QString genfill_last_out_;
     void sync_deliver();            // the Deliver tab's controls and Signal card from deliver_
     void load_deliver_settings();

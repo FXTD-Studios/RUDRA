@@ -4163,6 +4163,7 @@ TEST(GenFill, SetupSaysWhatIsMissing) {
     QSettings().clear();
     const auto root = aces_tmp("genfill-setup");
     fake_genfill(root, kFillOk);
+    QSettings().setValue("genfill/search", false);   // this machine's own models must not stand in
     QString why;
     auto s = app::genfill_setup(&why);
     ASSERT_TRUE(s) << why.toStdString();
@@ -4176,6 +4177,32 @@ TEST(GenFill, SetupSaysWhatIsMissing) {
     QSettings().setValue("genfill/repo", QString::fromStdString((root / "nowhere").string()));
     EXPECT_FALSE(app::genfill_setup(&why));
     EXPECT_TRUE(why.contains("repository")) << why.toStdString();
+    QSettings().clear();
+}
+
+// 4 Nov 2026: a saved base model that has gone is looked for again, here in a
+// Hugging Face cache (HF_HUB_CACHE), and the one found is saved.
+TEST(GenFill, SetupFindsTheBaseModelInAHuggingFaceCache) {
+    QSettings().clear();
+    const auto root = aces_tmp("genfill-search");
+    fake_genfill(root, kFillOk);
+    std::filesystem::remove_all(root / "models");
+    // Nothing of this machine's before the cache: its model download folder is an empty one.
+    QSettings().setValue("models/downloadRoot", QString::fromStdString((root / "downloads").string()));
+    const auto hub = root / "hub";
+    const auto snap = hub / "models--Wan-AI--Wan2.1-VACE-1.3B-diffusers" / "snapshots" / "abc123";
+    write_text(snap / "transformer" / "config.json", "{}");
+    write_text(hub / "models--Wan-AI--Wan2.1-VACE-1.3B-diffusers" / "refs" / "main", "abc123\n");
+    const QByteArray old = qgetenv("HF_HUB_CACHE");
+    qputenv("HF_HUB_CACHE", QByteArray::fromStdString(hub.string()));
+    QString why;
+    const auto s = app::genfill_setup(&why);
+    if (old.isEmpty()) qunsetenv("HF_HUB_CACHE");
+    else qputenv("HF_HUB_CACHE", old);
+    ASSERT_TRUE(s) << why.toStdString();
+    EXPECT_EQ(std::filesystem::weakly_canonical(s->base), std::filesystem::weakly_canonical(snap));
+    EXPECT_EQ(std::filesystem::weakly_canonical(app::to_path(QSettings().value("genfill/base").toString())),
+              std::filesystem::weakly_canonical(snap));
     QSettings().clear();
 }
 

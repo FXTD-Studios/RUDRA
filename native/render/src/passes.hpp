@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <thread>
 #include <vector>
 
 #include "rudra/core/baseline.hpp"
@@ -177,32 +178,63 @@ inline std::vector<std::uint8_t> view_masks_rgba8(const ViewParams& params, int 
     return masks_rgba8(cp, frame_width, frame_height);
 }
 
+// The viewer packs every frame it shows on the UI thread (4 Nov 2026): the
+// pixels split over a few threads, each writing its own range, so the result
+// is the same whatever the count. Small images stay on one thread.
+template <class F>
+inline void for_pixel_ranges(std::size_t n, F&& fn) {
+    const unsigned hw = std::max(1u, std::thread::hardware_concurrency());
+    const std::size_t k = std::max<std::size_t>(1, std::min<std::size_t>({std::size_t(hw), 8, n / 65536 + 1}));
+    if (k <= 1) {
+        fn(std::size_t(0), n);
+        return;
+    }
+    std::vector<std::thread> pool;
+    pool.reserve(k - 1);
+    for (std::size_t w = 1; w < k; ++w) pool.emplace_back([&, w] { fn(n * w / k, n * (w + 1) / k); });
+    fn(std::size_t(0), n / k);
+    for (auto& th : pool) th.join();
+}
+
 // sdr rgb + shadow in a, and residual rgb + highlight in a: the two inputs
 // composite.frag fetches.
 inline void interleave_inputs(const SdrImage& sdr, const Fields& fields, std::vector<float>& a, std::vector<float>& b) {
     const std::size_t n = std::size_t(sdr.width()) * std::size_t(sdr.height());
-    a.assign(n * 4, 0.0f);
-    b.assign(n * 4, 0.0f);
-    for (std::size_t i = 0; i < n; ++i) {
-        for (int c = 0; c < 3; ++c) {
-            a[i * 4 + std::size_t(c)] = sdr.buffer().plane(c)[i];
-            b[i * 4 + std::size_t(c)] = fields.residual.plane(c)[i];
+    a.resize(n * 4);   // every value is written below
+    b.resize(n * 4);
+    const float *s0 = sdr.buffer().plane(0), *s1 = sdr.buffer().plane(1), *s2 = sdr.buffer().plane(2);
+    const float *r0 = fields.residual.plane(0), *r1 = fields.residual.plane(1), *r2 = fields.residual.plane(2);
+    const float *sh = fields.shadow.plane(0), *hi = fields.highlight.plane(0);
+    float *pa = a.data(), *pb = b.data();
+    for_pixel_ranges(n, [=](std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            float* qa = pa + i * 4;
+            float* qb = pb + i * 4;
+            qa[0] = s0[i], qa[1] = s1[i], qa[2] = s2[i], qa[3] = sh[i];
+            qb[0] = r0[i], qb[1] = r1[i], qb[2] = r2[i], qb[3] = hi[i];
         }
-        a[i * 4 + 3] = fields.shadow.plane(0)[i];
-        b[i * 4 + 3] = fields.highlight.plane(0)[i];
-    }
+    });
 }
 
 // The baseline as the display pass reads it: rgb, and the SDR's max code in
-// alpha for the Invented layer (core/view.hpp sdr_max_codes).
+// alpha for the Invented layer (core/view.hpp sdr_max_codes; 0.5 without an
+// SDR of the same size).
 inline std::vector<float> baseline_rgba(const PlanarBuffer& rgb, const SdrImage* sdr) {
-    const std::vector<float> codes = sdr_max_codes(sdr, rgb.width(), rgb.height());
     const std::size_t n = rgb.plane_size();
     std::vector<float> out(n * 4);
-    for (std::size_t i = 0; i < n; ++i) {
-        for (int c = 0; c < 3; ++c) out[i * 4 + std::size_t(c)] = rgb.plane(c)[i];
-        out[i * 4 + 3] = codes[i];
-    }
+    const bool have = sdr && sdr->width() == rgb.width() && sdr->height() == rgb.height();
+    const float *c0 = rgb.plane(0), *c1 = rgb.plane(1), *c2 = rgb.plane(2);
+    const float* m0 = have ? sdr->buffer().plane(0) : nullptr;
+    const float* m1 = have ? sdr->buffer().plane(1) : nullptr;
+    const float* m2 = have ? sdr->buffer().plane(2) : nullptr;
+    float* po = out.data();
+    for_pixel_ranges(n, [=](std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            float* q = po + i * 4;
+            q[0] = c0[i], q[1] = c1[i], q[2] = c2[i];
+            q[3] = m0 ? std::max(std::max(m0[i], m1[i]), m2[i]) : 0.5f;
+        }
+    });
     return out;
 }
 
@@ -211,10 +243,14 @@ inline std::vector<float> baseline_rgba(const PlanarBuffer& rgb, const std::vect
     if (codes.size() != rgb.plane_size()) return baseline_rgba(rgb, nullptr);
     const std::size_t n = rgb.plane_size();
     std::vector<float> out(n * 4);
-    for (std::size_t i = 0; i < n; ++i) {
-        for (int c = 0; c < 3; ++c) out[i * 4 + std::size_t(c)] = rgb.plane(c)[i];
-        out[i * 4 + 3] = codes[i];
-    }
+    const float *c0 = rgb.plane(0), *c1 = rgb.plane(1), *c2 = rgb.plane(2), *m = codes.data();
+    float* po = out.data();
+    for_pixel_ranges(n, [=](std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            float* q = po + i * 4;
+            q[0] = c0[i], q[1] = c1[i], q[2] = c2[i], q[3] = m[i];
+        }
+    });
     return out;
 }
 

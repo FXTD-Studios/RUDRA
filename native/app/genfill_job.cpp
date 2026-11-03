@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QProcess>
@@ -11,6 +12,7 @@
 #include <QSettings>
 #include <QTimer>
 
+#include <algorithm>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -53,6 +55,75 @@ std::vector<fs::path> genfill_roots(const fs::path& repo) {
     if (const QString env = qEnvironmentVariable("RUDRA_GENFILL_DIR"); !env.isEmpty()) r.push_back(pq(env));
     return r;
 }
+
+// Wan2.1-VACE-1.3B in a Hugging Face cache (4 Nov 2026): a setup that ran
+// snapshot_download without local_dir, or any other tool that fetched it,
+// leaves hub/models--Wan-AI--Wan2.1-VACE-1.3B-diffusers/snapshots/<rev>/.
+// The snapshot refs/main names first, then any other.
+void hf_cache_snapshots(std::vector<fs::path>& out) {
+    std::vector<fs::path> hubs;
+    for (const char* v : {"HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"})
+        if (const QString e = qEnvironmentVariable(v); !e.isEmpty()) hubs.push_back(pq(e));
+    if (const QString e = qEnvironmentVariable("HF_HOME"); !e.isEmpty()) hubs.push_back(pq(e) / "hub");
+    hubs.push_back(pq(QDir::homePath()) / ".cache" / "huggingface" / "hub");
+    hubs.push_back("G:/datasets/models/_hf_home/hub");   // GENFILL.ps1's HF_HOME on the training workstation
+    std::error_code ec;
+    for (const auto& hub : hubs) {
+        const fs::path repo = hub / "models--Wan-AI--Wan2.1-VACE-1.3B-diffusers";
+        if (!fs::is_directory(repo / "snapshots", ec)) continue;
+        QFile ref(qp(repo / "refs" / "main"));
+        if (ref.open(QIODevice::ReadOnly)) {
+            const QString rev = QString::fromUtf8(ref.readAll()).trimmed();
+            if (!rev.isEmpty()) out.push_back(repo / "snapshots" / pq(rev));
+        }
+        for (const auto& e : fs::directory_iterator(repo / "snapshots", ec))
+            if (e.is_directory(ec)) out.push_back(e.path());
+    }
+}
+
+// The LoRA wherever File > Model packages put it: any folder of the download
+// root that holds rudra_genfill.safetensors, newest version name last-sorted first.
+void downloaded_loras(std::vector<fs::path>& out) {
+    QDir root(default_download_root());
+    QStringList dirs = root.entryList({"rudra_genfill*"}, QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    std::sort(dirs.begin(), dirs.end(), [](const QString& a, const QString& b) { return a > b; });   // v3 before v2
+    for (const QString& d : dirs) out.push_back(pq(root.filePath(d)) / "rudra_genfill.safetensors");
+}
+
+// A saved path wins while it is there; gone (moved, deleted), the search again.
+// The search runs only then: Deliver asks for the setup on every refresh.
+// genfill/search false (the tests; a site that wants only its own paths): a saved
+// path is kept even when it is gone, and nothing is searched past it.
+template <class Search>
+fs::path saved_or(const QString& key, const char* probe, Search&& search) {
+    QSettings st;
+    const QString saved = st.value(key).toString();
+    std::error_code ec;
+    if (!saved.isEmpty() && fs::exists(probe ? pq(saved) / probe : pq(saved), ec)) return pq(saved);
+    if (!saved.isEmpty() && !st.value("genfill/search", true).toBool()) return pq(saved);
+    return search();
+}
+
+}  // namespace
+
+std::vector<fs::path> genfill_base_candidates(const fs::path& repo) {
+    std::vector<fs::path> bases;
+    for (const auto& r : genfill_roots(repo)) bases.push_back(r / "Wan2.1-VACE-1.3B-diffusers");
+    bases.push_back(pq(default_download_root()) / "Wan2.1-VACE-1.3B-diffusers");
+    hf_cache_snapshots(bases);
+    bases.push_back("G:/datasets/models/Wan2.1-VACE-1.3B-diffusers");   // the training workstation
+    return bases;
+}
+
+std::vector<fs::path> genfill_lora_candidates(const fs::path& repo) {
+    std::vector<fs::path> loras;
+    downloaded_loras(loras);   // File > Model packages (31 Oct 2026)
+    for (const auto& r : genfill_roots(repo)) loras.push_back(r / "rudra_genfill.safetensors");
+    loras.push_back("G:/rudra_training/claude_genfill_v3_20261030/rudra_genfill.safetensors");   // GENFILL.ps1's v3 run
+    return loras;
+}
+
+namespace {
 
 // Where the Python and the base model come from (1 Nov 2026: macOS too, on Metal).
 #ifdef _WIN32
@@ -98,17 +169,12 @@ std::optional<GenFillSetup> genfill_setup(QString* why) {
     s.repo = find_repo();
     const QString py = st.value("genfill/python").toString();
     s.python = !py.isEmpty() ? pq(py) : default_python(s.repo);
-    std::vector<fs::path> bases, loras;
-    for (const auto& r : genfill_roots(s.repo)) {
-        bases.push_back(r / "Wan2.1-VACE-1.3B-diffusers");
-        loras.push_back(r / "rudra_genfill.safetensors");
-    }
-    bases.push_back("G:/datasets/models/Wan2.1-VACE-1.3B-diffusers");   // the training workstation
-    // Downloaded in the app (File > Model packages, 31 Oct 2026). Settings genfill/lora overrides it.
-    loras.push_back(fs::path(default_download_root().toStdU16String()) / "rudra_genfill_v3" / "rudra_genfill.safetensors");
-    const QString base = st.value("genfill/base").toString(), lora = st.value("genfill/lora").toString();
-    s.base = !base.isEmpty() ? pq(base) : first_existing(bases, "transformer/config.json");
-    s.lora = !lora.isEmpty() ? pq(lora) : first_existing(loras, nullptr);
+    // Found, not asked for (4 Nov 2026): the settings while their paths exist,
+    // else every place a setup, a download or a Hugging Face cache puts them;
+    // what is found is saved, so the next start looks once.
+    s.base = saved_or("genfill/base", "transformer/config.json",
+                      [&] { return first_existing(genfill_base_candidates(s.repo), "transformer/config.json"); });
+    s.lora = saved_or("genfill/lora", nullptr, [&] { return first_existing(genfill_lora_candidates(s.repo), nullptr); });
     auto refuse = [why](const QString& w) -> std::optional<GenFillSetup> {
         if (why) *why = w;
         return std::nullopt;
@@ -123,7 +189,24 @@ std::optional<GenFillSetup> genfill_setup(QString* why) {
     if (!fs::exists(s.lora, ec))
         return refuse(QStringLiteral("AI fill: no LoRA at %1 (File > Model packages > AI fill v3 > Download).").arg(qp(s.lora)));
     if (why) why->clear();
+    if (st.value("genfill/base").toString() != qp(s.base)) st.setValue("genfill/base", qp(s.base));
+    if (st.value("genfill/lora").toString() != qp(s.lora)) st.setValue("genfill/lora", qp(s.lora));
     return s;
+}
+
+GenFillInstall genfill_install_plan() {
+    QSettings st;
+    GenFillInstall p;
+    p.repo = find_repo();
+    const QString py = st.value("genfill/python").toString();
+    p.python = !py.isEmpty() ? pq(py) : default_python(p.repo);
+    // A model already somewhere: the setup checks it and installs only the packages.
+    std::error_code ec;
+    const fs::path found = first_existing(genfill_base_candidates(p.repo), "transformer/config.json");
+    p.base = fs::exists(found / "transformer" / "config.json", ec)
+                 ? found
+                 : pq(default_download_root()) / "Wan2.1-VACE-1.3B-diffusers";
+    return p;
 }
 
 GenFillJob::GenFillJob(QObject* parent) : parent_(parent) {}
