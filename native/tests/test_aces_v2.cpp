@@ -3,6 +3,7 @@
 // tools/aces_v2_parity (OCIO + LibTorch builds); these tests pin the contract.
 
 #include <gtest/gtest.h>
+#include <random>
 
 #include <algorithm>
 #include <cmath>
@@ -365,4 +366,43 @@ TEST(AcesV2Band, WeightRampsAndLimits) {
     MockView v;
     G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
     EXPECT_FALSE(run_frame(test_frame(), v, g1, true, true, true, bad).ok());
+}
+
+// ---- the smoothing on every core (3 Nov 2026): bit-identical to one thread ----
+TEST(AcesV2Smoothing, ThreadedIsBitIdenticalToOneThread) {
+    const int h = 180, w = 320;
+    PlanarBuffer src(3, h, w, 0.4f), pred(3, h, w, 0.0f);
+    std::mt19937 rng(9);
+    std::uniform_real_distribution<float> u(0.5f, 40.0f);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const bool clipped = (x - 160) * (x - 160) / 90.0 + (y - 90) * (y - 90) / 40.0 < 60.0 || (x > 20 && x < 60 && y > 10);
+            for (int c = 0; c < 3; ++c) {
+                src.at(c, y, x) = clipped ? 1.0f : 0.3f + 0.001f * float(x);
+                pred.at(c, y, x) = clipped ? u(rng) : 0.2f;
+            }
+        }
+    auto run = [&](const char* threads) {
+#ifdef _WIN32
+        _putenv_s("RUDRA_SMOOTH_THREADS", threads);
+#else
+        setenv("RUDRA_SMOOTH_THREADS", threads, 1);
+#endif
+        SmoothingStats st;
+        return smooth_clipped_hybrid(pred, src, 64.0, &st);
+    };
+    const PlanarBuffer one = run("1"), many = run("8");
+#ifdef _WIN32
+    _putenv_s("RUDRA_SMOOTH_THREADS", "");
+#else
+    unsetenv("RUDRA_SMOOTH_THREADS");
+#endif
+    ASSERT_EQ(one.plane_size(), many.plane_size());
+    std::size_t differ = 0;
+    for (int c = 0; c < 3; ++c)
+        for (std::size_t i = 0; i < one.plane_size(); ++i) differ += one.plane(c)[i] != many.plane(c)[i];
+    EXPECT_EQ(differ, 0u);
+    std::size_t changed = 0;   // the test means something: the smoothing did act
+    for (std::size_t i = 0; i < one.plane_size(); ++i) changed += one.plane(0)[i] != pred.plane(0)[i];
+    EXPECT_GT(changed, 1000u);
 }

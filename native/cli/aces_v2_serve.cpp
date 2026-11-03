@@ -372,6 +372,8 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                       {"width", codes.width()}, {"height", codes.height()},
                       {"bits", still->bits}, {"ms", ms}, {"reconstructed_fraction", double(recon) / double(k.mask.plane_size())},
                       {"peak", peak_luma(k.master)}, {"peak_plain", peak_luma(k.baseline)},
+                      {"stage_ms", {{"inverse", r->ms.inverse}, {"network", r->ms.network}, {"compose", r->ms.compose},
+                                    {"smoothing", r->ms.smoothing}, {"band", r->ms.band}, {"constraint", r->ms.constraint}}},
                       {"fully_clipped_pixels", r->smoothing.full_pixels}, {"remaining_display_errors", r->constraint.remaining_display_errors},
                       {"new_negative_luminance", r->constraint.new_negative_luminance}, {"luminance_guard", guard}});
                 if (req.value("keep", true)) kept = std::move(k);

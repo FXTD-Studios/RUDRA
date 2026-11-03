@@ -172,6 +172,13 @@ public:
     bool aces_realtime_playing() const { return aces_rt_playing_; }
     bool aces_playing() const { return aces_playing_; }   // through the model, frame by frame
     QString aces_cache_key() const;   // the shot, trims, monitor and source display it was made with
+    // The playback cache, filled by the view while playing and by the background prefetch (3 Nov 2026).
+    bool aces_cache_put(int index, std::shared_ptr<const NetworkLinearImage> model, std::shared_ptr<const NetworkLinearImage> base,
+                        std::shared_ptr<const SdrImage> sdr, std::vector<float> codes);
+    QJsonObject aces_request_json(int index, const QString& source, bool movie, const QString& prefix);
+    void aces_prefetch_soon(int delay_ms);
+    void aces_prefetch_next();
+    void aces_after_prefetch(const QJsonObject& o, int index, const QString& key, const QJsonObject& req);
     void aces_rt_stop();
     // Per-shot trims (28 Oct 2026 review): remembered with each shot (the movie, the
     // folder or the still); a new shot keeps the trims in hand. Copy / paste between shots.

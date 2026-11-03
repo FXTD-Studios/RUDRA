@@ -23,6 +23,7 @@
 #include <QPixmap>
 #include <QGroupBox>
 #include <QSettings>
+#include <QTimer>
 #include <QSpinBox>
 #include <QSlider>
 #include <QTemporaryDir>
@@ -1189,13 +1190,26 @@ void MainWindow::aces_request(int index) {
     const QString base_path = aces_tmp_->filePath(QStringLiteral("baseline_%1.f32").arg(index % 2));
     aces_busy_ = true;
     const QPointer<MainWindow> self(this);
+    QJsonObject req = aces_request_json(index, source, movie, QString());
+    if (aces_playing_ && play_state_->side.load() > 0) req["max_side"] = play_state_->side.load();
+    aces_engine_->request(req,
+                          [self, index, model_path, base_path](const QJsonObject& o) {
+                              if (self) self->aces_after_frame(o, index, model_path, base_path);
+                          });
+}
+
+// One learned frame's request (shared by the view and the playback prefetch, 3 Nov 2026):
+// the outputs are named <prefix>model_<n>.f32 ... in the temporary folder.
+QJsonObject MainWindow::aces_request_json(int index, const QString& source, bool movie, const QString& prefix) {
+    const QString model_path = aces_tmp_->filePath(QStringLiteral("%1model_%2.f32").arg(prefix).arg(index % 2));
+    const QString base_path = aces_tmp_->filePath(QStringLiteral("%1baseline_%2.f32").arg(prefix).arg(index % 2));
     QJsonObject req{{"op", "preview"}, {"source", source}, {"frame", movie ? index : 0}, {"keep", false},
                     {"model_out", model_path}, {"baseline_out", base_path}};
     // The monitoring transform, the Invented layer's codes, and a proxy while playing (28 Oct 2026).
     if (aces_monitor_ != "scene") req["display"] = aces_monitor_;
     if (aces_source_display_ != "bt1886") req["source_display"] = aces_source_display_;   // an sRGB / 2.2 master
-    req["codes_out"] = aces_tmp_->filePath(QStringLiteral("codes_%1.f32").arg(index % 2));
-    req["sdr_out"] = aces_tmp_->filePath(QStringLiteral("sdr_%1.f32").arg(index % 2));   // view revision 6
+    req["codes_out"] = aces_tmp_->filePath(QStringLiteral("%1codes_%2.f32").arg(prefix).arg(index % 2));
+    req["sdr_out"] = aces_tmp_->filePath(QStringLiteral("%1sdr_%2.f32").arg(prefix).arg(index % 2));   // view revision 6
     {   // the tau bands, as the Learned ACES dialog set them (aces/bandOn, aces/tauHigh, aces/tauLow)
         QSettings st;
         if (st.value("aces/bandOn", false).toBool()) {
@@ -1203,15 +1217,11 @@ void MainWindow::aces_request(int index) {
             req["band_tau_low"] = st.value("aces/tauLow", 5).toInt();
         }
     }
-    if (aces_playing_ && play_state_->side.load() > 0) req["max_side"] = play_state_->side.load();
     // The colorist's trims: the viewer shows what a render writes.
     if (const QJsonObject t = aces_trims_fields(aces_trims_.strength, aces_trims_.saturation, aces_trims_.peak_nits,
                                                  aces_trims_.exposure_ev, aces_trims_.contrast); !t.isEmpty())
         req["trims"] = t;
-    aces_engine_->request(req,
-                          [self, index, model_path, base_path](const QJsonObject& o) {
-                              if (self) self->aces_after_frame(o, index, model_path, base_path);
-                          });
+    return req;
 }
 
 void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString& model_path, const QString& base_path) {
@@ -1286,23 +1296,7 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
     }
     // The playback cache: a frame rendered at the playback size while playing goes in, made with
     // what the screen shows now (anything changed empties it).
-    if (aces_playing_ && play_state_->side.load() > 0) {
-        if (const QString key = aces_cache_key(); key != aces_cache_key_ || aces_cache_.size() != frames_.size()) {
-            aces_cache_.assign(frames_.size(), nullptr);
-            aces_cache_side_.assign(frames_.size(), {});
-            aces_cache_bytes_ = 0;
-            aces_cache_key_ = key;
-        }
-        // The model, and since view revision 6 its baseline, SDR and max codes too,
-        // so playback compares what a paused frame compares.
-        const std::size_t bytes = std::size_t(w) * std::size_t(h) * (3 + 3 + 3 + 1) * sizeof(float);
-        const std::size_t budget = std::size_t(QSettings().value("aces/playCacheMB", 2048).toInt()) * 1024 * 1024;
-        if (!aces_cache_[std::size_t(index)] && aces_cache_bytes_ + bytes <= budget) {
-            aces_cache_[std::size_t(index)] = aces_model_img_;
-            aces_cache_side_[std::size_t(index)] = {aces_base_img_, aces_sdr_img_, codes};
-            aces_cache_bytes_ += bytes;
-        }
-    }
+    if (aces_playing_ && play_state_->side.load() > 0) aces_cache_put(index, aces_model_img_, aces_base_img_, aces_sdr_img_, codes);
     run_stats();   // the readouts and scopes of this frame, in nits (28 Oct 2026)
     if (parade_) parade_->set_scope(qc_scope(aces_model_img_->buffer()));   // parade and gamut (28 Oct 2026 review)
     sync_check_summary();   // Simple's Check reads the same
@@ -1316,8 +1310,15 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
                       .arg(100.0 * o.value("reconstructed_fraction").toDouble(), 0, 'f', 2)
                       .arg(o.value("peak").toDouble(), 0, 'f', 1)
                       .arg(o.value("peak_plain").toDouble(), 0, 'f', 1);
+    if (const QJsonObject s = o.value("stage_ms").toObject(); !s.isEmpty())   // where the time went (3 Nov 2026)
+        frame_info_ += QStringLiteral("  \u00b7  view %1 · model %2 · smoothing %3 · constraint %4 ms")
+                           .arg(s.value("inverse").toDouble(), 0, 'f', 0)
+                           .arg(s.value("network").toDouble(), 0, 'f', 0)
+                           .arg(s.value("smoothing").toDouble(), 0, 'f', 0)
+                           .arg(s.value("constraint").toDouble(), 0, 'f', 0);
     sync_ui();
     show_status();
+    if (!aces_playing_) aces_prefetch_soon(250);   // idle: prepare playback in the background
     if (aces_playing_) {
         // Plays as fast as the model runs, filling the cache; the next play is real time.
         if (index + 1 < int(frames_.size())) aces_request(index + 1);
@@ -1333,9 +1334,114 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
     }
 }
 
+// Into the playback cache (the view while playing, and the prefetch): made with what the
+// screen shows now; anything changed empties it first. False when the budget is full.
+bool MainWindow::aces_cache_put(int index, std::shared_ptr<const NetworkLinearImage> model,
+                                std::shared_ptr<const NetworkLinearImage> base, std::shared_ptr<const SdrImage> sdr,
+                                std::vector<float> codes) {
+    if (index < 0 || index >= int(frames_.size()) || !model) return false;
+    if (const QString key = aces_cache_key(); key != aces_cache_key_ || aces_cache_.size() != frames_.size()) {
+        aces_cache_.assign(frames_.size(), nullptr);
+        aces_cache_side_.assign(frames_.size(), {});
+        aces_cache_bytes_ = 0;
+        aces_cache_key_ = key;
+    }
+    if (aces_cache_[std::size_t(index)]) return true;
+    // The model, and since view revision 6 its baseline, SDR and max codes too,
+    // so playback compares what a paused frame compares.
+    const std::size_t bytes = std::size_t(model->width()) * std::size_t(model->height()) * (3 + 3 + 3 + 1) * sizeof(float);
+    const std::size_t budget = std::size_t(QSettings().value("aces/playCacheMB", 2048).toInt()) * 1024 * 1024;
+    if (aces_cache_bytes_ + bytes > budget) return false;
+    aces_cache_[std::size_t(index)] = std::move(model);
+    aces_cache_side_[std::size_t(index)] = {std::move(base), std::move(sdr), std::move(codes)};
+    aces_cache_bytes_ += bytes;
+    return true;
+}
+
+// Playback prepared in the background (3 Nov 2026): while the learned route is open and
+// idle, the next frame missing from the playback cache is rendered at the playback size
+// and cached without being shown, so Play is real time once every frame is in. It never
+// runs while the engine is busy or a view the user asked for waits; such a request runs
+// first. Off with the setting aces/prefetch = false, or playback size Full.
+void MainWindow::aces_prefetch_soon(int delay_ms) {
+    QTimer::singleShot(delay_ms, this, [self = QPointer<MainWindow>(this)] {
+        if (self) self->aces_prefetch_next();
+    });
+}
+
+void MainWindow::aces_prefetch_next() {
+    const int n = int(frames_.size());
+    if (!aces_routed() || !aces_engine_ || n < 2 || aces_busy_ || aces_next_ >= 0 || aces_playing_ || aces_rt_playing_)
+        return;
+    if (play_state_->side.load() <= 0 || !QSettings().value("aces/prefetch", true).toBool()) return;
+    if (aces_cache_key() != aces_cache_key_ || aces_cache_.size() != frames_.size()) {   // a fresh cache for what shows now
+        aces_cache_.assign(frames_.size(), nullptr);
+        aces_cache_side_.assign(frames_.size(), {});
+        aces_cache_bytes_ = 0;
+        aces_cache_key_ = aces_cache_key();
+    }
+    // The next missing frame after the one on screen, wrapping: what Play shows first.
+    int index = -1;
+    for (int k = 0; k < n; ++k) {
+        const int i = (current_ + k) % n;
+        if (!aces_cache_[std::size_t(i)]) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0) return;   // all in
+    const std::size_t px = std::size_t(std::max(1, play_state_->side.load())) * std::size_t(play_state_->side.load());
+    const std::size_t budget = std::size_t(QSettings().value("aces/playCacheMB", 2048).toInt()) * 1024 * 1024;
+    if (aces_cache_bytes_ + px * 10 * sizeof(float) / 2 > budget) return;   // about full (16:9 at the side)
+    if (!aces_tmp_) aces_tmp_ = std::make_unique<QTemporaryDir>();
+    if (!aces_tmp_->isValid()) return;
+    const bool movie = shot_video_.has_value() && !shot_sources_.empty();
+    const QString source = movie ? qp(shot_sources_.front()) : qp(frames_[std::size_t(index)]);
+    QJsonObject req = aces_request_json(index, source, movie, QStringLiteral("pf_"));
+    req["max_side"] = play_state_->side.load();
+    const QString key = aces_cache_key();
+    aces_busy_ = true;
+    const QPointer<MainWindow> self(this);
+    aces_engine_->request(req, [self, index, key, req](const QJsonObject& o) {
+        if (self) self->aces_after_prefetch(o, index, key, req);
+    });
+}
+
+void MainWindow::aces_after_prefetch(const QJsonObject& o, int index, const QString& key, const QJsonObject& req) {
+    aces_busy_ = false;
+    if (o.value("ok").toBool() && aces_routed() && key == aces_cache_key()) {
+        const int w = o.value("width").toInt(), h = o.value("height").toInt();
+        auto model = read_planes(req.value("model_out").toString(), w, h);
+        auto base = read_planes(req.value("baseline_out").toString(), w, h);
+        if (model && base) {
+            std::vector<float> codes(std::size_t(w) * std::size_t(h));
+            std::ifstream in(pq(req.value("codes_out").toString()), std::ios::binary);
+            if (!in.read(reinterpret_cast<char*>(codes.data()), std::streamsize(codes.size() * sizeof(float)))) codes.clear();
+            std::shared_ptr<const SdrImage> sdr;
+            if (auto s = read_planes(req.value("sdr_out").toString(), w, h)) sdr = std::make_shared<const SdrImage>(std::move(*s));
+            aces_cache_put(index, std::make_shared<const NetworkLinearImage>(aces_view_image(*model)),
+                           std::make_shared<const NetworkLinearImage>(aces_view_image(*base)), std::move(sdr), std::move(codes));
+            const int done = aces_cached_frames(), n = int(frames_.size());
+            if (done == n) log(QStringLiteral("playback ready: all %1 frames prepared; Play is real time").arg(n));
+            sync_ui();
+        }
+    }
+    if (aces_next_ >= 0) {   // the user asked for a frame meanwhile: that first
+        const int next = aces_next_;
+        aces_next_ = -1;
+        aces_request(next);
+        return;
+    }
+    aces_prefetch_soon(0);
+}
+
 QString MainWindow::aces_cache_key() const {
+    QSettings st;   // the tau bands change the frames too (3 Nov 2026: they were missing from the key)
+    const QString band = st.value("aces/bandOn", false).toBool()
+                             ? QStringLiteral("band%1/%2").arg(st.value("aces/tauHigh", 254).toInt()).arg(st.value("aces/tauLow", 5).toInt())
+                             : QStringLiteral("noband");
     return shot_trim_key() + "|" + QString::fromStdString(aces_v2::trims_text(aces_trims_)) + "|" + aces_monitor_ + "|" +
-           aces_source_display_ + "|" + QString::number(play_state_->side.load());
+           aces_source_display_ + "|" + QString::number(play_state_->side.load()) + "|" + band;
 }
 
 int MainWindow::aces_cached_frames() const {
