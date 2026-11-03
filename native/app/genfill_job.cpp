@@ -9,6 +9,8 @@
 #include <QJsonDocument>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QCryptographicHash>
+#include <QDateTime>
 #include <QSettings>
 #include <QTimer>
 
@@ -163,6 +165,38 @@ QString genfill_out_dir(const QString& master) {
     return out;
 }
 
+QString genfill_file_sha256(const fs::path& file) {
+    std::error_code ec;
+    const auto size = fs::file_size(file, ec);
+    if (ec) return {};
+    const QFileInfo fi(qp(file));
+    const QString key = QStringLiteral("genfill/sha256_cache/") +
+                        QString::fromLatin1(QCryptographicHash::hash(qp(file).toUtf8(), QCryptographicHash::Sha1).toHex());
+    const QString stamp = QString::number(qulonglong(size)) + QLatin1Char(':') + QString::number(fi.lastModified().toMSecsSinceEpoch());
+    QSettings st;
+    const QStringList cached = st.value(key).toStringList();
+    if (cached.size() == 2 && cached[0] == stamp) return cached[1];
+    QFile f(qp(file));
+    if (!f.open(QIODevice::ReadOnly)) return {};
+    QCryptographicHash h(QCryptographicHash::Sha256);
+    if (!h.addData(&f)) return {};
+    const QString hex = QString::fromLatin1(h.result().toHex());
+    st.setValue(key, QStringList{stamp, hex});
+    return hex;
+}
+
+bool genfill_lora_is_v3(const fs::path& file, const QString& expected) {
+    return !expected.isEmpty() && genfill_file_sha256(file) == expected;
+}
+
+QString genfill_ready_text(const GenFillSetup& s) {
+    const QString where = QStringLiteral("Wan2.1-VACE-1.3B (%1) + %2").arg(from_path(s.base), from_path(s.lora));
+    return s.lora_is_v3 ? QStringLiteral("Ready: %1\nAI fill v3 (SHA-256 verified)").arg(where)
+                        : QStringLiteral("Ready, but this LoRA is NOT the published AI fill v3 (SHA-256 %1…); it may be an "
+                                         "older version, and only v3 passed RUDRA's gates:\n%2")
+                              .arg(QString::fromLatin1(kGenFillV3Sha256).left(12), where);
+}
+
 std::optional<GenFillSetup> genfill_setup(QString* why) {
     QSettings st;
     GenFillSetup s;
@@ -174,7 +208,17 @@ std::optional<GenFillSetup> genfill_setup(QString* why) {
     // what is found is saved, so the next start looks once.
     s.base = saved_or("genfill/base", "transformer/config.json",
                       [&] { return first_existing(genfill_base_candidates(s.repo), "transformer/config.json"); });
-    s.lora = saved_or("genfill/lora", nullptr, [&] { return first_existing(genfill_lora_candidates(s.repo), nullptr); });
+    // The LoRA: with nothing saved, the first candidate that VERIFIES as v3, else the
+    // first that exists (4 Nov 2026: the first that exists could be an old v1).
+    const auto loras = genfill_lora_candidates(s.repo);
+    for (const auto& l : loras) {
+        std::error_code e;
+        if (fs::exists(l, e) && genfill_lora_is_v3(l)) {
+            s.v3_found = l;
+            break;
+        }
+    }
+    s.lora = saved_or("genfill/lora", nullptr, [&] { return !s.v3_found.empty() ? s.v3_found : first_existing(loras, nullptr); });
     auto refuse = [why](const QString& w) -> std::optional<GenFillSetup> {
         if (why) *why = w;
         return std::nullopt;
@@ -189,6 +233,7 @@ std::optional<GenFillSetup> genfill_setup(QString* why) {
     if (!fs::exists(s.lora, ec))
         return refuse(QStringLiteral("AI fill: no LoRA at %1 (File > Model packages > AI fill v3 > Download).").arg(qp(s.lora)));
     if (why) why->clear();
+    s.lora_is_v3 = genfill_lora_is_v3(s.lora);
     if (st.value("genfill/base").toString() != qp(s.base)) st.setValue("genfill/base", qp(s.base));
     if (st.value("genfill/lora").toString() != qp(s.lora)) st.setValue("genfill/lora", qp(s.lora));
     return s;
