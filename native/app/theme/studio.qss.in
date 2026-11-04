@@ -124,6 +124,9 @@ QWidget#viewerToolbar QPushButton:checked { border-color: var(--gold); color: va
 QWidget#viewerToolbar QPushButton:disabled { color: var(--ink-3); }
 QLabel#vtBadge { background: var(--gold); color: var(--bg); border-radius: 4px; padding: 1px 8px; font-weight: 600; }
 QLabel#rangeLine { color: var(--ink-3); font-size: 11px; }
+/* 4 Nov 2026: a shot row's remove button */
+QToolButton[role="shot-remove"] { background: transparent; border: none; color: var(--ink-3); font-size: 14px; padding: 0 4px; }
+QToolButton[role="shot-remove"]:hover { color: var(--ink); }
 QLabel#zoomVal { color: var(--ink-3); font-size: 12px; font-family: "var(--mono-family)"; padding: 0 6px; }
 QWidget[role="badge"] { background: var(--card); border: 1px solid var(--raise); border-radius: 13px; }
 QWidget[role="badge"] QLabel { background: transparent; font-size: 12px; }

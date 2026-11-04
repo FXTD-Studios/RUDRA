@@ -291,6 +291,7 @@ public:
     void open_paths(const QStringList& paths);
     // Open recent: the shots opened last, newest first, kept between runs.
     QStringList recent_sources() const;
+    void forget_source(const QString& path);   // off the list on the left; nothing on disk touched
     void fill_recent();
     // Settings kept between runs: the window's place and size, the workspace,
     // the rails, the inspector tab, the container and the Render fields.

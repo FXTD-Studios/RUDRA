@@ -51,6 +51,9 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSlider>
+#include <QToolButton>
+#include <QMenu>
+#include <QTimer>
 #include <QSettings>
 #include <QStackedWidget>
 #include <QStandardPaths>
@@ -421,6 +424,7 @@ void MainWindow::bind_handlers() {
     h["recent-clear"] = [this] {
         QSettings().remove("recent/sources");
         fill_recent();
+        refresh_library();   // 4 Nov 2026: the rows on the left emptied too
     };
     h["remeasure"] = [this] {
         measure_now();
@@ -2340,6 +2344,18 @@ constexpr int kRecentMax = 10;
 
 QStringList MainWindow::recent_sources() const { return QSettings().value("recent/sources").toStringList(); }
 
+// 4 Nov 2026: one shot off the list on the left (and Open recent). The file or
+// folder itself is never touched.
+void MainWindow::forget_source(const QString& path) {
+    QSettings st;
+    QStringList r = st.value("recent/sources").toStringList();
+    r.removeAll(QDir::cleanPath(QFileInfo(path).absoluteFilePath()));
+    r.removeAll(QDir::cleanPath(path));
+    st.setValue("recent/sources", r);
+    fill_recent();
+    refresh_library();
+}
+
 void MainWindow::remember_source(const QString& path) {
     QSettings st;
     QStringList r = st.value("recent/sources").toStringList();
@@ -2519,6 +2535,7 @@ void MainWindow::refresh_library() {
     if (!shots) return;
     for (auto* c : shots->findChildren<QWidget*>(Qt::FindDirectChildrenOnly)) c->deleteLater();
     auto* v = static_cast<QVBoxLayout*>(shots->layout());
+    QString current;   // the open shot's path (set below, before its row)
     auto add_row = [&](const QString& name, const QString& sub, const QImage& thumb, bool sel, bool hdr,
                        const QString& open) {
         auto* r = new QWidget(shots);
@@ -2557,10 +2574,36 @@ void MainWindow::refresh_library() {
             r->installEventFilter(this);
             r->setProperty("open", open);
         }
+        // 4 Nov 2026: off the list, from the x or a right click. The open shot is
+        // closed; nothing on disk is touched. Deferred: the row is rebuilt.
+        const QString path = open.isEmpty() ? current : open;
+        const bool is_current = open.isEmpty();
+        auto remove = [this, path, is_current] {
+            QTimer::singleShot(0, this, [this, path, is_current] {
+                if (is_current) close_frames();
+                forget_source(path);
+            });
+        };
+        const QString what = is_current ? QStringLiteral("Close this shot and remove it from the list (the files stay on disk)")
+                                        : QStringLiteral("Remove from the list (the file stays on disk)");
+        auto* x = new QToolButton(r);
+        x->setText(QStringLiteral("\u00d7"));
+        x->setProperty("role", "shot-remove");
+        x->setObjectName(is_current ? "shotRemoveCurrent" : "shotRemove");
+        x->setToolTip(what);
+        x->setAutoRaise(true);
+        x->setFocusPolicy(Qt::NoFocus);
+        connect(x, &QToolButton::clicked, this, remove);
+        h->addWidget(x);
+        r->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(r, &QWidget::customContextMenuRequested, this, [this, r, remove, is_current](const QPoint& at) {
+            QMenu m(this);
+            m.addAction(is_current ? QStringLiteral("Close and remove from list") : QStringLiteral("Remove from list"), remove);
+            m.exec(r->mapToGlobal(at));
+        });
         v->addWidget(r);
     };
     int rows = 0;
-    QString current;
     if (!frames_.empty()) {
         const bool folder = frames_.size() > 1;
         const auto& first = frames_.front();
