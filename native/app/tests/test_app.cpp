@@ -46,6 +46,7 @@
 #include <QPointer>
 #include <QUrl>
 #include <QTest>
+#include <QToolButton>
 #include <QTreeWidget>
 
 #include "paths.hpp"
@@ -6205,5 +6206,46 @@ TEST(GenFillIdentity, ASavedLoraThatIsNotV3IsUsedButSaysSo) {
     EXPECT_FALSE(s->lora_is_v3);
     EXPECT_TRUE(app::genfill_ready_text(*s).contains("NOT the published AI fill v3"));
     for (const char* k : {"repo", "python", "base", "lora"}) st.remove(QStringLiteral("genfill/") + k);
+    std::filesystem::remove_all(dir);
+}
+
+// ---- shots off the list on the left (4 Nov 2026) ----
+TEST(AppShots, ARecentShotComesOffTheListAndStaysOnDisk) {
+    const auto dir = std::filesystem::temp_directory_path() / "rudra_shot_remove";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    const auto a = dir / "a.png", b = dir / "b.png";
+    { std::ofstream(a) << "x"; }
+    { std::ofstream(b) << "x"; }
+    QSettings().setValue("recent/sources", QStringList{app::from_path(a), app::from_path(b)});
+    app::MainWindow w(false);
+    w.forget_source(app::from_path(a));
+    const QStringList left = QSettings().value("recent/sources").toStringList();
+    EXPECT_FALSE(left.contains(QDir::cleanPath(app::from_path(a))));
+    EXPECT_TRUE(left.contains(app::from_path(b)) || left.contains(QDir::cleanPath(app::from_path(b))));
+    EXPECT_TRUE(std::filesystem::exists(a));   // only the list changes
+    QSettings().remove("recent/sources");
+    std::filesystem::remove_all(dir);
+}
+
+TEST(AppShots, EveryRecentRowHasARemoveButton) {
+    const auto dir = std::filesystem::temp_directory_path() / "rudra_shot_rows";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    QStringList r;
+    for (const char* n : {"one.png", "two.png", "three.png"}) {
+        std::ofstream(dir / n) << "x";
+        r << app::from_path(dir / n);
+    }
+    QSettings().setValue("recent/sources", r);
+    app::MainWindow w(false);
+    w.run("recent-clear");   // also proves Clear empties the rows, not only the menu
+    QCoreApplication::processEvents();
+    EXPECT_TRUE(w.findChildren<QToolButton*>("shotRemove").isEmpty());
+    QSettings().setValue("recent/sources", r);
+    w.forget_source(app::from_path(dir / "nothing-there.png"));   // refreshes the rows
+    QCoreApplication::processEvents();
+    EXPECT_EQ(w.findChildren<QToolButton*>("shotRemove").size(), 3);
+    QSettings().remove("recent/sources");
     std::filesystem::remove_all(dir);
 }
