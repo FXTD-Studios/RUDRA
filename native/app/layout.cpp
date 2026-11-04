@@ -18,7 +18,9 @@
 #include <initializer_list>
 #include <tuple>
 #include <QHBoxLayout>
+#include <QEvent>
 #include <QLabel>
+#include <QScrollBar>
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QPixmap>
@@ -89,6 +91,49 @@ QWidget* row(const QString& key, QLabel* value, const QString& role = "prow") {
 
 }  // namespace
 
+
+namespace {
+// A right-hand column never slides sideways (4 Nov 2026). The columns are fixed-width
+// scroll areas with the horizontal bar hidden; anything wider than the column (a long
+// path, the container line) left a hidden horizontal range that a trackpad swipe or
+// Shift+wheel panned, so the panel seemed to float and its right edge was cut off.
+// Now the content is held to the viewport's width (labels wrap) and the horizontal
+// position is locked at 0.
+class PinWidth final : public QObject {
+public:
+    PinWidth(QScrollArea* s, QWidget* col) : QObject(s), s_(s), col_(col) {}
+    bool eventFilter(QObject* o, QEvent* e) override {
+        if (o == s_->viewport() && e->type() == QEvent::Resize) {
+            col_->setMaximumWidth(s_->viewport()->width());
+            wrap_labels();
+        }
+        if (o == col_ && e->type() == QEvent::LayoutRequest) wrap_labels();   // labels made later (status lines)
+        return false;
+    }
+    void wrap_labels() const {
+        for (auto* l : col_->findChildren<QLabel*>())
+            if (!l->wordWrap() && !l->property("nowrap").toBool()) {
+                l->setWordWrap(true);
+                l->setMinimumWidth(0);
+            }
+    }
+
+private:
+    QScrollArea* s_;
+    QWidget* col_;
+};
+void pin_column(QScrollArea* s, QWidget* col) {
+    auto* pin = new PinWidth(s, col);
+    s->viewport()->installEventFilter(pin);
+    col->installEventFilter(pin);
+    pin->wrap_labels();
+    col->setMaximumWidth(s->viewport()->width());
+    auto* bar = s->horizontalScrollBar();
+    QObject::connect(bar, &QScrollBar::valueChanged, bar, [bar](int v) { if (v != 0) bar->setValue(0); });
+    QObject::connect(bar, &QScrollBar::rangeChanged, bar, [bar] { bar->setValue(0); });
+}
+}  // namespace
+
 void MainWindow::build_ui(bool with_viewer) {
     auto* app = styled("app");
     auto* v = column(app);
@@ -119,6 +164,7 @@ void MainWindow::build_ui(bool with_viewer) {
         iv->addWidget(scopes_);
         iv->addStretch(1);
         scroll->setWidget(inner);
+        pin_column(scroll, inner);
         dv->addWidget(scroll, 1);
         h->addWidget(scopes_dock_);
     }
@@ -1453,6 +1499,7 @@ QWidget* MainWindow::build_right_rail() {
     v->addWidget(lcard);
     v->addStretch(1);
     scroll->setWidget(col);
+    pin_column(scroll, col);
     rv->addWidget(scroll, 1);
     return rail;
 }

@@ -25,6 +25,9 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QGroupBox>
+#include <QLayout>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSlider>
 #include <QStackedWidget>
 #include <QImage>
@@ -6272,4 +6275,29 @@ TEST(AcesCleanShadows, OffByDefaultSavedAndPassedOn) {
     EXPECT_TRUE(QSettings().value("aces/cleanShadows").toBool());
     EXPECT_GE(told, 1);   // the viewer re-runs the frame
     QSettings().remove("aces/cleanShadows");
+}
+
+// ---- the right-hand columns never slide sideways (4 Nov 2026) ----
+TEST(AppRail, TheDeliveryColumnCannotBePannedAndWrapsLongText) {
+    app::MainWindow w(false);
+    w.resize(1600, 900);
+    w.show();
+    QCoreApplication::processEvents();
+    auto* scroll = w.findChild<QScrollArea*>("railscroll");
+    ASSERT_TRUE(scroll);
+    auto* col = scroll->widget();
+    auto* longest = new QLabel(QString("Ready: Wan2.1-VACE-1.3B (D:/A.I/Devlopments/RADIANCE_STUDIO_Pack_dev/models/"
+                                       "wan2.1-vace-1.3b-diffusers) + rudra_genfill.safetensors · AI fill v3, verified"), col);
+    col->layout()->addWidget(longest);
+    QCoreApplication::processEvents();
+    QCoreApplication::processEvents();
+    EXPECT_TRUE(longest->wordWrap());                                  // made later, still wrapped
+    EXPECT_LE(col->width(), scroll->viewport()->width());              // never wider than the column
+    scroll->horizontalScrollBar()->setValue(80);                        // a swipe or Shift+wheel
+    QCoreApplication::processEvents();
+    EXPECT_EQ(scroll->horizontalScrollBar()->value(), 0);               // stays put
+    auto* scopes = w.findChild<QScrollArea*>("scopesScroll");
+    ASSERT_TRUE(scopes);
+    scopes->horizontalScrollBar()->setValue(50);
+    EXPECT_EQ(scopes->horizontalScrollBar()->value(), 0);
 }
