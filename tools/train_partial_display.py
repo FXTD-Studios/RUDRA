@@ -31,6 +31,11 @@ def loc(p):
     return D + p.replace('\\', '/').split('G:/')[1]
 
 
+def pilot_path(p):
+    """A pilot report: relative to the data root (PILOTS), or an absolute G:/ path (--extra-pilot)."""
+    return loc(p) if 'G:/' in p.replace('\\', '/') else D + p
+
+
 def sha(p):
     return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
@@ -71,7 +76,7 @@ def build_pool(crops_per_frame, crop, seed, aligned=False, border=48, matched=Fa
     rng = np.random.default_rng(seed)
     pool, used = [], []
     for pil in (PILOTS if pilots is None else pilots):
-        rows = json.loads(Path(D + pil).read_text())['rows']
+        rows = json.loads(Path(pilot_path(pil)).read_text())['rows']
         for r in rows:
             assert r['split'] == 'train'
             for key in ('sdr','target'):
@@ -193,6 +198,7 @@ def main():
     ap.add_argument('--save-every', type=int, default=0, help='also save stepN.pt every N updates (diagnostics; the registered result is the last)')
     ap.add_argument('--max-hours', type=float, default=0, help='stop at the first save boundary after this many hours (requires --save-every)')
     ap.add_argument('--display-ev-weights',type=float,nargs='+',help='per-EV multipliers for the display terms, same order as --display-evs (default all 1)')
+    ap.add_argument('--extra-pilot',action='append',default=[],help='4 Nov 2026: another corpus report.json (G:/...), e.g. tools/build_real_partial_corpus.py; its rows join the still pool')
     ap.add_argument('--bin-weight',type=float,default=0.0,help='0 EV kit (training/aces_bin_hinge.py): weight of the half-code bin hinge vs the SOURCE codes; 0 = off, history unchanged')
     ap.add_argument('--bin-tol-codes',type=float,default=0.5,help='the bin hinge tolerance in 8-bit codes')
     ap.add_argument('--direct-step-report',help='replace Adam with normalized PCGrad using capped TRAIN report step lengths')
@@ -228,7 +234,7 @@ def main():
         p.requires_grad_(n.startswith('highlight_context.'))
     t0 = time.time()
     metadata=[]
-    pool, used = build_pool(a.crops_per_frame, a.crop, a.seed,a.aligned_crops,a.border,a.matched_crops,metadata,PILOTS[:1] if a.paired_motion else None)
+    pool, used = build_pool(a.crops_per_frame, a.crop, a.seed,a.aligned_crops,a.border,a.matched_crops,metadata,(PILOTS[:1] if a.paired_motion else PILOTS)+list(a.extra_pilot) if a.extra_pilot else (PILOTS[:1] if a.paired_motion else None))
     motion_pool=[]
     if a.paired_motion:
         from training.aces_partial_pairs import build_motion_pool
@@ -404,7 +410,7 @@ def main():
     torch.save({**state, 'model': after,
                 'recipe': {**vars(a), 'parent_checkpoint': a.checkpoint, 'parent_sha256': sha(a.checkpoint), 'trainer_sha256': sha(out / 'trainer_snapshot.py'), 'geometry_sha256':sha(out / 'geometry_snapshot.py'),
                            'trained': 'highlight_context only (partial highlights)', 'train_frames': used,
-                           'pilots': PILOTS,'pilot_hashes':{pil:sha(D+pil) for pil in PILOTS},'source_hashes':sources,
+                           'pilots': PILOTS+list(a.extra_pilot),'pilot_hashes':{pil:sha(pilot_path(pil)) for pil in PILOTS+list(a.extra_pilot)},'source_hashes':sources,
                            'schedule_sha256':sha(out/'schedule.json'),'crop_pool_sha256':sha(out/'crop_pool.json'),
                            'schedule_manifest_sha256':sha(out/'schedule_manifest.json') if a.registered_schedule else None,
                            'direct_step_source_sha256':sha(out/'direct_step_source.json') if a.direct_step_report else None,
