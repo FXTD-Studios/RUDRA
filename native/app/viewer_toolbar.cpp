@@ -151,6 +151,14 @@ void MainWindow::build_viewer_toolbar(QVBoxLayout* v, QWidget* parent) {
                             vtool_, true);
     connect(vt_range_, &QPushButton::clicked, this, [this] { session_.set_view_layer(session_.view_layer == 4 ? 0 : 4); });
     row->addWidget(vt_range_);
+    // 4 Nov 2026: the AI fill in the viewer, frame by frame and playing (the preview's
+    // frames, or the last finished fill); with Changes on, what it invented.
+    auto* fill = tool_button("AI fill", "vtAiFill",
+                             "Show the AI fill on every frame that has one: the preview's frames (Deliver > Preview AI fill) "
+                             "or the last finished fill. Turn Changes on to see what it invented.",
+                             vtool_, true);
+    connect(fill, &QPushButton::toggled, this, [this](bool on) { set_fill_view(on); });
+    row->addWidget(fill);
     row->addStretch(1);
     vt_badge_ = new QLabel(vtool_);
     vt_badge_->setObjectName("vtBadge");

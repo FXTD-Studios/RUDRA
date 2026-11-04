@@ -1297,6 +1297,7 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
         if (aces_sdr_img_) viewer_->set_source_sdr(*aces_sdr_img_);
     }
 #endif
+    apply_fill_view();   // the viewer's AI fill, when on and this frame has one
     sync_reference_ui();
     show_mode();   // the status bar says the learned model, not the analytic reconstruction
     // The filmstrip's picture of this frame, from what the viewer shows (29 Oct 2026).
@@ -1436,6 +1437,8 @@ void MainWindow::aces_after_prefetch(const QJsonObject& o, int index, const QStr
             aces_cache_put(index, std::make_shared<const NetworkLinearImage>(aces_view_image(*model)),
                            std::make_shared<const NetworkLinearImage>(aces_view_image(*base)), std::move(sdr), std::move(codes));
             const int done = aces_cached_frames(), n = int(frames_.size());
+            statusBar()->showMessage(done == n ? QStringLiteral("Playback ready: Play is real time")
+                                               : QStringLiteral("Preparing playback: %1 of %2 frames").arg(done).arg(n), done == n ? 5000 : 0);
             if (done == n) log(QStringLiteral("playback ready: all %1 frames prepared; Play is real time").arg(n));
             sync_ui();
         }
@@ -1469,6 +1472,12 @@ void MainWindow::aces_rt_stop() {
     if (!aces_rt_playing_) return;
     aces_rt_playing_ = false;
     if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
+    // How real time went (4 Nov 2026): frames dropped mean the screen could not keep up.
+    if (aces_rt_shown_ > 0)
+        log(QStringLiteral("real-time playback: %1 frames shown, %2 dropped%3").arg(aces_rt_shown_).arg(aces_rt_dropped_)
+                .arg(aces_rt_dropped_ > 0 ? QStringLiteral(" (a smaller playback size keeps up: View > Playback size)") : QString()));
+    fill_view_cache_.clear();   // back to full-size fills
+    sync_ui();
     // The full-size frame where it stopped.
     if (aces_routed() && !frames_.empty()) aces_request(current_);
 }

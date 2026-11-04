@@ -1239,7 +1239,15 @@ void MainWindow::toggle_play() {
                         aces_rt_stop();
                         return;
                     }
-                    current_ = (current_ + 1) % int(frames_.size());
+                    // By the clock (4 Nov 2026): the frame due now, so playback keeps the shot's speed;
+                    // a late tick drops frames (counted) instead of slowing down.
+                    const double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - aces_rt_t0_).count();
+                    const int n = int(frames_.size());
+                    const int due = (aces_rt_from_ + int(el * aces_rt_timer_fps_)) % n;
+                    if (due == current_) return;
+                    aces_rt_dropped_ += ((due - current_ + n) % n) - 1;
+                    ++aces_rt_shown_;
+                    current_ = due;
                     aces_shown_ = current_;
                     aces_model_img_ = aces_cache_[std::size_t(current_)];
                     // View revision 6: the cached baseline and SDR, so A | B, the
@@ -1255,10 +1263,16 @@ void MainWindow::toggle_play() {
                         if (side.sdr) viewer_->set_source_sdr(*side.sdr);
                     }
 #endif
-                    sync_ui();
+                    apply_fill_view();
+                    if (aces_rt_shown_ % 6 == 0) sync_ui();   // the whole UI 4 times a second, not every frame
                 });
             }
-            aces_rt_timer_->setInterval(std::max(1, int(std::lround(1000.0 / std::max(1.0, fps)))));
+            aces_rt_timer_fps_ = std::max(1.0, fps);
+            aces_rt_timer_->setInterval(std::max(1, int(std::lround(500.0 / aces_rt_timer_fps_))));   // ticks twice a frame
+            aces_rt_t0_ = std::chrono::steady_clock::now();
+            aces_rt_from_ = current_;
+            aces_rt_shown_ = aces_rt_dropped_ = 0;
+            fill_view_cache_.clear();   // fills at the playback size while playing
             aces_rt_playing_ = true;
             btn_play_->set_glyph(IconButton::Glyph::Pause);
             log(QStringLiteral("playing the cached learned frames in real time (%1 fps)").arg(fps, 0, 'f', 3));
@@ -1267,6 +1281,8 @@ void MainWindow::toggle_play() {
         }
         aces_playing_ = true;
         btn_play_->set_glyph(IconButton::Glyph::Pause);
+        statusBar()->showMessage(QStringLiteral("Playback is being prepared: %1 of %2 frames. Play is real time once all are ready "
+                                                "(meanwhile it plays as frames render).").arg(aces_cached_frames()).arg(frames_.size()), 8000);
         log(QStringLiteral("playing through the learned ACES model as frames render, caching them: play again for real time"));
         aces_request(current_ + 1 < int(frames_.size()) ? current_ + 1 : 0);
         return;

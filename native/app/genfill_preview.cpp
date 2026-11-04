@@ -343,7 +343,11 @@ void MainWindow::preview_genfill() {
                         p.mask = std::make_shared<const NetworkLinearImage>(preview_view_image(mk));
                         p.changed = np ? double(changed) / double(np) : 0.0;
                     }
+                    p.first = a;
+                    p.last = b;
+                    p.fill_dir = fdir;
                     self->genfill_preview_ = std::move(p);
+                    self->fill_view_cache_.clear();   // a new preview: the viewer's AI fill reads it afresh
                     // The whole shot at this rate: its master and its fill, per frame (the model's load is once).
                     const double per_frame = (master_s + fill_s) / std::max(1, frames);
                     const double whole_min = per_frame * n / 60.0;
@@ -408,4 +412,82 @@ void MainWindow::show_genfill_preview(const QString& which) {
                              8000);
 }
 
+// ---- the viewer's AI fill (4 Nov 2026) ----
+namespace {
+// Box-averaged down to `side` (the playback size), so a shot's fills fit in memory and play in real time.
+NetworkLinearImage fit_side(const NetworkLinearImage& img, int side) {
+    const int w = img.width(), h = img.height();
+    const int k = side > 0 ? std::max(1, (std::max(w, h) + side - 1) / side) : 1;
+    if (k == 1) return img;
+    const int ow = w / k, oh = h / k;
+    PlanarBuffer out(3, oh, ow);
+    for (int c = 0; c < 3; ++c)
+        for (int y = 0; y < oh; ++y)
+            for (int x = 0; x < ow; ++x) {
+                double s = 0;
+                for (int dy = 0; dy < k; ++dy)
+                    for (int dx = 0; dx < k; ++dx) s += img.buffer().at(c, y * k + dy, x * k + dx);
+                out.at(c, y, x) = float(s / (k * k));
+            }
+    return NetworkLinearImage(std::move(out));
+}
+}  // namespace
+
+std::shared_ptr<const NetworkLinearImage> MainWindow::fill_view_frame(int index) {
+    // The source: the preview's frames, else the last finished fill when it covers the shot.
+    const QString key = (genfill_preview_ ? genfill_preview_->fill_dir : QString()) + "|" + genfill_last_out_ + "|" +
+                        QString::number(play_state_->side.load()) + "|" + QString::number(aces_shown_ >= 0 && aces_model_img_ ? aces_model_img_->width() : 0);
+    if (key != fill_view_key_) {
+        fill_view_cache_.clear();
+        fill_view_files_.clear();
+        fill_view_key_ = key;
+        if (!genfill_last_out_.isEmpty())
+            for (const QString& n : QDir(genfill_last_out_).entryList({QStringLiteral("*.exr")}, QDir::Files, QDir::Name))
+                fill_view_files_ << QDir(genfill_last_out_).filePath(n);
+    }
+    if (auto it = fill_view_cache_.find(index); it != fill_view_cache_.end()) return it->second;
+    QString path;
+    if (genfill_preview_ && index >= genfill_preview_->first && index <= genfill_preview_->last && !genfill_preview_->fill_dir.isEmpty())
+        path = QDir(genfill_preview_->fill_dir).filePath(preview_name(index));
+    else if (fill_view_files_.size() == int(frames_.size()) && index >= 0 && index < fill_view_files_.size())
+        path = fill_view_files_[index];
+    if (path.isEmpty() || !QFileInfo::exists(path)) return nullptr;
+    QString why;
+    auto rgb = read_acescg_rgb(path, &why);
+    if (!rgb) return nullptr;
+    // The size of what the viewer shows for this frame: the playback size while playing, else full.
+    const int side = aces_rt_playing_ ? play_state_->side.load() : 0;
+    auto img = std::make_shared<const NetworkLinearImage>(fit_side(preview_view_image(*rgb), side));
+    fill_view_cache_[index] = img;
+    return img;
+}
+
+bool MainWindow::apply_fill_view() {
+    if (!fill_view_on_ || !aces_routed()) return false;
+    const auto img = fill_view_frame(current_);
+    if (!img) {
+        statusBar()->showMessage(QStringLiteral("AI fill: no fill for frame %1 (Preview AI fill, or render with AI fill)").arg(current_ + 1), 3000);
+        return false;
+    }
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) {
+        const bool base_ok = aces_base_img_ && aces_base_img_->width() == img->width() && aces_base_img_->height() == img->height();
+        const bool codes_ok = aces_codes_.size() == std::size_t(img->width()) * std::size_t(img->height());
+        viewer_->set_composited(*img, base_ok ? *aces_base_img_ : *img, codes_ok ? aces_codes_ : std::vector<float>{});
+    }
+#endif
+    return true;
+}
+
+void MainWindow::set_fill_view(bool on) {
+    fill_view_on_ = on;
+    if (on) {
+        if (!apply_fill_view()) return;
+        statusBar()->showMessage(QStringLiteral("Viewer: the AI fill (Changes shows what it invented)"), 4000);
+    } else if (aces_routed() && !frames_.empty()) {
+        if (!aces_rt_playing_) aces_request(current_);   // back to the frame without the fill
+    }
+}
+
 }  // namespace rudra::app
+
