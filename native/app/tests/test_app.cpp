@@ -4084,6 +4084,7 @@ for line in sys.stdin:
 // process speaking JSON lines). The fakes below stand in for the Python.
 // ---------------------------------------------------------------------------
 #include "genfill_job.hpp"
+#include "genfill_swap.hpp"
 
 TEST(Deliver, TheAiFillIsForTheLearnedExrOnly) {
     app::DeliverChoice c;
@@ -6300,4 +6301,35 @@ TEST(AppRail, TheDeliveryColumnCannotBePannedAndWrapsLongText) {
     ASSERT_TRUE(scopes);
     scopes->horizontalScrollBar()->setValue(50);
     EXPECT_EQ(scopes->horizontalScrollBar()->value(), 0);
+}
+
+// ---- AI fill fixes the master in place (4 Nov 2026) ----
+TEST(GenFillSwap, FilledFramesReplaceTheMasterAndTheOriginalsAreKept) {
+    const auto root = std::filesystem::temp_directory_path() / "rudra_genfill_swap";
+    std::filesystem::remove_all(root);
+    const auto m = root / "master", f = root / "master_aifill";
+    std::filesystem::create_directories(m);
+    std::filesystem::create_directories(f / "review");
+    for (const char* n : {"master.000001.exr", "master.000002.exr", "master.000003.exr"}) std::ofstream(m / n) << "original";
+    for (const char* n : {"master.000001.exr", "master.000002.exr"}) std::ofstream(f / n) << "filled";
+    std::ofstream(f / "extra.000009.exr") << "filled";   // no master frame of that name
+    std::ofstream(f / "review" / "master.000001.a.png") << "review";
+    std::filesystem::create_directories(root / "master_before_aifill");   // an earlier backup: never overwritten
+    const auto r = app::genfill_replace_in_master(app::from_path(m), app::from_path(f));
+    EXPECT_TRUE(r.error.isEmpty()) << r.error.toStdString();
+    EXPECT_EQ(r.replaced, 2);
+    EXPECT_EQ(r.skipped, 1);
+    EXPECT_TRUE(r.backup.endsWith("master_before_aifill_2"));
+    auto text = [](const std::filesystem::path& p) {
+        std::ifstream in(p);
+        std::string s;
+        std::getline(in, s);
+        return s;
+    };
+    EXPECT_EQ(text(m / "master.000001.exr"), "filled");     // fixed in place
+    EXPECT_EQ(text(m / "master.000003.exr"), "original");   // not filled: untouched
+    EXPECT_EQ(text(app::to_path(r.backup) / "master.000001.exr"), "original");   // kept
+    EXPECT_TRUE(std::filesystem::exists(f / "review" / "master.000001.a.png"));  // the review stays
+    EXPECT_TRUE(std::filesystem::exists(f / "extra.000009.exr"));
+    std::filesystem::remove_all(root);
 }
