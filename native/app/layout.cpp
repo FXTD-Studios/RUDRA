@@ -1072,8 +1072,9 @@ QWidget* MainWindow::build_right_rail() {
         auto* ai = new CheckRow("deliverAiFill", "AI fill (experimental)", "deliverAiFillHint",
                                 "clipped highlights, crushed shadows", kc);
         ai->setToolTip("After the render, a Wan2.1-VACE model trained on RUDRA's own footage fills only what the "
-                       "8-bit source cannot know: fully clipped highlights and fully crushed shadows. It writes a "
-                       "copy beside the master (<name>_aifill); no 8-bit code of the SDR view changes, and "
+                       "8-bit source cannot know: fully clipped highlights and fully crushed shadows. When it finishes "
+                       "it fixes those areas in the master in place and keeps the originals in <name>_before_aifill "
+                       "(the fill and its review stay in <name>_aifill); no 8-bit code of the SDR view changes, and "
                        "rudra.generated marks every pixel it invented");
         ai->clicked = [this] { set_deliver("ai_fill", deliver_.ai_fill ? "0" : "1"); };
         kcv->addWidget(ai);

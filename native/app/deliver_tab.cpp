@@ -26,6 +26,7 @@
 #include "paths.hpp"
 #include "aces_master.hpp"
 #include "genfill_job.hpp"
+#include "genfill_swap.hpp"
 #include "genfill_review.hpp"
 #include "main_window.hpp"
 #include "rudra/core/timecode.hpp"
@@ -319,7 +320,10 @@ void MainWindow::sync_deliver() {
                            .arg(ext)
                            .arg(c.output == "sequence" ? QStringLiteral(" …") : QString());
         if (movie && c.bits == 16) note += QStringLiteral(". Uncompressed: large files, lossless");
-        if (c.ai_fill) note += QStringLiteral(", then the AI fill writes a copy in %1_aifill").arg(shown_name);
+        if (c.ai_fill)
+            note += QSettings().value("genfill/replaceInMaster", true).toBool()
+                        ? QStringLiteral(", then the AI fill fixes the clipped areas in place (the originals kept in %1_before_aifill)").arg(shown_name)
+                        : QStringLiteral(", then the AI fill writes a copy in %1_aifill").arg(shown_name);
         note += QStringLiteral(". Nothing is ever replaced.");
     } else if (movie) {
         note = movie_shot ? QStringLiteral("Queued as an export with the movie's audio; see Queue.")
@@ -622,15 +626,26 @@ bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOpti
             }
             st->show();
         },
-        [self, out, finished](bool done, const QJsonObject& last) {
+        [self, out, master_dir, finished](bool done, const QJsonObject& last) {
             if (!self) return;
             auto* st = self->findChild<QLabel*>("renderStatus");
             QString text;
             if (done) {
                 self->genfill_last_out_ = out;
-                text = QStringLiteral("AI fill: %1 frame(s) to %2 · %3 % of pixels generated")
+                // 4 Nov 2026 (Ahmed: option a): the fill fixes the master in place; the
+                // originals go to <master>_before_aifill. Only after a fill that finished.
+                QString where = QStringLiteral("to %1").arg(QDir::toNativeSeparators(out));
+                if (QSettings().value("genfill/replaceInMaster", true).toBool()) {
+                    const GenFillSwap sw = genfill_replace_in_master(master_dir, out);
+                    if (!sw.error.isEmpty())
+                        where = QStringLiteral("to %1 (the master was NOT updated: %2)").arg(QDir::toNativeSeparators(out), sw.error);
+                    else if (sw.replaced > 0)
+                        where = QStringLiteral("fixed in place in %1; the originals are in %2")
+                                    .arg(QDir::toNativeSeparators(master_dir), QDir::toNativeSeparators(sw.backup));
+                }
+                text = QStringLiteral("AI fill: %1 frame(s) %2 · %3 % of pixels generated")
                            .arg(last.value("frames").toInt())
-                           .arg(QDir::toNativeSeparators(out))
+                           .arg(where)
                            .arg(100.0 * last.value("generated_fraction").toDouble(), 0, 'f', 2) +
                        (last.value("flagged_frames").toInt() > 0
                             ? QStringLiteral(" · %1 frame(s) flicker: Review fill… before it goes out").arg(last.value("flagged_frames").toInt())
