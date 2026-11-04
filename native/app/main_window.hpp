@@ -826,7 +826,26 @@ private:
         GenFillOptions options;   // what it was filled with: changed since, the preview is stale
         std::shared_ptr<const NetworkLinearImage> master, fill, mask;
         double changed = 0;       // share of the frame's pixels the fill invented
+        int first = -1, last = -1;   // 4 Nov 2026: every frame the preview filled, for the viewer's AI fill
+        QString fill_dir;
     };
+    // The viewer's AI fill (4 Nov 2026): while on, each learned frame that has a fill (the
+    // preview's frames, or every frame of the last finished fill) is shown filled, stepping and
+    // playing. Fills are read once, at the playback size, so real time holds.
+    bool fill_view_on_ = false;
+    std::map<int, std::shared_ptr<const NetworkLinearImage>> fill_view_cache_;
+    QStringList fill_view_files_;   // the last finished fill's frames, in order
+    QString fill_view_key_;
+    std::shared_ptr<const NetworkLinearImage> fill_view_frame(int index);
+    bool apply_fill_view();
+public:
+    void set_fill_view(bool on);
+    bool fill_view_on() const { return fill_view_on_; }
+private:
+    // Real-time playback by the clock (4 Nov 2026): the frame shown is the one due now.
+    std::chrono::steady_clock::time_point aces_rt_t0_{};
+    int aces_rt_from_ = 0, aces_rt_shown_ = 0, aces_rt_dropped_ = 0;
+    double aces_rt_timer_fps_ = 24.0;
     std::shared_ptr<GenFillServer> genfill_server_;
     std::optional<GenFillPreviewFrame> genfill_preview_;
     std::unique_ptr<QTemporaryDir> genfill_preview_tmp_;

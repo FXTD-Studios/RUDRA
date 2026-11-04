@@ -6333,3 +6333,16 @@ TEST(GenFillSwap, FilledFramesReplaceTheMasterAndTheOriginalsAreKept) {
     EXPECT_TRUE(std::filesystem::exists(f / "extra.000009.exr"));
     std::filesystem::remove_all(root);
 }
+
+// ---- the viewer's AI fill (4 Nov 2026) ----
+TEST(AppFillView, TheViewerHasAnAiFillToggleThatIsSafeWithoutAFill) {
+    app::MainWindow w(false);
+    auto* b = w.findChild<QPushButton*>("vtAiFill");
+    if (!b) GTEST_SKIP() << "the viewer bar is built with the viewer only";
+    EXPECT_TRUE(b->isCheckable());
+    EXPECT_FALSE(b->isChecked());
+    b->setChecked(true);   // nothing filled yet: no crash, just a message
+    EXPECT_TRUE(w.fill_view_on());
+    b->setChecked(false);
+    EXPECT_FALSE(w.fill_view_on());
+}
