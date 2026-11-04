@@ -77,6 +77,7 @@ struct AcesRunSettings {
     // tau_high and at or below tau_low, the exact analytic inverse between.
     bool band_on = false;
     int tau_high = 254, tau_low = 5;
+    bool clean_shadows = false;   // 4 Nov 2026: Clean shadows (core/aces_v2.hpp CleanShadows)
     int ocio_threads = 8;
     // Camera-log copies beside the EXRs (cli/aces_v2_log.hpp): "" for none, else
     // "logc4"/"acescct", and the formats ("tiff16", "dpx10", "prores4444xq"...).
@@ -166,6 +167,7 @@ private:
 
     QGroupBox* band_ = nullptr;
     QSpinBox *tau_high_ = nullptr, *tau_low_ = nullptr;
+    QCheckBox* clean_ = nullptr;
     std::vector<std::filesystem::path> roots_;
     std::vector<AcesPackageInfo> packages_;
     std::vector<std::filesystem::path> stills_;   // the stills, or the one video

@@ -6249,3 +6249,27 @@ TEST(AppShots, EveryRecentRowHasARemoveButton) {
     QSettings().remove("recent/sources");
     std::filesystem::remove_all(dir);
 }
+
+// ---- Clean shadows in the Learned ACES dialog (4 Nov 2026) ----
+TEST(AcesCleanShadows, OffByDefaultSavedAndPassedOn) {
+    QSettings().remove("aces/cleanShadows");
+    app::AcesRunSettings s;
+    s.package = "pkg";
+    s.input = "in";
+    s.out = "out";
+    EXPECT_FALSE(app::aces_cli_arguments(s).contains("--clean-shadows"));
+    s.clean_shadows = true;
+    EXPECT_TRUE(app::aces_cli_arguments(s).contains("--clean-shadows"));
+    const auto root = aces_tmp("clean_dialog");
+    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    app::AcesMasterDialog d(nullptr, {root}, root / "frames");
+    auto* box = d.findChild<QCheckBox*>("acesCleanShadows");
+    ASSERT_TRUE(box);
+    EXPECT_FALSE(box->isChecked());   // off by default: plates exactly as the model made them
+    int told = 0;
+    d.band_changed = [&] { ++told; };
+    box->setChecked(true);
+    EXPECT_TRUE(QSettings().value("aces/cleanShadows").toBool());
+    EXPECT_GE(told, 1);   // the viewer re-runs the frame
+    QSettings().remove("aces/cleanShadows");
+}

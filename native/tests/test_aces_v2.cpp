@@ -487,3 +487,73 @@ TEST(AcesV2Ceiling, OnlyPixelsAboveTheCeilingChange) {
     EXPECT_EQ(b.at(0, 0, 0), 10.0f);
     EXPECT_EQ(b.at(0, 0, 2), -5.0f);
 }
+
+// ---- Clean shadows (4 Nov 2026): edge-preserving denoise in the shadow band ----
+namespace {
+PlanarBuffer noisy_shadows(unsigned seed) {
+    const int h = 48, w = 64;
+    PlanarBuffer s(3, h, w);
+    std::mt19937 rng(seed);
+    std::uniform_int_distribution<int> noise(-2, 2);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            int base = x < 32 ? 14 : 30;           // two flat dark areas with a sharp edge between
+            if (y >= 40) base = 180;               // a bright strip: never touched
+            const int code = std::clamp(base + (y < 40 ? noise(rng) : 0), 0, 255);
+            for (int c = 0; c < 3; ++c) s.at(c, y, x) = float(code) / 255.0f;
+        }
+    return s;
+}
+double patch_sd(const PlanarBuffer& b, int x0, int x1, int y0, int y1) {
+    double m = 0, m2 = 0;
+    int n = 0;
+    for (int y = y0; y < y1; ++y)
+        for (int x = x0; x < x1; ++x) {
+            const double v = b.at(1, y, x);
+            m += v, m2 += v * v, ++n;
+        }
+    m /= n;
+    return std::sqrt(std::max(0.0, m2 / n - m * m));
+}
+}  // namespace
+
+TEST(AcesV2CleanShadows, NoiseHalvesEdgesStayAndTheViewHolds) {
+    MockView v;
+    const PlanarBuffer s = noisy_shadows(3);
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.0f, 0.0f); };
+    CleanShadows c;
+    c.on = true;
+    auto off = run_frame(s, v, g1, true, true, true);
+    auto on = run_frame(s, v, g1, true, true, true, {}, c);
+    ASSERT_TRUE(off.ok() && on.ok());
+    // Flat noise inside each area (away from the edge and borders): at least halved.
+    EXPECT_LT(patch_sd(on->acescg, 6, 26, 6, 34), 0.5 * patch_sd(off->acescg, 6, 26, 6, 34));
+    EXPECT_LT(patch_sd(on->acescg, 38, 58, 6, 34), 0.5 * patch_sd(off->acescg, 38, 58, 6, 34));
+    // The edge between the two areas (14 vs 30 codes, ~1 stop) survives: the step stays.
+    double left = 0, right = 0;
+    for (int y = 6; y < 34; ++y) left += on->acescg.at(1, y, 29), right += on->acescg.at(1, y, 34);
+    EXPECT_GT(right / left, 1.8);
+    // The bright strip is outside the band: bit-exact with Clean shadows off.
+    for (int x = 0; x < 64; ++x) EXPECT_EQ(on->acescg.at(1, 44, x), off->acescg.at(1, 44, x));
+    // The appearance contract still holds everywhere.
+    EXPECT_EQ(on->constraint.remaining_display_errors, 0u);
+    EXPECT_GT(on->clean_shadow_pixels, 1000u);
+    EXPECT_EQ(off->clean_shadow_pixels, 0u);
+}
+
+TEST(AcesV2CleanShadows, OffIsBitExactAndBadSettingsAreRefused) {
+    MockView v;
+    const PlanarBuffer s = noisy_shadows(5);
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    auto a = run_frame(s, v, g1, true, true, true);
+    CleanShadows off;   // on = false, whatever else is set
+    off.radius = 8;
+    auto b = run_frame(s, v, g1, true, true, true, {}, off);
+    ASSERT_TRUE(a.ok() && b.ok());
+    for (int c = 0; c < 3; ++c)
+        for (std::size_t i = 0; i < a->acescg.plane_size(); ++i) ASSERT_EQ(a->acescg.plane(c)[i], b->acescg.plane(c)[i]);
+    CleanShadows bad;
+    bad.on = true;
+    bad.radius = 0;
+    EXPECT_FALSE(run_frame(s, v, g1, true, true, true, {}, bad).ok());
+}

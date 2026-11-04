@@ -101,6 +101,23 @@ struct UserBand {
     static constexpr int kRampCodes = 2;
     bool valid() const noexcept { return tau_high >= 128 && tau_high <= 256 && tau_low >= -1 && tau_low <= 64; }
 };
+// Clean shadows (4 Nov 2026, off by default): an edge-preserving spatial denoise of the
+// master inside the shadow band, before the ceiling and the appearance constraint, so
+// the SDR view still holds within 1 code. Weight 1 where the source's brightest channel
+// is at or below max_code, 0 from max_code + 8. Each pixel there becomes a mean of its
+// (2 radius + 1)^2 neighbours weighted by distance (sigma radius / 2) and by the
+// difference in log2 luminance (sigma range_stops): flat noise averages out, edges stay.
+// No invention: nothing is added that the neighbourhood does not hold.
+struct CleanShadows {
+    bool on = false;
+    int max_code = 40;
+    int radius = 3;
+    float range_stops = 0.25f;
+    bool valid() const noexcept { return max_code >= 1 && max_code <= 128 && radius >= 1 && radius <= 8 && range_stops > 0.0f; }
+};
+PlanarBuffer clean_shadows(const PlanarBuffer& acescg, const PlanarBuffer& source, const CleanShadows& c,
+                           std::size_t* cleaned = nullptr);
+
 struct BandStats {
     std::size_t learned_pixels = 0;   // weight 1: the learned result as it was
     std::size_t ramp_pixels = 0;      // 0 < weight < 1
@@ -128,6 +145,7 @@ struct FrameResult {
     // 3 Nov 2026: pixels brought down to the luminance of the inverse of display white
     // (inverse_white_luma): near-white tinted codes invert up to 7x brighter than white.
     std::size_t ceiling_pixels = 0;
+    std::size_t clean_shadow_pixels = 0;   // pixels Clean shadows changed (0 when off)
     // Wall time of each stage, ms (3 Nov 2026): where a frame's time goes.
     struct StageMs {
         double inverse = 0, network = 0, compose = 0, smoothing = 0, band = 0, constraint = 0;
@@ -136,6 +154,6 @@ struct FrameResult {
 // Stages 1-7 for one frame of display codes in [0,1].
 Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, const G1Fn& g1,
                               bool smoothing = true, bool constrain = true, bool forbid_new_negative_y = false,
-                              const UserBand& band = {});
+                              const UserBand& band = {}, const CleanShadows& clean = {});
 
 }  // namespace rudra::aces_v2

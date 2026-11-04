@@ -402,6 +402,55 @@ PlanarBuffer constrain_colour_v2(const PlanarBuffer& source, const PlanarBuffer&
     return result;
 }
 
+PlanarBuffer clean_shadows(const PlanarBuffer& acescg, const PlanarBuffer& source, const CleanShadows& c, std::size_t* cleaned) {
+    PlanarBuffer out = acescg;
+    if (cleaned) *cleaned = 0;
+    if (!c.on) return out;
+    const int h = acescg.height(), w = acescg.width(), r = c.radius;
+    const std::size_t n = acescg.plane_size();
+    std::vector<float> weight(n, 0.0f), logy(n, 0.0f);
+    for (std::size_t i = 0; i < n; ++i) {
+        const float top = std::max({source.plane(0)[i], source.plane(1)[i], source.plane(2)[i]}) * 255.0f;
+        const float t = std::clamp((top - float(c.max_code)) / 8.0f, 0.0f, 1.0f);
+        weight[i] = 1.0f - t * t * (3.0f - 2.0f * t);
+        const double y = kLumaAp1[0] * acescg.plane(0)[i] + kLumaAp1[1] * acescg.plane(1)[i] + kLumaAp1[2] * acescg.plane(2)[i];
+        logy[i] = float(std::log2(std::max(y, 1e-9)));
+    }
+    const float ss = 2.0f * (0.5f * float(r)) * (0.5f * float(r)), rs = 2.0f * c.range_stops * c.range_stops;
+    std::vector<float> spatial(std::size_t((2 * r + 1) * (2 * r + 1)));
+    for (int dy = -r; dy <= r; ++dy)
+        for (int dx = -r; dx <= r; ++dx) spatial[std::size_t((dy + r) * (2 * r + 1) + dx + r)] = std::exp(-float(dx * dx + dy * dy) / ss);
+    std::vector<unsigned char> changed(n, 0);
+    parallel_rows(h, [&](int y) {
+        for (int x = 0; x < w; ++x) {
+            const std::size_t i = std::size_t(y) * std::size_t(w) + std::size_t(x);
+            if (weight[i] <= 0.0f) continue;
+            double acc[3] = {0, 0, 0}, wsum = 0;
+            for (int dy = -r; dy <= r; ++dy) {
+                const int yy = y + dy;
+                if (yy < 0 || yy >= h) continue;
+                for (int dx = -r; dx <= r; ++dx) {
+                    const int xx = x + dx;
+                    if (xx < 0 || xx >= w) continue;
+                    const std::size_t j = std::size_t(yy) * std::size_t(w) + std::size_t(xx);
+                    const float d = logy[j] - logy[i];
+                    const double k = double(spatial[std::size_t((dy + r) * (2 * r + 1) + dx + r)]) * std::exp(-double(d * d) / rs);
+                    for (int ch = 0; ch < 3; ++ch) acc[ch] += k * acescg.plane(ch)[j];
+                    wsum += k;
+                }
+            }
+            for (int ch = 0; ch < 3; ++ch) {
+                const float v = acescg.plane(ch)[i];
+                out.plane(ch)[i] = v + weight[i] * (float(acc[ch] / wsum) - v);
+            }
+            changed[i] = 1;
+        }
+    });
+    if (cleaned)
+        for (unsigned char ch : changed) *cleaned += ch;
+    return out;
+}
+
 float inverse_white_luma(const AcesView& view) {
     float w[3] = {1.0f, 1.0f, 1.0f};
     view.inverse(w, 1);
@@ -467,7 +516,9 @@ PlanarBuffer apply_user_band(const PlanarBuffer& prediction, const PlanarBuffer&
 }
 
 Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, const G1Fn& g1, bool smoothing,
-                              bool constrain, bool forbid_new_negative_y, const UserBand& band) {
+                              bool constrain, bool forbid_new_negative_y, const UserBand& band, const CleanShadows& clean) {
+    if (clean.on && !clean.valid())
+        return make_error(ErrorCode::InvalidArgument, "Clean shadows: max_code 1..128, radius 1..8, range above 0.");
     if (band.on && !band.valid())
         return make_error(ErrorCode::InvalidArgument, "tau_high must be 128..256 and tau_low -1..64.");
     if (source.channels() != 3) return make_error(ErrorCode::InvalidArgument, "The frame must be RGB.");
@@ -514,6 +565,7 @@ Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, 
             out.mask.plane(0)[i] *= user_band_weight(top, band);
         }
     }
+    if (clean.on) out.acescg = clean_shadows(out.acescg, source, clean, &out.clean_shadow_pixels);
     out.ceiling_pixels = cap_luminance(out.acescg, ceiling);
     out.ms.band = lap();
     if (constrain) out.acescg = constrain_colour_v2(source, out.acescg, baseline, g.weight, view, true, &out.constraint,
