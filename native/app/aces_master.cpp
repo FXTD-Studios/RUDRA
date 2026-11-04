@@ -188,6 +188,7 @@ QStringList aces_cli_arguments(const AcesRunSettings& s) {
                      "--device", q(s.device), "--ocio-threads", QString::number(s.ocio_threads)};
     a << (s.luminance_guard ? "--luminance-guard" : "--no-luminance-guard");
     if (s.band_on) a << "--tau-high" << QString::number(s.tau_high) << "--tau-low" << QString::number(s.tau_low);
+    if (s.clean_shadows) a << "--clean-shadows";
     if (!s.log_curve.empty() && !s.log_formats.empty()) a << "--log" << q(s.log_curve) << "--log-format" << q(s.log_formats);
     return a;
 }
@@ -462,17 +463,26 @@ AcesMasterDialog::AcesMasterDialog(QWidget* parent, std::vector<fs::path> roots,
         bl->addWidget(tau_high_);
         bl->addWidget(tau_low_);
         g->addWidget(band_, row++, 1, 1, 2);
+        clean_ = new QCheckBox("Clean shadows", this);
+        clean_->setObjectName("acesCleanShadows");
+        clean_->setChecked(bst.value("aces/cleanShadows", false).toBool());
+        clean_->setToolTip("Edge-preserving denoise in the deep shadows (codes 40 and below) of the master, so a push of a "
+                           "few stops is not all grain. The SDR view still shows the original within 1 code. Invents "
+                           "nothing; off by default (plates stay exactly as the model made them).");
+        g->addWidget(clean_, row++, 1, 1, 2);
         auto changed = [this] {
             QSettings st;
             st.setValue("aces/bandOn", band_->isChecked());
             st.setValue("aces/tauHigh", tau_high_->value());
             st.setValue("aces/tauLow", tau_low_->value());
+            st.setValue("aces/cleanShadows", clean_->isChecked());
             request_preview();
             if (band_changed) band_changed();
         };
         connect(band_, &QGroupBox::toggled, this, changed);
         connect(tau_high_, &QSpinBox::valueChanged, this, changed);
         connect(tau_low_, &QSpinBox::valueChanged, this, changed);
+        connect(clean_, &QCheckBox::toggled, this, changed);
     }
 
     g->addWidget(label("Also write", "acesLogLabel", "value", this), row, 0);
@@ -612,6 +622,7 @@ AcesMasterDialog::AcesMasterDialog(QWidget* parent, std::vector<fs::path> roots,
 }
 
 void AcesMasterDialog::add_band(QJsonObject& r) const {
+    if (clean_ && clean_->isChecked()) r["clean_shadows"] = true;
     if (!band_ || !band_->isChecked()) return;
     r["band_tau_high"] = tau_high_->value();
     r["band_tau_low"] = tau_low_->value();
@@ -750,6 +761,7 @@ AcesRunSettings AcesMasterDialog::settings() const {
     s.band_on = band_->isChecked();
     s.tau_high = tau_high_->value();
     s.tau_low = tau_low_->value();
+    s.clean_shadows = clean_->isChecked();
     s.log_formats = log_format_->currentData().toString().toStdString();
     if (!s.log_formats.empty()) s.log_curve = "logc4";
     return s;
@@ -1016,6 +1028,7 @@ void AcesMasterDialog::start_with_engine(const AcesRunSettings& s) {
                 r["band_tau_high"] = s.tau_high;
                 r["band_tau_low"] = s.tau_low;
             }
+            if (s.clean_shadows) r["clean_shadows"] = true;
             return r;
         }(),
         [this, self, out](const QJsonObject& o) {
@@ -1216,6 +1229,7 @@ QJsonObject MainWindow::aces_request_json(int index, const QString& source, bool
             req["band_tau_high"] = st.value("aces/tauHigh", 254).toInt();
             req["band_tau_low"] = st.value("aces/tauLow", 5).toInt();
         }
+        if (st.value("aces/cleanShadows", false).toBool()) req["clean_shadows"] = true;
     }
     // The colorist's trims: the viewer shows what a render writes.
     if (const QJsonObject t = aces_trims_fields(aces_trims_.strength, aces_trims_.saturation, aces_trims_.peak_nits,
@@ -1440,8 +1454,9 @@ QString MainWindow::aces_cache_key() const {
     const QString band = st.value("aces/bandOn", false).toBool()
                              ? QStringLiteral("band%1/%2").arg(st.value("aces/tauHigh", 254).toInt()).arg(st.value("aces/tauLow", 5).toInt())
                              : QStringLiteral("noband");
+    const QString clean = st.value("aces/cleanShadows", false).toBool() ? QStringLiteral("|clean") : QString();
     return shot_trim_key() + "|" + QString::fromStdString(aces_v2::trims_text(aces_trims_)) + "|" + aces_monitor_ + "|" +
-           aces_source_display_ + "|" + QString::number(play_state_->side.load()) + "|" + band;
+           aces_source_display_ + "|" + QString::number(play_state_->side.load()) + "|" + band + clean;
 }
 
 int MainWindow::aces_cached_frames() const {
