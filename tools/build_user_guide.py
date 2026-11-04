@@ -211,6 +211,15 @@ export = '''<section class="page" id="export" data-title="Deliver & colour">
 
 news = f'''<section class="page" id="whats-new" data-title="What’s new">
 <div class="eyebrow">08 / Release notes</div><h1>What’s new<br>in {VER}.</h1>
+<h2>In 1.1.0</h2>
+<ul>
+<li><strong>The viewer bar</strong>: f/stop, γ, an SDR | RUDRA wipe, clamp and clip zebras and the <strong>Range</strong> layer (below), and <strong>AI fill</strong>: every frame that has a fill shown filled, stepping and playing; with <strong>Changes</strong> on, what it invented.</li>
+<li><strong>Clean shadows</strong> (Deliver › Learned ACES 2.0, off by default): an edge-preserving denoise of the deep shadows, so a push of a few stops is not all grain; the SDR still shows the original within one code.</li>
+<li><strong>AI fill fixes the master in place</strong>: when a fill finishes, the originals move to <code>&lt;master&gt;_before_aifill</code>. Setup… checks the LoRA is the published AI fill v3.</li>
+<li><strong>An ACES Metadata File</strong> beside every EXR master, and <strong>alpha</strong> passed through (EXR, 16-bit TIFF, ProRes 4444).</li>
+<li><strong>Playback</strong> is prepared in the background ("Preparing playback: N of M"), then Play is real time.</li>
+<li><strong>The master stays at the source's native resolution.</strong> To deliver UHD from HD, resize once at the end in your finishing tool (Resolve's Deliver page, Nuke's Reformat) and label it up-converted.</li>
+</ul>
 <h2>In 1.0.3</h2>
 <ul>
 <li><strong>No model inside the package</strong>: every model is a download in <strong>File › Model packages</strong> that shows its licence first. Packages up to 1.0.1 carried the Beta 2 model <strong>sdr2hdr_image_v8</strong>, which is non-commercial; if you installed one of them, update or delete <strong>models/sdr2hdr_image_v8</strong> from the install before commercial work.</li>
