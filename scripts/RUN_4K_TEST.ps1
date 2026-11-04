@@ -79,6 +79,7 @@ $sw = [Diagnostics.Stopwatch]::StartNew()
 $ErrorActionPreference = "Continue"
 $proc = Start-Process -FilePath $Cli -ArgumentList @("aces-v2", "`"$Package`"", "`"$Clip`"", "--out", "`"$renderDir`"", "--device", $Device,
     "--exr", "half", "--range", "0:$($Frames - 1)") -NoNewWindow -PassThru -RedirectStandardOutput $logFile -RedirectStandardError "$logFile.err"
+$null = $proc.Handle   # PowerShell 5.1: without the handle, ExitCode stays null
 $peakRamMB = 0
 while (-not $proc.HasExited) {
     try { $proc.Refresh(); $peakRamMB = [Math]::Max($peakRamMB, [int]($proc.PeakWorkingSet64 / 1MB)) } catch {}
