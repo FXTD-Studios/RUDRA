@@ -12,8 +12,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.3/RUDRA-1.0.3-windows-x64-setup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%2010%20%2F%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white"></a>
-  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.3/RUDRA-1.0.3-macos-arm64.dmg"><img alt="Download for macOS" src="https://img.shields.io/badge/Download-macOS%20(Apple%20silicon)-111111?style=for-the-badge&logo=apple&logoColor=white"></a>
+  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.1.0/RUDRA-1.1.0-windows-x64-setup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%2010%20%2F%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white"></a>
+  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.1.0/RUDRA-1.1.0-macos-arm64.dmg"><img alt="Download for macOS" src="https://img.shields.io/badge/Download-macOS%20(Apple%20silicon)-111111?style=for-the-badge&logo=apple&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -50,8 +50,8 @@ away, and RUDRA marks every pixel it had to invent.
 
 | | |
 |---|---|
-| **Windows 10 / 11** (x64) | [Installer](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.3/RUDRA-1.0.3-windows-x64-setup.exe) · [Portable ZIP](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.3/RUDRA-1.0.3-windows-x64.zip) |
-| **macOS** (Apple silicon) | [DMG](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.3/RUDRA-1.0.3-macos-arm64.dmg) |
+| **Windows 10 / 11** (x64) | [Installer](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.1.0/RUDRA-1.1.0-windows-x64-setup.exe) · [Portable ZIP](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.1.0/RUDRA-1.1.0-windows-x64.zip) |
+| **macOS** (Apple silicon) | [DMG](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.1.0/RUDRA-1.1.0-macos-arm64.dmg) |
 
 All files, checksums and release notes are on the
 [releases page](https://github.com/FXTD-Studios/RUDRA/releases/latest).
@@ -120,7 +120,7 @@ The code and the 1.0 models (learned ACES 2.0, AI fill v3) are licensed under th
 The packages carry no model weights; each model is a download that shows its
 licence first. The older Beta 2 weights (`sdr2hdr_image_v8`, `sdr2hdr_shadow_v1`)
 are non-commercial ([`checkpoints/LICENSE`](checkpoints/LICENSE)). Packages up to
-1.0.1 bundled `sdr2hdr_image_v8` by mistake: update to 1.0.3, or delete
+1.0.1 bundled `sdr2hdr_image_v8` by mistake: update to 1.1.0, or delete
 `models/sdr2hdr_image_v8` from an older install, before commercial work. Every
 model, its licence and its status: [docs/MODELS.md](docs/MODELS.md).
 
