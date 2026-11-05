@@ -64,7 +64,7 @@ def main():
             if tightens:
                 learned,_=preds[f'{n}:learned']
                 for t in tightens:   # after the shipped pipeline's own constraint
-                    tout,tdiag=tighten_partial(src,learned,base,w,view,mode=t['mode'],tol_codes=t['tol_codes'],iters=t.get('iters',12))
+                    tout,tdiag=tighten_partial(src,learned,base,w,view,mode=t['mode'],tol_codes=t['tol_codes'],iters=t.get('iters',12),band_codes=t.get('band_codes',0.0))
                     preds[f"{n}:{t['name']}"]=(tout,preds[f'{n}:learned'][1])
         analytic=base.astype(np.float64)  # exact ACES 2.0 inverse (stage 1), same for all candidates
         high=(w>0)&(src.max(-1)>.5);full=high&(src.min(-1)>=254.5/255);part=high&~full
