@@ -6,7 +6,7 @@
 // and master with nothing loaded twice. The masters are the ones
 // `rudra-native aces-v2` writes (same stages, same EXR, same provenance).
 //
-//   rudra-native aces-v2-serve <package> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml]
+//   rudra-native aces-v2-serve <package> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml|coreml]
 //                              [--ocio-threads N] [--no-smoothing]
 // On start:  {"event":"ready", ...}  or  {"event":"error", ...} and exit 2.
 // Requests (id is echoed):
@@ -37,6 +37,7 @@
 //   {"op":"cancel","target":id}  stops that master (running or queued) only
 //   {"op":"quit"}
 
+#include "aces_v2_g1.hpp"
 #include "aces_v2_serve.hpp"
 
 #include <algorithm>
@@ -206,7 +207,7 @@ struct Inbox {
 
 int cmd_aces_v2_serve(const std::vector<std::string>& args) {
     if (args.empty() || args[0] == "--help") {
-        std::fprintf(stderr, "usage: rudra-native aces-v2-serve <package> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml] [--ocio-threads N] [--no-smoothing]\n");
+        std::fprintf(stderr, "usage: rudra-native aces-v2-serve <package> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml|coreml] [--ocio-threads N] [--no-smoothing]\n");
         return 64;
     }
     const auto t0 = Clock::now();
@@ -235,22 +236,12 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
         return fail_start(make_error(ErrorCode::ContractMismatch, "This package declares no clipped smoothing."));
     auto view = aces_v2::make_ocio_view(threads);
     if (!view) return fail_start(view.error());
-    Result<aces_v2::G1Fn> g1 = make_error(ErrorCode::Unsupported, "Unknown runtime (libtorch or onnxruntime).", runtime);
-    if (runtime == "libtorch") {
-#ifdef RUDRA_HAVE_LIBTORCH_ACES
-        g1 = aces_v2::load_g1_libtorch(m->g1, device);
-#else
-        g1 = make_error(ErrorCode::Unsupported, "This build has no LibTorch.");
-#endif
-    } else if (runtime == "onnxruntime") {
-        if (m->g1_onnx.empty()) return fail_start(make_error(ErrorCode::Unsupported, "This package has no ONNX model."));
-#ifdef RUDRA_HAVE_ORT_ACES
-        g1 = aces_v2::load_g1_onnxruntime(m->g1_onnx, device);
-#else
-        g1 = make_error(ErrorCode::Unsupported, "This build has no ONNX Runtime.");
-#endif
-    }
-    if (!g1) return fail_start(g1.error());
+    // The runtime asked for, or the one this build has (cli/aces_v2_g1.hpp): runtime and device say which.
+    auto chosen = aces_v2::load_g1_choice(*m, runtime, device);
+    if (!chosen) return fail_start(chosen.error());
+    runtime = chosen->runtime;
+    device = chosen->device;
+    Result<aces_v2::G1Fn> g1 = std::move(chosen->fn);
     // Warm-up on a small grey frame: the first CUDA call is the slow one.
     {
         PlanarBuffer warm(3, 64, 64, 0.5f);

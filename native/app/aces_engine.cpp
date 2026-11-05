@@ -234,7 +234,7 @@ std::optional<AcesEngine::Config> aces_engine_config(const std::vector<fs::path>
         !find_aces_packages({saved_pkg}).empty())
         c.package = saved_pkg;
     if (c.package.empty() && !packages.empty()) c.package = packages.front().root;
-    const QString key = st.value("aces/target", "cuda").toString();
+    const QString key = st.value("aces/target", default_aces_target()).toString();
     for (const auto& t : aces_run_targets())
         if (QString::fromStdString(t.key) == key) {
             c.runtime = t.runtime;
