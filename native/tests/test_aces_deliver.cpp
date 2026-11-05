@@ -670,6 +670,7 @@ TEST(AcesDeliver, WritesAnAmfThatNamesTheFramesItWrote) {
     EXPECT_EQ(*f, "SH010_rudra.amf");   // beside the frames in an existing folder
     std::ifstream in(dir / *f);
     const std::string xml((std::istreambuf_iterator<char>(in)), {});
+    in.close();   // Windows cannot remove a file that is still open (below)
     // The sequence pattern names exactly the frames aces_frame_stem writes.
     EXPECT_EQ(aces_frame_stem(*o, 0, "x.exr") + ".exr", "SH010_rudra.001001.exr");
     EXPECT_NE(xml.find("<aces:sequence idx=\"#\" min=\"1001\" max=\"1024\">SH010_rudra.######.exr</aces:sequence>"),
@@ -684,6 +685,7 @@ TEST(AcesDeliver, WritesAnAmfThatNamesTheFramesItWrote) {
     ASSERT_TRUE(g);
     std::ifstream in2(d2 / *g);
     const std::string x2((std::istreambuf_iterator<char>(in2)), {});
+    in2.close();
     EXPECT_EQ(x2.find("inputTransform"), std::string::npos);
     EXPECT_EQ(x2.find("clipId"), std::string::npos);   // unnamed: no sequence to name
     // No EXRs, no AMF.

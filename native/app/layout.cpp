@@ -934,7 +934,7 @@ QWidget* MainWindow::build_right_rail() {
     };
     rbv->addWidget(region_kind_);
     auto region_slider = [&](const QString& lab, const QString& id, float ReconstructionRegion::*field, int hi,
-                             double scale, int kind) {
+                             double scale, int kind, const QString& tip) {
         RegionSlider rs;
         rs.row = new QWidget(region_box_);
         rs.row->setProperty("role", "slider");
@@ -950,6 +950,7 @@ QWidget* MainWindow::build_right_rail() {
         col->addWidget(top);
         rs.slider = new QSlider(Qt::Horizontal, rs.row);
         rs.slider->setObjectName(id);
+        rs.slider->setToolTip(tip);
         rs.slider->setRange(0, hi);
         col->addWidget(rs.slider);
         rs.field = field;
@@ -968,15 +969,24 @@ QWidget* MainWindow::build_right_rail() {
         region_sliders_.push_back(rs);
     };
     // Luma and softness in hundredths, strength in twentieths (as Residual strength).
-    region_slider("Highlights from", "regionHighFrom", &ReconstructionRegion::highlight_from, 100, 100.0, 1);
-    region_slider("Highlight softness", "regionHighSoft", &ReconstructionRegion::highlight_softness, 50, 100.0, 1);
-    region_slider("Highlight strength", "regionHighStrength", &ReconstructionRegion::highlight_strength, 40, 20.0, 0);
-    region_slider("Shadows below", "regionShadowBelow", &ReconstructionRegion::shadow_below, 100, 100.0, 1);
-    region_slider("Shadow softness", "regionShadowSoft", &ReconstructionRegion::shadow_softness, 50, 100.0, 1);
-    region_slider("Shadow strength", "regionShadowStrength", &ReconstructionRegion::shadow_strength, 40, 20.0, 0);
-    region_slider("Band low", "regionBandLow", &ReconstructionRegion::band_low, 100, 100.0, 2);
-    region_slider("Band high", "regionBandHigh", &ReconstructionRegion::band_high, 100, 100.0, 2);
-    region_slider("Band softness", "regionBandSoft", &ReconstructionRegion::band_softness, 50, 100.0, 2);
+    region_slider("Highlights from", "regionHighFrom", &ReconstructionRegion::highlight_from, 100, 100.0, 1,
+                  "The SDR level above which the reconstruction works on the highlights");
+    region_slider("Highlight softness", "regionHighSoft", &ReconstructionRegion::highlight_softness, 50, 100.0, 1,
+                  "How gradually the highlight region fades in below that level");
+    region_slider("Highlight strength", "regionHighStrength", &ReconstructionRegion::highlight_strength, 40, 20.0, 0,
+                  "How much of the reconstruction the highlights receive");
+    region_slider("Shadows below", "regionShadowBelow", &ReconstructionRegion::shadow_below, 100, 100.0, 1,
+                  "The SDR level below which the reconstruction works on the shadows");
+    region_slider("Shadow softness", "regionShadowSoft", &ReconstructionRegion::shadow_softness, 50, 100.0, 1,
+                  "How gradually the shadow region fades in above that level");
+    region_slider("Shadow strength", "regionShadowStrength", &ReconstructionRegion::shadow_strength, 40, 20.0, 0,
+                  "How much of the reconstruction the shadows receive");
+    region_slider("Band low", "regionBandLow", &ReconstructionRegion::band_low, 100, 100.0, 2,
+                  "The bottom of the SDR band the reconstruction is limited to");
+    region_slider("Band high", "regionBandHigh", &ReconstructionRegion::band_high, 100, 100.0, 2,
+                  "The top of the SDR band the reconstruction is limited to");
+    region_slider("Band softness", "regionBandSoft", &ReconstructionRegion::band_softness, 50, 100.0, 2,
+                  "How gradually the band fades in and out at its edges");
     rcv->addWidget(region_box_);
     rcard->setObjectName("recReconCard");
     anv->addWidget(rcard);

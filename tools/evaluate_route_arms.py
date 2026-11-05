@@ -9,7 +9,7 @@ before anything is run; the gates are computed for it alone.
     python tools/evaluate_route_arms.py --corpus <grade set> --registration configs/experiments/research_full_only_route_20261101.json \
         --candidate d6400=G:/rudra_training/partial_pcgrad_duration6400_retry1_20261025/step6400.pt --out <new json>
 """
-import argparse,hashlib,json,sys
+import argparse,hashlib,json,os,sys
 from pathlib import Path
 import numpy as np
 import torch
@@ -46,7 +46,9 @@ def main():
         # on another machine the same files sit in --corpus. The hashes below
         # still decide that they are the registered cases.
         for k in ('source_path','reference_path'):
-            if not Path(c[k]).exists():c[k]=str(a.corpus/Path(c[k].replace('\\','/')).name)
+            # os.path.exists, not Path.exists: a /root path on a non-root
+            # machine (the CI runner) raises PermissionError instead of False.
+            if not os.path.exists(c[k]):c[k]=str(a.corpus/Path(c[k].replace('\\','/')).name)
         if sha(c['source_path'])!=c['source_sha256'] or sha(c['reference_path'])!=c['reference_sha256']:raise ValueError('case identity')
         src=np.load(c['source_path']);ref=np.load(c['reference_path']).astype(np.float64)
         x=torch.from_numpy(src).permute(2,0,1)[None]
