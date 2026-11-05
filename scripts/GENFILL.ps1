@@ -10,6 +10,7 @@
     powershell -ExecutionPolicy Bypass -File scripts\GENFILL.ps1 -Fill -Master <EXR folder> [-Lora <file>]
     powershell -ExecutionPolicy Bypass -File scripts\GENFILL.ps1 -Brightness    # v3: build the brightness set, train the estimator (CPU)
     powershell -ExecutionPolicy Bypass -File scripts\GENFILL.ps1 -Evaluate      # the registered gates (v3, held-out scenes)
+    powershell -ExecutionPolicy Bypass -File scripts\GENFILL.ps1 -PrecachePrompts [-Lora <file>]   # RUDRA 1.1: embed the prompt presets once (umT5 on the CPU)
 
   The GPU must be free: do not run the build or the training while another training run uses it.
   Nothing here changes an app default or releases a model.
@@ -30,7 +31,8 @@ param(
     [switch]$BuildOnly,
     [switch]$Fill,
     [switch]$Evaluate,
-    [switch]$Brightness
+    [switch]$Brightness,
+    [switch]$PrecachePrompts
 )
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path $PSScriptRoot -Parent
@@ -56,6 +58,16 @@ if ($Setup) {
     & $Python -c "from huggingface_hub import snapshot_download as d; d('Wan-AI/Wan2.1-VACE-1.3B-diffusers', local_dir=r'$Base')"
     if ($LASTEXITCODE -ne 0) { Fail "model download" }
     & $Python -c "import json,sys; c=json.load(open(r'$Base\transformer\config.json')); print('transformer', c.get('_class_name'), 'layers', c.get('num_layers'), 'vace', c.get('vace_layers'))"
+    exit 0
+}
+
+# ---- RUDRA 1.1: the prompt presets' embeddings, beside the LoRA the app uses -----------------
+if ($PrecachePrompts) {
+    $l = if ($Lora) { $Lora } else { Join-Path $V3 "rudra_genfill.safetensors" }
+    if (-not (Test-Path $l)) { Fail "no LoRA at $($l); give -Lora <rudra_genfill.safetensors>" }
+    $cache = Join-Path (Split-Path $l -Parent) "prompt_cache"
+    Say "Prompt presets -> $cache (umT5 loads once on the CPU, about 11 GB of RAM)"
+    if ((Py @("-m", "rudra.genfill.prompts", "precache", "--base", $Base, "--cache", $cache)) -ne 0) { Fail "precache" }
     exit 0
 }
 
