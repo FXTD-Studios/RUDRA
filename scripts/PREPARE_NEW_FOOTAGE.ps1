@@ -2,6 +2,7 @@
 .SYNOPSIS
   New footage for the 0 EV fix (5 Nov 2026, option 1: keep the gate, fix the model).
     TRAINING  F:\RND\2017\concave  (ARRI ALEXA, LogC3 in EXR)  -> G:\datasets\corpora\rudra_new_concave_20261105
+              D:\updown            (ARRI ALEXA Mini LF plates)  -> the same folder
     HOLDOUT   F:\CINEMA\The Crew   (ARRI ALEXA LogC3 plates)    -> G:\holdout\rudra_holdout_crew_20261105
   The holdout lives OUTSIDE every training root, so nothing can train on it and the
   holdout kit's leak check works. Stages, in order (each can be run alone):
@@ -25,14 +26,14 @@ $ErrorActionPreference = "Stop"
 function Say($m) { Write-Host "`n== $m" -ForegroundColor Cyan }
 function Fail($m) { Write-Host "FAILED: $m" -ForegroundColor Red; exit 1 }
 if (-not (Test-Path $Python)) { Fail "no $Python" }
-foreach ($p in "F:\RND\2017\concave", "F:\CINEMA\The Crew") { if (-not (Test-Path $p)) { Fail "footage not found: $p" } }
+foreach ($p in "F:\RND\2017\concave", "D:\updown", "F:\CINEMA\The Crew") { if (-not (Test-Path $p)) { Fail "footage not found: $p" } }
 if ($HoldOut -like "G:\datasets\corpora*" -or $HoldOut -like "G:\rudra_training*") { Fail "the holdout must live outside the training roots" }
 
 if ($Stage -in @("all", "ingest")) {
-    Say "Ingest concave (training) -> $TrainOut"
-    & $Python pipeline/ingest_fxtd_footage.py --out $TrainOut --sources concave
-    if ($LASTEXITCODE -ne 0) { Fail "ingest concave" }
-    & $Python pipeline/ingest_fxtd_footage.py --out $TrainOut --sources concave --finalize --path-root $TrainOut
+    Say "Ingest concave and updown (training) -> $TrainOut"
+    & $Python pipeline/ingest_fxtd_footage.py --out $TrainOut --sources concave updown
+    if ($LASTEXITCODE -ne 0) { Fail "ingest concave and updown" }
+    & $Python pipeline/ingest_fxtd_footage.py --out $TrainOut --sources concave updown --finalize --path-root $TrainOut
     if ($LASTEXITCODE -ne 0) { Fail "finalize concave" }
     Say "Ingest The Crew (holdout) -> $HoldOut"
     New-Item -ItemType Directory -Force (Split-Path $HoldOut) | Out-Null
