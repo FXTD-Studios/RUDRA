@@ -6346,3 +6346,32 @@ TEST(AppFillView, TheViewerHasAnAiFillToggleThatIsSafeWithoutAFill) {
     b->setChecked(false);
     EXPECT_FALSE(w.fill_view_on());
 }
+
+// ---- the viewer's AI fill finds the fill after it moved into the master (5 Nov 2026) ----
+TEST(GenFillSwap, TheViewerFindsTheFillBeforeAndAfterItMovesIntoTheMaster) {
+    const auto root = std::filesystem::temp_directory_path() / "rudra_genfill_view";
+    std::filesystem::remove_all(root);
+    const auto m = root / "master", f = root / "master_aifill";
+    std::filesystem::create_directories(m);
+    std::filesystem::create_directories(f);
+    for (const char* n : {"master.000001.exr", "master.000002.exr"}) {
+        std::ofstream(m / n) << "original";
+        std::ofstream(f / n) << "filled";
+    }
+    // Before the move: the fill folder's frames.
+    auto before = app::genfill_filled_frames(app::from_path(f), app::from_path(m));
+    ASSERT_EQ(before.size(), 2);
+    EXPECT_TRUE(before[0].contains("master_aifill"));
+    // A master never filled: nothing, even though it has frames.
+    EXPECT_TRUE(app::genfill_filled_frames(QString(), app::from_path(m)).isEmpty());
+    // After the in-place move: the master's frames (they are the fill now).
+    ASSERT_TRUE(app::genfill_replace_in_master(app::from_path(m), app::from_path(f)).error.isEmpty());
+    auto after = app::genfill_filled_frames(app::from_path(f), app::from_path(m));
+    ASSERT_EQ(after.size(), 2);
+    EXPECT_FALSE(after[0].contains("master_aifill"));
+    std::ifstream in(app::to_path(after[0]));
+    std::string s;
+    std::getline(in, s);
+    EXPECT_EQ(s, "filled");
+    std::filesystem::remove_all(root);
+}

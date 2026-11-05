@@ -835,6 +835,7 @@ private:
     bool fill_view_on_ = false;
     std::map<int, std::shared_ptr<const NetworkLinearImage>> fill_view_cache_;
     QStringList fill_view_files_;   // the last finished fill's frames, in order
+    QString genfill_last_master_;   // the master folder the last fill was for (its frames are the fill once moved in place)
     QString fill_view_key_;
     std::shared_ptr<const NetworkLinearImage> fill_view_frame(int index);
     bool apply_fill_view();

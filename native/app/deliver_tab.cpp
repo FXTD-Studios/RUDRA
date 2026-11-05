@@ -632,6 +632,8 @@ bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOpti
             QString text;
             if (done) {
                 self->genfill_last_out_ = out;
+                self->genfill_last_master_ = master_dir;
+                self->fill_view_cache_.clear();
                 // 4 Nov 2026 (Ahmed: option a): the fill fixes the master in place; the
                 // originals go to <master>_before_aifill. Only after a fill that finished.
                 QString where = QStringLiteral("to %1").arg(QDir::toNativeSeparators(out));
