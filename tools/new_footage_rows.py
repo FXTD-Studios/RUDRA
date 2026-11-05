@@ -41,7 +41,7 @@ def main(argv=None) -> int:
     else:
         with a.out.open("w", encoding="utf-8") as f:
             for r in keep:
-                f.write(json.dumps({**r, "hdr_path": str(a.ingest / r["hdr_path"])}) + "\n")
+                f.write(json.dumps({**r, "hdr_path": str(a.ingest / r["hdr_path"]), "plate_primaries": r.get("plate_primaries", "rec2020")}) + "\n")
     print(f"-> {a.out}")
     return 0 if keep else 2
 
