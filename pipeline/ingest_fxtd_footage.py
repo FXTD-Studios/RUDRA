@@ -132,7 +132,7 @@ SOURCES: dict[str, dict] = {
     "thecrew": {
         "project": "The Crew",
         "path": r"F:\CINEMA\The Crew",
-        "kind": "mov", "glob": "**/Sc_*_Sh*.mov", "shot_regex": r"^(Sc_\d+_Sh\d+)", "latest_only": True,
+        "kind": "mov", "glob": "**/Sc_*_Sh*.mov", "shot_regex": r"^(Sc_\d+[A-Za-z]?_Sh\d+[A-Za-z]?)", "latest_only": True,
         "encoding": "logc3", "gamut": "awg3",
         "camera": "ARRI ALEXA (LogC3, AWG3), VFX plates ProRes/DNxHR 4444 12-bit",
     },
@@ -202,6 +202,10 @@ def read_mov_frame(path: Path, index: int, fps: float, width: int, height: int) 
     raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.6f}", "-i", str(path),
                           "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb48le", "-"],
                          capture_output=True, check=True).stdout
+    if len(raw) != width * height * 6:   # a file shorter than its header says: decode up to the frame instead
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-vf", f"select=eq(n\\,{index})",
+                              "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb48le", "-"],
+                             capture_output=True, check=True).stdout
     if len(raw) != width * height * 6:
         raise IOError(f"{path.name} frame {index}: got {len(raw)} bytes")
     return np.frombuffer(raw, np.uint16).reshape(height, width, 3).astype(np.float32) / 65535.0
@@ -358,12 +362,22 @@ def process_shot(sid: str, src: dict, shot: str, items: list[dict], split: str, 
     # Every pick is decoded (the clip test needs the whole shot); only the
     # downsampled frame is kept, so a 4K shot costs ~10 x 18 MB, not 10 x 84 MB.
     smalls, peaks, sizes = [], [], []
+    kept = []
     for it in items:
-        cam = camera_linear(src, it)
+        try:
+            cam = camera_linear(src, it)
+        except (OSError, subprocess.CalledProcessError) as e:   # a damaged or short file: skip the frame
+            print(f"    skipped {Path(it['path']).name} frame {it.get('frame')}: {e}", flush=True)
+            continue
+        kept.append(it)
         peaks.append(frame_peak(cam))
         sizes.append(cam.shape[:2])
         smalls.append(downsample(cam))
         del cam
+    items = kept
+    if not items:
+        print(f"    {shot}: no readable frame", flush=True)
+        return []
     top, clipped = channel_plateaus(peaks)
     ceiling = shot_ceiling_nits(top, clipped, matrix)
     recipe = shot_recipe(scene_id)
