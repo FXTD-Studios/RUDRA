@@ -1583,6 +1583,20 @@ void MainWindow::sync_ui() {
     peak_val_->setText(QLocale(QLocale::English).toString(qlonglong(std::floor(session_.display_nits() + 0.5))));
     preserve_->set_on(g.preserve);
     preserve_->set_hint(g.preserve ? "do-no-harm" : "raw prediction");
+    {   // the reconstruction region (spec rev 2)
+        const ReconstructionRegion& rg = g.region;
+        region_on_->set_on(rg.enabled);
+        region_on_->set_hint(!rg.enabled ? "off" : rg.band ? "band" : "highlights + shadows");
+        region_box_->setVisible(rg.enabled);
+        region_kind_->set_on(rg.band ? "band" : "tones");
+        for (const auto& rs : region_sliders_) {
+            const QSignalBlocker b(rs.slider);
+            const double v = double(rg.*(rs.field));
+            rs.slider->setValue(int(std::lround(v * rs.scale)));
+            rs.value->setText(QString::number(v, 'f', 2));
+            rs.row->setVisible(rs.kind == 0 || (rs.kind == 2) == rg.band);
+        }
+    }
     anchor_->set_on(session_.anchor);
     anchor_->set_hint(session_.anchor ? "conform" : "raw ITM level");
     {
@@ -2106,6 +2120,7 @@ MasterRequest MainWindow::master_request() const {
     q.preserve_outside = session_.grade.preserve;
     q.recovery_mode = session_.grade.mode;
     q.strength = session_.grade.strength;
+    q.region = session_.grade.region;   // spec rev 2
     q.exposure_ev = session_.grade.exposure_ev;
     for (const auto& r : session_.grade.regions) q.regions.push_back({r.label, r.low_nits, r.high_nits, r.ev});
     q.anchor = session_.anchor;

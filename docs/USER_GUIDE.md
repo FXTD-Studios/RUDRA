@@ -128,6 +128,14 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
 - **Mode** (1 2 3 4): what the model may change: *All*, *Highlights*,
   *Shadows*, or *Off* (the baseline alone).
 - **Strength** ([ and ]): how much of the model's residual is added.
+- **Limit to a luminance region** (1.1): confine the reconstruction to a
+  range of the SDR's brightness. *Highlights + shadows* gives each its own
+  threshold (Highlights from, Shadows below, as SDR luma 0 to 1), softness
+  and strength; *Band* reconstructs only between Band low and Band high.
+  Every pixel outside the region keeps the analytic baseline exactly, bit
+  for bit, in the viewer, the master and movie exports; the master's sidecar
+  and EXR record the region (`reconstruction_region`). The region only ever
+  narrows what Mode allows. Not available with Keep super-whites.
 - **Preserve outside masks**: with painted masks, keep everything outside
   them at the baseline.
 - Hold **B** to flip to the baseline; **W** wipes baseline (left) against

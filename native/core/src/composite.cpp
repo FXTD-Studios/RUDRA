@@ -78,6 +78,67 @@ float anchor_target_log2(float code, std::span<const float> knots) noexcept {
 
 double exposure_gain(double ev) noexcept { return std::isfinite(ev) ? std::exp2(ev) : 1.0; }
 
+std::string reconstruction_region_error(const ReconstructionRegion& r) {
+    const float v[] = {r.highlight_from, r.highlight_softness, r.highlight_strength, r.shadow_below,
+                       r.shadow_softness, r.shadow_strength, r.band_low, r.band_high, r.band_softness};
+    for (float x : v)
+        if (!std::isfinite(x)) return "every reconstruction region value must be finite";
+    for (float x : {r.highlight_from, r.shadow_below, r.band_low, r.band_high})
+        if (x < 0.0f || x > 1.0f) return "reconstruction region thresholds are SDR luma, 0 to 1";
+    for (float x : {r.highlight_softness, r.shadow_softness, r.band_softness})
+        if (x < 0.0f || x > 0.5f) return "reconstruction region softness is 0 to 0.5";
+    for (float x : {r.highlight_strength, r.shadow_strength})
+        if (x < 0.0f || x > 2.0f) return "reconstruction region strength is 0 to 2";
+    if (!(r.band_low < r.band_high)) return "the reconstruction band's low must be below its high";
+    return {};
+}
+
+float region_ramp_up(float y, float at, float softness) noexcept {
+    if (!(softness > 0.0f)) return y >= at ? 1.0f : 0.0f;
+    const float t = std::clamp((y - (at - 0.5f * softness)) / softness, 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+float region_ramp_down(float y, float at, float softness) noexcept {
+    if (!(softness > 0.0f)) return y <= at ? 1.0f : 0.0f;
+    const float t = std::clamp(((at + 0.5f * softness) - y) / softness, 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+void region_weights(float y, const ReconstructionRegion& r, float& highlight, float& shadow) noexcept {
+    if (!r.enabled) {
+        highlight = shadow = 1.0f;
+        return;
+    }
+    if (r.band) {
+        const float b = region_ramp_up(y, r.band_low, r.band_softness) * region_ramp_down(y, r.band_high, r.band_softness);
+        highlight = b * r.highlight_strength;
+        shadow = b * r.shadow_strength;
+        return;
+    }
+    highlight = region_ramp_up(y, r.highlight_from, r.highlight_softness) * r.highlight_strength;
+    shadow = region_ramp_down(y, r.shadow_below, r.shadow_softness) * r.shadow_strength;
+}
+
+float reconstruction_gate(float y, float shadow_weight, const CompositeParams& params) noexcept {
+    float hp = sigmoidf((y - 0.82f) * 24.0f);
+    float sp = sigmoidf((0.10f - y) * 24.0f) * shadow_weight;
+    if (params.region.enabled) {   // revision 2; off leaves revision 1's arithmetic untouched
+        float wh = 1.0f, ws = 1.0f;
+        region_weights(y, params.region, wh, ws);
+        hp *= wh;
+        sp *= ws;
+    }
+    float gate = 0.0f;
+    switch (params.mode) {
+        case RecoveryMode::All: gate = std::max(hp, sp); break;
+        case RecoveryMode::Highlights: gate = hp; break;
+        case RecoveryMode::Shadows: gate = sp; break;
+        case RecoveryMode::Off: gate = 0.0f; break;
+    }
+    return gate * params.strength;
+}
+
 bool any_graded(std::span<const RegionBand> bands) noexcept {
     return std::any_of(bands.begin(), bands.end(), [](const RegionBand& b) { return b.ev != 0.0; });
 }
@@ -143,20 +204,17 @@ NetworkLinearImage composite(const SdrImage& sdr, const Fields& fields, const Fr
 
     for (std::size_t i = 0; i < n; ++i) {
         const float y = 0.2126f * s.plane(0)[i] + 0.7152f * s.plane(1)[i] + 0.0722f * s.plane(2)[i];
-        const float hp = sigmoidf((y - 0.82f) * 24.0f);
-        const float sp = sigmoidf((0.10f - y) * 24.0f) * scalars.shadow_weight;
-        float gate = 0.0f;
-        switch (params.mode) {
-            case RecoveryMode::All: gate = std::max(hp, sp); break;
-            case RecoveryMode::Highlights: gate = hp; break;
-            case RecoveryMode::Shadows: gate = sp; break;
-            case RecoveryMode::Off: gate = 0.0f; break;
-        }
-        gate *= params.strength;
+        const float gate = reconstruction_gate(y, scalars.shadow_weight, params);
+        // Revision 2: outside the region (gate exactly 0) the pixel is the baseline itself.
+        const bool keep_base = params.region.enabled && gate == 0.0f;
         const float recovery = std::max(hl[i], sh[i]);
         float px[3];
         for (int c = 0; c < 3; ++c) {
             const float base_c = b.plane(c)[i];
+            if (keep_base) {
+                px[c] = base_c;
+                continue;
+            }
             const float pred_log = std::clamp(std::log1p(base_c * log_scale) + r.plane(c)[i] * gate, 0.0f, log_ceiling);
             float pred = std::expm1(pred_log) / log_scale;
             if (params.preserve_outside) pred = base_c + recovery * (pred - base_c);

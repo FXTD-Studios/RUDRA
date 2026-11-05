@@ -25,6 +25,7 @@ tolerance are returned bit-exact. Registration key: "partial_tighten":
 from __future__ import annotations
 
 import numpy as np
+from scipy.ndimage import binary_dilation, laplace, uniform_filter
 
 FULL_CODE = 254.5 / 255.0
 
@@ -34,7 +35,8 @@ def partial_support(source, weight):
     return (np.asarray(weight) > 0) & (source.max(-1) > .5) & (source.min(-1) < FULL_CODE)
 
 
-def tighten_partial(source, constrained, baseline, weight, view, mode='bisect', tol_codes=0.5, iters=12, band_codes=0.0):
+def tighten_partial(source, constrained, baseline, weight, view, mode='bisect', tol_codes=0.5, iters=12, band_codes=0.0,
+                    target='source', dq_iters=200, dq_max_lap=1.5):
     """-> (result, diagnostics). `constrained` is constrain_colour's output."""
     source = np.asarray(source, np.float32)
     cur = np.asarray(constrained, np.float32)
@@ -42,7 +44,10 @@ def tighten_partial(source, constrained, baseline, weight, view, mode='bisect', 
     if cur.shape != source.shape or base.shape != source.shape or np.asarray(weight).shape != source.shape[:2]:
         raise ValueError('matching source, constrained, baseline and weight required')
     if mode == 'lock':
-        return lock_observed(source, constrained, baseline, weight, view, iters=max(3, min(int(iters), 6)), band_codes=band_codes)
+        return lock_observed(source, constrained, baseline, weight, view, iters=max(3, min(int(iters), 6)), band_codes=band_codes,
+                             target=target, dq_iters=dq_iters, dq_max_lap=dq_max_lap)
+    if target != 'source':
+        raise ValueError("target='dequant' is a lock-mode option")
     if mode not in ('halving', 'bisect'):
         raise ValueError("mode must be 'halving', 'bisect' or 'lock'")
     out = cur.copy()
@@ -100,10 +105,79 @@ def from_registration(reg):
     out = {'mode': cfg.get('mode', 'bisect'), 'tol_codes': float(cfg.get('tol_codes', 0.5)), 'iters': int(cfg.get('iters', 12))}
     if 'band_codes' in cfg:
         out['band_codes'] = float(cfg['band_codes'])
+    if cfg.get('target', 'source') != 'source':
+        out['target'] = str(cfg['target'])
+        out['dq_iters'] = int(cfg.get('dq_iters', 200))
+        out['dq_max_lap'] = float(cfg.get('dq_max_lap', 1.5))
     return out
 
 
-def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3, band_codes=0.0):
+def dequantize_recorded(source, region=None, iters=200, max_lap=1.5, half_bin=0.49, clip_ceiling=4.0):
+    """The lock's target without the 8-bit rounding (5 Nov 2026). -> (codes / 255, used mask).
+
+    The exact lock pins a recorded channel to the source's integer code, but the true
+    display value lies anywhere in that code's bin (+-0.5), and as content moves by a
+    fraction of a pixel the rounding flips frame to frame: that rounding noise is what
+    the lock copied into motion (aligned residual 0.0129). Per channel, this finds the
+    smoothest field (least squared Laplacian, projected accelerated gradient, as in
+    aces_curvature_dequant) that stays inside every recorded code's bin; a clipped
+    sample is only bounded below by the clip, so it does not drag the field down.
+
+    Used only where the content is smooth (mean |code Laplacian| over 5x5 <= max_lap:
+    rounding alone gives at most 2, texture or noise much more); elsewhere, and in
+    every clipped channel, the source code itself. The result never leaves the bin
+    (|result - code| <= half_bin), so it is always a value the camera could have shown.
+    No reference data and no learned weights. `region`: a bool HxW mask; the solve
+    runs on its bounding box (plus a margin) only.
+    """
+    src = np.asarray(source, np.float64)
+    if src.ndim != 3 or src.shape[-1] != 3 or not np.isfinite(src).all():
+        raise ValueError('finite HWC RGB source required')
+    out = src.copy()
+    used = np.zeros(src.shape, bool)
+    if region is not None:
+        region = np.asarray(region, bool)
+        if not region.any():
+            return out, used
+        ys, xs = np.nonzero(region)
+        m = 24
+        y0, y1 = max(int(ys.min()) - m, 0), min(int(ys.max()) + m + 1, src.shape[0])
+        x0, x1 = max(int(xs.min()) - m, 0), min(int(xs.max()) + m + 1, src.shape[1])
+    else:
+        y0, y1, x0, x1 = 0, src.shape[0], 0, src.shape[1]
+    codes = src[y0:y1, x0:x1] * 255.0
+    rec = codes < 254.5
+    lo = np.where(rec, codes - half_bin, 254.5)
+    hi = np.where(rec, codes + half_bin, 255.0 + clip_ceiling)
+    u = codes.copy()
+    y = u.copy()
+    t = 1.0
+    for _ in range(int(iters)):   # ||Laplacian|| <= 8, so a 1/64 step on L^T L is nonexpansive
+        g = np.stack([laplace(laplace(y[..., c], mode='reflect'), mode='reflect') for c in range(3)], -1)
+        nu = np.clip(y - g / 64.0, lo, hi)
+        nt = (1 + np.sqrt(1 + 4 * t * t)) / 2
+        y = nu + ((t - 1) / nt) * (nu - u)
+        u = nu
+        t = nt
+    smooth = np.zeros_like(rec)
+    for c in range(3):
+        k = codes[..., c]
+        r = rec[..., c]
+        lap = np.zeros_like(k)
+        ok = np.zeros_like(r)
+        lap[1:-1, 1:-1] = k[:-2, 1:-1] + k[2:, 1:-1] + k[1:-1, :-2] + k[1:-1, 2:] - 4 * k[1:-1, 1:-1]
+        ok[1:-1, 1:-1] = r[1:-1, 1:-1] & r[:-2, 1:-1] & r[2:, 1:-1] & r[1:-1, :-2] & r[1:-1, 2:]
+        num = uniform_filter(np.abs(lap) * ok, 5, mode='nearest')
+        den = uniform_filter(ok.astype(np.float64), 5, mode='nearest')
+        smooth[..., c] = (den > 0.2) & (num <= max_lap * den)
+    use = rec & smooth
+    out[y0:y1, x0:x1] = np.where(use, u, codes) / 255.0
+    used[y0:y1, x0:x1] = use
+    return out, used
+
+
+def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3, band_codes=0.0,
+                  target='source', dq_iters=200, dq_max_lap=1.5):
     """The 0 EV fix without new data (5 Nov 2026).
 
     In a partially clipped pixel (codes such as 255, 250, 230) the clipped channel
@@ -127,7 +201,14 @@ def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3
     0 is the exact lock. The exact lock passes 0 EV on real footage (fresh 0.241 against
     0.453) but makes motion follow the source's frame-to-frame code jitter (aligned
     residual 0.0129 against 0.0104); a band keeps the model's smooth values inside it.
+
+    target (5 Nov 2026): 'source' locks to the recorded integer codes (as registered on
+    5 and 6 Nov, bit for bit); 'dequant' locks to dequantize_recorded's estimate of the
+    value before 8-bit rounding, which does not flip as content moves. Either way a pixel
+    is only changed if every recorded channel ends within 1 code of the source.
     """
+    if target not in ('source', 'dequant'):
+        raise ValueError("target must be 'source' or 'dequant'")
     source = np.asarray(source, np.float32)
     cur = np.asarray(constrained, np.float32)
     base = np.asarray(baseline, np.float32)
@@ -141,7 +222,13 @@ def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3
         return out, diag
     src = source.reshape(-1, 3)[idx].astype(np.float64)
     x = cur.reshape(-1, 3)[idx].astype(np.float64)
-    target = src   # the recorded codes themselves: what the camera measured (the plain inverse returns them)
+    if target == 'dequant':
+        dq, used = dequantize_recorded(source, region=sup, iters=dq_iters, max_lap=dq_max_lap)
+        diag['target'] = 'dequant'
+        diag['dequant_channels'] = int(used.reshape(-1, 3)[idx].sum())
+        target = dq.reshape(-1, 3)[idx]
+    else:
+        target = src   # the recorded codes themselves: what the camera measured (the plain inverse returns them)
     rec = src < FULL_CODE                              # the recorded channels
     clipped = ~rec
     fwd = lambda v: np.asarray(view.forward(v.astype(np.float32)[None]), np.float64)[0]
@@ -173,7 +260,8 @@ def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3
         x = xp_ * np.exp(np.clip(du, -2.0, 2.0))
     d = fwd(x)
     err = np.maximum(np.abs(np.where(rec, d - target, 0.0)).max(1) * 255.0 - float(band_codes), 0.0)
-    ok = np.isfinite(x).all(1) & (err <= 0.5) & ~(clipped & (d < FULL_CODE)).any(1)
+    near_source = (np.abs(np.where(rec, d - src, 0.0)).max(1) * 255.0) <= 1.0   # the 1-code bound, whatever the target
+    ok = np.isfinite(x).all(1) & (err <= 0.5) & near_source & ~(clipped & (d < FULL_CODE)).any(1)
     flat = out.reshape(-1, 3)
     flat[idx[ok]] = x[ok].astype(np.float32)
     diag['changed_pixels'] = int(ok.sum())

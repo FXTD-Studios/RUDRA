@@ -1,0 +1,24 @@
+{
+ "parent": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+ "parent_sha256": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+ "steps": 1600,
+ "include_fully_clipped": true,
+ "old_coherent_control_max": 0.3825248606569533,
+ "aligned_residual_control_max": 0.010367255277136186,
+ "clipped_smoothing": {
+  "sigma": 64,
+  "mode": "hybrid",
+  "ramp": 1,
+  "start": 0
+ },
+ "scope": "The band lock (registered 6 Nov in its files, run 5 Nov) passed fresh 0 EV at every band (0.261 / 0.289 / 0.319, limit 0.338) and every other gate, but failed motion at every band (aligned residual 0.011365 / 0.010901 / 0.010532, limit 0.010367): one trade-off curve, no candidate. The motion cost comes from the lock target: the source's integer codes, whose 8-bit rounding flips frame to frame as content moves by a fraction of a pixel. The dequantized lock keeps the lock but aims it at dequantize_recorded's estimate of each recorded channel before rounding (the smoothest field inside every code's +-0.49 bin, only where the content is smooth: mean |code Laplacian| over 5x5 <= 1.5; elsewhere the code). Same pipeline, no retraining. Synthetic check before registration (smooth highlight, 0.5/0.25 px motion): recorded-channel error vs truth 0.29 -> 0.14 code RMS, aligned difference 0.10 -> 0.02; on noisy content (>= 0.5 code) it changes nothing. Real footage may behave differently. Registered 5 Nov 2026 before any run. Arms on w4: lock_dq000 (dequantized target, band 0), lock_dq015 (dequantized target, band 0.15), lock_b040 (source target, band 0.40: the control the 6 Nov curve predicts lands on both limits at once, aligned ~0.01037 and fresh ~0.335; written down here before it runs). Every original gate must hold (aligned residual <= 0.010367; old24 -3/0/+3 EV; Hunyuan48 <= 0.02 EV; no new negative Y; fresh 0 EV RMS <= 0.338 and -3/+3/H no worse than analytic). Among the arms that pass, the lowest fresh 0 EV is chosen; it then runs the Crew holdout once (configs/experiments/holdout_crew_20261105.json). If none passes, no candidate, and the 0 EV fix stops: RUDRA ACES 2 stays preview (decision D1, 3 Nov). A b040 pass alone is reported but treated with caution: its band was chosen after seeing the 6 Nov curve. This arm: b040.",
+ "release_authorized": false,
+ "forbid_new_negative_y": true,
+ "registered_before_evaluation": true,
+ "partial_tighten": {
+  "mode": "lock",
+  "iters": 4,
+  "band_codes": 0.4
+ },
+ "author": "FXTD Studios Research, 5 Nov 2026"
+}

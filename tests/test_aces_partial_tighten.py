@@ -165,3 +165,115 @@ def test_lock_band_leaves_values_inside_it_and_brings_outside_ones_to_the_edge()
     # band 0 is the exact lock, as registered on 5 Nov
     out0, _ = tighten_partial(src, far, base, w, v, mode='lock')
     assert np.abs(v.forward(out0)[0, 0, 1:] - src[0, 0, 1:]).max() * 255 < 0.05
+
+
+# --- the dequantized lock target (5 Nov 2026) --------------------------------------------
+
+from training.aces_partial_tighten import dequantize_recorded  # noqa: E402
+
+
+def _smooth_highlight(shift=(0.0, 0.0), noise=0.0, seed=0, n=72):
+    """A smooth warm highlight in display space: red clips in the middle, green and blue are
+    recorded. `shift` moves the content by a fraction of a pixel; noise moves with it."""
+    yy, xx = np.mgrid[0:n, 0:n].astype(np.float64)
+    X, Y = xx + shift[0], yy + shift[1]
+    r2 = (X - n / 2) ** 2 + (Y - n / 2) ** 2
+    d = np.stack([1.15 * np.exp(-r2 / (2 * 22.0 ** 2)) + 0.05,
+                  0.92 * np.exp(-r2 / (2 * 20.0 ** 2)) + 0.04,
+                  0.80 * np.exp(-r2 / (2 * 24.0 ** 2)) + 0.06], -1)
+    if noise:
+        g = np.random.default_rng(seed).normal(0, noise / 255, (n + 8, n + 8, 3))
+        ix = np.clip(np.rint(X).astype(int) + 4, 0, n + 7)
+        iy = np.clip(np.rint(Y).astype(int) + 4, 0, n + 7)
+        d = d + g[iy, ix]
+    return np.clip(d, 0, 1)
+
+
+def _recorded_partial(src):
+    return (src.max(-1) >= 254.5 / 255) & (src.min(-1) < 254.5 / 255)
+
+
+def test_dequant_recovers_smooth_values_inside_the_bins():
+    truth = _smooth_highlight()
+    src = (np.rint(truth * 255) / 255).astype(np.float32)
+    dq, used = dequantize_recorded(src)
+    rec = src < 254.5 / 255
+    sel = _recorded_partial(src)[..., None] & rec
+    assert sel.sum() > 50 and used[sel].mean() > 0.5
+    err_codes = np.sqrt(np.mean(((src - truth) * 255)[sel] ** 2))
+    err_dq = np.sqrt(np.mean(((dq - truth) * 255)[sel] ** 2))
+    assert err_dq < 0.75 * err_codes, (err_dq, err_codes)
+    assert (np.abs(dq - src) * 255 <= 0.49 + 1e-6).all()          # never leaves the code's bin
+    assert np.array_equal(dq[~rec], src[~rec].astype(np.float64))   # clipped channels untouched
+
+
+def test_dequant_leaves_noisy_content_at_the_codes():
+    truth = _smooth_highlight(noise=3.0, seed=3)
+    src = (np.rint(truth * 255) / 255).astype(np.float32)
+    dq, used = dequantize_recorded(src)
+    assert used.mean() < 0.05
+    sel = (src < 254.5 / 255) & ~used
+    assert np.array_equal(dq[sel], src[sel].astype(np.float64))
+
+
+def test_dequant_region_is_bit_exact_outside_its_box():
+    src = (np.rint(_smooth_highlight() * 255) / 255).astype(np.float32)
+    region = np.zeros(src.shape[:2], bool)
+    region[30:34, 30:34] = True
+    dq, used = dequantize_recorded(src, region=region)
+    box = np.zeros_like(region)
+    box[6:58, 6:58] = True                                          # 4x4 + the 24 px margin
+    assert np.array_equal(dq[~box], src[~box].astype(np.float64)) and not used[~box].any()
+
+
+def test_dequant_target_moves_less_under_subpixel_motion():
+    """The point of it: as content moves by a fraction of a pixel the integer codes flip,
+    the dequantized target follows the content instead (aligned difference vs the truth)."""
+    def aligned(r0, r1, dx=.5, dy=.25):
+        a = (1 - dy) * ((1 - dx) * r1[:-1, :-1] + dx * r1[:-1, 1:]) + dy * ((1 - dx) * r1[1:, :-1] + dx * r1[1:, 1:])
+        return r0[:-1, :-1] - a
+    t0, t1 = _smooth_highlight((0.0, 0.0)), _smooth_highlight((0.5, 0.25))
+    s0, s1 = [(np.rint(t * 255) / 255).astype(np.float32) for t in (t0, t1)]
+    d0, d1 = dequantize_recorded(s0)[0], dequantize_recorded(s1)[0]
+    sel = (_recorded_partial(s0)[..., None] & (s0 < 254.5 / 255))[:-1, :-1]
+    codes = np.mean((aligned(s0 - t0, s1 - t1) * 255)[sel] ** 2)
+    dq = np.mean((aligned(d0 - t0, d1 - t1) * 255)[sel] ** 2)
+    assert dq < 0.6 * codes, (dq, codes)
+
+
+def test_lock_dequant_target_settings_and_bounds():
+    v = ToyView()
+    truth = _smooth_highlight()
+    src = (np.rint(truth * 255) / 255).astype(np.float32)
+    base = v.inverse(src).astype(np.float32)
+    w = np.ones(src.shape[:2], np.float32)
+    cur = (v.inverse(np.clip(truth, 0, 0.999)) * 1.004).astype(np.float32)   # the model, drifting a little
+    a, da = tighten_partial(src, cur, base, w, v, mode='lock')
+    b, db = tighten_partial(src, cur, base, w, v, mode='lock', target='dequant')
+    assert db['target'] == 'dequant' and db['dequant_channels'] > 0 and db['changed_pixels'] > 0
+    sup = partial_support(src, w)
+    rec = (src < 254.5 / 255) & sup[..., None]
+    shown = v.forward(b)
+    assert (np.abs(shown - src)[rec] * 255 <= 1.0 + 1e-4).all()         # still within 1 code of the source
+    ea = np.sqrt(np.mean(((v.forward(a) - truth) * 255)[rec] ** 2))
+    eb = np.sqrt(np.mean(((shown - truth) * 255)[rec] ** 2))
+    assert eb < ea, (eb, ea)                                               # nearer what the camera saw
+    assert np.array_equal(a[~sup], cur[~sup]) and np.array_equal(b[~sup], cur[~sup])
+    reg = {'partial_tighten': {'mode': 'lock', 'iters': 4, 'target': 'dequant', 'dq_max_lap': 1.2}}
+    assert from_registration(reg) == {'mode': 'lock', 'tol_codes': 0.5, 'iters': 4, 'target': 'dequant',
+                                      'dq_iters': 200, 'dq_max_lap': 1.2}
+    assert 'target' not in from_registration({'partial_tighten': {'mode': 'lock', 'band_codes': 0.25}})
+    with pytest.raises(ValueError):
+        tighten_partial(src, cur, base, w, v, mode='bisect', target='dequant')
+
+
+def test_lock_source_target_is_unchanged_by_the_new_option():
+    v = MixingView()
+    x, src = _scene_pixel(v)
+    base = x * np.array([0.95, 1.0, 1.0], np.float32)
+    far = np.array([[[640.0, 2.0 * 1.04, 1.0]]], np.float32)
+    w = np.ones((1, 1), np.float32)
+    for band in (0.0, 0.25, 0.40):
+        o1, _ = tighten_partial(src, far, base, w, v, mode='lock', band_codes=band)
+        o2, _ = tighten_partial(src, far, base, w, v, mode='lock', band_codes=band, target='source')
+        assert np.array_equal(o1, o2)

@@ -73,6 +73,10 @@ struct GradeSnapshot {
     // MasterRequest::exposure_ev), -3 to +3. Undone with the grade; in
     // params() only when not 0 (the page has none).
     double exposure_ev = 0.0;
+    // Spec revision 2 (RUDRA 1.1, 5 Nov 2026): the reconstruction region
+    // (core/composite.hpp). Undone with the grade; off by default, and then
+    // left out of params(), projects and masters.
+    ReconstructionRegion region;
 };
 
 // The page's defaultRegions(): highlights 400 to 2 000, speculars 2 000 to
@@ -144,6 +148,12 @@ public:
     void reset_exposure();
     void peak_input(double peak_ev);             // the peak slider: not undone
     void toggle_preserve();                      // the Preserve check
+    // The reconstruction region (spec rev 2): a slider press pushes the undo
+    // entry and inputs move it, as strength's; the switch is one undo step.
+    // Out-of-range values are clamped to reconstruction_region_error's limits.
+    void region_press();
+    void region_input(const ReconstructionRegion& r);
+    void set_region_enabled(bool on);
     void reset_recon();
     void reset_regions();
     void undo();

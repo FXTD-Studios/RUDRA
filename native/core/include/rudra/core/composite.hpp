@@ -9,6 +9,7 @@
 // rudra/delivery/controls.py, which is also what ui/compositor.js runs.
 
 #include <span>
+#include <string>
 #include <vector>
 
 #include "rudra/core/fields.hpp"
@@ -46,6 +47,44 @@ std::vector<RegionBand> default_region_bands();
 
 bool any_graded(std::span<const RegionBand> bands) noexcept;
 
+// The reconstruction region (spec revision 2, RUDRA 1.1, 5 Nov 2026): where
+// the reconstruction may act, by the SDR's Rec.709 luma (0..1), set by the
+// artist. Off (the default) is revision 1's fixed priors, bit for bit. On, the
+// priors are weighted by compact smoothstep ramps:
+//
+//   highlights  1 at y >= highlight_from + softness/2, 0 at y <= highlight_from - softness/2
+//   shadows     1 at y <= shadow_below - softness/2,   0 at y >= shadow_below + softness/2
+//   band        both ramps over [band_low, band_high] (replaces the two above)
+//
+// each scaled by its own strength, and wherever the gate is exactly 0 the
+// composite returns the baseline itself (the pixel is preserved bit for bit).
+// A region only narrows the reconstruction: its weights multiply the priors,
+// so it never reconstructs where revision 1's priors would not, and the clip
+// fill (which is divided by the default priors) stays correct.
+struct ReconstructionRegion {
+    bool enabled = false;
+    bool band = false;                 // one luma band instead of highlights + shadows
+    float highlight_from = 0.75f;      // ramp centre
+    float highlight_softness = 0.10f;  // ramp width (0 = a hard edge)
+    float highlight_strength = 1.0f;   // 0..2
+    float shadow_below = 0.15f;
+    float shadow_softness = 0.10f;
+    float shadow_strength = 1.0f;
+    float band_low = 0.50f, band_high = 0.90f;
+    float band_softness = 0.05f;
+    bool operator==(const ReconstructionRegion&) const = default;
+};
+
+// The region's checks: every value finite, luma in [0, 1], softness in
+// [0, 0.5], strength in [0, 2], band_low < band_high. Empty when valid.
+std::string reconstruction_region_error(const ReconstructionRegion& r);
+
+// The compact ramps (fp32, as composite.frag).
+float region_ramp_up(float y, float at, float softness) noexcept;
+float region_ramp_down(float y, float at, float softness) noexcept;
+// The region's highlight and shadow weights at luma y (both 1 when off).
+void region_weights(float y, const ReconstructionRegion& r, float& highlight, float& shadow) noexcept;
+
 struct CompositeParams {
     RecoveryMode mode = RecoveryMode::All;
     float strength = 1.0f;
@@ -69,7 +108,14 @@ struct CompositeParams {
     // picture times 2^exposure_ev before the Region EV bands read it (they see
     // the exposed nits), clipped at the model's ceiling. 0: no change, bit for bit.
     double exposure_ev = 0.0;
+    // Spec revision 2 (5 Nov 2026): where the reconstruction may act. Off: revision 1.
+    ReconstructionRegion region;
 };
+
+// The gate of spec section 2 steps 3 and 4 for one pixel: the priors at SDR
+// luma y (the shadow one times the frame's shadow weight), the region's weights
+// when it is on, the recovery mode, times the strength.
+float reconstruction_gate(float y, float shadow_weight, const CompositeParams& params) noexcept;
 
 // 2^ev, the grade's exposure gain (1 at 0 EV).
 double exposure_gain(double ev) noexcept;

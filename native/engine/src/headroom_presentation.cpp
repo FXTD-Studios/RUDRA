@@ -20,6 +20,7 @@ Result<MasterRequest> headroom_request(const Session& s, bool grain, bool model,
     q.recovery_mode = s.grade.mode; q.strength = s.grade.strength;
     q.preserve_outside = s.grade.preserve;
     q.exposure_ev = s.grade.exposure_ev; q.masks = s.grade.masks;
+    q.region = s.grade.region;
     for (const auto& r : s.grade.regions) q.regions.push_back({r.label, r.low_nits, r.high_nits, r.ev});
     if (auto valid = validate_headroom_grade(q); !valid) return valid.error();
     return q;

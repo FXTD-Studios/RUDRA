@@ -138,6 +138,7 @@ CompositeParams Session::composite_params() const {
     p.reference = grade.reference;
     if (grade.masks && !grade.masks->empty()) p.masks = grade.masks;
     p.exposure_ev = grade.exposure_ev;
+    p.region = grade.region;
     return p;
 }
 
@@ -340,12 +341,48 @@ void Session::toggle_preserve() {
     notify(Grade);
 }
 
+namespace {
+ReconstructionRegion clamped_region(ReconstructionRegion r) {
+    auto c = [](float v, float lo, float hi, float d) { return std::isfinite(v) ? std::clamp(v, lo, hi) : d; };
+    const ReconstructionRegion d;
+    r.highlight_from = c(r.highlight_from, 0.0f, 1.0f, d.highlight_from);
+    r.shadow_below = c(r.shadow_below, 0.0f, 1.0f, d.shadow_below);
+    r.band_low = c(r.band_low, 0.0f, 1.0f, d.band_low);
+    r.band_high = c(r.band_high, 0.0f, 1.0f, d.band_high);
+    r.highlight_softness = c(r.highlight_softness, 0.0f, 0.5f, d.highlight_softness);
+    r.shadow_softness = c(r.shadow_softness, 0.0f, 0.5f, d.shadow_softness);
+    r.band_softness = c(r.band_softness, 0.0f, 0.5f, d.band_softness);
+    r.highlight_strength = c(r.highlight_strength, 0.0f, 2.0f, d.highlight_strength);
+    r.shadow_strength = c(r.shadow_strength, 0.0f, 2.0f, d.shadow_strength);
+    if (!(r.band_low < r.band_high)) {   // keep a band at least 0.01 wide
+        r.band_high = std::min(1.0f, r.band_low + 0.01f);
+        r.band_low = r.band_high - 0.01f;
+    }
+    return r;
+}
+}  // namespace
+
+void Session::region_press() { push_undo(); }
+
+void Session::region_input(const ReconstructionRegion& r) {
+    grade.region = clamped_region(r);
+    notify(Grade);
+}
+
+void Session::set_region_enabled(bool on) {
+    if (grade.region.enabled == on) return;
+    push_undo();
+    grade.region.enabled = on;
+    notify(Grade);
+}
+
 void Session::reset_recon() {
     push_undo();
     grade.mode = "all";
     grade.strength = 1.0;
     grade.preserve = true;
     grade.exposure_ev = 0.0;
+    grade.region = ReconstructionRegion{};
     notify(Grade);
 }
 
