@@ -1,0 +1,29 @@
+{
+ "registered_before_evaluation": true,
+ "source_registration": "configs/experiments/aces_constrained_generated_review_20261024.json",
+ "clip": "hunyuan_demo",
+ "candidate": "<filled by scripts/RUN_BIN_HINGE.ps1 after training: the arm's step1600.pt>",
+ "checkpoint_sha256": "<filled after training>",
+ "frames": 48,
+ "feather_radius": 0,
+ "all_highlight_appearance": true,
+ "policy": "Deterministic uncapped PCGrad control; original Hunyuan48 gates",
+ "checks": "48frames; max transition mean excess<=0.02EV; ordinary >=99.9% within1code; all highlight appearance<=1code; zero shadow lift/new negativeY; exact outside constraint support",
+ "scope": "Measured ends on w4 (fresh 0 EV RMS / aligned residual): the model 0.453 / 0.0090; the full lock with the source target 0.241 / 0.0129, with the dequantized target 0.239 / 0.0119. Both gates are squared errors, so a lock at strength lambda leaves (1-lambda)^2 of the 0 EV drift and adds lambda^2 of the full lock's jitter. Predicted: source 0.5 -> 0.307 / 0.0100, source 0.6 -> 0.284 / 0.0104, dequantized 0.5 -> 0.307 / 0.0097, dequantized 0.6 -> 0.284 / 0.0100. DEVIATION, recorded before the holdout was looked at: the dequantized-lock registration (16c72b2) chose lock_b040 (fresh 0.336 / aligned 0.0102: margins 0.002 code and 0.0002) for the Crew holdout. The holdout can be used once; Ahmed chose (6 Nov) to first run these arms, predicted to pass with margin, and to send the passing arm with the most margin. Nothing of the holdout has been read. Registered 6 Nov 2026 before any run. Arms on w4: lock_s050 and lock_s060 (source target), lock_dqs050 and lock_dqs060 (dequantized target), at strength 0.5 / 0.6. Every original gate must hold (aligned residual <= 0.010367; old24 -3/0/+3 EV; Hunyuan48 <= 0.02 EV; no new negative Y; fresh 0 EV RMS <= 0.338 and -3/+3/H no worse than analytic). Choice for the Crew holdout, between these arms and lock_b040: the passing arm with the largest smallest relative margin, min((0.010367 - aligned) / 0.010367, (0.338 - fresh) / 0.338). It then runs the Crew holdout once. If none of these passes, lock_b040 goes, as registered. This arm: source target, strength 0.5.",
+ "release_authorized": false,
+ "include_fully_clipped": true,
+ "clipped_smoothing": {
+  "start": 0,
+  "mode": "hybrid",
+  "ramp": 1,
+  "sigma": 64
+ },
+ "forbid_new_negative_y": true,
+ "partial_tighten": {
+  "mode": "lock",
+  "iters": 4,
+  "band_codes": 0.0,
+  "strength": 0.5
+ },
+ "author": "FXTD Studios Research, 6 Nov 2026"
+}
