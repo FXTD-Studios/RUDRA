@@ -36,7 +36,7 @@ def partial_support(source, weight):
 
 
 def tighten_partial(source, constrained, baseline, weight, view, mode='bisect', tol_codes=0.5, iters=12, band_codes=0.0,
-                    target='source', dq_iters=200, dq_max_lap=1.5):
+                    target='source', dq_iters=200, dq_max_lap=1.5, strength=1.0):
     """-> (result, diagnostics). `constrained` is constrain_colour's output."""
     source = np.asarray(source, np.float32)
     cur = np.asarray(constrained, np.float32)
@@ -45,7 +45,7 @@ def tighten_partial(source, constrained, baseline, weight, view, mode='bisect', 
         raise ValueError('matching source, constrained, baseline and weight required')
     if mode == 'lock':
         return lock_observed(source, constrained, baseline, weight, view, iters=max(3, min(int(iters), 6)), band_codes=band_codes,
-                             target=target, dq_iters=dq_iters, dq_max_lap=dq_max_lap)
+                             target=target, dq_iters=dq_iters, dq_max_lap=dq_max_lap, strength=strength)
     if target != 'source':
         raise ValueError("target='dequant' is a lock-mode option")
     if mode not in ('halving', 'bisect'):
@@ -109,6 +109,8 @@ def from_registration(reg):
         out['target'] = str(cfg['target'])
         out['dq_iters'] = int(cfg.get('dq_iters', 200))
         out['dq_max_lap'] = float(cfg.get('dq_max_lap', 1.5))
+    if 'strength' in cfg:
+        out['strength'] = float(cfg['strength'])
     return out
 
 
@@ -177,7 +179,7 @@ def dequantize_recorded(source, region=None, iters=200, max_lap=1.5, half_bin=0.
 
 
 def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3, band_codes=0.0,
-                  target='source', dq_iters=200, dq_max_lap=1.5):
+                  target='source', dq_iters=200, dq_max_lap=1.5, strength=1.0):
     """The 0 EV fix without new data (5 Nov 2026).
 
     In a partially clipped pixel (codes such as 255, 250, 230) the clipped channel
@@ -263,7 +265,18 @@ def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3
     near_source = (np.abs(np.where(rec, d - src, 0.0)).max(1) * 255.0) <= 1.0   # the 1-code bound, whatever the target
     ok = np.isfinite(x).all(1) & (err <= 0.5) & near_source & ~(clipped & (d < FULL_CODE)).any(1)
     flat = out.reshape(-1, 3)
-    flat[idx[ok]] = x[ok].astype(np.float32)
+    if strength < 1.0:
+        # Partial strength (6 Nov 2026): a geometric fraction lambda of the way from the model to
+        # the lock, channel by channel (each stays positive). Both gates are squared errors: the
+        # 0 EV drift left is (1 - lambda)^2 of the model's, the frame-to-frame jitter added is
+        # lambda^2 of the full lock's. Measured ends (w4): model 0.453 / 0.0090, full lock with
+        # the source target 0.241 / 0.0129, with the dequantized target 0.239 / 0.0119.
+        lam = float(strength)
+        raw = cur.reshape(-1, 3)[idx][ok].astype(np.float64)
+        flat[idx[ok]] = (np.maximum(raw, 1e-9) ** (1.0 - lam) * np.maximum(x[ok], 1e-9) ** lam).astype(np.float32)
+    else:
+        flat[idx[ok]] = x[ok].astype(np.float32)
+    diag['strength'] = float(strength)
     diag['changed_pixels'] = int(ok.sum())
     diag['kept_pixels'] = int((~ok).sum())
     diag['max_recorded_error_codes'] = float(err[ok].max()) if ok.any() else 0.0
