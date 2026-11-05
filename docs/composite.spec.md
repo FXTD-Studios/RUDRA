@@ -1,6 +1,8 @@
 # The composite: specification
 
-Status: revision 1, 23 Sep 2026. Normative for every implementation.
+Status: revision 2, 5 Nov 2026 (revision 1, 23 Sep 2026, plus the
+reconstruction region, section 2 steps 3b and 5b). Normative for every
+implementation.
 
 `picture = composite(sdr, fields, scalars, params)` is a pure function. The
 network runs once per frame and produces the fields; every user control acts
@@ -80,10 +82,27 @@ Per pixel, per channel `k`, in float32:
    applied.
 2. Luma of the SDR: `y = 0.2126 s_0 + 0.7152 s_1 + 0.0722 s_2` (Rec.709).
 3. Priors: `hp = sigmoid(24 (y - 0.82))`, `sp = sigmoid(24 (0.10 - y)) * w_s`.
+   3b. **Reconstruction region (revision 2, RUDRA 1.1, a user control; off by
+   default, and then this step does nothing, bit for bit).** With
+   `up(y; a, s) = smoothstep(clamp((y - (a - s/2)) / s, 0, 1))` (a hard step
+   `y >= a` when `s = 0`) and `down(y; a, s)` its mirror, both in fp32:
+   highlights + shadows: `hp *= up(y; h_from, h_soft) * h_strength`,
+   `sp *= down(y; s_below, s_soft) * s_strength`; band:
+   `B = up(y; b_lo, b_soft) * down(y; b_hi, b_soft)`, `hp *= B * h_strength`,
+   `sp *= B * s_strength`. Limits: luma 0..1, softness 0..0.5, strength
+   0..2, `b_lo < b_hi`. The region only multiplies the priors, so it never
+   reconstructs where revision 1 would not, and the clip fill (divided by the
+   revision 1 priors, `clip_fill.cpp`) stays exact. Oracle:
+   `rudra/delivery/region.py`; golden `native/tests/golden/composite/region_gate.json`
+   (`tools/emit_region_golden.py`, numpy only). `ui/compositor.js` (the
+   retired web viewer) does not implement it.
 4. Gate by recovery mode: all `max(hp, sp)`, highlights `hp`, shadows `sp`,
    off `0`; then `g = gate * strength`.
 5. Log prediction: `p_k = clamp(log1p(b_k L) + r_k g, 0, log1p(M L))`, and
    `pred_k = expm1(p_k) / L`.
+5b. With the region on and `g == 0` exactly: `pred_k = b_k`, skipping step 5,
+   so a preserved pixel is the baseline bit for bit (step 5's
+   `expm1(log1p(b L)) / L` is not, by fp32 rounding).
 6. Preserve outside the masks (default on): `pred_k = b_k + max(mh, ms) (pred_k - b_k)`.
 7. Region EV, only when some band has `ev != 0` (section 3), in nits:
    `out_k = clamp(pred_k * 10000 * G, 0, M * 10000) / 10000`.

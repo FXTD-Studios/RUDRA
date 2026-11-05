@@ -16,6 +16,8 @@ Result<void> validate_headroom_grade(const MasterRequest& q) {
             "Headroom v1 requires SDR anchoring, chroma carry and grain settling off");
     if (q.recovery_mode != "all" || q.strength != 1.0 || !q.preserve_outside)
         return make_error(ErrorCode::Unsupported, "Headroom v1 requires neutral recovery controls (all, strength 1, preserve)");
+    if (q.region.enabled)
+        return make_error(ErrorCode::Unsupported, "Headroom v1 does not take a reconstruction region");
     if (!q.checkpoint.empty() || !q.checkpoint_sha256.empty() || q.tiled)
         return make_error(ErrorCode::ContractMismatch, "Headroom v1 cannot record a model checkpoint or tiled inference");
     if (q.container != "aces" && q.container != "linear")

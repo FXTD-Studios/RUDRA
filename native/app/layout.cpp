@@ -914,6 +914,70 @@ QWidget* MainWindow::build_right_rail() {
     preserve_ = new CheckRow("preserve", "Preserve outside masks", "preserveHint", "do-no-harm", rcard);
     preserve_->clicked = [this] { session_.toggle_preserve(); };
     rcv->addWidget(preserve_);
+    // Spec revision 2 (RUDRA 1.1, 5 Nov 2026): limit the reconstruction to a
+    // luminance region of the SDR. Off is revision 1 bit for bit; on, every
+    // pixel outside the region keeps the baseline exactly.
+    region_on_ = new CheckRow("regionOn", "Limit to a luminance region", "regionHint", "off", rcard);
+    region_on_->clicked = [this] { session_.set_region_enabled(!session_.grade.region.enabled); };
+    rcv->addWidget(region_on_);
+    region_box_ = new QWidget(rcard);
+    region_box_->setObjectName("regionBox");
+    auto* rbv = column(region_box_, 0, 8);
+    region_kind_ = new Seg("regionKind", {{"tones", "Highlights + shadows"}, {"band", "Band"}}, region_box_);
+    region_kind_->clicked = [this](const QString& k) {
+        ReconstructionRegion r = session_.grade.region;
+        const bool band = k == "band";
+        if (r.band == band) return;
+        session_.region_press();
+        r.band = band;
+        session_.region_input(r);
+    };
+    rbv->addWidget(region_kind_);
+    auto region_slider = [&](const QString& lab, const QString& id, float ReconstructionRegion::*field, int hi,
+                             double scale, int kind) {
+        RegionSlider rs;
+        rs.row = new QWidget(region_box_);
+        rs.row->setProperty("role", "slider");
+        auto* col = column(rs.row, 0, 6);
+        auto* top = new QWidget(rs.row);
+        auto* th = new QHBoxLayout(top);
+        th->setContentsMargins(0, 0, 0, 0);
+        th->setSpacing(4);
+        th->addWidget(label(lab, {}, "slider-lab"));
+        th->addStretch(1);
+        rs.value = label("", id + "Val", "slider-val");
+        th->addWidget(rs.value);
+        col->addWidget(top);
+        rs.slider = new QSlider(Qt::Horizontal, rs.row);
+        rs.slider->setObjectName(id);
+        rs.slider->setRange(0, hi);
+        col->addWidget(rs.slider);
+        rs.field = field;
+        rs.scale = scale;
+        rs.kind = kind;
+        rbv->addWidget(rs.row);
+        QSlider* s = rs.slider;
+        connect(s, &QSlider::sliderPressed, this, [this] { session_.region_press(); });
+        connect(s, &QSlider::valueChanged, this, [this, s, field, scale](int n) {
+            ReconstructionRegion r = session_.grade.region;
+            if (std::lround(double(r.*field) * scale) == n) return;   // sync_ui, not a move
+            if (!s->isSliderDown()) session_.region_press();
+            r.*field = float(n / scale);
+            session_.region_input(r);
+        });
+        region_sliders_.push_back(rs);
+    };
+    // Luma and softness in hundredths, strength in twentieths (as Residual strength).
+    region_slider("Highlights from", "regionHighFrom", &ReconstructionRegion::highlight_from, 100, 100.0, 1);
+    region_slider("Highlight softness", "regionHighSoft", &ReconstructionRegion::highlight_softness, 50, 100.0, 1);
+    region_slider("Highlight strength", "regionHighStrength", &ReconstructionRegion::highlight_strength, 40, 20.0, 0);
+    region_slider("Shadows below", "regionShadowBelow", &ReconstructionRegion::shadow_below, 100, 100.0, 1);
+    region_slider("Shadow softness", "regionShadowSoft", &ReconstructionRegion::shadow_softness, 50, 100.0, 1);
+    region_slider("Shadow strength", "regionShadowStrength", &ReconstructionRegion::shadow_strength, 40, 20.0, 0);
+    region_slider("Band low", "regionBandLow", &ReconstructionRegion::band_low, 100, 100.0, 2);
+    region_slider("Band high", "regionBandHigh", &ReconstructionRegion::band_high, 100, 100.0, 2);
+    region_slider("Band softness", "regionBandSoft", &ReconstructionRegion::band_softness, 50, 100.0, 2);
+    rcv->addWidget(region_box_);
     rcard->setObjectName("recReconCard");
     anv->addWidget(rcard);
     {   // Shown on the learned route: these grade the analytic reconstruction only.

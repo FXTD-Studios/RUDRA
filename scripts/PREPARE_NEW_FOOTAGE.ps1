@@ -42,8 +42,11 @@ if ($Stage -in @("all", "ingest")) {
     & $Python pipeline/ingest_fxtd_footage.py --out $HoldOut --sources thecrew --finalize --path-root $HoldOut
     if ($LASTEXITCODE -ne 0) { Fail "finalize The Crew" }
 }
-if ($Stage -in @("all", "register")) {
-    if (Test-Path $Registration) { Fail "$Registration exists: a holdout is registered once (verify it: tools\holdout_kit.py verify $Registration)" }
+if ($Stage -in @("all", "register") -and (Test-Path $Registration)) {
+    Say "Holdout already registered: verifying the seal (a holdout is registered once)"
+    & $Python tools/holdout_kit.py verify $Registration --exclude-roots G:\datasets\corpora G:\rudra_training
+    if ($LASTEXITCODE -ne 0) { Fail "$Registration does not verify: stop and tell Claude, do not re-register" }
+} elseif ($Stage -in @("all", "register")) {
     Say "The Crew's candidates (references not sensor-clipped)"
     $cand = Join-Path $HoldOut "candidates.jsonl"
     & $Python tools/new_footage_rows.py --ingest $HoldOut --for holdout --camera "ARRI ALEXA LogC3" --out $cand

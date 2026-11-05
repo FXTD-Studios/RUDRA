@@ -34,8 +34,11 @@ struct CompositeUbo {
     float frame[4];     // x width, y height (3.3: the masks sample by normalised position), z exposure gain,
                         // w 1 when the anchor's target has knots (13 Oct 2026)
     float anchor[256];  // 64 vec4: anchor_target_knots, one per 8-bit code
+    float region[12];   // spec rev 2 (5 Nov 2026), three vec4: [0] x on, y band, z highlight_from, w its softness;
+                        // [1] x highlight strength, y shadow_below, z its softness, w shadow strength;
+                        // [2] x band low, y band high, z band softness
 };
-static_assert(sizeof(CompositeUbo) == (3 * 4 + 288 + 32 + 4 + 256) * sizeof(float));
+static_assert(sizeof(CompositeUbo) == (3 * 4 + 288 + 32 + 4 + 256 + 12) * sizeof(float));
 static_assert(288 >= 1 + kSourceCurveKnots);
 
 // The View block of shaders/display.frag.
@@ -111,6 +114,13 @@ inline CompositeUbo composite_ubo(const FrameScalars& scalars, const ModelConsta
     const std::vector<float> knots = anchor_target_knots(params);
     u.frame[3] = knots.size() == 256 ? 1.0f : 0.0f;
     if (knots.size() == 256) std::copy(knots.begin(), knots.end(), u.anchor);
+    const ReconstructionRegion& rg = params.region;   // all 0 when off: the shader skips it
+    if (rg.enabled) {
+        const float region[12] = {1.0f, rg.band ? 1.0f : 0.0f, rg.highlight_from, rg.highlight_softness,
+                                  rg.highlight_strength, rg.shadow_below, rg.shadow_softness, rg.shadow_strength,
+                                  rg.band_low, rg.band_high, rg.band_softness, 0.0f};
+        std::copy(std::begin(region), std::end(region), u.region);
+    }
     return u;
 }
 

@@ -660,6 +660,19 @@ private:
     Seg *view_mode_ = nullptr, *view_layer_ = nullptr, *zoom_seg_ = nullptr, *mode_seg_ = nullptr, *tabs_ = nullptr,
         *ws_ = nullptr;
     CheckRow *preserve_ = nullptr, *anchor_ = nullptr, *carry_chroma_ = nullptr;
+    // Spec rev 2 (RUDRA 1.1): the reconstruction region's switch, kind and sliders.
+    CheckRow* region_on_ = nullptr;
+    Seg* region_kind_ = nullptr;
+    QWidget* region_box_ = nullptr;
+    struct RegionSlider {
+        QWidget* row = nullptr;
+        QSlider* slider = nullptr;
+        QLabel* value = nullptr;
+        float ReconstructionRegion::*field = nullptr;
+        double scale = 100.0;   // slider steps per unit
+        int kind = 0;           // 0 both kinds, 1 highlights + shadows only, 2 band only
+    };
+    std::vector<RegionSlider> region_sliders_;
     QSlider *strength_ = nullptr, *peak_ = nullptr, *exposure_ = nullptr;
     QLabel* exposure_val_ = nullptr;
     QLabel *strength_val_ = nullptr, *peak_val_ = nullptr, *shot_count_ = nullptr, *frames_empty_ = nullptr,

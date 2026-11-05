@@ -61,6 +61,34 @@ double py_round(double x, int n) {
     return std::strtod(b, nullptr);
 }
 
+// The reconstruction region as JSON (spec revision 2), in field order.
+nlohmann::json region_to_json(const ReconstructionRegion& r) {
+    auto f = [](float v) { return py_round(double(v), 4); };
+    return {{"band", r.band},
+            {"highlight_from", f(r.highlight_from)}, {"highlight_softness", f(r.highlight_softness)},
+            {"highlight_strength", f(r.highlight_strength)},
+            {"shadow_below", f(r.shadow_below)}, {"shadow_softness", f(r.shadow_softness)},
+            {"shadow_strength", f(r.shadow_strength)},
+            {"band_low", f(r.band_low)}, {"band_high", f(r.band_high)}, {"band_softness", f(r.band_softness)}};
+}
+
+ReconstructionRegion region_from_json(const nlohmann::json& j) {
+    ReconstructionRegion r;
+    r.enabled = true;
+    auto g = [&](const char* k, float d) { return static_cast<float>(j.value(k, double(d))); };
+    r.band = j.value("band", false);
+    r.highlight_from = g("highlight_from", r.highlight_from);
+    r.highlight_softness = g("highlight_softness", r.highlight_softness);
+    r.highlight_strength = g("highlight_strength", r.highlight_strength);
+    r.shadow_below = g("shadow_below", r.shadow_below);
+    r.shadow_softness = g("shadow_softness", r.shadow_softness);
+    r.shadow_strength = g("shadow_strength", r.shadow_strength);
+    r.band_low = g("band_low", r.band_low);
+    r.band_high = g("band_high", r.band_high);
+    r.band_softness = g("band_softness", r.band_softness);
+    return r;
+}
+
 // How the analytic master filled where the SDR clipped, as the EXR and the
 // sidecar record it.
 std::string clip_fill_text(const MasterRequest& q) {
@@ -127,6 +155,11 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
             for (const auto& b : j.at("regions"))
                 r.regions.push_back({b.value("label", std::string()), b.at("low_nits").get<double>(),
                                      b.at("high_nits").get<double>(), b.value("ev", 0.0)});
+        if (j.contains("reconstruction_region") && !j.at("reconstruction_region").is_null()) {
+            r.region = region_from_json(j.at("reconstruction_region"));
+            if (const std::string why = reconstruction_region_error(r.region); !why.empty())
+                return make_error(ErrorCode::InvalidArgument, why);
+        }
         r.clip_fill = j.value("clip_fill", true);
         r.exposure_ev = j.value("exposure_ev", 0.0);
         if (!std::isfinite(r.exposure_ev) || std::fabs(r.exposure_ev) > 8.0)
@@ -137,6 +170,22 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
     } catch (const std::exception& e) {
         return make_error(ErrorCode::ParseError, "The master parameters are not valid JSON.", e.what());
     }
+    return r;
+}
+
+std::string reconstruction_region_json(const ReconstructionRegion& r) { return region_to_json(r).dump(); }
+
+Result<ReconstructionRegion> reconstruction_region_from_json(const std::string& json_text) {
+    ReconstructionRegion r;
+    try {
+        const auto j = nlohmann::json::parse(json_text);
+        if (!j.is_object()) return make_error(ErrorCode::ParseError, "The reconstruction region is not an object.");
+        r = region_from_json(j);
+    } catch (const std::exception& e) {
+        return make_error(ErrorCode::ParseError, "The reconstruction region is not valid JSON.", e.what());
+    }
+    if (const std::string why = reconstruction_region_error(r); !why.empty())
+        return make_error(ErrorCode::InvalidArgument, why);
     return r;
 }
 
@@ -155,6 +204,7 @@ std::string master_request_json(const MasterRequest& q) {
     if (q.source_curve != "unknown") j["source_curve"] = q.source_curve;
     if (!q.exr_half) j["exr_half"] = false;
     if (q.exposure_ev != 0.0) j["exposure_ev"] = q.exposure_ev;
+    if (q.region.enabled) j["reconstruction_region"] = region_to_json(q.region);
     if (q.analytic) j["analytic"] = true;
     if (!q.calibration.empty()) {
         auto cal = nlohmann::json::array();
@@ -191,10 +241,14 @@ Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, con
     if (!mode) return mode.error();
     const auto source = parse_source_curve(q.source_curve);
     if (!source) return make_error(ErrorCode::InvalidArgument, "source_curve must be unknown, bt1886, bt1886_shadows, aces, hable, agx, camera_log, or clip", q.source_curve);
+    if (q.region.enabled)
+        if (const std::string why = reconstruction_region_error(q.region); !why.empty())
+            return make_error(ErrorCode::InvalidArgument, why);
     CompositeParams cp;
     cp.mode = *mode;
     cp.strength = static_cast<float>(q.strength);
     cp.preserve_outside = q.preserve_outside;
+    cp.region = q.region;
     cp.source = *source;
     for (const auto& c : q.calibration)
         if (c.nits > 0.0 && c.code >= 0 && c.code <= 255) cp.calibration.push_back(c);
@@ -292,6 +346,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         provenance.emplace_back("rudra:exposureEV", b);
     }
     if (q.analytic) provenance.emplace_back("rudra:reconstruction", "analytic (no model)");
+    if (q.region.enabled) provenance.emplace_back("rudra:reconstructionRegion", region_to_json(q.region).dump());
     if (!q.exr_half) provenance.emplace_back("rudra:sampleType", "float32");
     if (q.analytic) provenance.emplace_back("rudra:clipFill", clip_fill_text(q));
     if (!cp.reference.empty()) provenance.emplace_back("rudra:reference", cp.reference.file);
@@ -361,6 +416,16 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     if (!source_sha.empty()) sidecar_dict.emplace_back("source_sha256", source_sha);
     if (*source != SourceCurve::Unknown) sidecar_dict.emplace_back("source_curve", q.source_curve);
     if (q.exposure_ev != 0.0) sidecar_dict.emplace_back("exposure_ev", q.exposure_ev);
+    if (q.region.enabled) {
+        const auto rj = region_to_json(q.region);
+        pyjson::Dict d;
+        for (const auto& [k, v] : rj.items()) {
+            if (v.is_boolean()) d.emplace_back(k, v.get<bool>());
+            else d.emplace_back(k, v.get<double>());
+        }
+        d.emplace_back("outside", "the baseline, bit for bit (gate exactly 0)");
+        sidecar_dict.emplace_back("reconstruction_region", pyjson::Value(d));
+    }
     if (q.analytic) sidecar_dict.emplace_back("reconstruction", "analytic (no model)");
     if (q.analytic) sidecar_dict.emplace_back("clip_fill", clip_fill_text(q));
     if (!cp.calibration.empty()) {

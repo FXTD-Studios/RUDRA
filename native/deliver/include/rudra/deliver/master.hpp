@@ -42,6 +42,11 @@ struct MasterRequest {
     bool preserve_outside = true;
     std::string recovery_mode = "all";      // all, highlights, shadows, off
     double strength = 1.0;
+    // Spec revision 2 (RUDRA 1.1, 5 Nov 2026): where the reconstruction may act
+    // (core/composite.hpp). In the JSON (`reconstruction_region`), the EXR
+    // (rudra:reconstructionRegion) and the sidecar only when on, so every
+    // master before reads the same.
+    ReconstructionRegion region;
     std::vector<MasterBand> regions;        // empty: the neutral default bands
     double region_softness_stops = 1.0;
     bool anchor = true;
@@ -106,6 +111,11 @@ struct MasterResult {
 Result<MasterRequest> master_request_from_json(const std::string& json_text);
 // And back: what `rudra-native master --params` reads for the same master.
 std::string master_request_json(const MasterRequest& q);
+
+// The reconstruction region (spec revision 2) as the JSON object masters,
+// projects and sidecars write, and back (enabled on read; checked).
+std::string reconstruction_region_json(const ReconstructionRegion& r);
+Result<ReconstructionRegion> reconstruction_region_from_json(const std::string& json_text);
 
 // The master's picture before any file: the request's composite (mode,
 // strength, preserve, source curve, calibration or reference, masks), then
