@@ -20,7 +20,7 @@ BEGIN
             VALUE "FileDescription", "RUDRA: SDR to HDR reconstruction"
             VALUE "FileVersion", "@RUDRA_VERSION_LABEL@"
             VALUE "InternalName", "RUDRA"
-            VALUE "LegalCopyright", "Copyright 2026 FXTD Studios. PolyForm Noncommercial 1.0.0."
+            VALUE "LegalCopyright", "Copyright 2026 FXTD Studios. Apache License 2.0."
             VALUE "OriginalFilename", "RUDRA.exe"
             VALUE "ProductName", "RUDRA"
             VALUE "ProductVersion", "@RUDRA_VERSION_LABEL@"

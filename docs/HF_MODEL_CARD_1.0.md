@@ -23,7 +23,7 @@ commercial use permitted.**
 
 | Folder | What it is | Size |
 |---|---|---|
-| [`models/RUDRA_ACES_2/`](models/RUDRA_ACES_2) | **RUDRA ACES 2**: the learned ACES 2.0 reconstruction. 8-bit SDR in, an ACEScg master out, whose ACES 2.0 SDR view keeps the source's 8-bit codes. Ships as TorchScript and ONNX (DirectML, Core ML or CPU). | 2.2 MB |
+| [`models/RUDRA_ACES_2/`](models/RUDRA_ACES_2) | **RUDRA ACES 2 (preview)**: the learned ACES 2.0 reconstruction. 8-bit SDR in, an ACEScg master out, whose ACES 2.0 SDR view keeps the source's 8-bit codes. Ships as TorchScript and ONNX (DirectML, Core ML or CPU). | 2.2 MB |
 | [`models/rudra_genfill_v3/`](models/rudra_genfill_v3) | **RUDRA AI fill v3**: a LoRA for Wan2.1-VACE-1.3B that draws the *shape* inside fully clipped highlights, and a small brightness estimator (`brightness.json`) that sets *how bright* they are. | 271 MB |
 
 ## Use
@@ -51,6 +51,16 @@ python -m rudra.genfill.run --master <EXR folder> --out <new folder> \
 
 `run.py` loads `brightness.json` from the LoRA's folder by default. Add
 `--brightness-offset <stops>` to shift the brightness (±3).
+
+## RUDRA ACES 2 is a preview
+
+In the last committed test it graded better than the analytic inverse at
+−3 EV and +3 EV and was closer on clipped highlights, but it **fails RUDRA's own 0 EV grading check** (0.121
+against a limit of 0.0604, the last committed result, 29 Oct 2026): at the
+delivered exposure its highlight pixels sit further from the reference than
+the plain inverse. No gate report naming this checkpoint has been published
+yet. Compare it with RUDRA's analytic result before delivery. Full record:
+[docs/MODELS.md](https://github.com/FXTD-Studios/RUDRA/blob/aces-v2/docs/MODELS.md).
 
 ## What the AI fill guarantees
 

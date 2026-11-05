@@ -4,6 +4,12 @@
 #   scripts/package_mac.sh                 # build, test, package -> dist/beta/RUDRA-<version>-macos-arm64.dmg
 #   SKIP_TESTS=1 scripts/package_mac.sh    # without the app's Qt tests
 #   SKIP_BUILD=1 scripts/package_mac.sh    # package what native_app.sh built last
+#   PUBLIC_RELEASE=1 scripts/package_mac.sh   # 1.0.3+, what release.yml builds: no model weights at
+#                                             # all (every model is an in-app download with its licence);
+#                                             # refused if tools/check_package_weights.py finds any
+# Beta 2 weights (sdr2hdr_*, non-commercial) are refused in every bundle unless
+# ALLOW_NONCOMMERCIAL_WEIGHTS=1 (internal builds only). 1.0.0 to 1.0.2 shipped
+# sdr2hdr_image_v8 from dist/models by mistake.
 #
 # The app is built by scripts/native_app.sh (Qt 6.8, ONNX Runtime with Core ML,
 # OpenCV from source, all in tmp/native_deps). Into the bundle go:
@@ -41,8 +47,16 @@ OCIO_ROOT=$PWD/tmp/native_deps/ocio-${OCIO_VERSION:-2.5.2}
 say() { printf '\n== %s\n' "$*"; }
 fail() { printf 'FAILED: %s\n' "$*" >&2; exit 1; }
 
-ls dist/models/*/manifest.json >/dev/null 2>&1 ||
-  fail "no model package in dist/models (scripts/native_gate_a.sh exports one)"
+BUNDLE_MODELS=1
+[ -n "${PUBLIC_RELEASE:-}" ] && BUNDLE_MODELS=""
+if [ -n "$BUNDLE_MODELS" ]; then
+  ls dist/models/*/manifest.json >/dev/null 2>&1 ||
+    fail "no model package in dist/models (scripts/native_gate_a.sh exports one)"
+  if [ -z "${ALLOW_NONCOMMERCIAL_WEIGHTS:-}" ] &&
+     find dist/models | grep -Eq '(^|/)(sdr2hdr_[^/]*|[^/]*shadow_v1[^/]*|[^/]*shadow_s[23][^/]*|[^/]*temporal_v1[^/]*)$'; then
+    fail "dist/models holds non-commercial Beta 2 weights; the bundle is Apache 2.0 (ALLOW_NONCOMMERCIAL_WEIGHTS=1 for an internal build only)"
+  fi
+fi
 
 if [ -z "${SKIP_BUILD:-}" ]; then
   NO_LAUNCH=1 PYTHON="$PY" SKIP_TESTS="${SKIP_TESTS:-}" scripts/native_app.sh
@@ -84,10 +98,14 @@ grep -q "usage: rudra-native aces-v2 <package>" <<<"$aces_usage" ||
 
 say "Models, licences"
 mkdir -p "$APP/Contents/Resources/models"
-cp -R dist/models/. "$APP/Contents/Resources/models/"
-find "$APP/Contents/Resources/models" -name "*.safetensors" -delete -o -name "*.config.json" -delete
+if [ -n "$BUNDLE_MODELS" ]; then
+  cp -R dist/models/. "$APP/Contents/Resources/models/"
+  find "$APP/Contents/Resources/models" -name "*.safetensors" -delete -o -name "*.config.json" -delete
+fi
 cp LICENSE NOTICE "$APP/Contents/Resources/"
-[ -f checkpoints/LICENSE ] && cp checkpoints/LICENSE "$APP/Contents/Resources/LICENSE-weights"
+if [ -n "$BUNDLE_MODELS" ] && [ -n "${ALLOW_NONCOMMERCIAL_WEIGHTS:-}" ] && [ -f checkpoints/LICENSE ]; then
+  cp checkpoints/LICENSE "$APP/Contents/Resources/LICENSE-weights"
+fi
 [ -f docs/USER_GUIDE.md ] && cp docs/USER_GUIDE.md "$APP/Contents/Resources/User guide.md"
 
 FFMPEG_BUNDLED=""
@@ -170,8 +188,12 @@ say "Check the bundle runs from where it is"
 leaks=$(for f in "$APP/Contents/MacOS/"* "$APP/Contents/Frameworks/"*.dylib; do [ -f "$f" ] && otool -L "$f" | tail -n +2; done |
         grep -E "$PWD|/opt/homebrew|/usr/local" || true)
 [ -z "$leaks" ] || { printf '%s\n' "$leaks"; fail "the bundle links outside itself"; }
-"$APP/Contents/MacOS/rudra-native" info "$APP/Contents/Resources/models/$(ls "$APP/Contents/Resources/models" | grep -v models.json | head -1)" >/dev/null ||
-  fail "rudra-native in the bundle cannot read its model"
+if [ -n "$BUNDLE_MODELS" ]; then
+  "$APP/Contents/MacOS/rudra-native" info "$APP/Contents/Resources/models/$(ls "$APP/Contents/Resources/models" | grep -v models.json | head -1)" >/dev/null ||
+    fail "rudra-native in the bundle cannot read its model"
+else
+  "$PY" tools/check_package_weights.py "$APP" || fail "the public bundle carries model weights"
+fi
 # The Cocoa platform: macdeployqt ships that one, not offscreen.
 "$APP/Contents/MacOS/RUDRA" --theme-check "$OUT/theme-check.json" >/dev/null ||
   fail "RUDRA in the bundle does not start"
