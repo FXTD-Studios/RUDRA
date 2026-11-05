@@ -4,7 +4,7 @@
                                 --lora <rudra_genfill.safetensors> [--tau-high 250] [--tau-low -1]
                                 [--blend-high 255] [--blend-low 0] [--feather 0]
                                 [--prompt-highlight "..."] [--prompt-shadow "..."] [--seed 0] [--steps 30]
-                                [--window 33] [--overlap 8] [--max-area 399360] [--device cuda] [--json]
+                                [--window 33] [--overlap 8] [--max-area 399360] [--device auto] [--json]
 
 What it does, per window of frames (33, overlapping 8):
   1. The master's own SDR view (the ACES 2.0 SDR view, 8-bit codes) gives the fill regions:
@@ -348,6 +348,20 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     return report
 
 
+def pick_device(requested: str = 'auto'):
+    """The device and the transformer's dtype (31 Oct 2026). CUDA in bfloat16 as before; on a Mac
+    Apple's MPS in float32 (bfloat16 kernels are not complete there); else the CPU in float32.
+    A device asked for that is not there falls back the same way."""
+    import torch
+    cuda = torch.cuda.is_available()
+    mps = bool(getattr(torch.backends, 'mps', None)) and torch.backends.mps.is_available()
+    if requested in ('auto', 'cuda') and cuda:
+        return 'cuda', torch.bfloat16
+    if requested in ('auto', 'cuda', 'mps') and mps:
+        return 'mps', torch.float32
+    return 'cpu', torch.float32
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--master', required=True)
@@ -365,7 +379,7 @@ def main(argv=None):
     ap.add_argument('--window', type=int, default=33)
     ap.add_argument('--overlap', type=int, default=8)
     ap.add_argument('--max-area', type=int, default=832 * 480)
-    ap.add_argument('--device', default='cuda')
+    ap.add_argument('--device', default='auto', help='auto (CUDA, else Apple MPS, else CPU), cuda, mps or cpu')
     ap.add_argument('--ocio-threads', type=int, default=8)
     ap.add_argument('--json', action='store_true')
     ap.add_argument('--blend-high', type=int, default=MaskSettings.blend_high,
@@ -388,10 +402,10 @@ def main(argv=None):
         out = Path(a.out)
         if out.exists():
             raise FileExistsError(f'{out} exists: the fill writes a new folder')
-        device = a.device if (a.device != 'cuda' or torch.cuda.is_available()) else 'cpu'
+        device, dtype = pick_device(a.device)
         t0 = time.time()
         cache = Path(a.prompt_cache) if a.prompt_cache else Path(a.lora).with_suffix('').parent / 'prompt_cache'
-        model = WanFill.load(a.base, a.lora, device=device, prompt_cache=cache, text_device='cpu')  # umT5 (11 GB) never on a 16 GB GPU beside the model
+        model = WanFill.load(a.base, a.lora, device=device, dtype=dtype, prompt_cache=cache, text_device='cpu')  # umT5 (11 GB) never on a 16 GB GPU beside the model
         s = FillSettings(steps=a.steps, seed=a.seed, guidance=a.guidance,
                          prompt_highlight=a.prompt_highlight, prompt_shadow=a.prompt_shadow)
         for text in {s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative} - {''}:

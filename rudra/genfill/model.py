@@ -64,6 +64,8 @@ class PromptBank:
         self._encoder = None
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+        elif getattr(torch.backends, 'mps', None) and torch.backends.mps.is_available():
+            torch.mps.empty_cache()
 
     @torch.no_grad()
     def get(self, text: str) -> torch.Tensor:

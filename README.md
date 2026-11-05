@@ -12,8 +12,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.1/RUDRA-1.0.1-windows-x64-setup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%2010%20%2F%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white"></a>
-  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.1/RUDRA-1.0.1-macos-arm64.dmg"><img alt="Download for macOS" src="https://img.shields.io/badge/Download-macOS%20(Apple%20silicon)-111111?style=for-the-badge&logo=apple&logoColor=white"></a>
+  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.2/RUDRA-1.0.2-windows-x64-setup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%2010%20%2F%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white"></a>
+  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.2/RUDRA-1.0.2-macos-arm64.dmg"><img alt="Download for macOS" src="https://img.shields.io/badge/Download-macOS%20(Apple%20silicon)-111111?style=for-the-badge&logo=apple&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -50,8 +50,8 @@ away, and RUDRA marks every pixel it had to invent.
 
 | | |
 |---|---|
-| **Windows 10 / 11** (x64) | [Installer](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.1/RUDRA-1.0.1-windows-x64-setup.exe) · [Portable ZIP](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.1/RUDRA-1.0.1-windows-x64.zip) |
-| **macOS** (Apple silicon) | [DMG](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.1/RUDRA-1.0.1-macos-arm64.dmg) |
+| **Windows 10 / 11** (x64) | [Installer](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.2/RUDRA-1.0.2-windows-x64-setup.exe) · [Portable ZIP](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.2/RUDRA-1.0.2-windows-x64.zip) |
+| **macOS** (Apple silicon) | [DMG](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.2/RUDRA-1.0.2-macos-arm64.dmg) |
 
 All files, checksums and release notes are on the
 [releases page](https://github.com/FXTD-Studios/RUDRA/releases/latest).
@@ -84,15 +84,17 @@ RUDRA works out of the box. For more of the clipped light, download the learned
 models are also on [Hugging Face](https://huggingface.co/fxtdstudios/rudra-models).
 
 **AI fill** (experimental, off by default) can draw detail inside large blown
-areas. It needs a 16 GB GPU and the Wan2.1-VACE-1.3B base model. What it draws is
+areas. It needs the Wan2.1-VACE-1.3B base model and a 16 GB GPU (on a Mac, 16 GB
+of memory or more); set it up with `scripts\GENFILL.ps1 -Setup` on Windows or
+`scripts/genfill_setup.sh` on a Mac. What it draws is
 a plausible guess, not recovered detail, so check every frame.
 
 ## System requirements
 
-- **Windows** 10 or 11, x64. The learned model runs on NVIDIA (CUDA) or any
-  DirectX 12 GPU (DirectML); without one, on the CPU.
-- **macOS** on Apple silicon. In 1.0 the learned model and AI fill are Windows
-  features.
+- **Windows** 10 or 11, x64. The learned model runs on any DirectX 12 GPU
+  (DirectML); without one, on the CPU.
+- **macOS** on Apple silicon. The learned model runs on the CPU, or on the GPU /
+  Neural Engine through Core ML; AI fill runs on the GPU through Metal.
 - An HDR display is recommended for judging the result. RUDRA also simulates HDR
   on an SDR screen.
 

@@ -36,6 +36,7 @@ ORT_VERSION=${ORT_VERSION:-1.22.0}
 BUILD=build/native_app
 QT_ROOT=$PWD/tmp/native_deps/Qt/$QT_VERSION/macos
 ORT_ROOT=$PWD/tmp/native_deps/onnxruntime-osx-arm64-$ORT_VERSION
+OCIO_ROOT=$PWD/tmp/native_deps/ocio-${OCIO_VERSION:-2.5.2}
 
 say() { printf '\n== %s\n' "$*"; }
 fail() { printf 'FAILED: %s\n' "$*" >&2; exit 1; }
@@ -60,9 +61,11 @@ APP=$OUT/RUDRA.app
 cp -R "$APP_SRC" "$APP"
 cp "$CLI_SRC" "$APP/Contents/MacOS/rudra-native"
 
-# ONNX Runtime beside Qt, found through @rpath from both executables.
+# ONNX Runtime and OpenColorIO (the learned ACES 2.0 engine) beside Qt, found
+# through @rpath from both executables.
 mkdir -p "$APP/Contents/Frameworks"
 cp -a "$ORT_ROOT"/lib/libonnxruntime*.dylib "$APP/Contents/Frameworks/"
+cp -a "$OCIO_ROOT"/lib/libOpenColorIO*.dylib "$APP/Contents/Frameworks/" || fail "no OpenColorIO in $OCIO_ROOT (scripts/build_ocio.sh)"
 for exe in "$APP/Contents/MacOS/RUDRA" "$APP/Contents/MacOS/rudra-native"; do
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$exe" 2>/dev/null || true
   # The build's absolute rpaths (tmp/native_deps) mean nothing on another Mac.
@@ -73,6 +76,11 @@ done
 
 say "Qt into the bundle (macdeployqt)"
 "$QT_ROOT/bin/macdeployqt" "$APP" -executable="$APP/Contents/MacOS/rudra-native" -verbose=1
+
+say "The learned ACES 2.0 engine starts from the bundle"
+aces_usage=$("$APP/Contents/MacOS/rudra-native" aces-v2 --help 2>&1 || true)   # it exits non-zero after the usage
+grep -q "usage: rudra-native aces-v2 <package>" <<<"$aces_usage" ||
+  fail "the bundled rudra-native has no ACES 2.0 engine, or cannot load OpenColorIO / ONNX Runtime"
 
 say "Models, licences"
 mkdir -p "$APP/Contents/Resources/models"

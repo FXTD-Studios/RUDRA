@@ -3537,8 +3537,15 @@ TEST(AcesMaster, CommandArgumentsCarryTheChoices) {
     EXPECT_EQ(a.at(a.indexOf("--device") + 1), "directml");
     s.luminance_guard = true;
     EXPECT_TRUE(app::aces_cli_arguments(s).contains("--luminance-guard"));
+#ifdef __APPLE__
+    ASSERT_EQ(app::aces_run_targets().size(), 2u);   // ONNX Runtime: the CPU, then Core ML
+    EXPECT_EQ(app::aces_run_targets()[0].device, "cpu");
+    EXPECT_EQ(app::aces_run_targets()[1].device, "coreml");
+#else
     ASSERT_EQ(app::aces_run_targets().size(), 4u);
     EXPECT_EQ(app::aces_run_targets()[0].device, "cuda");
+#endif
+    EXPECT_EQ(app::default_aces_target().toStdString(), app::aces_run_targets()[0].key);
     // No log copy: no --log. A LogC4 choice carries the curve and the formats.
     EXPECT_FALSE(app::aces_cli_arguments(s).contains("--log"));
     s.log_curve = "logc4";
@@ -4156,7 +4163,7 @@ TEST(GenFill, SetupSaysWhatIsMissing) {
     EXPECT_TRUE(why.isEmpty());
     std::filesystem::remove(root / "runs" / "rudra_genfill.safetensors");
     EXPECT_FALSE(app::genfill_setup(&why));
-    EXPECT_TRUE(why.contains("no trained LoRA")) << why.toStdString();
+    EXPECT_TRUE(why.contains("no LoRA at")) << why.toStdString();
     std::filesystem::remove_all(root / "models");
     EXPECT_FALSE(app::genfill_setup(&why));
     EXPECT_TRUE(why.contains("Wan2.1-VACE")) << why.toStdString();
@@ -4282,7 +4289,7 @@ for line in sys.stdin:
     std::filesystem::remove(root / "runs" / "rudra_genfill.safetensors");
     QString why;
     EXPECT_FALSE(w.start_genfill(QString::fromStdString((root / "renders" / "SH010").string()), &why));
-    EXPECT_TRUE(why.contains("no trained LoRA"));
+    EXPECT_TRUE(why.contains("no LoRA at"));
     QSettings().clear();
 }
 #endif
