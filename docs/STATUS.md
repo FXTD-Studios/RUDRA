@@ -1,3 +1,10 @@
+> **1 Nov 2026, 1.0.3:** public packages carry no model weights (1.0.0–1.0.1
+> bundled the non-commercial `sdr2hdr_image_v8`; `tools/check_package_weights.py`
+> now refuses that). RUDRA ACES 2 is labelled **preview** until a gate report
+> naming its checkpoint is committed (`tools/model_provenance.py`). The shipped
+> model is tested in CI by `.github/workflows/shipped_model.yml`. Licence and
+> status of every model: [MODELS.md](MODELS.md).
+
 # RUDRA — Training & Research Status
 
 > **1.0 release plan, 29 Oct 2026 (supersedes the 12 Oct steps):** 1.0 ships

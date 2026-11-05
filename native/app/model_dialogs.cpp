@@ -497,7 +497,8 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
                           "frModelStatus", "step-sub", right);
     body->addWidget(model_status_);
     v->addStretch(1);
-    auto* lic = label("The model weights are licensed for non-commercial use (checkpoints/LICENSE).", "licenceNote", {},
+    auto* lic = label("Each model shows its licence before you download it. The RUDRA 1.0 models are Apache 2.0; "
+                      "the older Beta 2 weights (sdr2hdr_*) are non-commercial only.", "licenceNote", {},
                       right);
     v->addWidget(lic);
     v->addSpacing(14);

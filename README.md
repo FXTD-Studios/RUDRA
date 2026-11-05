@@ -12,8 +12,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.2/RUDRA-1.0.2-windows-x64-setup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%2010%20%2F%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white"></a>
-  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.2/RUDRA-1.0.2-macos-arm64.dmg"><img alt="Download for macOS" src="https://img.shields.io/badge/Download-macOS%20(Apple%20silicon)-111111?style=for-the-badge&logo=apple&logoColor=white"></a>
+  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.3/RUDRA-1.0.3-windows-x64-setup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%2010%20%2F%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white"></a>
+  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.3/RUDRA-1.0.3-macos-arm64.dmg"><img alt="Download for macOS" src="https://img.shields.io/badge/Download-macOS%20(Apple%20silicon)-111111?style=for-the-badge&logo=apple&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -50,8 +50,8 @@ away, and RUDRA marks every pixel it had to invent.
 
 | | |
 |---|---|
-| **Windows 10 / 11** (x64) | [Installer](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.2/RUDRA-1.0.2-windows-x64-setup.exe) · [Portable ZIP](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.2/RUDRA-1.0.2-windows-x64.zip) |
-| **macOS** (Apple silicon) | [DMG](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.2/RUDRA-1.0.2-macos-arm64.dmg) |
+| **Windows 10 / 11** (x64) | [Installer](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.3/RUDRA-1.0.3-windows-x64-setup.exe) · [Portable ZIP](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.3/RUDRA-1.0.3-windows-x64.zip) |
+| **macOS** (Apple silicon) | [DMG](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.0.3/RUDRA-1.0.3-macos-arm64.dmg) |
 
 All files, checksums and release notes are on the
 [releases page](https://github.com/FXTD-Studios/RUDRA/releases/latest).
@@ -78,10 +78,15 @@ per-region exposure, batch queues, EDL conform and more.
 
 ## The learned model (optional)
 
-RUDRA works out of the box. For more of the clipped light, download the learned
-**ACES 2.0** model from inside the app: **Look › Download the model…** or
-**File › Model packages…**. It is free and checked file by file before use. The
-models are also on [Hugging Face](https://huggingface.co/fxtdstudios/rudra-models).
+RUDRA works out of the box with its analytic reconstruction. For more of the
+clipped light, download the learned **ACES 2.0** model from inside the app:
+**Look › Download the model…** or **File › Model packages…**. It is free and
+checked file by file before use. It is a **preview**: in the last published test
+it graded better at −3 and +3 EV, but at the delivered exposure its highlights
+sat further from the reference than the analytic result (the numbers are in
+[docs/MODELS.md](docs/MODELS.md)). Compare it with the analytic result before a
+client sees it. The models are also on
+[Hugging Face](https://huggingface.co/fxtdstudios/rudra-models).
 
 **AI fill** (experimental, off by default) can draw detail inside large blown
 areas. It needs the Wan2.1-VACE-1.3B base model and a 16 GB GPU (on a Mac, 16 GB
@@ -112,9 +117,12 @@ The code and the 1.0 models (learned ACES 2.0, AI fill v3) are licensed under th
 [Apache License 2.0](LICENSE): free for commercial use. Keep the
 [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE) files when you redistribute.
 
-The older Beta 2 weights (`sdr2hdr_image_v8`, `sdr2hdr_shadow_v1`) are
-non-commercial; see [`checkpoints/LICENSE`](checkpoints/LICENSE). Each model shows
-its licence in the app before you download it.
+The packages carry no model weights; each model is a download that shows its
+licence first. The older Beta 2 weights (`sdr2hdr_image_v8`, `sdr2hdr_shadow_v1`)
+are non-commercial ([`checkpoints/LICENSE`](checkpoints/LICENSE)). Packages up to
+1.0.1 bundled `sdr2hdr_image_v8` by mistake: update to 1.0.3, or delete
+`models/sdr2hdr_image_v8` from an older install, before commercial work. Every
+model, its licence and its status: [docs/MODELS.md](docs/MODELS.md).
 
 ---
 
