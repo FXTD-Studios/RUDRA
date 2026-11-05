@@ -1,0 +1,24 @@
+{
+ "parent": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+ "parent_sha256": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+ "steps": 1600,
+ "include_fully_clipped": true,
+ "old_coherent_control_max": 0.3825248606569533,
+ "aligned_residual_control_max": 0.010367255277136186,
+ "clipped_smoothing": {
+  "sigma": 64,
+  "mode": "hybrid",
+  "ramp": 1,
+  "start": 0
+ },
+ "scope": "The exact lock (5 Nov) passes 0 EV on real footage (fresh 0.241 against 0.453, limit 0.338; old24 0.0488) and keeps -3/+3/H better than analytic, but fails only motion: aligned residual 0.0129 against 0.0104 (w4 alone 0.0091), because it pins recorded channels to the source's exact codes, which jitter frame to frame. The band lock leaves a recorded channel within band_codes of the source as the model made it and brings only those outside to the band's edge. Registered 6 Nov 2026 before any run. Arms: w4 + lock with band 0.15, 0.25, 0.35 code. Every original gate must hold (aligned residual <= 0.010367; old24 -3/0/+3 EV; Hunyuan48 <= 0.02 EV; no new negative Y; fresh 0 EV RMS <= 0.338 and -3/+3/H no worse than analytic). Among the arms that pass, the lowest fresh 0 EV is chosen; it then runs the Crew holdout once. If none passes, no candidate. This arm: band 0.35.",
+ "release_authorized": false,
+ "forbid_new_negative_y": true,
+ "registered_before_evaluation": true,
+ "partial_tighten": {
+  "mode": "lock",
+  "iters": 4,
+  "band_codes": 0.35
+ },
+ "author": "FXTD Studios Research, 6 Nov 2026"
+}

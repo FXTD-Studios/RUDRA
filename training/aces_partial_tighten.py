@@ -34,7 +34,7 @@ def partial_support(source, weight):
     return (np.asarray(weight) > 0) & (source.max(-1) > .5) & (source.min(-1) < FULL_CODE)
 
 
-def tighten_partial(source, constrained, baseline, weight, view, mode='bisect', tol_codes=0.5, iters=12):
+def tighten_partial(source, constrained, baseline, weight, view, mode='bisect', tol_codes=0.5, iters=12, band_codes=0.0):
     """-> (result, diagnostics). `constrained` is constrain_colour's output."""
     source = np.asarray(source, np.float32)
     cur = np.asarray(constrained, np.float32)
@@ -42,7 +42,7 @@ def tighten_partial(source, constrained, baseline, weight, view, mode='bisect', 
     if cur.shape != source.shape or base.shape != source.shape or np.asarray(weight).shape != source.shape[:2]:
         raise ValueError('matching source, constrained, baseline and weight required')
     if mode == 'lock':
-        return lock_observed(source, constrained, baseline, weight, view, iters=max(3, min(int(iters), 6)))
+        return lock_observed(source, constrained, baseline, weight, view, iters=max(3, min(int(iters), 6)), band_codes=band_codes)
     if mode not in ('halving', 'bisect'):
         raise ValueError("mode must be 'halving', 'bisect' or 'lock'")
     out = cur.copy()
@@ -97,10 +97,13 @@ def from_registration(reg):
     cfg = reg.get('partial_tighten') if isinstance(reg, dict) else None
     if not cfg:
         return None
-    return {'mode': cfg.get('mode', 'bisect'), 'tol_codes': float(cfg.get('tol_codes', 0.5)), 'iters': int(cfg.get('iters', 12))}
+    out = {'mode': cfg.get('mode', 'bisect'), 'tol_codes': float(cfg.get('tol_codes', 0.5)), 'iters': int(cfg.get('iters', 12))}
+    if 'band_codes' in cfg:
+        out['band_codes'] = float(cfg['band_codes'])
+    return out
 
 
-def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3):
+def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3, band_codes=0.0):
     """The 0 EV fix without new data (5 Nov 2026).
 
     In a partially clipped pixel (codes such as 255, 250, 230) the clipped channel
@@ -118,6 +121,12 @@ def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3
     clipped channel would drop below the clip, or that does not converge, keeps
     its constrained value. Fully clipped pixels and pixels outside support are
     returned bit-exact.
+
+    band_codes (6 Nov 2026): a recorded channel within this many codes of the source is
+    left as the model made it; only one outside the band is brought to the band's edge.
+    0 is the exact lock. The exact lock passes 0 EV on real footage (fresh 0.241 against
+    0.453) but makes motion follow the source's frame-to-frame code jitter (aligned
+    residual 0.0129 against 0.0104); a band keeps the model's smooth values inside it.
     """
     source = np.asarray(source, np.float32)
     cur = np.asarray(constrained, np.float32)
@@ -125,7 +134,8 @@ def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3
     out = cur.copy()
     sup = partial_support(source, weight)
     idx = np.flatnonzero(sup)
-    diag = {'mode': 'lock', 'support_pixels': int(idx.size), 'changed_pixels': 0, 'kept_pixels': 0,
+    band = float(band_codes) / 255.0
+    diag = {'mode': 'lock', 'band_codes': float(band_codes), 'support_pixels': int(idx.size), 'changed_pixels': 0, 'kept_pixels': 0,
             'max_recorded_error_codes': 0.0}
     if idx.size == 0:
         return out, diag
@@ -135,9 +145,17 @@ def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3
     rec = src < FULL_CODE                              # the recorded channels
     clipped = ~rec
     fwd = lambda v: np.asarray(view.forward(v.astype(np.float32)[None]), np.float64)[0]
+    first = fwd(x)
+    if band > 0:   # inside the band already: leave the pixel as the model made it (bit-exact)
+        inside = (~rec | (np.abs(first - target) <= band)).all(1)
+        keep_idx, idx, src, x, rec, clipped, target = idx[inside], idx[~inside], src[~inside], x[~inside], rec[~inside], clipped[~inside], target[~inside]
+        diag['inside_band_pixels'] = int(inside.sum())
+        if idx.size == 0:
+            return out, diag
     for _ in range(iters):
         d = fwd(x)
-        r = np.where(rec, target - d, 0.0)
+        goal = np.clip(d, target - band, target + band) if band > 0 else target   # the band's nearest edge
+        r = np.where(rec, goal - d, 0.0)
         J = np.empty((x.shape[0], 3, 3))
         for c in range(3):
             h = eps * np.maximum(np.abs(x[:, c]), 1e-3)
@@ -154,7 +172,7 @@ def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3
         du = (np.linalg.pinv(Jr, rcond=1e-10) @ r[..., None])[..., 0]
         x = xp_ * np.exp(np.clip(du, -2.0, 2.0))
     d = fwd(x)
-    err = np.abs(np.where(rec, d - target, 0.0)).max(1) * 255.0
+    err = np.maximum(np.abs(np.where(rec, d - target, 0.0)).max(1) * 255.0 - float(band_codes), 0.0)
     ok = np.isfinite(x).all(1) & (err <= 0.5) & ~(clipped & (d < FULL_CODE)).any(1)
     flat = out.reshape(-1, 3)
     flat[idx[ok]] = x[ok].astype(np.float32)

@@ -143,3 +143,25 @@ def test_lock_brings_an_impossible_rebuild_down_to_what_the_recorded_channels_al
     assert d['changed_pixels'] == 1
     assert np.abs(disp[1:] - src[0, 0, 1:]).max() * 255 < 0.05   # the recorded channels display as recorded
     assert disp[0] >= 254.5 / 255 and out[0, 0, 0] < 700    # red still clipped, down to what green allows
+
+
+def test_lock_band_leaves_values_inside_it_and_brings_outside_ones_to_the_edge():
+    v = MixingView()
+    x, src = _scene_pixel(v)
+    base = x * np.array([0.95, 1.0, 1.0], np.float32)
+    w = np.ones((1, 1), np.float32)
+    d0 = v.forward(x)[0, 0]
+    # A model value 0.1 code off in green: inside a 0.25 band, untouched (bit-exact).
+    small = x.copy()
+    small[0, 0, 1] = small[0, 0, 1] * (1 + 0.1 / 255 / (d0[1] * (1 - d0[1])) * 0.9)
+    out, d = tighten_partial(src, small, base, w, v, mode='lock', band_codes=0.25)
+    if np.abs(v.forward(small)[0, 0, 1:] - src[0, 0, 1:]).max() * 255 <= 0.25:
+        assert np.array_equal(out, small) and d['inside_band_pixels'] == 1
+    # A model value 2 codes off: brought to the band's edge, not to the centre.
+    far = np.array([[[640.0, 2.0 * 1.04, 1.0]]], np.float32)
+    out, d = tighten_partial(src, far, base, w, v, mode='lock', band_codes=0.25)
+    e = np.abs(v.forward(out)[0, 0, 1:] - src[0, 0, 1:]).max() * 255
+    assert 0.15 <= e <= 0.26, e
+    # band 0 is the exact lock, as registered on 5 Nov
+    out0, _ = tighten_partial(src, far, base, w, v, mode='lock')
+    assert np.abs(v.forward(out0)[0, 0, 1:] - src[0, 0, 1:]).max() * 255 < 0.05
