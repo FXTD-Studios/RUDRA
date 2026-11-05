@@ -21,5 +21,6 @@
   "second": "d6400 (the shipped preview)"
  },
  "honesty": "The fresh and development sets have been looked at: development evidence. The Crew holdout decides.",
- "release_authorized": false
+ "release_authorized": false,
+ "limits": "Rebuilt fresh FXTD v2 set: 8 of 42 sources differ from the registered set by rounding (RESULT_FULL_ONLY_ROUTE_2026_11_02.md). Development evidence; the Crew holdout decides."
 }
