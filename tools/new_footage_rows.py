@@ -27,7 +27,7 @@ def main(argv=None) -> int:
     ap.add_argument("--camera", default="")
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
-    recs = [json.loads(l) for l in (a.ingest / "_records.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
+    recs = [json.loads(l) for p in sorted(a.ingest.glob("_records*.jsonl")) for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
     keep = [r for r in recs if usable(r)]
     scenes = {r["scene_id"] for r in keep}
     print(f"{len(recs)} frames ingested; {len(keep)} with an unclipped reference, from {len(scenes)} shots "
