@@ -170,3 +170,42 @@ def test_partial_tighten_arms_end_to_end(tmp_path, monkeypatch, ev):
     assert s["stub:tighten_bisect"]["grade_0"] <= s["stub:learned"]["grade_0"] + 1e-12
     assert s["stub:tighten_halving"]["grade_0"] <= s["stub:learned"]["grade_0"] + 1e-12
     assert json.loads(out.read_text())["primary"] == "stub:tighten_bisect"
+
+
+def test_lock_arm_end_to_end_with_the_real_view(tmp_path, monkeypatch, ev):
+    view = _view()
+    rng = np.random.default_rng(5)
+    refs, rows = {}, []
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    grade_reg = tmp_path / "grade_reg.json"
+    grade_reg.write_text(json.dumps({"limits": "test"}))
+    for i in range(3):
+        ref = rng.uniform(0.05, 0.5, (20, 20, 3)).astype(np.float32)
+        ref[4:16, 4:16] = [2.5, 1.2, 0.6]          # bright, partially clipped in the view
+        ref[4:16, 4:16] *= rng.uniform(0.9, 1.1, (12, 12, 1))
+        src = (np.rint(np.clip(np.asarray(view.forward(ref), np.float32), 0, 1) * 255) / 255).astype(np.float32)
+        refs[src.tobytes()] = ref
+        sp, rp = corpus / f"s{i}.npy", corpus / f"r{i}.npy"
+        np.save(sp, src)
+        np.save(rp, ref)
+        rows.append({"case_id": f"c{i}", "scene_id": f"sc{i}", "project": "p", "clip_target": 0, "kept": True,
+                     "source_path": str(sp), "source_sha256": _sha(sp), "reference_path": str(rp), "reference_sha256": _sha(rp)})
+    (corpus / "report.json").write_text(json.dumps({"registration_sha256": _sha(grade_reg), "rows": rows}))
+    reg = tmp_path / "arms.json"
+    reg.write_text(json.dumps({"grade_set_registration_sha256": _sha(grade_reg), "limits": "test",
+                               "arms": {"primary": "lock",
+                                        "partial_tighten": [{"name": "lock", "mode": "lock", "tol_codes": 0.5, "iters": 4}]}}))
+    ckpt = tmp_path / "stub.pt"
+    ckpt.write_bytes(pickle.dumps({"stub": 0}))
+    monkeypatch.setattr(ev, "model_from_checkpoint", lambda st: StubModel(view, refs))
+    out = tmp_path / "out.json"
+    monkeypatch.setattr(sys, "argv", ["x", "--corpus", str(corpus), "--registration", str(reg),
+                                      "--candidate", f"stub={ckpt}", "--out", str(out)])
+    ev.main()
+    s = json.loads(out.read_text())["summary"]
+    # The stub drifts partial pixels within the 1-code constraint; half a code pulls them back.
+    # The lock puts the recorded channels back on the camera's codes: 0 EV no worse than the model's.
+    assert s["stub:lock"]["grade_0"] <= s["stub:learned"]["grade_0"] + 1e-9
+    assert json.loads(out.read_text())["primary"] == "stub:lock"
+    print("0 EV  learned", s["stub:learned"]["grade_0"], " lock", s["stub:lock"]["grade_0"], " analytic", s["analytic"]["grade_0"])

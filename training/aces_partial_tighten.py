@@ -41,8 +41,10 @@ def tighten_partial(source, constrained, baseline, weight, view, mode='bisect', 
     base = np.asarray(baseline, np.float32)
     if cur.shape != source.shape or base.shape != source.shape or np.asarray(weight).shape != source.shape[:2]:
         raise ValueError('matching source, constrained, baseline and weight required')
+    if mode == 'lock':
+        return lock_observed(source, constrained, baseline, weight, view, iters=max(3, min(int(iters), 6)))
     if mode not in ('halving', 'bisect'):
-        raise ValueError("mode must be 'halving' or 'bisect'")
+        raise ValueError("mode must be 'halving', 'bisect' or 'lock'")
     out = cur.copy()
     sup = partial_support(source, weight)
     idx = np.flatnonzero(sup)
@@ -96,3 +98,67 @@ def from_registration(reg):
     if not cfg:
         return None
     return {'mode': cfg.get('mode', 'bisect'), 'tol_codes': float(cfg.get('tol_codes', 0.5)), 'iters': int(cfg.get('iters', 12))}
+
+
+def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3):
+    """The 0 EV fix without new data (5 Nov 2026).
+
+    In a partially clipped pixel (codes such as 255, 250, 230) the clipped channel
+    shows 255 for the model and for the reference alike, so it cannot make 0 EV
+    error; the error is all in the channels the camera RECORDED (here 250 and 230),
+    which the 1-code constraint lets the model drift in. This holds each recorded
+    channel's displayed value at the plain inverse's (which matches the source) and
+    leaves the clipped channel(s), the highlight reconstruction, to the model.
+
+    The view mixes channels, so per pixel this solves for the smallest change in
+    ACEScg that puts the recorded channels' display back: Gauss-Newton on
+    view(x)[recorded] = view(baseline)[recorded], the 3x3 Jacobian by finite
+    differences, rows weighted by which channels are recorded. Continuous in the
+    input (no halving steps), so neighbouring frames move together. A pixel whose
+    clipped channel would drop below the clip, or that does not converge, keeps
+    its constrained value. Fully clipped pixels and pixels outside support are
+    returned bit-exact.
+    """
+    source = np.asarray(source, np.float32)
+    cur = np.asarray(constrained, np.float32)
+    base = np.asarray(baseline, np.float32)
+    out = cur.copy()
+    sup = partial_support(source, weight)
+    idx = np.flatnonzero(sup)
+    diag = {'mode': 'lock', 'support_pixels': int(idx.size), 'changed_pixels': 0, 'kept_pixels': 0,
+            'max_recorded_error_codes': 0.0}
+    if idx.size == 0:
+        return out, diag
+    src = source.reshape(-1, 3)[idx].astype(np.float64)
+    x = cur.reshape(-1, 3)[idx].astype(np.float64)
+    target = src   # the recorded codes themselves: what the camera measured (the plain inverse returns them)
+    rec = src < FULL_CODE                              # the recorded channels
+    clipped = ~rec
+    fwd = lambda v: np.asarray(view.forward(v.astype(np.float32)[None]), np.float64)[0]
+    for _ in range(iters):
+        d = fwd(x)
+        r = np.where(rec, target - d, 0.0)
+        J = np.empty((x.shape[0], 3, 3))
+        for c in range(3):
+            h = eps * np.maximum(np.abs(x[:, c]), 1e-3)
+            xp = x.copy()
+            xp[:, c] += h
+            J[:, :, c] = (fwd(xp) - d) / h[:, None]
+        # The smallest RELATIVE change (in log x, so every channel stays positive and moves
+        # in proportion) that brings the recorded channels' display back: the pseudo-inverse
+        # of the recorded rows, the clipped row left free. The view mixes channels, so a
+        # rebuilt clipped channel that the recorded ones could not have been seen with is
+        # brought down to what they allow: the camera saw those values with the true one.
+        xp_ = np.maximum(x, 1e-6)
+        Jr = J * xp_[:, None, :] * rec[:, :, None]
+        du = (np.linalg.pinv(Jr, rcond=1e-10) @ r[..., None])[..., 0]
+        x = xp_ * np.exp(np.clip(du, -2.0, 2.0))
+    d = fwd(x)
+    err = np.abs(np.where(rec, d - target, 0.0)).max(1) * 255.0
+    ok = np.isfinite(x).all(1) & (err <= 0.5) & ~(clipped & (d < FULL_CODE)).any(1)
+    flat = out.reshape(-1, 3)
+    flat[idx[ok]] = x[ok].astype(np.float32)
+    diag['changed_pixels'] = int(ok.sum())
+    diag['kept_pixels'] = int((~ok).sum())
+    diag['max_recorded_error_codes'] = float(err[ok].max()) if ok.any() else 0.0
+    return out, diag
