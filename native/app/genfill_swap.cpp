@@ -47,4 +47,20 @@ GenFillSwap genfill_replace_in_master(const QString& master_dir, const QString& 
     return r;
 }
 
+QStringList genfill_filled_frames(const QString& fill_dir, const QString& master_dir) {
+    auto exrs = [](const QString& d) {
+        QStringList out;
+        if (d.isEmpty()) return out;
+        const QDir dir(d);
+        for (const QString& n : dir.entryList({QStringLiteral("*.exr")}, QDir::Files, QDir::Name)) out << dir.filePath(n);
+        return out;
+    };
+    QStringList fill = exrs(fill_dir);
+    if (!fill.isEmpty()) return fill;
+    if (master_dir.isEmpty()) return {};
+    const QFileInfo m(QDir::cleanPath(master_dir));
+    const QStringList backups = m.dir().entryList({m.fileName() + QStringLiteral("_before_aifill*")}, QDir::Dirs | QDir::NoDotAndDotDot);
+    return backups.isEmpty() ? QStringList{} : exrs(master_dir);
+}
+
 }  // namespace rudra::app

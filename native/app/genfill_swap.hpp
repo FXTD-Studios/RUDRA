@@ -6,6 +6,7 @@
 // keeps its review pictures and report. A failure part-way puts that frame back and
 // stops: every frame is either the original or the filled one, never neither.
 #include <QString>
+#include <QStringList>
 
 namespace rudra::app {
 
@@ -17,5 +18,11 @@ struct GenFillSwap {
 };
 
 GenFillSwap genfill_replace_in_master(const QString& master_dir, const QString& fill_dir);
+
+// The filled frames, in frame order, for the viewer's AI fill: the fill folder's EXRs
+// while they are there, else, after a fill was moved into the master in place (a
+// <master>_before_aifill* folder beside it holds the originals), the master's EXRs.
+// Empty when neither holds a fill.
+QStringList genfill_filled_frames(const QString& fill_dir, const QString& master_dir);
 
 }  // namespace rudra::app

@@ -1,4 +1,5 @@
 #include "genfill_preview.hpp"
+#include "genfill_swap.hpp"
 
 #include <QDir>
 #include <QFileInfo>
@@ -435,15 +436,14 @@ NetworkLinearImage fit_side(const NetworkLinearImage& img, int side) {
 
 std::shared_ptr<const NetworkLinearImage> MainWindow::fill_view_frame(int index) {
     // The source: the preview's frames, else the last finished fill when it covers the shot.
-    const QString key = (genfill_preview_ ? genfill_preview_->fill_dir : QString()) + "|" + genfill_last_out_ + "|" +
+    const QString key = (genfill_preview_ ? genfill_preview_->fill_dir : QString()) + "|" + genfill_last_out_ + "|" + genfill_last_master_ + "|" +
                         QString::number(play_state_->side.load()) + "|" + QString::number(aces_shown_ >= 0 && aces_model_img_ ? aces_model_img_->width() : 0);
     if (key != fill_view_key_) {
         fill_view_cache_.clear();
         fill_view_files_.clear();
         fill_view_key_ = key;
-        if (!genfill_last_out_.isEmpty())
-            for (const QString& n : QDir(genfill_last_out_).entryList({QStringLiteral("*.exr")}, QDir::Files, QDir::Name))
-                fill_view_files_ << QDir(genfill_last_out_).filePath(n);
+        // The fill folder's frames, or, once moved into the master in place, the master's.
+        fill_view_files_ = genfill_filled_frames(genfill_last_out_, genfill_last_master_);
     }
     if (auto it = fill_view_cache_.find(index); it != fill_view_cache_.end()) return it->second;
     QString path;
