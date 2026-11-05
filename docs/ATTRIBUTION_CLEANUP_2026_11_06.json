@@ -1,0 +1,38 @@
+{
+ "what": "Registrations and records renamed to the research_ prefix and reworded to FXTD Studios Research; their SHA-256 pins recomputed after the edits. 'old' is the hash each registration had when it was registered and run (the results on G: record it); 'new' is the file's hash now.",
+ "renamed_to": [
+  "configs\\experiments\\research_bin_hinge_dev_20261102.json",
+  "configs\\experiments\\research_bin_hinge_fresh_20261102.json",
+  "configs\\experiments\\research_bin_hinge_grade_template_20261102.json",
+  "configs\\experiments\\research_bin_hinge_video_template_20261102.json",
+  "configs\\experiments\\research_bin_hinge_w0_20261102.json",
+  "configs\\experiments\\research_bin_hinge_w16_20261102.json",
+  "configs\\experiments\\research_bin_hinge_w4_20261102.json",
+  "configs\\experiments\\research_d6400_guard_video_20261026.json",
+  "configs\\experiments\\research_d6400_neg_y_guard_eval_20261025.json",
+  "configs\\experiments\\research_d6400_plus3x16_1600_20261025.json",
+  "configs\\experiments\\research_fresh_fxtd_grade_20261026.json",
+  "configs\\experiments\\research_fresh_fxtd_grade_v2_20261026.json",
+  "configs\\experiments\\research_full_only_route_20261101.json",
+  "configs\\experiments\\research_genfill_v1_1_20261029.json",
+  "configs\\experiments\\research_genfill_v1_20261027.json",
+  "configs\\experiments\\research_genfill_v2_20261029.json",
+  "configs\\experiments\\research_genfill_v3_20261030.json",
+  "configs\\experiments\\research_genfill_v3_brightness_dev_20261030.json",
+  "configs\\experiments\\research_partial_tighten_bisect_dev_20261102.json",
+  "configs\\experiments\\research_partial_tighten_bisect_video_20261102.json",
+  "configs\\experiments\\research_partial_tighten_fresh_20261102.json",
+  "configs\\experiments\\research_partial_tighten_halving_dev_20261102.json",
+  "configs\\experiments\\research_partial_tighten_halving_video_20261102.json",
+  "configs\\experiments\\research_partial_tolerance_20261025.json",
+  "configs\\experiments\\research_scale_crops_20261027.json",
+  "configs\\experiments\\research_scale_partial_20261027.json"
+ ],
+ "note": "each of these was named with the former assistant prefix in place of research_",
+ "repinned": {
+  "configs\\experiments\\research_fresh_fxtd_grade_v2_20261026.json": {
+   "old": "14ad2c7a00b1e9d1105ba1ec78fc7aa98e79466549f688637836bf85527bc0e9",
+   "new": "e635921673556da949a72eedf4d258e4874afbd2a5b44650b1262365d3032cb4"
+  }
+ }
+}

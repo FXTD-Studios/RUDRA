@@ -2,8 +2,8 @@
  "registered_before_evaluation": true,
  "author": "FXTD Studios Research, 6 Nov 2026",
  "purpose": "The exact lock (5 Nov) passes 0 EV on real footage (fresh 0.241 against 0.453, limit 0.338; old24 0.0488) and keeps -3/+3/H better than analytic, but fails only motion: aligned residual 0.0129 against 0.0104 (w4 alone 0.0091), because it pins recorded channels to the source's exact codes, which jitter frame to frame. The band lock leaves a recorded channel within band_codes of the source as the model made it and brings only those outside to the band's edge.",
- "grade_set_registration": "configs/experiments/claude_fresh_fxtd_grade_v2_20261026.json",
- "grade_set_registration_sha256": "14ad2c7a00b1e9d1105ba1ec78fc7aa98e79466549f688637836bf85527bc0e9",
+ "grade_set_registration": "configs/experiments/research_fresh_fxtd_grade_v2_20261026.json",
+ "grade_set_registration_sha256": "e635921673556da949a72eedf4d258e4874afbd2a5b44650b1262365d3032cb4",
  "arms": {
   "primary": "lock_b025",
   "partial_tighten": [
@@ -32,7 +32,7 @@
  },
  "decision_rule": "Registered 6 Nov 2026 before any run. Arms: w4 + lock with band 0.15, 0.25, 0.35 code. Every original gate must hold (aligned residual <= 0.010367; old24 -3/0/+3 EV; Hunyuan48 <= 0.02 EV; no new negative Y; fresh 0 EV RMS <= 0.338 and -3/+3/H no worse than analytic). Among the arms that pass, the lowest fresh 0 EV is chosen; it then runs the Crew holdout once. If none passes, no candidate.",
  "candidates": {
-  "primary": "w4 (claude_bin_hinge_w4_20261102 step1600)"
+  "primary": "w4 (research_bin_hinge_w4_20261102 step1600)"
  },
  "honesty": "The fresh and development sets have been looked at: development evidence. The Crew holdout decides.",
  "release_authorized": false,

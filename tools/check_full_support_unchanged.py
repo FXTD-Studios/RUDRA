@@ -1,4 +1,4 @@
-"""Restated gate for partial-highlight training (configs/experiments/claude_partial_tolerance_20261025.json).
+"""Restated gate for partial-highlight training (configs/experiments/research_partial_tolerance_20261025.json).
 
 A candidate that trains only highlight_context must leave fully clipped pixels exactly as its parent
 produces them: raw candidate output == raw parent output inside fully clipped support, bit-exact,

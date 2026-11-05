@@ -32,7 +32,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     verdicts = {}
     for arm in a.arms:
-        reg = json.loads((a.experiments / f"claude_bin_hinge_{arm}_20261102.json").read_text())
+        reg = json.loads((a.experiments / f"research_bin_hinge_{arm}_20261102.json").read_text())
         out = Path(reg["out"])
         print(f"\n=== {arm}  (bin weight {reg['bin_weight']:g}, tolerance {reg['bin_tol_codes']:g} code)  {out}")
         ok_all = True

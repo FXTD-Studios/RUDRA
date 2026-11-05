@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Run the pre-registered full-only routing arms (configs/experiments/claude_full_only_route_20261101.json)
+  Run the pre-registered full-only routing arms (configs/experiments/research_full_only_route_20261101.json)
   on the fresh FXTD grading set v2. Inference only: no training, CPU is enough (about the time
   the 26 Oct fresh-grade run took, times the number of arms).
 
@@ -10,9 +10,9 @@
 [CmdletBinding()]
 param(
     [string]$Python = ".venv\Scripts\python.exe",
-    [string]$Corpus = "G:\rudra_training\claude_release_candidate_20261026\fresh_fxtd_grade_v2_20261026",
+    [string]$Corpus = "G:\rudra_training\research_release_candidate_20261026\fresh_fxtd_grade_v2_20261026",
     [string]$Checkpoint = "G:\rudra_training\partial_pcgrad_duration6400_retry1_20261025\step6400.pt",
-    [string]$OutDir = "G:\rudra_training\claude_full_only_route_20261101"
+    [string]$OutDir = "G:\rudra_training\research_full_only_route_20261101"
 )
 $ErrorActionPreference = "Stop"
 function Fail($m) { Write-Host "FAILED: $m" -ForegroundColor Red; exit 1 }
@@ -26,7 +26,7 @@ $out = Join-Path $OutDir ("route_arms_{0}.json" -f (Get-Date -Format "yyyyMMdd_H
 & $Python -m pytest -q tests/test_aces_full_only.py tests/test_evaluate_route_arms.py
 if ($LASTEXITCODE -ne 0) { Fail "the arm's tests" }
 & $Python tools/evaluate_route_arms.py --corpus $Corpus `
-    --registration configs/experiments/claude_full_only_route_20261101.json `
+    --registration configs/experiments/research_full_only_route_20261101.json `
     --candidate "d6400=$Checkpoint" --out $out
 if ($LASTEXITCODE -ne 0) { Fail "evaluation" }
 & $Python -c @"

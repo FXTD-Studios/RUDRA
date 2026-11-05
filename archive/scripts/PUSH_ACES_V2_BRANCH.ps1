@@ -49,7 +49,7 @@ ACES 2.0 model, native v2 staged pipeline and tooling (work since 21 Oct)
   train_partial_display, check_full_support_unchanged, provenance_archive, audits and evaluators
 - native/: core/aces_v2 (+manifest major 2), infer OCIO 2.5.2 view, LibTorch and ONNX Runtime G1,
   engine/aces_v2_job, CLI aces-v2, tests/test_aces_v2 (8 tests), tools/aces_v2_parity
-- configs/experiments: registrations incl. claude_partial_tolerance_20261025 (0 EV RMS +0.1 code)
+- configs/experiments: registrations incl. research_partial_tolerance_20261025 (0 EV RMS +0.1 code)
 - scripts/NATIVE_ACES_V2.ps1, docs/THIRD_PARTY_LICENSES.md (draft), docs/RUDRA_MODEL_STATUS_2026-10-25.md
 
 Research branch: no default changed, no model released, release_authorized false everywhere.

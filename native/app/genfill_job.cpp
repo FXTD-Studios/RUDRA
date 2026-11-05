@@ -121,7 +121,7 @@ std::vector<fs::path> genfill_lora_candidates(const fs::path& repo) {
     std::vector<fs::path> loras;
     downloaded_loras(loras);   // File > Model packages (31 Oct 2026)
     for (const auto& r : genfill_roots(repo)) loras.push_back(r / "rudra_genfill.safetensors");
-    loras.push_back("G:/rudra_training/claude_genfill_v3_20261030/rudra_genfill.safetensors");   // GENFILL.ps1's v3 run
+    loras.push_back("G:/rudra_training/research_genfill_v3_20261030/rudra_genfill.safetensors");   // GENFILL.ps1's v3 run
     return loras;
 }
 

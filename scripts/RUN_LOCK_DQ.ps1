@@ -20,7 +20,7 @@ function Say($m) { Write-Host "`n== $m" -ForegroundColor Cyan }
 function Fail($m) { Write-Host "FAILED: $m" -ForegroundColor Red; exit 1 }
 if (-not (Test-Path $Python)) { Fail "no $Python" }
 $E = "configs\experiments"
-$src = "G:\rudra_training\claude_bin_hinge_w4_20261102"
+$src = "G:\rudra_training\research_bin_hinge_w4_20261102"
 $ck = Join-Path $src "step1600.pt"; $anc = Join-Path $src "training_ancestry.json"; $rep = Join-Path $src "report.json"
 foreach ($p in $ck, $anc, $rep) { if (-not (Test-Path $p)) { Fail "missing $p" } }
 Say "Tests"
@@ -39,7 +39,7 @@ foreach ($b in $Bands) {
     }
     if (-not (Test-Path "$Out\grade_$b.json")) {
         Say "Old24 grades, band $b"
-        $g = Get-Content "$E\claude_bin_hinge_grade_template_20261102.json" -Raw | ConvertFrom-Json
+        $g = Get-Content "$E\research_bin_hinge_grade_template_20261102.json" -Raw | ConvertFrom-Json
         $g.evaluation = ("$root\paired_development\old_coherent\candidate_report.json" -replace "\\", "/")
         $g.parent = ("$root\paired_development\old_coherent\parent_report.json" -replace "\\", "/")
         [IO.File]::WriteAllText("$Out\grade_registration_$b.json", ($g | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding $false))

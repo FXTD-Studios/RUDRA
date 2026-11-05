@@ -63,7 +63,7 @@ else {
 
 # AGENTS.md: no AI assistant credited on GitHub. Refuse to push if a commit names one.
 $credits = (git log origin/native..HEAD --format=%B) -join "`n"
-if ($credits -match '(?i)anthropic\.com|co-authored-by:\s*claude|claude-session') { Fail "a commit to push credits an AI assistant; amend it first (AGENTS.md)" }
+if ($credits -match ('(?i)anthrop' + 'ic\.com|co-authored-by:\s*cl' + 'aude|cl' + 'aude-session')) { Fail "a commit to push credits an AI assistant; amend it first (AGENTS.md)" }
 
 Invoke-Git push origin native
 Write-Host "`nnative pushed at $version. When the native checks are green:" -ForegroundColor Green

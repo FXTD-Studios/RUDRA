@@ -18,7 +18,7 @@ function Say($m) { Write-Host "`n== $m" -ForegroundColor Cyan }
 function Fail($m) { Write-Host "FAILED: $m" -ForegroundColor Red; exit 1 }
 if (-not (Test-Path $Python)) { Fail "no $Python" }
 $E = "configs\experiments"
-$runs = @{ "w4" = @("G:\rudra_training\claude_bin_hinge_w4_20261102", "step1600.pt"); "d6400" = @("G:\rudra_training\partial_pcgrad_duration6400_retry1_20261025", "step6400.pt") }
+$runs = @{ "w4" = @("G:\rudra_training\research_bin_hinge_w4_20261102", "step1600.pt"); "d6400" = @("G:\rudra_training\partial_pcgrad_duration6400_retry1_20261025", "step6400.pt") }
 Say "Tests"
 & $Python -m pytest -q tests/test_aces_partial_tighten.py
 if ($LASTEXITCODE -ne 0) { Fail "tests" }
@@ -38,7 +38,7 @@ foreach ($arm in $Arms) {
     }
     if (-not (Test-Path "$Out\grade_$arm.json")) {
         Say "Old24 grades, $arm + lock"
-        $g = Get-Content "$E\claude_bin_hinge_grade_template_20261102.json" -Raw | ConvertFrom-Json
+        $g = Get-Content "$E\research_bin_hinge_grade_template_20261102.json" -Raw | ConvertFrom-Json
         $g.evaluation = ("$root\paired_development\old_coherent\candidate_report.json" -replace "\\", "/")
         $g.parent = ("$root\paired_development\old_coherent\parent_report.json" -replace "\\", "/")
         [IO.File]::WriteAllText("$Out\grade_registration_$arm.json", ($g | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding $false))

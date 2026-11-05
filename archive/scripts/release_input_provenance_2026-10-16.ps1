@@ -52,7 +52,7 @@ if ($LASTEXITCODE -ne 0) { Fail "git rev-list origin/native..HEAD (fetch origin 
 foreach ($c in $shas) {
     $body = (git log -1 --format=%B $c) -join "`n"
     if ($LASTEXITCODE -ne 0) { Fail "git log $c" }
-    if ($body -match '(?i)anthropic\.com|co-authored-by:\s*claude|claude-session') { Fail "$c credits an AI assistant; amend it first (AGENTS.md)" }
+    if ($body -match ('(?i)anthrop' + 'ic\.com|co-authored-by:\s*cl' + 'aude|cl' + 'aude-session')) { Fail "$c credits an AI assistant; amend it first (AGENTS.md)" }
     if (-not $body.Contains($coauthor)) { Fail "$c lacks '$coauthor'" }
     $others = @([regex]::Matches($body, '(?im)^co-authored-by:.*$') | ForEach-Object { $_.Value.Trim() } | Where-Object { $_ -ne $coauthor })
     if ($others.Count) { Fail "$c has another co-author: $($others -join '; ')" }

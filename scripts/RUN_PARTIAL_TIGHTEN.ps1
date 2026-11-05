@@ -5,14 +5,14 @@
     2. paired development gates + grades:    tools/evaluate_aces_context_motion.py  (CUDA)
     3. Hunyuan48 video:                      tools/evaluate_aces_feather_video.py
   for the primary arm (bisect) and the control (halving), then one decision table.
-  Inference only. Registrations: configs/experiments/claude_partial_tighten_*_20261102.json.
+  Inference only. Registrations: configs/experiments/research_partial_tighten_*_20261102.json.
 #>
 [CmdletBinding()]
 param(
     [string]$Python = ".venv\Scripts\python.exe",
     [string]$RunRoot = "G:\rudra_training\partial_pcgrad_duration6400_retry1_20261025",
     [string]$Fresh = "G:\rudra_training\fresh_fxtd_grade_v2_rebuild_20261102",
-    [string]$Out = "G:\rudra_training\claude_partial_tighten_20261102",
+    [string]$Out = "G:\rudra_training\research_partial_tighten_20261102",
     [switch]$SkipFresh, [switch]$SkipDev, [switch]$SkipVideo
 )
 $ErrorActionPreference = "Stop"
@@ -33,7 +33,7 @@ if ($LASTEXITCODE -ne 0) { Fail "tests" }
 if (-not $SkipFresh) {
     Say "1. Fresh FXTD v2 (CPU)"
     if (-not (Test-Path "$Fresh\report.json")) { Fail "no rebuilt fresh set at $Fresh" }
-    & $Python tools/evaluate_route_arms.py --corpus $Fresh --registration configs/experiments/claude_partial_tighten_fresh_20261102.json `
+    & $Python tools/evaluate_route_arms.py --corpus $Fresh --registration configs/experiments/research_partial_tighten_fresh_20261102.json `
         --candidate "d6400=$ckpt" --out "$Out\fresh_arms.json"
     if ($LASTEXITCODE -ne 0) { Fail "fresh evaluation" }
 }
@@ -45,12 +45,12 @@ foreach ($arm in "bisect", "halving") {
         Copy-Item $ckpt, $anc, $rep $root -Force
         $pd = Join-Path $root "paired_development"
         if (Test-Path $pd) { Remove-Item -Recurse -Force $pd }   # the evaluator reads them from its root and writes root\paired_development
-        & $Python tools/evaluate_aces_context_motion.py --registration "configs/experiments/claude_partial_tighten_${arm}_dev_20261102.json" --root $root
+        & $Python tools/evaluate_aces_context_motion.py --registration "configs/experiments/research_partial_tighten_${arm}_dev_20261102.json" --root $root
         if ($LASTEXITCODE -ne 0) { Fail "development gates ($arm)" }
     }
     if (-not $SkipVideo) {
         Say "3. Hunyuan48 video, $arm"
-        & $Python tools/evaluate_aces_feather_video.py --registration "configs/experiments/claude_partial_tighten_${arm}_video_20261102.json" --out "$Out\video_$arm.json"
+        & $Python tools/evaluate_aces_feather_video.py --registration "configs/experiments/research_partial_tighten_${arm}_video_20261102.json" --out "$Out\video_$arm.json"
         if ($LASTEXITCODE -ne 0) { Fail "video ($arm)" }
     }
 }

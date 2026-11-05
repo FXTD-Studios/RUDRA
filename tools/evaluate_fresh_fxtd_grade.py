@@ -1,4 +1,4 @@
-"""Evaluate frozen candidates on the fresh FXTD grading set (claude_fresh_fxtd_grade_20261026.json)."""
+"""Evaluate frozen candidates on the fresh FXTD grading set (research_fresh_fxtd_grade_20261026.json)."""
 import argparse,hashlib,json,sys
 from pathlib import Path
 import numpy as np

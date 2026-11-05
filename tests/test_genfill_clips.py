@@ -52,7 +52,7 @@ def _tree(tmp: Path):
     src = UP / 'corpora/rudra_fxtd_camera_20261016'
     (cam / 'hdr' / FXTD).write_bytes((src / 'hdr' / FXTD).read_bytes())
     (cam / '_ingest_config.json').write_bytes((src / '_ingest_config.json').read_bytes())
-    fresh = g / 'rudra_training/claude_release_candidate_20261026/fresh_fxtd_grade_v2_20261026'; fresh.mkdir(parents=True)
+    fresh = g / 'rudra_training/research_release_candidate_20261026/fresh_fxtd_grade_v2_20261026'; fresh.mkdir(parents=True)
     (fresh / 'report.json').write_text(json.dumps({'scenes': 1, 'rows': [{'scene_id': 'fxtd_elmatareed_x', 'kept': True}]}))
     reg_file = tmp / 'reg.json'; reg_file.write_text('{}')
     return g, reg_file
@@ -196,7 +196,7 @@ def test_evaluator_runs_and_reports_gates(tmp_path):
     r = subprocess.run([sys.executable, str(ROOT / 'tools/evaluate_genfill.py'), '--out', str(out), '--tiny',
                         '--root', str(g).replace('\\', '/') + '/', '--frames', '9', '--height', '64', '--width', '96',
                         '--window', '5', '--overlap', '2', '--steps', '2', '--ph-offset', '0', '--fxtd-offset', '0', '--fxtd-pool', 'fresh',
-                        '--registration', str(ROOT / 'configs/experiments/claude_genfill_v1_1_20261029.json')],
+                        '--registration', str(ROOT / 'configs/experiments/research_genfill_v1_1_20261029.json')],
                        capture_output=True, text=True, env=env, timeout=900)
     assert r.returncode == 0, r.stderr[-3000:]
     rep = json.loads((out / 'report.json').read_text())
@@ -319,7 +319,7 @@ def test_evaluator_v3_reports_the_brightness_gate(tmp_path):
                         '--root', str(g).replace('\\', '/') + '/', '--frames', '5', '--height', '64', '--width', '96',
                         '--window', '5', '--overlap', '2', '--steps', '2', '--ph-offset', '0', '--fxtd-pool', 'extra',
                         '--brightness-model', str(tmp_path / 'b.json'), '--brightness-offset', '0.5',
-                        '--registration', str(ROOT / 'configs/experiments/claude_genfill_v1_1_20261029.json')],
+                        '--registration', str(ROOT / 'configs/experiments/research_genfill_v1_1_20261029.json')],
                        capture_output=True, text=True, env=env, timeout=900)
     assert r.returncode == 0, r.stderr[-3000:]
     rep = json.loads((out / 'report.json').read_text())

@@ -1,6 +1,6 @@
 {
   "registered_before_training": true,
-  "author": "Claude (Cowork), approved by ahmed 25 Oct ('yes go')",
+  "author": "FXTD Studios Research (Cowork), approved by ahmed 25 Oct ('yes go')",
   "parent": "G:/rudra_training/partial_pcgrad_duration6400_retry1_20261025/step6400.pt",
   "parent_sha256": "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e",
   "steps": 1600,

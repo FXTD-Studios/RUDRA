@@ -30,7 +30,7 @@ Say "Tests"
 if ($LASTEXITCODE -ne 0) { Fail "tests" }
 
 foreach ($arm in $Arms) {
-    $reg = Get-Content "$E\claude_bin_hinge_${arm}_20261102.json" -Raw | ConvertFrom-Json
+    $reg = Get-Content "$E\research_bin_hinge_${arm}_20261102.json" -Raw | ConvertFrom-Json
     $out = $reg.out -replace "/", "\"
     $ck = Join-Path $out "step1600.pt"
     if (-not $SkipTrain -and -not (Test-Path $ck)) {
@@ -50,12 +50,12 @@ foreach ($arm in $Arms) {
     if (-not (Test-Path "$out\paired_development\acceptance.json")) {
         if (Test-Path "$out\paired_development") { Remove-Item -Recurse -Force "$out\paired_development" }
         Say "Paired development gates, $arm (CUDA)"
-        & $Python tools/evaluate_aces_context_motion.py --registration "$E\claude_bin_hinge_dev_20261102.json" --root $out
+        & $Python tools/evaluate_aces_context_motion.py --registration "$E\research_bin_hinge_dev_20261102.json" --root $out
         if ($LASTEXITCODE -ne 0) { Fail "development gates ($arm)" }
     }
     if (-not (Test-Path "$out\grade.json")) {
         Say "Old coherent grades, $arm"
-        $g = Get-Content "$E\claude_bin_hinge_grade_template_20261102.json" -Raw | ConvertFrom-Json
+        $g = Get-Content "$E\research_bin_hinge_grade_template_20261102.json" -Raw | ConvertFrom-Json
         $g.evaluation = ("$out\paired_development\old_coherent\candidate_report.json" -replace "\\", "/")
         $g.parent = ("$out\paired_development\old_coherent\parent_report.json" -replace "\\", "/")
         [IO.File]::WriteAllText("$out\grade_registration.json", ($g | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding $false))
@@ -64,7 +64,7 @@ foreach ($arm in $Arms) {
     }
     if (-not (Test-Path "$out\video.json")) {
         Say "Hunyuan48 video, $arm"
-        $v = Get-Content "$E\claude_bin_hinge_video_template_20261102.json" -Raw | ConvertFrom-Json
+        $v = Get-Content "$E\research_bin_hinge_video_template_20261102.json" -Raw | ConvertFrom-Json
         $v.candidate = ($ck -replace "\\", "/"); $v.checkpoint_sha256 = $sha
         [IO.File]::WriteAllText("$out\video_registration.json", ($v | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding $false))
         & $Python tools/evaluate_aces_feather_video.py --registration "$out\video_registration.json" --out "$out\video.json"
@@ -72,7 +72,7 @@ foreach ($arm in $Arms) {
     }
     if (-not (Test-Path "$out\fresh.json")) {
         Say "Fresh FXTD v2, $arm (CPU)"
-        & $Python tools/evaluate_route_arms.py --corpus $Fresh --registration "$E\claude_bin_hinge_fresh_20261102.json" `
+        & $Python tools/evaluate_route_arms.py --corpus $Fresh --registration "$E\research_bin_hinge_fresh_20261102.json" `
             --candidate "${arm}=$ck" --out "$out\fresh.json"
         if ($LASTEXITCODE -ne 0) { Fail "fresh ($arm)" }
     }

@@ -9,14 +9,14 @@
     powershell -ExecutionPolicy Bypass -File scripts\TRAIN_ACES_SCALE.ps1 -SmokeTest   # 20 plates, 20 updates
 
   Registrations (written before anything ran):
-    configs\experiments\claude_scale_crops_20261027.json     the data
-    configs\experiments\claude_scale_partial_20261027.json   the training run and its gates
+    configs\experiments\research_scale_crops_20261027.json     the data
+    configs\experiments\research_scale_partial_20261027.json   the training run and its gates
   Nothing here changes a default or releases a model. Keep the PC awake (no sleep) overnight.
 #>
 param(
     [string]$Python = ".venv\Scripts\python.exe",
-    [string]$Crops = "G:\datasets\corpora\claude_aces_scale_crops_20261027",
-    [string]$Out = "G:\rudra_training\claude_scale_partial_20261027",
+    [string]$Crops = "G:\datasets\corpora\research_aces_scale_crops_20261027",
+    [string]$Out = "G:\rudra_training\research_scale_partial_20261027",
     [string]$Parent = "G:\rudra_training\partial_pcgrad_duration6400_retry1_20261025\step6400.pt",
     [int]$Workers = 8,
     [switch]$BuildOnly,
@@ -47,7 +47,7 @@ if (Test-Path (Join-Path $Crops "summary.json")) {
 } else {
     if (Test-Path $Crops) { Fail "$Crops exists without summary.json (an interrupted build): delete it, then run again" }
     Say "Build the training crops ($Workers workers) -> $Crops"
-    $bargs = @("tools\build_aces_scale_crops.py", "--out", $Crops, "--registration", "configs\experiments\claude_scale_crops_20261027.json", "--workers", $Workers)
+    $bargs = @("tools\build_aces_scale_crops.py", "--out", $Crops, "--registration", "configs\experiments\research_scale_crops_20261027.json", "--workers", $Workers)
     if ($SmokeTest) { $bargs += @("--limit", "20") }
     $ErrorActionPreference = "Continue"   # Python warnings on stderr must not stop the run
     & $Python @bargs 2>&1 | Tee-Object -FilePath "$Crops.build.log"
@@ -64,7 +64,7 @@ if (-not $SmokeTest -and $Cuda -ne "True") { Fail "no CUDA GPU visible to torch:
 if (Test-Path $Out) { Fail "$Out exists: the registered run writes a new folder" }
 $steps = if ($SmokeTest) { 20 } else { 60000 }
 $every = if ($SmokeTest) { 10 } else { 2500 }
-Say "Train (registered: claude_scale_partial_20261027) -> $Out"
+Say "Train (registered: research_scale_partial_20261027) -> $Out"
 Write-Host "stops after 9.5 hours at the next 2,500-update save, or at 60,000 updates"
 $targs = @("tools\train_partial_display.py", "--checkpoint", $Parent, "--out", $Out, "--device", $(if ($Cuda -eq "True") { "cuda" } else { "cpu" }),
            "--data-root", "G:/", "--crop-store", $Crops.Replace('\', '/'),

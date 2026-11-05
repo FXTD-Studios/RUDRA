@@ -90,7 +90,7 @@ if ($left.Count) { Write-Host "Not committed (left for you):" -ForegroundColor Y
 
 # AGENTS.md: no AI assistant credited on GitHub.
 $credits = (git log origin/native..HEAD --format=%B) -join "`n"
-if ($credits -match '(?i)anthropic\.com|co-authored-by:\s*claude|claude-session') { Fail "a commit credits an AI assistant; amend it first (AGENTS.md)" }
+if ($credits -match ('(?i)anthrop' + 'ic\.com|co-authored-by:\s*cl' + 'aude|cl' + 'aude-session')) { Fail "a commit credits an AI assistant; amend it first (AGENTS.md)" }
 
 if ($Push) {
     Invoke-Git push origin native

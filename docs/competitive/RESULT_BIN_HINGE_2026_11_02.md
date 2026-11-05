@@ -1,7 +1,7 @@
 # Result: the 0 EV training kit, bin hinge w4 and w16 (2 Nov 2026)
 
-Registrations `claude_bin_hinge_w{4,16}_20261102.json` (before training). Parent d6400.
-Evidence `G:\rudra_training\claude_bin_hinge_w{4,16}_20261102\`.
+Registrations `research_bin_hinge_w{4,16}_20261102.json` (before training). Parent d6400.
+Evidence `G:\rudra_training\research_bin_hinge_w{4,16}_20261102\`.
 
 **Concluded: neither arm passes its registered rule (the fresh 0 EV tolerant rule fails for both). Not promoted.**
 

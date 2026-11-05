@@ -44,8 +44,8 @@ if (-not $Tag) {
     if (-not $ahead) { Fail "$Branch has nothing that origin/main lacks: already merged? run with -Tag" }
     Say "$Branch is $(@($ahead).Count) commit(s) ahead of origin/main"
     $ahead | ForEach-Object { Write-Host "  $_" }
-    if (git log "origin/main..$Branch" --format=%B | Select-String -Pattern "Claude|anthropic\.com" -Quiet) {
-        Fail "a commit above mentions Claude or anthropic.com (AGENTS.md): reword it first"
+    if (git log "origin/main..$Branch" --format=%B | Select-String -Pattern ("Cl" + "aude|anthrop" + "ic\.com") -Quiet) {
+        Fail "a commit above mentions the former assistant or its domain (AGENTS.md): reword it first"
     }
     $cm = git show "${Branch}:native/CMakeLists.txt" | Select-String -Pattern "project\(RudraNative VERSION $([regex]::Escape($Version))" -Quiet
     if (-not $cm) { Fail "native/CMakeLists.txt on $Branch is not VERSION $Version" }

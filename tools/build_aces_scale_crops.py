@@ -29,7 +29,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 SOURCES = 'G:/datasets/corpora/rudra_run05_sources_20261022/sources.jsonl'
-FRESH = 'G:/rudra_training/claude_release_candidate_20261026/fresh_fxtd_grade_v2_20261026/report.json'
+FRESH = 'G:/rudra_training/research_release_candidate_20261026/fresh_fxtd_grade_v2_20261026/report.json'
 EVAL_DIR_PATTERN = re.compile(r'(aces|run05|ambientcg|holdout|temporal|fresh)', re.I)
 EVAL_NAME_PATTERN = re.compile(r'(val|dev|holdout|validation|development|quarantine|test|candidate)', re.I)
 OFFSETS = (0.0, 2.0, 4.0)
