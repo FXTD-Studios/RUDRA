@@ -1,0 +1,423 @@
+{
+ "schema": "rudra_holdout_registration_v1",
+ "registered": "2026-11-05T08:07:49",
+ "registered_before_building": true,
+ "registered_before_evaluation": true,
+ "purpose": "confirmatory holdout for the learned ACES 2.0 model's release gates",
+ "candidates_file": "G:\\holdout\\rudra_holdout_crew_20261105\\candidates.jsonl",
+ "candidates_sha256": "b7f1024b2a98fd38375b613d86fc93582065fe8fddff536d88da2eac015473fe",
+ "exclude_roots": [
+  "G:\\datasets\\corpora",
+  "G:\\rudra_training"
+ ],
+ "exclusion_index": {
+  "manifest_files": 55380,
+  "scene_ids": 2641,
+  "sha256": 29168,
+  "file_names": 116218
+ },
+ "selection": {
+  "n": 48,
+  "strata": [
+   "scene_id"
+  ],
+  "seed": 20261101,
+  "rule": "stratified round robin, one row per scene first"
+ },
+ "counts": {
+  "candidates": 240,
+  "eligible": 240,
+  "excluded": 0,
+  "picked": 48,
+  "scenes": 24
+ },
+ "rows": [
+  {
+   "id": "fxtd_thecrew_sc_34_sh010_s0_f000227",
+   "scene_id": "fxtd_thecrew_sc_34_sh010",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_34_sh010_s0_f000227.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "e83c5bd70ff8f006bb96b849146e45ba008bf0d7c48ed1d178eb1f4c58c6e4c2"
+  },
+  {
+   "id": "fxtd_thecrew_sc_34_sh020_s0_f000174",
+   "scene_id": "fxtd_thecrew_sc_34_sh020",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_34_sh020_s0_f000174.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "b71f25f353a477110feae64c092584d86a8c6538cf0eb1fffe0462c03cfdd7f6"
+  },
+  {
+   "id": "fxtd_thecrew_sc_40a_sh030_s0_f000006",
+   "scene_id": "fxtd_thecrew_sc_40a_sh030",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_40a_sh030_s0_f000006.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "f40093961686ea5a62d4e20f4261a55a22a5950c61e14a122c54a55db42a0d16"
+  },
+  {
+   "id": "fxtd_thecrew_sc_40a_sh040_s0_f000006",
+   "scene_id": "fxtd_thecrew_sc_40a_sh040",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_40a_sh040_s0_f000006.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "f7fcca233240855894cd85f065d08b8e1a7d01bdc8ca031591c00aaed7c653a4"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0180_s0_f000055",
+   "scene_id": "fxtd_thecrew_sc_69_sh0180",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0180_s0_f000055.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "92a00e55b95d3a26f28e229af00b96106b16ec1a5c7ecbc84f05b1971d4748cf"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0190_s0_f000007",
+   "scene_id": "fxtd_thecrew_sc_69_sh0190",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0190_s0_f000007.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "debf7873a53b3340e9d5b680bfe0e94b66a6a575d059644c39f299bc0a3b8d5f"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0280_s0_f000007",
+   "scene_id": "fxtd_thecrew_sc_69_sh0280",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0280_s0_f000007.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "08c9ac13d580d1c31f5db4657dc3bbbea1d7fc362e0ffcc66a3087fb0dcd0d76"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0290_s0_f000000",
+   "scene_id": "fxtd_thecrew_sc_69_sh0290",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0290_s0_f000000.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "1fbec36ff755c0d48fc8c4c78022399d1b9ba39687b2ac3a20bc851259532219"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0300_s0_f000015",
+   "scene_id": "fxtd_thecrew_sc_69_sh0300",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0300_s0_f000015.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "f91bab684cb429e9630d7619b0d2e5a33953f05c63e5bc1411d181b0729c3623"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0310_s0_f000007",
+   "scene_id": "fxtd_thecrew_sc_69_sh0310",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0310_s0_f000007.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "71f4a4753b067453a6f1db9e0274884b8fb7b3fd6815b9ce27093d0dcc89453b"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0320_s0_f000008",
+   "scene_id": "fxtd_thecrew_sc_69_sh0320",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0320_s0_f000008.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "09070a73f5a05ead39ecb07a0fb7560b1956847bd66cc88bc7548386ae7ced8f"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0330_s0_f000015",
+   "scene_id": "fxtd_thecrew_sc_69_sh0330",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0330_s0_f000015.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "baeb3e0ad6eea82ff54646825504d6dca4f2aa81089cf7d7ef58f9e1a196d4ad"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_extra_sh010_s0_f000018",
+   "scene_id": "fxtd_thecrew_sc_69e_extra_sh010",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_extra_sh010_s0_f000018.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "639a9d4eb3d72363c2f3d54c20c6bf7fb2df9275bfcbed92b8e4c2b111164f6c"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_extra_sh020_s0_f000008",
+   "scene_id": "fxtd_thecrew_sc_69e_extra_sh020",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_extra_sh020_s0_f000008.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "709381df35a0c60c0af867b0303ef6451d674d9e7c127b60afe2ecc2ad6bf216"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_extra_sh030_s0_f000019",
+   "scene_id": "fxtd_thecrew_sc_69e_extra_sh030",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_extra_sh030_s0_f000019.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "df90f88a028200b1614f58e6187d40df98217b9f1f05533b0739ed554e3ad19f"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_extra_sh040_s0_f000027",
+   "scene_id": "fxtd_thecrew_sc_69e_extra_sh040",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_extra_sh040_s0_f000027.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "5253e3e87ffd8dafee99f4be440b62e295f7fde38e203585e76e2a6aa0c4ef15"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_sh0100_s0_f000011",
+   "scene_id": "fxtd_thecrew_sc_69e_sh0100",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_sh0100_s0_f000011.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "67e39eba6ffb0f981962ea788bf50c1893de97e7e55adbb8f71d16aa7ea7ce38"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_sh060_s0_f000011",
+   "scene_id": "fxtd_thecrew_sc_69e_sh060",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_sh060_s0_f000011.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "017509cb30a278922053cbba6fe6aa93531d72cba8383480c47dd55362c84281"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_sh070_s0_f000022",
+   "scene_id": "fxtd_thecrew_sc_69e_sh070",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_sh070_s0_f000022.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "aea6dfdc2bb7eb9cff851f7eaa6f7914d157bdfb967475dfe6e2c75c3837e9ae"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_sh080_s0_f000012",
+   "scene_id": "fxtd_thecrew_sc_69e_sh080",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_sh080_s0_f000012.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "66efac211208d29ee0e13091b546d59704d75c251659cfe534b09a519635e2e0"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_sh090_s0_f000007",
+   "scene_id": "fxtd_thecrew_sc_69e_sh090",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_sh090_s0_f000007.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "fd899d33b86185b3efa87a067722302d47b7e94e83ad7b1a59018524f2bab85f"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69h_extra_sh010_s0_f000012",
+   "scene_id": "fxtd_thecrew_sc_69h_extra_sh010",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69h_extra_sh010_s0_f000012.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "cbeab55bf56e6c05f9cf6ec9ae023ebffbd7e3bae59c5a667439e828c5ebec02"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69h_sh030_s0_f000010",
+   "scene_id": "fxtd_thecrew_sc_69h_sh030",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69h_sh030_s0_f000010.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "88ec789af64e6b140829d00605cf9303de322ac297b44211b4c057066426fcdf"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69h_sh040_s0_f000001",
+   "scene_id": "fxtd_thecrew_sc_69h_sh040",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69h_sh040_s0_f000001.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "e2c7bfe47758de8d236f2609668edd74b87e93fc57a80c3d087a1597c59423dc"
+  },
+  {
+   "id": "fxtd_thecrew_sc_34_sh010_s0_f000093",
+   "scene_id": "fxtd_thecrew_sc_34_sh010",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_34_sh010_s0_f000093.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "517e39856325a3b3460ac0b04d7c276117077414d820be047e9164c520e5404c"
+  },
+  {
+   "id": "fxtd_thecrew_sc_34_sh020_s0_f000201",
+   "scene_id": "fxtd_thecrew_sc_34_sh020",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_34_sh020_s0_f000201.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "41b43928ad29102897bfa1347313234f69e3af85e3baca183ce79011755ac4fc"
+  },
+  {
+   "id": "fxtd_thecrew_sc_40a_sh030_s0_f000011",
+   "scene_id": "fxtd_thecrew_sc_40a_sh030",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_40a_sh030_s0_f000011.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "5dee5bd9391cd35f669c6e20da301d1a49116b74613bae466bb9878978e09beb"
+  },
+  {
+   "id": "fxtd_thecrew_sc_40a_sh040_s0_f000000",
+   "scene_id": "fxtd_thecrew_sc_40a_sh040",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_40a_sh040_s0_f000000.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "8f3fe3577e8a3d7e4fe62c673b1cda3a6e356161ab7f0f6401bad75e26d3d647"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0180_s0_f000005",
+   "scene_id": "fxtd_thecrew_sc_69_sh0180",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0180_s0_f000005.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "366d98d9f138dffceb14212e4aa5ef303a5649674eab6210966bd753cd624844"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0190_s0_f000009",
+   "scene_id": "fxtd_thecrew_sc_69_sh0190",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0190_s0_f000009.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "e155093fde3bc135356a00b16119c872b38b936ae50eea583fcd78873c9c503f"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0280_s0_f000001",
+   "scene_id": "fxtd_thecrew_sc_69_sh0280",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0280_s0_f000001.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "3260948ebe985d1204ebd7a6dd05e751810206c2aba7743115c6abe748cb83ee"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0290_s0_f000012",
+   "scene_id": "fxtd_thecrew_sc_69_sh0290",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0290_s0_f000012.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "12c67e303dd39e4731fd1adbc9d4e9dabda08473461bfac901ced5b1a7190f92"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0300_s0_f000013",
+   "scene_id": "fxtd_thecrew_sc_69_sh0300",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0300_s0_f000013.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "24adf61108a7f5de0adc7e6eeb56541405ddc9e77c8855659ff2e05977a928bf"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0310_s0_f000014",
+   "scene_id": "fxtd_thecrew_sc_69_sh0310",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0310_s0_f000014.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "b19f2a917cfda7c619a29a190cee3f5e909698234a381a332fda1422e2582e32"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0320_s0_f000002",
+   "scene_id": "fxtd_thecrew_sc_69_sh0320",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0320_s0_f000002.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "b1ec1c47d5075be15ee09437878b156abd853f19447a7ddd618f68f70418a57e"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69_sh0330_s0_f000005",
+   "scene_id": "fxtd_thecrew_sc_69_sh0330",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69_sh0330_s0_f000005.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "4182bcbae1d34f31c9975a455bd992c682a12d7bf21b2ef2b16921b9bb51b743"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_extra_sh010_s0_f000010",
+   "scene_id": "fxtd_thecrew_sc_69e_extra_sh010",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_extra_sh010_s0_f000010.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "3727686cf790c2c9e1864e7b72e4410fba8faf1af109b4763a7e391aa35245c5"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_extra_sh020_s0_f000021",
+   "scene_id": "fxtd_thecrew_sc_69e_extra_sh020",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_extra_sh020_s0_f000021.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "cbdf2fda84a8fcd42bf80db70620bacfd15c7bc231ac0495c7926175805d5f1d"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_extra_sh030_s0_f000014",
+   "scene_id": "fxtd_thecrew_sc_69e_extra_sh030",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_extra_sh030_s0_f000014.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "db737f09c8c794c8b2f637d7292d0b9171138159150f7304e41178dcdf8c6b28"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_extra_sh040_s0_f000010",
+   "scene_id": "fxtd_thecrew_sc_69e_extra_sh040",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_extra_sh040_s0_f000010.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "b143c597c8841e3fbddd66d5e34ef2a38cd87dd3d5bfd8b3682f6c780221d8f5"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_sh0100_s0_f000007",
+   "scene_id": "fxtd_thecrew_sc_69e_sh0100",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_sh0100_s0_f000007.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "fcf315652580a46ee6d28137e4cf4b52d958d41ce0039372f45869816d22ac45"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_sh060_s0_f000019",
+   "scene_id": "fxtd_thecrew_sc_69e_sh060",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_sh060_s0_f000019.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "f4f1105c3b4df465d03c561c5190a591c699f290bfba32da84ce12068b78e825"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_sh070_s0_f000006",
+   "scene_id": "fxtd_thecrew_sc_69e_sh070",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_sh070_s0_f000006.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "aec15c012dda2507fd286036cbb435f5fe7df62c1bac87174b415f2890861327"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_sh080_s0_f000023",
+   "scene_id": "fxtd_thecrew_sc_69e_sh080",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_sh080_s0_f000023.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "596052e8c2ebca2a356a930dfd1576460d0f4c6e789ecb50b79523c933e9b6a1"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69e_sh090_s0_f000011",
+   "scene_id": "fxtd_thecrew_sc_69e_sh090",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69e_sh090_s0_f000011.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "ef3c633fd1d334d1041d567d64cd0ce888d293e73c9a7b68df96ce3ceef9f09e"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69h_extra_sh010_s0_f000030",
+   "scene_id": "fxtd_thecrew_sc_69h_extra_sh010",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69h_extra_sh010_s0_f000030.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "aaca0c00c490e4edb0a8c98b7a880f4e71de329aeb1b7953102a400ae90113a5"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69h_sh030_s0_f000020",
+   "scene_id": "fxtd_thecrew_sc_69h_sh030",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69h_sh030_s0_f000020.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "292d081e43810bb0ab3e1b003b512a20ba99b349513c727ffa6358d6b2d59c06"
+  },
+  {
+   "id": "fxtd_thecrew_sc_69h_sh040_s0_f000004",
+   "scene_id": "fxtd_thecrew_sc_69h_sh040",
+   "path": "G:\\holdout\\rudra_holdout_crew_20261105\\hdr\\fxtd_thecrew_sc_69h_sh040_s0_f000004.png",
+   "project": "The Crew",
+   "camera": "ARRI ALEXA LogC3",
+   "sha256": "1fa8522beacd62dc456d49fdc56a8513e738c644bd4afaa17bf20f17c643b433"
+  }
+ ],
+ "excluded": [],
+ "use": "confirmatory only: build the cases, run the registered candidate once, report whatever it shows",
+ "seal_sha256": "e8942eb675599c8c4d2a40c714a2e1c362aab8e7057d44d966b71d9e0f53d4c8"
+}
