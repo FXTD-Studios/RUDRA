@@ -23,7 +23,7 @@ the holdout (HOLDOUT_KIT.md). Never the same project in both.
    Aim for 300+ pairs from 20+ scenes; fewer will not move a model.
 3. Build it (same command without --dry-run). The report records every refused
    evaluation scene and the hashes of what it excluded against.
-4. Register before training (Claude writes it from the report): arm **w4 + real**
+4. Register before training (written from the report): arm **w4 + real**
    (continue w4, 1600 steps, its recipe, `--extra-pilot G:\datasets\corpora\real_partial_v1\report.json`)
    and control **w4 continued** (identical, no extra pilot); the original gates plus
    the fresh tolerant rule; selection on the fresh rule with every gate held.

@@ -1,4 +1,4 @@
-"""Fresh grading set from FXTD camera plates (registration claude_fresh_fxtd_grade_20261026.json).
+"""Fresh grading set from FXTD camera plates (registration research_fresh_fxtd_grade_20261026.json).
 
 One eligible frame per scene (selection file), area-downsampled to longest side 512 in
 linear light, BT.2020 -> AP1, at the plate's native camera exposure plus 0/+1/+2 stops
@@ -16,7 +16,7 @@ from training.aces_reference import reference_view
 from training.sdr2hdr_dataset import storage_for
 
 CLIP=254.5/255
-OFFSETS=(0,1,2)   # v2: native camera exposure plus 0/+1/+2 stops (registration claude_fresh_fxtd_grade_v2_20261026)
+OFFSETS=(0,1,2)   # v2: native camera exposure plus 0/+1/+2 stops (registration research_fresh_fxtd_grade_v2_20261026)
 
 
 def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()

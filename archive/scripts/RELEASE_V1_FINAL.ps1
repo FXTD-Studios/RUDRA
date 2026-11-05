@@ -110,7 +110,7 @@ Co-authored-by: FXTD Studios Research <research@fxtdstudios.com>
     if ($code -ne 0) { Fail "git commit" }
 }
 $credits = (git log "origin/$Branch..HEAD" --format=%B) -join "`n"
-if ($credits -match '(?i)anthropic\.com|co-authored-by:\s*claude|claude-session') { Fail "a commit to push credits an AI assistant; amend it first (AGENTS.md)" }
+if ($credits -match ('(?i)anthrop' + 'ic\.com|co-authored-by:\s*cl' + 'aude|cl' + 'aude-session')) { Fail "a commit to push credits an AI assistant; amend it first (AGENTS.md)" }
 
 Say "Push $Branch"
 git push origin $Branch

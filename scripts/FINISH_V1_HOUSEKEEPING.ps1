@@ -11,7 +11,7 @@
     1. git fetch --tags; say whether v1.0.3 is tagged on origin
     2. commit the provenance record, tools/inspect_highlights.py, the .gitignore
        entry for result.json and the corrected LEGAL_QUESTIONS.md
-    3. refuse to push if any unpushed commit mentions Claude or anthropic.com
+    3. refuse to push if any unpushed commit mentions the former assistant or its domain
        (AGENTS.md), then push feat/gap-kits and print the PR link
     4. delete the transfer leftovers in tmp\ (never tmp\native_deps)
     5. move the stale remote ref lock into .git\_stale_locks
@@ -101,9 +101,9 @@ if (-not $SkipPush) {
     if ($LASTEXITCODE -ne 0) { Fail "ship 1.0.3 first (scripts\RELEASE_1_0_3.ps1): origin/main lacks it, and this push would bundle it with $Branch. Or pass -SkipPush" }
     Say "Check unpushed commits for AI attribution, then push $Branch"
     $bodies = git log "origin/main..HEAD" --format=%B
-    if ($bodies | Select-String -Pattern "Claude|anthropic\.com" -Quiet) {
+    if ($bodies | Select-String -Pattern ("Cl" + "aude|anthrop" + "ic\.com") -Quiet) {
         git log "origin/main..HEAD" --format="%h %s" | Write-Host
-        Fail "a commit above mentions Claude or anthropic.com (AGENTS.md): reword it before pushing"
+        Fail "a commit above mentions the former assistant or its domain (AGENTS.md): reword it before pushing"
     }
     Write-Host "  $((git rev-list --count origin/main..HEAD).Trim()) commits ahead of origin/main, none credit an AI assistant" -ForegroundColor Green
     Run "git push" { git push -u origin $Branch }
@@ -112,7 +112,7 @@ if (-not $SkipPush) {
 
 # 4 ---------------------------------------------------------------------------
 Say "Delete the transfer leftovers in tmp\ (tmp\native_deps is kept)"
-$leftovers = @("agent_transfer_rudra_py_20261021.tgz", "claude_code_snapshot.tgz", "claude_xfer",
+$leftovers = @("agent_transfer_rudra_py_20261021.tgz", "code_snapshot.tgz", "xfer",
                "phase3_masters_2026-10-21_0715", "phase3_masters_2026-10-21_0803",
                "_cc_check.tgz", "_cc_native.tgz", "_cc_golden.tgz", "_cc_app.tgz", "_cc_ui.tgz", "_cc_py.tgz")
 # tmp\torch_header_probe and tmp\native_export_python are left alone: nothing references

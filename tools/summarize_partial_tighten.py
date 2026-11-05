@@ -78,7 +78,7 @@ def main(argv=None) -> int:
                   f"{'' if flick is None else ('pass' if flick <= 0.02 else 'FAIL')}")
         else:
             print("  video: not run")
-    print("\nThe registered decision rule (claude_partial_tighten_fresh_20261102.json) decides; this table only collects.")
+    print("\nThe registered decision rule (research_partial_tighten_fresh_20261102.json) decides; this table only collects.")
     return 0
 
 

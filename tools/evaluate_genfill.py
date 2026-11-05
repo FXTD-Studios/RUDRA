@@ -1,4 +1,4 @@
-"""The registered gates of RUDRA's generative fill (claude_genfill_v1_20261027), 27 Oct 2026.
+"""The registered gates of RUDRA's generative fill (research_genfill_v1_20261027), 27 Oct 2026.
 
     python tools/evaluate_genfill.py --out <new dir> --base <Wan2.1-VACE-1.3B-diffusers> --lora <rudra_genfill.safetensors>
                                      [--scenes 24] [--frames 33] [--height 288] [--width 512] [--seed 20261029]
@@ -213,7 +213,7 @@ def main(argv=None):
     ap.add_argument('--overlap', type=int, default=8)
     ap.add_argument('--seed', type=int, default=20261029)
     ap.add_argument('--device', default='cuda')
-    ap.add_argument('--registration', default='configs/experiments/claude_genfill_v3_20261030.json')
+    ap.add_argument('--registration', default='configs/experiments/research_genfill_v3_20261030.json')
     ap.add_argument('--tiny', action='store_true', help=argparse.SUPPRESS)
     a = ap.parse_args(argv)
     import torch

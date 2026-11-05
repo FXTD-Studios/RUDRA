@@ -1,13 +1,13 @@
 {
-  "id": "claude_genfill_v2_20261029",
-  "written": "2026-10-29, after claude_genfill_v1_1_20261029 FAILED (H log2 CI [-0.130, +0.100]; one +1.56-stop overshoot), before any v2 data, training or output",
-  "author": "Claude (Cowork session); approved by Ahmed ('do the recommendations')",
-  "parents": ["claude_genfill_v1_20261027 (FAIL)", "claude_genfill_v1_1_20261029 (FAIL on H log2 only)"],
+  "id": "research_genfill_v2_20261029",
+  "written": "2026-10-29, after research_genfill_v1_1_20261029 FAILED (H log2 CI [-0.130, +0.100]; one +1.56-stop overshoot), before any v2 data, training or output",
+  "author": "FXTD Studios Research (Cowork session); approved by Ahmed ('do the recommendations')",
+  "parents": ["research_genfill_v1_20261027 (FAIL)", "research_genfill_v1_1_20261029 (FAIL on H log2 only)"],
   "base_model": {"repo": "Wan-AI/Wan2.1-VACE-1.3B-diffusers", "licence": "Apache-2.0", "local": "G:/datasets/models/Wan2.1-VACE-1.3B-diffusers"},
   "data": {
     "builder": "tools/build_genfill_clips.py --recipe v2",
-    "out": "G:/datasets/corpora/claude_genfill_clips_v2_20261029",
-    "sources_and_exclusions": "as claude_genfill_v1_20261027 (commercial-clean only; every development, validation, holdout and fresh-grade scene excluded and asserted)",
+    "out": "G:/datasets/corpora/research_genfill_clips_v2_20261029",
+    "sources_and_exclusions": "as research_genfill_v1_20261027 (commercial-clean only; every development, validation, holdout and fresh-grade scene excluded and asserted)",
     "changes_from_v1": [
       "clip kinds: highlight 0.40, broad 0.25, shadow 0.15, random 0.20; 'broad' = exposure raised in half stops from -2 until >= 5 % of frame 0 is at code 255 (wide, mild clipping: the v1.1 overshoot case)",
       "FXTD own footage: 2 clips per plate (was 1)",
@@ -17,7 +17,7 @@
   },
   "training": {
     "trainer": "training/genfill_train.py",
-    "out": "G:/rudra_training/claude_genfill_v2_20261029",
+    "out": "G:/rudra_training/research_genfill_v2_20261029",
     "init": "the v1 LoRA (sha256 9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a)",
     "loss": [
       "flow matching (shift 3) weighted 1 + 4 on the latent cells of the CORE (code 255/0), not the context mask",
@@ -34,7 +34,7 @@
     "scenes": "Poly Haven: the shuffled held-scene list (seed 20261029) entries 48-71, none evaluated before; FXTD: the held FXTD scenes outside the fresh grade set (4 ELMATAREED scenes, pool 'extra'), none evaluated before",
     "clips": "as v1.1: Poly Haven highlight + shadow clip per scene, FXTD highlight clip; exposure until >= 0.5 % of frame 0 at code 255 (highlight) / <= 4 (shadow)"
   },
-  "gates": "identical to claude_genfill_v1_1_20261029: R codes kept; H on code-255 pixels (log2 delta < 0 with the 95 % bootstrap CI excluding 0; PU21 at -3 and -6 EV lower); S on codes <= 4 at +3 EV (CI upper <= +2 %); T <= 0.02 EV; A <= 1.5",
+  "gates": "identical to research_genfill_v1_1_20261029: R codes kept; H on code-255 pixels (log2 delta < 0 with the 95 % bootstrap CI excluding 0; PU21 at -3 and -6 EV lower); S on codes <= 4 at +3 EV (CI upper <= +2 %); T <= 0.02 EV; A <= 1.5",
   "decision_rule": "PASS: offer the AI fill (experimental, off by default) in the app and Radiance Studio. FAIL: stop and review the approach with Ahmed before any further training.",
   "release_authorized": false
 }

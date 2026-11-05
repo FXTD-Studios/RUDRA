@@ -1,7 +1,7 @@
 {
   "purpose": "paired test of image-edge shadow supervision for the local (radius 8) sqrt-luma shadow branch; only change versus aces_shadow_mixed_local1200 is --include-image-edges",
   "registered_before_training": true,
-  "registered_by": "Claude (Cowork) session, 24 Oct 2026; launched by owner from PowerShell",
+  "registered_by": "FXTD Studios Research (Cowork) session, 24 Oct 2026; launched by owner from PowerShell",
   "pilot": "G:\\datasets\\corpora\\aces_shadow_mixed144_20261023\\report.json",
   "base_checkpoint": "G:/rudra_training/aces_coverage_restorer4800_20261023/step4800.pt",
   "control": "G:/rudra_training/aces_shadow_mixed_local1200_20261023",

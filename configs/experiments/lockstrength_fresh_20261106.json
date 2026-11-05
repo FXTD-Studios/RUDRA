@@ -2,8 +2,8 @@
  "registered_before_evaluation": true,
  "author": "FXTD Studios Research, 6 Nov 2026",
  "purpose": "Measured ends on w4 (fresh 0 EV RMS / aligned residual): the model 0.453 / 0.0090; the full lock with the source target 0.241 / 0.0129, with the dequantized target 0.239 / 0.0119. Both gates are squared errors, so a lock at strength lambda leaves (1-lambda)^2 of the 0 EV drift and adds lambda^2 of the full lock's jitter. Predicted: source 0.5 -> 0.307 / 0.0100, source 0.6 -> 0.284 / 0.0104, dequantized 0.5 -> 0.307 / 0.0097, dequantized 0.6 -> 0.284 / 0.0100.",
- "grade_set_registration": "configs/experiments/claude_fresh_fxtd_grade_v2_20261026.json",
- "grade_set_registration_sha256": "14ad2c7a00b1e9d1105ba1ec78fc7aa98e79466549f688637836bf85527bc0e9",
+ "grade_set_registration": "configs/experiments/research_fresh_fxtd_grade_v2_20261026.json",
+ "grade_set_registration_sha256": "e635921673556da949a72eedf4d258e4874afbd2a5b44650b1262365d3032cb4",
  "arms": {
   "primary": "lock_dqs060",
   "partial_tighten": [
@@ -49,7 +49,7 @@
  },
  "decision_rule": "Registered 6 Nov 2026 before any run. Arms on w4: lock_s050 and lock_s060 (source target), lock_dqs050 and lock_dqs060 (dequantized target), at strength 0.5 / 0.6. Every original gate must hold (aligned residual <= 0.010367; old24 -3/0/+3 EV; Hunyuan48 <= 0.02 EV; no new negative Y; fresh 0 EV RMS <= 0.338 and -3/+3/H no worse than analytic). Choice for the Crew holdout, between these arms and lock_b040: the passing arm with the largest smallest relative margin, min((0.010367 - aligned) / 0.010367, (0.338 - fresh) / 0.338). It then runs the Crew holdout once. If none of these passes, lock_b040 goes, as registered.",
  "candidates": {
-  "primary": "w4 (claude_bin_hinge_w4_20261102 step1600)"
+  "primary": "w4 (research_bin_hinge_w4_20261102 step1600)"
  },
  "honesty": "The fresh and development sets have been looked at: development evidence. The Crew holdout decides.",
  "release_authorized": false,

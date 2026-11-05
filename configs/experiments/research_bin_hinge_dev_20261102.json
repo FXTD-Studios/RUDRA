@@ -11,7 +11,7 @@
   "ramp": 1,
   "start": 0
  },
- "scope": "Paired development gates for the bin-hinge arms (claude_bin_hinge_w*_20261102.json), shipped pipeline unchanged. Original limits. No release qualification.",
+ "scope": "Paired development gates for the bin-hinge arms (research_bin_hinge_w*_20261102.json), shipped pipeline unchanged. Original limits. No release qualification.",
  "release_authorized": false,
  "forbid_new_negative_y": true,
  "registered_before_evaluation": true

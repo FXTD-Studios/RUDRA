@@ -6,7 +6,7 @@ gate, plus one dimension: each candidate is evaluated as the shipped pipeline
 the feathers the registration lists. The registration names the primary arm
 before anything is run; the gates are computed for it alone.
 
-    python tools/evaluate_route_arms.py --corpus <grade set> --registration configs/experiments/claude_full_only_route_20261101.json \
+    python tools/evaluate_route_arms.py --corpus <grade set> --registration configs/experiments/research_full_only_route_20261101.json \
         --candidate d6400=G:/rudra_training/partial_pcgrad_duration6400_retry1_20261025/step6400.pt --out <new json>
 """
 import argparse,hashlib,json,sys

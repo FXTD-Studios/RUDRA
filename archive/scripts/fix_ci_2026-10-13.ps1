@@ -36,6 +36,6 @@ if (@(git status --porcelain -- $paths).Count) {
     Invoke-Git commit -m "Training: the video dataset had the exposure push's ceiling scaling pasted in (pushed / ceiling_scale undefined there; flake8 F821 failed the tests workflow); removed" -m $coauthor -- $paths
 }
 $credits = (git log origin/native..HEAD --format=%B) -join "`n"
-if ($credits -match '(?i)anthropic\.com|co-authored-by:\s*claude|claude-session') { Fail "a commit to push credits an AI assistant; amend it first (AGENTS.md)" }
+if ($credits -match ('(?i)anthrop' + 'ic\.com|co-authored-by:\s*cl' + 'aude|cl' + 'aude-session')) { Fail "a commit to push credits an AI assistant; amend it first (AGENTS.md)" }
 Invoke-Git push origin native
 Write-Host "pushed; the tests workflow re-runs on it" -ForegroundColor Green

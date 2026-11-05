@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 SOURCES = 'G:/datasets/corpora/rudra_run05_sources_20261022/sources.jsonl'
 POLYHAVEN = 'G:/datasets/sources/polyhaven'
-FRESH = 'G:/rudra_training/claude_release_candidate_20261026/fresh_fxtd_grade_v2_20261026/report.json'
+FRESH = 'G:/rudra_training/research_release_candidate_20261026/fresh_fxtd_grade_v2_20261026/report.json'
 COMMERCIAL = ('CC0', 'FXTD Studios own footage', 'CC0 sources and authored geometry; source receipts retained')
 AP1_Y = np.array([.2722287168, .6740817658, .0536895174], np.float32)
 

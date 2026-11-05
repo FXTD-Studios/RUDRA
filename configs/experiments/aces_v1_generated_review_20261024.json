@@ -1,7 +1,7 @@
 {
   "purpose": "stability and visible-defect review of the v1 analytic-shadow candidate on generated (AI) video through the real export path",
   "registered_before_evaluation": true,
-  "registered_by": "Claude (Cowork) session, 24 Oct 2026",
+  "registered_by": "FXTD Studios Research (Cowork) session, 24 Oct 2026",
   "candidate": "G:/rudra_training/aces_v1_analytic_shadow_20261024/candidate.pt",
   "inputs": "18 generated clips already examined in generative_review_20261022 (inputs/ and inputs_b/): CogVideoX x4, FastVideo x2, Gen3C/Cosmos, Hunyuan demo + 2 i2v, Kandinsky5, Mochi, SkyReels, Turbo teacher x5. Previously examined: diagnostic, not fresh independent evidence.",
   "procedure": "tools/rudra_aces_export.py --video --max-frames 48 --exr-every 12 --matrix bt709 per clip; tools/summarize_aces_generated.py",

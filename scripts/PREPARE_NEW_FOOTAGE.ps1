@@ -45,7 +45,7 @@ if ($Stage -in @("all", "ingest")) {
 if ($Stage -in @("all", "register") -and (Test-Path $Registration)) {
     Say "Holdout already registered: verifying the seal (a holdout is registered once)"
     & $Python tools/holdout_kit.py verify $Registration --exclude-roots G:\datasets\corpora G:\rudra_training
-    if ($LASTEXITCODE -ne 0) { Fail "$Registration does not verify: stop and tell Claude, do not re-register" }
+    if ($LASTEXITCODE -ne 0) { Fail "$Registration does not verify: stop and tell FXTD Studios Research, do not re-register" }
 } elseif ($Stage -in @("all", "register")) {
     Say "The Crew's candidates (references not sensor-clipped)"
     $cand = Join-Path $HoldOut "candidates.jsonl"
@@ -68,5 +68,5 @@ if ($Stage -in @("all", "dryrun")) {
     if (Test-Path $Registration) { $ex += $Registration }
     & $Python tools/build_real_partial_corpus.py --sources $rows --plates (Join-Path $TrainOut "hdr") --exclude @ex `
         --out G:\datasets\corpora\real_partial_v1 --dry-run
-    Write-Host "`nAim for 300+ pairs from 20+ shots. Paste this whole output to Claude." -ForegroundColor Cyan
+    Write-Host "`nAim for 300+ pairs from 20+ shots. Paste this whole output." -ForegroundColor Cyan
 }

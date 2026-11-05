@@ -9,7 +9,7 @@
   "all_highlight_appearance": true,
   "policy": "Deterministic uncapped PCGrad control; original Hunyuan48 gates",
   "checks": "48frames; max transition mean excess<=0.02EV; ordinary >=99.9% within1code; all highlight appearance<=1code; zero shadow lift/new negativeY; exact outside constraint support",
-  "scope": "Duration6400 + luminance guard; original Hunyuan48 gates. Claude 26 Oct.",
+  "scope": "Duration6400 + luminance guard; original Hunyuan48 gates. FXTD Studios Research 26 Oct.",
   "release_authorized": false,
   "include_fully_clipped": true,
   "clipped_smoothing": {

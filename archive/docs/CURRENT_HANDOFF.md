@@ -511,7 +511,7 @@ crop phase and48px border merit full-frame equivalence measurement before more
 partial-route training. Next fixed TRAIN crop/phase/border audit, then targeted
 correction if mismatch confirmed. Evidence:
 docs/production/PARTIAL_PRESERVATION_2026-10-25.md and
-G:/rudra_training/claude_partial_finetune_20261025/ft_rel3_w05/preservation_independent_20261025.json.
+G:/rudra_training/research_partial_finetune_20261025/ft_rel3_w05/preservation_independent_20261025.json.
 Earlier entries below are historical; goal remains incomplete.
 
 **Current — partial-highlight fine-tune arms + native ACES v2 staged pipeline (25 Oct):**
@@ -523,7 +523,7 @@ rel3_w05 passes +3/-3EV but old H .38539 > cap .38252. Partially clipped 0EV err
 for partial-route training (outside_highlight_exact holds): gate needs restating. DECISION NEEDED:
 keep "no worse than analytic" exact grading gates (then more GPU research), or pre-declare a display
 tolerance (e.g. RMS within 0.1 code of analytic) BEFORE testing on a fresh holdout. Not holdout evidence.
-Evidence: G:/rudra_training/claude_partial_finetune_20261025/README.md.
+Evidence: G:/rudra_training/research_partial_finetune_20261025/README.md.
 NATIVE (no default changed): core/aces_v2 (compose, hybrid64 smoothing, 1-code constraint, run_frame),
 core/aces_v2_manifest (contract rudra_native_aces_v2_staged major 2), infer/aces_ocio_view.cpp
 (RUDRA_WITH_OCIO, OCIO 2.5.2 exact), infer/aces_g1_libtorch.cpp, ORT G1 in onnxruntime_backend.cpp,
@@ -557,7 +557,7 @@ the reference on old24, so the gate is consistent. Half-code discrete backtrack 
 aligned residual) and continuous display projection (0EV .0615-.081 but new H .315-.358) both rejected.
 Next (GPU): fine-tune partial-highlight route with a 0EV display-space loss vs target, keep hybrid64
 at inference, rerun all gates + generated-suite review. Development data reused; not holdout evidence.
-Evidence: G:/rudra_training/claude_clipped_smoothing_20261024/README.md. No default changed.
+Evidence: G:/rudra_training/research_clipped_smoothing_20261024/README.md. No default changed.
 
 **Current — learned-context TRAIN audit complete (24 October):**
 All four certified-blind images/43 crops audited;110,771 unique/701,385 repeated

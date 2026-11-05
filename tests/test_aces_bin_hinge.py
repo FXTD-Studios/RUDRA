@@ -49,7 +49,7 @@ def test_decision_table_reads_every_file_and_judges_each_gate(tmp_path, capsys):
     exp.mkdir()
     for name, aligned, g0, f0 in (("w4", .0095, .055, .10), ("w16", .0120, .050, .09)):
         out = _arm(tmp_path, name, aligned, g0, f0)
-        (exp / f"claude_bin_hinge_{name}_20261102.json").write_text(json.dumps(
+        (exp / f"research_bin_hinge_{name}_20261102.json").write_text(json.dumps(
             {"out": str(out), "bin_weight": 4 if name == "w4" else 16, "bin_tol_codes": 0.5}))
     summarize(["--arms", "w4", "w16", "--experiments", str(exp)])
     text = capsys.readouterr().out

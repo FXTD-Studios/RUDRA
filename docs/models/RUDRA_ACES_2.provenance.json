@@ -234,7 +234,7 @@
       }
     },
     {
-      "path": "G:\\rudra_training\\claude_d6400_plus3x16_1600_20261025\\preservation.json",
+      "path": "G:\\rudra_training\\research_d6400_plus3x16_1600_20261025\\preservation.json",
       "sha256": "2ddf413c53aa8dd63b70e9f565999eae4c4ad28a40a95e6463ae13b29ace5127",
       "names": [
         "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
@@ -246,7 +246,7 @@
       }
     },
     {
-      "path": "G:\\rudra_training\\claude_release_candidate_20261026\\hunyuan48_d6400_guard.json",
+      "path": "G:\\rudra_training\\research_release_candidate_20261026\\hunyuan48_d6400_guard.json",
       "sha256": "549aabe217ef2309018a3233342d505230f93a42290b85b230210dc2c10fa865",
       "names": [
         "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
@@ -260,7 +260,7 @@
       }
     },
     {
-      "path": "G:\\rudra_training\\claude_release_candidate_20261026\\fresh_fxtd_grade_20261026\\evaluation.json",
+      "path": "G:\\rudra_training\\research_release_candidate_20261026\\fresh_fxtd_grade_20261026\\evaluation.json",
       "sha256": "abdfdab5fb184cf736a198d976d8b93a6905af956db6e3697a6d49a71927e1cc",
       "names": [
         "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
@@ -285,7 +285,7 @@
       }
     },
     {
-      "path": "G:\\rudra_training\\claude_release_candidate_20261026\\rudra_aces_v2_d6400_guard_20261026\\manifest.json",
+      "path": "G:\\rudra_training\\research_release_candidate_20261026\\rudra_aces_v2_d6400_guard_20261026\\manifest.json",
       "sha256": "6788617e5eb1dc9a2579e6dbf4c195d863d2da4d1350747e33512e6179a51738",
       "names": [
         "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
@@ -335,7 +335,7 @@
       "verdict_fields": null
     },
     {
-      "path": "G:\\rudra_training\\claude_release_candidate_20261026\\fresh_fxtd_grade_v2_20261026\\claude_fresh_fxtd_grade_v2_20261026.json",
+      "path": "G:\\rudra_training\\research_release_candidate_20261026\\fresh_fxtd_grade_v2_20261026\\research_fresh_fxtd_grade_v2_20261026.json",
       "sha256": "14ad2c7a00b1e9d1105ba1ec78fc7aa98e79466549f688637836bf85527bc0e9",
       "names": [
         "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"
@@ -345,7 +345,7 @@
         "candidates": {
           "primary": "G:/rudra_training/partial_pcgrad_duration6400_retry1_20261025/step6400.pt (sha f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e) with hybrid64 smoothing, constraint include_fully_clipped, forbid_new_negative_y",
           "secondary_report_only": [
-            "G:/rudra_training/claude_d6400_plus3x16_1600_20261025/step1600.pt (same pipeline)"
+            "G:/rudra_training/research_d6400_plus3x16_1600_20261025/step1600.pt (same pipeline)"
           ]
         },
         "gates_primary": {
@@ -360,7 +360,7 @@
       }
     },
     {
-      "path": "G:\\rudra_training\\claude_release_candidate_20261026\\fresh_fxtd_grade_v2_20261026\\evaluation.json",
+      "path": "G:\\rudra_training\\research_release_candidate_20261026\\fresh_fxtd_grade_v2_20261026\\evaluation.json",
       "sha256": "a44139986c52b9c5e4fafdf407499d64b5d9e89abdc26dcc1da7fab6df80236c",
       "names": [
         "f73f14c7e74d5bb54d0cbf949b94365f2eeb12a3cc50ed3ea45d1ad1b163256e"

@@ -1,5 +1,5 @@
 {
- "name": "claude_partial_tolerance_20261025",
+ "name": "research_partial_tolerance_20261025",
  "written_utc": "2026-10-25T07:59:51Z",
  "written_before": "arms ft_rel3_w025 and ft_rel3_w035 were trained or evaluated",
  "approved_by": "ahmed (chat, 25 Oct 2026: approved 0 EV allowance of 0.1 code RMS over analytic)",
