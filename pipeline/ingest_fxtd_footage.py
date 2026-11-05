@@ -126,6 +126,16 @@ SOURCES: dict[str, dict] = {
         "encoding": "logc3", "gamut": "awg3",
         "camera": "ARRI ALEXA (LogC3 EI800 assumed, AWG3), LogC code values in EXR",
     },
+    # updown: TRAINING. ARRI ALEXA Mini LF open gate (4448x3096) camera plates, the _V1 files
+    # at the top level only (frames\ holds Nuke comp versions, V4/V5). Nuke tags the
+    # project "ARRI LogC3 (EI800)". TN_09_SC1140_SH1150 is also a flicker test clip.
+    "updown": {
+        "project": "updown (TN_09)",
+        "path": r"D:\updown",
+        "kind": "mov", "glob": "TN_*_SC*_SH*_V1.mov", "shot_regex": r"^(TN_\d+_SC\d+_SH\d+)",
+        "encoding": "logc3", "gamut": "awg3",
+        "camera": "ARRI ALEXA Mini LF open gate (LogC3 EI800, AWG3), ProRes 4444 12-bit",
+    },
     # thecrew: HOLDOUT ONLY, into its own folder, registered with tools/holdout_kit.py
     # before any case is built. The camera plates only (Sc_NN_ShNNN_Vnn, Nuke-tagged
     # AlexaV3LogC); the latest version of each shot.
