@@ -25,6 +25,24 @@ LUMA=np.array([.2722287168,.6740817658,.0536895174])
 def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
 
+def grade_set_pin(corpus_sha,want):
+    """How the grading set's recorded registration hash matches the one this run
+    registers: 'direct', 'repinned' or None.
+
+    The 6 Nov 2026 attribution cleanup (docs/ATTRIBUTION_CLEANUP_2026_11_06.json)
+    reworded registrations and recomputed their pins. A grading set built before
+    it (fresh_fxtd_grade_v2_rebuild_20261102) still records the registration's
+    hash from when it was built; the cleanup log names that exact old -> new pair.
+    Only that pair is accepted: same set, same cases (their own hashes are still
+    checked per case below), wording-only edit to the registration."""
+    if corpus_sha==want:return 'direct'
+    log=Path(__file__).resolve().parents[1]/'docs'/'ATTRIBUTION_CLEANUP_2026_11_06.json'
+    if log.exists():
+        for v in json.loads(log.read_text()).get('repinned',{}).values():
+            if v.get('new')==want and v.get('old')==corpus_sha:return 'repinned'
+    return None
+
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--corpus',type=Path,required=True);ap.add_argument('--registration',type=Path,required=True)
@@ -33,7 +51,8 @@ def main():
     if a.out.exists():raise ValueError('new output required')
     reg=json.loads(a.registration.read_text());corpus=json.loads((a.corpus/'report.json').read_text())
     # The grading set keeps its own registration; this one registers the arms.
-    if corpus['registration_sha256']!=reg['grade_set_registration_sha256']:raise ValueError('not the registered grading set')
+    pin=grade_set_pin(corpus['registration_sha256'],reg['grade_set_registration_sha256'])
+    if pin is None:raise ValueError('not the registered grading set')
     feathers=[float(f) for f in reg['arms'].get('full_only_feathers_px',[])];primary_arm=reg['arms']['primary']
     tightens=reg['arms'].get('partial_tighten',[])   # [{"name":..,"mode":..,"tol_codes":..,"iters":..}]
     torch.set_num_threads(2);view=reference_view();view.set_threads(4)
@@ -118,7 +137,7 @@ def main():
            'appearance':summary[primary]['remaining_display_errors']==0}
     result={'primary':primary,'gates':gates,'numerical_pass':all(gates.values()),'summary':summary,'bootstrap_vs_analytic':ci,'by_project':projects,
             'cases':len(rows),'scenes':len(scenes),'candidates':{n:s for n,(m,s) in models.items()},'rows':rows,
-            'registration_sha256':sha(a.registration),'corpus_report_sha256':sha(a.corpus/'report.json'),'evaluator_sha256':sha(__file__),
+            'registration_sha256':sha(a.registration),'grade_set_pin':pin,'grade_set_corpus_registration_sha256':corpus['registration_sha256'],'corpus_report_sha256':sha(a.corpus/'report.json'),'evaluator_sha256':sha(__file__),
             'scope':reg['limits'],'primary_arm':primary_arm,'feathers_px':feathers,'release_authorized':False}
     a.out.write_text(json.dumps(result,indent=1));print(json.dumps({k:result[k] for k in ('gates','summary','bootstrap_vs_analytic','by_project')},indent=1))
 
