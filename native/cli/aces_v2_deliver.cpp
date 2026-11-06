@@ -5,6 +5,8 @@
 #include <cctype>
 
 #include "rudra/core/gamut.hpp"
+#include "rudra/deliver/exr.hpp"
+#include "rudra/deliver/master.hpp"
 #include "rudra/core/hdr10.hpp"
 #include "rudra/core/metadata.hpp"
 #include "rudra/core/timecode.hpp"
@@ -15,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <limits>
 
@@ -98,6 +101,11 @@ Result<AcesDeliverOptions> aces_deliver_from_json(const nlohmann::json& req) {
     auto trims = aces_trims_from_json(req.value("trims", nlohmann::json()));
     if (!trims) return trims.error();
     o.trims = *trims;
+    if (req.contains("reconstruction_region") && req["reconstruction_region"].is_object()) {
+        auto rr = reconstruction_region_from_json(req["reconstruction_region"].dump());
+        if (!rr) return rr.error();
+        o.region = *rr;
+    }
     auto copies = parse_aces_log(req.value("log", std::string()), req.value("log_formats", std::string()));
     if (!copies) return copies.error();
     o.copies = *copies;
@@ -352,10 +360,32 @@ AcesFrameStamp aces_frame_stamp(const AcesDeliverOptions& o, std::size_t i, cons
     return s;
 }
 
+PlanarBuffer aces_region_blend(const ReconstructionRegion& region, const PlanarBuffer& acescg, const PlanarBuffer& baseline,
+                               const PlanarBuffer& codes) {
+    if (!region.enabled) return acescg;
+    PlanarBuffer out = acescg;
+    const std::size_t n = acescg.plane_size();
+    for (std::size_t i = 0; i < n; ++i) {
+        const float y = 0.2126f * std::clamp(codes.plane(0)[i], 0.0f, 1.0f) + 0.7152f * std::clamp(codes.plane(1)[i], 0.0f, 1.0f) +
+                        0.0722f * std::clamp(codes.plane(2)[i], 0.0f, 1.0f);
+        float wh = 1.0f, ws = 1.0f;
+        region_weights(y, region, wh, ws);
+        const float w = std::clamp(std::max(wh, ws), 0.0f, 1.0f);
+        for (int c = 0; c < 3; ++c) {
+            const float b = baseline.plane(c)[i];
+            out.plane(c)[i] = w == 0.0f ? b : w == 1.0f ? acescg.plane(c)[i] : b + w * (acescg.plane(c)[i] - b);
+        }
+    }
+    return out;
+}
+
 PlanarBuffer aces_trimmed(const AcesDeliverOptions& o, const PlanarBuffer& acescg, const PlanarBuffer& mask,
                           const aces_v2::AcesView& view, const PlanarBuffer& codes) {
-    if (o.trims.identity()) return acescg;
-    return aces_v2::apply_trims(acescg, aces_v2::view_inverse(view, codes), mask, o.trims);
+    if (o.trims.identity() && !o.region.enabled) return acescg;
+    const PlanarBuffer base = aces_v2::view_inverse(view, codes);
+    const PlanarBuffer in = aces_region_blend(o.region, acescg, base, codes);
+    if (o.trims.identity()) return in;
+    return aces_v2::apply_trims(in, base, mask, o.trims);
 }
 
 AcesLightLevel aces_light_level(const PlanarBuffer& acescg, const aces_v2::AcesView* hdr_pq, int index) {
@@ -477,6 +507,23 @@ Result<AcesFrameIn> AcesFrameFeed::next() {
     if (all_) return all_->next();
     if (at_ >= frames_.size()) return make_error(ErrorCode::InvalidArgument, "No more frames.");
     return aces_read_one(video_, frames_[at_++], log_);
+}
+
+Result<PlanarBuffer> aces_master_acescg(const fs::path& exr) {
+    auto e = read_exr(exr);
+    if (!e) return e.error();
+    const PlanarBuffer& px = e->pixels;
+    if (px.channels() < 3) return make_error(ErrorCode::InvalidArgument, "The EXR has no RGB.", exr.string());
+    PlanarBuffer rgb(3, px.height(), px.width());
+    for (int c = 0; c < 3; ++c) std::copy_n(px.plane(c), px.plane_size(), rgb.plane(c));
+    bool ap0 = false;
+    for (const auto& [name, payload] : e->attributes)
+        if (name == "chromaticities" && payload.size() >= sizeof(float)) {
+            float rx = 0;
+            std::memcpy(&rx, payload.data(), sizeof(float));   // OpenEXR is little-endian, as every target here
+            ap0 = std::abs(double(rx) - kAp0Chromaticities[0]) < 1e-3;
+        }
+    return ap0 ? convert_primaries(rgb, Primaries::Ap0, Primaries::Ap1) : rgb;
 }
 
 }  // namespace rudra

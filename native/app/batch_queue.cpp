@@ -233,7 +233,8 @@ DeliverChoice batch_effective(const BatchJob& j) {
     DeliverChoice c = j.choice;
     c.source = "aces";
     c = deliver_fit(c, true, j.shot.kind == "movie", j.shot.kind == "sequence");
-    if (!ai_fill_possible(c, true)) c.ai_fill = false;   // EXR stills and sequences only
+    // EXR stills and sequences only: the batch has no movie-from-filled-frames step (the Deliver tab has).
+    if (c.output == "movie" || !ai_fill_possible(c, true)) c.ai_fill = false;
     return c;
 }
 

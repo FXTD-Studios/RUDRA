@@ -473,6 +473,7 @@ QJsonObject MainWindow::aces_deliver_request(QString* why) const {
     }
     if (const QString reel = render_reel(); !reel.isEmpty()) req["reel"] = reel;
     if (aces_source_display_ != "bt1886") req["source_display"] = aces_source_display_;
+    if (const QJsonObject r = aces_region_field(); !r.isEmpty()) req["reconstruction_region"] = r;   // as the viewer shows it
     return req;
 }
 
@@ -525,7 +526,7 @@ void MainWindow::deliver_render() {
 void MainWindow::aces_deliver() {
     auto* status = findChild<QLabel*>("renderStatus");
     QString why;
-    const QJsonObject req = aces_deliver_request(&why);
+    QJsonObject req = aces_deliver_request(&why);
     if (req.isEmpty()) {
         status->setText(why);
         status->show();
@@ -534,6 +535,22 @@ void MainWindow::aces_deliver() {
         return;
     }
     halt_playback();
+    // A movie with the AI fill (6 Nov 2026): the masters as EXR first (the fill reads EXR), the
+    // movie made from the filled frames after it, with the same name, format, rate and timecode.
+    aifill_movie_req_ = {};
+    if (const DeliverChoice c = deliver_effective(); c.output == "movie" && c.ai_fill) {
+        QJsonObject enc{{"op", "encode"}, {"out", req.value("out")}, {"name", req.value("name")}, {"log", req.value("log")},
+                        {"log_formats", req.value("log_formats")}};
+        const double rate = shot_video_ && shot_video_->fps && *shot_video_->fps > 0 ? *shot_video_->fps : c.fps;
+        enc["fps"] = req.contains("fps") ? req.value("fps").toDouble() : rate;
+        for (const char* k : {"timecode", "reel"})
+            if (req.contains(k)) enc[k] = req.value(k);
+        aifill_movie_req_ = enc;
+        req["exr"] = c.gamut == "ap0" ? "half" : "float";
+        req["exr_gamut"] = c.gamut == "ap0" ? "ap0" : "acescg";
+        req.remove("log");
+        req.remove("log_formats");
+    }
     const QString out = req.value("out").toString();
     const int total = req.value("frames").isArray() ? int(req.value("frames").toArray().size()) : -1;
     log("Render destination: " + QDir::toNativeSeparators(out) + " (learned ACES 2.0, " + container_field_->text() + ")");
@@ -597,10 +614,23 @@ void MainWindow::aces_deliver_finished(const QJsonObject& o, const QString& out)
         if (auto* d = findChild<QLabel*>("colDelivered")) d->setText(QString::number(delivered_));
         if (!cancelled && n > 0 && deliver_effective().ai_fill) {
             QString why;
-            if (!start_genfill(out, &why)) {
+            // A movie with the AI fill: once the fill is in, its frames make the movie.
+            std::function<void(bool, QString)> then;
+            if (!aifill_movie_req_.isEmpty()) {
+                const QPointer<MainWindow> self(this);
+                then = [self, out](bool done, const QString&) {
+                    if (!self) return;
+                    if (done) self->encode_aifill_movie(out, self->genfill_last_out_);
+                    else self->aifill_movie_req_ = {};
+                };
+            }
+            if (!start_genfill(out, &why, then)) {
+                aifill_movie_req_ = {};
                 status->setText(text + QStringLiteral(" · AI fill not run: ") + why);
                 log("AI fill not run: " + why);
             }
+        } else {
+            aifill_movie_req_ = {};
         }
     }
     status->show();
@@ -634,72 +664,7 @@ bool MainWindow::review_genfill(const QString& dir_in, QString* why) {
     return true;
 }
 
-void MainWindow::suggest_genfill_prompt() {
-    auto* btn = findChild<QPushButton*>("deliverAiSuggest");
-    auto say = [this](const QString& t) { log(t); statusBar()->showMessage(t, 8000); };
-    QString why;
-    const auto setup = genfill_setup(&why);
-    if (!setup) return say(QStringLiteral("Suggest a prompt: the AI fill is not set up (") + why + ")");
-    if (!current_frame_) return say(QStringLiteral("Suggest a prompt: open a shot first"));
-    // The frame the viewer shows, as the SDR codes the fill's regions are made from.
-    const SdrImage& sdr = current_frame_->sdr;
-    Png8 png{sdr.width(), sdr.height(), 3, std::vector<std::uint8_t>(std::size_t(sdr.width()) * std::size_t(sdr.height()) * 3)};
-    for (int y = 0; y < sdr.height(); ++y)
-        for (int x = 0; x < sdr.width(); ++x)
-            for (int c = 0; c < 3; ++c)
-                png.data[(std::size_t(y) * std::size_t(sdr.width()) + std::size_t(x)) * 3 + std::size_t(c)] =
-                    std::uint8_t(std::lround(std::clamp(sdr.buffer().at(c, y, x), 0.0f, 1.0f) * 255.0f));
-    const QString file = QDir(QDir::tempPath()).filePath(
-        QStringLiteral("rudra_suggest_%1.png").arg(QCoreApplication::applicationPid()));
-    if (auto w = write_png8(file.toStdString(), png); !w) return say(QString::fromStdString(w.error().message));
-    auto* proc = new QProcess(this);
-    auto env = QProcessEnvironment::systemEnvironment();
-    const QString old = env.value("PYTHONPATH");
-    env.insert("PYTHONPATH", QString::fromStdString(setup->repo.string()) + (old.isEmpty() ? QString() : QDir::listSeparator() + old));
-    proc->setProcessEnvironment(env);
-    proc->setWorkingDirectory(QString::fromStdString(setup->repo.string()));
-    if (btn) btn->setEnabled(false);
-    const GenFillOptions o = deliver_effective().ai;
-    connect(proc, &QProcess::finished, this, [this, proc, btn, file](int, QProcess::ExitStatus) {
-        QFile::remove(file);
-        if (btn) btn->setEnabled(true);
-        proc->deleteLater();
-        QString why2;
-        const auto r = parse_prompt_suggestions(proc->readAllStandardOutput(), &why2);
-        if (!r) {
-            log("Suggest a prompt: " + why2 + " " + QString::fromUtf8(proc->readAllStandardError()).right(400));
-            statusBar()->showMessage("Suggest a prompt: " + why2, 8000);
-            return;
-        }
-        auto* menu = new QMenu(this);
-        menu->setAttribute(Qt::WA_DeleteOnClose);
-        auto add = [this, menu](QMenu* m, const PromptSuggestion& p) {
-            auto* a = m->addAction(p.label + (p.cached ? QStringLiteral("  \u00b7 ready") : QString()) + QStringLiteral("  \u2014 ") + p.text);
-            a->setToolTip(p.reason.isEmpty() ? p.text : p.reason);
-            connect(a, &QAction::triggered, this, [this, p] {
-                const bool shadow = p.region == "shadow";
-                if (auto* le = findChild<QLineEdit*>(shadow ? "deliverAiPromptShadow" : "deliverAiPromptHighlight")) le->setText(p.text);
-                set_deliver(shadow ? "ai_prompt_shadow" : "ai_prompt_highlight", p.text);
-                log("AI fill prompt: " + p.text + (p.reason.isEmpty() ? QString() : " (" + p.reason + ")"));
-            });
-        };
-        menu->setToolTipsVisible(true);
-        if (r->suggested.empty()) {
-            menu->addAction(QStringLiteral("Nothing fully clipped in this frame: nothing for the fill to draw"))->setEnabled(false);
-        } else {
-            menu->addSection(QStringLiteral("Suggested for this frame"));
-            for (const auto& p : r->suggested) add(menu, p);
-        }
-        auto* all = menu->addMenu(QStringLiteral("All presets"));
-        all->setToolTipsVisible(true);
-        for (const auto& p : r->presets) add(all, p);
-        auto* b = findChild<QPushButton*>("deliverAiSuggest");
-        menu->popup(b ? b->mapToGlobal(QPoint(0, b->height())) : QCursor::pos());
-    });
-    proc->start(QString::fromStdString(setup->python.string()), genfill_suggest_arguments(*setup, o, {file}));
-}
-
-bool MainWindow::start_genfill(const QString& master_dir, QString* why) {
+bool MainWindow::start_genfill(const QString& master_dir, QString* why, std::function<void(bool, QString)> finished) {
     // The Deliver render's: its frames only when it wrote into a folder that holds others.
     GenFillOptions o = deliver_effective().ai;
     QString base = master_dir;
@@ -707,7 +672,69 @@ bool MainWindow::start_genfill(const QString& master_dir, QString* why) {
         o.glob = render_name_for_fill_ + render_separator_ + QString("[0-9]").repeated(render_padding_) + "*.exr";
         base = QDir(master_dir).filePath(render_name_for_fill_);
     }
-    return start_genfill_with(master_dir, o, base, {}, why);
+    return start_genfill_with(master_dir, o, base, std::move(finished), why);
+}
+
+void MainWindow::encode_aifill_movie(const QString& master_dir, const QString& fill_dir) {
+    auto* status = findChild<QLabel*>("renderStatus");
+    QJsonObject req = aifill_movie_req_;
+    aifill_movie_req_ = {};
+    if (req.isEmpty()) return;
+    // This render's filled frames, in order: the fill folder's, or the master's once fixed in place.
+    const QString prefix = req.value("name").toString() + render_separator_;
+    QJsonArray exrs;
+    for (const QString& f : genfill_filled_frames(fill_dir, master_dir))
+        if (QFileInfo(f).fileName().startsWith(prefix)) exrs.append(qp(to_path(f)));
+    if (exrs.isEmpty()) {
+        const QString t = QStringLiteral("AI fill: no filled frames were found for the movie in %1").arg(QDir::toNativeSeparators(master_dir));
+        status->setText(t);
+        status->show();
+        log(t);
+        return;
+    }
+    req["exrs"] = exrs;
+    if (!aces_engine_) return;
+    const int total = int(exrs.size());
+    status->setText(QStringLiteral("Making the movie from the AI-filled frames…"));
+    status->show();
+    btn_master_->setToolTip("Click to stop the movie (the filled EXR frames stay)");
+    const QPointer<MainWindow> self(this);
+    aces_deliver_id_ = -1;
+    const int id = aces_engine_->request(
+        req,
+        [self, master_dir](const QJsonObject& o) {
+            if (!self) return;
+            self->aces_deliver_id_ = 0;
+            self->btn_master_->setToolTip({});
+            auto* st = self->findChild<QLabel*>("renderStatus");
+            QString t;
+            if (!o.value("ok").toBool())
+                t = QStringLiteral("The AI-filled movie was not made: ") + (o.value("error").toString() + ' ' + o.value("detail").toString()).trimmed() +
+                    QStringLiteral(" (the filled EXR frames are in %1)").arg(QDir::toNativeSeparators(master_dir));
+            else if (o.value("cancelled").toBool())
+                t = QStringLiteral("Movie stopped; the filled EXR frames are in %1").arg(QDir::toNativeSeparators(master_dir));
+            else
+                t = QStringLiteral("AI-filled movie: %1 (%2 frames; the filled EXR frames are beside it)")
+                        .arg(QDir::toNativeSeparators(o.value("movie").toString()))
+                        .arg(o.value("frames").toInt()) +
+                    (o.value("hdr10").toString().isEmpty()
+                         ? QString()
+                         : QStringLiteral(" · HDR10 MaxCLL %1 / MaxFALL %2 nits")
+                               .arg(std::lround(std::ceil(o.value("maxcll").toDouble())))
+                               .arg(std::lround(std::ceil(std::min(o.value("maxfall").toDouble(), o.value("maxcll").toDouble())))));
+            st->setText(t);
+            st->show();
+            self->log(t);
+            self->refresh_enabled();
+            self->sync_ui();
+        },
+        [self, total](const QJsonObject& p) {
+            if (!self) return;
+            if (auto* st = self->findChild<QLabel*>("renderStatus"))
+                st->setText(QStringLiteral("Making the AI-filled movie %1 / %2").arg(p.value("index").toInt()).arg(total));
+        });
+    if (aces_deliver_id_ != 0) aces_deliver_id_ = id;
+    refresh_enabled();
 }
 
 bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOptions& options, const QString& out_base,

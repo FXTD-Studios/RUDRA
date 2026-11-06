@@ -195,6 +195,26 @@ QString preview_name(int index) { return QStringLiteral("preview.%1.exr").arg(in
 
 }  // namespace
 
+// Why a finished preview may look like nothing (6 Nov 2026): the fill invents only where
+// the master's SDR view is fully clipped (code 255) or crushed (0), and only above SDR
+// white, which a display peak near 203 nits shows as plain white either way.
+QString genfill_preview_hint(double changed, bool region_on, double display_nits) {
+    if (changed <= 0.0)
+        return QStringLiteral(". Nothing was invented on this frame: the AI fill acts only where the master's SDR "
+                              "view is fully clipped (code 255) or crushed (0)%1, and this frame has none there. "
+                              "Preview a frame with blown highlights.")
+            .arg(region_on ? QStringLiteral(" inside the reconstruction region") : QString());
+    if (display_nits < 600.0)
+        return QStringLiteral(". The invented detail is above SDR white: at a %1-nit display peak it shows as white. "
+                              "Raise Display peak (1,000 nits) or click Invented to see where it acts.")
+            .arg(display_nits, 0, 'f', 0);
+    return {};
+}
+
+namespace {
+
+}  // namespace
+
 bool MainWindow::genfill_previewing() const { return genfill_preview_busy_; }
 
 void MainWindow::preview_genfill() {
@@ -221,6 +241,8 @@ void MainWindow::preview_genfill() {
     const auto setup = genfill_setup(&why);
     if (!setup) return say(why + QStringLiteral(" Setup… > Set up automatically does it for you."));
     halt_playback();
+    // The suggested prompts for this frame, over the viewer while it fills (6 Nov 2026).
+    if (prompt_suggest_frame_ != current_ || !prompt_suggestions_) run_prompt_suggestions(false, /*quiet=*/true);
 
     const int n = int(frames_.size());
     const bool movie = shot_video_.has_value() && !shot_sources_.empty();
@@ -252,6 +274,7 @@ void MainWindow::preview_genfill() {
                                                  aces_trims_.exposure_ev, aces_trims_.contrast); !t.isEmpty())
         req["trims"] = t;
     if (aces_source_display_ != "bt1886") req["source_display"] = aces_source_display_;
+    if (const QJsonObject r = aces_region_field(); !r.isEmpty()) req["reconstruction_region"] = r;
 
     genfill_preview_busy_ = true;
     genfill_preview_.reset();
@@ -273,6 +296,7 @@ void MainWindow::preview_genfill() {
                 if (st2) st2->setText(t);
                 self->log(t);
                 self->refresh_enabled();
+                self->sync_ai_prompt_bar();
             };
             if (!o.value("ok").toBool() || o.value("cancelled").toBool())
                 return end(o.value("cancelled").toBool()
@@ -369,7 +393,9 @@ void MainWindow::preview_genfill() {
                                       : QString())
                             .arg(100.0 * self->genfill_preview_->changed, 0, 'f', 2)
                             .arg(n)
-                            .arg(whole_min, 0, 'f', whole_min < 10 ? 1 : 0));
+                            .arg(whole_min, 0, 'f', whole_min < 10 ? 1 : 0) +
+                        genfill_preview_hint(self->genfill_preview_->changed, !options.region_json.isEmpty(),
+                                             self->session_.display_nits()));
                     self->show_genfill_preview(QStringLiteral("fill"));
                 },
                 &why2);
@@ -383,6 +409,7 @@ void MainWindow::preview_genfill() {
         });
     if (genfill_preview_master_id_ != 0) genfill_preview_master_id_ = id;   // still running (a refusal answers at once)
     refresh_enabled();
+    sync_ai_prompt_bar();
 }
 
 void MainWindow::show_genfill_preview(const QString& which) {
@@ -391,26 +418,22 @@ void MainWindow::show_genfill_preview(const QString& which) {
         if (st) st->setText(QStringLiteral("No AI fill preview yet: Preview AI fill fills the frames around the playhead."));
         return;
     }
-    if (current_ != genfill_preview_->index) {   // the viewer moved on: back to the previewed frame first
-        step_to(genfill_preview_->index);
-        if (st)
-            st->setText(QStringLiteral("The preview is of frame %1: back to it; click %2 again once it is shown.")
-                            .arg(genfill_preview_->index + 1)
-                            .arg(which == "mask" ? "Invented" : which == "master" ? "Master" : "AI fill"));
-        return;
-    }
+    // The viewer moved on: back to the previewed frame; the picture asked for goes up when it
+    // lands (apply_fill_view runs on every frame shown), with no second click (6 Nov 2026).
+    const bool away = current_ != genfill_preview_->index;
+    if (away) step_to(genfill_preview_->index);
     genfill_preview_show_ = which;
     const auto& p = *genfill_preview_;
-    const auto img = which == "master" ? p.master : which == "mask" ? p.mask : p.fill;
-#ifdef RUDRA_APP_VIEWER
-    if (viewer_ && img) {
-        // The plain ACES inverse stays the baseline (Baseline view, the wipe) when it is this frame's.
-        const bool base_ok = aces_base_img_ && aces_base_img_->width() == img->width() && aces_base_img_->height() == img->height();
-        const bool codes_ok = aces_codes_.size() == std::size_t(img->width()) * std::size_t(img->height());
-        viewer_->set_composited(*img, base_ok ? *aces_base_img_ : *p.master, codes_ok ? aces_codes_ : std::vector<float>{});
-        if (aces_sdr_img_) viewer_->set_source_sdr(*aces_sdr_img_);
+    if (which == "fill") {
+        // The AI fill: the viewer's AI fill switch on, so it stays on this frame and the
+        // previewed ones around it whatever the route renders next (6 Nov 2026).
+        genfill_preview_pinned_ = false;
+        if (auto* t = findChild<QPushButton*>("vtAiFill"); t && !t->isChecked()) t->setChecked(true);   // -> set_fill_view
+        else set_fill_view(true);
+    } else {
+        genfill_preview_pinned_ = true;
+        if (!away) apply_fill_view();
     }
-#endif
     for (const char* id : {"deliverAiShowFill", "deliverAiShowMaster", "deliverAiShowMask"})
         if (auto* b = findChild<QPushButton*>(id)) b->setChecked(QString::fromLatin1(id).endsWith(
                                                          which == "mask" ? "Mask" : which == "master" ? "Master" : "Fill"));
@@ -469,30 +492,63 @@ std::shared_ptr<const NetworkLinearImage> MainWindow::fill_view_frame(int index)
     return img;
 }
 
-bool MainWindow::apply_fill_view() {
-    if (!fill_view_on_ || !aces_routed()) return false;
+bool MainWindow::apply_fill_view(bool quiet) {
+#ifdef RUDRA_APP_VIEWER
+    // The base the Changes layer compares with: the plain ACES inverse when it is this size.
+    auto show = [this](const NetworkLinearImage& img, const NetworkLinearImage& fallback_base) {
+        if (!viewer_) return;
+        const bool base_ok = aces_base_img_ && aces_base_img_->width() == img.width() && aces_base_img_->height() == img.height();
+        const bool codes_ok = aces_codes_.size() == std::size_t(img.width()) * std::size_t(img.height());
+        viewer_->set_composited(img, base_ok ? *aces_base_img_ : fallback_base, codes_ok ? aces_codes_ : std::vector<float>{});
+        if (aces_sdr_img_ && aces_sdr_img_->width() == img.width() && aces_sdr_img_->height() == img.height())
+            viewer_->set_source_sdr(*aces_sdr_img_);
+    };
+#endif
+    if (frames_.empty()) return false;
+    // 6 Nov 2026: the preview's Master / Invented picture, pinned to the previewed frame. It was
+    // shown once and the next frame the route rendered (any slider, the learned frame landing)
+    // replaced it, so the preview looked as if it had done nothing.
+    if (genfill_preview_pinned_ && genfill_preview_) {
+        if (current_ != genfill_preview_->index) {
+            genfill_preview_pinned_ = false;
+        } else if (genfill_preview_show_ != "fill") {
+            const auto& p = *genfill_preview_;
+            const auto img = genfill_preview_show_ == "master" ? p.master : p.mask;
+#ifdef RUDRA_APP_VIEWER
+            if (img) show(*img, *p.master);
+#endif
+            return img != nullptr;
+        }
+    }
+    if (!fill_view_on_) return false;
+    // Any route (6 Nov 2026): the fill is of the learned ACES master, but the analytic route's
+    // viewer showed nothing at all with the AI fill on.
     const auto img = fill_view_frame(current_);
     if (!img) {
-        statusBar()->showMessage(QStringLiteral("AI fill: no fill for frame %1 (Preview AI fill, or render with AI fill)").arg(current_ + 1), 3000);
+        if (!quiet)
+            statusBar()->showMessage(QStringLiteral("AI fill: no fill for frame %1 (Preview AI fill, or render with AI fill)").arg(current_ + 1), 3000);
         return false;
     }
 #ifdef RUDRA_APP_VIEWER
-    if (viewer_) {
-        const bool base_ok = aces_base_img_ && aces_base_img_->width() == img->width() && aces_base_img_->height() == img->height();
-        const bool codes_ok = aces_codes_.size() == std::size_t(img->width()) * std::size_t(img->height());
-        viewer_->set_composited(*img, base_ok ? *aces_base_img_ : *img, codes_ok ? aces_codes_ : std::vector<float>{});
-    }
+    show(*img, *img);
 #endif
     return true;
 }
 
 void MainWindow::set_fill_view(bool on) {
+    if (fill_view_on_ == on) {
+        if (on) apply_fill_view();
+        return;
+    }
     fill_view_on_ = on;
+    sync_ai_prompt_bar();
     if (on) {
+        genfill_preview_pinned_ = false;
         if (!apply_fill_view()) return;
         statusBar()->showMessage(QStringLiteral("Viewer: the AI fill (Changes shows what it invented)"), 4000);
-    } else if (aces_routed() && !frames_.empty()) {
-        if (!aces_rt_playing_) aces_request(current_);   // back to the frame without the fill
+    } else {
+        genfill_preview_pinned_ = false;
+        if (!frames_.empty()) step_to(current_);   // back to the frame without the fill, on whichever route
     }
 }
 

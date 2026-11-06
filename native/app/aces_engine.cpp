@@ -151,7 +151,7 @@ int AcesEngine::request(QJsonObject req, Reply on_reply, Reply on_progress) {
         if (on_reply) on_reply(QJsonObject{{"id", id}, {"ok", false}, {"error", status_text()}});
         return id;
     }
-    if (req.value("op").toString() == "master") {
+    if (const QString op = req.value("op").toString(); op == "master" || op == "encode") {   // one at a time; cancellable
         if (busy()) {
             if (on_reply) on_reply(QJsonObject{{"id", id}, {"ok", false}, {"error", busy_text()}});
             return id;

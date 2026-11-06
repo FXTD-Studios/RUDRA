@@ -83,3 +83,25 @@ def test_a_backend_failure_says_where_and_what(frames, tmp_path):
                  "--report", str(root / "r.json")]) == 1
     w = json.loads((root / "r.json").read_text())["frames"][0]["B_backends"]
     assert (w["worst_pixel"]["x"], w["worst_pixel"]["y"]) == (20, 10) and w["pixels_over_limit"] >= 1
+
+
+def test_one_pixel_on_the_constraint_threshold_is_not_a_backend_failure(tmp_path):
+    """PR #48 (6 Nov 2026): one pixel of a frame half a code apart, the rest identical, is
+    the 1-code backtrack taking another side in another runtime: the limit holds at p99.9
+    and the max within 1 code. Over --b-max anywhere still fails."""
+    rng = np.random.default_rng(11)
+    codes = rng.integers(0, 256, size=(48, 64, 3), dtype=np.uint8)   # > 1000 pixels: one is under 0.1 %
+    src = tmp_path / "src"; src.mkdir()
+    cv2.imwrite(str(src / "f001.png"), codes[..., ::-1])
+    view = ACES2View()
+    disp = codes.astype(np.float32) / 255.0
+    a = tmp_path / "a"; a.mkdir()
+    _write_exr(a / "f001.exr", np.asarray(view.inverse(disp), np.float32))
+    nudged = disp.copy(); nudged[12, 3] = np.clip(nudged[12, 3] + 0.55 / 255.0, 0, 1)
+    one = tmp_path / "one"; one.mkdir()
+    _write_exr(one / "f001.exr", np.asarray(view.inverse(nudged), np.float32))
+    args = ["--source", str(src), "--master", str(a), "--b-limit", "0.25", "--report", str(tmp_path / "r.json")]
+    assert main(args + ["--other", str(one)]) == 0
+    b = json.loads((tmp_path / "r.json").read_text())["frames"][0]["B_backends"]
+    assert 0.25 < b["max"] <= 1.0 and b["p999"] <= 0.25
+    assert main(args + ["--other", str(one), "--b-max", "0.25"]) == 1

@@ -684,6 +684,8 @@ void MainWindow::session_changed(std::uint32_t what) {
                                      });
         if (!same) start_engine(frames_, current_);
     }
+    // 6 Nov 2026: the learned route takes the reconstruction region too: a change shows again.
+    if ((what & Session::Grade) && aces_routed() && !(session_.grade.region == aces_region_sent_)) aces_request(current_);
     if (what & (Session::Grade | Session::Delivery)) {
         // The headroom route snapshots the grade after every change, undo and
         // restore included, and takes the frame on screen again (or switches
@@ -1384,6 +1386,7 @@ void MainWindow::show_own_values() {
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) viewer_->set_frame({cur->sdr, cur->fields, cur->scalars, cur->model});
 #endif
+    apply_fill_view(/*quiet=*/true);
     current_frame_ = std::move(cur);
     run_stats();
 }
@@ -1707,6 +1710,7 @@ void MainWindow::sync_ui() {
     sync_deliver();
     sync_aces_trims();
     sync_simple();
+    sync_ai_prompt_bar();
 }
 
 void MainWindow::keyPressEvent(QKeyEvent* e) {
@@ -1785,6 +1789,9 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
         viewer_->set_composite(session_.composite_params());
     }
 #endif
+    // 6 Nov 2026: the AI fill stays on the viewer on this route too (a new frame replaced it).
+    const bool filled = apply_fill_view(/*quiet=*/true);
+    (void)filled;
     cur->header = std::move(header);
     cur->index = current_;
     frame_ready_ok_ = true;

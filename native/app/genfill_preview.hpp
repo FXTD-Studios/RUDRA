@@ -22,6 +22,9 @@ class QProcess;
 
 namespace rudra::app {
 
+// The preview's last sentence: why it may look like nothing (no clipped pixels, a low display peak).
+QString genfill_preview_hint(double changed, bool region_on, double display_nits);
+
 class GenFillServer {
 public:
     using Event = std::function<void(const QJsonObject&)>;

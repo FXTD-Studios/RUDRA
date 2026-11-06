@@ -540,6 +540,7 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     vbox->setContentsMargins(0, 0, 0, 0);
     vbox->setSpacing(0);
     build_viewer_toolbar(vbox, viewer_box);
+    build_ai_prompt_bar(vbox, viewer_box);   // 6 Nov 2026: the AI fill's prompt and its suggestions, over the picture
     viewer_stack_ = new QStackedWidget(viewer_box);
     viewer_stack_->setObjectName("viewerStack");
     auto* empty = new QWidget(viewer_stack_);
@@ -1183,6 +1184,15 @@ QWidget* MainWindow::build_right_rail() {
             box->setObjectName("deliverAiFillOptions");
             auto* bv = column(box, 0, 2);
             bv->setContentsMargins(14, 0, 0, 4);
+            {   // 6 Nov 2026: the suggested prompts first, one click each (Suggest fills them in)
+                bv->addWidget(label("Suggested prompts", {}, "note", box));
+                auto* chips = new QWidget(box);
+                chips->setObjectName("aiSuggestChips");
+                auto* cv = new QVBoxLayout(chips);
+                cv->setContentsMargins(0, 0, 0, 2);
+                cv->setSpacing(2);
+                bv->addWidget(chips);
+            }
             auto spin = [&](const char* id, const QString& key, int lo, int hi, const QString& special, const char* tip) {
                 auto* sb = new QSpinBox(box);
                 sb->setObjectName(id);
