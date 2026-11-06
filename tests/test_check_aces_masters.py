@@ -72,3 +72,14 @@ def test_non_finite_values_fail(frames):
     m = master.copy(); m[0, 0, 0] = np.nan
     _write_exr(nan / "f001.exr", m)
     assert main(["--source", str(root / "src"), "--master", str(nan), "--report", str(root / "r.json")]) == 1
+
+
+def test_a_backend_failure_says_where_and_what(frames, tmp_path):
+    root, master, _ = frames
+    b = root / "b"; b.mkdir()
+    other = master.copy(); other[10, 20] *= 1.2
+    _write_exr(b / "f001.exr", other)
+    assert main(["--source", str(root / "src"), "--master", str(root / "a"), "--other", str(b), "--b-limit", "0.25",
+                 "--report", str(root / "r.json")]) == 1
+    w = json.loads((root / "r.json").read_text())["frames"][0]["B_backends"]
+    assert (w["worst_pixel"]["x"], w["worst_pixel"]["y"]) == (20, 10) and w["pixels_over_limit"] >= 1
