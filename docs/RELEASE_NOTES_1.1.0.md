@@ -4,6 +4,17 @@ Control over where the reconstruction acts, and an AI fill you can steer, previe
 up in one click. The promise is unchanged: the SDR you delivered still shows within one
 8-bit code of the original, and anything RUDRA invents is marked.
 
+## Opening it the first time
+
+RUDRA is free and open source (Apache 2.0), and the packages are not signed with a paid
+certificate, so your system asks once:
+
+- **Windows**: "Windows protected your PC" → **More info** → **Run anyway**.
+- **macOS**: right-click RUDRA.app → **Open** → **Open** (or System Settings › Privacy &
+  Security › **Open Anyway**).
+
+Download it only from this GitHub page; the checksums are listed with each release.
+
 ## The licence fix, for certain
 
 1.1.0 carries the 1.0.3 fix: **the packages hold no model weights**. Every
