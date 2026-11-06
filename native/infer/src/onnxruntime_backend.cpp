@@ -30,6 +30,7 @@
 #include "rudra/infer/aces_v2_runtime.hpp"
 #include "rudra/infer/backend.hpp"
 #include <memory>
+#include <mutex>
 
 namespace rudra {
 namespace {
@@ -291,9 +292,37 @@ Result<G1Fn> load_g1_onnxruntime(const std::filesystem::path& onnx, const std::s
         } else if (device != "cpu") {
             return make_error(ErrorCode::InvalidArgument, "Unknown device for the ACES model.", device);
         }
-        auto session = std::make_shared<Ort::Session>(rudra::env(), onnx.c_str(), so);
-        G1Fn fn = [session](const PlanarBuffer& source, const PlanarBuffer& baseline) -> Result<G1Output> {
+        // Core ML compiles the graph when the session is made. With the free
+        // h/w dimensions the restorer's Pad->AveragePool chain has no size and
+        // Core ML refuses it ("generic_pool_kernel: Zero dimension in output
+        // shape"). So on Core ML the session is made per frame size, with h and
+        // w fixed; every other device keeps one dynamic-shape session.
+        const bool per_size = device == "coreml";
+        struct Sessions {
+            std::mutex m;
+            std::shared_ptr<Ort::Session> s;
+            int64_t h = -1, w = -1;
+        };
+        auto cache = std::make_shared<Sessions>();
+        if (!per_size) cache->s = std::make_shared<Ort::Session>(rudra::env(), onnx.c_str(), so);
+        auto opts = std::make_shared<Ort::SessionOptions>(so.Clone());
+        auto session_for = [cache, per_size, onnx, opts](int64_t h, int64_t w) -> std::shared_ptr<Ort::Session> {
+            std::lock_guard<std::mutex> lock(cache->m);
+            if (!per_size) return cache->s;
+            if (!cache->s || cache->h != h || cache->w != w) {
+                Ort::SessionOptions sized = opts->Clone();
+                Ort::ThrowOnError(Ort::GetApi().AddFreeDimensionOverrideByName(sized, "h", h));
+                Ort::ThrowOnError(Ort::GetApi().AddFreeDimensionOverrideByName(sized, "w", w));
+                cache->s.reset();
+                cache->s = std::make_shared<Ort::Session>(rudra::env(), onnx.c_str(), sized);
+                cache->h = h;
+                cache->w = w;
+            }
+            return cache->s;
+        };
+        G1Fn fn = [session_for](const PlanarBuffer& source, const PlanarBuffer& baseline) -> Result<G1Output> {
             try {
+                auto session = session_for(source.height(), source.width());
                 Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
                 std::array<int64_t, 4> shape{1, 3, source.height(), source.width()};
                 std::array<Ort::Value, 2> in{
