@@ -106,7 +106,10 @@ PipeText pipe_text(const std::string& container, double display_nits, std::optio
     t.in = (h.source_bits && *h.source_bits ? std::to_string(*h.source_bits) + "-bit " : std::string()) +
            "sRGB · Rec.709";
     t.working = "scene-linear · 203 nits = 1.0";
-    t.master = container != "linear" ? "ACES 2065-1 EXR, half" : "linear Rec.2020 EXR, half";
+    t.master = container == "linear"   ? "linear Rec.2020 EXR, half"
+               : container == "acescg" ? "ACEScg EXR, half"
+               : container == "rec709" ? "linear Rec.709 EXR, half"
+                                       : "ACES 2065-1 EXR, half";
     t.view = "exposure + clip · " + js_fmt(js_round(display_nits), 0) + " nits";
     const bool has = maxcll && std::isfinite(*maxcll);
     if (has && *maxcll > display_nits * 1.001) {

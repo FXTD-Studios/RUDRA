@@ -52,8 +52,9 @@ struct ViewUbo {
     float paint[4];    // x the painted mask's channel (< 0 none), yzw its tint (3.3)
     float look[4];     // revision 6: x 2^view_ev, y 1 / gamma, z gamma on, w the SDR light bound
     float ab[4];       // revision 6: x shown, y wipe left, z wipe right (0 model, 1 baseline, 2 sdr), w zebras
+    float region[4];   // RUDRA 1.1: x 1 when the region overlay texture is bound and on, yzw its tint (sRGB)
 };
-static_assert(sizeof(ViewUbo) == 52 * sizeof(float));
+static_assert(sizeof(ViewUbo) == 56 * sizeof(float));
 
 // The Hold block of shaders/hold.frag (the static hold while playing).
 struct HoldUbo {
@@ -175,6 +176,8 @@ inline ViewUbo view_ubo(const ViewParams& params, int width, bool have_sdr = fal
     u.ab[1] = float(int(params.wipe_left));
     u.ab[2] = float(int(params.wipe_right));
     u.ab[3] = float((params.clamp_zebra ? 1 : 0) | (params.clip_zebra ? 2 : 0));
+    u.region[0] = params.region_overlay && params.overlay_region.enabled ? 1.0f : 0.0f;
+    for (int k = 0; k < 3; ++k) u.region[1 + k] = params.region_tint[std::size_t(k)];
     return u;
 }
 

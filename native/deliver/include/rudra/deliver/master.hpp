@@ -47,6 +47,20 @@ struct MasterRequest {
     // (rudra:reconstructionRegion) and the sidecar only when on, so every
     // master before reads the same.
     ReconstructionRegion region;
+    // RUDRA 1.1 priority 3 (5 Nov 2026): write <name>.mattes.exr beside the master: float32
+    // channels rudra.highlight, rudra.shadow, rudra.changed, rudra.region (with a region) and
+    // rudra.paint.<band> (painted masks), core reconstruction_mattes. In the JSON, EXR and
+    // sidecar only when on.
+    bool mattes = false;
+    // RUDRA 1.1: where the mattes (and the regions picture) go instead of beside the master,
+    // as <master stem>.mattes.exr: a movie export's frames folder holds frames only. Empty:
+    // beside the master. Not in the JSON (the app sets it for the movie it is making).
+    std::filesystem::path mattes_dir;
+    // RUDRA 1.1 priority 4 (5 Nov 2026): <name>.ev-2.png, .ev+0.png, .ev+2.png beside the master,
+    // rendered from the EXR as written (read back), and the preview-to-export check: the same
+    // brackets from the in-memory picture the viewer shows, compared code for code. In the JSON,
+    // EXR and sidecar only when on.
+    bool brackets = false;
     std::vector<MasterBand> regions;        // empty: the neutral default bands
     double region_softness_stops = 1.0;
     bool anchor = true;
@@ -55,7 +69,7 @@ struct MasterRequest {
     double chroma_knee = 0.99;
     bool settle_grain = true;               // at anchor_knee
     std::string source_space = "rec709";
-    std::string container = "aces";         // aces or linear
+    std::string container = "aces";         // aces (ACES 2065-1), acescg, linear (Rec.2020) or rec709 (linear; RUDRA 1.1)
     bool exr_half = true;                  // false: 32-bit float grading master
     // Roadmap 3.1: the curve that made the SDR (core/source_curve.hpp ids).
     // "unknown" is the ACES inverse, and is left out of the JSON and the
@@ -105,6 +119,10 @@ struct MasterResult {
     double peak_nits = 0.0;
     int width = 0, height = 0, source_bits = 0;
     std::filesystem::path exr, sidecar;
+    std::filesystem::path masks, mattes;   // beside the master when written (painted masks; RUDRA 1.1 mattes)
+    std::filesystem::path regions;         // RUDRA 1.1: <name>.regions.png, the pixel classes, with the mattes
+    std::vector<std::filesystem::path> brackets;   // RUDRA 1.1: -2, 0, +2 EV PNGs
+    int bracket_max_code_delta = -1;               // preview vs export, worst 8-bit code over the brackets; -1 none
 };
 
 // The request as the Studio's params dict (what the golden index records).

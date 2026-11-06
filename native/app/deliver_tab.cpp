@@ -4,6 +4,13 @@
 // cli/aces_v2_deliver.hpp), or the analytic master and movie exports as before.
 
 #include <QCheckBox>
+#include <QCoreApplication>
+#include <QCursor>
+#include <QFile>
+#include <QMenu>
+#include <QProcess>
+#include <QProcessEnvironment>
+#include <QStatusBar>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QDir>
@@ -30,6 +37,7 @@
 #include "genfill_review.hpp"
 #include "main_window.hpp"
 #include "rudra/core/timecode.hpp"
+#include "rudra/platform/png8.hpp"
 #include "widgets.hpp"
 
 namespace fs = std::filesystem;
@@ -61,7 +69,11 @@ bool MainWindow::deliver_learned_wanted() const {
 DeliverChoice MainWindow::deliver_effective() const {
     const bool aces = deliver_aces() || deliver_learned_wanted();
     DeliverChoice c = deliver_;
-    if (!aces) c.gamut = session_.container == "linear" ? QStringLiteral("linear") : QStringLiteral("ap0");
+    // RUDRA 1.1: the AI fill acts only inside the grade's reconstruction region, when one is on.
+    c.ai.region_json = session_.grade.region.enabled
+                           ? QString::fromStdString(reconstruction_region_json(session_.grade.region))
+                           : QString();
+    if (!aces) c.gamut = session_.container == "aces" ? QStringLiteral("ap0") : QString::fromStdString(session_.container);
     const bool movie = shot_is_video();
     return deliver_fit(c, aces, movie, !movie && frames_.size() > 1);
 }
@@ -78,6 +90,8 @@ void MainWindow::load_deliver_settings() {
     c.bits = st.value("deliver/bits", c.bits).toInt();
     c.codec = st.value("deliver/codec", c.codec).toString();
     c.keep_exr = st.value("deliver/keepExr", c.keep_exr).toBool();
+    c.mattes = st.value("deliver/mattes", c.mattes).toBool();
+    c.brackets = st.value("deliver/brackets", c.brackets).toBool();
     c.fps = st.value("deliver/fps", c.fps).toDouble();
     c.ai_fill = st.value("deliver/aiFill", c.ai_fill).toBool();
     c.ai.tau_high = st.value("deliver/aiTauHigh", c.ai.tau_high).toInt();
@@ -85,6 +99,9 @@ void MainWindow::load_deliver_settings() {
     c.ai.seed = st.value("deliver/aiSeed", c.ai.seed).toInt();
     c.ai.steps = st.value("deliver/aiSteps", c.ai.steps).toInt();
     c.ai.brightness = st.value("deliver/aiBrightness", c.ai.brightness).toDouble();
+    c.ai.prompt_strength = std::clamp(st.value("deliver/aiPromptStrength", c.ai.prompt_strength).toDouble(), 0.0, 2.0);
+    c.ai.shape_gain = std::clamp(st.value("deliver/aiShapeGain", c.ai.shape_gain).toDouble(), 0.0, 2.0);
+    c.ai.fallback = st.value("deliver/aiFallback", true).toBool();   // RUDRA 1.1: on unless turned off
     c.ai.prompt_highlight = st.value("deliver/aiPromptHighlight").toString();
     c.ai.prompt_shadow = st.value("deliver/aiPromptShadow").toString();
     if (c.source != "aces" && c.source != "analytic") c.source = "aces";
@@ -107,9 +124,10 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
     } else if (key == "image" && (value == "exr32" || value == "exr16" || value == "dpx10")) {
         deliver_.image = value;
         st.setValue("deliver/image", value);
-    } else if (key == "gamut" && (value == "ap0" || value == "acescg" || value == "linear")) {
-        // The analytic master's gamut is the session's container (Deliver menu).
-        if (!deliver_aces() && value != "acescg") run(value == "ap0" ? "container-aces" : "container-linear");
+    } else if (key == "gamut" && (value == "ap0" || value == "acescg" || value == "linear" || value == "rec709")) {
+        // The analytic master's gamut is the session's container (Deliver menu); RUDRA 1.1: all four.
+        if (!deliver_aces()) session_.set_container(value == "ap0" ? "aces" : value.toStdString());
+        if (deliver_aces() && value == "rec709") return;
         if (deliver_aces() || value == "ap0") {
             deliver_.gamut = value == "linear" ? QStringLiteral("acescg") : value;
             st.setValue("deliver/gamut", deliver_.gamut);
@@ -126,6 +144,12 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
     } else if (key == "codec" && (value == "prores422hq" || value == "prores4444" || value == "prores4444xq" || value == "hevc10")) {
         deliver_.codec = value;
         st.setValue("deliver/codec", value);
+    } else if (key == "brackets") {   // RUDRA 1.1 priority 4
+        deliver_.brackets = value == "1" || value == "true";
+        st.setValue("deliver/brackets", deliver_.brackets);
+    } else if (key == "mattes") {   // RUDRA 1.1 priority 3
+        deliver_.mattes = value == "1" || value == "true";
+        st.setValue("deliver/mattes", deliver_.mattes);
     } else if (key == "keep_exr") {
         deliver_.keep_exr = value == "1" || value == "true";
         st.setValue("deliver/keepExr", deliver_.keep_exr);
@@ -158,6 +182,20 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
         if (!ok || v < -3.0 || v > 3.0) return;
         deliver_.ai.brightness = v;
         st.setValue("deliver/aiBrightness", v);
+    } else if (key == "ai_fallback") {   // RUDRA 1.1 priority 5
+        deliver_.ai.fallback = value == "1" || value == "true";
+        st.setValue("deliver/aiFallback", deliver_.ai.fallback);
+    } else if (key == "ai_prompt_strength" || key == "ai_shape_gain") {   // RUDRA 1.1
+        bool ok = false;
+        const double v = value.toDouble(&ok);
+        if (!ok || !std::isfinite(v) || v < 0.0 || v > 2.0) return;
+        if (key == "ai_prompt_strength") {
+            deliver_.ai.prompt_strength = v;
+            st.setValue("deliver/aiPromptStrength", v);
+        } else {
+            deliver_.ai.shape_gain = v;
+            st.setValue("deliver/aiShapeGain", v);
+        }
     } else if (key == "ai_prompt_highlight") {
         deliver_.ai.prompt_highlight = value.left(400);
         st.setValue("deliver/aiPromptHighlight", deliver_.ai.prompt_highlight);
@@ -203,8 +241,8 @@ void MainWindow::sync_deliver() {
     const bool exr = !movie && c.image != "dpx10";
     show("deliverGamutRow", exr);
     if (auto* gamut = dynamic_cast<Seg*>(findChild<QWidget*>("deliverGamut"))) {
-        gamut->button("acescg")->setVisible(aces);
         gamut->button("linear")->setVisible(!aces);
+        gamut->button("rec709")->setVisible(!aces);   // RUDRA 1.1: the analytic master writes it too
         gamut->set_on(c.gamut);
     }
     // A movie: 10-bit ProRes or 16-bit uncompressed RGB.
@@ -243,6 +281,10 @@ void MainWindow::sync_deliver() {
     }
     show("deliverKeepExr", aces && movie);
     if (auto* keep = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverKeepExr"))) keep->set_on(c.keep_exr);
+    show("deliverMattes", !aces);   // a movie's mattes go to <name>_mattes, a frame each
+    if (auto* mt = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverMattes"))) mt->set_on(c.mattes);
+    show("deliverBrackets", !aces && c.output != "movie");
+    if (auto* br = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverBrackets"))) br->set_on(c.brackets);
     // The AI fill (layer 3): the learned EXR still or sequence only.
     const bool ai_possible = ai_fill_possible(c, aces);
     show("deliverAiFill", ai_possible);
@@ -262,6 +304,15 @@ void MainWindow::sync_deliver() {
         const QSignalBlocker b(bs);
         bs->setValue(c.ai.brightness);
     }
+    for (const auto& [id, v] : {std::pair{"deliverAiPromptStrength", c.ai.prompt_strength},
+                                std::pair{"deliverAiShapeGain", c.ai.shape_gain}})
+        if (auto* ds = findChild<QDoubleSpinBox*>(id)) {
+            const QSignalBlocker b(ds);
+            ds->setValue(v);
+        }
+    if (auto* fb = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFallback"))) fb->set_on(c.ai.fallback);
+    if (auto* rn = findChild<QLabel*>("deliverAiRegion"))   // the grade's region reaches the fill
+        rn->setVisible(c.ai_fill && !c.ai.region_json.isEmpty());
     auto set_line = [this](const char* id, const QString& v) {
         if (auto* le = findChild<QLineEdit*>(id); le && le->text() != v) {
             const QSignalBlocker b(le);
@@ -581,6 +632,71 @@ bool MainWindow::review_genfill(const QString& dir_in, QString* why) {
     if (!isVisible()) return true;   // tests: the review read, no window
     GenFillReviewDialog(std::move(*r), this).exec();
     return true;
+}
+
+void MainWindow::suggest_genfill_prompt() {
+    auto* btn = findChild<QPushButton*>("deliverAiSuggest");
+    auto say = [this](const QString& t) { log(t); statusBar()->showMessage(t, 8000); };
+    QString why;
+    const auto setup = genfill_setup(&why);
+    if (!setup) return say(QStringLiteral("Suggest a prompt: the AI fill is not set up (") + why + ")");
+    if (!current_frame_) return say(QStringLiteral("Suggest a prompt: open a shot first"));
+    // The frame the viewer shows, as the SDR codes the fill's regions are made from.
+    const SdrImage& sdr = current_frame_->sdr;
+    Png8 png{sdr.width(), sdr.height(), 3, std::vector<std::uint8_t>(std::size_t(sdr.width()) * std::size_t(sdr.height()) * 3)};
+    for (int y = 0; y < sdr.height(); ++y)
+        for (int x = 0; x < sdr.width(); ++x)
+            for (int c = 0; c < 3; ++c)
+                png.data[(std::size_t(y) * std::size_t(sdr.width()) + std::size_t(x)) * 3 + std::size_t(c)] =
+                    std::uint8_t(std::lround(std::clamp(sdr.buffer().at(c, y, x), 0.0f, 1.0f) * 255.0f));
+    const QString file = QDir(QDir::tempPath()).filePath(
+        QStringLiteral("rudra_suggest_%1.png").arg(QCoreApplication::applicationPid()));
+    if (auto w = write_png8(file.toStdString(), png); !w) return say(QString::fromStdString(w.error().message));
+    auto* proc = new QProcess(this);
+    auto env = QProcessEnvironment::systemEnvironment();
+    const QString old = env.value("PYTHONPATH");
+    env.insert("PYTHONPATH", QString::fromStdString(setup->repo.string()) + (old.isEmpty() ? QString() : QDir::listSeparator() + old));
+    proc->setProcessEnvironment(env);
+    proc->setWorkingDirectory(QString::fromStdString(setup->repo.string()));
+    if (btn) btn->setEnabled(false);
+    const GenFillOptions o = deliver_effective().ai;
+    connect(proc, &QProcess::finished, this, [this, proc, btn, file](int, QProcess::ExitStatus) {
+        QFile::remove(file);
+        if (btn) btn->setEnabled(true);
+        proc->deleteLater();
+        QString why2;
+        const auto r = parse_prompt_suggestions(proc->readAllStandardOutput(), &why2);
+        if (!r) {
+            log("Suggest a prompt: " + why2 + " " + QString::fromUtf8(proc->readAllStandardError()).right(400));
+            statusBar()->showMessage("Suggest a prompt: " + why2, 8000);
+            return;
+        }
+        auto* menu = new QMenu(this);
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        auto add = [this, menu](QMenu* m, const PromptSuggestion& p) {
+            auto* a = m->addAction(p.label + (p.cached ? QStringLiteral("  \u00b7 ready") : QString()) + QStringLiteral("  \u2014 ") + p.text);
+            a->setToolTip(p.reason.isEmpty() ? p.text : p.reason);
+            connect(a, &QAction::triggered, this, [this, p] {
+                const bool shadow = p.region == "shadow";
+                if (auto* le = findChild<QLineEdit*>(shadow ? "deliverAiPromptShadow" : "deliverAiPromptHighlight")) le->setText(p.text);
+                set_deliver(shadow ? "ai_prompt_shadow" : "ai_prompt_highlight", p.text);
+                log("AI fill prompt: " + p.text + (p.reason.isEmpty() ? QString() : " (" + p.reason + ")"));
+            });
+        };
+        menu->setToolTipsVisible(true);
+        if (r->suggested.empty()) {
+            menu->addAction(QStringLiteral("Nothing fully clipped in this frame: nothing for the fill to draw"))->setEnabled(false);
+        } else {
+            menu->addSection(QStringLiteral("Suggested for this frame"));
+            for (const auto& p : r->suggested) add(menu, p);
+        }
+        auto* all = menu->addMenu(QStringLiteral("All presets"));
+        all->setToolTipsVisible(true);
+        for (const auto& p : r->presets) add(all, p);
+        auto* b = findChild<QPushButton*>("deliverAiSuggest");
+        menu->popup(b ? b->mapToGlobal(QPoint(0, b->height())) : QCursor::pos());
+    });
+    proc->start(QString::fromStdString(setup->python.string()), genfill_suggest_arguments(*setup, o, {file}));
 }
 
 bool MainWindow::start_genfill(const QString& master_dir, QString* why) {

@@ -14,6 +14,10 @@
 
 namespace rudra {
 
+// RUDRA 1.1 (5 Nov 2026): the analytic master with no model package at all, what
+// `rudra-native master analytic <image> ...` runs (tools/validate_rudra_1_1.py uses it).
+Result<MasterResult> render_analytic_master(const std::filesystem::path& image, const MasterRequest& q,
+                                            const std::filesystem::path& out);
 Result<MasterResult> render_master(const ModelManifest& package, InferenceBackend& backend,
                                    const std::filesystem::path& image, const MasterRequest& request,
                                    const std::filesystem::path& out);

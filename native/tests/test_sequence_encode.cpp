@@ -274,7 +274,8 @@ TEST(SequenceEncode, DeliverReportIsThePythons) {
     for (const auto& r : idx["runs"]) {
         SCOPED_TRACE(r["target"].get<std::string>());
         auto p = run_process({RUDRA_CLI_PATH, "deliver", (kDir / "frames").string(), "--output", (work / "shot").string(),
-                              "--target", r["target"].get<std::string>(), "--fps", "23.976", "--source-space", "rec709"});
+                              "--target", r["target"].get<std::string>(), "--fps", "23.976", "--source-space", "rec709",
+                              "--peak-fit", "scale"});   // the Python's fit: its report, byte for byte
         ASSERT_TRUE(p);
         ASSERT_EQ(p->exit_code, 0) << p->err;
         std::string got = p->out;
@@ -366,4 +367,78 @@ TEST(SequenceEncode, SixteenBitRgbMovIsUncompressedPq) {
     std::string all;
     for (const auto& a : cmd) all += a + " ";
     EXPECT_NE(all.find("-c:v rawvideo -pix_fmt rgb48be"), std::string::npos) << all;
+}
+
+// Finding F1 (5 Nov 2026): a clipped blue sky decodes to ~1200 nits of blue at
+// ~150 nits of luminance. At a 1000-nit peak the Python's fit scales the whole
+// pixel down for that one channel and the sky goes darker than the master;
+// the delivery's default now keeps its luminance and gives up saturation.
+namespace {
+double y2020(double r, double g, double b) { return 0.2627 * r + 0.6780 * g + 0.0593 * b; }
+NitsFrame sky_pixels() {
+    NitsFrame f(1, 4);
+    const double px[4][3] = {{100, 140, 1200}, {60, 90, 1150}, {300, 250, 200}, {900, 950, 1400}};
+    for (int i = 0; i < 4; ++i)
+        for (int c = 0; c < 3; ++c) f.plane(c)[std::size_t(i)] = px[i][c];
+    return f;
+}
+}  // namespace
+
+TEST(PeakFit, TheDeliveryKeepsASaturatedPixelsLuminance) {
+    EXPECT_EQ(SequenceEncodeOptions{}.peak_fit, PeakFit::KeepLuminance);
+    EXPECT_EQ(peak_fit_from_name("luminance"), PeakFit::KeepLuminance);
+    EXPECT_EQ(peak_fit_from_name("scale"), PeakFit::Scale);
+    EXPECT_FALSE(peak_fit_from_name("clip"));
+    const NitsFrame in = sky_pixels();
+    auto keep = shoulder_to_peak(in, 1000.0, PeakFit::KeepLuminance);
+    auto scale = shoulder_to_peak(in, 1000.0, PeakFit::Scale);
+    ASSERT_TRUE(keep && scale);
+    for (std::size_t i = 0; i < 2; ++i) {   // the sky: luminance under the knee, blue over the peak
+        const double y_in = y2020(in.plane(0)[i], in.plane(1)[i], in.plane(2)[i]);
+        const double y_keep = y2020(keep->plane(0)[i], keep->plane(1)[i], keep->plane(2)[i]);
+        const double y_scale = y2020(scale->plane(0)[i], scale->plane(1)[i], scale->plane(2)[i]);
+        EXPECT_NEAR(std::log2(y_keep / y_in), 0.0, 1e-4) << i;
+        EXPECT_LT(std::log2(y_scale / y_in), -0.1) << i;   // what F1 measured
+        EXPECT_NEAR(std::max({keep->plane(0)[i], keep->plane(1)[i], keep->plane(2)[i]}), 1000.0, 0.1) << i;
+        // Same hue direction: the chroma (pixel minus its luminance) only shrinks.
+        const double k = (keep->plane(2)[i] - y_keep) / (in.plane(2)[i] - y_in);
+        EXPECT_GT(k, 0.0);
+        EXPECT_LT(k, 1.0);
+        for (int c = 0; c < 2; ++c)
+            EXPECT_NEAR(keep->plane(c)[i] - y_keep, k * (in.plane(c)[i] - y_in), 0.05) << i << " " << c;
+    }
+    for (int c = 0; c < 3; ++c) EXPECT_EQ(keep->plane(c)[2], scale->plane(c)[2]);   // inside the peak: untouched
+    // Luminance past the knee: the shoulder rolls it off in both, and nothing goes over the peak.
+    for (int c = 0; c < 3; ++c) EXPECT_LE(keep->plane(c)[3], 1000.0);
+}
+
+TEST(PeakFit, HlgKeepsTheSceneLuminanceOfASaturatedPixel) {
+    const SequenceTarget* t = find_sequence_target("hlg");
+    ASSERT_NE(t, nullptr);
+    const NitsFrame in = sky_pixels();
+    auto fitted = shoulder_to_peak(in, 1000.0, PeakFit::KeepLuminance);
+    ASSERT_TRUE(fitted);
+    auto decode = [&](PeakFit fit) {
+        auto codes = encode_sequence_frame(*fitted, *t, 1000.0, Primaries::Rec2020, false, fit);
+        EXPECT_TRUE(codes);
+        std::vector<double> y;
+        const double a = 0.17883277, b = 1 - 4 * a, cc = 0.5 - a * std::log(4 * a), gamma = 1.2;
+        for (std::size_t i = 0; i < 4; ++i) {
+            double e[3];
+            for (int c = 0; c < 3; ++c) {
+                const double v = (*codes)[i * 3 + std::size_t(c)] / 65535.0;
+                e[c] = v <= 0.5 ? v * v / 3.0 : (std::exp((v - cc) / a) + b) / 12.0;
+            }
+            const double ys = y2020(e[0], e[1], e[2]);
+            y.push_back(1000.0 * std::pow(ys, gamma));   // the display's luminance (BT.2100 OOTF)
+        }
+        return y;
+    };
+    const auto keep = decode(PeakFit::KeepLuminance), scale = decode(PeakFit::Scale);
+    for (std::size_t i = 0; i < 2; ++i) {
+        const double y_ref = y2020(fitted->plane(0)[i], fitted->plane(1)[i], fitted->plane(2)[i]);
+        EXPECT_NEAR(std::log2(keep[i] / y_ref), 0.0, 0.01) << i;   // 16-bit codes
+        EXPECT_LT(std::log2(scale[i] / y_ref), -0.3) << i;          // the 0.70 stop of F1, give or take the pixel
+    }
+    EXPECT_NEAR(keep[2], scale[2], 1e-9);   // a pixel inside the range: the same codes
 }

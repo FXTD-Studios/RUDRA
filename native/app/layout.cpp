@@ -933,6 +933,15 @@ QWidget* MainWindow::build_right_rail() {
         session_.region_input(r);
     };
     rbv->addWidget(region_kind_);
+    // RUDRA 1.1: where the region acts, on the frame on screen: a histogram and the viewer tint.
+    region_hist_ = new RegionHistogramView(region_box_);
+    rbv->addWidget(region_hist_);
+    region_show_ = new CheckRow("regionShow", "Show on the viewer", "regionShowHint", "tinted", region_box_);
+    region_show_->clicked = [this] {
+        session_.show_region = !session_.show_region;
+        refresh_view_region();
+    };
+    rbv->addWidget(region_show_);
     auto region_slider = [&](const QString& lab, const QString& id, float ReconstructionRegion::*field, int hi,
                              double scale, int kind, const QString& tip) {
         RegionSlider rs;
@@ -1095,7 +1104,7 @@ QWidget* MainWindow::build_right_rail() {
         image->addItem("DPX · 10-bit", "dpx10");
         connect(image, &QComboBox::activated, this, [this, image](int i) { set_deliver("image", image->itemData(i).toString()); });
         field("Format", image, "deliverImageRow", "The file type of a still or a sequence");
-        auto* gamut = new Seg("deliverGamut", {{"ap0", "ACES 2065-1"}, {"acescg", "ACEScg"}, {"linear", "Rec.2020 linear"}});
+        auto* gamut = new Seg("deliverGamut", {{"ap0", "ACES 2065-1"}, {"acescg", "ACEScg"}, {"linear", "Rec.2020 linear"}, {"rec709", "Rec.709 linear"}});
         gamut->clicked = [this](const QString& k) { set_deliver("gamut", k); };
         field("Colour", gamut, "deliverGamutRow",
               "The EXR's primaries: ACES 2065-1 (AP0, the archive and interchange master) or ACEScg (AP1, for compositing)");
@@ -1142,6 +1151,23 @@ QWidget* MainWindow::build_right_rail() {
                          "half (ST 2065-4) with the mask in mask/");
         keep->clicked = [this] { set_deliver("keep_exr", deliver_.keep_exr ? "0" : "1"); };
         kcv->addWidget(keep);
+        // RUDRA 1.1 priority 3: the reconstruction's mattes for compositing.
+        auto* mattes = new CheckRow("deliverMattes", "Write mattes (EXR)", "deliverMattesHint",
+                                    "highlight, shadow, changed", kc);
+        mattes->setToolTip("Beside each master, <name>.mattes.exr: float channels rudra.highlight and rudra.shadow (how "
+                           "much each reconstruction acted), rudra.changed (exactly where the reconstruction differs from "
+                           "the baseline), rudra.region (the luminance region, when on) and rudra.paint.N (painted masks). "
+                           "Before the grade");
+        mattes->clicked = [this] { set_deliver("mattes", deliver_.mattes ? "0" : "1"); };
+        kcv->addWidget(mattes);
+        // RUDRA 1.1 priority 4: exposure brackets and the preview-to-export check.
+        auto* brackets = new CheckRow("deliverBrackets", "Write EV brackets", "deliverBracketsHint",
+                                      "\u22122 / 0 / +2 EV", kc);
+        brackets->setToolTip("Beside each master, <name>.ev-2.png, .ev+0.png and .ev+2.png: the master as written, "
+                             "read back and shown on an SDR screen with diffuse white at 0 EV. The sidecar records how "
+                             "far they are from what the viewer showed (preview_vs_export, in 8-bit codes)");
+        brackets->clicked = [this] { set_deliver("brackets", deliver_.brackets ? "0" : "1"); };
+        kcv->addWidget(brackets);
         // The AI fill (layer 3, genfill_job.hpp): an AI-filled copy of a learned EXR render.
         auto* ai = new CheckRow("deliverAiFill", "AI fill (experimental)", "deliverAiFillHint",
                                 "clipped highlights, crushed shadows", kc);
@@ -1187,6 +1213,15 @@ QWidget* MainWindow::build_right_rail() {
             line("deliverAiPromptHighlight", "ai_prompt_highlight", "Highlight prompt (optional)",
                  "e.g. warm sunset sun with soft halo");
             line("deliverAiPromptShadow", "ai_prompt_shadow", "Shadow prompt (optional)", "e.g. dark wood grain");
+            {   // RUDRA 1.1: suggest a prompt from the frame's clipped areas, or pick a preset
+                auto* sg = new QPushButton("Suggest a prompt\u2026", box);
+                sg->setObjectName("deliverAiSuggest");
+                sg->setToolTip("Looks at this frame's fully clipped areas (size, place, shape, the colour around "
+                               "them) and suggests a prompt, with the presets beside it. No model runs; a preset "
+                               "marked ready needs no text model when the fill starts");
+                connect(sg, &QPushButton::clicked, this, [this] { suggest_genfill_prompt(); });
+                bv->addWidget(sg);
+            }
             spin("deliverAiSeed", "ai_seed", 0, 999999, {}, "Seed|Another seed gives another plausible fill");
             spin("deliverAiSteps", "ai_steps", 1, 100, {}, "Steps|Denoising steps: more is slower, often cleaner (30)");
             {   // v3 (30 Oct 2026): the AI draws the shape; how bright it is comes from RUDRA's estimate plus this
@@ -1204,6 +1239,44 @@ QWidget* MainWindow::build_right_rail() {
                 connect(bs, &QDoubleSpinBox::valueChanged, this, [this](double v) { set_deliver("ai_brightness", QString::number(v, 'g', 6)); });
                 rcol->addWidget(bs);
                 bv->addWidget(r);
+            }
+            // RUDRA 1.1 (5 Nov 2026): prompt strength and detail strength, 0 to 2, 1 = AI fill v3 as gated.
+            auto dspin = [&](const char* id, const QString& key, const QString& head, const QString& tip) {
+                auto* r = new QWidget(box);
+                auto* rcol = column(r, 0, 2);
+                rcol->addWidget(label(head, {}, "note", r));
+                auto* ds = new QDoubleSpinBox(r);
+                ds->setObjectName(id);
+                ds->setRange(0.0, 2.0);
+                ds->setSingleStep(0.1);
+                ds->setDecimals(2);
+                ds->setValue(1.0);
+                ds->setToolTip(tip);
+                connect(ds, &QDoubleSpinBox::valueChanged, this, [this, key](double v) { set_deliver(key, QString::number(v, 'g', 6)); });
+                rcol->addWidget(ds);
+                bv->addWidget(r);
+            };
+            dspin("deliverAiPromptStrength", "ai_prompt_strength", "Prompt strength",
+                  "How strongly the highlight and shadow prompts steer their regions. 1 = as AI fill v3 was "
+                  "tested; 0 ignores the prompts; above 1 is experimental. No effect without a prompt");
+            dspin("deliverAiShapeGain", "ai_shape_gain", "Detail strength",
+                  "How much the drawn shape varies the brightness inside a filled area. 1 = as tested; "
+                  "0 = a flat fill at the estimated brightness");
+            {   // RUDRA 1.1 priority 5: the fallback when the fill flickers
+                auto* fb = new CheckRow("deliverAiFallback", "Drop flickering fill frames", "deliverAiFallbackHint",
+                                        "keep the master there", box);
+                fb->setToolTip("A frame whose fill jumps by more than a quarter stop into it AND out of it (a "
+                               "one-frame flicker) is written as the master's own frame. A fill that starts or ends "
+                               "is kept. Every dropped frame is listed in genfill.json (fell_back)");
+                fb->clicked = [this] { set_deliver("ai_fallback", deliver_.ai.fallback ? "0" : "1"); };
+                bv->addWidget(fb);
+            }
+            {
+                auto* rn = label("Fills only inside the luminance region set on the Reconstruct card.",
+                                 "deliverAiRegion", "small", box);
+                rn->setWordWrap(true);
+                rn->hide();
+                bv->addWidget(rn);
             }
             auto* setup = label("", "deliverAiSetup", "small", box);
             setup->setWordWrap(true);
@@ -1598,6 +1671,9 @@ QWidget* MainWindow::build_pipe() {
     seg("pipeWorking", "scene-linear \u00b7 203 nits = 1.0");
     arrow();
     view_transform_ = seg("viewTransform", "exposure + clip \u00b7 203 nits");
+    arrow();
+    // RUDRA 1.1 priority 4: what the viewer writes to the display (transfer, primaries, white).
+    seg("pipeDisplay", QString::fromStdString(display_signal_text(DisplayTarget::sdr(), 203.0)));
     arrow();
     seg("pipeMaster", "ACES 2065-1 EXR, float32");
     auto* warn = label("", "pipeWarn", {}, pipe);

@@ -162,11 +162,11 @@ Result<ColourTags> expected_tags(const std::string& target) {
     return ColourTags{{"color_primaries", kPrimaries}, {"color_space", target == "ffv1rgb16" || target == "rgb16mov" ? "gbr" : kMatrix}, {"color_transfer", transfer_name(t->transfer)}};
 }
 
-Result<NitsFrame> shoulder_to_peak(const NitsFrame& rgb, double peak) {
+Result<NitsFrame> shoulder_to_peak(const NitsFrame& rgb, double peak, PeakFit fit) {
     PlanarBuffer f(3, rgb.height(), rgb.width());
     for (int c = 0; c < 3; ++c)
         for (std::size_t i = 0; i < rgb.plane_size(); ++i) f.plane(c)[i] = static_cast<float>(rgb.plane(c)[i] / 10000.0);
-    auto m = master_to_peak(f, peak);
+    auto m = master_to_peak(f, peak, std::nullopt, fit);
     if (!m) return m.error();
     NitsFrame out(rgb.height(), rgb.width());
     for (int c = 0; c < 3; ++c)
@@ -174,7 +174,7 @@ Result<NitsFrame> shoulder_to_peak(const NitsFrame& rgb, double peak) {
     return out;
 }
 
-Result<NitsFrame> deliver_master_frame(NitsFrame f, Primaries source, double peak) {
+Result<NitsFrame> deliver_master_frame(NitsFrame f, Primaries source, double peak, PeakFit fit) {
     if (source != Primaries::Rec2020) {
         const Mat3 m = rgb_to_rgb_matrix(source, Primaries::Rec2020);
         const std::size_t n = f.plane_size();
@@ -184,11 +184,11 @@ Result<NitsFrame> deliver_master_frame(NitsFrame f, Primaries source, double pea
                 f.plane(int(c))[i] = double(static_cast<float>(m[c][0] * v[0] + m[c][1] * v[1] + m[c][2] * v[2]));
         }
     }
-    return shoulder_to_peak(f, peak);
+    return shoulder_to_peak(f, peak, fit);
 }
 
 Result<std::vector<std::uint16_t>> encode_sequence_frame(const NitsFrame& in, const SequenceTarget& target, double peak,
-                                                         Primaries source, bool shoulder) {
+                                                         Primaries source, bool shoulder, PeakFit fit) {
     NitsFrame rgb = in;
     const std::size_t n = rgb.plane_size();
     if (source != Primaries::Rec2020) {
@@ -200,7 +200,7 @@ Result<std::vector<std::uint16_t>> encode_sequence_frame(const NitsFrame& in, co
             for (std::size_t i = 0; i < n; ++i) rgb.plane(c)[i] = double(conv.plane(c)[i]) * kWhiteNits;
     }
     if (shoulder) {
-        auto s = shoulder_to_peak(rgb, peak);
+        auto s = shoulder_to_peak(rgb, peak, fit);
         if (!s) return s.error();
         rgb = std::move(*s);
     }
@@ -226,7 +226,9 @@ Result<std::vector<std::uint16_t>> encode_sequence_frame(const NitsFrame& in, co
             const double ratio = ys / std::max(yd, 1e-12);
             double s[3];
             for (int c = 0; c < 3; ++c) s[c] = d[c] * ratio;
-            const double top = std::max(1.0, std::max(s[0], std::max(s[1], s[2])));
+            double top = 1.0;
+            if (fit == PeakFit::Scale) top = std::max(1.0, std::max(s[0], std::max(s[1], s[2])));   // the Python's
+            else fit_to_peak(s, ys, 1.0, fit);   // scene luminance kept: the OOTF gives back the display's
             for (int c = 0; c < 3; ++c) {
                 const double coded = hlg_oetf64(s[c] / top);
                 out[i * 3 + std::size_t(c)] = static_cast<std::uint16_t>(std::clamp(coded, 0.0, 1.0) * 65535.0 + 0.5);
@@ -435,7 +437,7 @@ Result<fs::path> encode_sequence(const std::function<std::optional<NitsFrame>()>
     int written = 0;
     bool pipe_closed = false;
     for (;;) {
-        auto codes = encode_sequence_frame(*frame, *spec, o.peak_nits, o.source, o.shoulder);
+        auto codes = encode_sequence_frame(*frame, *spec, o.peak_nits, o.source, o.shoulder, o.peak_fit);
         if (!codes) {
             (*process)->kill();
             (*process)->wait();
@@ -495,7 +497,11 @@ Result<std::vector<fs::path>> list_linear_frames(const fs::path& path) {
         for (const auto& e : fs::directory_iterator(path, ec)) {
             std::string ext = e.path().extension().string();
             for (char& c : ext) c = char(std::tolower(static_cast<unsigned char>(c)));
-            if (ext == ".exr" || ext == ".npy") found.push_back(e.path());
+            // RUDRA 1.1 (5 Nov 2026): a master's mattes (<name>.mattes.exr) sit beside it and are not frames.
+            std::string name = e.path().filename().string();
+            for (char& c : name) c = char(std::tolower(static_cast<unsigned char>(c)));
+            const bool matte = name.size() > 11 && name.compare(name.size() - 11, 11, ".mattes.exr") == 0;
+            if ((ext == ".exr" || ext == ".npy") && !matte) found.push_back(e.path());
         }
         if (found.empty()) return make_error(ErrorCode::NotFound, "no .exr/.npy frames in " + path.string());
         std::sort(found.begin(), found.end());
@@ -549,7 +555,7 @@ Result<LinearDelivery> deliver_linear_frames(const std::vector<fs::path>& paths,
         if (cancelled()) return stopped();
         auto f = load_linear_frame(paths[i], nits_scale);
         if (!f) return f.error();
-        auto m = deliver_master_frame(std::move(*f), source, o.peak_nits);
+        auto m = deliver_master_frame(std::move(*f), source, o.peak_nits, o.peak_fit);
         if (!m) return m.error();
         stats.push_back(analyze_frame(*m, int(i)));
         if (progress) progress({i + 1, paths.size(), false});
@@ -571,7 +577,7 @@ Result<LinearDelivery> deliver_linear_frames(const std::vector<fs::path>& paths,
         }
         if (progress && next_index > 0) progress({next_index, paths.size(), true});
         auto f = load_linear_frame(paths[next_index++], nits_scale);
-        if (f) f = deliver_master_frame(std::move(*f), source, o.peak_nits);
+        if (f) f = deliver_master_frame(std::move(*f), source, o.peak_nits, o.peak_fit);
         if (!f) {
             load_error = f.error();
             return std::nullopt;

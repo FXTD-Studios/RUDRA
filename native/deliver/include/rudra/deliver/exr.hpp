@@ -34,6 +34,7 @@ ExrTypedAttributes exr_timecode_attributes(const std::string& timecode, double f
 extern const Chromaticities kAp0Chromaticities;
 extern const Chromaticities kAp1Chromaticities;
 extern const Chromaticities kRec2020Chromaticities;
+extern const Chromaticities kRec709Chromaticities;   // RUDRA 1.1: the linear Rec.709 container
 
 // float32 -> IEEE half, round to nearest even (numpy's astype(np.float16)).
 std::uint16_t float_to_half(float f) noexcept;
@@ -68,11 +69,19 @@ Result<void> write_acescg_exr(const std::filesystem::path& path, const PlanarBuf
                               const PlanarBuffer* reconstruction_mask = nullptr, const ExrTypedAttributes& typed = {},
                               const PlanarBuffer* alpha = nullptr);
 
+// A mattes EXR (RUDRA 1.1, 5 Nov 2026): one-plane float32 channels by name (e.g.
+// "rudra.highlight"), each finite in [0, 1] and of one size, uncompressed scanlines,
+// no RGB. What Nuke / Resolve read as named channels beside the master.
+using NamedPlanes = std::vector<std::pair<std::string, PlanarBuffer>>;
+Result<void> write_mattes_exr(const std::filesystem::path& path, const NamedPlanes& planes,
+                              const ExrAttributes& attributes = {});
+
 // read_exr for uncompressed scanline files (exr.py's reader): the planes in
 // R, G, B(, A) order, and the header's attributes in file order as raw bytes.
 struct ExrImage {
     PlanarBuffer pixels;
     std::optional<PlanarBuffer> reconstruction_mask;
+    NamedPlanes other;   // every other channel, one plane each, in file order (5 Nov 2026)
     std::vector<std::pair<std::string, std::string>> attribute_types;   // name -> type
     std::vector<std::pair<std::string, std::vector<std::uint8_t>>> attributes;   // name -> payload
     std::vector<int> pixel_types;   // per channel, file order: 1 half, 2 float

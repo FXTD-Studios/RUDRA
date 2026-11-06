@@ -6051,6 +6051,132 @@ TEST(GenFill, TheArtistsBrightnessOffsetReachesTheFill) {
     QSettings().clear();
 }
 
+// RUDRA 1.1 priority 2 (5 Nov 2026): prompt strength, detail strength and the
+// reconstruction region reach the fill; their defaults leave the command line as it was.
+TEST(GenFill, PromptStrengthDetailAndRegionReachTheFill) {
+    app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/lora.safetensors"};
+    app::GenFillOptions o;
+    const QStringList plain = app::genfill_arguments(s, o, "m", "o");
+    for (const char* f : {"--prompt-strength", "--shape-gain", "--region"}) EXPECT_FALSE(plain.contains(f)) << f;
+    o.prompt_strength = 1.5;
+    o.shape_gain = 0.5;
+    o.region_json = R"({"band":true})";
+    const QStringList a = app::genfill_arguments(s, o, "m", "o");
+    EXPECT_EQ(a[a.indexOf("--prompt-strength") + 1], "1.5");
+    EXPECT_EQ(a[a.indexOf("--shape-gain") + 1], "0.5");
+    EXPECT_EQ(a[a.indexOf("--region") + 1], R"({"band":true})");
+    app::DeliverChoice c;
+    c.ai.prompt_strength = 9.0;
+    c.ai.shape_gain = -1.0;
+    const auto fit = app::deliver_fit(c, true, false, false);
+    EXPECT_DOUBLE_EQ(fit.ai.prompt_strength, 2.0);
+    EXPECT_DOUBLE_EQ(fit.ai.shape_gain, 0.0);
+    QSettings().clear();
+    app::MainWindow w(false);
+    w.set_deliver("ai_prompt_strength", "1.25");
+    EXPECT_DOUBLE_EQ(w.deliver_choice().ai.prompt_strength, 1.25);
+    w.set_deliver("ai_prompt_strength", "3");                                         // refused: out of range
+    EXPECT_DOUBLE_EQ(w.deliver_choice().ai.prompt_strength, 1.25);
+    EXPECT_TRUE(w.deliver_effective().ai.region_json.isEmpty());                      // no region: none sent
+    QSettings().clear();
+}
+
+// RUDRA 1.1, the Beeble gaps (5 Nov 2026): the AI fill on the analytic route, the four analytic
+// containers, and the region's histogram and viewer switch on the Reconstruct card.
+TEST(Gaps, AnalyticFillContainersAndTheRegionCard) {
+    app::DeliverChoice c;
+    c.output = "still";
+    c.image = "exr32";
+    c.gamut = "ap0";
+    EXPECT_TRUE(app::ai_fill_possible(c, false));       // analytic ACES 2065-1: the fill reads AP0
+    c.gamut = "linear";
+    EXPECT_FALSE(app::ai_fill_possible(c, false));      // Rec.2020 linear: it would be read as AP1
+    c.gamut = "ap0";
+    c.output = "movie";
+    EXPECT_FALSE(app::ai_fill_possible(c, false));
+    c.output = "still";
+    for (const char* g : {"acescg", "rec709", "linear", "ap0"}) {
+        c.gamut = g;
+        EXPECT_EQ(app::deliver_fit(c, false, false, false).gamut, QString(g)) << g;   // kept on the analytic route
+    }
+    QSettings().clear();
+    app::MainWindow w(false);
+    w.set_deliver("source", "analytic");
+    w.set_deliver("gamut", "rec709");
+    EXPECT_EQ(w.deliver_effective().gamut, "rec709");
+    w.set_deliver("gamut", "acescg");
+    EXPECT_EQ(w.deliver_effective().gamut, "acescg");
+    ASSERT_NE(w.findChild<QWidget*>("regionHistogram"), nullptr);
+    ASSERT_NE(w.findChild<QWidget*>("regionShow"), nullptr);
+    QSettings().clear();
+}
+
+// RUDRA 1.1 (5 Nov 2026): Suggest a prompt: the command line and the JSON rudra.genfill.prompts prints
+// (this string is its real output for a synthetic sunset, trimmed to two presets).
+TEST(GenFill, PromptSuggestionsAreReadBack) {
+    app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/v3/rudra_genfill.safetensors"};
+    app::GenFillOptions o;
+    o.tau_high = 245;
+    const QStringList a = app::genfill_suggest_arguments(s, o, {"/tmp/f.png"});
+    EXPECT_EQ(a.mid(0, 4), (QStringList{"-m", "rudra.genfill.prompts", "suggest", "/tmp/f.png"}));
+    EXPECT_EQ(QDir::fromNativeSeparators(a[a.indexOf("--cache") + 1]), "/runs/v3/prompt_cache");
+    EXPECT_EQ(a[a.indexOf("--tau-high") + 1], "245");
+    const QByteArray out =
+        "a warning line\n"
+        R"({"clipped_fraction": 0.0531, "suggestions": [{"id": "sun_disc", "label": "Sun", "text": "warm sun disc with a soft halo and a smooth glow", "region": "highlight", "score": 0.031, "reason": "a small round clipped area (3.11%), warm around it", "cached": false}], "ok": true, "presets": [{"id": "sky_blue", "label": "Clear blue sky", "text": "clear blue sky, smooth gradient toward the horizon, soft high clouds", "region": "highlight", "cached": true}, {"id": "shadow_detail", "label": "Shadow detail", "text": "dark shadow detail, soft texture, low light", "region": "shadow", "cached": false}]})";
+    QString why;
+    const auto r = app::parse_prompt_suggestions(out, &why);
+    ASSERT_TRUE(r.has_value()) << why.toStdString();
+    ASSERT_EQ(r->suggested.size(), 1u);
+    EXPECT_EQ(r->suggested[0].id, "sun_disc");
+    EXPECT_EQ(r->suggested[0].reason, "a small round clipped area (3.11%), warm around it");
+    ASSERT_EQ(r->presets.size(), 2u);
+    EXPECT_TRUE(r->presets[0].cached);
+    EXPECT_EQ(r->presets[1].region, "shadow");
+    EXPECT_FALSE(app::parse_prompt_suggestions(R"({"ok": false, "error": "ValueError: cannot read x"})", &why));
+    EXPECT_EQ(why, "ValueError: cannot read x");
+    EXPECT_FALSE(app::parse_prompt_suggestions("Traceback (most recent call last):", &why));
+    app::MainWindow w(false);
+    ASSERT_NE(w.findChild<QPushButton*>("deliverAiSuggest"), nullptr);
+}
+
+// RUDRA 1.1 priority 5 (5 Nov 2026): the fill's fallback, on by default in Deliver, off in a bare options.
+TEST(GenFill, TheFlickerFallbackIsOnInDeliver) {
+    app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/lora.safetensors"};
+    app::GenFillOptions o;
+    EXPECT_FALSE(app::genfill_arguments(s, o, "m", "o").contains("--fallback"));
+    o.fallback = true;
+    const QStringList a = app::genfill_arguments(s, o, "m", "o");
+    EXPECT_EQ(a[a.indexOf("--fallback") + 1], "spikes");
+    QSettings().clear();
+    app::MainWindow w(false);
+    EXPECT_TRUE(w.deliver_choice().ai.fallback);
+    w.set_deliver("ai_fallback", "0");
+    EXPECT_FALSE(w.deliver_choice().ai.fallback);
+    EXPECT_FALSE(QSettings().value("deliver/aiFallback").toBool());
+    ASSERT_NE(w.findChild<QWidget*>("deliverAiFallback"), nullptr);
+    QSettings().clear();
+}
+
+// RUDRA 1.1 priorities 3 and 4 (5 Nov 2026): the Deliver checks and the display signal in the pipe bar.
+TEST(Deliver, MattesBracketsAndTheDisplaySignal) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    EXPECT_FALSE(w.deliver_choice().mattes);
+    EXPECT_FALSE(w.deliver_choice().brackets);
+    w.set_deliver("mattes", "1");
+    w.set_deliver("brackets", "1");
+    EXPECT_TRUE(w.deliver_choice().mattes);
+    EXPECT_TRUE(w.deliver_choice().brackets);
+    EXPECT_TRUE(QSettings().value("deliver/brackets").toBool());
+    ASSERT_NE(w.findChild<QWidget*>("deliverMattes"), nullptr);
+    ASSERT_NE(w.findChild<QWidget*>("deliverBrackets"), nullptr);
+    auto* ds = w.findChild<QLabel*>("pipeDisplay");
+    ASSERT_NE(ds, nullptr);
+    EXPECT_TRUE(ds->text().startsWith("SDR") || ds->text().contains("reference white 203 nits")) << ds->text().toStdString();
+    QSettings().clear();
+}
+
 #ifdef RUDRA_HAVE_STILL_DECODE
 // A downloaded AI fill LoRA is the one Deliver > AI fill uses (31 Oct 2026).
 TEST(AppModels, ADownloadedLoraBecomesTheAiFills) {

@@ -8,9 +8,11 @@
 #include <memory>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "rudra/core/color.hpp"
+#include "rudra/core/composite.hpp"
 #include "rudra/core/image.hpp"
 #include "rudra/core/masks.hpp"
 
@@ -105,7 +107,27 @@ struct ViewParams {
     // gamma and peak (yellow, the other diagonal).
     bool clamp_zebra = false;
     bool clip_zebra = false;
+    // RUDRA 1.1 (5 Nov 2026): the reconstruction region (composite.hpp) tinted over the Image
+    // picture, kRegionTintMix times its weight, as the composite gates by it. Off: no change.
+    bool region_overlay = false;
+    ReconstructionRegion overlay_region;
+    std::array<float, 3> region_tint{0.20f, 0.85f, 0.95f};
 };
+inline constexpr float kRegionTintMix = 0.40f;
+
+// The region overlay's weight per pixel as the viewer uploads it (RGBA8, the weight in R, image
+// order): max of region_weights() of the SDR's clamped Rec.709 luma, clipped to [0, 1], to 8 bits.
+// All 0 when the region is off or there is no SDR of that size.
+std::vector<std::uint8_t> region_overlay_rgba8(const SdrImage* sdr, const ReconstructionRegion& region, int width, int height);
+
+// The Reconstruct card's histogram (RUDRA 1.1): the frame's SDR Rec.709 luma in `bins` bins,
+// the region's weight at each bin's centre, and the share of pixels it reaches (weight > 0).
+struct RegionHistogram {
+    std::vector<double> counts;   // pixels per bin, of all pixels (0..1)
+    std::vector<float> weight;    // max(highlight, shadow) weight at the bin's centre, clipped
+    double reached = 0.0;         // share of pixels with weight > 0
+};
+RegionHistogram region_histogram(const SdrImage& sdr, const ReconstructionRegion& region, int bins = 64);
 
 // Revision 6 overlays: stripe period and mix, colours as SDR codes (graphics
 // at the SDR white on the HDR paths).
@@ -236,6 +258,29 @@ Probe probe_pixel(const NetworkLinearImage& model, const NetworkLinearImage& bas
 // The SDR picture quantised as the 8-bit framebuffer does: round(255 c).
 Rgb8Image render_view_rgb8(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
                            const ViewParams& params, const SdrImage* sdr = nullptr);
+
+// ---- RUDRA 1.1 priority 4 (5 Nov 2026): exposure brackets and the display signal ----
+
+// The EV brackets RUDRA renders beside a master: -2, 0 and +2 stops.
+inline constexpr std::array<double, 3> kBracketStops{-2.0, 0.0, 2.0};
+
+// One bracket: `picture` (network units, primaries `source`) through the SDR view with the
+// diffuse white (203 nits) at code 1.0, the viewer exposure at `ev` stops, clipped, sRGB,
+// rounded to 8 bits: what the viewer shows on an SDR screen at view peak 203 and EV `ev`.
+// -2 shows the light up to 812 nits, +2 the shadows.
+Rgb8Image exposure_bracket(const NetworkLinearImage& picture, double ev, Primaries source = Primaries::Rec709);
+
+// How far apart two 8-bit pictures of one size are: the largest code difference over every
+// channel, and the share of pixels (0..1) with any difference. size mismatch: {256, 1}.
+struct CodeDelta {
+    int max_code_delta = 0;
+    double pixels_differing = 0.0;
+};
+CodeDelta code_delta(const Rgb8Image& a, const Rgb8Image& b);
+
+// The signal the viewer writes, in one line, e.g. "HDR10 · PQ (ST 2084) · Rec.2020 · reference
+// white 203 nits · display peak 1,000 nits". The SDR path names the view peak it simulates.
+std::string display_signal_text(const DisplayTarget& target, double view_peak_nits);
 
 // The SDR's max(R, G, B) code per pixel, what the display pass reads for the
 // Invented layer (the GPU gets it as the baseline texture's alpha); 0.5, a

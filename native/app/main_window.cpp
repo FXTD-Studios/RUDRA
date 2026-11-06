@@ -741,6 +741,9 @@ void MainWindow::session_changed(std::uint32_t what) {
             const int band = session_.show_masks ? session_.painted_band() : -1;
             v.paint_band = band;
             if (band >= 0) v.paint_tint = kBandTints[band];
+            // RUDRA 1.1: the reconstruction region, tinted where the composite lets it act.
+            v.region_overlay = session_.show_region && session_.grade.region.enabled;
+            v.overlay_region = session_.grade.region;
             viewer_->set_view(v);
         }
     }
@@ -1566,6 +1569,31 @@ void MainWindow::inspect_source() {
                                   shot_video_ ? shot_video_->stream : std::nullopt, still);
 }
 
+void MainWindow::refresh_view_region() {
+    const ReconstructionRegion& rg = session_.grade.region;
+    if (region_hist_) {
+        if (!rg.enabled || !current_frame_) {
+            region_hist_->clear();
+            region_hist_frame_ = nullptr;
+        } else if (region_hist_frame_ != current_frame_.get() || !(region_hist_region_ == rg)) {
+            region_hist_->set(region_histogram(current_frame_->sdr, rg), ViewParams{}.region_tint);
+            region_hist_frame_ = current_frame_.get();
+            region_hist_region_ = rg;
+        }
+    }
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) {
+        ViewParams v = viewer_->view();
+        const bool on = session_.show_region && rg.enabled;
+        if (v.region_overlay != on || !(v.overlay_region == rg)) {
+            v.region_overlay = on;
+            v.overlay_region = rg;
+            viewer_->set_view(v);
+        }
+    }
+#endif
+}
+
 void MainWindow::sync_ui() {
     const auto& g = session_.grade;
     mode_seg_->set_on(QString::fromStdString(g.mode));
@@ -1588,6 +1616,9 @@ void MainWindow::sync_ui() {
         region_on_->set_on(rg.enabled);
         region_on_->set_hint(!rg.enabled ? "off" : rg.band ? "band" : "highlights + shadows");
         region_box_->setVisible(rg.enabled);
+        region_show_->set_on(session_.show_region);
+        region_show_->set_hint(session_.show_region ? "tinted" : "off");
+        refresh_view_region();
         region_kind_->set_on(rg.band ? "band" : "tones");
         for (const auto& rs : region_sliders_) {
             const QSignalBlocker b(rs.slider);
@@ -1607,9 +1638,14 @@ void MainWindow::sync_ui() {
     anchor_knee_->setEnabled(session_.anchor);
     carry_chroma_->set_on(session_.carry_chroma);
     carry_chroma_->set_hint(session_.carry_chroma ? "below the clip" : "per-channel");
-    const bool aces = session_.container == "aces";
-    container_field_->setText(aces ? "OpenEXR — ACES 2065-1" : "OpenEXR — linear Rec.2020");
-    primaries_field_->setText(aces ? "AP0 (ST 2065-4)" : "Rec.2020");
+    {   // RUDRA 1.1: four analytic containers
+        const std::string& k = session_.container;
+        container_field_->setText(k == "linear"   ? "OpenEXR — linear Rec.2020"
+                                  : k == "acescg" ? "OpenEXR — ACEScg"
+                                  : k == "rec709" ? "OpenEXR — linear Rec.709"
+                                                  : "OpenEXR — ACES 2065-1");
+        primaries_field_->setText(k == "linear" ? "Rec.2020" : k == "acescg" ? "AP1 (ACEScg)" : k == "rec709" ? "Rec.709" : "AP0 (ST 2065-4)");
+    }
     region_count_->setText(QString::number(g.regions.size()));
     regions_->sync();
     mask_panel_->sync();
@@ -2009,6 +2045,13 @@ void MainWindow::update_pipe() {
     findChild<QLabel*>("pipeIn")->setText(in);
     findChild<QLabel*>("pipeWorking")->setText(QString::fromStdString(t.working));
     view_transform_->setText(QString::fromStdString(t.view));
+    if (auto* ds = findChild<QLabel*>("pipeDisplay")) {   // RUDRA 1.1: the signal on the glass
+        DisplayTarget target = DisplayTarget::sdr();
+#ifdef RUDRA_APP_VIEWER
+        if (viewer_) target = viewer_->view().target;
+#endif
+        ds->setText(QString::fromStdString(display_signal_text(target, session_.display_nits())));
+    }
     findChild<QLabel*>("pipeMaster")->setText(QString::fromStdString(t.master).replace("EXR, half", "EXR, float32"));
     if (const QString pipe = deliver_pipe_label(deliver_effective(), deliver_aces()); !pipe.isEmpty())
         findChild<QLabel*>("pipeMaster")->setText(pipe);   // the Deliver tab's learned master or movie
@@ -2162,6 +2205,10 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     RenderPlan plan;
     plan.render_dir = folder.toStdString();
     plan.render_name = to_movie ? frames_movie_->name : findChild<QLineEdit*>("renderName")->text().trimmed().toStdString();
+    // RUDRA 1.1: the AI fill after an analytic render picks this render's frames in the folder.
+    analytic_fill_glob_ = to_movie ? QString()
+                                   : QString::fromStdString(plan.render_name) +
+                                         (sequence ? QStringLiteral(".[0-9][0-9][0-9][0-9][0-9][0-9].exr") : QStringLiteral(".exr"));
     plan.render_count = int(n);
     plan.frame_start = to_movie ? 0 : findChild<QSpinBox*>("renderStart")->value();
     plan.sequence = sequence;
@@ -2176,6 +2223,19 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
 
     MasterRequest q = master_request();
     if (to_movie) q.container = "linear";   // Rec.2020 scene linear, what deliver reads
+    q.mattes = deliver_effective().mattes;   // RUDRA 1.1: the masters' mattes
+    if (to_movie && q.mattes) {   // a movie: per frame, in <name>_mattes beside its frames folder (frames only there)
+        q.mattes_dir = frames_movie_->frames_dir.parent_path() / (frames_movie_->name + "_mattes");
+        std::error_code mec;
+        if (std::filesystem::exists(q.mattes_dir, mec) && !std::filesystem::is_empty(q.mattes_dir, mec)) {
+            const QString t = from_path(q.mattes_dir.filename()) + " already holds mattes; move it or pick another name";
+            say("Stopped: " + t);
+            log("Render stopped: " + t);
+            frames_movie_.reset();
+            return;
+        }
+    }
+    q.brackets = !to_movie && deliver_effective().brackets;   // RUDRA 1.1: -2 / 0 / +2 EV and the export check
     const ModelConstants model = frame_constants();
     if (!prepare) {
 #ifdef RUDRA_HAVE_STILL_DECODE
@@ -2249,6 +2309,19 @@ void MainWindow::master_finished(const MasterOutcome& o, const QString& folder) 
     btn_master_->setToolTip({});
     refresh_enabled();
     sync_ui();
+    // RUDRA 1.1: the AI fill of an analytic EXR render (ACES 2065-1), as the learned route does.
+    if (!movie && !o.error && !o.cancelled && o.completed > 0 && !deliver_aces() && deliver_effective().ai_fill) {
+        QString why;
+        GenFillOptions go = deliver_effective().ai;
+        go.glob = analytic_fill_glob_;   // this render's frames only (master_targets' names)
+        QString name = analytic_fill_glob_;   // the render name: the glob without its frame part
+        name = name.contains('[') ? name.left(name.indexOf(QStringLiteral(".[0-9]"))) : name.left(name.size() - 4);
+        const QString base = QDir(folder).filePath(name);
+        if (analytic_fill_glob_.isEmpty() || !start_genfill_with(folder, go, base, {}, &why)) {
+            status->setText(status->text() + QStringLiteral(" \u00b7 AI fill not run: ") + why);
+            log("AI fill not run: " + why);
+        }
+    }
     // The movie's encode goes last, so its "Encoding…" button (a click stops
     // the movie) is what shows while it runs, not "Master EXR".
     if (movie) encode_frames_movie(std::move(*movie));

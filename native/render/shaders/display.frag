@@ -19,11 +19,13 @@ layout(std140, binding = 0) uniform View {
     vec4 paint;   // roadmap 3.3: x the painted mask's channel (< 0 none), yzw its tint (sRGB)
     vec4 look;    // revision 6: x 2^view_ev, y 1 / view gamma, z 1 when the gamma is on, w 1 when sdrLight is bound
     vec4 ab;      // revision 6: x the shown source, y the wipe's left, z its right (0 model, 1 baseline, 2 sdr), w zebras (1 clamp + 2 clip)
+    vec4 region;  // RUDRA 1.1: x 1 to tint the reconstruction region, yzw its tint (sRGB)
 };
 
 layout(binding = 3) uniform sampler2D masks;      // painted masks (3.3), RGBA8, a band per channel
 layout(binding = 1) uniform sampler2D model;      // rgb reconstruction, network units; a the SDR's Rec.2020 luma, linearised (the anchor's target)
 layout(binding = 2) uniform sampler2D baseline;   // rgb analytic baseline, a the SDR's max code (Invented)
+layout(binding = 5) uniform sampler2D regionW;    // RUDRA 1.1: r the region's weight (core region_overlay_rgba8)
 layout(binding = 4) uniform sampler2D sdrLight;   // revision 6: rgb the SDR as light (core/view.cpp sdr_light_rgba), a its clamp flags
 
 const float kPeak = 10000.0;
@@ -182,6 +184,14 @@ void main() {
         float a = 0.35 * (ch == 0 ? mv.x : ch == 1 ? mv.y : ch == 2 ? mv.z : mv.w);
         if (a > 0.0) {
             vec3 t = target.x < 0.5 ? paint.yzw : 203.0 * vec3(srgbToLinear(paint.y), srgbToLinear(paint.z), srgbToLinear(paint.w));
+            c = c * (1.0 - a) + t * a;
+        }
+    }
+    if (region.x > 0.5 && mode == 0) {
+        // RUDRA 1.1: the reconstruction region, as the composite gates by it (core/view.cpp).
+        float a = 0.40 * texelFetch(regionW, p, 0).r;
+        if (a > 0.0) {
+            vec3 t = target.x < 0.5 ? region.yzw : 203.0 * vec3(srgbToLinear(region.y), srgbToLinear(region.z), srgbToLinear(region.w));
             c = c * (1.0 - a) + t * a;
         }
     }
