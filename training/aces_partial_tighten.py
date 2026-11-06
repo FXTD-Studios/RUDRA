@@ -273,7 +273,28 @@ def lock_observed(source, constrained, baseline, weight, view, iters=4, eps=2e-3
         # the source target 0.241 / 0.0129, with the dequantized target 0.239 / 0.0119.
         lam = float(strength)
         raw = cur.reshape(-1, 3)[idx][ok].astype(np.float64)
-        flat[idx[ok]] = (np.maximum(raw, 1e-9) ** (1.0 - lam) * np.maximum(x[ok], 1e-9) ** lam).astype(np.float32)
+        xl = x[ok]
+        rec_ok, clip_ok, src_ok = rec[ok], clipped[ok], src[ok]
+        # The appearance guard (7 Nov 2026): a blend of two in-bounds values can leave the bounds,
+        # because the view mixes channels. Each pixel takes the weakest strength, from lambda up to
+        # the full lock (which passed above), whose blend still shows every recorded channel within
+        # 1 code of the source and keeps every clipped channel clipped. Without it, every strength
+        # arm failed Hunyuan48's all_highlight_appearance (6 Nov).
+        chosen = np.full(raw.shape[0], np.nan)
+        res = np.empty_like(raw)
+        for lk in (lam, lam + (1 - lam) * .25, lam + (1 - lam) * .5, lam + (1 - lam) * .75, 1.0):
+            todo = np.isnan(chosen)
+            if not todo.any():
+                break
+            blend = np.maximum(raw[todo], 1e-9) ** (1.0 - lk) * np.maximum(xl[todo], 1e-9) ** lk
+            db = fwd(blend)
+            good = ((np.abs(np.where(rec_ok[todo], db - src_ok[todo], 0.0)).max(1) * 255.0 <= 1.0)
+                    & ~(clip_ok[todo] & (db < FULL_CODE)).any(1)) | (lk >= 1.0)
+            sel = np.flatnonzero(todo)[good]
+            res[sel] = blend[good]
+            chosen[sel] = lk
+        flat[idx[ok]] = res.astype(np.float32)
+        diag['strength_raised_pixels'] = int((chosen > lam + 1e-9).sum())
     else:
         flat[idx[ok]] = x[ok].astype(np.float32)
     diag['strength'] = float(strength)
