@@ -757,7 +757,10 @@ bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOpti
             if (!self) return;
             auto* st = self->findChild<QLabel*>("renderStatus");
             const QString ev = o.value("event").toString();
-            if (ev == "ready") {
+            if (ev == "embedding") {   // a prompt not in the cache: umT5 loads once to embed it (6 Nov 2026)
+                st->setText(QStringLiteral("AI fill: embedding %1 new prompt(s), once (a minute or more)…")
+                                .arg(o.value("prompts").toArray().size()));
+            } else if (ev == "ready") {
                 st->setText(QStringLiteral("AI fill: model loaded on %1…").arg(o.value("device").toString()));
             } else if (ev == "progress") {
                 st->setText(QStringLiteral("AI fill: window %1 / %2 · step %3 / %4")

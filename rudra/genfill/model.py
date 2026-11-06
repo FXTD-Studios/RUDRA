@@ -51,6 +51,11 @@ class PromptBank:
     def key(text: str) -> str:
         return hashlib.sha256(text.strip().encode()).hexdigest()[:24]
 
+    def has(self, text: str) -> bool:
+        """Whether get(text) is instant: in memory or in the disk cache (no umT5 load)."""
+        k = self.key(text)
+        return k in self._mem or bool(self.cache and (self.cache / f'{k}.pt').exists())
+
     def put(self, text: str, embeds: torch.Tensor):
         self._mem[self.key(text)] = embeds
 

@@ -471,6 +471,19 @@ def brightness_settings(a, offset: float, shape_gain: float | None = None):
                               identity={'estimator': bm, 'estimator_sha256': sha256_file(bm)})
 
 
+def prepare_prompts(bank, texts, emit) -> None:
+    """The prompts' embeddings, before the fill (6 Nov 2026). A prompt not in the cache loads umT5
+    (about 11 GB, on the CPU) once to embed it: a minute or more with nothing on screen, so the app
+    is told first ({"event": "embedding", "prompts": [...]}) and can say why it waits."""
+    texts = [t for t in dict.fromkeys(texts) if t]
+    new = [t for t in texts if not bank.has(t)]
+    if new:
+        emit(event='embedding', prompts=new, text=f'embedding {len(new)} new prompt(s): once, a minute or more')
+    for t in texts:
+        bank.get(t)
+    bank.release()
+
+
 def serve(model, view, a, emit, FillSettings) -> int:
     """The app's AI fill preview (4 Nov 2026): the model stays loaded, so a setting changed and
     previewed again costs the fill, not the 1-2 minutes of loading. One JSON object per stdin line:
@@ -515,9 +528,7 @@ def serve(model, view, a, emit, FillSettings) -> int:
                              prompt_highlight=str(r.get('prompt_highlight', a.prompt_highlight)),
                              prompt_shadow=str(r.get('prompt_shadow', a.prompt_shadow)),
                              prompt_strength=checked_prompt_strength(r.get('prompt_strength', a.prompt_strength)))
-            for text in {s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative} - {''}:
-                model.prompts.get(text)
-            model.prompts.release()
+            prepare_prompts(model.prompts, [s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative], tagged)
             ms = MaskSettings(tau_high=int(r.get('tau_high', a.tau_high)), tau_low=int(r.get('tau_low', a.tau_low)),
                               blend_high=a.blend_high, blend_low=a.blend_low, feather=a.feather,
                               max_gain_stops=a.max_gain_stops).check()
@@ -596,9 +607,7 @@ def main(argv=None):
         s = FillSettings(steps=a.steps, seed=a.seed, guidance=a.guidance,
                          prompt_highlight=a.prompt_highlight, prompt_shadow=a.prompt_shadow,
                          prompt_strength=checked_prompt_strength(a.prompt_strength))
-        for text in {s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative} - {''}:
-            model.prompts.get(text)
-        model.prompts.release()
+        prepare_prompts(model.prompts, [s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative], emit)
         view = ACES2View(threads=max(1, min(16, a.ocio_threads)))
         emit(event='ready', device=device, load_seconds=round(time.time() - t0, 1), model=model.identity)
         if a.serve:

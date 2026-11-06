@@ -1001,8 +1001,11 @@ QWidget* MainWindow::build_right_rail() {
     rcard->setObjectName("recReconCard");
     anv->addWidget(rcard);
     {   // Shown on the learned route: these grade the analytic reconstruction only.
+        // 6 Nov 2026: the luminance region reaches the learned route too (aces_region_blend), so it is
+        // left out of this note and stays enabled (colorist_tab.cpp locks the rest).
         auto* rn = label("Learned ACES 2.0 is rendering: these controls are the analytic reconstruction's and do not "
-                         "reach its frames or renders. Its trims are in the Learned ACES 2.0 card above.",
+                         "reach its frames or renders, except Limit to a luminance region, which it applies "
+                         "too (strength up to 1). Its trims are in the Learned ACES 2.0 card above.",
                          "routeNoteRec", "small", rec);
         rn->setWordWrap(true);
         rn->hide();

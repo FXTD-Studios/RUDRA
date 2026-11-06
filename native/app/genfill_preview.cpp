@@ -338,6 +338,10 @@ void MainWindow::preview_genfill() {
                                          .arg(e.value("device").toString())
                                          .arg(e.value("load_seconds").toDouble(), 0, 'f', 0)
                                          .arg(frames));
+                    else if (ev == "embedding")   // a typed prompt not in the cache: umT5 loads once (6 Nov 2026)
+                        st2->setText(QStringLiteral("AI fill preview: embedding %1 new prompt(s), once (a minute or more); "
+                                                    "the presets are instant")
+                                         .arg(e.value("prompts").toArray().size()));
                     else if (ev == "progress")
                         st2->setText(QStringLiteral("AI fill preview: step %1 / %2").arg(e.value("step").toInt()).arg(e.value("steps").toInt()));
                 },
