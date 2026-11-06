@@ -120,6 +120,16 @@ float regionGain(vec3 nits, vec2 uv) {
     return exp2(total);
 }
 
+// One colour channel of the reconstruction (the body of the former per-channel loop, unchanged).
+float channelOf(float sc, float fc, bool outside, float gate, float logScale, float logCeiling, float recovery, bool recover) {
+    float base = baselineOf(sc);
+    if (outside) return base;
+    float pl = clamp(log1pAccurate(base * logScale) + fc * gate, 0.0, logCeiling);
+    float v = expm1Accurate(pl) / logScale;
+    if (recover) v = base + recovery * (v - base);
+    return v;
+}
+
 void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
     vec4 a = texelFetch(sdrShadow, p, 0);
@@ -149,18 +159,15 @@ void main() {
     float recovery = max(highlight, shadow);
     float logCeiling = log1pAccurate(model.y * logScale);
 
-    vec3 pred;
-    for (int c = 0; c < 3; ++c) {
-        float base = baselineOf(s[c]);
-        if (regionOn && gate == 0.0) {   // outside the region: the baseline itself
-            pred[c] = base;
-            continue;
-        }
-        float pl = clamp(log1pAccurate(base * logScale) + f[c] * gate, 0.0, logCeiling);
-        float v = expm1Accurate(pl) / logScale;
-        if (control.y > 0.5) v = base + recovery * (v - base);
-        pred[c] = v;
-    }
+    // One channel at a time through channelOf, assembled as a vec3: no indexed write into a
+    // local array inside a loop. Direct3D's HLSL compiler cannot unroll such a loop when it
+    // also exits early ("X3500 array reference cannot be used as an l-value ... X3511
+    // unrolling failed"), and the viewer then draws nothing on Windows (6 Nov 2026).
+    bool outside = regionOn && gate == 0.0;   // outside the region: the baseline itself
+    bool recover = control.y > 0.5;
+    vec3 pred = vec3(channelOf(s.r, f.r, outside, gate, logScale, logCeiling, recovery, recover),
+                     channelOf(s.g, f.g, outside, gate, logScale, logCeiling, recovery, recover),
+                     channelOf(s.b, f.b, outside, gate, logScale, logCeiling, recovery, recover));
     float grade = 1.0;
     if (counts.y > 0.0 || frame.z != 1.0) {
         // The exposure first; the bands read the exposed nits (core/composite.cpp).
