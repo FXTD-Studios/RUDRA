@@ -22,6 +22,7 @@ import argparse
 import json
 import re
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -31,10 +32,22 @@ from make_models_json import CHANNELS, model_entry  # noqa: E402
 HF_URL = re.compile(r"^https://huggingface\.co/(?P<repo>[^/]+/[^/]+)/resolve/(?P<rev>[^/]+)/(?P<path>.+)$")
 
 
+# 7 Nov 2026: the website answers Python's default "Python-urllib" agent with 403 (the app's
+# Qt downloader is let through); a plain agent of our own, as a browser would send one.
+USER_AGENT = "Mozilla/5.0 (compatible; RUDRA-models-index/1.1)"
+
+
 def load(src: str) -> dict:
     if src.startswith("https://"):
-        with urllib.request.urlopen(src, timeout=30) as r:   # noqa: S310 (https only)
-            return json.loads(r.read().decode("utf-8"))
+        req = urllib.request.Request(src, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:   # noqa: S310 (https only)
+                return json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            raise SystemExit(f"{src}: the site answered {e.code}. Open it in a browser, save it as a file "
+                             f"(for example dist\\models_live.json) and pass --in with that file.") from None
+        except urllib.error.URLError as e:
+            raise SystemExit(f"{src}: {e.reason}. Save it from a browser and pass --in with the file.") from None
     return json.loads(Path(src).read_text(encoding="utf-8"))
 
 
