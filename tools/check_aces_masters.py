@@ -128,8 +128,21 @@ def main(argv=None) -> int:
                 ok = False
             else:
                 master_b, _ = read_master(exr_b)
-                b = stats(np.abs(to_codes(view, master_b) - view_a), b_limit + a.slack)
+                view_b = to_codes(view, master_b)
+                d = np.abs(view_b - view_a)
+                b = stats(d, b_limit + a.slack)
                 b["pass"] = b["max"] <= b_limit + a.slack
+                # Where the runtimes disagree most (6 Nov 2026): the pixel, what the source and each
+                # runtime have there, and whether RUDRA rebuilt it, so a failure says what kind it is.
+                e = d.max(-1)
+                y, x = (int(v) for v in np.unravel_index(int(np.argmax(e)), e.shape))
+                b["worst_pixel"] = {"x": x, "y": y, "source_codes": [float(v) for v in codes[y, x]],
+                                    "view_a": [round(float(v), 3) for v in view_a[y, x]],
+                                    "view_b": [round(float(v), 3) for v in view_b[y, x]],
+                                    "master_a": [float(v) for v in master[y, x]],
+                                    "master_b": [float(v) for v in master_b[y, x]],
+                                    "reconstructed": (float(mask[y, x]) if mask is not None else None)}
+                b["pixels_over_limit"] = int((e > b_limit + a.slack).sum())
                 lin = np.abs(master_b - master) / np.maximum(np.abs(master), 1e-3)
                 b["scene_linear_rel_max"] = float(lin.max())
                 row["B_backends"] = b
@@ -150,6 +163,10 @@ def main(argv=None) -> int:
             line += f"R max {r['max']:.3f} codes ({'ok' if r['pass'] else 'FAIL'})"
         if b:
             line += f"; B max {b['max']:.3f} codes ({'ok' if b['pass'] else 'FAIL'})"
+            if not b["pass"]:
+                w = b["worst_pixel"]
+                line += (f" [{b['pixels_over_limit']} px over; worst at ({w['x']},{w['y']}) source {w['source_codes']}"
+                         f" A {w['view_a']} B {w['view_b']} rebuilt {w['reconstructed']}]")
         print(line)
     print("PASS" if ok else "FAILED", f"-> {a.report}")
     return 0 if ok else 1
