@@ -234,6 +234,12 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   fill: a constraint score, not a probability), and the sidecar the share of
   each class (`pixel_classes`). In the viewer, the **Invented** layer shows
   the same reconstructed / estimated split live.
+- **More detail in the filled area** (AI fill, off by default): the fill model works at about
+  832 × 480. On, it sees only a box around the shot's clipped areas (one box for the whole
+  shot, so the fill still moves as one picture) instead of the whole frame, so a blown sky in a
+  door a third of the frame wide is drawn at roughly twice the detail. Small specks far from the
+  main area keep the master there; `genfill.json` gives the box and the share left out
+  (`focus`). Off is AI fill v3 as tested.
 - **Drop flickering fill frames** (AI fill, on by default): a frame whose
   fill jumps more than a quarter stop into it and out of it is written as
   the master's own frame; a fill that starts or ends is kept. A fill that is

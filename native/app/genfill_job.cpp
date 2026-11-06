@@ -14,6 +14,7 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QTimer>
 
 #include <algorithm>
@@ -27,12 +28,16 @@ namespace {
 QString qp(const fs::path& p) { return from_path(p); }
 fs::path pq(const QString& s) { return to_path(s); }
 
-// The repository: the saved one, else the first folder upwards of the app (or the
-// working directory) with rudra/genfill/run.py.
+// The repository: the saved one, else the Python a package carries beside the app (7 Nov
+// 2026: <app>/python on Windows, RUDRA.app/Contents/Resources/python on macOS), else the first
+// folder upwards of the app (or the working directory) with rudra/genfill/run.py.
 fs::path find_repo() {
     QSettings st;
     const QString saved = st.value("genfill/repo").toString();
     if (!saved.isEmpty()) return pq(saved);
+    const QDir app(QCoreApplication::applicationDirPath());
+    for (const QString& packaged : {app.filePath("python"), app.filePath("../Resources/python")})
+        if (QFileInfo::exists(packaged + "/rudra/genfill/run.py")) return pq(QDir::cleanPath(packaged));
     for (const QString& start : {QCoreApplication::applicationDirPath(), QDir::currentPath()}) {
         QDir d(start);
         for (int i = 0; i < 8; ++i) {
@@ -136,16 +141,45 @@ const QString kSetupScript = QStringLiteral("scripts\\GENFILL.ps1 -Setup");
 const QString kSetupScript = QStringLiteral("scripts/genfill_setup.sh");
 #endif
 
+// 7 Nov 2026: the Python "Set up automatically" made (genfill_bootstrap), else the repository's
+// .venv. Not a Python on the PATH: the setup would install the fill's packages into it, and one
+// without PyTorch for the GPU is worse than the bootstrap's own.
 fs::path default_python(const fs::path& repo) {
+    std::error_code ec;
+    if (const fs::path own = genfill_bootstrap_python(); fs::exists(own, ec)) return own;
 #ifdef _WIN32
-    return repo / ".venv" / "Scripts" / "python.exe";
+    return repo / ".venv" / "Scripts" / "python.exe";   // missing: the bootstrap's case
 #else
     const fs::path venv = repo / ".venv" / "bin" / "python";
-    return fs::exists(venv) ? venv : fs::path("python3");
+    return fs::exists(venv, ec) ? venv : fs::path("python3");
 #endif
 }
 
 }  // namespace
+
+fs::path genfill_bootstrap_root() {
+    return pq(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)) / "genfill";
+}
+
+fs::path genfill_bootstrap_python() {
+#ifdef _WIN32
+    return genfill_bootstrap_root() / "venv" / "Scripts" / "python.exe";
+#else
+    return genfill_bootstrap_root() / "venv" / "bin" / "python";
+#endif
+}
+
+fs::path genfill_bootstrap_script(const fs::path& repo) {
+#ifdef _WIN32
+    const char* name = "genfill_bootstrap.ps1";
+#else
+    const char* name = "genfill_bootstrap.sh";
+#endif
+    std::error_code ec;
+    for (const fs::path& p : {repo / name, repo / "scripts" / name})   // a package's python/, the repository
+        if (!repo.empty() && fs::exists(p, ec)) return p;
+    return {};
+}
 
 QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, const QString& master, const QString& out) {
     QStringList a{"-m", "rudra.genfill.run", "--master", master, "--out", out, "--base", qp(s.base), "--lora", qp(s.lora),
@@ -158,6 +192,7 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
     if (o.shape_gain != 1.0) a << "--shape-gain" << QString::number(o.shape_gain, 'g', 6);
     if (!o.region_json.isEmpty()) a << "--region" << o.region_json;
     if (o.fallback) a << "--fallback" << "spikes";
+    if (o.focus_region) a << "--focus" << "region";
     if (!o.glob.isEmpty()) a << "--glob" << o.glob;
     return a;
 }

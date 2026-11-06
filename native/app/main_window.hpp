@@ -231,6 +231,7 @@ public:
     // model kept loaded, and shown in the viewer: "fill", "master" or "mask" (the
     // invented pixels). A second click on Preview stops it.
     void preview_genfill();
+    void start_analytic_preview_master(const QString& mdir, int a, int b, std::function<void(const QJsonObject&)> done);
     void show_genfill_preview(const QString& which);
     // RUDRA 1.1: the AI fill's "Suggest" button: rudra.genfill.prompts on the current frame,
     // then a menu of suggestions and presets that fills the highlight / shadow prompt.
@@ -246,6 +247,9 @@ public:
     void use_prompt_suggestion(const PromptSuggestion& p);
     // RUDRA 1.1: the region tint on the viewer and the card's histogram, from the session.
     void refresh_view_region();
+    // What the region tint shows (7 Nov 2026): the analytic composite's gate on the analytic
+    // route; the region's own weight on the learned route (what it and the AI fill apply).
+    RegionOverlayGate region_overlay_gate() const;
     bool genfill_previewing() const;
     // The batch queue (28 Oct 2026, batch_queue.hpp): shots rendered one after
     // another through the learned ACES 2.0 model. Its file is the setting
@@ -382,6 +386,9 @@ public:
     // the Render fields, then a background job over the frames. `prepare` and
     // `count` stand in for the opened frames and the network (the tests).
     void master(PrepareMasterFrame prepare = {}, std::size_t count = 0);
+    // Each source decoded and reconstructed as Master EXR does (the analytic fields, or the loaded
+    // model's); empty in a build without still decode. The AI fill preview uses it too (7 Nov 2026).
+    PrepareMasterFrame master_prepare(std::vector<std::filesystem::path> sources, const MasterRequest& q) const;
     bool mastering() const { return master_job_ && master_job_->running(); }
     // What a master renders with now (the session, the Deliver checks, the model).
     MasterRequest master_request() const;
@@ -680,6 +687,7 @@ private:
     class RegionHistogramView* region_hist_ = nullptr;
     const void* region_hist_frame_ = nullptr;         // the frame and region the histogram was made for
     ReconstructionRegion region_hist_region_;
+    RegionOverlayGate region_hist_gate_;
     Seg* region_kind_ = nullptr;
     QWidget* region_box_ = nullptr;
     struct RegionSlider {
@@ -902,6 +910,8 @@ private:
     bool prompt_suggest_running_ = false;
     QWidget* ai_prompt_bar_ = nullptr;                       // over the viewer
     int genfill_preview_master_id_ = 0;   // the engine's master request while the preview's master renders
+    std::unique_ptr<MasterJob> genfill_preview_job_;   // ... or the analytic route's (7 Nov 2026)
+    bool genfill_ready_ = false;   // the AI fill was set up at the last Deliver refresh (the prompt bar shows then)
     bool genfill_preview_busy_ = false;
     QString genfill_last_out_;
     void sync_deliver();            // the Deliver tab's controls and Signal card from deliver_

@@ -746,6 +746,7 @@ void MainWindow::session_changed(std::uint32_t what) {
             // RUDRA 1.1: the reconstruction region, tinted where the composite lets it act.
             v.region_overlay = session_.show_region && session_.grade.region.enabled;
             v.overlay_region = session_.grade.region;
+            v.overlay_gate = region_overlay_gate();
             viewer_->set_view(v);
         }
     }
@@ -1572,25 +1573,39 @@ void MainWindow::inspect_source() {
                                   shot_video_ ? shot_video_->stream : std::nullopt, still);
 }
 
+RegionOverlayGate MainWindow::region_overlay_gate() const {
+    RegionOverlayGate g;
+    if (aces_routed()) return g;   // the learned route applies the region's own weight (aces_region_blend)
+    const CompositeParams p = session_.composite_params();
+    g.analytic = true;
+    g.mode = p.mode;
+    g.strength = p.strength;
+    g.shadow_weight = current_frame_ ? current_frame_->scalars.shadow_weight : 1.0f;
+    return g;
+}
+
 void MainWindow::refresh_view_region() {
     const ReconstructionRegion& rg = session_.grade.region;
+    const RegionOverlayGate gate = region_overlay_gate();
     if (region_hist_) {
         if (!rg.enabled || !current_frame_) {
             region_hist_->clear();
             region_hist_frame_ = nullptr;
-        } else if (region_hist_frame_ != current_frame_.get() || !(region_hist_region_ == rg)) {
-            region_hist_->set(region_histogram(current_frame_->sdr, rg), ViewParams{}.region_tint);
+        } else if (region_hist_frame_ != current_frame_.get() || !(region_hist_region_ == rg) || !(region_hist_gate_ == gate)) {
+            region_hist_->set(region_histogram(current_frame_->sdr, rg, 64, gate), ViewParams{}.region_tint, gate.analytic);
             region_hist_frame_ = current_frame_.get();
             region_hist_region_ = rg;
+            region_hist_gate_ = gate;
         }
     }
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         ViewParams v = viewer_->view();
         const bool on = session_.show_region && rg.enabled;
-        if (v.region_overlay != on || !(v.overlay_region == rg)) {
+        if (v.region_overlay != on || !(v.overlay_region == rg) || !(v.overlay_gate == gate)) {
             v.region_overlay = on;
             v.overlay_region = rg;
+            v.overlay_gate = gate;
             viewer_->set_view(v);
         }
     }
@@ -2187,6 +2202,32 @@ MasterRequest MainWindow::master_request() const {
 
 const SdrImage* MainWindow::frame_sdr() const { return current_frame_ ? &current_frame_->sdr : nullptr; }
 
+PrepareMasterFrame MainWindow::master_prepare(std::vector<std::filesystem::path> sources, const MasterRequest& q) const {
+#ifdef RUDRA_HAVE_STILL_DECODE
+    return [sources = std::move(sources), backend = use_model_ ? backend_.get() : nullptr, mu = backend_mutex_,
+            q](std::size_t i) -> Result<MasterFrame> {
+        auto file = ensure_frame_file(sources[i]);
+        if (!file) return file.error();
+        auto d = decode_sdr_file(*file);
+        if (!d) return d.error();
+        if (!backend) {   // the analytic reconstruction: no network, the clip fill unless it is off
+            Fields fields = analytic_fields_for(d->rgb, q);
+            return MasterFrame{std::move(d->rgb), d->bits, std::move(fields), FrameScalars{}, *file, false,
+                               primaries_id(d->colour.primaries), std::move(d->alpha)};
+        }
+        std::lock_guard lock(*mu);
+        auto fr = infer_frame(*backend, d->rgb, TileConfig{0, 0});   // full resolution, untiled
+        if (!fr) return fr.error();
+        return MasterFrame{std::move(d->rgb), d->bits, std::move(fr->fields), std::move(fr->scalars), *file, fr->tiled,
+                           primaries_id(d->colour.primaries), std::move(d->alpha)};
+    };
+#else
+    (void)sources;
+    (void)q;
+    return {};
+#endif
+}
+
 void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     auto* status = findChild<QLabel*>("renderStatus");
     auto say = [status](const QString& t) {
@@ -2245,27 +2286,11 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     q.brackets = !to_movie && deliver_effective().brackets;   // RUDRA 1.1: -2 / 0 / +2 EV and the export check
     const ModelConstants model = frame_constants();
     if (!prepare) {
-#ifdef RUDRA_HAVE_STILL_DECODE
-        prepare = [sources, backend = use_model_ ? backend_.get() : nullptr, mu = backend_mutex_, q](std::size_t i) -> Result<MasterFrame> {
-            auto file = ensure_frame_file(sources[i]);
-            if (!file) return file.error();
-            auto d = decode_sdr_file(*file);
-            if (!d) return d.error();
-            if (!backend) {   // the analytic reconstruction: no network, the clip fill unless it is off
-                Fields fields = analytic_fields_for(d->rgb, q);
-                return MasterFrame{std::move(d->rgb), d->bits, std::move(fields), FrameScalars{}, *file, false,
-                                   primaries_id(d->colour.primaries), std::move(d->alpha)};
-            }
-            std::lock_guard lock(*mu);
-            auto fr = infer_frame(*backend, d->rgb, TileConfig{0, 0});   // full resolution, untiled
-            if (!fr) return fr.error();
-            return MasterFrame{std::move(d->rgb), d->bits, std::move(fr->fields), std::move(fr->scalars), *file, fr->tiled,
-                               primaries_id(d->colour.primaries), std::move(d->alpha)};
-        };
-#else
-        say("This build has no still decode (RUDRA_WITH_OPENCV=OFF).");
-        return;
-#endif
+        prepare = master_prepare(sources, q);
+        if (!prepare) {
+            say("This build has no still decode (RUDRA_WITH_OPENCV=OFF).");
+            return;
+        }
     }
     halt_playback();   // stopPlay()
     btn_master_->setText("Rendering\u2026");

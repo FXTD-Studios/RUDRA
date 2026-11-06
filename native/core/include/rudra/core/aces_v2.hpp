@@ -87,7 +87,7 @@ PlanarBuffer constrain_colour_v2(const PlanarBuffer& source, const PlanarBuffer&
                                  bool include_fully_clipped = true, ConstraintStats* stats = nullptr,
                                  bool forbid_new_negative_y = false);
 
-// Stage 5b (1 Nov 2026, the user's tau controls, as SwitchHDR's): keep the
+// Stage 5b (1 Nov 2026, the user's tau controls): keep the
 // learned result only where the source's brightest channel is at or above
 // tau_high (highlights) or at or below tau_low (shadows), in 8-bit codes, with
 // a 2-code ramp; everywhere between is the exact analytic inverse, which the

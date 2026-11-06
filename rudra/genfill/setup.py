@@ -71,6 +71,21 @@ def machine(base: Path) -> dict:
     return out
 
 
+def no_gpu_reason(m: dict) -> str:
+    """Why the fill cannot run here, in words that say what to do (6 Nov 2026: a Python without
+    PyTorch was reported as 'no GPU', and the artist went looking for a driver problem)."""
+    if m.get('torch') is None:
+        return (f'PyTorch is not installed in {sys.executable}. Install the build for your GPU '
+                '(https://pytorch.org/get-started/locally/: CUDA on Windows and Linux), then run this again')
+    if m['device'] == 'cpu' and '+cpu' in str(m.get('torch')):
+        return (f"PyTorch {m['torch']} is the CPU-only build: install the CUDA build instead "
+                '(https://pytorch.org/get-started/locally/)')
+    if m['device'] == 'cpu':
+        return (f"PyTorch {m['torch']} found no CUDA GPU or Apple GPU: the AI fill needs an NVIDIA GPU with 16 GB "
+                'and a current driver (Windows, Linux) or Apple silicon with 16 GB (Mac)')
+    return f"the GPU has {m['memory_gb']} GB; the AI fill needs 16 GB"
+
+
 def have_model(base: Path) -> bool:
     return (base / 'transformer' / 'config.json').is_file() and (base / 'model_index.json').is_file()
 
@@ -130,8 +145,7 @@ def main(argv=None) -> int:
         emit('done', ok=ready, base=str(base), device=m['device'], check_only=True)
         return 0 if ready else 1
     if m['device'] == 'cpu' or (not enough_mem and not a.allow_small_gpu):
-        why = ('no CUDA GPU or Apple GPU was found by PyTorch' if m['device'] == 'cpu' else
-               f"the GPU has {m['memory_gb']} GB; the AI fill needs 16 GB")
+        why = no_gpu_reason(m)
         emit('done', ok=False, error=why, base=str(base), device=m['device'])
         return 2
     if not enough_disk:

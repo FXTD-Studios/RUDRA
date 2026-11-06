@@ -6093,7 +6093,7 @@ TEST(GenFill, PromptStrengthDetailAndRegionReachTheFill) {
     QSettings().clear();
 }
 
-// RUDRA 1.1, the Beeble gaps (5 Nov 2026): the AI fill on the analytic route, the four analytic
+// RUDRA 1.1, the workflow gaps (5 Nov 2026): the AI fill on the analytic route, the four analytic
 // containers, and the region's histogram and viewer switch on the Reconstruct card.
 TEST(Gaps, AnalyticFillContainersAndTheRegionCard) {
     app::DeliverChoice c;
@@ -6150,6 +6150,24 @@ TEST(GenFill, PromptSuggestionsAreReadBack) {
     EXPECT_FALSE(app::parse_prompt_suggestions("Traceback (most recent call last):", &why));
     app::MainWindow w(false);
     ASSERT_NE(w.findChild<QPushButton*>("deliverAiSuggest"), nullptr);
+}
+
+// 7 Nov 2026: "More detail in the filled area" (--focus region), off by default (v3 as gated).
+TEST(GenFill, FocusOnTheFilledAreaIsOptIn) {
+    app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/lora.safetensors"};
+    app::GenFillOptions o;
+    EXPECT_FALSE(app::genfill_arguments(s, o, "m", "o").contains("--focus"));
+    o.focus_region = true;
+    const QStringList a = app::genfill_arguments(s, o, "m", "o");
+    EXPECT_EQ(a[a.indexOf("--focus") + 1], "region");
+    QSettings().clear();
+    app::MainWindow w(false);
+    EXPECT_FALSE(w.deliver_choice().ai.focus_region);
+    w.set_deliver("ai_focus", "1");
+    EXPECT_TRUE(w.deliver_choice().ai.focus_region);
+    EXPECT_TRUE(QSettings().value("deliver/aiFocus").toBool());
+    ASSERT_NE(w.findChild<QWidget*>("deliverAiFocus"), nullptr);
+    QSettings().clear();
 }
 
 // RUDRA 1.1 priority 5 (5 Nov 2026): the fill's fallback, on by default in Deliver, off in a bare options.
@@ -6491,6 +6509,46 @@ TEST(AppFillView, ThePreviewSaysWhyItShowsNothing) {
     EXPECT_TRUE(app::genfill_preview_hint(0.0, true, 1000).contains("inside the reconstruction region"));
     EXPECT_TRUE(app::genfill_preview_hint(0.02, false, 203).contains("203-nit"));
     EXPECT_TRUE(app::genfill_preview_hint(0.02, false, 1000).isEmpty());
+}
+
+// ---- AI fill from a package (7 Nov 2026): the bootstrap beside the packaged python/, or in the
+// repository's scripts/; the fill's own Python under the app's data folder ----
+TEST(GenFill, TheBootstrapIsFoundInAPackageOrTheRepository) {
+#ifdef _WIN32
+    const char* name = "genfill_bootstrap.ps1";
+#else
+    const char* name = "genfill_bootstrap.sh";
+#endif
+    const auto root = std::filesystem::temp_directory_path() / "rudra_genfill_bootstrap";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root / "package" / "python");
+    std::filesystem::create_directories(root / "repo" / "scripts");
+    std::ofstream(root / "package" / "python" / name) << "#";
+    std::ofstream(root / "repo" / "scripts" / name) << "#";
+    EXPECT_EQ(app::genfill_bootstrap_script(root / "package" / "python"), root / "package" / "python" / name);
+    EXPECT_EQ(app::genfill_bootstrap_script(root / "repo"), root / "repo" / "scripts" / name);
+    EXPECT_TRUE(app::genfill_bootstrap_script(root / "nowhere").empty());
+    EXPECT_TRUE(app::genfill_bootstrap_script({}).empty());
+    EXPECT_EQ(app::genfill_bootstrap_root().filename(), "genfill");
+    const auto py = app::genfill_bootstrap_python();
+    EXPECT_EQ(py.parent_path().parent_path().parent_path(), app::genfill_bootstrap_root());   // <root>/venv/<bin>/python
+    std::filesystem::remove_all(root);
+}
+
+// ---- the region histogram says how much acts, as the tint (7 Nov 2026) ----
+TEST(AppRegion, TheHistogramCaptionSaysHowMuchActs) {
+    app::RegionHistogramView v;
+    RegionHistogram h;
+    h.counts = {0.5, 0.5};
+    h.weight = {0.0f, 1.0f};
+    h.reached = 0.25;
+    h.strong = 0.1;
+    v.set(h, {0.2f, 0.85f, 0.95f}, true);
+    EXPECT_TRUE(v.caption().contains("Acts on 25.0 %")) << v.caption().toStdString();
+    EXPECT_TRUE(v.caption().contains("10.0 %"));
+    EXPECT_TRUE(v.caption().contains("built-in priors"));
+    v.set(h, {0.2f, 0.85f, 0.95f}, false);
+    EXPECT_FALSE(v.caption().contains("built-in priors"));
 }
 
 // ---- the prompt bar over the viewer (6 Nov 2026) ----

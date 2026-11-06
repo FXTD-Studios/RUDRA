@@ -63,6 +63,9 @@ struct GenFillOptions {
     // RUDRA 1.1 priority 5: a frame whose fill flickers for one frame is written as the master's own
     // (--fallback spikes). Off here so a bare GenFillOptions is v3; Deliver turns it on by default.
     bool fallback = false;
+    // 7 Nov 2026: the model draws only the box around what the shot fills, at its working size
+    // (--focus region): more detail where the fill is. Off = v3 (the whole frame, as gated).
+    bool focus_region = false;
     QString glob;         // the master folder's frames to fill ("SH010.*.exr"); "" = every EXR there
     bool operator==(const GenFillOptions&) const = default;
 };
@@ -102,6 +105,15 @@ struct GenFillInstall {
     std::filesystem::path repo, python, base;
 };
 GenFillInstall genfill_install_plan();
+
+// The AI fill's own Python (7 Nov 2026): "Set up automatically" on a computer with no Python for
+// it runs genfill_bootstrap (.ps1 on Windows, .sh elsewhere: a package's python/ folder or the
+// repository's scripts/), which puts uv, a private Python 3.12 and the fill's environment under
+// genfill_bootstrap_root() (<AppLocalData>/genfill) and then rudra.genfill.setup. Nothing on the
+// system changes. genfill_bootstrap_script is empty when neither has it.
+std::filesystem::path genfill_bootstrap_root();
+std::filesystem::path genfill_bootstrap_python();
+std::filesystem::path genfill_bootstrap_script(const std::filesystem::path& repo);
 
 // The setup: the saved paths while they exist, else the first candidate that
 // does (and it is saved); nullopt and `why` when a part is missing.

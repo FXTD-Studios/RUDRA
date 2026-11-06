@@ -194,6 +194,13 @@ void MainWindow::build_ai_prompt_bar(QVBoxLayout* v, QWidget* parent) {
         if (auto* d = findChild<QLineEdit*>("deliverAiPromptHighlight")) d->setText(le->text());
         set_deliver("ai_prompt_highlight", le->text());
     });
+    connect(le, &QLineEdit::returnPressed, this, [this, le] {   // Return previews with the prompt (7 Nov 2026)
+        if (le->text() != deliver_.ai.prompt_highlight) {   // returnPressed comes before editingFinished
+            if (auto* d = findChild<QLineEdit*>("deliverAiPromptHighlight")) d->setText(le->text());
+            set_deliver("ai_prompt_highlight", le->text());
+        }
+        if (!genfill_preview_busy_) preview_genfill();
+    });
     h->addWidget(le, 2);
     auto* chips = new QWidget(ai_prompt_bar_);
     chips->setObjectName("aiSuggestChips");
@@ -219,8 +226,11 @@ void MainWindow::build_ai_prompt_bar(QVBoxLayout* v, QWidget* parent) {
 
 void MainWindow::sync_ai_prompt_bar() {
     if (!ai_prompt_bar_) return;
-    // Over the viewer while the AI fill is being previewed, or shown (the preview's or a render's).
-    const bool on = !frames_.empty() && (genfill_preview_busy_ || genfill_preview_.has_value() || fill_view_on_);
+    // Over the viewer while the AI fill is being previewed, or shown (the preview's or a render's),
+    // and (7 Nov 2026) whenever AI fill is on in Deliver and set up, so the first prompt and the first
+    // preview start here too.
+    const bool on = !frames_.empty() && (genfill_preview_busy_ || genfill_preview_.has_value() || fill_view_on_ ||
+                                         (deliver_.ai_fill && genfill_ready_));
     ai_prompt_bar_->setVisible(on);
     if (!on) return;
     if (auto* le = findChild<QLineEdit*>("viewerAiPrompt"); le && !le->hasFocus() && le->text() != deliver_.ai.prompt_highlight) {
@@ -228,8 +238,10 @@ void MainWindow::sync_ai_prompt_bar() {
         le->setText(deliver_.ai.prompt_highlight);
     }
     if (auto* again = findChild<QPushButton*>("viewerAiPreviewAgain")) {
-        again->setText(genfill_preview_busy_ ? QStringLiteral("Stop preview") : QStringLiteral("Preview again"));
-        again->setEnabled(deliver_aces() || genfill_preview_busy_);
+        again->setText(genfill_preview_busy_ ? QStringLiteral("Stop preview")
+                       : genfill_preview_      ? QStringLiteral("Preview again")
+                                               : QStringLiteral("Preview AI fill"));
+        again->setEnabled(genfill_ready_ || genfill_preview_busy_);   // either route (7 Nov 2026)
     }
 }
 

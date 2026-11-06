@@ -605,7 +605,7 @@ private:
         std::unique_ptr<QRhiTexture> tl(rhi_->newTexture(QRhiTexture::RGBA32F, light_size));
         // RUDRA 1.1: the region overlay's weights (binding 5), core's own bytes; all 0 when off.
         const std::vector<std::uint8_t> region_bytes = region_overlay_rgba8(
-            params.region_overlay ? sdr : nullptr, params.overlay_region, w, h);
+            params.region_overlay ? sdr : nullptr, params.overlay_region, w, h, params.overlay_gate);
         std::unique_ptr<QRhiTexture> tr(rhi_->newTexture(QRhiTexture::RGBA8, QSize(w, h)));
         std::unique_ptr<QRhiTexture> ta(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
         std::unique_ptr<QRhiTexture> tb(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));

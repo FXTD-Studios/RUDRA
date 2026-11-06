@@ -1,8 +1,19 @@
 # RUDRA 1.1.0
 
-Inspection, delivery and AI fill, built around one promise: the SDR you
-delivered still shows within one 8-bit code of the original, and anything
-RUDRA invents is marked.
+Control over where the reconstruction acts, and an AI fill you can steer, preview and set
+up in one click. The promise is unchanged: the SDR you delivered still shows within one
+8-bit code of the original, and anything RUDRA invents is marked.
+
+## Opening it the first time
+
+RUDRA is free and open source (Apache 2.0), and the packages are not signed with a paid
+certificate, so your system asks once:
+
+- **Windows**: "Windows protected your PC" → **More info** → **Run anyway**.
+- **macOS**: right-click RUDRA.app → **Open** → **Open** (or System Settings › Privacy &
+  Security › **Open Anyway**).
+
+Download it only from this GitHub page; the checksums are listed with each release.
 
 ## The licence fix, for certain
 
@@ -13,66 +24,87 @@ The build refuses a public package that carries any weight file.
 `models/sdr2hdr_image_v8` folder from the install (that model is
 non-commercial), or simply install 1.1.0.
 
-## The viewer
+## Limit the reconstruction to a luminance region
 
-- **A Nuke-style bar under the viewer**: f/stop and γ, −6 to +2 brackets,
-  an SDR | RUDRA wipe with A/B pickers, clamp and clip zebras, and a **Range**
-  layer colouring each pixel by its stops above SDR white. None of it touches
-  the master; an amber VIEW badge shows whenever the view is gained.
-- The viewer now reads the SDR exactly as the masters do (BT.1886 by default).
-- **AI fill** on the viewer bar: every frame that has a fill is shown filled,
-  stepping and playing; with **Changes** on, what it invented.
+On the **Reconstruct** card, **Limit to a luminance region**:
 
-## Learned ACES 2.0 route
+- **Highlights + shadows**: highlights from an SDR level and shadows below one, each with
+  its own softness and strength; or one **Band** between two levels.
+- Every pixel outside the region keeps the plain inverse **bit for bit**.
+- A **histogram** of the frame shows how strongly the reconstruction acts at each
+  brightness ("Acts on x % of this frame · at half strength or more on y %"), and
+  **Show on the viewer** tints the picture by the same amount. On the analytic route that
+  includes the built-in highlight and shadow priors, the mode and the strength, so the tint
+  shows what actually changes.
+- The region reaches the learned ACES 2.0 route (strength up to 1), the masters, the
+  projects and the AI fill.
 
-- **Rebuild only highlights and shadows** (τ high / τ low): the model's result
-  only where the source is that bright or that dark; everything between is the
-  plain ACES inverse, pixel for pixel.
-- **Clean shadows** (off by default): an edge-preserving denoise of the deep
-  shadows, held to the one-code guarantee. It invents nothing.
-- **A highlight ceiling at ACES white**: slightly tinted near-white codes no
-  longer invert to hundreds of thousands of nits. Pixels the ACES view itself
-  cannot return are reported apart (`aces_inverse_limit`), not as RUDRA errors.
-- The learned model stays **preview**: it grades better at −3 and +3 EV, but
-  not yet at the delivered exposure on real footage.
+## AI fill: steer it, preview it, set it up in one click
+
+The AI fill (experimental, off by default) draws detail inside fully clipped
+highlights and crushed shadows. It never changes an 8-bit code of the master's SDR view,
+and every pixel it invents is in `rudra.generated`.
+
+- **Set up automatically** now works from the Windows and macOS packages. On a computer
+  with no Python for it, RUDRA installs its own (Python 3.12, PyTorch and the fill's
+  packages) in its data folder, nothing else on the system changes, then downloads the
+  base model. **Download AI fill v3** takes you to the last part, the LoRA.
+- **Prompts**: a highlight and a shadow prompt, **Prompt strength** and **Detail
+  strength**; nine presets (sky, sunset, sun, lamp, window daylight, glints, flame, shadow
+  detail). **Suggest** reads the frame's clipped areas and proposes a prompt with its reason.
+- **A prompt bar over the viewer** while AI fill is on: type a prompt, pick a suggestion or
+  a preset, press Return to preview.
+- **Preview AI fill** fills the frames around the playhead and shows them in the viewer
+  (AI fill, Master, Invented), **on the analytic route as well as the learned one**. The
+  first time a typed prompt is used the status says it is being embedded (once).
+- **More detail in the filled area** (off by default): the fill model draws only a box around
+  the shot's clipped areas instead of the whole frame, so a blown sky that is part of the
+  frame gets up to twice the detail per side.
+- **Drop flickering fill frames** (on by default): a frame whose fill flickers for one frame
+  keeps the master's own frame.
+- **It fixes the master in place** (the originals in `<master>_before_aifill`), for EXR
+  sequences and now for **learned-route movies** (the movie is encoded from the filled frames).
+- **It says which model runs**: the LoRA is checked against the published AI fill v3 by its
+  SHA-256, with **Use AI fill v3** when an older one is found.
 
 ## Delivery
 
-- An **ACES Metadata File (AMF v2.0)** beside every EXR master, validated
-  against the Academy's schema.
-- **Alpha** passes through: EXR masters (premultiplied), 16-bit TIFF and
-  ProRes 4444 log copies (straight, 10-bit). ProRes 422 HQ, HEVC, DPX and the
-  16-bit QuickTime have no alpha; the provenance says where it went.
-- The master stays at the **source's native resolution**. Resize for a
-  delivery in your finishing tool (Resolve's Deliver page, Nuke's Reformat),
-  and label an up-conversion as such.
+- **Mattes (EXR)** beside each master: what changed, the pixel class, a confidence, the
+  highlight, shadow and region weights and the painted masks; the AI fill splits
+  `rudra.generated` into highlight and shadow.
+- **EV brackets** (−2, 0, +2) beside each master, with a check that the preview and the
+  export match.
+- **Four analytic containers**: ACES 2065-1, ACEScg, scene-linear Rec.709 and Rec.2020.
+- An **ACES Metadata File (AMF v2.0)** beside every EXR master; **alpha** passes through
+  EXR, 16-bit TIFF and ProRes 4444; the master stays at the source's native resolution.
 
-## AI fill
+## The viewer
 
-- **It fixes the master in place**: when a fill finishes, the clipped areas of
-  the master frames are filled and the originals are kept in
-  `<master>_before_aifill`. A stopped or failed fill never touches the master.
-- **It says which model runs**: the LoRA is checked against the published
-  AI fill v3 by its SHA-256; an older one is flagged, with **Use AI fill v3**.
-- **Set up automatically** and **Preview AI fill** around the playhead.
+- A Nuke-style bar: f/stop and γ, −6 to +2 brackets, an SDR | RUDRA wipe, clamp and clip
+  zebras, and a **Range** layer colouring each pixel by its stops above SDR white. An amber
+  VIEW badge shows whenever the view is gained.
+- The display signal is named on screen (transfer, primaries, white, peak).
+- **AI fill** on the viewer bar shows every frame that has a fill, stepping and playing.
 
-## Playback and the app
+## Learned ACES 2.0 route (preview)
 
-- **Playback is prepared in the background** ("Preparing playback: N of M"),
-  then Play is real time, kept by the clock: if the screen cannot keep up it
-  drops frames rather than slowing, and says so when you stop.
-- Remove a shot from the list (× or right click); the files stay on disk.
-- The right-hand columns no longer slide sideways.
+- **Rebuild only highlights and shadows** (τ high / τ low), **Clean shadows** (off by
+  default) and a highlight ceiling at ACES white.
+- The model is **unchanged from 1.0.3** and stays labelled **preview**: it does not yet
+  pass the grading check at the delivered exposure on real footage. The analytic
+  reconstruction, which needs no model, is the default.
 
-## Tools
+## Models
 
-`tools/measure_flicker.py` and `scripts/RUN_FLICKER_CLIPS.ps1` (flicker on any
-real clip against 0.02 EV), `scripts/RUN_4K_TEST.ps1` (a minute of 4K on a
-16 GB card), `tools/inspect_highlights.py`, `tools/holdout_kit.py`,
-`tools/build_real_partial_corpus.py`.
+No new weights in 1.1.0. **RUDRA ACES 2** (Apache 2.0, preview) and **AI fill v3**
+(Apache 2.0, experimental) are downloads in File › Model packages, checked file by file
+before use. See `docs/MODELS.md`.
 
 ## Known limits
 
-Clean shadows is spatial only and in the learned route only. ProRes alpha is
-10-bit. The learned model's 0 EV result on real footage is the open problem;
-see `docs/competitive/`.
+- The AI fill needs a 16 GB GPU (NVIDIA with a current driver, or Apple silicon), about
+  5 GB for its Python environment and 25 GB for the base model.
+- More detail in the filled area has not been through AI fill v3's gates; compare it with
+  the default on your shot.
+- Clean shadows is spatial only and on the learned route only. ProRes alpha is 10-bit.
+- The analytic route has no AI fill for movies yet (EXR sequences only).

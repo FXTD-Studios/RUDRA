@@ -74,6 +74,17 @@ if (-not (git ls-tree --name-only origin/main "tools/check_package_weights.py"))
 if (git show "origin/main:.github/workflows/release.yml" | Select-String -Pattern "export_model.py checkpoints/sdr2hdr_image_v8" -Quiet) { Fail "origin/main's release workflow still exports sdr2hdr_image_v8: merge the PR first" }
 $cm = git show "origin/main:native/CMakeLists.txt" | Select-String -Pattern "project\(RudraNative VERSION $([regex]::Escape($Version))" -Quiet
 if (-not $cm) { Fail "native/CMakeLists.txt on origin/main is not VERSION $Version" }
+# 7 Nov 2026: twice the tag went on main before the PR was merged (the checks above passed: main
+# already had the licence fix and the version). The release's own work must be on main, and main
+# must hold what the branch holds in the code and the notes.
+foreach ($f in "scripts/genfill_bootstrap.ps1", "tools/update_models_index.py") {
+    if (-not (git ls-tree --name-only origin/main $f)) { Fail "origin/main lacks ${f}: merge PR $Branch (Squash and merge) first" }
+}
+git diff --quiet origin/main "origin/$Branch" -- native rudra scripts tools "docs/RELEASE_NOTES_$Version.md"
+if ($LASTEXITCODE -ne 0) {
+    git diff --stat origin/main "origin/$Branch" -- native rudra scripts tools "docs/RELEASE_NOTES_$Version.md" | Select-Object -Last 5
+    Fail "origin/main differs from origin/$Branch (above): merge the PR, or push what is missing, before tagging"
+}
 if (git ls-remote --tags origin "refs/tags/$TagName") { Fail "$TagName already exists on origin" }
 if (git tag -l $TagName) { Fail "$TagName already exists locally (git tag -d $TagName if it is a mistake)" }
 $sha = (git rev-parse --short origin/main).Trim()

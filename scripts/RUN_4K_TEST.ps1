@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   4K and long-clip test of the learned ACES route (4 Nov 2026): can RUDRA render a long 4K
-  clip locally on a 16 GB card, without a frame cap (Beeble SwitchHDR 2.0: 480 frames, cloud)?
+  clip locally on a 16 GB card, without a frame cap (cloud services cap a clip at a few hundred frames)?
 
   Renders -Frames frames of a clip through rudra-native aces-v2 (EXR half masters), samples
   GPU memory every second (nvidia-smi), and reports: seconds per frame (first, middle and last

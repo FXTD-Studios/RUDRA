@@ -1001,8 +1001,11 @@ QWidget* MainWindow::build_right_rail() {
     rcard->setObjectName("recReconCard");
     anv->addWidget(rcard);
     {   // Shown on the learned route: these grade the analytic reconstruction only.
+        // 6 Nov 2026: the luminance region reaches the learned route too (aces_region_blend), so it is
+        // left out of this note and stays enabled (colorist_tab.cpp locks the rest).
         auto* rn = label("Learned ACES 2.0 is rendering: these controls are the analytic reconstruction's and do not "
-                         "reach its frames or renders. Its trims are in the Learned ACES 2.0 card above.",
+                         "reach its frames or renders, except Limit to a luminance region, which it applies "
+                         "too (strength up to 1). Its trims are in the Learned ACES 2.0 card above.",
                          "routeNoteRec", "small", rec);
         rn->setWordWrap(true);
         rn->hide();
@@ -1272,6 +1275,16 @@ QWidget* MainWindow::build_right_rail() {
             dspin("deliverAiShapeGain", "ai_shape_gain", "Detail strength",
                   "How much the drawn shape varies the brightness inside a filled area. 1 = as tested; "
                   "0 = a flat fill at the estimated brightness");
+            {   // 7 Nov 2026: the model's pixels spent on the clipped area, not the whole frame
+                auto* fo = new CheckRow("deliverAiFocus", "More detail in the filled area", "deliverAiFocusHint",
+                                        "draws only around it", box);
+                fo->setToolTip("The fill model works at about 832 x 480. On, it sees only a box around the shot's "
+                               "clipped areas (the same box for every frame), so a sky in a door a third of the "
+                               "frame wide is drawn at about twice the detail. Small specks far from the main area "
+                               "keep the master. Off = AI fill v3 as tested (the whole frame)");
+                fo->clicked = [this] { set_deliver("ai_focus", deliver_.ai.focus_region ? "0" : "1"); };
+                bv->addWidget(fo);
+            }
             {   // RUDRA 1.1 priority 5: the fallback when the fill flickers
                 auto* fb = new CheckRow("deliverAiFallback", "Drop flickering fill frames", "deliverAiFallbackHint",
                                         "keep the master there", box);
