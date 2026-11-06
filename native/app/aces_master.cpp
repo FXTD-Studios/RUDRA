@@ -19,6 +19,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QPixmap>
 #include <QGroupBox>
@@ -43,6 +44,7 @@
 
 #include "aces_engine.hpp"
 #include "main_window.hpp"
+#include "rudra/deliver/master.hpp"
 #include "widgets.hpp"
 #include <QStatusBar>
 #include "rudra/core/aces_v2_manifest.hpp"
@@ -1235,7 +1237,16 @@ QJsonObject MainWindow::aces_request_json(int index, const QString& source, bool
     if (const QJsonObject t = aces_trims_fields(aces_trims_.strength, aces_trims_.saturation, aces_trims_.peak_nits,
                                                  aces_trims_.exposure_ev, aces_trims_.contrast); !t.isEmpty())
         req["trims"] = t;
+    // 6 Nov 2026: the Reconstruct card's luminance region reaches the learned route too
+    // (it showed no change there: the engine never heard of it).
+    if (const QJsonObject r = aces_region_field(); !r.isEmpty()) req["reconstruction_region"] = r;
+    aces_region_sent_ = session_.grade.region;
     return req;
+}
+
+QJsonObject MainWindow::aces_region_field() const {
+    if (!session_.grade.region.enabled) return {};
+    return QJsonDocument::fromJson(QByteArray::fromStdString(reconstruction_region_json(session_.grade.region))).object();
 }
 
 void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString& model_path, const QString& base_path) {
@@ -1459,7 +1470,8 @@ QString MainWindow::aces_cache_key() const {
                              : QStringLiteral("noband");
     const QString clean = st.value("aces/cleanShadows", false).toBool() ? QStringLiteral("|clean") : QString();
     return shot_trim_key() + "|" + QString::fromStdString(aces_v2::trims_text(aces_trims_)) + "|" + aces_monitor_ + "|" +
-           aces_source_display_ + "|" + QString::number(play_state_->side.load()) + "|" + band + clean;
+           aces_source_display_ + "|" + QString::number(play_state_->side.load()) + "|" + band + clean + "|" +
+           QString::fromUtf8(QJsonDocument(aces_region_field()).toJson(QJsonDocument::Compact));
 }
 
 int MainWindow::aces_cached_frames() const {

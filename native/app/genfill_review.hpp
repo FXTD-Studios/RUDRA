@@ -67,6 +67,9 @@ private:
 class GenFillSetupDialog : public QDialog {
 public:
     explicit GenFillSetupDialog(QWidget* parent = nullptr);
+    // Each part's box and mark from a fresh search (6 Nov 2026): the path found automatically
+    // as the box's grey text, a tick or a cross beside it.
+    void refresh_found();
 };
 
 }  // namespace rudra::app

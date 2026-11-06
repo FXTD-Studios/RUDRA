@@ -236,7 +236,8 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         auto* le = new QLineEdit(this);
         le->setObjectName(QStringLiteral("genfillSetup_") + row.key);
         le->setText(row.now);
-        le->setPlaceholderText("found automatically (the app, the repository, the model folder, the Hugging Face cache)");
+        auto* mark = new QLabel(this);
+        mark->setObjectName(QStringLiteral("genfillSetupMark_") + row.key);
         auto* b = new QPushButton("Browse…", this);
         const bool folder = row.folder;
         connect(b, &QPushButton::clicked, this, [this, le, folder] {
@@ -247,6 +248,7 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         grid->addWidget(new QLabel(QString::fromUtf8(row.label), this), r, 0);
         grid->addWidget(le, r, 1);
         grid->addWidget(b, r, 2);
+        grid->addWidget(mark, r, 3);
         ++r;
     }
     v->addLayout(grid);
@@ -361,6 +363,7 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
             const auto ok = genfill_setup(&w);
             status->setText(ok ? genfill_ready_text(*ok)
                                : QStringLiteral("Packages and base model are set up. ") + w);
+            refresh_found();
         });
         connect(proc, &QProcess::errorOccurred, this, [status, busy, automatic](QProcess::ProcessError) {
             busy->setVisible(false);
@@ -381,9 +384,45 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         const auto ok = genfill_setup(&w);
         status->setText(ok ? genfill_ready_text(*ok) : w);
         if (auto* u = findChild<QPushButton*>(QStringLiteral("genfillUseV3"))) u->setVisible(ok && !ok->lora_is_v3 && !ok->v3_found.empty());
+        refresh_found();
     });
     connect(box, &QDialogButtonBox::rejected, this, &QDialog::reject);
     v->addWidget(box);
+    refresh_found();
+}
+
+void GenFillSetupDialog::refresh_found() {
+    QString why;
+    const auto found = genfill_setup(&why);
+    const GenFillInstall plan = genfill_install_plan();
+    for (const char* key : {"python", "repo", "base", "lora"}) {
+        const std::string k = key;
+        QString auto_path;
+        if (found)
+            auto_path = from_path(k == "python" ? found->python : k == "repo" ? found->repo : k == "base" ? found->base : found->lora);
+        else if (k == "python" && !plan.python.empty() && QFileInfo::exists(from_path(plan.python)))
+            auto_path = from_path(plan.python);
+        else if (k == "repo" && !plan.repo.empty())
+            auto_path = from_path(plan.repo);
+        auto* le = findChild<QLineEdit*>(QStringLiteral("genfillSetup_") + key);
+        auto* mark = findChild<QLabel*>(QStringLiteral("genfillSetupMark_") + key);
+        if (!le || !mark) continue;
+        const bool typed = !le->text().trimmed().isEmpty();
+        const bool ok = typed ? QFileInfo::exists(le->text().trimmed()) : !auto_path.isEmpty();
+        le->setPlaceholderText(auto_path.isEmpty() ? QStringLiteral("not found: Browse…, or Set up automatically")
+                                                   : QStringLiteral("found automatically: ") + QDir::toNativeSeparators(auto_path));
+        le->setToolTip(auto_path.isEmpty() ? QStringLiteral("Not found on this computer")
+                                           : QStringLiteral("In use: ") + QDir::toNativeSeparators(auto_path) +
+                                                 QStringLiteral("\nLeave empty to keep finding it automatically"));
+        mark->setText(ok ? QStringLiteral("\u2713") : QStringLiteral("\u2717"));
+        mark->setToolTip(ok ? QStringLiteral("found") : QStringLiteral("missing"));
+    }
+    if (auto* a = findChild<QPushButton*>("genfillSetupAuto")) {
+        a->setText(found ? QStringLiteral("Check and repair…") : QStringLiteral("Set up automatically…"));
+        a->setToolTip(found ? QStringLiteral("Everything was found automatically. This checks the GPU and the disk and installs any missing package")
+                            : QStringLiteral("Installs the Python packages and downloads the base model, then finds every part by itself"));
+        a->setDefault(!found);
+    }
 }
 
 }  // namespace rudra::app

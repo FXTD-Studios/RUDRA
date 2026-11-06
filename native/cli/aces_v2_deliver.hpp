@@ -30,6 +30,7 @@
 #include "aces_v2_inputs.hpp"
 #include "aces_v2_log.hpp"
 #include "rudra/core/aces_v2_trims.hpp"
+#include "rudra/core/composite.hpp"
 #include "rudra/core/measure.hpp"
 #include "rudra/deliver/exr.hpp"
 #include "rudra/infer/aces_v2_runtime.hpp"
@@ -48,6 +49,10 @@ struct AcesDeliverOptions {
     int start = 0;
     std::string timecode, reel;
     aces_v2::AcesTrims trims;
+    // 6 Nov 2026: the grade's reconstruction region ("reconstruction_region", deliver
+    // reconstruction_region_json) on the learned route: the master is the plain ACES
+    // inverse plus the region's weight times what the model adds. Off: unchanged.
+    ReconstructionRegion region;
     int padding = 6;
     std::string separator = ".";   // between the name and the frame number: ".", "_" or ""
     bool into_existing = false, create_dirs = true;
@@ -121,6 +126,11 @@ struct AcesFrameStamp {
 AcesFrameStamp aces_frame_stamp(const AcesDeliverOptions& o, std::size_t i, const AcesFrameIn& f, double run_fps);
 // The master after the trims (the model's own when there are none); the
 // baseline is the plain inverse of `codes` through `view`.
+// The learned master narrowed (or opened) to the reconstruction region, by the source's Rec.709
+// luma: baseline + w (master - baseline), w = max of the region's highlight and shadow
+// weights, clamped to [0, 1]; w 0 is the plain ACES inverse bit for bit. Off: `acescg` itself.
+PlanarBuffer aces_region_blend(const ReconstructionRegion& region, const PlanarBuffer& acescg, const PlanarBuffer& baseline,
+                               const PlanarBuffer& codes);
 PlanarBuffer aces_trimmed(const AcesDeliverOptions& o, const PlanarBuffer& acescg, const PlanarBuffer& mask,
                           const aces_v2::AcesView& view, const PlanarBuffer& codes);
 // A frame's light level (28 Oct 2026): MaxCLL is the brightest pixel's largest
@@ -177,5 +187,10 @@ private:
     std::size_t at_ = 0;
     double fps_ = 24.0;
 };
+
+// A finished master EXR (this engine's, or the AI fill's copy of it) read back as ACEScg:
+// its RGB, converted from AP0 when its chromaticities say ACES 2065-1 (6 Nov 2026: the
+// movie made from AI-filled frames, aces-v2-serve's "encode").
+Result<PlanarBuffer> aces_master_acescg(const std::filesystem::path& exr);
 
 }  // namespace rudra

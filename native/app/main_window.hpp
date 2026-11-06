@@ -218,7 +218,7 @@ public:
     // The AI fill (layer 3, genfill_job.hpp) of a learned EXR render: runs after the
     // render when chosen, or on any master folder; a Render click while it runs stops it.
     bool genfill_running() const;
-    bool start_genfill(const QString& master_dir, QString* why = nullptr);
+    bool start_genfill(const QString& master_dir, QString* why = nullptr, std::function<void(bool, QString)> finished = {});
     // The same with its own options and output base (<base>_aifill) and a
     // callback when it ends (true when done): the batch's AI fill (29 Oct 2026).
     bool start_genfill_with(const QString& master_dir, const GenFillOptions& options, const QString& out_base,
@@ -235,6 +235,15 @@ public:
     // RUDRA 1.1: the AI fill's "Suggest" button: rudra.genfill.prompts on the current frame,
     // then a menu of suggestions and presets that fills the highlight / shadow prompt.
     void suggest_genfill_prompt();
+    // 6 Nov 2026: the suggestions as buttons, at the top of the AI fill card and in a bar over
+    // the viewer while the AI fill is previewed or shown. `popup`: the menu too (the button).
+    // `quiet`: no message when the fill is not set up (the automatic run on a preview).
+    void run_prompt_suggestions(bool popup, bool quiet = false);
+    void build_ai_prompt_bar(QVBoxLayout* v, QWidget* parent);
+    void refresh_prompt_chips();
+    void sync_ai_prompt_bar();
+    // Applies one suggestion to its prompt box (highlight or shadow).
+    void use_prompt_suggestion(const PromptSuggestion& p);
     // RUDRA 1.1: the region tint on the viewer and the card's histogram, from the session.
     void refresh_view_region();
     bool genfill_previewing() const;
@@ -833,6 +842,15 @@ private:
     std::unique_ptr<BatchRunner> batch_runner_;
     QPointer<QDialog> batch_window_;
     QString render_name_for_fill_;
+    // 6 Nov 2026: a learned movie with the AI fill is three steps: the EXR masters, their
+    // AI fill, then this "encode" request (aces-v2-serve) makes the movie from the filled
+    // frames. Empty when the render in hand is not one.
+    QJsonObject aifill_movie_req_;
+    // The reconstruction region as the learned engine takes it ({} when off), and the one
+    // the last learned frame was asked with (a change asks for the frame again).
+    QJsonObject aces_region_field() const;
+    ReconstructionRegion aces_region_sent_;
+    void encode_aifill_movie(const QString& master_dir, const QString& fill_dir);
     QString analytic_fill_glob_;   // RUDRA 1.1: the last analytic render's frames, for its AI fill
     // The Render card's Nuke-style path (29 Oct 2026): its padding and separator.
     int render_padding_ = 4;
@@ -861,7 +879,10 @@ private:
     QString genfill_last_master_;   // the master folder the last fill was for (its frames are the fill once moved in place)
     QString fill_view_key_;
     std::shared_ptr<const NetworkLinearImage> fill_view_frame(int index);
-    bool apply_fill_view();
+    // The viewer's AI fill, or the preview's pinned Master / Invented picture, over
+    // whatever the route just showed (any route: 6 Nov 2026). quiet: no status message
+    // when this frame has no fill. False when nothing was applied.
+    bool apply_fill_view(bool quiet = false);
 public:
     void set_fill_view(bool on);
     bool fill_view_on() const { return fill_view_on_; }
@@ -874,6 +895,12 @@ private:
     std::optional<GenFillPreviewFrame> genfill_preview_;
     std::unique_ptr<QTemporaryDir> genfill_preview_tmp_;
     QString genfill_preview_show_ = "fill";
+    // 6 Nov 2026: Master / Invented stay on the previewed frame when the route re-renders it.
+    bool genfill_preview_pinned_ = false;
+    std::optional<PromptSuggestions> prompt_suggestions_;   // the last suggestion run's
+    int prompt_suggest_frame_ = -1;                          // ... and the frame it looked at
+    bool prompt_suggest_running_ = false;
+    QWidget* ai_prompt_bar_ = nullptr;                       // over the viewer
     int genfill_preview_master_id_ = 0;   // the engine's master request while the preview's master renders
     bool genfill_preview_busy_ = false;
     QString genfill_last_out_;

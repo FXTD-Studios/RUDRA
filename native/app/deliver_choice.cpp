@@ -57,7 +57,10 @@ DeliverChoice deliver_fit(DeliverChoice c, bool aces_source, bool shot_movie, bo
 bool ai_fill_possible(const DeliverChoice& c, bool aces_source) {
     // RUDRA 1.1 (5 Nov 2026): the analytic EXR master too, in ACES 2065-1 (the fill reads AP0 and AP1
     // only), so the luminance region, the mattes and the prompts work on one render.
-    return (aces_source || c.gamut == "ap0") && c.output != "movie" && (c.image == "exr32" || c.image == "exr16");
+    // 6 Nov 2026: the learned movie too: its masters are rendered as EXR, filled, then the movie is
+    // made from the filled frames (aces-v2-serve "encode"). The analytic movie has no such path yet.
+    if (c.output == "movie") return aces_source;
+    return (aces_source || c.gamut == "ap0") && (c.image == "exr32" || c.image == "exr16");
 }
 
 QJsonObject aces_deliver_fields(const DeliverChoice& c) {

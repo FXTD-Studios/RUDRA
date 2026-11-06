@@ -3921,7 +3921,7 @@ TEST(Deliver, TheAnalyticSourceKeepsWhatItCanWrite) {
     // The analytic master: EXR 32-bit, ACES 2065-1 or linear Rec.2020, a 16-bit movie in PQ.
     const auto a = app::deliver_fit(c, false, true, false);
     EXPECT_EQ(a.image, "exr32");
-    EXPECT_EQ(a.gamut, "linear");
+    EXPECT_EQ(a.gamut, "acescg");   // RUDRA 1.1: the analytic EXR keeps ACEScg (four containers)
     EXPECT_EQ(a.encoding, "pq");
     c.bits = 10;
     EXPECT_EQ(app::deliver_fit(c, false, true, false).encoding, "logc4");   // a movie's ProRes takes a log
@@ -4085,20 +4085,29 @@ for line in sys.stdin:
 // ---------------------------------------------------------------------------
 #include "genfill_job.hpp"
 #include "genfill_swap.hpp"
+#include "genfill_preview.hpp"
 
-TEST(Deliver, TheAiFillIsForTheLearnedExrOnly) {
+TEST(Deliver, TheAiFillIsForTheLearnedExrAndMovie) {
     app::DeliverChoice c;
     c.ai_fill = true;
     EXPECT_TRUE(app::ai_fill_possible(c, true));
     EXPECT_TRUE(app::deliver_fit(c, true, false, false).ai_fill);
-    EXPECT_FALSE(app::deliver_fit(c, false, false, false).ai_fill);   // the analytic master
+    EXPECT_TRUE(app::deliver_fit(c, false, false, false).ai_fill);    // RUDRA 1.1: the analytic master in ACES 2065-1
+    {
+        app::DeliverChoice lin = c;
+        lin.gamut = "linear";
+        EXPECT_FALSE(app::deliver_fit(lin, false, false, false).ai_fill);   // read as AP1 it would be wrong
+    }
     c.image = "exr16";
     EXPECT_TRUE(app::deliver_fit(c, true, false, true).ai_fill);
     c.image = "dpx10";
     EXPECT_FALSE(app::deliver_fit(c, true, false, true).ai_fill);
     c.image = "exr32";
     c.output = "movie";
-    EXPECT_FALSE(app::deliver_fit(c, true, true, false).ai_fill);
+    // 6 Nov 2026: the learned movie too (EXR masters, their fill, then the movie of the filled frames).
+    EXPECT_TRUE(app::deliver_fit(c, true, true, false).ai_fill);
+    EXPECT_TRUE(app::ai_fill_possible(c, true));
+    EXPECT_FALSE(app::ai_fill_possible(c, false));   // the analytic movie: no such path yet
     // Thresholds stay in range, the shadow one below the highlight one.
     app::DeliverChoice d;
     d.ai.tau_high = 999;
@@ -4288,9 +4297,12 @@ for line in sys.stdin:
     fake_genfill(root, kFillOk);
     app::MainWindow w(false);
     w.set_model_roots({root});
-    // Not offered for the analytic master.
+    // RUDRA 1.1: offered for the analytic master in ACES 2065-1, not in linear Rec.2020.
     w.set_deliver("source", "analytic");
+    EXPECT_FALSE(w.findChild<QWidget*>("deliverAiFill")->isHidden());
+    w.session().set_container("linear");
     EXPECT_TRUE(w.findChild<QWidget*>("deliverAiFill")->isHidden());
+    w.session().set_container("aces");
     app::AcesEngine::Config c;
     c.cli = cli;
     c.package = root / "pkg";
@@ -6471,6 +6483,23 @@ TEST(AppFillView, TheViewerHasAnAiFillToggleThatIsSafeWithoutAFill) {
     EXPECT_TRUE(w.fill_view_on());
     b->setChecked(false);
     EXPECT_FALSE(w.fill_view_on());
+}
+
+// ---- why a finished preview may look like nothing (6 Nov 2026) ----
+TEST(AppFillView, ThePreviewSaysWhyItShowsNothing) {
+    EXPECT_TRUE(app::genfill_preview_hint(0.0, false, 1000).contains("Nothing was invented"));
+    EXPECT_TRUE(app::genfill_preview_hint(0.0, true, 1000).contains("inside the reconstruction region"));
+    EXPECT_TRUE(app::genfill_preview_hint(0.02, false, 203).contains("203-nit"));
+    EXPECT_TRUE(app::genfill_preview_hint(0.02, false, 1000).isEmpty());
+}
+
+// ---- the prompt bar over the viewer (6 Nov 2026) ----
+TEST(AppFillView, ThePromptBarShowsWhileTheFillIsShown) {
+    app::MainWindow w(false);
+    auto* bar = w.findChild<QWidget*>("viewerAiPromptBar");
+    ASSERT_NE(bar, nullptr);
+    EXPECT_TRUE(bar->isHidden());   // no shot, no fill
+    EXPECT_GE(w.findChildren<QWidget*>("aiSuggestChips").size(), 2);   // over the viewer and on the AI fill card
 }
 
 // ---- the viewer's AI fill finds the fill after it moved into the master (5 Nov 2026) ----

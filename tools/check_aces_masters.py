@@ -7,8 +7,13 @@ checkpoint, so CI can run them on what users actually download:
      model's own view) gives back the source's display codes. The package's
      appearance constraint promises max 1 code, fully clipped pixels included.
   B  backends: two masters of the same frames (LibTorch vs ONNX Runtime, CPU
-     vs Core ML, ...) agree in that view within the manifest's
-     onnx_tolerance.limit_display_codes.
+     vs Core ML, ...) agree in that view: at the 99.9th percentile within the
+     manifest's onnx_tolerance.limit_display_codes, and everywhere within the
+     appearance constraint's own bound (--b-max, 1 code). A pixel sitting on the
+     constraint's 1-code threshold takes one side of its halving backtrack in one
+     runtime and the other side in the other, depending on the CPU's kernels: both
+     masters keep the R contract there, and the max alone made CI flake (PR #48:
+     one pixel of 2 million at 0.55 codes, the push run of the same commit passing).
 
     python tools/check_aces_masters.py --source frames/ --master out_libtorch/ \\
         [--other out_onnxruntime/] [--package models/RUDRA_ACES_2] --report r.json
@@ -76,6 +81,8 @@ def main(argv=None) -> int:
     ap.add_argument("--r-limit", type=float, default=1.0, help="round-trip limit, display codes (contract: 1)")
     ap.add_argument("--r-fraction", type=float, default=1.0, help="share of pixels that must be within --r-limit")
     ap.add_argument("--b-limit", type=float, help="backend limit, display codes (default: the manifest's)")
+    ap.add_argument("--b-max", type=float, default=1.0,
+                    help="backend hard limit for any pixel, display codes (the appearance constraint's 1 code)")
     ap.add_argument("--slack", type=float, default=0.02, help="float slack added to both limits (OCIO build differences)")
     ap.add_argument("--round-codes", action="store_true",
                     help="round 16-bit source frames to whole 8-bit codes, as the engine does for an 8-bit video")
@@ -131,7 +138,8 @@ def main(argv=None) -> int:
                 view_b = to_codes(view, master_b)
                 d = np.abs(view_b - view_a)
                 b = stats(d, b_limit + a.slack)
-                b["pass"] = b["max"] <= b_limit + a.slack
+                # 6 Nov 2026: the limit at p99.9; the max within the constraint's bound (see the docstring).
+                b["pass"] = b["p999"] <= b_limit + a.slack and b["max"] <= max(a.b_max, b_limit) + a.slack
                 # Where the runtimes disagree most (6 Nov 2026): the pixel, what the source and each
                 # runtime have there, and whether RUDRA rebuilt it, so a failure says what kind it is.
                 e = d.max(-1)
@@ -152,6 +160,7 @@ def main(argv=None) -> int:
     report = {"schema": "rudra_aces_master_check_v1", "view": view.identity, "source": str(a.source),
               "master": str(a.master), "other": str(a.other) if a.other else None,
               "r_limit_codes": a.r_limit, "r_fraction": a.r_fraction, "b_limit_codes": b_limit,
+              "b_limit_at": "p99.9", "b_max_codes": max(a.b_max, b_limit),
               "slack": a.slack, "frames": rows, "pass": bool(ok)}
     a.report.parent.mkdir(parents=True, exist_ok=True)
     a.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -162,7 +171,7 @@ def main(argv=None) -> int:
         if r:
             line += f"R max {r['max']:.3f} codes ({'ok' if r['pass'] else 'FAIL'})"
         if b:
-            line += f"; B max {b['max']:.3f} codes ({'ok' if b['pass'] else 'FAIL'})"
+            line += f"; B max {b['max']:.3f} p99.9 {b['p999']:.3f} codes ({'ok' if b['pass'] else 'FAIL'})"
             if not b["pass"]:
                 w = b["worst_pixel"]
                 line += (f" [{b['pixels_over_limit']} px over; worst at ({w['x']},{w['y']}) source {w['source_codes']}"
