@@ -63,6 +63,9 @@ struct GenFillOptions {
     // RUDRA 1.1 priority 5: a frame whose fill flickers for one frame is written as the master's own
     // (--fallback spikes). Off here so a bare GenFillOptions is v3; Deliver turns it on by default.
     bool fallback = false;
+    // 7 Nov 2026: the model draws only the box around what the shot fills, at its working size
+    // (--focus region): more detail where the fill is. Off = v3 (the whole frame, as gated).
+    bool focus_region = false;
     QString glob;         // the master folder's frames to fill ("SH010.*.exr"); "" = every EXR there
     bool operator==(const GenFillOptions&) const = default;
 };

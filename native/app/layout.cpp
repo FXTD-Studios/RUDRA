@@ -1275,6 +1275,16 @@ QWidget* MainWindow::build_right_rail() {
             dspin("deliverAiShapeGain", "ai_shape_gain", "Detail strength",
                   "How much the drawn shape varies the brightness inside a filled area. 1 = as tested; "
                   "0 = a flat fill at the estimated brightness");
+            {   // 7 Nov 2026: the model's pixels spent on the clipped area, not the whole frame
+                auto* fo = new CheckRow("deliverAiFocus", "More detail in the filled area", "deliverAiFocusHint",
+                                        "draws only around it", box);
+                fo->setToolTip("The fill model works at about 832 x 480. On, it sees only a box around the shot's "
+                               "clipped areas (the same box for every frame), so a sky in a door a third of the "
+                               "frame wide is drawn at about twice the detail. Small specks far from the main area "
+                               "keep the master. Off = AI fill v3 as tested (the whole frame)");
+                fo->clicked = [this] { set_deliver("ai_focus", deliver_.ai.focus_region ? "0" : "1"); };
+                bv->addWidget(fo);
+            }
             {   // RUDRA 1.1 priority 5: the fallback when the fill flickers
                 auto* fb = new CheckRow("deliverAiFallback", "Drop flickering fill frames", "deliverAiFallbackHint",
                                         "keep the master there", box);

@@ -4,7 +4,8 @@
                                 --lora <rudra_genfill.safetensors> [--tau-high 250] [--tau-low -1]
                                 [--blend-high 255] [--blend-low 0] [--feather 0]
                                 [--prompt-highlight "..."] [--prompt-shadow "..."] [--seed 0] [--steps 30]
-                                [--window 33] [--overlap 8] [--max-area 399360] [--device auto] [--json]
+                                [--window 33] [--overlap 8] [--max-area 399360] [--focus frame|region]
+                                [--device auto] [--json]
 
 What it does, per window of frames (33, overlapping 8):
   1. The master's own SDR view (the ACES 2.0 SDR view, 8-bit codes) gives the fill regions:
@@ -12,6 +13,8 @@ What it does, per window of frames (33, overlapping 8):
   2. The model sees the exact (analytic) inverse of those codes, log-encoded, at a working size
      (<= 832 x 480 area by default), and the region mask; the frames the previous window
      already filled come in as kept frames (mask 0), so windows join without a seam.
+     --focus region: the model sees only the box around what the shot fills (one box for the
+     whole shot), so the working size is spent there: more detail in a sky that is part of the frame.
   3. The fill is decoded, brought to full size and blended into the master with
      composite.r_safe_blend: no 8-bit code of the master's SDR view changes (the R contract).
 Pixels the fill does not touch are copied bit for bit (gamut, half/float as written).
@@ -131,6 +134,53 @@ def working_size(h: int, w: int, max_area: int, multiple: int = 16) -> tuple[int
             max(multiple, int(w * s // multiple) * multiple))
 
 
+FOCUS = ('frame', 'region')   # what the model sees: the whole frame, or the box around what it fills (7 Nov 2026)
+FOCUS_MARGIN = 0.15           # context around the box, a share of its own size each side ...
+FOCUS_MIN_MARGIN = 48         # ... and at least this many pixels
+FOCUS_MIN_SIDE = 256          # a thin strip gets this much of the frame around it, at least
+FOCUS_MAX_SHARE = 0.6         # a box this much of the frame or more: the whole frame is as good
+FOCUS_COVER = 0.9             # the box takes the largest areas until this share of the shot's mask
+
+
+def focus_box(union: np.ndarray, extra: int = 0, cover: float = FOCUS_COVER) -> tuple[int, int, int, int] | None:
+    """The shot's fill masks, OR-ed over every frame (H, W bool) -> (y0, y1, x0, x1): a box with
+    context around the largest connected areas, taken until `cover` of the mask is in them, the same
+    box for every frame so the fill moves as one picture. Specks far from them (a lamp, a glint) do
+    not stretch it to the whole frame; the fill leaves them to the master (genfill.json says how
+    much). None when there is nothing to fill or the box is most of the frame (the whole frame is
+    then no worse). `extra`: pixels the blend reaches past the masks (the feather), inside the box."""
+    import cv2
+    H, W = union.shape
+    n, _, st, _ = cv2.connectedComponentsWithStats(union.astype(np.uint8), connectivity=8)
+    if n <= 1:
+        return None
+    total, got = float(st[1:, 4].sum()), 0.0
+    y0, y1, x0, x1 = H, 0, W, 0
+    for k in np.argsort(-st[1:, 4], kind='stable') + 1:
+        x, y, w, h, a = (int(v) for v in st[k])
+        y0, y1, x0, x1 = min(y0, y), max(y1, y + h), min(x0, x), max(x1, x + w)
+        got += a
+        if got >= cover * total:
+            break
+
+    def grow(a, b, size):
+        m = max(FOCUS_MIN_MARGIN + extra, int(np.ceil(FOCUS_MARGIN * (b - a))) + extra)
+        a, b = a - m, b + m
+        short = FOCUS_MIN_SIDE - (b - a)
+        if short > 0:
+            a, b = a - short // 2, b + short - short // 2
+        if a < 0:
+            a, b = 0, b - a
+        if b > size:
+            a, b = max(0, a - (b - size)), size
+        return max(0, a), min(size, b)
+    y0, y1 = grow(y0, y1, H)
+    x0, x1 = grow(x0, x1, W)
+    if (y1 - y0) * (x1 - x0) >= FOCUS_MAX_SHARE * H * W:
+        return None
+    return y0, y1, x0, x1
+
+
 def list_frames(master: Path, pattern: str = '*.exr') -> list[Path]:
     """The master's EXR frames; `pattern` (fnmatch) picks one render's frames
     in a folder that holds others too (the app's Nuke-style Write, 29 Oct 2026)."""
@@ -228,7 +278,7 @@ class Emitter:
 
 def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, window=33, overlap=8,
                 max_area=832 * 480, emit=None, cancel=None, pattern='*.exr', brightness=None,
-                region=None, fallback: str = 'none') -> dict:
+                region=None, fallback: str = 'none', focus: str = 'frame') -> dict:
     """brightness: a brightness.BrightnessSettings for the v3 split (shape from the model, brightness
     from the estimator plus the artist's offset); None keeps the model's own brightness (v1-v2).
     region: a rudra.delivery.region.ReconstructionRegion (RUDRA 1.1). On, the fill (and its prompts)
@@ -238,9 +288,16 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     fill jumps more than TEMPORAL_FLAG stops beyond the master's own change both INTO it and OUT of it
     (a one-frame flicker; a fill appearing or ending jumps on one side only and is kept). 'none' keeps
     every fill (v3). Either way a fill that is not finite falls back. Each frame is written once the
-    next shows whether it spiked; every fallback is in genfill.json ('fell_back')."""
+    next shows whether it spiked; every fallback is in genfill.json ('fell_back').
+    focus (7 Nov 2026): 'frame' (v3) gives the model the whole frame at max_area; 'region' gives it
+    only the box around everything the shot fills (focus_box), so the same max_area spends its
+    pixels where the fill is: a sky in a door a third of the frame wide is drawn at about twice the
+    detail. One box for the whole shot (a first pass over the masks), so the fill stays one moving
+    picture; outside the box nothing is generated and every pixel stays the master's."""
     if fallback not in FALLBACKS:
         raise ValueError(f'fallback must be one of {", ".join(FALLBACKS)}')
+    if focus not in FOCUS:
+        raise ValueError(f'focus must be one of {", ".join(FOCUS)}')
     from rudra.delivery.region import fill_region_weight
     recon_region = region      # `region` is reused below for each frame's fill mask
     import cv2
@@ -250,13 +307,34 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     out.mkdir(parents=True, exist_ok=False)
     first = read_frame(frames[0])
     H, W = first['ap1'].shape[:2]
-    h, w = working_size(H, W, max_area, model.multiple)
+    region_on = recon_region is not None and recon_region.enabled
+    box, inside, outside_share = None, None, 0.0
+    if focus == 'region':      # a first pass: the masks the fill will use, OR-ed over the shot
+        pre, union = TemporalMask(ms), np.zeros((H, W), bool)
+        for k, f in enumerate(frames):
+            if cancel and cancel():
+                break
+            fr0 = first if k == 0 else read_frame(f)
+            c0 = np.rint(np.clip(view.forward(fr0['ap1']), 0, 1) * 255).astype(np.uint8)
+            hi, lo = pre(c0)
+            m0 = hi | lo
+            if region_on:
+                m0 &= fill_region_weight(c0, recon_region) > 0
+            union |= m0
+            emit(event='focus', index=k + 1, of=len(frames))
+        box = focus_box(union, extra=ms.feather)
+        if box:
+            inside = np.zeros((H, W), bool)
+            inside[box[0]:box[1], box[2]:box[3]] = True
+            outside_share = float((union & ~inside).sum()) / max(1.0, float(union.sum()))
+    y0, y1, x0, x1 = box if box else (0, H, 0, W)
+    crop = (slice(y0, y1), slice(x0, x1))
+    h, w = working_size(y1 - y0, x1 - x0, max_area, model.multiple)
     plan = plan_windows(len(frames), window, overlap)
     tmask = TemporalMask(ms)
     prev_b = None
     masks: dict[int, tuple[np.ndarray, np.ndarray]] = {}
     rweights: dict[int, np.ndarray] = {}             # the reconstruction region's weight, per frame (when on)
-    region_on = recon_region is not None and recon_region.enabled
     gen_work: dict[int, np.ndarray] = {}            # encoded fill at working size, frames still needed as kept frames
     t0 = time.time()
     pending = None                                   # RUDRA 1.1: the frame waiting for the next one
@@ -280,7 +358,11 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
              temporal_excess_stops=temporal, fell_back=reason, seconds=round(time.time() - t0, 1))
 
     stats = {'frames': len(frames), 'windows': len(plan), 'generated_pixels': 0, 'region_pixels': 0,
-             'windows_generated': 0, 'working_size': [h, w], 'size': [H, W]}
+             'windows_generated': 0, 'working_size': [h, w], 'size': [H, W],
+             'focus': {'mode': focus, 'box': [y0, y1, x0, x1] if box else None,
+                       'mask_outside_box': round(outside_share, 4),   # left to the master (specks far away)
+                       # the model's pixels per frame pixel, against the whole frame at the same max_area
+                       'detail_gain': round((w / float(x1 - x0)) / (working_size(H, W, max_area, model.multiple)[1] / float(W)), 3)}}
     per_frame = []          # the review: each frame's generated share and the flicker the fill adds
     prev_small = None
     bid = None if brightness is None else {**brightness.identity, 'offset': brightness.offset,
@@ -301,6 +383,8 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                 codes[i] = np.rint(np.clip(view.forward(frs[i]['ap1']), 0, 1) * 255).astype(np.uint8)
                 if i not in masks:
                     hi, lo = tmask(codes[i])
+                    if inside is not None:                # --focus region: nothing is drawn outside the box
+                        hi, lo = hi & inside, lo & inside
                     if region_on:
                         rw = fill_region_weight(codes[i], recon_region)
                         rweights[i] = rw
@@ -316,8 +400,8 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                     vid[k] = gen_work[i]
                     continue
                 analytic = view.inverse(codes[i].astype(np.float32) / 255.0)
-                vid[k] = cv2.resize(encoding.encode(analytic).astype(np.float32), (w, h), interpolation=cv2.INTER_AREA)
-                region = (masks[i][0] | masks[i][1]).astype(np.float32)
+                vid[k] = cv2.resize(encoding.encode(analytic[crop]).astype(np.float32), (w, h), interpolation=cv2.INTER_AREA)
+                region = (masks[i][0] | masks[i][1])[crop].astype(np.float32)
                 msk[k] = cv2.resize(region, (w, h), interpolation=cv2.INTER_AREA) > 0
             video = torch.from_numpy(vid).permute(3, 0, 1, 2)[None]
             mt = torch.from_numpy(msk)[None, None]
@@ -326,7 +410,7 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                 r = np.zeros((n_pad, h, w), np.float32)
                 for k, i in enumerate(idxs + [idxs[-1]] * (n_pad - len(idxs))):
                     if not (i < new and i in gen_work):
-                        r[k] = cv2.resize(masks[i][j].astype(np.float32), (w, h), interpolation=cv2.INTER_AREA) > 0
+                        r[k] = cv2.resize(masks[i][j][crop].astype(np.float32), (w, h), interpolation=cv2.INTER_AREA) > 0
                 regions[key] = torch.from_numpy(r)[None, None]
             def step(a, b):
                 if cancel and cancel():
@@ -347,8 +431,12 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
             region = masks[i][0] | masks[i][1]
             if need and region.any():
                 gen_work[i] = dec[k]
-                full = cv2.resize(dec[k], (W, H), interpolation=cv2.INTER_CUBIC)
-                fill_lin = encoding.decode(full.astype(np.float32)).astype(np.float32)
+                part = cv2.resize(dec[k], (x1 - x0, y1 - y0), interpolation=cv2.INTER_CUBIC)
+                if box:   # outside the box the master itself (finite; the blend weight there is 0)
+                    fill_lin = fr['ap1'].astype(np.float32).copy()
+                    fill_lin[crop] = encoding.decode(part.astype(np.float32)).astype(np.float32)
+                else:
+                    fill_lin = encoding.decode(part.astype(np.float32)).astype(np.float32)
                 if brightness is not None:                         # v3: shape from the model, brightness from the estimator
                     from .brightness import compose, excess_map
                     b_map, lab = excess_map(codes[i], fr['ap1'], brightness.estimator, brightness.offset)
@@ -490,7 +578,8 @@ def serve(model, view, a, emit, FillSettings) -> int:
         {"id": 3, "master": <EXR folder>, "out": <new folder>, "glob": "*.exr",
          "tau_high": 250, "tau_low": -1, "seed": 0, "steps": 30, "brightness_offset": 0.0,
          "prompt_highlight": "", "prompt_shadow": "", "window": 33, "overlap": 8,
-         "prompt_strength": 1.0, "shape_gain": 1.0, "region": {...} or null, "fallback": "none"}
+         "prompt_strength": 1.0, "shape_gain": 1.0, "region": {...} or null, "fallback": "none",
+         "focus": "frame" | "region"}
     (any field left out takes the command line's value). Every event of a request carries its
     id; it ends with {"event": "done", "ok": true, "id": ..., ...} or an "error". 'cancel'
     stops the request running at its next step; 'quit' or the end of stdin ends the server."""
@@ -540,7 +629,8 @@ def serve(model, view, a, emit, FillSettings) -> int:
                               pattern=str(r.get('glob', '*.exr')),
                               brightness=brightness_settings(a, float(r.get('brightness_offset', a.brightness_offset)),
                                                              checked_shape_gain(r.get('shape_gain', a.shape_gain))),
-                              region=request_region(r, a), fallback=str(r.get('fallback', a.fallback)))
+                              region=request_region(r, a), fallback=str(r.get('fallback', a.fallback)),
+                              focus=str(r.get('focus', a.focus)))
             tagged(event='done', ok=True, out=str(out), **rep['stats'])
         except Exception as e:  # noqa: BLE001 - one failed request does not end the server
             tagged(event='error', ok=False, error=type(e).__name__, detail=str(e))
@@ -583,6 +673,8 @@ def main(argv=None):
                     help='RUDRA 1.1: how strongly a region prompt steers its region (0..2; 1 = as v3 was gated)')
     ap.add_argument('--fallback', default='none', choices=FALLBACKS,
                     help="RUDRA 1.1: 'spikes' writes the master's own frame where the fill flickers for one frame")
+    ap.add_argument('--focus', default='frame', choices=FOCUS,
+                    help="'region': the model draws only the box around what the shot fills, at the working size (more detail)")
     ap.add_argument('--region', default='',
                     help='RUDRA 1.1: the reconstruction region as JSON (native reconstruction_region_json); '
                          'the fill acts only inside it')
@@ -621,7 +713,7 @@ def main(argv=None):
         brightness = brightness_settings(a, a.brightness_offset)
         rep = fill_master(Path(a.master), out, model, view, s, ms, a.window, a.overlap, a.max_area, emit,
                           cancel=stop.is_set, pattern=a.glob, brightness=brightness, region=region,
-                          fallback=a.fallback)
+                          fallback=a.fallback, focus=a.focus)
         emit(event='done', ok=True, out=str(out), **rep['stats'])
         return 0
     except Exception as e:  # noqa: BLE001 - every failure goes to the app as one line

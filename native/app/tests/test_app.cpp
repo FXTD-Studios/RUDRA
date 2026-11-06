@@ -6152,6 +6152,24 @@ TEST(GenFill, PromptSuggestionsAreReadBack) {
     ASSERT_NE(w.findChild<QPushButton*>("deliverAiSuggest"), nullptr);
 }
 
+// 7 Nov 2026: "More detail in the filled area" (--focus region), off by default (v3 as gated).
+TEST(GenFill, FocusOnTheFilledAreaIsOptIn) {
+    app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/lora.safetensors"};
+    app::GenFillOptions o;
+    EXPECT_FALSE(app::genfill_arguments(s, o, "m", "o").contains("--focus"));
+    o.focus_region = true;
+    const QStringList a = app::genfill_arguments(s, o, "m", "o");
+    EXPECT_EQ(a[a.indexOf("--focus") + 1], "region");
+    QSettings().clear();
+    app::MainWindow w(false);
+    EXPECT_FALSE(w.deliver_choice().ai.focus_region);
+    w.set_deliver("ai_focus", "1");
+    EXPECT_TRUE(w.deliver_choice().ai.focus_region);
+    EXPECT_TRUE(QSettings().value("deliver/aiFocus").toBool());
+    ASSERT_NE(w.findChild<QWidget*>("deliverAiFocus"), nullptr);
+    QSettings().clear();
+}
+
 // RUDRA 1.1 priority 5 (5 Nov 2026): the fill's fallback, on by default in Deliver, off in a bare options.
 TEST(GenFill, TheFlickerFallbackIsOnInDeliver) {
     app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/lora.safetensors"};

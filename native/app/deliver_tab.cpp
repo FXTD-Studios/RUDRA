@@ -102,6 +102,7 @@ void MainWindow::load_deliver_settings() {
     c.ai.prompt_strength = std::clamp(st.value("deliver/aiPromptStrength", c.ai.prompt_strength).toDouble(), 0.0, 2.0);
     c.ai.shape_gain = std::clamp(st.value("deliver/aiShapeGain", c.ai.shape_gain).toDouble(), 0.0, 2.0);
     c.ai.fallback = st.value("deliver/aiFallback", true).toBool();   // RUDRA 1.1: on unless turned off
+    c.ai.focus_region = st.value("deliver/aiFocus", false).toBool();  // 7 Nov 2026: off (v3) unless turned on
     c.ai.prompt_highlight = st.value("deliver/aiPromptHighlight").toString();
     c.ai.prompt_shadow = st.value("deliver/aiPromptShadow").toString();
     if (c.source != "aces" && c.source != "analytic") c.source = "aces";
@@ -182,6 +183,9 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
         if (!ok || v < -3.0 || v > 3.0) return;
         deliver_.ai.brightness = v;
         st.setValue("deliver/aiBrightness", v);
+    } else if (key == "ai_focus") {   // 7 Nov 2026: draw the clipped area at more detail
+        deliver_.ai.focus_region = value == "1" || value == "true";
+        st.setValue("deliver/aiFocus", deliver_.ai.focus_region);
     } else if (key == "ai_fallback") {   // RUDRA 1.1 priority 5
         deliver_.ai.fallback = value == "1" || value == "true";
         st.setValue("deliver/aiFallback", deliver_.ai.fallback);
@@ -311,6 +315,7 @@ void MainWindow::sync_deliver() {
             ds->setValue(v);
         }
     if (auto* fb = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFallback"))) fb->set_on(c.ai.fallback);
+    if (auto* fo = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFocus"))) fo->set_on(c.ai.focus_region);
     if (auto* rn = findChild<QLabel*>("deliverAiRegion"))   // the grade's region reaches the fill
         rn->setVisible(c.ai_fill && !c.ai.region_json.isEmpty());
     auto set_line = [this](const char* id, const QString& v) {
