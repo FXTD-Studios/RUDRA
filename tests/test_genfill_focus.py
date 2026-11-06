@@ -13,6 +13,7 @@ from rudra.genfill.run import FOCUS_MAX_SHARE, FOCUS_MIN_MARGIN, FOCUS_MIN_SIDE,
 
 
 def test_the_box_holds_the_masks_with_context_and_stays_in_the_frame():
+    """A door a third of the frame wide: the box holds it with context, inside the frame."""
     u = np.zeros((1080, 1920), bool)
     u[100:600, 300:900] = True                       # a door a third of the frame wide
     y0, y1, x0, x1 = focus_box(u)
@@ -23,6 +24,7 @@ def test_the_box_holds_the_masks_with_context_and_stays_in_the_frame():
 
 
 def test_a_speck_gets_a_minimum_box_and_an_edge_box_is_shifted_in():
+    """A glint in a corner gets at least the minimum box, moved inside the frame."""
     u = np.zeros((1080, 1920), bool)
     u[0:3, 1915:1920] = True                          # a glint in the corner
     y0, y1, x0, x1 = focus_box(u)
@@ -31,6 +33,7 @@ def test_a_speck_gets_a_minimum_box_and_an_edge_box_is_shifted_in():
 
 
 def test_nothing_or_most_of_the_frame_means_the_whole_frame():
+    """No mask, or a box of most of the frame: no box (the whole frame)."""
     assert focus_box(np.zeros((100, 200), bool)) is None
     u = np.zeros((1080, 1920), bool)
     u[50:1000, 50:1800] = True
@@ -41,6 +44,7 @@ def test_nothing_or_most_of_the_frame_means_the_whole_frame():
 
 
 def test_specks_far_away_do_not_stretch_the_box():
+    """Specks far from the main area stay out of the box; covering them all means the whole frame."""
     u = np.zeros((1080, 1920), bool)
     u[200:700, 300:900] = True                        # the blown door
     u[50:55, 1800:1805] = u[1000:1004, 20:24] = True   # a lamp and a glint in far corners
@@ -50,6 +54,7 @@ def test_specks_far_away_do_not_stretch_the_box():
 
 
 def test_the_feather_is_inside_the_box():
+    """The blend's reach past the mask (the feather) is inside the box."""
     u = np.zeros((1000, 1000), bool)
     u[500:520, 500:520] = True
     for extra in (0, 40, 150):                        # the blend reaches `extra` px past the mask
@@ -58,6 +63,7 @@ def test_the_feather_is_inside_the_box():
 
 
 def test_focus_region_keeps_the_contract_and_draws_only_in_the_box(tmp_path):
+    """On the tiny Wan VACE: more detail, nothing drawn outside the box, every SDR code kept."""
     pytest.importorskip('diffusers')
     pytest.importorskip('OpenEXR')
     pytest.importorskip('PyOpenColorIO')
@@ -92,6 +98,7 @@ def test_focus_region_keeps_the_contract_and_draws_only_in_the_box(tmp_path):
 
 
 def test_focus_is_checked(tmp_path):
+    """An unknown focus is refused."""
     pytest.importorskip('diffusers')
     from genfill_tiny import tiny_fill
     from rudra.genfill.masks import MaskSettings

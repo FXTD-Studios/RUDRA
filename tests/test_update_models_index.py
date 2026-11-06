@@ -6,12 +6,13 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from update_models_index import main, update  # noqa: E402
+from update_models_index import HttpsOnlyRedirects, main, update  # noqa: E402
 
 URL = "https://huggingface.co/fxtdstudios/rudra-models/resolve/{rev}/models/rudra_genfill_v3/{p}"
 
 
 def published():
+    """A published index of two models, as the website serves it."""
     return {"version": 1, "models": [
         {"id": "rudra_aces_2", "title": "RUDRA ACES 2", "version": "1.0", "channel": "release", "kind": "aces_v2",
          "summary": "s", "licence": "Apache 2.0", "licence_url": "", "folder": "RUDRA_ACES_2", "min_app": "1.0.0",
@@ -25,6 +26,7 @@ def published():
 
 
 def test_the_channel_changes_and_nothing_else():
+    """--channel changes that one field of that one model."""
     old = published()
     new = update(json.loads(json.dumps(old)), {"rudra_aces_2": "preview"}, {}, None)
     assert new["models"][0]["channel"] == "preview"
@@ -33,6 +35,7 @@ def test_the_channel_changes_and_nothing_else():
 
 
 def test_a_refresh_lists_the_new_files_at_the_same_place(tmp_path):
+    """--refresh lists the folder again at the same repo and folder, pinned to --revision."""
     folder = tmp_path / "rudra_genfill_v3"
     (folder / "prompt_cache").mkdir(parents=True)
     (folder / "rudra_genfill.safetensors").write_bytes(b"abc")
@@ -46,6 +49,7 @@ def test_a_refresh_lists_the_new_files_at_the_same_place(tmp_path):
 
 
 def test_refusals(tmp_path):
+    """An unknown model or channel, a wrongly named folder and a folder missing published files stop it."""
     with pytest.raises(SystemExit):
         update(published(), {"nope": "preview"}, {}, None)
     with pytest.raises(SystemExit):
@@ -63,8 +67,21 @@ def test_refusals(tmp_path):
 
 
 def test_the_command_line(tmp_path):
+    """The command line reads a saved index and writes the changed one."""
     src = tmp_path / "in.json"
     src.write_text(json.dumps(published()))
     out = tmp_path / "out.json"
     assert main(["--in", str(src), "--out", str(out), "--channel", "rudra_aces_2=preview"]) == 0
     assert json.loads(out.read_text())["models"][0]["channel"] == "preview"
+
+
+def test_a_redirect_is_followed_only_to_https():
+    """A redirect to plain http is refused before it is requested; one to https is followed (review, 7 Nov 2026)."""
+    import urllib.error
+    import urllib.request
+    h = HttpsOnlyRedirects()
+    req = urllib.request.Request("https://www.example.com/rudra-docs/models.json")
+    with pytest.raises(urllib.error.URLError, match="not https"):
+        h.redirect_request(req, None, 302, "Found", {}, "http://www.example.com/rudra-docs/models.json")
+    nxt = h.redirect_request(req, None, 302, "Found", {}, "https://cdn.example.com/rudra-docs/models.json")
+    assert nxt.full_url == "https://cdn.example.com/rudra-docs/models.json"
