@@ -1,0 +1,28 @@
+{
+ "parent": "G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt",
+ "parent_sha256": "ac63918fd97fa94ab9f7febcb6219935f13391c084ae73a85c0bf40823e277ec",
+ "steps": 1600,
+ "include_fully_clipped": true,
+ "old_coherent_control_max": 0.3825248606569533,
+ "aligned_residual_control_max": 0.010367255277136186,
+ "clipped_smoothing": {
+  "sigma": 64,
+  "mode": "hybrid",
+  "ramp": 1,
+  "start": 0
+ },
+ "scope": "Measured ends on w4 (fresh 0 EV RMS / aligned residual): the model 0.453 / 0.0090; the full lock with the source target 0.241 / 0.0129, with the dequantized target 0.239 / 0.0119. Both gates are squared errors, so a lock at strength lambda leaves (1-lambda)^2 of the 0 EV drift and adds lambda^2 of the full lock's jitter. Predicted: source 0.5 -> 0.307 / 0.0100, source 0.6 -> 0.284 / 0.0104, dequantized 0.5 -> 0.307 / 0.0097, dequantized 0.6 -> 0.284 / 0.0100. DEVIATION, recorded before the holdout was looked at: the dequantized-lock registration (16c72b2) chose lock_b040 (fresh 0.336 / aligned 0.0102: margins 0.002 code and 0.0002) for the Crew holdout. The holdout can be used once; Ahmed chose (6 Nov) to first run these arms, predicted to pass with margin, and to send the passing arm with the most margin. Nothing of the holdout has been read. Registered 6 Nov 2026 before any run. Arms on w4: lock_s050 and lock_s060 (source target), lock_dqs050 and lock_dqs060 (dequantized target), at strength 0.5 / 0.6. Every original gate must hold (aligned residual <= 0.010367; old24 -3/0/+3 EV; Hunyuan48 <= 0.02 EV; no new negative Y; fresh 0 EV RMS <= 0.338 and -3/+3/H no worse than analytic). Choice for the Crew holdout, between these arms and lock_b040: the passing arm with the largest smallest relative margin, min((0.010367 - aligned) / 0.010367, (0.338 - fresh) / 0.338). It then runs the Crew holdout once. If none of these passes, lock_b040 goes, as registered. This arm: dequant target, strength 0.6.",
+ "release_authorized": false,
+ "forbid_new_negative_y": true,
+ "registered_before_evaluation": true,
+ "partial_tighten": {
+  "mode": "lock",
+  "iters": 4,
+  "band_codes": 0.0,
+  "strength": 0.6,
+  "target": "dequant",
+  "dq_iters": 200,
+  "dq_max_lap": 1.5
+ },
+ "author": "FXTD Studios Research, 6 Nov 2026"
+}

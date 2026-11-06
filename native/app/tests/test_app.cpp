@@ -24,6 +24,10 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QGroupBox>
+#include <QLayout>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSlider>
 #include <QStackedWidget>
 #include <QImage>
@@ -45,6 +49,7 @@
 #include <QPointer>
 #include <QUrl>
 #include <QTest>
+#include <QToolButton>
 #include <QTreeWidget>
 
 #include "paths.hpp"
@@ -1041,7 +1046,12 @@ TEST(AppMeasure, TheProbeReadsThePixelUnderThePointer) {
         ASSERT_TRUE(w.probe_box()->isVisible());
         const auto rows = probe_box(*probe);
         const auto labels = w.probe_box()->findChildren<QLabel*>();
-        ASSERT_EQ(labels.size(), qsizetype(rows.size() * 2));
+        // The page's rows first, then view revision 6's native ones: the
+        // original's codes, which are clamped, and the stops over the SDR white.
+        ASSERT_EQ(labels.size(), qsizetype(rows.size() * 2 + 6));
+        EXPECT_EQ(labels[qsizetype(rows.size() * 2)]->text().toStdString(), "Original");
+        EXPECT_EQ(labels[qsizetype(rows.size() * 2 + 2)]->text().toStdString(), "Clamped");
+        EXPECT_EQ(labels[qsizetype(rows.size() * 2 + 4)]->text().toStdString(), "Over SDR white");
         for (std::size_t r = 0; r < rows.size(); ++r) {
             EXPECT_EQ(labels[qsizetype(r * 2)]->text().toStdString(), rows[r].k);
             EXPECT_EQ(labels[qsizetype(r * 2 + 1)]->text().toStdString(), rows[r].v);
@@ -3911,7 +3921,7 @@ TEST(Deliver, TheAnalyticSourceKeepsWhatItCanWrite) {
     // The analytic master: EXR 32-bit, ACES 2065-1 or linear Rec.2020, a 16-bit movie in PQ.
     const auto a = app::deliver_fit(c, false, true, false);
     EXPECT_EQ(a.image, "exr32");
-    EXPECT_EQ(a.gamut, "linear");
+    EXPECT_EQ(a.gamut, "acescg");   // RUDRA 1.1: the analytic EXR keeps ACEScg (four containers)
     EXPECT_EQ(a.encoding, "pq");
     c.bits = 10;
     EXPECT_EQ(app::deliver_fit(c, false, true, false).encoding, "logc4");   // a movie's ProRes takes a log
@@ -4074,20 +4084,30 @@ for line in sys.stdin:
 // process speaking JSON lines). The fakes below stand in for the Python.
 // ---------------------------------------------------------------------------
 #include "genfill_job.hpp"
+#include "genfill_swap.hpp"
+#include "genfill_preview.hpp"
 
-TEST(Deliver, TheAiFillIsForTheLearnedExrOnly) {
+TEST(Deliver, TheAiFillIsForTheLearnedExrAndMovie) {
     app::DeliverChoice c;
     c.ai_fill = true;
     EXPECT_TRUE(app::ai_fill_possible(c, true));
     EXPECT_TRUE(app::deliver_fit(c, true, false, false).ai_fill);
-    EXPECT_FALSE(app::deliver_fit(c, false, false, false).ai_fill);   // the analytic master
+    EXPECT_TRUE(app::deliver_fit(c, false, false, false).ai_fill);    // RUDRA 1.1: the analytic master in ACES 2065-1
+    {
+        app::DeliverChoice lin = c;
+        lin.gamut = "linear";
+        EXPECT_FALSE(app::deliver_fit(lin, false, false, false).ai_fill);   // read as AP1 it would be wrong
+    }
     c.image = "exr16";
     EXPECT_TRUE(app::deliver_fit(c, true, false, true).ai_fill);
     c.image = "dpx10";
     EXPECT_FALSE(app::deliver_fit(c, true, false, true).ai_fill);
     c.image = "exr32";
     c.output = "movie";
-    EXPECT_FALSE(app::deliver_fit(c, true, true, false).ai_fill);
+    // 6 Nov 2026: the learned movie too (EXR masters, their fill, then the movie of the filled frames).
+    EXPECT_TRUE(app::deliver_fit(c, true, true, false).ai_fill);
+    EXPECT_TRUE(app::ai_fill_possible(c, true));
+    EXPECT_FALSE(app::ai_fill_possible(c, false));   // the analytic movie: no such path yet
     // Thresholds stay in range, the shadow one below the highlight one.
     app::DeliverChoice d;
     d.ai.tau_high = 999;
@@ -4157,6 +4177,7 @@ TEST(GenFill, SetupSaysWhatIsMissing) {
     QSettings().clear();
     const auto root = aces_tmp("genfill-setup");
     fake_genfill(root, kFillOk);
+    QSettings().setValue("genfill/search", false);   // this machine's own models must not stand in
     QString why;
     auto s = app::genfill_setup(&why);
     ASSERT_TRUE(s) << why.toStdString();
@@ -4170,6 +4191,32 @@ TEST(GenFill, SetupSaysWhatIsMissing) {
     QSettings().setValue("genfill/repo", QString::fromStdString((root / "nowhere").string()));
     EXPECT_FALSE(app::genfill_setup(&why));
     EXPECT_TRUE(why.contains("repository")) << why.toStdString();
+    QSettings().clear();
+}
+
+// 4 Nov 2026: a saved base model that has gone is looked for again, here in a
+// Hugging Face cache (HF_HUB_CACHE), and the one found is saved.
+TEST(GenFill, SetupFindsTheBaseModelInAHuggingFaceCache) {
+    QSettings().clear();
+    const auto root = aces_tmp("genfill-search");
+    fake_genfill(root, kFillOk);
+    std::filesystem::remove_all(root / "models");
+    // Nothing of this machine's before the cache: its model download folder is an empty one.
+    QSettings().setValue("models/downloadRoot", QString::fromStdString((root / "downloads").string()));
+    const auto hub = root / "hub";
+    const auto snap = hub / "models--Wan-AI--Wan2.1-VACE-1.3B-diffusers" / "snapshots" / "abc123";
+    write_text(snap / "transformer" / "config.json", "{}");
+    write_text(hub / "models--Wan-AI--Wan2.1-VACE-1.3B-diffusers" / "refs" / "main", "abc123\n");
+    const QByteArray old = qgetenv("HF_HUB_CACHE");
+    qputenv("HF_HUB_CACHE", QByteArray::fromStdString(hub.string()));
+    QString why;
+    const auto s = app::genfill_setup(&why);
+    if (old.isEmpty()) qunsetenv("HF_HUB_CACHE");
+    else qputenv("HF_HUB_CACHE", old);
+    ASSERT_TRUE(s) << why.toStdString();
+    EXPECT_EQ(std::filesystem::weakly_canonical(s->base), std::filesystem::weakly_canonical(snap));
+    EXPECT_EQ(std::filesystem::weakly_canonical(app::to_path(QSettings().value("genfill/base").toString())),
+              std::filesystem::weakly_canonical(snap));
     QSettings().clear();
 }
 
@@ -4250,9 +4297,12 @@ for line in sys.stdin:
     fake_genfill(root, kFillOk);
     app::MainWindow w(false);
     w.set_model_roots({root});
-    // Not offered for the analytic master.
+    // RUDRA 1.1: offered for the analytic master in ACES 2065-1, not in linear Rec.2020.
     w.set_deliver("source", "analytic");
+    EXPECT_FALSE(w.findChild<QWidget*>("deliverAiFill")->isHidden());
+    w.session().set_container("linear");
     EXPECT_TRUE(w.findChild<QWidget*>("deliverAiFill")->isHidden());
+    w.session().set_container("aces");
     app::AcesEngine::Config c;
     c.cli = cli;
     c.package = root / "pkg";
@@ -6013,6 +6063,132 @@ TEST(GenFill, TheArtistsBrightnessOffsetReachesTheFill) {
     QSettings().clear();
 }
 
+// RUDRA 1.1 priority 2 (5 Nov 2026): prompt strength, detail strength and the
+// reconstruction region reach the fill; their defaults leave the command line as it was.
+TEST(GenFill, PromptStrengthDetailAndRegionReachTheFill) {
+    app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/lora.safetensors"};
+    app::GenFillOptions o;
+    const QStringList plain = app::genfill_arguments(s, o, "m", "o");
+    for (const char* f : {"--prompt-strength", "--shape-gain", "--region"}) EXPECT_FALSE(plain.contains(f)) << f;
+    o.prompt_strength = 1.5;
+    o.shape_gain = 0.5;
+    o.region_json = R"({"band":true})";
+    const QStringList a = app::genfill_arguments(s, o, "m", "o");
+    EXPECT_EQ(a[a.indexOf("--prompt-strength") + 1], "1.5");
+    EXPECT_EQ(a[a.indexOf("--shape-gain") + 1], "0.5");
+    EXPECT_EQ(a[a.indexOf("--region") + 1], R"({"band":true})");
+    app::DeliverChoice c;
+    c.ai.prompt_strength = 9.0;
+    c.ai.shape_gain = -1.0;
+    const auto fit = app::deliver_fit(c, true, false, false);
+    EXPECT_DOUBLE_EQ(fit.ai.prompt_strength, 2.0);
+    EXPECT_DOUBLE_EQ(fit.ai.shape_gain, 0.0);
+    QSettings().clear();
+    app::MainWindow w(false);
+    w.set_deliver("ai_prompt_strength", "1.25");
+    EXPECT_DOUBLE_EQ(w.deliver_choice().ai.prompt_strength, 1.25);
+    w.set_deliver("ai_prompt_strength", "3");                                         // refused: out of range
+    EXPECT_DOUBLE_EQ(w.deliver_choice().ai.prompt_strength, 1.25);
+    EXPECT_TRUE(w.deliver_effective().ai.region_json.isEmpty());                      // no region: none sent
+    QSettings().clear();
+}
+
+// RUDRA 1.1, the Beeble gaps (5 Nov 2026): the AI fill on the analytic route, the four analytic
+// containers, and the region's histogram and viewer switch on the Reconstruct card.
+TEST(Gaps, AnalyticFillContainersAndTheRegionCard) {
+    app::DeliverChoice c;
+    c.output = "still";
+    c.image = "exr32";
+    c.gamut = "ap0";
+    EXPECT_TRUE(app::ai_fill_possible(c, false));       // analytic ACES 2065-1: the fill reads AP0
+    c.gamut = "linear";
+    EXPECT_FALSE(app::ai_fill_possible(c, false));      // Rec.2020 linear: it would be read as AP1
+    c.gamut = "ap0";
+    c.output = "movie";
+    EXPECT_FALSE(app::ai_fill_possible(c, false));
+    c.output = "still";
+    for (const char* g : {"acescg", "rec709", "linear", "ap0"}) {
+        c.gamut = g;
+        EXPECT_EQ(app::deliver_fit(c, false, false, false).gamut, QString(g)) << g;   // kept on the analytic route
+    }
+    QSettings().clear();
+    app::MainWindow w(false);
+    w.set_deliver("source", "analytic");
+    w.set_deliver("gamut", "rec709");
+    EXPECT_EQ(w.deliver_effective().gamut, "rec709");
+    w.set_deliver("gamut", "acescg");
+    EXPECT_EQ(w.deliver_effective().gamut, "acescg");
+    ASSERT_NE(w.findChild<QWidget*>("regionHistogram"), nullptr);
+    ASSERT_NE(w.findChild<QWidget*>("regionShow"), nullptr);
+    QSettings().clear();
+}
+
+// RUDRA 1.1 (5 Nov 2026): Suggest a prompt: the command line and the JSON rudra.genfill.prompts prints
+// (this string is its real output for a synthetic sunset, trimmed to two presets).
+TEST(GenFill, PromptSuggestionsAreReadBack) {
+    app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/v3/rudra_genfill.safetensors"};
+    app::GenFillOptions o;
+    o.tau_high = 245;
+    const QStringList a = app::genfill_suggest_arguments(s, o, {"/tmp/f.png"});
+    EXPECT_EQ(a.mid(0, 4), (QStringList{"-m", "rudra.genfill.prompts", "suggest", "/tmp/f.png"}));
+    EXPECT_EQ(QDir::fromNativeSeparators(a[a.indexOf("--cache") + 1]), "/runs/v3/prompt_cache");
+    EXPECT_EQ(a[a.indexOf("--tau-high") + 1], "245");
+    const QByteArray out =
+        "a warning line\n"
+        R"({"clipped_fraction": 0.0531, "suggestions": [{"id": "sun_disc", "label": "Sun", "text": "warm sun disc with a soft halo and a smooth glow", "region": "highlight", "score": 0.031, "reason": "a small round clipped area (3.11%), warm around it", "cached": false}], "ok": true, "presets": [{"id": "sky_blue", "label": "Clear blue sky", "text": "clear blue sky, smooth gradient toward the horizon, soft high clouds", "region": "highlight", "cached": true}, {"id": "shadow_detail", "label": "Shadow detail", "text": "dark shadow detail, soft texture, low light", "region": "shadow", "cached": false}]})";
+    QString why;
+    const auto r = app::parse_prompt_suggestions(out, &why);
+    ASSERT_TRUE(r.has_value()) << why.toStdString();
+    ASSERT_EQ(r->suggested.size(), 1u);
+    EXPECT_EQ(r->suggested[0].id, "sun_disc");
+    EXPECT_EQ(r->suggested[0].reason, "a small round clipped area (3.11%), warm around it");
+    ASSERT_EQ(r->presets.size(), 2u);
+    EXPECT_TRUE(r->presets[0].cached);
+    EXPECT_EQ(r->presets[1].region, "shadow");
+    EXPECT_FALSE(app::parse_prompt_suggestions(R"({"ok": false, "error": "ValueError: cannot read x"})", &why));
+    EXPECT_EQ(why, "ValueError: cannot read x");
+    EXPECT_FALSE(app::parse_prompt_suggestions("Traceback (most recent call last):", &why));
+    app::MainWindow w(false);
+    ASSERT_NE(w.findChild<QPushButton*>("deliverAiSuggest"), nullptr);
+}
+
+// RUDRA 1.1 priority 5 (5 Nov 2026): the fill's fallback, on by default in Deliver, off in a bare options.
+TEST(GenFill, TheFlickerFallbackIsOnInDeliver) {
+    app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/lora.safetensors"};
+    app::GenFillOptions o;
+    EXPECT_FALSE(app::genfill_arguments(s, o, "m", "o").contains("--fallback"));
+    o.fallback = true;
+    const QStringList a = app::genfill_arguments(s, o, "m", "o");
+    EXPECT_EQ(a[a.indexOf("--fallback") + 1], "spikes");
+    QSettings().clear();
+    app::MainWindow w(false);
+    EXPECT_TRUE(w.deliver_choice().ai.fallback);
+    w.set_deliver("ai_fallback", "0");
+    EXPECT_FALSE(w.deliver_choice().ai.fallback);
+    EXPECT_FALSE(QSettings().value("deliver/aiFallback").toBool());
+    ASSERT_NE(w.findChild<QWidget*>("deliverAiFallback"), nullptr);
+    QSettings().clear();
+}
+
+// RUDRA 1.1 priorities 3 and 4 (5 Nov 2026): the Deliver checks and the display signal in the pipe bar.
+TEST(Deliver, MattesBracketsAndTheDisplaySignal) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    EXPECT_FALSE(w.deliver_choice().mattes);
+    EXPECT_FALSE(w.deliver_choice().brackets);
+    w.set_deliver("mattes", "1");
+    w.set_deliver("brackets", "1");
+    EXPECT_TRUE(w.deliver_choice().mattes);
+    EXPECT_TRUE(w.deliver_choice().brackets);
+    EXPECT_TRUE(QSettings().value("deliver/brackets").toBool());
+    ASSERT_NE(w.findChild<QWidget*>("deliverMattes"), nullptr);
+    ASSERT_NE(w.findChild<QWidget*>("deliverBrackets"), nullptr);
+    auto* ds = w.findChild<QLabel*>("pipeDisplay");
+    ASSERT_NE(ds, nullptr);
+    EXPECT_TRUE(ds->text().startsWith("SDR") || ds->text().contains("reference white 203 nits")) << ds->text().toStdString();
+    QSettings().clear();
+}
+
 #ifdef RUDRA_HAVE_STILL_DECODE
 // A downloaded AI fill LoRA is the one Deliver > AI fill uses (31 Oct 2026).
 TEST(AppModels, ADownloadedLoraBecomesTheAiFills) {
@@ -6045,3 +6221,312 @@ TEST(AppModels, ADownloadedLoraBecomesTheAiFills) {
     QSettings().clear();
 }
 #endif
+
+// ---- view revision 6: the viewer toolbar (app/viewer_toolbar.cpp) ----
+TEST(AppViewerToolbar, ControlsDriveTheSessionAndNeverTheGrade) {
+    app::MainWindow w(false);
+    w.show();
+    const std::string params = w.session().params_json();
+    auto* tool = w.findChild<QWidget*>("viewerToolbar");
+    ASSERT_NE(tool, nullptr);
+    // Inside the viewer's box, so the Pro boards' frame keeps its geometry.
+    EXPECT_EQ(tool->parentWidget(), w.findChild<QWidget*>("viewer"));
+    auto* badge = w.findChild<QLabel*>("vtBadge");
+    EXPECT_FALSE(badge->isVisibleTo(&w));
+    w.findChild<QPushButton*>("vtBracket-2")->click();
+    EXPECT_DOUBLE_EQ(w.session().view_ev, -2.0);
+    EXPECT_TRUE(badge->isVisibleTo(&w));
+    EXPECT_TRUE(badge->text().startsWith("VIEW"));
+    EXPECT_EQ(w.findChild<QSlider*>("vtEvSlider")->value(), -20);
+    w.findChild<QPushButton*>("vtStop")->click();   // 0 <-> the last value
+    EXPECT_DOUBLE_EQ(w.session().view_ev, 0.0);
+    w.findChild<QPushButton*>("vtStop")->click();
+    EXPECT_DOUBLE_EQ(w.session().view_ev, -2.0);
+    w.findChild<QPushButton*>("vtRange")->click();
+    EXPECT_EQ(w.session().view_layer, 4);
+    w.findChild<QPushButton*>("vtClip")->click();
+    EXPECT_TRUE(w.session().clip_zebra);
+    w.findChild<QPushButton*>("vtReset")->click();
+    EXPECT_TRUE(w.session().viewer_neutral());
+    EXPECT_FALSE(badge->isVisibleTo(&w));
+    EXPECT_EQ(w.session().params_json(), params);   // the master's settings never moved
+}
+
+TEST(AppViewerToolbar, AltKeysReachTheViewer) {
+    app::MainWindow w(false);
+    w.show();
+    w.activateWindow();
+    ASSERT_TRUE(QTest::qWaitForWindowActive(&w));
+    QTest::keyClick(&w, Qt::Key_BracketLeft, Qt::AltModifier);
+    EXPECT_DOUBLE_EQ(w.session().view_ev, -0.5);
+    QTest::keyClick(&w, Qt::Key_B, Qt::AltModifier);   // the next bracket up: 0
+    EXPECT_DOUBLE_EQ(w.session().view_ev, 0.0);
+    QTest::keyClick(&w, Qt::Key_K, Qt::AltModifier);
+    EXPECT_TRUE(w.session().clamp_zebra);
+    QTest::keyClick(&w, Qt::Key_R, Qt::AltModifier);
+    EXPECT_EQ(w.session().view_layer, 4);
+}
+
+// ---- the tau bands of the learned ACES route (core/aces_v2.hpp UserBand, 1 Nov 2026) ----
+TEST(AcesBand, CommandArgumentsOnlyWhenOn) {
+    app::AcesRunSettings s;
+    s.package = "pkg";
+    s.input = "in";
+    s.out = "out";
+    EXPECT_FALSE(app::aces_cli_arguments(s).contains("--tau-high"));   // off: the model as it is
+    s.band_on = true;
+    s.tau_high = 250;
+    s.tau_low = -1;
+    const QStringList a = app::aces_cli_arguments(s);
+    EXPECT_EQ(a.at(a.indexOf("--tau-high") + 1), "250");
+    EXPECT_EQ(a.at(a.indexOf("--tau-low") + 1), "-1");
+}
+
+TEST(AcesBand, DialogControlsPersistAndTellTheViewer) {
+    QSettings().remove("aces/bandOn");
+    QSettings().remove("aces/tauHigh");
+    QSettings().remove("aces/tauLow");
+    const auto root = aces_tmp("band_dialog");
+    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    app::AcesMasterDialog d(nullptr, {root}, root / "frames");
+    auto* band = d.findChild<QGroupBox*>("acesBand");
+    auto* hi = d.findChild<QSpinBox*>("acesTauHigh");
+    auto* lo = d.findChild<QSpinBox*>("acesTauLow");
+    ASSERT_TRUE(band && hi && lo);
+    EXPECT_FALSE(band->isChecked());   // off by default
+    EXPECT_EQ(hi->value(), 254);       // the model's own bands when switched on
+    EXPECT_EQ(lo->value(), 5);
+    EXPECT_EQ(hi->minimum(), 128);
+    EXPECT_EQ(hi->maximum(), 256);
+    EXPECT_EQ(lo->minimum(), -1);
+    EXPECT_EQ(lo->maximum(), 64);
+    int told = 0;
+    d.band_changed = [&] { ++told; };
+    band->setChecked(true);
+    hi->setValue(240);
+    EXPECT_GE(told, 2);
+    EXPECT_TRUE(QSettings().value("aces/bandOn").toBool());
+    EXPECT_EQ(QSettings().value("aces/tauHigh").toInt(), 240);
+    band->setChecked(false);
+    EXPECT_FALSE(QSettings().value("aces/bandOn").toBool());
+}
+
+// ---- AI fill: which LoRA (4 Nov 2026, on the automatic setup) ----
+TEST(GenFillIdentity, TheLoraIsIdentifiedByItsHash) {
+    const auto dir = std::filesystem::temp_directory_path() / "rudra_genfill_identity";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    const auto lora = dir / "rudra_genfill.safetensors";
+    { std::ofstream(lora, std::ios::binary) << "not really a LoRA"; }
+    const QString sha = app::genfill_file_sha256(lora);
+    EXPECT_EQ(sha, QString::fromLatin1(QCryptographicHash::hash("not really a LoRA", QCryptographicHash::Sha256).toHex()));
+    EXPECT_TRUE(app::genfill_lora_is_v3(lora, sha));
+    EXPECT_FALSE(app::genfill_lora_is_v3(lora));   // not the published v3
+    { std::ofstream(lora, std::ios::binary) << "another version, a different size"; }
+    EXPECT_NE(app::genfill_file_sha256(lora), sha);   // the cache follows the file
+    EXPECT_TRUE(app::genfill_file_sha256(dir / "missing.safetensors").isEmpty());
+    std::filesystem::remove_all(dir);
+}
+
+TEST(GenFillIdentity, ASavedLoraThatIsNotV3IsUsedButSaysSo) {
+    const auto dir = std::filesystem::temp_directory_path() / "rudra_genfill_saved_v1";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir / "repo" / "rudra" / "genfill");
+    std::filesystem::create_directories(dir / "wan" / "transformer");
+    { std::ofstream(dir / "repo" / "rudra" / "genfill" / "run.py") << "#"; }
+    { std::ofstream(dir / "wan" / "transformer" / "config.json") << "{}"; }
+    { std::ofstream(dir / "v1.safetensors", std::ios::binary) << "an older LoRA"; }
+    QSettings st;
+    st.setValue("genfill/repo", app::from_path(dir / "repo"));
+    st.setValue("genfill/python", "python");
+    st.setValue("genfill/base", app::from_path(dir / "wan"));
+    st.setValue("genfill/lora", app::from_path(dir / "v1.safetensors"));
+    QString why;
+    const auto s = app::genfill_setup(&why);
+    ASSERT_TRUE(s.has_value()) << why.toStdString();
+    EXPECT_EQ(s->lora, dir / "v1.safetensors");   // kept: the artist chose it
+    EXPECT_FALSE(s->lora_is_v3);
+    EXPECT_TRUE(app::genfill_ready_text(*s).contains("NOT the published AI fill v3"));
+    for (const char* k : {"repo", "python", "base", "lora"}) st.remove(QStringLiteral("genfill/") + k);
+    std::filesystem::remove_all(dir);
+}
+
+// ---- shots off the list on the left (4 Nov 2026) ----
+TEST(AppShots, ARecentShotComesOffTheListAndStaysOnDisk) {
+    const auto dir = std::filesystem::temp_directory_path() / "rudra_shot_remove";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    const auto a = dir / "a.png", b = dir / "b.png";
+    { std::ofstream(a) << "x"; }
+    { std::ofstream(b) << "x"; }
+    QSettings().setValue("recent/sources", QStringList{app::from_path(a), app::from_path(b)});
+    app::MainWindow w(false);
+    w.forget_source(app::from_path(a));
+    const QStringList left = QSettings().value("recent/sources").toStringList();
+    EXPECT_FALSE(left.contains(QDir::cleanPath(app::from_path(a))));
+    EXPECT_TRUE(left.contains(app::from_path(b)) || left.contains(QDir::cleanPath(app::from_path(b))));
+    EXPECT_TRUE(std::filesystem::exists(a));   // only the list changes
+    QSettings().remove("recent/sources");
+    std::filesystem::remove_all(dir);
+}
+
+TEST(AppShots, EveryRecentRowHasARemoveButton) {
+    const auto dir = std::filesystem::temp_directory_path() / "rudra_shot_rows";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    QStringList r;
+    for (const char* n : {"one.png", "two.png", "three.png"}) {
+        std::ofstream(dir / n) << "x";
+        r << app::from_path(dir / n);
+    }
+    QSettings().setValue("recent/sources", r);
+    app::MainWindow w(false);
+    w.run("recent-clear");   // also proves Clear empties the rows, not only the menu
+    QCoreApplication::processEvents();
+    EXPECT_TRUE(w.findChildren<QToolButton*>("shotRemove").isEmpty());
+    QSettings().setValue("recent/sources", r);
+    w.forget_source(app::from_path(dir / "nothing-there.png"));   // refreshes the rows
+    QCoreApplication::processEvents();
+    EXPECT_EQ(w.findChildren<QToolButton*>("shotRemove").size(), 3);
+    QSettings().remove("recent/sources");
+    std::filesystem::remove_all(dir);
+}
+
+// ---- Clean shadows in the Learned ACES dialog (4 Nov 2026) ----
+TEST(AcesCleanShadows, OffByDefaultSavedAndPassedOn) {
+    QSettings().remove("aces/cleanShadows");
+    app::AcesRunSettings s;
+    s.package = "pkg";
+    s.input = "in";
+    s.out = "out";
+    EXPECT_FALSE(app::aces_cli_arguments(s).contains("--clean-shadows"));
+    s.clean_shadows = true;
+    EXPECT_TRUE(app::aces_cli_arguments(s).contains("--clean-shadows"));
+    const auto root = aces_tmp("clean_dialog");
+    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    app::AcesMasterDialog d(nullptr, {root}, root / "frames");
+    auto* box = d.findChild<QCheckBox*>("acesCleanShadows");
+    ASSERT_TRUE(box);
+    EXPECT_FALSE(box->isChecked());   // off by default: plates exactly as the model made them
+    int told = 0;
+    d.band_changed = [&] { ++told; };
+    box->setChecked(true);
+    EXPECT_TRUE(QSettings().value("aces/cleanShadows").toBool());
+    EXPECT_GE(told, 1);   // the viewer re-runs the frame
+    QSettings().remove("aces/cleanShadows");
+}
+
+// ---- the right-hand columns never slide sideways (4 Nov 2026) ----
+TEST(AppRail, TheDeliveryColumnCannotBePannedAndWrapsLongText) {
+    app::MainWindow w(false);
+    w.resize(1600, 900);
+    w.show();
+    QCoreApplication::processEvents();
+    auto* scroll = w.findChild<QScrollArea*>("railscroll");
+    ASSERT_TRUE(scroll);
+    auto* col = scroll->widget();
+    auto* longest = new QLabel(QString("Ready: Wan2.1-VACE-1.3B (D:/A.I/Devlopments/RADIANCE_STUDIO_Pack_dev/models/"
+                                       "wan2.1-vace-1.3b-diffusers) + rudra_genfill.safetensors · AI fill v3, verified"), col);
+    col->layout()->addWidget(longest);
+    QCoreApplication::processEvents();
+    QCoreApplication::processEvents();
+    EXPECT_TRUE(longest->wordWrap());                                  // made later, still wrapped
+    EXPECT_LE(col->width(), scroll->viewport()->width());              // never wider than the column
+    scroll->horizontalScrollBar()->setValue(80);                        // a swipe or Shift+wheel
+    QCoreApplication::processEvents();
+    EXPECT_EQ(scroll->horizontalScrollBar()->value(), 0);               // stays put
+    auto* scopes = w.findChild<QScrollArea*>("scopesScroll");
+    ASSERT_TRUE(scopes);
+    scopes->horizontalScrollBar()->setValue(50);
+    EXPECT_EQ(scopes->horizontalScrollBar()->value(), 0);
+}
+
+// ---- AI fill fixes the master in place (4 Nov 2026) ----
+TEST(GenFillSwap, FilledFramesReplaceTheMasterAndTheOriginalsAreKept) {
+    const auto root = std::filesystem::temp_directory_path() / "rudra_genfill_swap";
+    std::filesystem::remove_all(root);
+    const auto m = root / "master", f = root / "master_aifill";
+    std::filesystem::create_directories(m);
+    std::filesystem::create_directories(f / "review");
+    for (const char* n : {"master.000001.exr", "master.000002.exr", "master.000003.exr"}) std::ofstream(m / n) << "original";
+    for (const char* n : {"master.000001.exr", "master.000002.exr"}) std::ofstream(f / n) << "filled";
+    std::ofstream(f / "extra.000009.exr") << "filled";   // no master frame of that name
+    std::ofstream(f / "review" / "master.000001.a.png") << "review";
+    std::filesystem::create_directories(root / "master_before_aifill");   // an earlier backup: never overwritten
+    const auto r = app::genfill_replace_in_master(app::from_path(m), app::from_path(f));
+    EXPECT_TRUE(r.error.isEmpty()) << r.error.toStdString();
+    EXPECT_EQ(r.replaced, 2);
+    EXPECT_EQ(r.skipped, 1);
+    EXPECT_TRUE(r.backup.endsWith("master_before_aifill_2"));
+    auto text = [](const std::filesystem::path& p) {
+        std::ifstream in(p);
+        std::string s;
+        std::getline(in, s);
+        return s;
+    };
+    EXPECT_EQ(text(m / "master.000001.exr"), "filled");     // fixed in place
+    EXPECT_EQ(text(m / "master.000003.exr"), "original");   // not filled: untouched
+    EXPECT_EQ(text(app::to_path(r.backup) / "master.000001.exr"), "original");   // kept
+    EXPECT_TRUE(std::filesystem::exists(f / "review" / "master.000001.a.png"));  // the review stays
+    EXPECT_TRUE(std::filesystem::exists(f / "extra.000009.exr"));
+    std::filesystem::remove_all(root);
+}
+
+// ---- the viewer's AI fill (4 Nov 2026) ----
+TEST(AppFillView, TheViewerHasAnAiFillToggleThatIsSafeWithoutAFill) {
+    app::MainWindow w(false);
+    auto* b = w.findChild<QPushButton*>("vtAiFill");
+    if (!b) GTEST_SKIP() << "the viewer bar is built with the viewer only";
+    EXPECT_TRUE(b->isCheckable());
+    EXPECT_FALSE(b->isChecked());
+    b->setChecked(true);   // nothing filled yet: no crash, just a message
+    EXPECT_TRUE(w.fill_view_on());
+    b->setChecked(false);
+    EXPECT_FALSE(w.fill_view_on());
+}
+
+// ---- why a finished preview may look like nothing (6 Nov 2026) ----
+TEST(AppFillView, ThePreviewSaysWhyItShowsNothing) {
+    EXPECT_TRUE(app::genfill_preview_hint(0.0, false, 1000).contains("Nothing was invented"));
+    EXPECT_TRUE(app::genfill_preview_hint(0.0, true, 1000).contains("inside the reconstruction region"));
+    EXPECT_TRUE(app::genfill_preview_hint(0.02, false, 203).contains("203-nit"));
+    EXPECT_TRUE(app::genfill_preview_hint(0.02, false, 1000).isEmpty());
+}
+
+// ---- the prompt bar over the viewer (6 Nov 2026) ----
+TEST(AppFillView, ThePromptBarShowsWhileTheFillIsShown) {
+    app::MainWindow w(false);
+    auto* bar = w.findChild<QWidget*>("viewerAiPromptBar");
+    ASSERT_NE(bar, nullptr);
+    EXPECT_TRUE(bar->isHidden());   // no shot, no fill
+    EXPECT_GE(w.findChildren<QWidget*>("aiSuggestChips").size(), 2);   // over the viewer and on the AI fill card
+}
+
+// ---- the viewer's AI fill finds the fill after it moved into the master (5 Nov 2026) ----
+TEST(GenFillSwap, TheViewerFindsTheFillBeforeAndAfterItMovesIntoTheMaster) {
+    const auto root = std::filesystem::temp_directory_path() / "rudra_genfill_view";
+    std::filesystem::remove_all(root);
+    const auto m = root / "master", f = root / "master_aifill";
+    std::filesystem::create_directories(m);
+    std::filesystem::create_directories(f);
+    for (const char* n : {"master.000001.exr", "master.000002.exr"}) {
+        std::ofstream(m / n) << "original";
+        std::ofstream(f / n) << "filled";
+    }
+    // Before the move: the fill folder's frames.
+    auto before = app::genfill_filled_frames(app::from_path(f), app::from_path(m));
+    ASSERT_EQ(before.size(), 2);
+    EXPECT_TRUE(before[0].contains("master_aifill"));
+    // A master never filled: nothing, even though it has frames.
+    EXPECT_TRUE(app::genfill_filled_frames(QString(), app::from_path(m)).isEmpty());
+    // After the in-place move: the master's frames (they are the fill now).
+    ASSERT_TRUE(app::genfill_replace_in_master(app::from_path(m), app::from_path(f)).error.isEmpty());
+    auto after = app::genfill_filled_frames(app::from_path(f), app::from_path(m));
+    ASSERT_EQ(after.size(), 2);
+    EXPECT_FALSE(after[0].contains("master_aifill"));
+    std::ifstream in(app::to_path(after[0]));
+    std::string s;
+    std::getline(in, s);
+    EXPECT_EQ(s, "filled");
+    std::filesystem::remove_all(root);
+}

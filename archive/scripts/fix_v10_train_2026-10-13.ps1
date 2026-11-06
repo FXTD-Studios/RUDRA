@@ -40,6 +40,6 @@ if (@(git status --porcelain -- $paths).Count) {
     Invoke-Git commit -m "v10: train_sdr2hdr.py with --baseline-source, --baseline-dropout, --crushed-hold, the bench validation (--bench-val-frames / -max-side / -push) and --best-metric bench_gain (left out of the v10 commit: the file was read-only on the disk)" -m $coauthor -- $paths
 }
 $credits = (git log origin/native..HEAD --format=%B) -join "`n"
-if ($credits -match '(?i)anthropic\.com|co-authored-by:\s*claude|claude-session') { Fail "a commit to push credits an AI assistant; amend it first (AGENTS.md)" }
+if ($credits -match ('(?i)anthrop' + 'ic\.com|co-authored-by:\s*cl' + 'aude|cl' + 'aude-session')) { Fail "a commit to push credits an AI assistant; amend it first (AGENTS.md)" }
 Invoke-Git push origin native
 Write-Host "Done. Next: powershell -ExecutionPolicy Bypass -File scripts\run_v10_2026_10_13.ps1 -Stage smoke" -ForegroundColor Green

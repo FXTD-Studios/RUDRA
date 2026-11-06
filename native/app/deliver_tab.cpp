@@ -4,6 +4,13 @@
 // cli/aces_v2_deliver.hpp), or the analytic master and movie exports as before.
 
 #include <QCheckBox>
+#include <QCoreApplication>
+#include <QCursor>
+#include <QFile>
+#include <QMenu>
+#include <QProcess>
+#include <QProcessEnvironment>
+#include <QStatusBar>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QDir>
@@ -26,9 +33,11 @@
 #include "paths.hpp"
 #include "aces_master.hpp"
 #include "genfill_job.hpp"
+#include "genfill_swap.hpp"
 #include "genfill_review.hpp"
 #include "main_window.hpp"
 #include "rudra/core/timecode.hpp"
+#include "rudra/platform/png8.hpp"
 #include "widgets.hpp"
 
 namespace fs = std::filesystem;
@@ -60,7 +69,11 @@ bool MainWindow::deliver_learned_wanted() const {
 DeliverChoice MainWindow::deliver_effective() const {
     const bool aces = deliver_aces() || deliver_learned_wanted();
     DeliverChoice c = deliver_;
-    if (!aces) c.gamut = session_.container == "linear" ? QStringLiteral("linear") : QStringLiteral("ap0");
+    // RUDRA 1.1: the AI fill acts only inside the grade's reconstruction region, when one is on.
+    c.ai.region_json = session_.grade.region.enabled
+                           ? QString::fromStdString(reconstruction_region_json(session_.grade.region))
+                           : QString();
+    if (!aces) c.gamut = session_.container == "aces" ? QStringLiteral("ap0") : QString::fromStdString(session_.container);
     const bool movie = shot_is_video();
     return deliver_fit(c, aces, movie, !movie && frames_.size() > 1);
 }
@@ -77,6 +90,8 @@ void MainWindow::load_deliver_settings() {
     c.bits = st.value("deliver/bits", c.bits).toInt();
     c.codec = st.value("deliver/codec", c.codec).toString();
     c.keep_exr = st.value("deliver/keepExr", c.keep_exr).toBool();
+    c.mattes = st.value("deliver/mattes", c.mattes).toBool();
+    c.brackets = st.value("deliver/brackets", c.brackets).toBool();
     c.fps = st.value("deliver/fps", c.fps).toDouble();
     c.ai_fill = st.value("deliver/aiFill", c.ai_fill).toBool();
     c.ai.tau_high = st.value("deliver/aiTauHigh", c.ai.tau_high).toInt();
@@ -84,6 +99,9 @@ void MainWindow::load_deliver_settings() {
     c.ai.seed = st.value("deliver/aiSeed", c.ai.seed).toInt();
     c.ai.steps = st.value("deliver/aiSteps", c.ai.steps).toInt();
     c.ai.brightness = st.value("deliver/aiBrightness", c.ai.brightness).toDouble();
+    c.ai.prompt_strength = std::clamp(st.value("deliver/aiPromptStrength", c.ai.prompt_strength).toDouble(), 0.0, 2.0);
+    c.ai.shape_gain = std::clamp(st.value("deliver/aiShapeGain", c.ai.shape_gain).toDouble(), 0.0, 2.0);
+    c.ai.fallback = st.value("deliver/aiFallback", true).toBool();   // RUDRA 1.1: on unless turned off
     c.ai.prompt_highlight = st.value("deliver/aiPromptHighlight").toString();
     c.ai.prompt_shadow = st.value("deliver/aiPromptShadow").toString();
     if (c.source != "aces" && c.source != "analytic") c.source = "aces";
@@ -106,9 +124,10 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
     } else if (key == "image" && (value == "exr32" || value == "exr16" || value == "dpx10")) {
         deliver_.image = value;
         st.setValue("deliver/image", value);
-    } else if (key == "gamut" && (value == "ap0" || value == "acescg" || value == "linear")) {
-        // The analytic master's gamut is the session's container (Deliver menu).
-        if (!deliver_aces() && value != "acescg") run(value == "ap0" ? "container-aces" : "container-linear");
+    } else if (key == "gamut" && (value == "ap0" || value == "acescg" || value == "linear" || value == "rec709")) {
+        // The analytic master's gamut is the session's container (Deliver menu); RUDRA 1.1: all four.
+        if (!deliver_aces()) session_.set_container(value == "ap0" ? "aces" : value.toStdString());
+        if (deliver_aces() && value == "rec709") return;
         if (deliver_aces() || value == "ap0") {
             deliver_.gamut = value == "linear" ? QStringLiteral("acescg") : value;
             st.setValue("deliver/gamut", deliver_.gamut);
@@ -125,6 +144,12 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
     } else if (key == "codec" && (value == "prores422hq" || value == "prores4444" || value == "prores4444xq" || value == "hevc10")) {
         deliver_.codec = value;
         st.setValue("deliver/codec", value);
+    } else if (key == "brackets") {   // RUDRA 1.1 priority 4
+        deliver_.brackets = value == "1" || value == "true";
+        st.setValue("deliver/brackets", deliver_.brackets);
+    } else if (key == "mattes") {   // RUDRA 1.1 priority 3
+        deliver_.mattes = value == "1" || value == "true";
+        st.setValue("deliver/mattes", deliver_.mattes);
     } else if (key == "keep_exr") {
         deliver_.keep_exr = value == "1" || value == "true";
         st.setValue("deliver/keepExr", deliver_.keep_exr);
@@ -157,6 +182,20 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
         if (!ok || v < -3.0 || v > 3.0) return;
         deliver_.ai.brightness = v;
         st.setValue("deliver/aiBrightness", v);
+    } else if (key == "ai_fallback") {   // RUDRA 1.1 priority 5
+        deliver_.ai.fallback = value == "1" || value == "true";
+        st.setValue("deliver/aiFallback", deliver_.ai.fallback);
+    } else if (key == "ai_prompt_strength" || key == "ai_shape_gain") {   // RUDRA 1.1
+        bool ok = false;
+        const double v = value.toDouble(&ok);
+        if (!ok || !std::isfinite(v) || v < 0.0 || v > 2.0) return;
+        if (key == "ai_prompt_strength") {
+            deliver_.ai.prompt_strength = v;
+            st.setValue("deliver/aiPromptStrength", v);
+        } else {
+            deliver_.ai.shape_gain = v;
+            st.setValue("deliver/aiShapeGain", v);
+        }
     } else if (key == "ai_prompt_highlight") {
         deliver_.ai.prompt_highlight = value.left(400);
         st.setValue("deliver/aiPromptHighlight", deliver_.ai.prompt_highlight);
@@ -202,8 +241,8 @@ void MainWindow::sync_deliver() {
     const bool exr = !movie && c.image != "dpx10";
     show("deliverGamutRow", exr);
     if (auto* gamut = dynamic_cast<Seg*>(findChild<QWidget*>("deliverGamut"))) {
-        gamut->button("acescg")->setVisible(aces);
         gamut->button("linear")->setVisible(!aces);
+        gamut->button("rec709")->setVisible(!aces);   // RUDRA 1.1: the analytic master writes it too
         gamut->set_on(c.gamut);
     }
     // A movie: 10-bit ProRes or 16-bit uncompressed RGB.
@@ -242,6 +281,10 @@ void MainWindow::sync_deliver() {
     }
     show("deliverKeepExr", aces && movie);
     if (auto* keep = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverKeepExr"))) keep->set_on(c.keep_exr);
+    show("deliverMattes", !aces);   // a movie's mattes go to <name>_mattes, a frame each
+    if (auto* mt = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverMattes"))) mt->set_on(c.mattes);
+    show("deliverBrackets", !aces && c.output != "movie");
+    if (auto* br = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverBrackets"))) br->set_on(c.brackets);
     // The AI fill (layer 3): the learned EXR still or sequence only.
     const bool ai_possible = ai_fill_possible(c, aces);
     show("deliverAiFill", ai_possible);
@@ -261,6 +304,15 @@ void MainWindow::sync_deliver() {
         const QSignalBlocker b(bs);
         bs->setValue(c.ai.brightness);
     }
+    for (const auto& [id, v] : {std::pair{"deliverAiPromptStrength", c.ai.prompt_strength},
+                                std::pair{"deliverAiShapeGain", c.ai.shape_gain}})
+        if (auto* ds = findChild<QDoubleSpinBox*>(id)) {
+            const QSignalBlocker b(ds);
+            ds->setValue(v);
+        }
+    if (auto* fb = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFallback"))) fb->set_on(c.ai.fallback);
+    if (auto* rn = findChild<QLabel*>("deliverAiRegion"))   // the grade's region reaches the fill
+        rn->setVisible(c.ai_fill && !c.ai.region_json.isEmpty());
     auto set_line = [this](const char* id, const QString& v) {
         if (auto* le = findChild<QLineEdit*>(id); le && le->text() != v) {
             const QSignalBlocker b(le);
@@ -271,7 +323,22 @@ void MainWindow::sync_deliver() {
     set_line("deliverAiPromptShadow", c.ai.prompt_shadow);
     if (auto* st = findChild<QLabel*>("deliverAiSetup"); st && ai_possible && c.ai_fill) {
         QString why;
-        st->setText(genfill_setup(&why) ? QStringLiteral("Ready: Wan2.1-VACE-1.3B + the RUDRA fill LoRA") : why);
+        // Where each part was found (4 Nov 2026); missing: Setup… > Set up automatically.
+        if (const auto s = genfill_setup(&why))
+            st->setText(QStringLiteral("Ready: Wan2.1-VACE-1.3B (%1) + %2 · %3")
+                            .arg(from_path(s->base), from_path(s->lora.filename()),
+                                 s->lora_is_v3 ? QStringLiteral("AI fill v3, verified")
+                                               : QStringLiteral("NOT AI fill v3: Setup… to switch")));
+        else
+            st->setText(why + QStringLiteral(" Setup… > Set up automatically does it for you."));
+    }
+    // The preview's buttons: the views once there is one; a setting changed since, it says so.
+    for (const char* id : {"deliverAiShowFill", "deliverAiShowMaster", "deliverAiShowMask"})
+        if (auto* b = findChild<QPushButton*>(id)) b->setEnabled(genfill_preview_.has_value() && !genfill_preview_busy_);
+    if (auto* ps = findChild<QLabel*>("deliverAiPreviewStatus");
+        ps && genfill_preview_ && !genfill_preview_busy_ && !(genfill_preview_->options == c.ai)) {
+        const QString stale = QStringLiteral(" · settings changed since: Preview AI fill again");
+        if (!ps->text().endsWith(stale)) ps->setText(ps->text() + stale);
     }
     show("deliverAnalyticOptions", !aces);
     // The Signal card says what the file is.
@@ -304,7 +371,10 @@ void MainWindow::sync_deliver() {
                            .arg(ext)
                            .arg(c.output == "sequence" ? QStringLiteral(" …") : QString());
         if (movie && c.bits == 16) note += QStringLiteral(". Uncompressed: large files, lossless");
-        if (c.ai_fill) note += QStringLiteral(", then the AI fill writes a copy in %1_aifill").arg(shown_name);
+        if (c.ai_fill)
+            note += QSettings().value("genfill/replaceInMaster", true).toBool()
+                        ? QStringLiteral(", then the AI fill fixes the clipped areas in place (the originals kept in %1_before_aifill)").arg(shown_name)
+                        : QStringLiteral(", then the AI fill writes a copy in %1_aifill").arg(shown_name);
         note += QStringLiteral(". Nothing is ever replaced.");
     } else if (movie) {
         note = movie_shot ? QStringLiteral("Queued as an export with the movie's audio; see Queue.")
@@ -403,6 +473,7 @@ QJsonObject MainWindow::aces_deliver_request(QString* why) const {
     }
     if (const QString reel = render_reel(); !reel.isEmpty()) req["reel"] = reel;
     if (aces_source_display_ != "bt1886") req["source_display"] = aces_source_display_;
+    if (const QJsonObject r = aces_region_field(); !r.isEmpty()) req["reconstruction_region"] = r;   // as the viewer shows it
     return req;
 }
 
@@ -455,7 +526,7 @@ void MainWindow::deliver_render() {
 void MainWindow::aces_deliver() {
     auto* status = findChild<QLabel*>("renderStatus");
     QString why;
-    const QJsonObject req = aces_deliver_request(&why);
+    QJsonObject req = aces_deliver_request(&why);
     if (req.isEmpty()) {
         status->setText(why);
         status->show();
@@ -464,6 +535,22 @@ void MainWindow::aces_deliver() {
         return;
     }
     halt_playback();
+    // A movie with the AI fill (6 Nov 2026): the masters as EXR first (the fill reads EXR), the
+    // movie made from the filled frames after it, with the same name, format, rate and timecode.
+    aifill_movie_req_ = {};
+    if (const DeliverChoice c = deliver_effective(); c.output == "movie" && c.ai_fill) {
+        QJsonObject enc{{"op", "encode"}, {"out", req.value("out")}, {"name", req.value("name")}, {"log", req.value("log")},
+                        {"log_formats", req.value("log_formats")}};
+        const double rate = shot_video_ && shot_video_->fps && *shot_video_->fps > 0 ? *shot_video_->fps : c.fps;
+        enc["fps"] = req.contains("fps") ? req.value("fps").toDouble() : rate;
+        for (const char* k : {"timecode", "reel"})
+            if (req.contains(k)) enc[k] = req.value(k);
+        aifill_movie_req_ = enc;
+        req["exr"] = c.gamut == "ap0" ? "half" : "float";
+        req["exr_gamut"] = c.gamut == "ap0" ? "ap0" : "acescg";
+        req.remove("log");
+        req.remove("log_formats");
+    }
     const QString out = req.value("out").toString();
     const int total = req.value("frames").isArray() ? int(req.value("frames").toArray().size()) : -1;
     log("Render destination: " + QDir::toNativeSeparators(out) + " (learned ACES 2.0, " + container_field_->text() + ")");
@@ -527,10 +614,23 @@ void MainWindow::aces_deliver_finished(const QJsonObject& o, const QString& out)
         if (auto* d = findChild<QLabel*>("colDelivered")) d->setText(QString::number(delivered_));
         if (!cancelled && n > 0 && deliver_effective().ai_fill) {
             QString why;
-            if (!start_genfill(out, &why)) {
+            // A movie with the AI fill: once the fill is in, its frames make the movie.
+            std::function<void(bool, QString)> then;
+            if (!aifill_movie_req_.isEmpty()) {
+                const QPointer<MainWindow> self(this);
+                then = [self, out](bool done, const QString&) {
+                    if (!self) return;
+                    if (done) self->encode_aifill_movie(out, self->genfill_last_out_);
+                    else self->aifill_movie_req_ = {};
+                };
+            }
+            if (!start_genfill(out, &why, then)) {
+                aifill_movie_req_ = {};
                 status->setText(text + QStringLiteral(" · AI fill not run: ") + why);
                 log("AI fill not run: " + why);
             }
+        } else {
+            aifill_movie_req_ = {};
         }
     }
     status->show();
@@ -564,7 +664,7 @@ bool MainWindow::review_genfill(const QString& dir_in, QString* why) {
     return true;
 }
 
-bool MainWindow::start_genfill(const QString& master_dir, QString* why) {
+bool MainWindow::start_genfill(const QString& master_dir, QString* why, std::function<void(bool, QString)> finished) {
     // The Deliver render's: its frames only when it wrote into a folder that holds others.
     GenFillOptions o = deliver_effective().ai;
     QString base = master_dir;
@@ -572,7 +672,69 @@ bool MainWindow::start_genfill(const QString& master_dir, QString* why) {
         o.glob = render_name_for_fill_ + render_separator_ + QString("[0-9]").repeated(render_padding_) + "*.exr";
         base = QDir(master_dir).filePath(render_name_for_fill_);
     }
-    return start_genfill_with(master_dir, o, base, {}, why);
+    return start_genfill_with(master_dir, o, base, std::move(finished), why);
+}
+
+void MainWindow::encode_aifill_movie(const QString& master_dir, const QString& fill_dir) {
+    auto* status = findChild<QLabel*>("renderStatus");
+    QJsonObject req = aifill_movie_req_;
+    aifill_movie_req_ = {};
+    if (req.isEmpty()) return;
+    // This render's filled frames, in order: the fill folder's, or the master's once fixed in place.
+    const QString prefix = req.value("name").toString() + render_separator_;
+    QJsonArray exrs;
+    for (const QString& f : genfill_filled_frames(fill_dir, master_dir))
+        if (QFileInfo(f).fileName().startsWith(prefix)) exrs.append(qp(to_path(f)));
+    if (exrs.isEmpty()) {
+        const QString t = QStringLiteral("AI fill: no filled frames were found for the movie in %1").arg(QDir::toNativeSeparators(master_dir));
+        status->setText(t);
+        status->show();
+        log(t);
+        return;
+    }
+    req["exrs"] = exrs;
+    if (!aces_engine_) return;
+    const int total = int(exrs.size());
+    status->setText(QStringLiteral("Making the movie from the AI-filled frames…"));
+    status->show();
+    btn_master_->setToolTip("Click to stop the movie (the filled EXR frames stay)");
+    const QPointer<MainWindow> self(this);
+    aces_deliver_id_ = -1;
+    const int id = aces_engine_->request(
+        req,
+        [self, master_dir](const QJsonObject& o) {
+            if (!self) return;
+            self->aces_deliver_id_ = 0;
+            self->btn_master_->setToolTip({});
+            auto* st = self->findChild<QLabel*>("renderStatus");
+            QString t;
+            if (!o.value("ok").toBool())
+                t = QStringLiteral("The AI-filled movie was not made: ") + (o.value("error").toString() + ' ' + o.value("detail").toString()).trimmed() +
+                    QStringLiteral(" (the filled EXR frames are in %1)").arg(QDir::toNativeSeparators(master_dir));
+            else if (o.value("cancelled").toBool())
+                t = QStringLiteral("Movie stopped; the filled EXR frames are in %1").arg(QDir::toNativeSeparators(master_dir));
+            else
+                t = QStringLiteral("AI-filled movie: %1 (%2 frames; the filled EXR frames are beside it)")
+                        .arg(QDir::toNativeSeparators(o.value("movie").toString()))
+                        .arg(o.value("frames").toInt()) +
+                    (o.value("hdr10").toString().isEmpty()
+                         ? QString()
+                         : QStringLiteral(" · HDR10 MaxCLL %1 / MaxFALL %2 nits")
+                               .arg(std::lround(std::ceil(o.value("maxcll").toDouble())))
+                               .arg(std::lround(std::ceil(std::min(o.value("maxfall").toDouble(), o.value("maxcll").toDouble())))));
+            st->setText(t);
+            st->show();
+            self->log(t);
+            self->refresh_enabled();
+            self->sync_ui();
+        },
+        [self, total](const QJsonObject& p) {
+            if (!self) return;
+            if (auto* st = self->findChild<QLabel*>("renderStatus"))
+                st->setText(QStringLiteral("Making the AI-filled movie %1 / %2").arg(p.value("index").toInt()).arg(total));
+        });
+    if (aces_deliver_id_ != 0) aces_deliver_id_ = id;
+    refresh_enabled();
 }
 
 bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOptions& options, const QString& out_base,
@@ -607,15 +769,28 @@ bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOpti
             }
             st->show();
         },
-        [self, out, finished](bool done, const QJsonObject& last) {
+        [self, out, master_dir, finished](bool done, const QJsonObject& last) {
             if (!self) return;
             auto* st = self->findChild<QLabel*>("renderStatus");
             QString text;
             if (done) {
                 self->genfill_last_out_ = out;
-                text = QStringLiteral("AI fill: %1 frame(s) to %2 · %3 % of pixels generated")
+                self->genfill_last_master_ = master_dir;
+                self->fill_view_cache_.clear();
+                // 4 Nov 2026 (Ahmed: option a): the fill fixes the master in place; the
+                // originals go to <master>_before_aifill. Only after a fill that finished.
+                QString where = QStringLiteral("to %1").arg(QDir::toNativeSeparators(out));
+                if (QSettings().value("genfill/replaceInMaster", true).toBool()) {
+                    const GenFillSwap sw = genfill_replace_in_master(master_dir, out);
+                    if (!sw.error.isEmpty())
+                        where = QStringLiteral("to %1 (the master was NOT updated: %2)").arg(QDir::toNativeSeparators(out), sw.error);
+                    else if (sw.replaced > 0)
+                        where = QStringLiteral("fixed in place in %1; the originals are in %2")
+                                    .arg(QDir::toNativeSeparators(master_dir), QDir::toNativeSeparators(sw.backup));
+                }
+                text = QStringLiteral("AI fill: %1 frame(s) %2 · %3 % of pixels generated")
                            .arg(last.value("frames").toInt())
-                           .arg(QDir::toNativeSeparators(out))
+                           .arg(where)
                            .arg(100.0 * last.value("generated_fraction").toDouble(), 0, 'f', 2) +
                        (last.value("flagged_frames").toInt() > 0
                             ? QStringLiteral(" · %1 frame(s) flicker: Review fill… before it goes out").arg(last.value("flagged_frames").toInt())

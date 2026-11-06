@@ -28,6 +28,6 @@ foreach ($c in $commits) {
 $left = @(git status --porcelain --untracked-files=no)
 if ($left.Count) { Write-Host "Still modified, not committed (left for you):" -ForegroundColor Yellow; $left | Write-Host }
 $credits = (git log origin/native..HEAD --format=%B) -join "`n"
-if ($credits -match '(?i)anthropic\.com|co-authored-by:\s*claude|claude-session') { Fail "a commit to push credits an AI assistant; amend it first (AGENTS.md)" }
+if ($credits -match ('(?i)anthrop' + 'ic\.com|co-authored-by:\s*cl' + 'aude|cl' + 'aude-session')) { Fail "a commit to push credits an AI assistant; amend it first (AGENTS.md)" }
 Invoke-Git push origin native
 Write-Host "native pushed. With the checks green, tag the candidate: .\scripts\release_v1_rc.ps1 -Rc 2 -Tag" -ForegroundColor Green

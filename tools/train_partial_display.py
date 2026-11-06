@@ -31,6 +31,11 @@ def loc(p):
     return D + p.replace('\\', '/').split('G:/')[1]
 
 
+def pilot_path(p):
+    """A pilot report: relative to the data root (PILOTS), or an absolute G:/ path (--extra-pilot)."""
+    return loc(p) if 'G:/' in p.replace('\\', '/') else D + p
+
+
 def sha(p):
     return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
@@ -71,7 +76,7 @@ def build_pool(crops_per_frame, crop, seed, aligned=False, border=48, matched=Fa
     rng = np.random.default_rng(seed)
     pool, used = [], []
     for pil in (PILOTS if pilots is None else pilots):
-        rows = json.loads(Path(D + pil).read_text())['rows']
+        rows = json.loads(Path(pilot_path(pil)).read_text())['rows']
         for r in rows:
             assert r['split'] == 'train'
             for key in ('sdr','target'):
@@ -193,6 +198,9 @@ def main():
     ap.add_argument('--save-every', type=int, default=0, help='also save stepN.pt every N updates (diagnostics; the registered result is the last)')
     ap.add_argument('--max-hours', type=float, default=0, help='stop at the first save boundary after this many hours (requires --save-every)')
     ap.add_argument('--display-ev-weights',type=float,nargs='+',help='per-EV multipliers for the display terms, same order as --display-evs (default all 1)')
+    ap.add_argument('--extra-pilot',action='append',default=[],help='4 Nov 2026: another corpus report.json (G:/...), e.g. tools/build_real_partial_corpus.py; its rows join the still pool')
+    ap.add_argument('--bin-weight',type=float,default=0.0,help='0 EV kit (training/aces_bin_hinge.py): weight of the half-code bin hinge vs the SOURCE codes; 0 = off, history unchanged')
+    ap.add_argument('--bin-tol-codes',type=float,default=0.5,help='the bin hinge tolerance in 8-bit codes')
     ap.add_argument('--direct-step-report',help='replace Adam with normalized PCGrad using capped TRAIN report step lengths')
     a = ap.parse_args()
     if a.direct_step_report and (not a.pcgrad or not a.deterministic or a.max_update_l2 is not None or a.pcgrad_probe_steps):
@@ -212,6 +220,7 @@ def main():
     if fixed_scale and not a.relative:raise ValueError('fixed display scales require relative loss')
     globals()['D']=a.data_root.rstrip('/\\')+'/'
     if a.temporal_weight<0 or (a.temporal_weight and not a.paired_motion):raise ValueError('temporal objective requires paired motion')
+    if a.bin_weight<0 or not np.isfinite(a.bin_weight) or a.bin_tol_codes<0:raise ValueError('bin weight and tolerance must be finite and >= 0')
     if a.paired_motion and (not a.aligned_crops or a.batch%2):raise ValueError('aligned crops and even frame batch required')
     out = Path(a.out); out.mkdir(parents=True, exist_ok=False)
     (out / 'trainer_snapshot.py').write_bytes(Path(__file__).read_bytes())  # exact code, for provenance
@@ -225,7 +234,7 @@ def main():
         p.requires_grad_(n.startswith('highlight_context.'))
     t0 = time.time()
     metadata=[]
-    pool, used = build_pool(a.crops_per_frame, a.crop, a.seed,a.aligned_crops,a.border,a.matched_crops,metadata,PILOTS[:1] if a.paired_motion else None)
+    pool, used = build_pool(a.crops_per_frame, a.crop, a.seed,a.aligned_crops,a.border,a.matched_crops,metadata,(PILOTS[:1] if a.paired_motion else PILOTS)+list(a.extra_pilot) if a.extra_pilot else (PILOTS[:1] if a.paired_motion else None))
     motion_pool=[]
     if a.paired_motion:
         from training.aces_partial_pairs import build_motion_pool
@@ -280,7 +289,9 @@ def main():
                 if not count:raise ValueError('empty temporal support')
                 terms.append(value);active_count+=count
             temporal=torch.stack(terms).mean()
+        src_codes = x[..., b:-b, b:-b] if a.bin_weight > 0 else None   # the bin hinge's reference: the source itself
         pred, t, mask, ana = pred[..., b:-b, b:-b], t[..., b:-b, b:-b], mask[..., b:-b, b:-b].float(), ana[..., b:-b, b:-b]
+        pd0_cache = None
         n = mask.sum().clamp_min(1)
         photo = (((torch.asinh(pred) - torch.asinh(t)) ** 2).mean(1, keepdim=True) * mask).sum() / n
         loss = photo
@@ -298,11 +309,20 @@ def main():
                         ema[ev] = fixed_scale[ev] if fixed_scale is not None else (r if ev not in ema else .95 * ema[ev] + .05 * r)
                         ref = torch.tensor(max(ema[ev], 1e-4),device=a.device)
                 pd = _Forward.apply(pred * k)
+                if ev == 0 and a.bin_weight > 0: pd0_cache = pd
                 e = ((((pd - td) * 255) ** 2).mean(1, keepdim=True) * mask).sum() / n
                 terms.append(ev_weight * e / ref.clamp_min(1e-6))
                 objectives[f'display_ev_{ev:g}']=a.display_weight/len(a.display_evs)*terms[-1]
             disp = torch.stack(terms).mean()
             loss = photo + a.display_weight * disp
+        bin_diag = None
+        if a.bin_weight > 0:   # the 0 EV kit: learn to land inside the source's code bin
+            from training.aces_bin_hinge import bin_hinge
+            view0 = pd0_cache if pd0_cache is not None else _Forward.apply(pred)
+            binv, over_tol, over_one = bin_hinge(view0, src_codes, mask, a.bin_tol_codes)
+            loss = loss + a.bin_weight * binv
+            objectives['bin'] = a.bin_weight * binv
+            bin_diag = {'bin': float(binv.detach()), 'over_tol_share': over_tol, 'over_one_code_share': over_one}
         loss=loss+a.temporal_weight*temporal
         if is_motion and a.temporal_weight:objectives['temporal']=a.temporal_weight*temporal
         if not torch.isfinite(loss):raise ValueError('nonfinite loss')
@@ -360,6 +380,7 @@ def main():
                 probe.update(step=step,domain='motion' if is_motion else 'still',snapshot_sha256=sha(snapshot))
                 (out/f'step_probe_{step:04d}.json').write_text(json.dumps(probe,indent=2,allow_nan=False))
         hist.append({'step': step, 'photo': float(photo.detach()), 'display': float(disp.detach()), 'pixels': int(n), 'analytic_ema': dict(ema),'domain':'motion' if is_motion else 'still','temporal':float(temporal.detach()),'active_pixels':active_count})
+        if bin_diag is not None: hist[-1].update(bin_diag)   # only when the kit is on: older histories stay identical
         if projection_info is not None:hist[-1]['pcgrad']=projection_info
         if a.save_every and step % a.save_every == 0 and step < a.steps:
             save_checkpoint(out / f'step{step}.pt', state, model, {**vars(a), 'parent_checkpoint': a.checkpoint,
@@ -389,7 +410,7 @@ def main():
     torch.save({**state, 'model': after,
                 'recipe': {**vars(a), 'parent_checkpoint': a.checkpoint, 'parent_sha256': sha(a.checkpoint), 'trainer_sha256': sha(out / 'trainer_snapshot.py'), 'geometry_sha256':sha(out / 'geometry_snapshot.py'),
                            'trained': 'highlight_context only (partial highlights)', 'train_frames': used,
-                           'pilots': PILOTS,'pilot_hashes':{pil:sha(D+pil) for pil in PILOTS},'source_hashes':sources,
+                           'pilots': PILOTS+list(a.extra_pilot),'pilot_hashes':{pil:sha(pilot_path(pil)) for pil in PILOTS+list(a.extra_pilot)},'source_hashes':sources,
                            'schedule_sha256':sha(out/'schedule.json'),'crop_pool_sha256':sha(out/'crop_pool.json'),
                            'schedule_manifest_sha256':sha(out/'schedule_manifest.json') if a.registered_schedule else None,
                            'direct_step_source_sha256':sha(out/'direct_step_source.json') if a.direct_step_report else None,

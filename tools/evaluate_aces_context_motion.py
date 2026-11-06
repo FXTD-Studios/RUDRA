@@ -55,6 +55,11 @@ def main():
                 from training.aces_clipped_smoothing import smooth_clipped
                 constrained_input,_=smooth_clipped(constrained_input,source,**reg['clipped_smoothing'])
             predictions['candidate'],diagnostic=constrain_colour(source,constrained_input,baseline,w,view,include_fully_clipped=reg.get('include_fully_clipped',False),forbid_new_negative_y=reg.get('forbid_new_negative_y',False))
+            # The 0 EV arm (training/aces_partial_tighten.py); only when the registration names it.
+            from training.aces_partial_tighten import from_registration,tighten_partial
+            if (_pt:=from_registration(reg)):
+                predictions['candidate'],_ptd=tighten_partial(source,predictions['candidate'],baseline,w,view,**_pt)
+                diagnostic=dict(diagnostic,partial_tighten=_ptd) if isinstance(diagnostic,dict) else diagnostic
             high=(w>0)&(source.max(-1)>.5);shadow=(w>0)&~high
             isolation.append(bool(np.array_equal(predictions['parent'][~high],predictions['candidate_raw'][~high])))
             if model.contract().get('full_context'):

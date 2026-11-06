@@ -6,6 +6,9 @@
 #include "rudra/core/aces_v2.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <thread>
 #include <cmath>
 #include <cstdint>
 #include <numeric>
@@ -36,6 +39,26 @@ std::vector<double> gaussian_kernel(int ksize, double sigma) {
     }
     for (auto& v : k) v *= 1.0 / sum;
     return k;
+}
+
+// f(y) for y in [0, h) on every core, rows split in contiguous blocks (3 Nov 2026).
+// RUDRA_SMOOTH_THREADS=1 forces one thread (the bit-exactness test compares the two).
+template <class F>
+void parallel_rows(int h, F&& f) {
+    unsigned t = std::max(1u, std::thread::hardware_concurrency());
+    if (const char* e = std::getenv("RUDRA_SMOOTH_THREADS")) t = std::max(1, std::atoi(e));
+    t = std::min<unsigned>(t, unsigned(std::max(1, h / 8)));
+    if (t <= 1) {
+        for (int y = 0; y < h; ++y) f(y);
+        return;
+    }
+    std::vector<std::thread> pool;
+    const int step = (h + int(t) - 1) / int(t);
+    for (int y0 = 0; y0 < h; y0 += step)
+        pool.emplace_back([&f, y0, y1 = std::min(h, y0 + step)] {
+            for (int y = y0; y < y1; ++y) f(y);
+        });
+    for (auto& th : pool) th.join();
 }
 
 // cv2.erode with a 3x3 cross, border constant 0, applied `iterations` times.
@@ -208,10 +231,12 @@ PlanarBuffer smooth_clipped_hybrid(const PlanarBuffer& prediction, const PlanarB
                 x1 = std::max(x1, x);
             }
     const int bw = x1 - x0 + 1;
-    // Horizontal pass for every row (zero rows skipped), columns x0..x1.
+    // Horizontal pass for every row (zero rows skipped), columns x0..x1. Rows run on
+    // every core (3 Nov 2026): each output is written by one row only and summed in
+    // the same order, so the result is bit-identical to one thread.
     std::vector<double> hn(static_cast<std::size_t>(h) * bw, 0.0), hd(hn.size(), 0.0);
-    for (int y = 0; y < h; ++y) {
-        if (!row_has[y]) continue;
+    parallel_rows(h, [&](int y) {
+        if (!row_has[y]) return;
         const std::size_t base = static_cast<std::size_t>(y) * w;
         for (int x = x0; x <= x1; ++x) {
             double sn = 0.0, sd = 0.0;
@@ -225,9 +250,9 @@ PlanarBuffer smooth_clipped_hybrid(const PlanarBuffer& prediction, const PlanarB
             hn[static_cast<std::size_t>(y) * bw + (x - x0)] = sn;
             hd[static_cast<std::size_t>(y) * bw + (x - x0)] = sd;
         }
-    }
+    });
     std::vector<double> ls = ly;
-    for (int y = 0; y < h; ++y)
+    parallel_rows(h, [&](int y) {
         for (int x = x0; x <= x1; ++x) {
             const std::size_t i = static_cast<std::size_t>(y) * w + x;
             if (!ok[i]) continue;
@@ -240,6 +265,7 @@ PlanarBuffer smooth_clipped_hybrid(const PlanarBuffer& prediction, const PlanarB
             }
             ls[i] = sd > 1e-6 ? sn / std::max(sd, 1e-6) : ly[i];
         }
+    });
 
     // Flat log luminance per connected component of the eroded interior.
     auto interior = erode_cross(full, h, w, 2);
@@ -354,32 +380,197 @@ PlanarBuffer constrain_colour_v2(const PlanarBuffer& source, const PlanarBuffer&
             }
         if (!idx.empty()) {
             display_error(idx, err);
-            for (float e : err) s.remaining_display_errors += e > 1.0f;
+            std::vector<std::size_t> failing;
+            for (std::size_t j = 0; j < idx.size(); ++j)
+                if (err[j] > 1.0f) failing.push_back(idx[j]);
+            if (!failing.empty()) {   // the view's own limit, or the reconstruction's
+                std::vector<float> rgb(failing.size() * 3);
+                for (std::size_t j = 0; j < failing.size(); ++j)
+                    for (int c = 0; c < 3; ++c) rgb[j * 3 + std::size_t(c)] = baseline.plane(c)[failing[j]];
+                view.forward(rgb.data(), failing.size());
+                for (std::size_t j = 0; j < failing.size(); ++j) {
+                    float e = 0.0f;
+                    for (int c = 0; c < 3; ++c)
+                        e = std::max(e, std::abs(rgb[j * 3 + std::size_t(c)] - source.plane(c)[failing[j]]) * 255.0f);
+                    if (e > 1.0f) ++s.inverse_limit_pixels;
+                    else ++s.remaining_display_errors;
+                }
+            }
         }
         *stats = s;
     }
     return result;
 }
 
+PlanarBuffer clean_shadows(const PlanarBuffer& acescg, const PlanarBuffer& source, const CleanShadows& c, std::size_t* cleaned) {
+    PlanarBuffer out = acescg;
+    if (cleaned) *cleaned = 0;
+    if (!c.on) return out;
+    const int h = acescg.height(), w = acescg.width(), r = c.radius;
+    const std::size_t n = acescg.plane_size();
+    std::vector<float> weight(n, 0.0f), logy(n, 0.0f);
+    for (std::size_t i = 0; i < n; ++i) {
+        const float top = std::max({source.plane(0)[i], source.plane(1)[i], source.plane(2)[i]}) * 255.0f;
+        const float t = std::clamp((top - float(c.max_code)) / 8.0f, 0.0f, 1.0f);
+        weight[i] = 1.0f - t * t * (3.0f - 2.0f * t);
+        const double y = kLumaAp1[0] * acescg.plane(0)[i] + kLumaAp1[1] * acescg.plane(1)[i] + kLumaAp1[2] * acescg.plane(2)[i];
+        logy[i] = float(std::log2(std::max(y, 1e-9)));
+    }
+    const float ss = 2.0f * (0.5f * float(r)) * (0.5f * float(r)), rs = 2.0f * c.range_stops * c.range_stops;
+    std::vector<float> spatial(std::size_t((2 * r + 1) * (2 * r + 1)));
+    for (int dy = -r; dy <= r; ++dy)
+        for (int dx = -r; dx <= r; ++dx) spatial[std::size_t((dy + r) * (2 * r + 1) + dx + r)] = std::exp(-float(dx * dx + dy * dy) / ss);
+    std::vector<unsigned char> changed(n, 0);
+    parallel_rows(h, [&](int y) {
+        for (int x = 0; x < w; ++x) {
+            const std::size_t i = std::size_t(y) * std::size_t(w) + std::size_t(x);
+            if (weight[i] <= 0.0f) continue;
+            double acc[3] = {0, 0, 0}, wsum = 0;
+            for (int dy = -r; dy <= r; ++dy) {
+                const int yy = y + dy;
+                if (yy < 0 || yy >= h) continue;
+                for (int dx = -r; dx <= r; ++dx) {
+                    const int xx = x + dx;
+                    if (xx < 0 || xx >= w) continue;
+                    const std::size_t j = std::size_t(yy) * std::size_t(w) + std::size_t(xx);
+                    const float d = logy[j] - logy[i];
+                    const double k = double(spatial[std::size_t((dy + r) * (2 * r + 1) + dx + r)]) * std::exp(-double(d * d) / rs);
+                    for (int ch = 0; ch < 3; ++ch) acc[ch] += k * acescg.plane(ch)[j];
+                    wsum += k;
+                }
+            }
+            for (int ch = 0; ch < 3; ++ch) {
+                const float v = acescg.plane(ch)[i];
+                out.plane(ch)[i] = v + weight[i] * (float(acc[ch] / wsum) - v);
+            }
+            changed[i] = 1;
+        }
+    });
+    if (cleaned)
+        for (unsigned char ch : changed) *cleaned += ch;
+    return out;
+}
+
+float inverse_white_luma(const AcesView& view) {
+    float w[3] = {1.0f, 1.0f, 1.0f};
+    view.inverse(w, 1);
+    return float(kLumaAp1[0] * w[0] + kLumaAp1[1] * w[1] + kLumaAp1[2] * w[2]);
+}
+
+std::size_t cap_luminance(PlanarBuffer& acescg, float luma_max) {
+    if (!(luma_max > 0.0f)) return 0;
+    std::size_t n = 0;
+    for (std::size_t i = 0; i < acescg.plane_size(); ++i) {
+        const float y = float(kLumaAp1[0] * acescg.plane(0)[i] + kLumaAp1[1] * acescg.plane(1)[i] + kLumaAp1[2] * acescg.plane(2)[i]);
+        if (y > luma_max) {
+            const float k = luma_max / y;
+            for (int c = 0; c < 3; ++c) acescg.plane(c)[i] *= k;
+            ++n;
+        }
+    }
+    return n;
+}
+
+float user_band_weight(float top, const UserBand& band) noexcept {
+    const float code = top * 255.0f;
+    const float ramp = float(UserBand::kRampCodes);
+    float hi = 0.0f, lo = 0.0f;
+    if (band.tau_high <= 255) {   // 1 at tau_high and above, 0 at tau_high - ramp and below
+        const float t = std::clamp((code - (float(band.tau_high) - ramp)) / ramp, 0.0f, 1.0f);
+        hi = t * t * (3.0f - 2.0f * t);
+    }
+    if (band.tau_low >= 0) {      // 1 at tau_low and below, 0 at tau_low + ramp and above
+        const float t = std::clamp((code - float(band.tau_low)) / ramp, 0.0f, 1.0f);
+        lo = 1.0f - t * t * (3.0f - 2.0f * t);
+    }
+    return std::max(hi, lo);
+}
+
+PlanarBuffer apply_user_band(const PlanarBuffer& prediction, const PlanarBuffer& baseline, const PlanarBuffer& source,
+                             const UserBand& band, BandStats* stats, PlanarBuffer* weight_out) {
+    PlanarBuffer out = prediction;
+    const std::size_t n = source.plane_size();
+    if (weight_out) *weight_out = PlanarBuffer(1, source.height(), source.width());
+    BandStats s;
+    for (std::size_t i = 0; i < n; ++i) {
+        const float top = std::max(std::max(source.plane(0)[i], source.plane(1)[i]), source.plane(2)[i]);
+        const float w = user_band_weight(top, band);
+        if (weight_out) weight_out->plane(0)[i] = w;
+        if (w >= 1.0f) {
+            ++s.learned_pixels;
+            continue;
+        }
+        if (w <= 0.0f) {
+            ++s.analytic_pixels;
+            for (int c = 0; c < 3; ++c) out.plane(c)[i] = baseline.plane(c)[i];
+            continue;
+        }
+        ++s.ramp_pixels;
+        for (int c = 0; c < 3; ++c) {
+            const float b = baseline.plane(c)[i];
+            out.plane(c)[i] = b + w * (prediction.plane(c)[i] - b);
+        }
+    }
+    if (stats) *stats = s;
+    return out;
+}
+
 Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, const G1Fn& g1, bool smoothing,
-                              bool constrain, bool forbid_new_negative_y) {
+                              bool constrain, bool forbid_new_negative_y, const UserBand& band, const CleanShadows& clean) {
+    if (clean.on && !clean.valid())
+        return make_error(ErrorCode::InvalidArgument, "Clean shadows: max_code 1..128, radius 1..8, range above 0.");
+    if (band.on && !band.valid())
+        return make_error(ErrorCode::InvalidArgument, "tau_high must be 128..256 and tau_low -1..64.");
     if (source.channels() != 3) return make_error(ErrorCode::InvalidArgument, "The frame must be RGB.");
     for (float v : source.span())
         if (!std::isfinite(v) || v < 0.0f || v > 1.0f)
             return make_error(ErrorCode::InvalidArgument, "Frame codes must be finite and within 0..1.",
                               "aces_v2::run_frame source outside [0,1]");
-    const PlanarBuffer baseline = view_inverse(view, source);
+    using clock = std::chrono::steady_clock;
+    auto t = clock::now();
+    auto lap = [&t] {
+        const auto now = clock::now();
+        const double ms = std::chrono::duration<double, std::milli>(now - t).count();
+        t = now;
+        return ms;
+    };
+    FrameResult out;
+    // The highlight ceiling (3 Nov 2026): nothing brighter than the inverse of display
+    // white. Near-white tinted codes (253,255,255) invert up to 7x past it (09V: 969x,
+    // about 197,000 nits); the master and the baseline the constraint falls back to both
+    // stop there, hue kept.
+    const float ceiling = inverse_white_luma(view);
+    PlanarBuffer baseline = view_inverse(view, source);
+    cap_luminance(baseline, ceiling);
+    out.ms.inverse = lap();
     auto net = g1(source, baseline);
     if (!net) return net.error();
     const G1Output& g = net.value();
-    const PlanarBuffer restored = view_inverse(view, g.restored_source);
+    out.ms.network = lap();
+    PlanarBuffer restored = view_inverse(view, g.restored_source);
+    cap_luminance(restored, ceiling);
+    out.ms.inverse += lap();
     Composed composed = compose_v2(source, baseline, restored, g);
-    FrameResult out;
+    out.ms.compose = lap();
     out.mask = std::move(composed.mask);
     out.acescg = smoothing ? smooth_clipped_hybrid(composed.acescg, source, 64.0, &out.smoothing)
                            : std::move(composed.acescg);
+    out.ms.smoothing = lap();
+    // Stage 5b: the user's bands; before the constraint, which still holds the 1-code round trip.
+    if (band.on) {
+        out.acescg = apply_user_band(out.acescg, baseline, source, band, &out.band);
+        // The mask channel says what was reconstructed: none of the analytic band.
+        for (std::size_t i = 0; i < out.mask.plane_size(); ++i) {
+            const float top = std::max(std::max(source.plane(0)[i], source.plane(1)[i]), source.plane(2)[i]);
+            out.mask.plane(0)[i] *= user_band_weight(top, band);
+        }
+    }
+    if (clean.on) out.acescg = clean_shadows(out.acescg, source, clean, &out.clean_shadow_pixels);
+    out.ceiling_pixels = cap_luminance(out.acescg, ceiling);
+    out.ms.band = lap();
     if (constrain) out.acescg = constrain_colour_v2(source, out.acescg, baseline, g.weight, view, true, &out.constraint,
                                                     forbid_new_negative_y);
+    out.ms.constraint = lap();
     for (float v : out.acescg.span())
         if (!std::isfinite(v)) return make_error(ErrorCode::BackendError, "The reconstruction produced a non-finite value.");
     return out;

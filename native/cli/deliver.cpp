@@ -41,6 +41,11 @@ int cmd_deliver(const std::vector<std::string>& args) {
         else if (k == "--peak-nits" && num) o.peak_nits = d;
         else if (k == "--min-nits" && num) o.min_nits = d;
         else if (k == "--nits-scale" && num) nits_scale = d;
+        else if (k == "--peak-fit") {   // luminance (default) | scale (the Python's)
+            const auto f = peak_fit_from_name(v);
+            if (!f) return usage("invalid --peak-fit: " + v + " (luminance or scale)");
+            o.peak_fit = *f;
+        }
         else if (k == "--source-space") {
             if (v == "rec2020") o.source = Primaries::Rec2020;
             else if (v == "rec709") o.source = Primaries::Rec709;
@@ -74,7 +79,7 @@ int cmd_deliver(const std::vector<std::string>& args) {
     // Only ProRes has frame headers: scanning HEVC for 'icpf' can match
     // compressed data and report tags that do not exist.
     const bool prores = std::find(t->codec.begin(), t->codec.end(), "prores_ks") != t->codec.end();
-    const pyjson::Value report = pyjson::Dict{
+    pyjson::Dict report{
         {"file", out->string()},
         {"frames", int(paths->size())},
         {"target", o.target},
@@ -87,6 +92,8 @@ int cmd_deliver(const std::vector<std::string>& args) {
         {"tags_verified", o.verify_tags},
         {"note", t->note},
     };
+    // Only when it differs from the Python's, so `--peak-fit scale` reports exactly as `rudra deliver` does.
+    if (o.peak_fit != PeakFit::Scale) report.emplace_back("peak_fit", peak_fit_name(o.peak_fit));
     std::printf("%s\n", pyjson::dumps(report, 2).c_str());
     return 0;
 }

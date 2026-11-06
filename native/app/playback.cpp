@@ -23,21 +23,34 @@ Result<std::unique_ptr<MovieFeeder>> MovieFeeder::start(const std::filesystem::p
     if (!ffmpeg) return make_error(ErrorCode::NotFound, "ffmpeg is not on PATH");
     auto video = open_video_source(movie, VideoArgs{});
     if (!video) return video.error();
-    const int w = video->stream.width, h = video->stream.height;
+    int w = video->stream.width, h = video->stream.height;
     char ss[64];
     std::snprintf(ss, sizeof ss, "%.6f", start / std::max(fps, 1e-6));
     // As the per-frame path decodes (media/sequence.cpp): the first video
     // stream, ffmpeg's own conversion to RGB, accurate seek; raw 16-bit RGB.
-    const std::vector<std::string> argv = {ffmpeg->string(), "-v", "error", "-nostdin", "-accurate_seek", "-ss", ss,
-                                           "-i", movie.string(), "-map", "0:v:0", "-frames:v",
-                                           std::to_string(count - start), "-f", "rawvideo", "-pix_fmt", "rgb48le", "-"};
+    std::vector<std::string> argv = {ffmpeg->string(), "-v", "error", "-nostdin", "-threads", "0", "-accurate_seek",
+                                     "-ss", ss, "-i", movie.string(), "-map", "0:v:0", "-frames:v",
+                                     std::to_string(count - start)};
+    // At the preview's size, made by ffmpeg (4 Nov 2026): a 4K frame came down
+    // the pipe whole (50 MB of rgb48), was turned to float and only then made
+    // small. The size is fit_max_side's, so the frames line up with the
+    // paused path's; the stop decodes the frame again through that path.
+    bool scaled = false;
+    if (max_side > 0 && std::max(w, h) > max_side) {
+        const double ratio = double(max_side) / double(std::max(h, w));
+        const int nw = std::max(1, int(double(w) * ratio)), nh = std::max(1, int(double(h) * ratio));
+        argv.insert(argv.end(), {"-vf", "scale=" + std::to_string(nw) + ":" + std::to_string(nh) + ":flags=area"});
+        w = nw, h = nh, scaled = true;
+    }
+    argv.insert(argv.end(), {"-f", "rawvideo", "-pix_fmt", "rgb48le", "-"});
     const auto log = std::filesystem::temp_directory_path() / "rudra-playback-decode.log";
     auto d = VideoDecoder::open_command(argv, w, h, 3, count - start, log);
     if (!d) return d.error();
     std::unique_ptr<MovieFeeder> f(new MovieFeeder());
     f->impl_ = std::make_unique<Impl>();
     f->impl_->decoder = std::move(*d);
-    f->start_ = start, f->count_ = count, f->max_side_ = max_side, f->ahead_ = std::max(1, ahead);
+    f->start_ = start, f->count_ = count, f->max_side_ = scaled ? 0 : max_side, f->ahead_ = std::max(1, ahead);
+    f->scaled_ = scaled;
     f->next_ = start;
     f->worker_ = std::thread([p = f.get()] { p->run(); });
     return f;

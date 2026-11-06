@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,10 @@ struct AcesFrameIn {
     int frame = -1;
     std::string timecode, reel;
     double fps = 0;
+    // The source's straight alpha in [0, 1] (1 Nov 2026): RGBA stills and
+    // movies with an alpha channel (ProRes 4444, PNG/QuickTime Animation ...).
+    // The model never sees it; the EXR masters carry it as A.
+    std::optional<PlanarBuffer> alpha;
 };
 
 // A movie's start timecode and reel name from its ffprobe streams (a tmcd

@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -23,6 +24,9 @@ struct DecodedStill {
     int distinct_codes = 0;    // distinct values in the green channel as stored
     std::string source;        // which decoder read it
     StillColour colour;        // its ICC / cICP / sRGB tag and EXIF orientation (applied)
+    // RGBA files (1 Nov 2026): the alpha plane in [0, 1], as stored (straight in
+    // PNG and TIFF). Absent for grey and RGB. The masters carry it (deliver/exr.hpp).
+    std::optional<PlanarBuffer> alpha;
     bool truncated_to_8bit() const noexcept { return bits <= 8; }
 };
 

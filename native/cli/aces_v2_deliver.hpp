@@ -30,6 +30,7 @@
 #include "aces_v2_inputs.hpp"
 #include "aces_v2_log.hpp"
 #include "rudra/core/aces_v2_trims.hpp"
+#include "rudra/core/composite.hpp"
 #include "rudra/core/measure.hpp"
 #include "rudra/deliver/exr.hpp"
 #include "rudra/infer/aces_v2_runtime.hpp"
@@ -48,6 +49,10 @@ struct AcesDeliverOptions {
     int start = 0;
     std::string timecode, reel;
     aces_v2::AcesTrims trims;
+    // 6 Nov 2026: the grade's reconstruction region ("reconstruction_region", deliver
+    // reconstruction_region_json) on the learned route: the master is the plain ACES
+    // inverse plus the region's weight times what the model adds. Off: unchanged.
+    ReconstructionRegion region;
     int padding = 6;
     std::string separator = ".";   // between the name and the frame number: ".", "_" or ""
     bool into_existing = false, create_dirs = true;
@@ -78,6 +83,13 @@ Result<void> aces_prepare_out(const AcesDeliverOptions& o, const std::filesystem
                               const std::string& movie);
 // Where the run's provenance goes: out/provenance.json, or out/<name>_provenance.json into an existing folder.
 std::filesystem::path aces_provenance_file(const AcesDeliverOptions& o, const std::filesystem::path& out);
+// The ACES Metadata File (AMF v2.0, core/aces_amf.hpp) beside the EXR masters:
+// <name>.amf in an existing folder, rudra.amf in a new one.
+std::filesystem::path aces_amf_file(const AcesDeliverOptions& o, const std::filesystem::path& out);
+// Writes it when the delivery writes EXRs (ACEScg: with the Academy's ACEScg to
+// ACES input transform; AP0: none); frames is how many EXRs were written. The
+// file name, or empty when there are no EXRs.
+Result<std::string> aces_write_amf(const AcesDeliverOptions& o, const std::filesystem::path& out, std::size_t frames);
 // The HDR10 sidecar of a render with PQ copies: out/hdr10.json or out/<name>_hdr10.json (28 Oct 2026).
 std::filesystem::path aces_hdr10_file(const AcesDeliverOptions& o, const std::filesystem::path& out);
 nlohmann::json aces_hdr10_json(double maxcll, double maxfall, double peak_nits = 1000);
@@ -98,9 +110,11 @@ std::string aces_movie_file(const AcesDeliverOptions& o, const std::string& stem
 // What provenance.json says the EXR is ("ACEScg scene-linear, signed, unclamped, float32", ...).
 std::string aces_exr_label(const AcesDeliverOptions& o);
 // The EXR in the chosen gamut and depth, with the rudra.reconstructed mask.
+// `alpha`: the source's straight alpha (AcesFrameIn::alpha), written as A with
+// RGB premultiplied (deliver/exr.hpp); null for none.
 Result<void> write_aces_master_exr(const std::filesystem::path& path, const PlanarBuffer& acescg, const PlanarBuffer& mask,
                                    const AcesDeliverOptions& o, const ExrAttributes& provenance,
-                                   const ExrTypedAttributes& typed = {});
+                                   const ExrTypedAttributes& typed = {}, const PlanarBuffer* alpha = nullptr);
 
 // Frame `i` of the run: its timecode (`timecode` + i, or + the movie's frame
 // number, at the rate; else the movie's own; "" when neither) and reel
@@ -112,6 +126,11 @@ struct AcesFrameStamp {
 AcesFrameStamp aces_frame_stamp(const AcesDeliverOptions& o, std::size_t i, const AcesFrameIn& f, double run_fps);
 // The master after the trims (the model's own when there are none); the
 // baseline is the plain inverse of `codes` through `view`.
+// The learned master narrowed (or opened) to the reconstruction region, by the source's Rec.709
+// luma: baseline + w (master - baseline), w = max of the region's highlight and shadow
+// weights, clamped to [0, 1]; w 0 is the plain ACES inverse bit for bit. Off: `acescg` itself.
+PlanarBuffer aces_region_blend(const ReconstructionRegion& region, const PlanarBuffer& acescg, const PlanarBuffer& baseline,
+                               const PlanarBuffer& codes);
 PlanarBuffer aces_trimmed(const AcesDeliverOptions& o, const PlanarBuffer& acescg, const PlanarBuffer& mask,
                           const aces_v2::AcesView& view, const PlanarBuffer& codes);
 // A frame's light level (28 Oct 2026): MaxCLL is the brightest pixel's largest
@@ -168,5 +187,10 @@ private:
     std::size_t at_ = 0;
     double fps_ = 24.0;
 };
+
+// A finished master EXR (this engine's, or the AI fill's copy of it) read back as ACEScg:
+// its RGB, converted from AP0 when its chromaticities say ACES 2065-1 (6 Nov 2026: the
+// movie made from AI-filled frames, aces-v2-serve's "encode").
+Result<PlanarBuffer> aces_master_acescg(const std::filesystem::path& exr);
 
 }  // namespace rudra

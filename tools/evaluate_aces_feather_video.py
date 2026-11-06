@@ -29,6 +29,11 @@ def main():
             from training.aces_clipped_smoothing import smooth_clipped
             pred,_=smooth_clipped(pred,source_rgb,**reg['clipped_smoothing'])
         rgb,diag=feather_full(source_rgb,pred,base,w,view,radius) if radius else constrain_colour(source_rgb,pred,base,w,view,include_fully_clipped=reg.get('include_fully_clipped',False),repair_inverse_boundary=reg.get('repair_inverse_boundary',False),forbid_new_negative_y=reg.get('forbid_new_negative_y',False))
+        # The 0 EV arm (training/aces_partial_tighten.py); only when the registration names it.
+        from training.aces_partial_tighten import from_registration,tighten_partial
+        if (_pt:=from_registration(reg)):
+            rgb,_ptd=tighten_partial(source_rgb,rgb,base,w,view,**_pt)
+            diag=dict(diag,partial_tighten=_ptd) if isinstance(diag,dict) else diag
         shown=view.forward(rgb);error=np.abs(shown-source_rgb).max(-1)*255
         shadow=(w>0)&(source_rgb.max(-1)<=.5);current=(cell_luminance(rgb),cell_luminance(base))
         row={'frame':i,'diagnostic':diag,'all_max_code_error':float(error.max()),

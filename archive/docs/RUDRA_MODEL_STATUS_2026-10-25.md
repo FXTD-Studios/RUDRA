@@ -40,7 +40,7 @@ Partially clipped pixels at 0 EV: error went from 0.186 to 0.133 code² (analyti
 
 ## 3. Rules agreed on 25 Oct
 
-Registration: `configs/experiments/claude_partial_tolerance_20261025.json` (written before the new arms ran).
+Registration: `configs/experiments/research_partial_tolerance_20261025.json` (written before the new arms ran).
 
 - **0 EV grading:** pass if √(error) ≤ √(analytic) + 0.1 code. The limit is 0.1195 code² on the old-scene development set.
 - **Restated check:** "outside fully clipped exact" is replaced, because partial-route training changes partial pixels by design. The replacement is:
@@ -96,8 +96,8 @@ Registration: `configs/experiments/claude_partial_tolerance_20261025.json` (writ
 
 ## Evidence
 
-- Fine-tune results: `G:\rudra_training\claude_partial_finetune_20261025\`
-- Smoothing results: `G:\rudra_training\claude_clipped_smoothing_20261024\`
+- Fine-tune results: `G:\rudra_training\research_partial_finetune_20261025\`
+- Smoothing results: `G:\rudra_training\research_clipped_smoothing_20261024\`
 - Provenance archive: `G:\rudra_training\provenance_guarded_projected600_20261025\`
 - Handoff: `docs\CURRENT_HANDOFF.md`
 - Licences (draft): `docs\THIRD_PARTY_LICENSES.md`

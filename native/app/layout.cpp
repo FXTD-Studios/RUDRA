@@ -18,7 +18,9 @@
 #include <initializer_list>
 #include <tuple>
 #include <QHBoxLayout>
+#include <QEvent>
 #include <QLabel>
+#include <QScrollBar>
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QPixmap>
@@ -89,6 +91,49 @@ QWidget* row(const QString& key, QLabel* value, const QString& role = "prow") {
 
 }  // namespace
 
+
+namespace {
+// A right-hand column never slides sideways (4 Nov 2026). The columns are fixed-width
+// scroll areas with the horizontal bar hidden; anything wider than the column (a long
+// path, the container line) left a hidden horizontal range that a trackpad swipe or
+// Shift+wheel panned, so the panel seemed to float and its right edge was cut off.
+// Now the content is held to the viewport's width (labels wrap) and the horizontal
+// position is locked at 0.
+class PinWidth final : public QObject {
+public:
+    PinWidth(QScrollArea* s, QWidget* col) : QObject(s), s_(s), col_(col) {}
+    bool eventFilter(QObject* o, QEvent* e) override {
+        if (o == s_->viewport() && e->type() == QEvent::Resize) {
+            col_->setMaximumWidth(s_->viewport()->width());
+            wrap_labels();
+        }
+        if (o == col_ && e->type() == QEvent::LayoutRequest) wrap_labels();   // labels made later (status lines)
+        return false;
+    }
+    void wrap_labels() const {
+        for (auto* l : col_->findChildren<QLabel*>())
+            if (!l->wordWrap() && !l->property("nowrap").toBool()) {
+                l->setWordWrap(true);
+                l->setMinimumWidth(0);
+            }
+    }
+
+private:
+    QScrollArea* s_;
+    QWidget* col_;
+};
+void pin_column(QScrollArea* s, QWidget* col) {
+    auto* pin = new PinWidth(s, col);
+    s->viewport()->installEventFilter(pin);
+    col->installEventFilter(pin);
+    pin->wrap_labels();
+    col->setMaximumWidth(s->viewport()->width());
+    auto* bar = s->horizontalScrollBar();
+    QObject::connect(bar, &QScrollBar::valueChanged, bar, [bar](int v) { if (v != 0) bar->setValue(0); });
+    QObject::connect(bar, &QScrollBar::rangeChanged, bar, [bar] { bar->setValue(0); });
+}
+}  // namespace
+
 void MainWindow::build_ui(bool with_viewer) {
     auto* app = styled("app");
     auto* v = column(app);
@@ -119,6 +164,7 @@ void MainWindow::build_ui(bool with_viewer) {
         iv->addWidget(scopes_);
         iv->addStretch(1);
         scroll->setWidget(inner);
+        pin_column(scroll, inner);
         dv->addWidget(scroll, 1);
         h->addWidget(scopes_dock_);
     }
@@ -486,8 +532,17 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     v->addWidget(compare_bar_);
 
     // ── the viewer ──
-    viewer_stack_ = new QStackedWidget(centre);
-    viewer_stack_->setObjectName("viewer");
+    // The viewer's box (the Pro boards' frame) holds, since view revision 6,
+    // the viewer toolbar over the picture: the frame keeps its geometry.
+    auto* viewer_box = new QWidget(centre);
+    viewer_box->setObjectName("viewer");
+    auto* vbox = new QVBoxLayout(viewer_box);
+    vbox->setContentsMargins(0, 0, 0, 0);
+    vbox->setSpacing(0);
+    build_viewer_toolbar(vbox, viewer_box);
+    build_ai_prompt_bar(vbox, viewer_box);   // 6 Nov 2026: the AI fill's prompt and its suggestions, over the picture
+    viewer_stack_ = new QStackedWidget(viewer_box);
+    viewer_stack_->setObjectName("viewerStack");
     auto* empty = new QWidget(viewer_stack_);
     empty->setObjectName("empty");
     auto* ev = column(empty, 0, 6);
@@ -537,7 +592,8 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
 #else
     (void)with_viewer;
 #endif
-    v->addWidget(viewer_stack_, 1);
+    vbox->addWidget(viewer_stack_, 1);
+    v->addWidget(viewer_box, 1);
     v->addWidget(build_pipe());
 
     // ── the timeline ──
@@ -859,6 +915,89 @@ QWidget* MainWindow::build_right_rail() {
     preserve_ = new CheckRow("preserve", "Preserve outside masks", "preserveHint", "do-no-harm", rcard);
     preserve_->clicked = [this] { session_.toggle_preserve(); };
     rcv->addWidget(preserve_);
+    // Spec revision 2 (RUDRA 1.1, 5 Nov 2026): limit the reconstruction to a
+    // luminance region of the SDR. Off is revision 1 bit for bit; on, every
+    // pixel outside the region keeps the baseline exactly.
+    region_on_ = new CheckRow("regionOn", "Limit to a luminance region", "regionHint", "off", rcard);
+    region_on_->clicked = [this] { session_.set_region_enabled(!session_.grade.region.enabled); };
+    rcv->addWidget(region_on_);
+    region_box_ = new QWidget(rcard);
+    region_box_->setObjectName("regionBox");
+    auto* rbv = column(region_box_, 0, 8);
+    region_kind_ = new Seg("regionKind", {{"tones", "Highlights + shadows"}, {"band", "Band"}}, region_box_);
+    region_kind_->clicked = [this](const QString& k) {
+        ReconstructionRegion r = session_.grade.region;
+        const bool band = k == "band";
+        if (r.band == band) return;
+        session_.region_press();
+        r.band = band;
+        session_.region_input(r);
+    };
+    rbv->addWidget(region_kind_);
+    // RUDRA 1.1: where the region acts, on the frame on screen: a histogram and the viewer tint.
+    region_hist_ = new RegionHistogramView(region_box_);
+    rbv->addWidget(region_hist_);
+    region_show_ = new CheckRow("regionShow", "Show on the viewer", "regionShowHint", "tinted", region_box_);
+    region_show_->clicked = [this] {
+        session_.show_region = !session_.show_region;
+        refresh_view_region();
+    };
+    rbv->addWidget(region_show_);
+    auto region_slider = [&](const QString& lab, const QString& id, float ReconstructionRegion::*field, int hi,
+                             double scale, int kind, const QString& tip) {
+        RegionSlider rs;
+        rs.row = new QWidget(region_box_);
+        rs.row->setProperty("role", "slider");
+        auto* col = column(rs.row, 0, 6);
+        auto* top = new QWidget(rs.row);
+        auto* th = new QHBoxLayout(top);
+        th->setContentsMargins(0, 0, 0, 0);
+        th->setSpacing(4);
+        th->addWidget(label(lab, {}, "slider-lab"));
+        th->addStretch(1);
+        rs.value = label("", id + "Val", "slider-val");
+        th->addWidget(rs.value);
+        col->addWidget(top);
+        rs.slider = new QSlider(Qt::Horizontal, rs.row);
+        rs.slider->setObjectName(id);
+        rs.slider->setToolTip(tip);
+        rs.slider->setRange(0, hi);
+        col->addWidget(rs.slider);
+        rs.field = field;
+        rs.scale = scale;
+        rs.kind = kind;
+        rbv->addWidget(rs.row);
+        QSlider* s = rs.slider;
+        connect(s, &QSlider::sliderPressed, this, [this] { session_.region_press(); });
+        connect(s, &QSlider::valueChanged, this, [this, s, field, scale](int n) {
+            ReconstructionRegion r = session_.grade.region;
+            if (std::lround(double(r.*field) * scale) == n) return;   // sync_ui, not a move
+            if (!s->isSliderDown()) session_.region_press();
+            r.*field = float(n / scale);
+            session_.region_input(r);
+        });
+        region_sliders_.push_back(rs);
+    };
+    // Luma and softness in hundredths, strength in twentieths (as Residual strength).
+    region_slider("Highlights from", "regionHighFrom", &ReconstructionRegion::highlight_from, 100, 100.0, 1,
+                  "The SDR level above which the reconstruction works on the highlights");
+    region_slider("Highlight softness", "regionHighSoft", &ReconstructionRegion::highlight_softness, 50, 100.0, 1,
+                  "How gradually the highlight region fades in below that level");
+    region_slider("Highlight strength", "regionHighStrength", &ReconstructionRegion::highlight_strength, 40, 20.0, 0,
+                  "How much of the reconstruction the highlights receive");
+    region_slider("Shadows below", "regionShadowBelow", &ReconstructionRegion::shadow_below, 100, 100.0, 1,
+                  "The SDR level below which the reconstruction works on the shadows");
+    region_slider("Shadow softness", "regionShadowSoft", &ReconstructionRegion::shadow_softness, 50, 100.0, 1,
+                  "How gradually the shadow region fades in above that level");
+    region_slider("Shadow strength", "regionShadowStrength", &ReconstructionRegion::shadow_strength, 40, 20.0, 0,
+                  "How much of the reconstruction the shadows receive");
+    region_slider("Band low", "regionBandLow", &ReconstructionRegion::band_low, 100, 100.0, 2,
+                  "The bottom of the SDR band the reconstruction is limited to");
+    region_slider("Band high", "regionBandHigh", &ReconstructionRegion::band_high, 100, 100.0, 2,
+                  "The top of the SDR band the reconstruction is limited to");
+    region_slider("Band softness", "regionBandSoft", &ReconstructionRegion::band_softness, 50, 100.0, 2,
+                  "How gradually the band fades in and out at its edges");
+    rcv->addWidget(region_box_);
     rcard->setObjectName("recReconCard");
     anv->addWidget(rcard);
     {   // Shown on the learned route: these grade the analytic reconstruction only.
@@ -966,7 +1105,7 @@ QWidget* MainWindow::build_right_rail() {
         image->addItem("DPX · 10-bit", "dpx10");
         connect(image, &QComboBox::activated, this, [this, image](int i) { set_deliver("image", image->itemData(i).toString()); });
         field("Format", image, "deliverImageRow", "The file type of a still or a sequence");
-        auto* gamut = new Seg("deliverGamut", {{"ap0", "ACES 2065-1"}, {"acescg", "ACEScg"}, {"linear", "Rec.2020 linear"}});
+        auto* gamut = new Seg("deliverGamut", {{"ap0", "ACES 2065-1"}, {"acescg", "ACEScg"}, {"linear", "Rec.2020 linear"}, {"rec709", "Rec.709 linear"}});
         gamut->clicked = [this](const QString& k) { set_deliver("gamut", k); };
         field("Colour", gamut, "deliverGamutRow",
               "The EXR's primaries: ACES 2065-1 (AP0, the archive and interchange master) or ACEScg (AP1, for compositing)");
@@ -1013,12 +1152,30 @@ QWidget* MainWindow::build_right_rail() {
                          "half (ST 2065-4) with the mask in mask/");
         keep->clicked = [this] { set_deliver("keep_exr", deliver_.keep_exr ? "0" : "1"); };
         kcv->addWidget(keep);
+        // RUDRA 1.1 priority 3: the reconstruction's mattes for compositing.
+        auto* mattes = new CheckRow("deliverMattes", "Write mattes (EXR)", "deliverMattesHint",
+                                    "highlight, shadow, changed", kc);
+        mattes->setToolTip("Beside each master, <name>.mattes.exr: float channels rudra.highlight and rudra.shadow (how "
+                           "much each reconstruction acted), rudra.changed (exactly where the reconstruction differs from "
+                           "the baseline), rudra.region (the luminance region, when on) and rudra.paint.N (painted masks). "
+                           "Before the grade");
+        mattes->clicked = [this] { set_deliver("mattes", deliver_.mattes ? "0" : "1"); };
+        kcv->addWidget(mattes);
+        // RUDRA 1.1 priority 4: exposure brackets and the preview-to-export check.
+        auto* brackets = new CheckRow("deliverBrackets", "Write EV brackets", "deliverBracketsHint",
+                                      "\u22122 / 0 / +2 EV", kc);
+        brackets->setToolTip("Beside each master, <name>.ev-2.png, .ev+0.png and .ev+2.png: the master as written, "
+                             "read back and shown on an SDR screen with diffuse white at 0 EV. The sidecar records how "
+                             "far they are from what the viewer showed (preview_vs_export, in 8-bit codes)");
+        brackets->clicked = [this] { set_deliver("brackets", deliver_.brackets ? "0" : "1"); };
+        kcv->addWidget(brackets);
         // The AI fill (layer 3, genfill_job.hpp): an AI-filled copy of a learned EXR render.
         auto* ai = new CheckRow("deliverAiFill", "AI fill (experimental)", "deliverAiFillHint",
                                 "clipped highlights, crushed shadows", kc);
         ai->setToolTip("After the render, a Wan2.1-VACE model trained on RUDRA's own footage fills only what the "
-                       "8-bit source cannot know: fully clipped highlights and fully crushed shadows. It writes a "
-                       "copy beside the master (<name>_aifill); no 8-bit code of the SDR view changes, and "
+                       "8-bit source cannot know: fully clipped highlights and fully crushed shadows. When it finishes "
+                       "it fixes those areas in the master in place and keeps the originals in <name>_before_aifill "
+                       "(the fill and its review stay in <name>_aifill); no 8-bit code of the SDR view changes, and "
                        "rudra.generated marks every pixel it invented");
         ai->clicked = [this] { set_deliver("ai_fill", deliver_.ai_fill ? "0" : "1"); };
         kcv->addWidget(ai);
@@ -1027,6 +1184,15 @@ QWidget* MainWindow::build_right_rail() {
             box->setObjectName("deliverAiFillOptions");
             auto* bv = column(box, 0, 2);
             bv->setContentsMargins(14, 0, 0, 4);
+            {   // 6 Nov 2026: the suggested prompts first, one click each (Suggest fills them in)
+                bv->addWidget(label("Suggested prompts", {}, "note", box));
+                auto* chips = new QWidget(box);
+                chips->setObjectName("aiSuggestChips");
+                auto* cv = new QVBoxLayout(chips);
+                cv->setContentsMargins(0, 0, 0, 2);
+                cv->setSpacing(2);
+                bv->addWidget(chips);
+            }
             auto spin = [&](const char* id, const QString& key, int lo, int hi, const QString& special, const char* tip) {
                 auto* sb = new QSpinBox(box);
                 sb->setObjectName(id);
@@ -1057,6 +1223,15 @@ QWidget* MainWindow::build_right_rail() {
             line("deliverAiPromptHighlight", "ai_prompt_highlight", "Highlight prompt (optional)",
                  "e.g. warm sunset sun with soft halo");
             line("deliverAiPromptShadow", "ai_prompt_shadow", "Shadow prompt (optional)", "e.g. dark wood grain");
+            {   // RUDRA 1.1: suggest a prompt from the frame's clipped areas, or pick a preset
+                auto* sg = new QPushButton("Suggest a prompt\u2026", box);
+                sg->setObjectName("deliverAiSuggest");
+                sg->setToolTip("Looks at this frame's fully clipped areas (size, place, shape, the colour around "
+                               "them) and suggests a prompt, with the presets beside it. No model runs; a preset "
+                               "marked ready needs no text model when the fill starts");
+                connect(sg, &QPushButton::clicked, this, [this] { suggest_genfill_prompt(); });
+                bv->addWidget(sg);
+            }
             spin("deliverAiSeed", "ai_seed", 0, 999999, {}, "Seed|Another seed gives another plausible fill");
             spin("deliverAiSteps", "ai_steps", 1, 100, {}, "Steps|Denoising steps: more is slower, often cleaner (30)");
             {   // v3 (30 Oct 2026): the AI draws the shape; how bright it is comes from RUDRA's estimate plus this
@@ -1074,6 +1249,44 @@ QWidget* MainWindow::build_right_rail() {
                 connect(bs, &QDoubleSpinBox::valueChanged, this, [this](double v) { set_deliver("ai_brightness", QString::number(v, 'g', 6)); });
                 rcol->addWidget(bs);
                 bv->addWidget(r);
+            }
+            // RUDRA 1.1 (5 Nov 2026): prompt strength and detail strength, 0 to 2, 1 = AI fill v3 as gated.
+            auto dspin = [&](const char* id, const QString& key, const QString& head, const QString& tip) {
+                auto* r = new QWidget(box);
+                auto* rcol = column(r, 0, 2);
+                rcol->addWidget(label(head, {}, "note", r));
+                auto* ds = new QDoubleSpinBox(r);
+                ds->setObjectName(id);
+                ds->setRange(0.0, 2.0);
+                ds->setSingleStep(0.1);
+                ds->setDecimals(2);
+                ds->setValue(1.0);
+                ds->setToolTip(tip);
+                connect(ds, &QDoubleSpinBox::valueChanged, this, [this, key](double v) { set_deliver(key, QString::number(v, 'g', 6)); });
+                rcol->addWidget(ds);
+                bv->addWidget(r);
+            };
+            dspin("deliverAiPromptStrength", "ai_prompt_strength", "Prompt strength",
+                  "How strongly the highlight and shadow prompts steer their regions. 1 = as AI fill v3 was "
+                  "tested; 0 ignores the prompts; above 1 is experimental. No effect without a prompt");
+            dspin("deliverAiShapeGain", "ai_shape_gain", "Detail strength",
+                  "How much the drawn shape varies the brightness inside a filled area. 1 = as tested; "
+                  "0 = a flat fill at the estimated brightness");
+            {   // RUDRA 1.1 priority 5: the fallback when the fill flickers
+                auto* fb = new CheckRow("deliverAiFallback", "Drop flickering fill frames", "deliverAiFallbackHint",
+                                        "keep the master there", box);
+                fb->setToolTip("A frame whose fill jumps by more than a quarter stop into it AND out of it (a "
+                               "one-frame flicker) is written as the master's own frame. A fill that starts or ends "
+                               "is kept. Every dropped frame is listed in genfill.json (fell_back)");
+                fb->clicked = [this] { set_deliver("ai_fallback", deliver_.ai.fallback ? "0" : "1"); };
+                bv->addWidget(fb);
+            }
+            {
+                auto* rn = label("Fills only inside the luminance region set on the Reconstruct card.",
+                                 "deliverAiRegion", "small", box);
+                rn->setWordWrap(true);
+                rn->hide();
+                bv->addWidget(rn);
             }
             auto* setup = label("", "deliverAiSetup", "small", box);
             setup->setWordWrap(true);
@@ -1095,6 +1308,34 @@ QWidget* MainWindow::build_right_rail() {
                 rh->addWidget(review);
                 rh->addStretch(1);
                 bv->addWidget(row);
+            }
+            {   // Before the whole shot (4 Nov 2026): the frames around the playhead, filled and shown in the viewer.
+                auto* row = new QWidget(box);
+                auto* rh = new QHBoxLayout(row);
+                rh->setContentsMargins(0, 4, 0, 0);
+                auto* pv = new QPushButton("Preview AI fill", row);
+                pv->setObjectName("deliverAiPreview");
+                pv->setToolTip("Fills the 9 frames around the playhead with these settings and shows the result here, "
+                               "before you render the whole shot. The fill model stays loaded, so the next preview is quicker");
+                connect(pv, &QPushButton::clicked, this, [this] { preview_genfill(); });
+                rh->addWidget(pv);
+                for (auto [id, text, which, tip] :
+                     {std::tuple{"deliverAiShowFill", "AI fill", "fill", "The previewed frame with the AI fill"},
+                      std::tuple{"deliverAiShowMaster", "Master", "master", "The same frame without it"},
+                      std::tuple{"deliverAiShowMask", "Invented", "mask", "White where the AI fill invented the pixels"}}) {
+                    auto* b = new QPushButton(QString::fromUtf8(text), row);
+                    b->setObjectName(id);
+                    b->setCheckable(true);
+                    b->setToolTip(QString::fromUtf8(tip));
+                    const QString w = QString::fromUtf8(which);
+                    connect(b, &QPushButton::clicked, this, [this, w] { show_genfill_preview(w); });
+                    rh->addWidget(b);
+                }
+                rh->addStretch(1);
+                bv->addWidget(row);
+                auto* ps = label("", "deliverAiPreviewStatus", "small", box);
+                ps->setWordWrap(true);
+                bv->addWidget(ps);
             }
             kcv->addWidget(box);
         }
@@ -1416,6 +1657,7 @@ QWidget* MainWindow::build_right_rail() {
     v->addWidget(lcard);
     v->addStretch(1);
     scroll->setWidget(col);
+    pin_column(scroll, col);
     rv->addWidget(scroll, 1);
     return rail;
 }
@@ -1439,6 +1681,9 @@ QWidget* MainWindow::build_pipe() {
     seg("pipeWorking", "scene-linear \u00b7 203 nits = 1.0");
     arrow();
     view_transform_ = seg("viewTransform", "exposure + clip \u00b7 203 nits");
+    arrow();
+    // RUDRA 1.1 priority 4: what the viewer writes to the display (transfer, primaries, white).
+    seg("pipeDisplay", QString::fromStdString(display_signal_text(DisplayTarget::sdr(), 203.0)));
     arrow();
     seg("pipeMaster", "ACES 2065-1 EXR, float32");
     auto* warn = label("", "pipeWarn", {}, pipe);

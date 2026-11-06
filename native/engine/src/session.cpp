@@ -138,6 +138,7 @@ CompositeParams Session::composite_params() const {
     p.reference = grade.reference;
     if (grade.masks && !grade.masks->empty()) p.masks = grade.masks;
     p.exposure_ev = grade.exposure_ev;
+    p.region = grade.region;
     return p;
 }
 
@@ -340,12 +341,48 @@ void Session::toggle_preserve() {
     notify(Grade);
 }
 
+namespace {
+ReconstructionRegion clamped_region(ReconstructionRegion r) {
+    auto c = [](float v, float lo, float hi, float d) { return std::isfinite(v) ? std::clamp(v, lo, hi) : d; };
+    const ReconstructionRegion d;
+    r.highlight_from = c(r.highlight_from, 0.0f, 1.0f, d.highlight_from);
+    r.shadow_below = c(r.shadow_below, 0.0f, 1.0f, d.shadow_below);
+    r.band_low = c(r.band_low, 0.0f, 1.0f, d.band_low);
+    r.band_high = c(r.band_high, 0.0f, 1.0f, d.band_high);
+    r.highlight_softness = c(r.highlight_softness, 0.0f, 0.5f, d.highlight_softness);
+    r.shadow_softness = c(r.shadow_softness, 0.0f, 0.5f, d.shadow_softness);
+    r.band_softness = c(r.band_softness, 0.0f, 0.5f, d.band_softness);
+    r.highlight_strength = c(r.highlight_strength, 0.0f, 2.0f, d.highlight_strength);
+    r.shadow_strength = c(r.shadow_strength, 0.0f, 2.0f, d.shadow_strength);
+    if (!(r.band_low < r.band_high)) {   // keep a band at least 0.01 wide
+        r.band_high = std::min(1.0f, r.band_low + 0.01f);
+        r.band_low = r.band_high - 0.01f;
+    }
+    return r;
+}
+}  // namespace
+
+void Session::region_press() { push_undo(); }
+
+void Session::region_input(const ReconstructionRegion& r) {
+    grade.region = clamped_region(r);
+    notify(Grade);
+}
+
+void Session::set_region_enabled(bool on) {
+    if (grade.region.enabled == on) return;
+    push_undo();
+    grade.region.enabled = on;
+    notify(Grade);
+}
+
 void Session::reset_recon() {
     push_undo();
     grade.mode = "all";
     grade.strength = 1.0;
     grade.preserve = true;
     grade.exposure_ev = 0.0;
+    grade.region = ReconstructionRegion{};
     notify(Grade);
 }
 
@@ -394,6 +431,73 @@ void Session::toggle_changes() {
     notify(View);
 }
 
+namespace {
+bool viewer_source(std::string_view s) { return s == "model" || s == "baseline" || s == "sdr"; }
+}  // namespace
+
+void Session::set_view_ev(double ev) {
+    ev = std::max(-10.0, std::min(10.0, ev));
+    if (ev == view_ev) return;
+    if (ev != 0.0) last_view_ev_ = ev;
+    view_ev = ev;
+    notify(View);
+}
+
+void Session::nudge_view_ev(double delta) { set_view_ev(std::round((view_ev + delta) * 10.0) / 10.0); }
+
+void Session::toggle_view_ev() {
+    if (view_ev != 0.0) {
+        last_view_ev_ = view_ev;
+        view_ev = 0.0;
+    } else {
+        view_ev = last_view_ev_;
+    }
+    notify(View);
+}
+
+void Session::set_view_gamma(double gamma) {
+    gamma = std::max(0.2, std::min(5.0, gamma));
+    if (gamma == view_gamma) return;
+    view_gamma = gamma;
+    notify(View);
+}
+
+void Session::reset_viewer() {
+    if (viewer_neutral()) return;
+    if (view_ev != 0.0) last_view_ev_ = view_ev;
+    view_ev = 0.0;
+    view_gamma = 1.0;
+    notify(View);
+}
+
+void Session::set_wipe_sources(std::string_view left, std::string_view right) {
+    if (!viewer_source(left) || !viewer_source(right)) return;
+    wipe_left = std::string(left);
+    wipe_right = std::string(right);
+    if (!wipe) wipe = 0.5;
+    notify(View | Wipe);
+}
+
+void Session::flip_ab() {
+    if (wipe) {
+        std::swap(wipe_left, wipe_right);
+        notify(View | Wipe);
+        return;
+    }
+    show = show == wipe_right ? wipe_left : wipe_right;
+    notify(View);
+}
+
+void Session::toggle_clamp_zebra() {
+    clamp_zebra = !clamp_zebra;
+    notify(View);
+}
+
+void Session::toggle_clip_zebra() {
+    clip_zebra = !clip_zebra;
+    notify(View);
+}
+
 void Session::toggle_anchor() {
     anchor = !anchor;
     notify(Delivery);
@@ -415,7 +519,7 @@ Result<void> Session::load_state(const GradeSnapshot& g, double peak, bool ancho
     anchor = anchor_on;
     carry_chroma = carry;
     anchor_knee = std::max(0.5, std::min(0.99, knee));
-    container = container_kind == "linear" ? "linear" : "aces";
+    container = container_kind == "linear" || container_kind == "acescg" || container_kind == "rec709" ? container_kind : "aces";
     notify(Grade | Peak | Delivery);
     return {};
 }

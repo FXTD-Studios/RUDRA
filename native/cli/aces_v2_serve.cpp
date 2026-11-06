@@ -33,6 +33,11 @@
 //       (uncompressed 16-bit RGB QuickTime).
 //   {"id":4,"op":"probe","source":"<still or video>"}  -> frames, width, height, fps
 //       {"id":3,"progress":{...}} per frame, then {"id":3,"ok":true,"done":true,...}
+//   {"id":5,"op":"encode","exrs":["<master.exr>",...],"out":"<existing dir>","name":"shot","log":"pq1000",
+//       "log_formats":"prores422hq","fps":24,"timecode":"01:00:00:00","reel":"A001"}
+//       (6 Nov 2026) the movie of finished masters (the AI fill's copies), in order, through the
+//       same writer and display target as a master's movie: {"progress":...} per frame, then
+//       {"ok":true,"done":true,"movie":"<path>","maxcll":...}. Nothing is re-run through the model.
 //   {"op":"cancel"}  stops a master after the frame in hand
 //   {"op":"cancel","target":id}  stops that master (running or queued) only
 //   {"op":"quit"}
@@ -62,6 +67,7 @@
 #include "rudra/core/aces_v2.hpp"
 #include "rudra/core/aces_v2_manifest.hpp"
 #include "rudra/deliver/exr.hpp"
+#include "rudra/deliver/master.hpp"
 #include "rudra/infer/aces_v2_runtime.hpp"
 #include "rudra/media/still.hpp"
 #include "aces_v2_inputs.hpp"
@@ -294,6 +300,17 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
         try {
             if (op == "quit") break;
             const bool guard = req.value("guard", m->forbid_new_negative_y);
+            // The user's tau bands (core/aces_v2.hpp UserBand): on when either is given.
+            aces_v2::UserBand band;
+            // Own keys: "tau_high"/"tau_low" are the AI fill's thresholds on a fill view.
+            if (req.contains("band_tau_high") || req.contains("band_tau_low")) {
+                band.on = true;
+                band.tau_high = req.value("band_tau_high", band.tau_high);
+                band.tau_low = req.value("band_tau_low", band.tau_low);
+                if (!band.valid()) throw std::runtime_error("band_tau_high must be 128..256 and band_tau_low -1..64");
+            }
+            aces_v2::CleanShadows clean;   // 4 Nov 2026: Clean shadows, off unless asked
+            clean.on = req.value("clean_shadows", false);
             if (op == "preview") {
                 const fs::path src = req.at("source").get<std::string>();
                 const int frame_index = req.value("frame", 0);
@@ -325,7 +342,7 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     }
                     hdr_view = std::move(*hv);
                 }
-                auto r = aces_v2::run_frame(codes, **view, *g1, smoothing, true, guard);
+                auto r = aces_v2::run_frame(codes, **view, *g1, smoothing, true, guard, band, clean);
                 if (!r) {
                     send(err(id, r.error()));
                     continue;
@@ -337,6 +354,15 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     send(err(id, trims.error()));
                     continue;
                 }
+                // 6 Nov 2026: the grade's reconstruction region, as the master applies it (aces_trimmed).
+                if (req.contains("reconstruction_region") && req["reconstruction_region"].is_object()) {
+                    auto rr = reconstruction_region_from_json(req["reconstruction_region"].dump());
+                    if (!rr) {
+                        send(err(id, rr.error()));
+                        continue;
+                    }
+                    k.master = aces_region_blend(*rr, k.master, k.baseline, k.codes);
+                }
                 if (!trims->identity()) k.master = aces_v2::apply_trims(k.master, k.baseline, k.mask, *trims);
                 bool wrote = true;
                 // The monitoring transform (scene, or an ACES 2.0 output decoded to display light).
@@ -345,6 +371,8 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     wrote = wrote && write_planes(req["model_out"].get<std::string>(), aces_monitor_planes(k.master, mview, monitor));
                 if (req.contains("baseline_out"))
                     wrote = wrote && write_planes(req["baseline_out"].get<std::string>(), aces_monitor_planes(k.baseline, mview, monitor));
+                if (req.contains("sdr_out"))   // the SDR's codes, 3 planes (view revision 6: Sdr source, zebras, Range)
+                    wrote = wrote && write_planes(req["sdr_out"].get<std::string>(), k.codes);
                 if (req.contains("codes_out")) {   // the SDR's largest code per pixel: the Invented layer
                     const PlanarBuffer cp = aces_code_plane(k.codes);
                     std::ofstream o(req["codes_out"].get<std::string>(), std::ios::binary);
@@ -361,7 +389,10 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                       {"width", codes.width()}, {"height", codes.height()},
                       {"bits", still->bits}, {"ms", ms}, {"reconstructed_fraction", double(recon) / double(k.mask.plane_size())},
                       {"peak", peak_luma(k.master)}, {"peak_plain", peak_luma(k.baseline)},
+                      {"stage_ms", {{"inverse", r->ms.inverse}, {"network", r->ms.network}, {"compose", r->ms.compose},
+                                    {"smoothing", r->ms.smoothing}, {"band", r->ms.band}, {"constraint", r->ms.constraint}}},
                       {"fully_clipped_pixels", r->smoothing.full_pixels}, {"remaining_display_errors", r->constraint.remaining_display_errors},
+                      {"aces_inverse_limit_pixels", r->constraint.inverse_limit_pixels}, {"highlight_ceiling_pixels", r->ceiling_pixels}, {"clean_shadow_pixels", r->clean_shadow_pixels},
                       {"new_negative_luminance", r->constraint.new_negative_luminance}, {"luminance_guard", guard}});
                 if (req.value("keep", true)) kept = std::move(k);
             } else if (op == "probe") {
@@ -441,6 +472,10 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                             {"appearance_constraint", guard ? "1 code, include fully clipped, no new negative luminance"
                                                             : "1 code, include fully clipped"},
                             {"luminance_guard", guard}, {"luminance_guard_package_default", m->forbid_new_negative_y},
+                            {"clean_shadows", clean.on},
+                            {"user_band", band.on ? json{{"tau_high", band.tau_high}, {"tau_low", band.tau_low},
+                                             {"rule", "learned only at or above tau_high / at or below tau_low (brightest channel, 8-bit codes, 2-code ramp); exact analytic inverse between"}}
+                                     : json(nullptr)},
                             {"master", aces_exr_label(*opts)}, {"trims", aces_trims_json(opts->trims)},
                             {"source_display", aces_source_display_label(opts->source_display)},
                             {"mask", "rudra.reconstructed = highlight reconstruction weight; 0 = from source (incl. analytic shadows)"},
@@ -486,7 +521,7 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     }
                     aces_adapt_source(f->codes, opts->source_display);   // an sRGB or 2.2 source, as BT.1886 codes
                     const auto t = Clock::now();
-                    auto r = aces_v2::run_frame(f->codes, **view, *g1, smoothing, true, guard);
+                    auto r = aces_v2::run_frame(f->codes, **view, *g1, smoothing, true, guard, band, clean);
                     if (!r) {
                         failure = r.error();
                         break;
@@ -511,12 +546,13 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                                                 {"source", f->source}, {"view", (*view)->identity()}};
                     if (opts->writes_exr())
                         if (auto w = write_aces_master_exr(exr, master, r->mask, *opts, prov,
-                                                                      exr_timecode_attributes(stamp.timecode, stamp.fps, stamp.reel)); !w) {
+                                                                      exr_timecode_attributes(stamp.timecode, stamp.fps, stamp.reel),
+                                                          f->alpha ? &*f->alpha : nullptr); !w) {
                             failure = w.error();
                             break;
                         }
                     if (logw)
-                        if (auto lw = logw->write(master, stem + ".exr", stamp.timecode); !lw) {
+                        if (auto lw = logw->write(master, stem + ".exr", stamp.timecode, f->alpha ? &*f->alpha : nullptr); !lw) {
                             failure = lw.error();
                             break;
                         }
@@ -532,6 +568,8 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                                         {"constraint_changed", r->constraint.changed_pixels},
                                         {"constraint_baseline_fallback", r->constraint.baseline_fallback_pixels},
                                         {"remaining_display_errors", r->constraint.remaining_display_errors},
+                                        {"aces_inverse_limit_pixels", r->constraint.inverse_limit_pixels},
+                                        {"highlight_ceiling_pixels", r->ceiling_pixels},
                                         {"new_negative_luminance", r->constraint.new_negative_luminance}};
                     run["frames"].push_back(frame);
                     send({{"id", id}, {"progress", {{"index", i + 1}, {"total", total}, {"source", f->source},
@@ -566,6 +604,12 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                 run["light_level"] = kAcesLightLevelNote;
                 run["appearance_constraint_pass"] = all_ok;
                 run["cancelled"] = stopped;
+                // The ACES Metadata File beside the masters (core/aces_amf.hpp).
+                if (auto amf = aces_write_amf(*opts, out, run.contains("frames") ? run["frames"].size() : 0); !amf) {
+                    if (!failure) failure = amf.error();
+                } else if (!amf->empty()) {
+                    run["amf"] = *amf;
+                }
                 if (auto pw = aces_write_whole(aces_provenance_file(*opts, out), run.dump(1)); !pw && !failure) failure = pw.error();
                 in.forget(id);
                 if (failure) send(err(id, *failure));
@@ -577,6 +621,95 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     if (run.contains("dolby_vision")) done["dolby_vision"] = aces_dovi_xml_file(*opts, out).string();
                     send(done);
                 }
+            } else if (op == "encode") {
+                in.cancel = false;
+                std::vector<fs::path> exrs;
+                for (const auto& e : req.at("exrs")) exrs.emplace_back(e.get<std::string>());
+                const fs::path out = req.at("out").get<std::string>();
+                json dreq = req;
+                dreq["exr"] = "none";   // the masters exist: only the movie is written
+                auto opts = aces_deliver_from_json(dreq);
+                if (!opts) {
+                    send(err(id, opts.error()));
+                    continue;
+                }
+                if (exrs.empty() || !opts->copies.any() || !opts->copies.movie()) {
+                    send(err(id, "encode needs masters and a movie format (log and log_formats)."));
+                    continue;
+                }
+                if (!fs::is_directory(out)) {
+                    send(err(id, "The movie's folder does not exist.", out.string()));
+                    continue;
+                }
+                const fs::path movie = out / aces_movie_file(*opts, req.value("movie_stem", out.filename().string()));
+                if (fs::exists(movie)) {
+                    send(err(id, "The movie exists; nothing is replaced.", movie.string()));
+                    continue;
+                }
+                if (!hdr_view) {
+                    auto hv = aces_v2::make_ocio_display_view(aces_v2::kOcioHdrDisplay, aces_v2::kOcioHdrView, threads);
+                    if (!hv) {
+                        send(err(id, hv.error()));
+                        continue;
+                    }
+                    hdr_view = std::move(*hv);
+                }
+                std::optional<Error> failure;
+                const aces_v2::AcesView* copy_view = hdr_view.get();
+                if (opts->copies.pq && opts->copies.target != "pq1000") {
+                    auto& tv = target_views[opts->copies.target];
+                    if (!tv) {
+                        auto made = aces_target_view(opts->copies.display_target(), threads);
+                        if (made) tv = std::move(*made);
+                        else failure = made.error();
+                    }
+                    copy_view = tv.get();
+                }
+                std::unique_ptr<AcesLogWriter> logw;
+                if (!failure) {
+                    auto w = AcesLogWriter::open(opts->copies, out, movie, opts->fps > 0 ? opts->fps : 24.0, copy_view);
+                    if (!w) failure = w.error();
+                    else logw = std::move(*w);
+                }
+                if (logw) logw->set_movie_stamp(req.value("timecode", std::string()), req.value("reel", std::string()));
+                const aces_v2::AcesView* light_view = opts->copies.hdr10() && copy_view ? copy_view : hdr_view.get();
+                double run_maxcll = 0, run_maxfall = 0;
+                bool stopped = false;
+                std::size_t written = 0;
+                for (std::size_t i = 0; !failure && i < exrs.size(); ++i) {
+                    if (in.cancel || in.cancelled(id)) {
+                        stopped = true;
+                        break;
+                    }
+                    const auto t = Clock::now();
+                    auto px = aces_master_acescg(exrs[i]);
+                    if (!px) {
+                        failure = px.error();
+                        break;
+                    }
+                    const AcesLightLevel light = aces_light_level(*px, light_view, int(i));
+                    run_maxcll = std::max(run_maxcll, light.maxcll);
+                    run_maxfall = std::max(run_maxfall, light.maxfall);
+                    if (auto lw = logw->write(*px, exrs[i].filename().string()); !lw) {
+                        failure = lw.error();
+                        break;
+                    }
+                    ++written;
+                    send({{"id", id}, {"progress", {{"index", i + 1}, {"total", exrs.size()}, {"exr", exrs[i].filename().string()},
+                                                    {"ms", ms_since(t)}}}});
+                }
+                if (logw)
+                    if (auto fin = logw->finish(run_maxcll, run_maxfall); !fin && !failure) failure = fin.error();
+                json done = {{"id", id}, {"ok", true}, {"done", true}, {"cancelled", stopped}, {"frames", written},
+                             {"movie", movie.string()}, {"maxcll", run_maxcll}, {"maxfall", run_maxfall}};
+                if (!failure && opts->copies.hdr10()) {
+                    const json h = aces_hdr10_json(run_maxcll, run_maxfall, opts->copies.display_target().peak_nits);
+                    if (auto hw = aces_write_whole(aces_hdr10_file(*opts, out), h.dump(1)); !hw) failure = hw.error();
+                    else done["hdr10"] = aces_hdr10_file(*opts, out).string();
+                }
+                in.forget(id);
+                if (failure) send(err(id, *failure));
+                else send(done);
             } else {
                 send(err(id, "Unknown op.", op));
             }

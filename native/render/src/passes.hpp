@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <thread>
 #include <vector>
 
 #include "rudra/core/baseline.hpp"
@@ -33,8 +34,11 @@ struct CompositeUbo {
     float frame[4];     // x width, y height (3.3: the masks sample by normalised position), z exposure gain,
                         // w 1 when the anchor's target has knots (13 Oct 2026)
     float anchor[256];  // 64 vec4: anchor_target_knots, one per 8-bit code
+    float region[12];   // spec rev 2 (5 Nov 2026), three vec4: [0] x on, y band, z highlight_from, w its softness;
+                        // [1] x highlight strength, y shadow_below, z its softness, w shadow strength;
+                        // [2] x band low, y band high, z band softness
 };
-static_assert(sizeof(CompositeUbo) == (3 * 4 + 288 + 32 + 4 + 256) * sizeof(float));
+static_assert(sizeof(CompositeUbo) == (3 * 4 + 288 + 32 + 4 + 256 + 12) * sizeof(float));
 static_assert(288 >= 1 + kSourceCurveKnots);
 
 // The View block of shaders/display.frag.
@@ -46,8 +50,11 @@ struct ViewUbo {
     float gfx[12];
     float anchor[4];   // x on, y knee, z softness, w hold (roadmap 3.3)
     float paint[4];    // x the painted mask's channel (< 0 none), yzw its tint (3.3)
+    float look[4];     // revision 6: x 2^view_ev, y 1 / gamma, z gamma on, w the SDR light bound
+    float ab[4];       // revision 6: x shown, y wipe left, z wipe right (0 model, 1 baseline, 2 sdr), w zebras
+    float region[4];   // RUDRA 1.1: x 1 when the region overlay texture is bound and on, yzw its tint (sRGB)
 };
-static_assert(sizeof(ViewUbo) == 44 * sizeof(float));
+static_assert(sizeof(ViewUbo) == 56 * sizeof(float));
 
 // The Hold block of shaders/hold.frag (the static hold while playing).
 struct HoldUbo {
@@ -108,6 +115,13 @@ inline CompositeUbo composite_ubo(const FrameScalars& scalars, const ModelConsta
     const std::vector<float> knots = anchor_target_knots(params);
     u.frame[3] = knots.size() == 256 ? 1.0f : 0.0f;
     if (knots.size() == 256) std::copy(knots.begin(), knots.end(), u.anchor);
+    const ReconstructionRegion& rg = params.region;   // all 0 when off: the shader skips it
+    if (rg.enabled) {
+        const float region[12] = {1.0f, rg.band ? 1.0f : 0.0f, rg.highlight_from, rg.highlight_softness,
+                                  rg.highlight_strength, rg.shadow_below, rg.shadow_softness, rg.shadow_strength,
+                                  rg.band_low, rg.band_high, rg.band_softness, 0.0f};
+        std::copy(std::begin(region), std::end(region), u.region);
+    }
     return u;
 }
 
@@ -132,7 +146,7 @@ inline std::vector<std::uint8_t> masks_rgba8(const CompositeParams& params, int 
 }
 
 // The uniforms as core/view.cpp rounds them to fp32.
-inline ViewUbo view_ubo(const ViewParams& params, int width) {
+inline ViewUbo view_ubo(const ViewParams& params, int width, bool have_sdr = false) {
     ViewUbo u{};
     u.view[0] = float(int(params.mode));
     u.view[1] = float(10000.0 / std::max(params.display_nits, 1e-3));
@@ -154,8 +168,20 @@ inline ViewUbo view_ubo(const ViewParams& params, int width) {
     const bool painting = params.paint_band >= 0 && params.masks && params.masks->has(params.paint_band);
     u.paint[0] = painting ? float(params.paint_band) : -1.0f;
     for (int k = 0; k < 3; ++k) u.paint[1 + k] = params.paint_tint[std::size_t(k)];
+    u.look[0] = float(std::exp2(params.view_ev));
+    u.look[1] = float(1.0 / std::clamp(params.view_gamma, 0.2, 5.0));
+    u.look[2] = params.view_gamma != 1.0 ? 1.0f : 0.0f;
+    u.look[3] = have_sdr ? 1.0f : 0.0f;
+    u.ab[0] = float(int(params.show));
+    u.ab[1] = float(int(params.wipe_left));
+    u.ab[2] = float(int(params.wipe_right));
+    u.ab[3] = float((params.clamp_zebra ? 1 : 0) | (params.clip_zebra ? 2 : 0));
+    u.region[0] = params.region_overlay && params.overlay_region.enabled ? 1.0f : 0.0f;
+    for (int k = 0; k < 3; ++k) u.region[1 + k] = params.region_tint[std::size_t(k)];
     return u;
 }
+
+
 
 // The masks texture for the display pass, from the view's set (see
 // masks_rgba8 above for the composite's).
@@ -165,32 +191,63 @@ inline std::vector<std::uint8_t> view_masks_rgba8(const ViewParams& params, int 
     return masks_rgba8(cp, frame_width, frame_height);
 }
 
+// The viewer packs every frame it shows on the UI thread (4 Nov 2026): the
+// pixels split over a few threads, each writing its own range, so the result
+// is the same whatever the count. Small images stay on one thread.
+template <class F>
+inline void for_pixel_ranges(std::size_t n, F&& fn) {
+    const unsigned hw = std::max(1u, std::thread::hardware_concurrency());
+    const std::size_t k = std::max<std::size_t>(1, std::min<std::size_t>({std::size_t(hw), 8, n / 65536 + 1}));
+    if (k <= 1) {
+        fn(std::size_t(0), n);
+        return;
+    }
+    std::vector<std::thread> pool;
+    pool.reserve(k - 1);
+    for (std::size_t w = 1; w < k; ++w) pool.emplace_back([&, w] { fn(n * w / k, n * (w + 1) / k); });
+    fn(std::size_t(0), n / k);
+    for (auto& th : pool) th.join();
+}
+
 // sdr rgb + shadow in a, and residual rgb + highlight in a: the two inputs
 // composite.frag fetches.
 inline void interleave_inputs(const SdrImage& sdr, const Fields& fields, std::vector<float>& a, std::vector<float>& b) {
     const std::size_t n = std::size_t(sdr.width()) * std::size_t(sdr.height());
-    a.assign(n * 4, 0.0f);
-    b.assign(n * 4, 0.0f);
-    for (std::size_t i = 0; i < n; ++i) {
-        for (int c = 0; c < 3; ++c) {
-            a[i * 4 + std::size_t(c)] = sdr.buffer().plane(c)[i];
-            b[i * 4 + std::size_t(c)] = fields.residual.plane(c)[i];
+    a.resize(n * 4);   // every value is written below
+    b.resize(n * 4);
+    const float *s0 = sdr.buffer().plane(0), *s1 = sdr.buffer().plane(1), *s2 = sdr.buffer().plane(2);
+    const float *r0 = fields.residual.plane(0), *r1 = fields.residual.plane(1), *r2 = fields.residual.plane(2);
+    const float *sh = fields.shadow.plane(0), *hi = fields.highlight.plane(0);
+    float *pa = a.data(), *pb = b.data();
+    for_pixel_ranges(n, [=](std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            float* qa = pa + i * 4;
+            float* qb = pb + i * 4;
+            qa[0] = s0[i], qa[1] = s1[i], qa[2] = s2[i], qa[3] = sh[i];
+            qb[0] = r0[i], qb[1] = r1[i], qb[2] = r2[i], qb[3] = hi[i];
         }
-        a[i * 4 + 3] = fields.shadow.plane(0)[i];
-        b[i * 4 + 3] = fields.highlight.plane(0)[i];
-    }
+    });
 }
 
 // The baseline as the display pass reads it: rgb, and the SDR's max code in
-// alpha for the Invented layer (core/view.hpp sdr_max_codes).
+// alpha for the Invented layer (core/view.hpp sdr_max_codes; 0.5 without an
+// SDR of the same size).
 inline std::vector<float> baseline_rgba(const PlanarBuffer& rgb, const SdrImage* sdr) {
-    const std::vector<float> codes = sdr_max_codes(sdr, rgb.width(), rgb.height());
     const std::size_t n = rgb.plane_size();
     std::vector<float> out(n * 4);
-    for (std::size_t i = 0; i < n; ++i) {
-        for (int c = 0; c < 3; ++c) out[i * 4 + std::size_t(c)] = rgb.plane(c)[i];
-        out[i * 4 + 3] = codes[i];
-    }
+    const bool have = sdr && sdr->width() == rgb.width() && sdr->height() == rgb.height();
+    const float *c0 = rgb.plane(0), *c1 = rgb.plane(1), *c2 = rgb.plane(2);
+    const float* m0 = have ? sdr->buffer().plane(0) : nullptr;
+    const float* m1 = have ? sdr->buffer().plane(1) : nullptr;
+    const float* m2 = have ? sdr->buffer().plane(2) : nullptr;
+    float* po = out.data();
+    for_pixel_ranges(n, [=](std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            float* q = po + i * 4;
+            q[0] = c0[i], q[1] = c1[i], q[2] = c2[i];
+            q[3] = m0 ? std::max(std::max(m0[i], m1[i]), m2[i]) : 0.5f;
+        }
+    });
     return out;
 }
 
@@ -199,10 +256,14 @@ inline std::vector<float> baseline_rgba(const PlanarBuffer& rgb, const std::vect
     if (codes.size() != rgb.plane_size()) return baseline_rgba(rgb, nullptr);
     const std::size_t n = rgb.plane_size();
     std::vector<float> out(n * 4);
-    for (std::size_t i = 0; i < n; ++i) {
-        for (int c = 0; c < 3; ++c) out[i * 4 + std::size_t(c)] = rgb.plane(c)[i];
-        out[i * 4 + 3] = codes[i];
-    }
+    const float *c0 = rgb.plane(0), *c1 = rgb.plane(1), *c2 = rgb.plane(2), *m = codes.data();
+    float* po = out.data();
+    for_pixel_ranges(n, [=](std::size_t begin, std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+            float* q = po + i * 4;
+            q[0] = c0[i], q[1] = c1[i], q[2] = c2[i], q[3] = m[i];
+        }
+    });
     return out;
 }
 

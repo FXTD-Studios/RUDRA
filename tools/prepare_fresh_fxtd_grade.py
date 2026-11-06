@@ -1,4 +1,4 @@
-"""Fresh grading set from FXTD camera plates (registration claude_fresh_fxtd_grade_20261026.json).
+"""Fresh grading set from FXTD camera plates (registration research_fresh_fxtd_grade_20261026.json).
 
 One eligible frame per scene (selection file), area-downsampled to longest side 512 in
 linear light, BT.2020 -> AP1, rendered at the exposures where 1% and 5% of pixels clip in

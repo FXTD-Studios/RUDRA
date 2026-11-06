@@ -19,9 +19,13 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QPixmap>
+#include <QGroupBox>
 #include <QSettings>
+#include <QTimer>
+#include <QSpinBox>
 #include <QSlider>
 #include <QTemporaryDir>
 #include <QUrl>
@@ -40,6 +44,7 @@
 
 #include "aces_engine.hpp"
 #include "main_window.hpp"
+#include "rudra/deliver/master.hpp"
 #include "widgets.hpp"
 #include <QStatusBar>
 #include "rudra/core/aces_v2_manifest.hpp"
@@ -184,6 +189,8 @@ QStringList aces_cli_arguments(const AcesRunSettings& s) {
     QStringList a = {"aces-v2", qp(s.package), qp(s.input), "--out", qp(s.out), "--runtime", q(s.runtime),
                      "--device", q(s.device), "--ocio-threads", QString::number(s.ocio_threads)};
     a << (s.luminance_guard ? "--luminance-guard" : "--no-luminance-guard");
+    if (s.band_on) a << "--tau-high" << QString::number(s.tau_high) << "--tau-low" << QString::number(s.tau_low);
+    if (s.clean_shadows) a << "--clean-shadows";
     if (!s.log_curve.empty() && !s.log_formats.empty()) a << "--log" << q(s.log_curve) << "--log-format" << q(s.log_formats);
     return a;
 }
@@ -429,6 +436,57 @@ AcesMasterDialog::AcesMasterDialog(QWidget* parent, std::vector<fs::path> roots,
     guard_->setChecked(true);
     g->addWidget(guard_, row++, 1, 1, 2);
 
+    // The tau bands, as SwitchHDR's thresholds (core/aces_v2.hpp UserBand).
+    {
+        QSettings bst;
+        band_ = new QGroupBox("Rebuild only highlights and shadows", this);
+        band_->setObjectName("acesBand");
+        band_->setCheckable(true);
+        band_->setChecked(bst.value("aces/bandOn", false).toBool());
+        band_->setToolTip("The model's result is kept only where the brightest channel of the original is at or above "
+                          "\u03c4 high, or at or below \u03c4 low (8-bit codes). Everything between is the plain ACES inverse, "
+                          "which gives the original back pixel for pixel. Off: the model's own result everywhere. "
+                          "In the viewer, Changes shows what was rebuilt.");
+        auto* bl = new QHBoxLayout(band_);
+        tau_high_ = new QSpinBox(band_);
+        tau_high_->setObjectName("acesTauHigh");
+        tau_high_->setRange(128, 256);
+        tau_high_->setPrefix(QStringLiteral("\u03c4 high "));
+        tau_high_->setSpecialValueText(QStringLiteral("highlights off"));
+        tau_high_->setToolTip("Codes at or above this are rebuilt (254: the model's own band; 256: no highlights)");
+        tau_high_->setValue(bst.value("aces/tauHigh", 254).toInt());
+        tau_low_ = new QSpinBox(band_);
+        tau_low_->setObjectName("acesTauLow");
+        tau_low_->setRange(-1, 64);
+        tau_low_->setPrefix(QStringLiteral("\u03c4 low "));
+        tau_low_->setSpecialValueText(QStringLiteral("shadows off"));
+        tau_low_->setToolTip("Codes at or below this are rebuilt (5: the model's own band; -1: no shadows)");
+        tau_low_->setValue(bst.value("aces/tauLow", 5).toInt());
+        bl->addWidget(tau_high_);
+        bl->addWidget(tau_low_);
+        g->addWidget(band_, row++, 1, 1, 2);
+        clean_ = new QCheckBox("Clean shadows", this);
+        clean_->setObjectName("acesCleanShadows");
+        clean_->setChecked(bst.value("aces/cleanShadows", false).toBool());
+        clean_->setToolTip("Edge-preserving denoise in the deep shadows (codes 40 and below) of the master, so a push of a "
+                           "few stops is not all grain. The SDR view still shows the original within 1 code. Invents "
+                           "nothing; off by default (plates stay exactly as the model made them).");
+        g->addWidget(clean_, row++, 1, 1, 2);
+        auto changed = [this] {
+            QSettings st;
+            st.setValue("aces/bandOn", band_->isChecked());
+            st.setValue("aces/tauHigh", tau_high_->value());
+            st.setValue("aces/tauLow", tau_low_->value());
+            st.setValue("aces/cleanShadows", clean_->isChecked());
+            request_preview();
+            if (band_changed) band_changed();
+        };
+        connect(band_, &QGroupBox::toggled, this, changed);
+        connect(tau_high_, &QSpinBox::valueChanged, this, changed);
+        connect(tau_low_, &QSpinBox::valueChanged, this, changed);
+        connect(clean_, &QCheckBox::toggled, this, changed);
+    }
+
     g->addWidget(label("Also write", "acesLogLabel", "value", this), row, 0);
     log_format_ = new QComboBox(this);
     log_format_->setObjectName("acesLog");
@@ -565,6 +623,13 @@ AcesMasterDialog::AcesMasterDialog(QWidget* parent, std::vector<fs::path> roots,
     on_engine_change();
 }
 
+void AcesMasterDialog::add_band(QJsonObject& r) const {
+    if (clean_ && clean_->isChecked()) r["clean_shadows"] = true;
+    if (!band_ || !band_->isChecked()) return;
+    r["band_tau_high"] = tau_high_->value();
+    r["band_tau_low"] = tau_low_->value();
+}
+
 AcesMasterDialog::~AcesMasterDialog() {
     if (proc_ && proc_->state() != QProcess::NotRunning) {
         proc_->kill();
@@ -695,6 +760,10 @@ AcesRunSettings AcesMasterDialog::settings() const {
     s.runtime = t.runtime;
     s.device = t.device;
     s.luminance_guard = guard_->isChecked();
+    s.band_on = band_->isChecked();
+    s.tau_high = tau_high_->value();
+    s.tau_low = tau_low_->value();
+    s.clean_shadows = clean_->isChecked();
     s.log_formats = log_format_->currentData().toString().toStdString();
     if (!s.log_formats.empty()) s.log_curve = "logc4";
     return s;
@@ -860,8 +929,10 @@ void AcesMasterDialog::request_preview() {
     const QVariant frame = preview_frame_->currentData(Qt::UserRole + 1);
     preview_stats_->setText(QStringLiteral("Running the model on %1…").arg(preview_frame_->currentText()));
     const QPointer<QObject> self(this);
-    engine_->request(QJsonObject{{"op", "preview"}, {"source", path}, {"frame", frame.isValid() ? frame.toInt() : 0},
-                                 {"guard", guard_->isChecked()}},
+    QJsonObject preview_req{{"op", "preview"}, {"source", path}, {"frame", frame.isValid() ? frame.toInt() : 0},
+                            {"guard", guard_->isChecked()}};
+    add_band(preview_req);
+    engine_->request(preview_req,
                      [this, self](const QJsonObject& o) {
                          if (!self) return;
                          preview_busy_ = false;
@@ -903,6 +974,7 @@ void AcesMasterDialog::request_view() {
     const QPointer<QObject> self(this);
     QJsonObject view_req{{"op", "view"}, {"ev", ev_->value() / 2.0}, {"mode", mode_->currentData().toString()},
                          {"max_side", 1600}, {"out", out}};
+    add_band(view_req);
     if (mode_->currentData().toString() == "fill") {   // the Deliver tab's AI fill thresholds (genfill_job.hpp)
         QSettings st;
         view_req["tau_high"] = st.value("deliver/aiTauHigh", 250).toInt();
@@ -951,8 +1023,16 @@ void AcesMasterDialog::start_with_engine(const AcesRunSettings& s) {
     const QPointer<QObject> self(this);
     const fs::path out = s.out;
     engine_master_id_ = engine_->request(
-        QJsonObject{{"op", "master"}, {"sources", sources}, {"out", qp(s.out)}, {"guard", s.luminance_guard},
-                    {"log", q(s.log_curve)}, {"log_formats", q(s.log_formats)}},
+        [&] {
+            QJsonObject r{{"op", "master"}, {"sources", sources}, {"out", qp(s.out)}, {"guard", s.luminance_guard},
+                          {"log", q(s.log_curve)}, {"log_formats", q(s.log_formats)}};
+            if (s.band_on) {
+                r["band_tau_high"] = s.tau_high;
+                r["band_tau_low"] = s.tau_low;
+            }
+            if (s.clean_shadows) r["clean_shadows"] = true;
+            return r;
+        }(),
         [this, self, out](const QJsonObject& o) {
             if (!self) return;
             engine_master_ = false;
@@ -992,7 +1072,13 @@ void MainWindow::open_aces_master() {
         input = shot_sources_.size() == 1 ? shot_sources_.front() : shot_sources_.front().parent_path();
         if (fs::is_directory(shot_sources_.front(), ec)) input = shot_sources_.front();
     }
-    if (!aces_master_) aces_master_ = new AcesMasterDialog(this, model_roots(), input, aces_engine());
+    if (!aces_master_) {
+        aces_master_ = new AcesMasterDialog(this, model_roots(), input, aces_engine());
+        // The tau bands drive the learned viewer too: re-run the frame shown.
+        static_cast<AcesMasterDialog*>(aces_master_.data())->band_changed = [this] {
+            if (aces_routed() && !frames_.empty()) aces_request(current_);
+        };
+    }
     else if (!static_cast<AcesMasterDialog*>(aces_master_.data())->running()) {
         auto* d = static_cast<AcesMasterDialog*>(aces_master_.data());
         d->refresh_packages();
@@ -1119,21 +1205,48 @@ void MainWindow::aces_request(int index) {
     const QString base_path = aces_tmp_->filePath(QStringLiteral("baseline_%1.f32").arg(index % 2));
     aces_busy_ = true;
     const QPointer<MainWindow> self(this);
+    QJsonObject req = aces_request_json(index, source, movie, QString());
+    if (aces_playing_ && play_state_->side.load() > 0) req["max_side"] = play_state_->side.load();
+    aces_engine_->request(req,
+                          [self, index, model_path, base_path](const QJsonObject& o) {
+                              if (self) self->aces_after_frame(o, index, model_path, base_path);
+                          });
+}
+
+// One learned frame's request (shared by the view and the playback prefetch, 3 Nov 2026):
+// the outputs are named <prefix>model_<n>.f32 ... in the temporary folder.
+QJsonObject MainWindow::aces_request_json(int index, const QString& source, bool movie, const QString& prefix) {
+    const QString model_path = aces_tmp_->filePath(QStringLiteral("%1model_%2.f32").arg(prefix).arg(index % 2));
+    const QString base_path = aces_tmp_->filePath(QStringLiteral("%1baseline_%2.f32").arg(prefix).arg(index % 2));
     QJsonObject req{{"op", "preview"}, {"source", source}, {"frame", movie ? index : 0}, {"keep", false},
                     {"model_out", model_path}, {"baseline_out", base_path}};
     // The monitoring transform, the Invented layer's codes, and a proxy while playing (28 Oct 2026).
     if (aces_monitor_ != "scene") req["display"] = aces_monitor_;
     if (aces_source_display_ != "bt1886") req["source_display"] = aces_source_display_;   // an sRGB / 2.2 master
-    req["codes_out"] = aces_tmp_->filePath(QStringLiteral("codes_%1.f32").arg(index % 2));
-    if (aces_playing_ && play_state_->side.load() > 0) req["max_side"] = play_state_->side.load();
+    req["codes_out"] = aces_tmp_->filePath(QStringLiteral("%1codes_%2.f32").arg(prefix).arg(index % 2));
+    req["sdr_out"] = aces_tmp_->filePath(QStringLiteral("%1sdr_%2.f32").arg(prefix).arg(index % 2));   // view revision 6
+    {   // the tau bands, as the Learned ACES dialog set them (aces/bandOn, aces/tauHigh, aces/tauLow)
+        QSettings st;
+        if (st.value("aces/bandOn", false).toBool()) {
+            req["band_tau_high"] = st.value("aces/tauHigh", 254).toInt();
+            req["band_tau_low"] = st.value("aces/tauLow", 5).toInt();
+        }
+        if (st.value("aces/cleanShadows", false).toBool()) req["clean_shadows"] = true;
+    }
     // The colorist's trims: the viewer shows what a render writes.
     if (const QJsonObject t = aces_trims_fields(aces_trims_.strength, aces_trims_.saturation, aces_trims_.peak_nits,
                                                  aces_trims_.exposure_ev, aces_trims_.contrast); !t.isEmpty())
         req["trims"] = t;
-    aces_engine_->request(req,
-                          [self, index, model_path, base_path](const QJsonObject& o) {
-                              if (self) self->aces_after_frame(o, index, model_path, base_path);
-                          });
+    // 6 Nov 2026: the Reconstruct card's luminance region reaches the learned route too
+    // (it showed no change there: the engine never heard of it).
+    if (const QJsonObject r = aces_region_field(); !r.isEmpty()) req["reconstruction_region"] = r;
+    aces_region_sent_ = session_.grade.region;
+    return req;
+}
+
+QJsonObject MainWindow::aces_region_field() const {
+    if (!session_.grade.region.enabled) return {};
+    return QJsonDocument::fromJson(QByteArray::fromStdString(reconstruction_region_json(session_.grade.region))).object();
 }
 
 void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString& model_path, const QString& base_path) {
@@ -1178,12 +1291,24 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
         if (!in.read(reinterpret_cast<char*>(codes.data()), std::streamsize(codes.size() * sizeof(float)))) codes.clear();
     }
     aces_codes_ = codes;
+    // The SDR's codes (view revision 6): the Sdr source, the clamp zebra and
+    // the Range layer. An older engine writes none: those then fall back.
+    aces_sdr_img_.reset();
+    {
+        QString sp = model_path;
+        sp.replace(QStringLiteral("model_"), QStringLiteral("sdr_"));
+        if (auto s = read_planes(sp, w, h)) aces_sdr_img_ = std::make_shared<const SdrImage>(std::move(*s));
+    }
     // A reference still compared: it takes the baseline's place (Baseline, Wipe, B), when it is the same size.
     const auto* ref = ref_compare_ ? reference_still() : nullptr;
     aces_ref_shown_ = ref && ref->width() == aces_model_img_->width() && ref->height() == aces_model_img_->height();
 #ifdef RUDRA_APP_VIEWER
-    if (viewer_) viewer_->set_composited(*aces_model_img_, aces_ref_shown_ ? *ref : *aces_base_img_, codes);
+    if (viewer_) {
+        viewer_->set_composited(*aces_model_img_, aces_ref_shown_ ? *ref : *aces_base_img_, codes);
+        if (aces_sdr_img_) viewer_->set_source_sdr(*aces_sdr_img_);
+    }
 #endif
+    apply_fill_view();   // the viewer's AI fill, when on and this frame has one
     sync_reference_ui();
     show_mode();   // the status bar says the learned model, not the analytic reconstruction
     // The filmstrip's picture of this frame, from what the viewer shows (29 Oct 2026).
@@ -1197,19 +1322,7 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
     }
     // The playback cache: a frame rendered at the playback size while playing goes in, made with
     // what the screen shows now (anything changed empties it).
-    if (aces_playing_ && play_state_->side.load() > 0) {
-        if (const QString key = aces_cache_key(); key != aces_cache_key_ || aces_cache_.size() != frames_.size()) {
-            aces_cache_.assign(frames_.size(), nullptr);
-            aces_cache_bytes_ = 0;
-            aces_cache_key_ = key;
-        }
-        const std::size_t bytes = std::size_t(w) * std::size_t(h) * 3 * sizeof(float);
-        const std::size_t budget = std::size_t(QSettings().value("aces/playCacheMB", 2048).toInt()) * 1024 * 1024;
-        if (!aces_cache_[std::size_t(index)] && aces_cache_bytes_ + bytes <= budget) {
-            aces_cache_[std::size_t(index)] = aces_model_img_;
-            aces_cache_bytes_ += bytes;
-        }
-    }
+    if (aces_playing_ && play_state_->side.load() > 0) aces_cache_put(index, aces_model_img_, aces_base_img_, aces_sdr_img_, codes);
     run_stats();   // the readouts and scopes of this frame, in nits (28 Oct 2026)
     if (parade_) parade_->set_scope(qc_scope(aces_model_img_->buffer()));   // parade and gamut (28 Oct 2026 review)
     sync_check_summary();   // Simple's Check reads the same
@@ -1223,8 +1336,15 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
                       .arg(100.0 * o.value("reconstructed_fraction").toDouble(), 0, 'f', 2)
                       .arg(o.value("peak").toDouble(), 0, 'f', 1)
                       .arg(o.value("peak_plain").toDouble(), 0, 'f', 1);
+    if (const QJsonObject s = o.value("stage_ms").toObject(); !s.isEmpty())   // where the time went (3 Nov 2026)
+        frame_info_ += QStringLiteral("  \u00b7  view %1 · model %2 · smoothing %3 · constraint %4 ms")
+                           .arg(s.value("inverse").toDouble(), 0, 'f', 0)
+                           .arg(s.value("network").toDouble(), 0, 'f', 0)
+                           .arg(s.value("smoothing").toDouble(), 0, 'f', 0)
+                           .arg(s.value("constraint").toDouble(), 0, 'f', 0);
     sync_ui();
     show_status();
+    if (!aces_playing_) aces_prefetch_soon(250);   // idle: prepare playback in the background
     if (aces_playing_) {
         // Plays as fast as the model runs, filling the cache; the next play is real time.
         if (index + 1 < int(frames_.size())) aces_request(index + 1);
@@ -1240,9 +1360,118 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
     }
 }
 
+// Into the playback cache (the view while playing, and the prefetch): made with what the
+// screen shows now; anything changed empties it first. False when the budget is full.
+bool MainWindow::aces_cache_put(int index, std::shared_ptr<const NetworkLinearImage> model,
+                                std::shared_ptr<const NetworkLinearImage> base, std::shared_ptr<const SdrImage> sdr,
+                                std::vector<float> codes) {
+    if (index < 0 || index >= int(frames_.size()) || !model) return false;
+    if (const QString key = aces_cache_key(); key != aces_cache_key_ || aces_cache_.size() != frames_.size()) {
+        aces_cache_.assign(frames_.size(), nullptr);
+        aces_cache_side_.assign(frames_.size(), {});
+        aces_cache_bytes_ = 0;
+        aces_cache_key_ = key;
+    }
+    if (aces_cache_[std::size_t(index)]) return true;
+    // The model, and since view revision 6 its baseline, SDR and max codes too,
+    // so playback compares what a paused frame compares.
+    const std::size_t bytes = std::size_t(model->width()) * std::size_t(model->height()) * (3 + 3 + 3 + 1) * sizeof(float);
+    const std::size_t budget = std::size_t(QSettings().value("aces/playCacheMB", 2048).toInt()) * 1024 * 1024;
+    if (aces_cache_bytes_ + bytes > budget) return false;
+    aces_cache_[std::size_t(index)] = std::move(model);
+    aces_cache_side_[std::size_t(index)] = {std::move(base), std::move(sdr), std::move(codes)};
+    aces_cache_bytes_ += bytes;
+    return true;
+}
+
+// Playback prepared in the background (3 Nov 2026): while the learned route is open and
+// idle, the next frame missing from the playback cache is rendered at the playback size
+// and cached without being shown, so Play is real time once every frame is in. It never
+// runs while the engine is busy or a view the user asked for waits; such a request runs
+// first. Off with the setting aces/prefetch = false, or playback size Full.
+void MainWindow::aces_prefetch_soon(int delay_ms) {
+    QTimer::singleShot(delay_ms, this, [self = QPointer<MainWindow>(this)] {
+        if (self) self->aces_prefetch_next();
+    });
+}
+
+void MainWindow::aces_prefetch_next() {
+    const int n = int(frames_.size());
+    if (!aces_routed() || !aces_engine_ || n < 2 || aces_busy_ || aces_next_ >= 0 || aces_playing_ || aces_rt_playing_)
+        return;
+    if (play_state_->side.load() <= 0 || !QSettings().value("aces/prefetch", true).toBool()) return;
+    if (aces_cache_key() != aces_cache_key_ || aces_cache_.size() != frames_.size()) {   // a fresh cache for what shows now
+        aces_cache_.assign(frames_.size(), nullptr);
+        aces_cache_side_.assign(frames_.size(), {});
+        aces_cache_bytes_ = 0;
+        aces_cache_key_ = aces_cache_key();
+    }
+    // The next missing frame after the one on screen, wrapping: what Play shows first.
+    int index = -1;
+    for (int k = 0; k < n; ++k) {
+        const int i = (current_ + k) % n;
+        if (!aces_cache_[std::size_t(i)]) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0) return;   // all in
+    const std::size_t px = std::size_t(std::max(1, play_state_->side.load())) * std::size_t(play_state_->side.load());
+    const std::size_t budget = std::size_t(QSettings().value("aces/playCacheMB", 2048).toInt()) * 1024 * 1024;
+    if (aces_cache_bytes_ + px * 10 * sizeof(float) / 2 > budget) return;   // about full (16:9 at the side)
+    if (!aces_tmp_) aces_tmp_ = std::make_unique<QTemporaryDir>();
+    if (!aces_tmp_->isValid()) return;
+    const bool movie = shot_video_.has_value() && !shot_sources_.empty();
+    const QString source = movie ? qp(shot_sources_.front()) : qp(frames_[std::size_t(index)]);
+    QJsonObject req = aces_request_json(index, source, movie, QStringLiteral("pf_"));
+    req["max_side"] = play_state_->side.load();
+    const QString key = aces_cache_key();
+    aces_busy_ = true;
+    const QPointer<MainWindow> self(this);
+    aces_engine_->request(req, [self, index, key, req](const QJsonObject& o) {
+        if (self) self->aces_after_prefetch(o, index, key, req);
+    });
+}
+
+void MainWindow::aces_after_prefetch(const QJsonObject& o, int index, const QString& key, const QJsonObject& req) {
+    aces_busy_ = false;
+    if (o.value("ok").toBool() && aces_routed() && key == aces_cache_key()) {
+        const int w = o.value("width").toInt(), h = o.value("height").toInt();
+        auto model = read_planes(req.value("model_out").toString(), w, h);
+        auto base = read_planes(req.value("baseline_out").toString(), w, h);
+        if (model && base) {
+            std::vector<float> codes(std::size_t(w) * std::size_t(h));
+            std::ifstream in(pq(req.value("codes_out").toString()), std::ios::binary);
+            if (!in.read(reinterpret_cast<char*>(codes.data()), std::streamsize(codes.size() * sizeof(float)))) codes.clear();
+            std::shared_ptr<const SdrImage> sdr;
+            if (auto s = read_planes(req.value("sdr_out").toString(), w, h)) sdr = std::make_shared<const SdrImage>(std::move(*s));
+            aces_cache_put(index, std::make_shared<const NetworkLinearImage>(aces_view_image(*model)),
+                           std::make_shared<const NetworkLinearImage>(aces_view_image(*base)), std::move(sdr), std::move(codes));
+            const int done = aces_cached_frames(), n = int(frames_.size());
+            statusBar()->showMessage(done == n ? QStringLiteral("Playback ready: Play is real time")
+                                               : QStringLiteral("Preparing playback: %1 of %2 frames").arg(done).arg(n), done == n ? 5000 : 0);
+            if (done == n) log(QStringLiteral("playback ready: all %1 frames prepared; Play is real time").arg(n));
+            sync_ui();
+        }
+    }
+    if (aces_next_ >= 0) {   // the user asked for a frame meanwhile: that first
+        const int next = aces_next_;
+        aces_next_ = -1;
+        aces_request(next);
+        return;
+    }
+    aces_prefetch_soon(0);
+}
+
 QString MainWindow::aces_cache_key() const {
+    QSettings st;   // the tau bands change the frames too (3 Nov 2026: they were missing from the key)
+    const QString band = st.value("aces/bandOn", false).toBool()
+                             ? QStringLiteral("band%1/%2").arg(st.value("aces/tauHigh", 254).toInt()).arg(st.value("aces/tauLow", 5).toInt())
+                             : QStringLiteral("noband");
+    const QString clean = st.value("aces/cleanShadows", false).toBool() ? QStringLiteral("|clean") : QString();
     return shot_trim_key() + "|" + QString::fromStdString(aces_v2::trims_text(aces_trims_)) + "|" + aces_monitor_ + "|" +
-           aces_source_display_ + "|" + QString::number(play_state_->side.load());
+           aces_source_display_ + "|" + QString::number(play_state_->side.load()) + "|" + band + clean + "|" +
+           QString::fromUtf8(QJsonDocument(aces_region_field()).toJson(QJsonDocument::Compact));
 }
 
 int MainWindow::aces_cached_frames() const {
@@ -1255,6 +1484,12 @@ void MainWindow::aces_rt_stop() {
     if (!aces_rt_playing_) return;
     aces_rt_playing_ = false;
     if (btn_play_) btn_play_->set_glyph(IconButton::Glyph::Play);
+    // How real time went (4 Nov 2026): frames dropped mean the screen could not keep up.
+    if (aces_rt_shown_ > 0)
+        log(QStringLiteral("real-time playback: %1 frames shown, %2 dropped%3").arg(aces_rt_shown_).arg(aces_rt_dropped_)
+                .arg(aces_rt_dropped_ > 0 ? QStringLiteral(" (a smaller playback size keeps up: View > Playback size)") : QString()));
+    fill_view_cache_.clear();   // back to full-size fills
+    sync_ui();
     // The full-size frame where it stopped.
     if (aces_routed() && !frames_.empty()) aces_request(current_);
 }

@@ -12,7 +12,7 @@ name: shipped model
 
 on:
   push:
-    branches: [aces-v2, main]
+    branches: [main, feat/gap-kits]
     paths: ["native/**", "tools/check_aces_masters.py", "scripts/ci_shipped_model.sh", "scripts/build_ocio.sh",
             ".github/workflows/shipped_model.yml"]
   pull_request:

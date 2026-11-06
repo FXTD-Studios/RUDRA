@@ -1,7 +1,7 @@
 {
   "purpose": "decide whether image-edge shadow supervision is a real improvement or seed noise; measure seed variance of the local radius-8 shadow branch",
   "registered_before_training": true,
-  "registered_by": "Claude (Cowork) session, 24 Oct 2026, after aces_shadow_edge_20261024 failed its single-seed registration",
+  "registered_by": "FXTD Studios Research (Cowork) session, 24 Oct 2026, after aces_shadow_edge_20261024 failed its single-seed registration",
   "prior_result": "single seed 20261023: edge natural shadow MSE 4.81% below control (needed 5%), first shadow result below coverage4800 (6.274e-7 vs 6.447e-7), but 3 lifted pixels (max 1.33 code) on acoustical_shell v1, original-dev shadow +0.09%, dark motion means 0.00447/0.00376 vs 0.00389/0.00326 EV. FAIL, kept as evidence.",
   "evidence_limit": "natural development shadow metric rests on 7 frames from 3 scenes; single-seed differences of a few percent are not interpretable without seed spread",
   "arms": {"control": "tools/train_aces_shadow_context.py, no --include-image-edges", "edge": "same plus --include-image-edges"},

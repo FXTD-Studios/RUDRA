@@ -90,7 +90,7 @@ def video_frames(path,matrix='bt709',max_frames=0,decode_bits=8):
 CLIPPED_SMOOTHING={'hybrid64':dict(sigma=64.0,ramp=1.0,start=0.0,mode='hybrid')}
 
 
-def infer(model,source,device,colour_backtrack=False,include_fully_clipped=False,repair_inverse_boundary=False,clipped_smoothing='none',forbid_new_negative_y=False):
+def infer(model,source,device,colour_backtrack=False,include_fully_clipped=False,repair_inverse_boundary=False,clipped_smoothing='none',forbid_new_negative_y=False,highlight_ceiling=True):
     """source HxWx3 display codes [0,1] -> (acescg HxWx3 float32, mask HxW, stats)."""
     x=torch.from_numpy(np.ascontiguousarray(source,dtype=np.float32)).permute(2,0,1)[None].to(device)
     with torch.inference_mode():
@@ -106,6 +106,16 @@ def infer(model,source,device,colour_backtrack=False,include_fully_clipped=False
         # it per connected component (log luminance + RGB mean); outside support bit-exact.
         from training.aces_clipped_smoothing import smooth_clipped
         acescg,_=smooth_clipped(acescg,source,**CLIPPED_SMOOTHING[clipped_smoothing])
+    ceiling_pixels=0
+    if highlight_ceiling:
+        # The native engine's ceiling (training/aces_ceiling.py) on the baseline and the master.
+        # Unlike native (and tools/export_native_v2.py), the restored source is not capped here: its
+        # composition happens inside the model class. They can differ only where a restored value
+        # passes the ceiling and is blended rather than replaced.
+        from training.aces_ceiling import cap_luminance_np,inverse_white_luma
+        limit=inverse_white_luma()
+        baseline,_=cap_luminance_np(baseline,limit)
+        acescg,ceiling_pixels=cap_luminance_np(acescg,limit)
     colour_diagnostic=None
     if colour_backtrack or include_fully_clipped:
         from training.aces_colour_backtrack import constrain_colour
@@ -119,7 +129,8 @@ def infer(model,source,device,colour_backtrack=False,include_fully_clipped=False
            'shadow_max_lift_code':float((shown-source).max(-1)[shadow].max()*255) if shadow.any() else None,
            'acescg_min':float(acescg.min()),'acescg_max':float(acescg.max()),
            'negative_luminance_pixels':int(((acescg@LUMA_AP1)<0).sum()),
-           'new_negative_luminance_pixels':int((((acescg@LUMA_AP1)<0)&((baseline@LUMA_AP1)>=0)).sum())}
+           'new_negative_luminance_pixels':int((((acescg@LUMA_AP1)<0)&((baseline@LUMA_AP1)>=0)).sum()),
+           'highlight_ceiling_pixels':ceiling_pixels if highlight_ceiling else None}
     return acescg,mask,stats,baseline
 
 
@@ -146,6 +157,7 @@ def main():
     p.add_argument('--decode-bits',type=int,choices=(8,16),default=16,help='Video RGB decode precision;16 preserves high-bit-depth input,8 reproduces legacy review decoding')
     p.add_argument('--repair-inverse-boundary',action='store_true',help='Experimental measured near-white inverse fallback; requires colour-backtrack')
     p.add_argument('--forbid-new-negative-y',action='store_true',help='appearance constraint also backtracks new negative AP1 luminance')
+    p.add_argument('--no-highlight-ceiling',action='store_true',help='do not cap at the inverse of display white (the native engine caps since 3 Nov 2026)')
     p.add_argument('--device',default='auto',choices=('auto','cpu','cuda'))
     p.add_argument('--max-frames',type=int,default=0)
     p.add_argument('--ocio-threads',type=int,choices=range(1,17),default=4)
@@ -201,7 +213,7 @@ def main():
     def produce():
         for i,source in enumerate(frames):
             if a.max_frames and i>=a.max_frames:break
-            start=time.time();acescg,mask,stats,baseline=infer(model,source,device,a.colour_backtrack,a.colour_backtrack_all,a.repair_inverse_boundary,a.clipped_smoothing,a.forbid_new_negative_y)
+            start=time.time();acescg,mask,stats,baseline=infer(model,source,device,a.colour_backtrack,a.colour_backtrack_all,a.repair_inverse_boundary,a.clipped_smoothing,a.forbid_new_negative_y,not a.no_highlight_ceiling)
             record={'frame':i,'seconds':None,**stats}
             if i%a.exr_every==0:
                 name=(names[i] if names else f'frame_{i:06d}')+'.exr';path=a.out/'exr'/name

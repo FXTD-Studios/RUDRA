@@ -84,6 +84,7 @@ Result<void> validate_headroom_project(const Project& p, bool require_loaded_mas
     q.anchor = p.anchor; q.carry_chroma = p.carry_chroma; q.settle_grain = p.settle_grain;
     q.recovery_mode = p.grade.mode; q.strength = p.grade.strength; q.preserve_outside = p.grade.preserve;
     q.container = p.container; q.exposure_ev = p.grade.exposure_ev; q.masks = p.grade.masks;
+    q.region = p.grade.region;
     for (const auto& r : p.grade.regions) {
         if (!std::isfinite(r.ev) || r.ev < -4 || r.ev > 4)
             return make_error(ErrorCode::InvalidArgument, "Headroom project region EV exceeds supported UI ranges");
@@ -150,6 +151,8 @@ std::string project_json(const Project& p, const fs::path& project_file) {
         {"deliver",
          {{"anchor", p.anchor}, {"anchor_knee", p.anchor_knee}, {"carry_chroma", p.carry_chroma}, {"container", p.container}}},
     };
+    if (p.grade.region.enabled)   // spec rev 2: only when on, so older projects read the same
+        j["grade"]["reconstruction_region"] = json::parse(reconstruction_region_json(p.grade.region));
     if (p.grade.headroom_policy != HeadroomPolicy::Disabled) {
         j["decode"] = {{"headroom_policy", headroom_policy_id(p.grade.headroom_policy)}};
         j["deliver"]["settle_grain"] = p.settle_grain;
@@ -218,6 +221,12 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
             return make_error(ErrorCode::ParseError, "Invalid headroom project's painted-mask reference");
         p.grade.clip_fill = g.value("clip_fill", true);   // projects before 12 Oct 2026: on, the default
         p.grade.exposure_ev = g.value("exposure_ev", 0.0);   // projects before 13 Oct 2026: none
+        if (g.contains("reconstruction_region") && !g["reconstruction_region"].is_null()) {
+            auto rr = reconstruction_region_from_json(g["reconstruction_region"].dump());
+            if (!rr) return make_error(ErrorCode::ParseError, "This RUDRA project is damaged (reconstruction region).",
+                                       rr.error().message);
+            p.grade.region = *rr;
+        }
         for (const auto& c : g.value("clip_peaks", json::array()))
             p.grade.clip_peaks.push_back({c.value("x", 0.5), c.value("y", 0.5), c.value("nits", 0.0)});
         const json& view = j.value("view", json::object());
@@ -259,7 +268,8 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
         c.y = std::clamp(c.y, 0.0, 1.0);
         c.nits = std::clamp(c.nits, 0.0, 10000.0);
     }
-    if (p.container != "aces" && p.container != "linear") return damaged("container " + p.container);
+    if (p.container != "aces" && p.container != "linear" && p.container != "acescg" && p.container != "rec709")
+        return damaged("container " + p.container);
     if (!p.grade.reference.empty() &&
         (p.grade.reference.target_log2_nits.size() != 256 || p.grade.reference.samples_per_code.size() != 256))
         return damaged("the reference fit");

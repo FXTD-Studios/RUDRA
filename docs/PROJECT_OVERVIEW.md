@@ -242,7 +242,7 @@ non-commercial data; every evaluation scene excluded); its validation loss fell
 from 0.074 to 0.030. v1, v1.1 and v2, which asked the model for
 brightness too, failed their registered gates. **v3 (30 Oct 2026), which
 splits shape from brightness, passed every gate** on 25 new Poly Haven scenes
-(`configs/experiments/claude_genfill_v3_20261030.json`): clipped highlights
+(`configs/experiments/research_genfill_v3_20261030.json`): clipped highlights
 0.13 stops closer to the truth than the exact inverse (95 % CI 0.04–0.23),
 much better detail at -3 and -6 EV, the brightness estimate better than
 leaving it (overshoot of more than a stop in 3 % of areas), every 8-bit code

@@ -1,0 +1,483 @@
+[
+ {
+  "shot": "SELF_SKY",
+  "category": "sky",
+  "frames": 1,
+  "region": {
+   "highlight_from": 0.8,
+   "highlight_softness": 0.08,
+   "shadow_strength": 0.0
+  },
+  "checks": {
+   "C1_preserved": {
+    "result": "PASS",
+    "differing_pixels_outside_region": 0
+   },
+   "C2_mattes_match": {
+    "result": "PASS",
+    "differing_but_unmarked": 0,
+    "marked_but_rounded_equal_in_exr": 3
+   },
+   "C3_brackets_preview_vs_export": {
+    "result": "PASS",
+    "max_code_delta": 0
+   },
+   "C4_default_chain_outside_region": {
+    "result": "INFO",
+    "max_stops": 0.00042814688726269763,
+    "p99_stops": 0.0004280887225097199,
+    "why": "anchor hold / chroma / grain read neighbours or the whole frame"
+   },
+   "C6_hdr10": {
+    "fidelity": {
+     "result": "FAIL",
+     "peak_nits": 6413.529052734375,
+     "tags": {
+      "color_space": "bt2020nc",
+      "color_transfer": "smpte2084",
+      "color_primaries": "bt2020"
+     },
+     "neutral_pixels": 4600,
+     "median_stops": 0.024870009377553043,
+     "p95_stops": 0.07436381852340777,
+     "saturated_info": {
+      "sat_2_4": {
+       "pixels_pct": 11.97,
+       "median_stops": 0.048221939214071
+      },
+      "sat_4_8": {
+       "pixels_pct": 25.2,
+       "median_stops": 0.06402757605008268
+      },
+      "sat_8_inf": {
+       "pixels_pct": 48.73,
+       "median_stops": 0.07360038373290767
+      }
+     }
+    },
+    "preview": {
+     "result": "INFO",
+     "peak_nits": 1000.0,
+     "master_peak_nits": 5130.8232421875,
+     "sdr_range_shift_stops_median": -0.009382270753105963,
+     "bracket0_codes_p99": 24.0,
+     "bracket0_codes_max": 41
+    },
+    "result": "FAIL"
+   },
+   "C6_hlg": {
+    "fidelity": {
+     "result": "FAIL",
+     "peak_nits": 6413.529052734375,
+     "tags": {
+      "color_space": "bt2020nc",
+      "color_transfer": "arib-std-b67",
+      "color_primaries": "bt2020"
+     },
+     "neutral_pixels": 4600,
+     "median_stops": 0.03722581336576891,
+     "p95_stops": 0.10738343401255407,
+     "saturated_info": {
+      "sat_2_4": {
+       "pixels_pct": 11.97,
+       "median_stops": 0.06900253987960543
+      },
+      "sat_4_8": {
+       "pixels_pct": 25.2,
+       "median_stops": 0.07284205955792855
+      },
+      "sat_8_inf": {
+       "pixels_pct": 48.73,
+       "median_stops": 0.08485218232100254
+      }
+     }
+    },
+    "preview": {
+     "result": "INFO",
+     "peak_nits": 1000.0,
+     "master_peak_nits": 5130.8232421875,
+     "sdr_range_shift_stops_median": -0.015980993039958126,
+     "bracket0_codes_p99": 53.0,
+     "bracket0_codes_max": 60
+    },
+    "result": "FAIL"
+   }
+  }
+ },
+ {
+  "shot": "SELF_SUNSET",
+  "category": "sunset",
+  "frames": 1,
+  "region": {
+   "highlight_from": 0.85,
+   "highlight_softness": 0.06,
+   "shadow_strength": 0.0
+  },
+  "checks": {
+   "C1_preserved": {
+    "result": "PASS",
+    "differing_pixels_outside_region": 0
+   },
+   "C2_mattes_match": {
+    "result": "PASS",
+    "differing_but_unmarked": 0,
+    "marked_but_rounded_equal_in_exr": 0
+   },
+   "C3_brackets_preview_vs_export": {
+    "result": "PASS",
+    "max_code_delta": 0
+   },
+   "C4_default_chain_outside_region": {
+    "result": "INFO",
+    "max_stops": 0.0047495342477977065,
+    "p99_stops": 0.0,
+    "why": "anchor hold / chroma / grain read neighbours or the whole frame"
+   },
+   "C6_hdr10": {
+    "fidelity": {
+     "result": "PASS",
+     "peak_nits": 3332.459716796875,
+     "tags": {
+      "color_space": "bt2020nc",
+      "color_transfer": "smpte2084",
+      "color_primaries": "bt2020"
+     },
+     "neutral_pixels": 989,
+     "median_stops": 0.012956049291799278,
+     "p95_stops": 0.05187585812536908,
+     "saturated_info": {
+      "sat_2_4": {
+       "pixels_pct": 0.08,
+       "median_stops": 0.03233410262899591
+      },
+      "sat_4_8": {
+       "pixels_pct": 29.41,
+       "median_stops": 0.006798907864469023
+      },
+      "sat_8_inf": {
+       "pixels_pct": 67.48,
+       "median_stops": 0.008550103535132659
+      }
+     }
+    },
+    "preview": {
+     "result": "INFO",
+     "peak_nits": 1000.0,
+     "master_peak_nits": 2665.9677734375,
+     "sdr_range_shift_stops_median": 0.0008972519888694267,
+     "bracket0_codes_p99": 9.0,
+     "bracket0_codes_max": 78
+    },
+    "result": "PASS"
+   },
+   "C6_hlg": {
+    "fidelity": {
+     "result": "PASS",
+     "peak_nits": 3332.459716796875,
+     "tags": {
+      "color_space": "bt2020nc",
+      "color_transfer": "arib-std-b67",
+      "color_primaries": "bt2020"
+     },
+     "neutral_pixels": 989,
+     "median_stops": 0.014323461023082407,
+     "p95_stops": 0.04927037869988604,
+     "saturated_info": {
+      "sat_2_4": {
+       "pixels_pct": 0.08,
+       "median_stops": 0.036260727776614564
+      },
+      "sat_4_8": {
+       "pixels_pct": 29.41,
+       "median_stops": 0.003812232537283746
+      },
+      "sat_8_inf": {
+       "pixels_pct": 67.48,
+       "median_stops": 0.008490945456200666
+      }
+     }
+    },
+    "preview": {
+     "result": "INFO",
+     "peak_nits": 1000.0,
+     "master_peak_nits": 2665.9677734375,
+     "sdr_range_shift_stops_median": 0.0008665072643225391,
+     "bracket0_codes_p99": 5.0,
+     "bracket0_codes_max": 74
+    },
+    "result": "PASS"
+   }
+  }
+ },
+ {
+  "shot": "SELF_WINDOW",
+  "category": "window",
+  "frames": 1,
+  "region": {
+   "highlight_from": 0.88,
+   "highlight_softness": 0.04,
+   "shadow_strength": 0.0
+  },
+  "checks": {
+   "C1_preserved": {
+    "result": "PASS",
+    "differing_pixels_outside_region": 0
+   },
+   "C2_mattes_match": {
+    "result": "PASS",
+    "differing_but_unmarked": 0,
+    "marked_but_rounded_equal_in_exr": 0
+   },
+   "C3_brackets_preview_vs_export": {
+    "result": "PASS",
+    "max_code_delta": 0
+   },
+   "C4_default_chain_outside_region": {
+    "result": "INFO",
+    "max_stops": 0.0,
+    "p99_stops": 0.0,
+    "why": "anchor hold / chroma / grain read neighbours or the whole frame"
+   },
+   "C6_hdr10": {
+    "fidelity": {
+     "result": "PASS",
+     "peak_nits": 1596.2437438964844,
+     "tags": {
+      "color_space": "bt2020nc",
+      "color_transfer": "smpte2084",
+      "color_primaries": "bt2020"
+     },
+     "neutral_pixels": 32640,
+     "median_stops": 0.007437766950027474,
+     "p95_stops": 0.03099100537649927,
+     "saturated_info": {}
+    },
+    "preview": {
+     "result": "INFO",
+     "peak_nits": 1000.0,
+     "master_peak_nits": 1276.9949951171875,
+     "sdr_range_shift_stops_median": 0.0038767795595089248,
+     "bracket0_codes_p99": 1.0,
+     "bracket0_codes_max": 1
+    },
+    "result": "PASS"
+   },
+   "C6_hlg": {
+    "fidelity": {
+     "result": "PASS",
+     "peak_nits": 1596.2437438964844,
+     "tags": {
+      "color_space": "bt2020nc",
+      "color_transfer": "arib-std-b67",
+      "color_primaries": "bt2020"
+     },
+     "neutral_pixels": 32640,
+     "median_stops": 0.006409796594516859,
+     "p95_stops": 0.026155225231343886,
+     "saturated_info": {}
+    },
+    "preview": {
+     "result": "INFO",
+     "peak_nits": 1000.0,
+     "master_peak_nits": 1276.9949951171875,
+     "sdr_range_shift_stops_median": 0.001779763786789795,
+     "bracket0_codes_p99": 1.0,
+     "bracket0_codes_max": 2
+    },
+    "result": "PASS"
+   }
+  }
+ },
+ {
+  "shot": "SELF_REFLECTION",
+  "category": "reflection",
+  "frames": 1,
+  "region": {
+   "band": true,
+   "band_low": 0.7,
+   "band_high": 1.0,
+   "band_softness": 0.04,
+   "shadow_strength": 0.0
+  },
+  "checks": {
+   "C1_preserved": {
+    "result": "PASS",
+    "differing_pixels_outside_region": 0
+   },
+   "C2_mattes_match": {
+    "result": "PASS",
+    "differing_but_unmarked": 0,
+    "marked_but_rounded_equal_in_exr": 0
+   },
+   "C3_brackets_preview_vs_export": {
+    "result": "PASS",
+    "max_code_delta": 0
+   },
+   "C4_default_chain_outside_region": {
+    "result": "INFO",
+    "max_stops": 0.0,
+    "p99_stops": 0.0,
+    "why": "anchor hold / chroma / grain read neighbours or the whole frame"
+   },
+   "C6_hdr10": {
+    "fidelity": {
+     "result": "PASS",
+     "peak_nits": 1594.9546813964844,
+     "tags": {
+      "color_space": "bt2020nc",
+      "color_transfer": "smpte2084",
+      "color_primaries": "bt2020"
+     },
+     "neutral_pixels": 32640,
+     "median_stops": 0.00987123980112389,
+     "p95_stops": 0.00987123980112389,
+     "saturated_info": {}
+    },
+    "preview": {
+     "result": "INFO",
+     "peak_nits": 1000.0,
+     "master_peak_nits": 1275.9637451171875,
+     "sdr_range_shift_stops_median": -0.00987123980112389,
+     "bracket0_codes_p99": 1.0,
+     "bracket0_codes_max": 4
+    },
+    "result": "PASS"
+   },
+   "C6_hlg": {
+    "fidelity": {
+     "result": "PASS",
+     "peak_nits": 1594.9546813964844,
+     "tags": {
+      "color_space": "bt2020nc",
+      "color_transfer": "arib-std-b67",
+      "color_primaries": "bt2020"
+     },
+     "neutral_pixels": 32640,
+     "median_stops": 0.00016763838999821396,
+     "p95_stops": 0.00016763838999821396,
+     "saturated_info": {}
+    },
+    "preview": {
+     "result": "INFO",
+     "peak_nits": 1000.0,
+     "master_peak_nits": 1275.9637451171875,
+     "sdr_range_shift_stops_median": -0.0026250443298789,
+     "bracket0_codes_p99": 0.0,
+     "bracket0_codes_max": 2
+    },
+    "result": "PASS"
+   }
+  }
+ },
+ {
+  "shot": "SELF_FIRE_MOVING",
+  "category": "fire",
+  "frames": 12,
+  "region": {
+   "highlight_from": 0.75,
+   "highlight_softness": 0.1,
+   "shadow_strength": 0.0
+  },
+  "checks": {
+   "C1_preserved": {
+    "result": "PASS",
+    "differing_pixels_outside_region": 0
+   },
+   "C2_mattes_match": {
+    "result": "PASS",
+    "differing_but_unmarked": 0,
+    "marked_but_rounded_equal_in_exr": 0
+   },
+   "C3_brackets_preview_vs_export": {
+    "result": "PASS",
+    "max_code_delta": 0
+   },
+   "C4_default_chain_outside_region": {
+    "result": "INFO",
+    "max_stops": 0.0,
+    "p99_stops": 0.0,
+    "why": "anchor hold / chroma / grain read neighbours or the whole frame"
+   },
+   "C5_temporal": {
+    "result": "PASS",
+    "region_added_flicker_ev_mean": 0.0068355049984680175,
+    "region_added_flicker_ev_max": 0.011615281308847702,
+    "region_coverage_step_mean": 0.01593137254901961
+   },
+   "C6_hdr10": {
+    "fidelity": {
+     "result": "PASS",
+     "peak_nits": 3433.8299560546875,
+     "tags": {
+      "color_space": "bt2020nc",
+      "color_transfer": "smpte2084",
+      "color_primaries": "bt2020"
+     },
+     "neutral_pixels": 19189,
+     "median_stops": 0.010802814074114616,
+     "p95_stops": 0.03560705734909112,
+     "saturated_info": {
+      "sat_2_4": {
+       "pixels_pct": 29.76,
+       "median_stops": 0.010681223208997576
+      },
+      "sat_4_8": {
+       "pixels_pct": 10.56,
+       "median_stops": 0.013481772303920853
+      },
+      "sat_8_inf": {
+       "pixels_pct": 0.88,
+       "median_stops": 0.03586053076147298
+      }
+     }
+    },
+    "preview": {
+     "result": "INFO",
+     "peak_nits": 1000.0,
+     "master_peak_nits": 2747.06396484375,
+     "sdr_range_shift_stops_median": 0.010802814074114616,
+     "bracket0_codes_p99": 6.0,
+     "bracket0_codes_max": 75
+    },
+    "result": "PASS"
+   },
+   "C6_hlg": {
+    "fidelity": {
+     "result": "PASS",
+     "peak_nits": 3433.8299560546875,
+     "tags": {
+      "color_space": "bt2020nc",
+      "color_transfer": "arib-std-b67",
+      "color_primaries": "bt2020"
+     },
+     "neutral_pixels": 19189,
+     "median_stops": 0.008382309955902629,
+     "p95_stops": 0.03274391018030974,
+     "saturated_info": {
+      "sat_2_4": {
+       "pixels_pct": 29.76,
+       "median_stops": 0.009490222937380492
+      },
+      "sat_4_8": {
+       "pixels_pct": 10.56,
+       "median_stops": 0.010685407858114674
+      },
+      "sat_8_inf": {
+       "pixels_pct": 0.88,
+       "median_stops": 0.03378903938578781
+      }
+     }
+    },
+    "preview": {
+     "result": "INFO",
+     "peak_nits": 1000.0,
+     "master_peak_nits": 2747.06396484375,
+     "sdr_range_shift_stops_median": -0.008585276237056055,
+     "bracket0_codes_p99": 5.0,
+     "bracket0_codes_max": 76
+    },
+    "result": "PASS"
+   }
+  }
+ }
+]

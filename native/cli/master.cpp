@@ -5,6 +5,21 @@
 
 namespace rudra {
 
+Result<MasterResult> render_analytic_master(const std::filesystem::path& image, const MasterRequest& q,
+                                            const std::filesystem::path& out) {
+    auto decoded = decode_sdr_file(image);
+    if (!decoded) return decoded.error();
+    MasterRequest qa = q;
+    qa.analytic = true;
+    qa.checkpoint.clear();
+    qa.checkpoint_sha256.clear();
+    qa.source_file = image;
+    qa.source_space = q.source_space == "rec709" ? primaries_id(decoded->colour.primaries) : q.source_space;
+    qa.alpha = decoded->alpha;
+    return write_master(decoded->rgb, decoded->bits, analytic_fields_for(decoded->rgb, qa), FrameScalars{}, kAnalyticConstants, qa,
+                        out);
+}
+
 Result<MasterResult> render_master(const ModelManifest& pkg, InferenceBackend& backend,
                                    const std::filesystem::path& image, const MasterRequest& q,
                                    const std::filesystem::path& out) {
@@ -21,6 +36,7 @@ Result<MasterResult> render_master(const ModelManifest& pkg, InferenceBackend& b
         qa.checkpoint_sha256.clear();
         qa.source_file = image;
         qa.source_space = space;
+        qa.alpha = decoded->alpha;   // an RGBA still keeps its alpha in the master
         return write_master(decoded->rgb, decoded->bits, analytic_fields_for(decoded->rgb, qa), FrameScalars{}, kAnalyticConstants, qa,
                             out);
     }
@@ -31,6 +47,7 @@ Result<MasterResult> render_master(const ModelManifest& pkg, InferenceBackend& b
     qm.source_file = image;
     qm.tiled = fr->tiled;
     qm.source_space = space;
+    qm.alpha = decoded->alpha;
     return write_master(decoded->rgb, decoded->bits, fr->fields, fr->scalars,
                         ModelConstants{pkg.log_scale, pkg.max_hdr, pkg.corpus_ev}, qm, out);
 }

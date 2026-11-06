@@ -103,9 +103,11 @@ std::vector<fs::path> files_in(const fs::path& dir) {
 
 QJsonObject choice_json(const DeliverChoice& c) {
     return {{"output", c.output}, {"image", c.image}, {"gamut", c.gamut}, {"encoding", c.encoding}, {"pq_peak", c.pq_peak}, {"bits", c.bits},
-            {"codec", c.codec}, {"keep_exr", c.keep_exr}, {"fps", c.fps}, {"ai_fill", c.ai_fill},
+            {"codec", c.codec}, {"keep_exr", c.keep_exr}, {"mattes", c.mattes}, {"brackets", c.brackets}, {"fps", c.fps}, {"ai_fill", c.ai_fill},
             {"ai", QJsonObject{{"tau_high", c.ai.tau_high}, {"tau_low", c.ai.tau_low}, {"seed", c.ai.seed}, {"steps", c.ai.steps}, {"brightness", c.ai.brightness},
-                               {"prompt_highlight", c.ai.prompt_highlight}, {"prompt_shadow", c.ai.prompt_shadow}}}};
+                               {"prompt_highlight", c.ai.prompt_highlight}, {"prompt_shadow", c.ai.prompt_shadow},
+                               {"prompt_strength", c.ai.prompt_strength}, {"shape_gain", c.ai.shape_gain},
+                               {"region", c.ai.region_json}, {"fallback", c.ai.fallback}}}};
 }
 
 DeliverChoice choice_from(const QJsonObject& o) {
@@ -118,6 +120,8 @@ DeliverChoice choice_from(const QJsonObject& o) {
     c.bits = o.value("bits").toInt(c.bits);
     c.codec = o.value("codec").toString(c.codec);
     c.keep_exr = o.value("keep_exr").toBool(c.keep_exr);
+    c.mattes = o.value("mattes").toBool(false);
+    c.brackets = o.value("brackets").toBool(false);
     c.fps = o.value("fps").toDouble(c.fps);
     c.ai_fill = o.value("ai_fill").toBool(false);
     const QJsonObject ai = o.value("ai").toObject();
@@ -128,6 +132,10 @@ DeliverChoice choice_from(const QJsonObject& o) {
     c.ai.brightness = ai.value("brightness").toDouble(c.ai.brightness);
     c.ai.prompt_highlight = ai.value("prompt_highlight").toString();
     c.ai.prompt_shadow = ai.value("prompt_shadow").toString();
+    c.ai.prompt_strength = std::clamp(ai.value("prompt_strength").toDouble(1.0), 0.0, 2.0);
+    c.ai.shape_gain = std::clamp(ai.value("shape_gain").toDouble(1.0), 0.0, 2.0);
+    c.ai.region_json = ai.value("region").toString();
+    c.ai.fallback = ai.value("fallback").toBool(false);
     return c;
 }
 
@@ -225,7 +233,8 @@ DeliverChoice batch_effective(const BatchJob& j) {
     DeliverChoice c = j.choice;
     c.source = "aces";
     c = deliver_fit(c, true, j.shot.kind == "movie", j.shot.kind == "sequence");
-    if (!ai_fill_possible(c, true)) c.ai_fill = false;   // EXR stills and sequences only
+    // EXR stills and sequences only: the batch has no movie-from-filled-frames step (the Deliver tab has).
+    if (c.output == "movie" || !ai_fill_possible(c, true)) c.ai_fill = false;
     return c;
 }
 

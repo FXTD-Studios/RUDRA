@@ -171,3 +171,125 @@ def test_the_fill_leaves_a_review_for_the_app(tmp_path):
             assert (out / 'review' / f'{stem}.{suffix}.png').exists()
     report = json.loads((out / 'genfill.json').read_text())
     assert report['review']['folder'] == 'review' and len(report['frames']) == len(names)
+
+
+# ---- RUDRA 1.1 priority 2 (5 Nov 2026): the reconstruction region and prompt strength ----
+
+def test_a_region_that_excludes_the_highlights_leaves_the_master_bit_for_bit(tmp_path):
+    from genfill_tiny import tiny_fill
+    from rudra.aces_view import ACES2View
+    from rudra.delivery.region import ReconstructionRegion
+    view = ACES2View()
+    master = tmp_path / 'master'
+    write_master(master, n=5)
+    out = tmp_path / 'filled'
+    shadows_only = ReconstructionRegion(enabled=True, band=True, band_low=0.0, band_high=0.3, band_softness=0.0)
+    rep = fill_master(master, out, tiny_fill(), view, FillSettings(steps=2, seed=1), MaskSettings(dilate=2),
+                      window=5, overlap=2, max_area=48 * 64, region=shadows_only)
+    assert rep['stats']['generated_pixels'] == 0
+    assert rep['stats']['windows_generated'] == 0          # nothing to fill: the model never ran
+    assert rep['region']['band_high'] == 0.3
+    for name in sorted(p.name for p in master.glob('*.exr')):
+        a, b = read_frame(master / name), read_frame(out / name)
+        for c in 'RGB':
+            assert np.array_equal(a['channels'][c], b['channels'][c])
+
+
+def test_the_fill_acts_only_inside_the_region(tmp_path):
+    from genfill_tiny import tiny_fill
+    from rudra.aces_view import ACES2View
+    from rudra.delivery.region import ReconstructionRegion, fill_region_weight
+    view = ACES2View()
+    master = tmp_path / 'master'
+    write_master(master, n=5)
+    region = ReconstructionRegion(enabled=True, highlight_from=0.97, highlight_softness=0.02, shadow_strength=0.0)
+    out = tmp_path / 'filled'
+    fill_master(master, out, tiny_fill(), view, FillSettings(steps=2, seed=1), MaskSettings(dilate=2),
+                window=5, overlap=2, max_area=48 * 64, region=region)
+    for name in sorted(p.name for p in master.glob('*.exr')):
+        a, b = read_frame(master / name), read_frame(out / name)
+        codes = np.rint(np.clip(view.forward(a['ap1']), 0, 1) * 255).astype(np.uint8)
+        w = fill_region_weight(codes, region)
+        gen = b['channels']['rudra.generated'].astype(np.float32)
+        assert not (gen[w == 0] > 0).any()
+        assert (gen <= w + 1e-6).all()                       # the blend never exceeds the region's weight
+        for c in 'RGB':
+            assert np.array_equal(a['channels'][c][w == 0], b['channels'][c][w == 0])
+
+
+def test_prompt_strength_one_is_v3_and_zero_ignores_the_prompt():
+    import torch
+    from genfill_tiny import tiny_fill
+    m = tiny_fill()
+    ctx = torch.randn(1, 96, 2, 8, 8, generator=torch.Generator().manual_seed(0))
+    reg = {'highlight': torch.ones(1, 1, 5, 16, 16)}
+    run = lambda **kw: m.denoise(ctx, FillSettings(steps=2, seed=4, **kw), reg)   # noqa: E731
+    assert torch.equal(run(prompt_highlight='a bright sun'),
+                       run(prompt_highlight='a bright sun', prompt_strength=1.0))
+    assert torch.equal(run(prompt_highlight='a bright sun', prompt_strength=0.0), run())
+    assert not torch.equal(run(prompt_highlight='a bright sun', prompt_strength=1.5),
+                           run(prompt_highlight='a bright sun'))
+
+
+def test_generated_is_split_between_highlights_and_shadows_exactly(tmp_path):
+    from genfill_tiny import tiny_fill
+    from rudra.aces_view import ACES2View
+    from rudra.genfill.run import GENERATED_PARTS
+    master = tmp_path / 'master'
+    write_master(master, n=5)
+    out = tmp_path / 'filled'
+    fill_master(master, out, tiny_fill(), ACES2View(), FillSettings(steps=2, seed=1),
+                MaskSettings(dilate=2, tau_low=8, blend_low=4), window=5, overlap=2, max_area=48 * 64)
+    seen = 0
+    for name in sorted(p.name for p in master.glob('*.exr')):
+        ch = read_frame(out / name)['channels']
+        g, hi, lo = ch['rudra.generated'], ch[GENERATED_PARTS[0]], ch[GENERATED_PARTS[1]]
+        assert np.array_equal(hi + lo, g)                   # exactly rudra.generated
+        assert not ((hi > 0) & (lo > 0)).any()              # a pixel belongs to one region
+        seen += int((hi > 0).sum())
+    assert seen > 0
+
+
+# ---- RUDRA 1.1 priority 5 (5 Nov 2026): the fallback when the fill flickers ----
+
+def test_spike_fallback_writes_the_masters_frame_and_keeps_onset_and_end(tmp_path, monkeypatch):
+    import rudra.genfill.run as R
+    from genfill_tiny import tiny_fill
+    from rudra.aces_view import ACES2View
+    master = tmp_path / 'master'
+    write_master(master, n=5)
+    monkeypatch.setattr(R, 'TEMPORAL_FLAG', -1.0)          # every measured frame counts as a jump
+    out = tmp_path / 'filled'
+    rep = fill_master(master, out, tiny_fill(), ACES2View(), FillSettings(steps=2, seed=1), MaskSettings(dilate=2),
+                      window=5, overlap=2, max_area=48 * 64, fallback='spikes')
+    frames = rep['frames']
+    assert rep['fallback'] == 'spikes'
+    assert frames[0]['fell_back'] is None and frames[-1]['fell_back'] is None   # nothing before / after them
+    middle = [f for f in frames[1:-1] if f['temporal_excess_stops'] is not None]
+    assert middle and all(f['fell_back'] == 'flicker' for f in middle)
+    assert rep['stats']['fallback_frames'] == len(middle)
+    for f in middle:
+        a, b = read_frame(master / f['name']), read_frame(out / f['name'])
+        assert not (b['channels']['rudra.generated'] > 0).any()
+        for c in 'RGB':
+            assert np.array_equal(a['channels'][c], b['channels'][c])
+
+
+def test_no_fallback_is_v3(tmp_path):
+    from genfill_tiny import tiny_fill
+    from rudra.aces_view import ACES2View
+    master = tmp_path / 'master'
+    write_master(master, n=5)
+    a, b = tmp_path / 'a', tmp_path / 'b'
+    args = dict(window=5, overlap=2, max_area=48 * 64)
+    fill_master(master, a, tiny_fill(), ACES2View(), FillSettings(steps=2, seed=1), MaskSettings(dilate=2), **args)
+    rb = fill_master(master, b, tiny_fill(), ACES2View(), FillSettings(steps=2, seed=1), MaskSettings(dilate=2),
+                     fallback='none', **args)
+    assert rb['stats']['fallback_frames'] == 0
+    for name in sorted(p.name for p in master.glob('*.exr')):
+        x, y = read_frame(a / name), read_frame(b / name)
+        for c in 'RGB':
+            assert np.array_equal(x['channels'][c], y['channels'][c])
+    with pytest.raises(ValueError):
+        fill_master(master, tmp_path / 'c', tiny_fill(), ACES2View(), FillSettings(steps=2), MaskSettings(),
+                    fallback='sometimes', **args)

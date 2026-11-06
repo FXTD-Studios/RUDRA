@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "parallel.hpp"
+
 namespace rudra {
 namespace {
 // rudra/radiometry.py
@@ -34,11 +36,25 @@ float baseline_value(float sdr_code, float corpus_ev) noexcept {
     return inverse_aces_approx(srgb_to_linear(sdr_code)) * scale;
 }
 
+namespace {
+// baseline_value's scale, once per image instead of once per sample (the same
+// float: the same expression).
+float baseline_scale(float corpus_ev) noexcept {
+    return static_cast<float>(std::exp2(-static_cast<double>(corpus_ev)) * (203.0 / 10000.0));
+}
+}  // namespace
+
+// Every sample on its own (pow, sqrt, exp2), so the image splits over a few
+// threads with the same result to the bit (4 Nov 2026: the viewer builds the
+// baseline for every frame it shows, which took a 1600 px frame's whole time).
 NetworkLinearImage analytic_baseline(const SdrImage& sdr, float corpus_ev) {
     PlanarBuffer out(3, sdr.height(), sdr.width());
     const auto in = sdr.buffer().span();
     auto o = out.span();
-    for (std::size_t i = 0; i < in.size(); ++i) o[i] = baseline_value(in[i], corpus_ev);
+    const float scale = baseline_scale(corpus_ev);
+    detail::parallel_chunks(in.size(), detail::worker_count(in.size()), [&](int, std::size_t b, std::size_t e) {
+        for (std::size_t i = b; i < e; ++i) o[i] = inverse_aces_approx(srgb_to_linear(in[i])) * scale;
+    });
     return NetworkLinearImage(std::move(out));
 }
 
@@ -53,13 +69,20 @@ float curve_correction_log2(float sdr_code, std::span<const float> params) noexc
 }
 
 NetworkLinearImage corrected_baseline(const SdrImage& sdr, float corpus_ev, std::span<const float> params) {
-    NetworkLinearImage base = analytic_baseline(sdr, corpus_ev);
-    if (params.size() < 3) return base;
+    if (params.size() < 3) return analytic_baseline(sdr, corpus_ev);
+    // One pass: the baseline, then its correction, sample by sample (as two passes did).
+    PlanarBuffer out(3, sdr.height(), sdr.width());
     const auto in = sdr.buffer().span();
-    auto o = base.buffer().span();
-    for (std::size_t i = 0; i < in.size(); ++i)
-        o[i] *= std::exp2(curve_correction_log2(in[i], params));
-    return base;
+    auto o = out.span();
+    const float scale = baseline_scale(corpus_ev);
+    detail::parallel_chunks(in.size(), detail::worker_count(in.size()), [&](int, std::size_t b, std::size_t e) {
+        for (std::size_t i = b; i < e; ++i) {
+            float v = inverse_aces_approx(srgb_to_linear(in[i])) * scale;
+            v *= std::exp2(curve_correction_log2(in[i], params));
+            o[i] = v;
+        }
+    });
+    return NetworkLinearImage(std::move(out));
 }
 
 }  // namespace rudra

@@ -18,6 +18,7 @@ layout(std140, binding = 0) uniform Composite {
     vec4 frame;     // x width, y height of the frame (the masks sample by normalised position), z the exposure gain 2^ev (13 Oct 2026),
                     // w 1 when the anchor's target has knots
     vec4 anchor[64];   // the anchor's target over the sRGB reading, log2, one per 8-bit code (core anchor_target_knots)
+    vec4 region[3];    // spec rev 2: the reconstruction region (render/src/passes.hpp); region[0].x 0 = off
 };
 
 layout(binding = 1) uniform sampler2D sdrShadow;   // rgb SDR code values, a shadow mask
@@ -86,6 +87,18 @@ float expm1Accurate(float x) {
 
 float sigmoid(float x) { return 1.0 / (1.0 + exp(-x)); }
 
+// core/src/composite.cpp region_ramp_up / region_ramp_down (spec rev 2).
+float rampUp(float y, float at, float soft) {
+    if (!(soft > 0.0)) return y >= at ? 1.0 : 0.0;
+    float t = clamp((y - (at - 0.5 * soft)) / soft, 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+float rampDown(float y, float at, float soft) {
+    if (!(soft > 0.0)) return y <= at ? 1.0 : 0.0;
+    float t = clamp(((at + 0.5 * soft) - y) / soft, 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+
 // qualifier_mask and region_ev_gain (rudra/delivery/controls.py), in fp32.
 float maskChannel(vec4 m, int c) { return c == 0 ? m.x : c == 1 ? m.y : c == 2 ? m.z : m.w; }
 
@@ -107,6 +120,16 @@ float regionGain(vec3 nits, vec2 uv) {
     return exp2(total);
 }
 
+// One colour channel of the reconstruction (the body of the former per-channel loop, unchanged).
+float channelOf(float sc, float fc, bool outside, float gate, float logScale, float logCeiling, float recovery, bool recover) {
+    float base = baselineOf(sc);
+    if (outside) return base;
+    float pl = clamp(log1pAccurate(base * logScale) + fc * gate, 0.0, logCeiling);
+    float v = expm1Accurate(pl) / logScale;
+    if (recover) v = base + recovery * (v - base);
+    return v;
+}
+
 void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
     vec4 a = texelFetch(sdrShadow, p, 0);
@@ -119,20 +142,32 @@ void main() {
     float y = 0.2126 * s.r + 0.7152 * s.g + 0.0722 * s.b;
     float hp = sigmoid((y - 0.82) * 24.0);
     float sp = sigmoid((0.10 - y) * 24.0) * control.z;
+    bool regionOn = region[0].x > 0.5;
+    if (regionOn) {   // core region_weights
+        if (region[0].y > 0.5) {
+            float b = rampUp(y, region[2].x, region[2].z) * rampDown(y, region[2].y, region[2].z);
+            hp *= b * region[1].x;
+            sp *= b * region[1].w;
+        } else {
+            hp *= rampUp(y, region[0].z, region[0].w) * region[1].x;
+            sp *= rampDown(y, region[1].y, region[1].z) * region[1].w;
+        }
+    }
     int mode = int(control.x);
     float gate = mode == 0 ? max(hp, sp) : mode == 1 ? hp : mode == 2 ? sp : 0.0;
     gate *= model.w;
     float recovery = max(highlight, shadow);
     float logCeiling = log1pAccurate(model.y * logScale);
 
-    vec3 pred;
-    for (int c = 0; c < 3; ++c) {
-        float base = baselineOf(s[c]);
-        float pl = clamp(log1pAccurate(base * logScale) + f[c] * gate, 0.0, logCeiling);
-        float v = expm1Accurate(pl) / logScale;
-        if (control.y > 0.5) v = base + recovery * (v - base);
-        pred[c] = v;
-    }
+    // One channel at a time through channelOf, assembled as a vec3: no indexed write into a
+    // local array inside a loop. Direct3D's HLSL compiler cannot unroll such a loop when it
+    // also exits early ("X3500 array reference cannot be used as an l-value ... X3511
+    // unrolling failed"), and the viewer then draws nothing on Windows (6 Nov 2026).
+    bool outside = regionOn && gate == 0.0;   // outside the region: the baseline itself
+    bool recover = control.y > 0.5;
+    vec3 pred = vec3(channelOf(s.r, f.r, outside, gate, logScale, logCeiling, recovery, recover),
+                     channelOf(s.g, f.g, outside, gate, logScale, logCeiling, recovery, recover),
+                     channelOf(s.b, f.b, outside, gate, logScale, logCeiling, recovery, recover));
     float grade = 1.0;
     if (counts.y > 0.0 || frame.z != 1.0) {
         // The exposure first; the bands read the exposed nits (core/composite.cpp).

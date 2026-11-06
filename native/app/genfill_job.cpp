@@ -4,13 +4,19 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QCryptographicHash>
+#include <QDateTime>
 #include <QSettings>
 #include <QTimer>
 
+#include <algorithm>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -54,6 +60,75 @@ std::vector<fs::path> genfill_roots(const fs::path& repo) {
     return r;
 }
 
+// Wan2.1-VACE-1.3B in a Hugging Face cache (4 Nov 2026): a setup that ran
+// snapshot_download without local_dir, or any other tool that fetched it,
+// leaves hub/models--Wan-AI--Wan2.1-VACE-1.3B-diffusers/snapshots/<rev>/.
+// The snapshot refs/main names first, then any other.
+void hf_cache_snapshots(std::vector<fs::path>& out) {
+    std::vector<fs::path> hubs;
+    for (const char* v : {"HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"})
+        if (const QString e = qEnvironmentVariable(v); !e.isEmpty()) hubs.push_back(pq(e));
+    if (const QString e = qEnvironmentVariable("HF_HOME"); !e.isEmpty()) hubs.push_back(pq(e) / "hub");
+    hubs.push_back(pq(QDir::homePath()) / ".cache" / "huggingface" / "hub");
+    hubs.push_back("G:/datasets/models/_hf_home/hub");   // GENFILL.ps1's HF_HOME on the training workstation
+    std::error_code ec;
+    for (const auto& hub : hubs) {
+        const fs::path repo = hub / "models--Wan-AI--Wan2.1-VACE-1.3B-diffusers";
+        if (!fs::is_directory(repo / "snapshots", ec)) continue;
+        QFile ref(qp(repo / "refs" / "main"));
+        if (ref.open(QIODevice::ReadOnly)) {
+            const QString rev = QString::fromUtf8(ref.readAll()).trimmed();
+            if (!rev.isEmpty()) out.push_back(repo / "snapshots" / pq(rev));
+        }
+        for (const auto& e : fs::directory_iterator(repo / "snapshots", ec))
+            if (e.is_directory(ec)) out.push_back(e.path());
+    }
+}
+
+// The LoRA wherever File > Model packages put it: any folder of the download
+// root that holds rudra_genfill.safetensors, newest version name last-sorted first.
+void downloaded_loras(std::vector<fs::path>& out) {
+    QDir root(default_download_root());
+    QStringList dirs = root.entryList({"rudra_genfill*"}, QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    std::sort(dirs.begin(), dirs.end(), [](const QString& a, const QString& b) { return a > b; });   // v3 before v2
+    for (const QString& d : dirs) out.push_back(pq(root.filePath(d)) / "rudra_genfill.safetensors");
+}
+
+// A saved path wins while it is there; gone (moved, deleted), the search again.
+// The search runs only then: Deliver asks for the setup on every refresh.
+// genfill/search false (the tests; a site that wants only its own paths): a saved
+// path is kept even when it is gone, and nothing is searched past it.
+template <class Search>
+fs::path saved_or(const QString& key, const char* probe, Search&& search) {
+    QSettings st;
+    const QString saved = st.value(key).toString();
+    std::error_code ec;
+    if (!saved.isEmpty() && fs::exists(probe ? pq(saved) / probe : pq(saved), ec)) return pq(saved);
+    if (!saved.isEmpty() && !st.value("genfill/search", true).toBool()) return pq(saved);
+    return search();
+}
+
+}  // namespace
+
+std::vector<fs::path> genfill_base_candidates(const fs::path& repo) {
+    std::vector<fs::path> bases;
+    for (const auto& r : genfill_roots(repo)) bases.push_back(r / "Wan2.1-VACE-1.3B-diffusers");
+    bases.push_back(pq(default_download_root()) / "Wan2.1-VACE-1.3B-diffusers");
+    hf_cache_snapshots(bases);
+    bases.push_back("G:/datasets/models/Wan2.1-VACE-1.3B-diffusers");   // the training workstation
+    return bases;
+}
+
+std::vector<fs::path> genfill_lora_candidates(const fs::path& repo) {
+    std::vector<fs::path> loras;
+    downloaded_loras(loras);   // File > Model packages (31 Oct 2026)
+    for (const auto& r : genfill_roots(repo)) loras.push_back(r / "rudra_genfill.safetensors");
+    loras.push_back("G:/rudra_training/research_genfill_v3_20261030/rudra_genfill.safetensors");   // GENFILL.ps1's v3 run
+    return loras;
+}
+
+namespace {
+
 // Where the Python and the base model come from (1 Nov 2026: macOS too, on Metal).
 #ifdef _WIN32
 const QString kSetupScript = QStringLiteral("scripts\\GENFILL.ps1 -Setup");
@@ -79,8 +154,50 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
     if (!o.prompt_highlight.trimmed().isEmpty()) a << "--prompt-highlight" << o.prompt_highlight.trimmed();
     if (!o.prompt_shadow.trimmed().isEmpty()) a << "--prompt-shadow" << o.prompt_shadow.trimmed();
     if (o.brightness != 0.0) a << "--brightness-offset" << QString::number(o.brightness, 'g', 6);
+    if (o.prompt_strength != 1.0) a << "--prompt-strength" << QString::number(o.prompt_strength, 'g', 6);
+    if (o.shape_gain != 1.0) a << "--shape-gain" << QString::number(o.shape_gain, 'g', 6);
+    if (!o.region_json.isEmpty()) a << "--region" << o.region_json;
+    if (o.fallback) a << "--fallback" << "spikes";
     if (!o.glob.isEmpty()) a << "--glob" << o.glob;
     return a;
+}
+
+QStringList genfill_suggest_arguments(const GenFillSetup& s, const GenFillOptions& o, const QStringList& frames) {
+    QStringList a{"-m", "rudra.genfill.prompts", "suggest"};
+    a << frames;
+    a << "--json" << "--cache" << qp(s.lora.parent_path() / "prompt_cache") << "--tau-high" << QString::number(o.tau_high)
+      << "--tau-low" << QString::number(o.tau_low);
+    return a;
+}
+
+std::optional<PromptSuggestions> parse_prompt_suggestions(const QByteArray& json, QString* why) {
+    // The last JSON line: anything printed before it (a warning) is not ours.
+    QByteArray line = json.trimmed();
+    if (const qsizetype nl = line.lastIndexOf('\n'); nl >= 0) line = line.mid(nl + 1);
+    const QJsonDocument d = QJsonDocument::fromJson(line);
+    if (!d.isObject()) {
+        if (why) *why = QStringLiteral("The prompt suggestion gave no answer.");
+        return std::nullopt;
+    }
+    const QJsonObject o = d.object();
+    if (!o.value("ok").toBool()) {
+        if (why) *why = o.value("error").toString(QStringLiteral("The prompt suggestion failed."));
+        return std::nullopt;
+    }
+    auto read = [](const QJsonArray& arr) {
+        std::vector<PromptSuggestion> v;
+        for (const auto& x : arr) {
+            const QJsonObject e = x.toObject();
+            v.push_back({e.value("id").toString(), e.value("label").toString(), e.value("text").toString(),
+                         e.value("region").toString(), e.value("reason").toString(), e.value("cached").toBool()});
+        }
+        return v;
+    };
+    PromptSuggestions r;
+    r.suggested = read(o.value("suggestions").toArray());
+    r.presets = read(o.value("presets").toArray());
+    r.clipped_fraction = o.value("clipped_fraction").toDouble();
+    return r;
 }
 
 QString genfill_out_dir(const QString& master) {
@@ -92,23 +209,60 @@ QString genfill_out_dir(const QString& master) {
     return out;
 }
 
+QString genfill_file_sha256(const fs::path& file) {
+    std::error_code ec;
+    const auto size = fs::file_size(file, ec);
+    if (ec) return {};
+    const QFileInfo fi(qp(file));
+    const QString key = QStringLiteral("genfill/sha256_cache/") +
+                        QString::fromLatin1(QCryptographicHash::hash(qp(file).toUtf8(), QCryptographicHash::Sha1).toHex());
+    const QString stamp = QString::number(qulonglong(size)) + QLatin1Char(':') + QString::number(fi.lastModified().toMSecsSinceEpoch());
+    QSettings st;
+    const QStringList cached = st.value(key).toStringList();
+    if (cached.size() == 2 && cached[0] == stamp) return cached[1];
+    QFile f(qp(file));
+    if (!f.open(QIODevice::ReadOnly)) return {};
+    QCryptographicHash h(QCryptographicHash::Sha256);
+    if (!h.addData(&f)) return {};
+    const QString hex = QString::fromLatin1(h.result().toHex());
+    st.setValue(key, QStringList{stamp, hex});
+    return hex;
+}
+
+bool genfill_lora_is_v3(const fs::path& file, const QString& expected) {
+    return !expected.isEmpty() && genfill_file_sha256(file) == expected;
+}
+
+QString genfill_ready_text(const GenFillSetup& s) {
+    const QString where = QStringLiteral("Wan2.1-VACE-1.3B (%1) + %2").arg(from_path(s.base), from_path(s.lora));
+    return s.lora_is_v3 ? QStringLiteral("Ready: %1\nAI fill v3 (SHA-256 verified)").arg(where)
+                        : QStringLiteral("Ready, but this LoRA is NOT the published AI fill v3 (SHA-256 %1…); it may be an "
+                                         "older version, and only v3 passed RUDRA's gates:\n%2")
+                              .arg(QString::fromLatin1(kGenFillV3Sha256).left(12), where);
+}
+
 std::optional<GenFillSetup> genfill_setup(QString* why) {
     QSettings st;
     GenFillSetup s;
     s.repo = find_repo();
     const QString py = st.value("genfill/python").toString();
     s.python = !py.isEmpty() ? pq(py) : default_python(s.repo);
-    std::vector<fs::path> bases, loras;
-    for (const auto& r : genfill_roots(s.repo)) {
-        bases.push_back(r / "Wan2.1-VACE-1.3B-diffusers");
-        loras.push_back(r / "rudra_genfill.safetensors");
+    // Found, not asked for (4 Nov 2026): the settings while their paths exist,
+    // else every place a setup, a download or a Hugging Face cache puts them;
+    // what is found is saved, so the next start looks once.
+    s.base = saved_or("genfill/base", "transformer/config.json",
+                      [&] { return first_existing(genfill_base_candidates(s.repo), "transformer/config.json"); });
+    // The LoRA: with nothing saved, the first candidate that VERIFIES as v3, else the
+    // first that exists (4 Nov 2026: the first that exists could be an old v1).
+    const auto loras = genfill_lora_candidates(s.repo);
+    for (const auto& l : loras) {
+        std::error_code e;
+        if (fs::exists(l, e) && genfill_lora_is_v3(l)) {
+            s.v3_found = l;
+            break;
+        }
     }
-    bases.push_back("G:/datasets/models/Wan2.1-VACE-1.3B-diffusers");   // the training workstation
-    // Downloaded in the app (File > Model packages, 31 Oct 2026). Settings genfill/lora overrides it.
-    loras.push_back(fs::path(default_download_root().toStdU16String()) / "rudra_genfill_v3" / "rudra_genfill.safetensors");
-    const QString base = st.value("genfill/base").toString(), lora = st.value("genfill/lora").toString();
-    s.base = !base.isEmpty() ? pq(base) : first_existing(bases, "transformer/config.json");
-    s.lora = !lora.isEmpty() ? pq(lora) : first_existing(loras, nullptr);
+    s.lora = saved_or("genfill/lora", nullptr, [&] { return !s.v3_found.empty() ? s.v3_found : first_existing(loras, nullptr); });
     auto refuse = [why](const QString& w) -> std::optional<GenFillSetup> {
         if (why) *why = w;
         return std::nullopt;
@@ -123,7 +277,25 @@ std::optional<GenFillSetup> genfill_setup(QString* why) {
     if (!fs::exists(s.lora, ec))
         return refuse(QStringLiteral("AI fill: no LoRA at %1 (File > Model packages > AI fill v3 > Download).").arg(qp(s.lora)));
     if (why) why->clear();
+    s.lora_is_v3 = genfill_lora_is_v3(s.lora);
+    if (st.value("genfill/base").toString() != qp(s.base)) st.setValue("genfill/base", qp(s.base));
+    if (st.value("genfill/lora").toString() != qp(s.lora)) st.setValue("genfill/lora", qp(s.lora));
     return s;
+}
+
+GenFillInstall genfill_install_plan() {
+    QSettings st;
+    GenFillInstall p;
+    p.repo = find_repo();
+    const QString py = st.value("genfill/python").toString();
+    p.python = !py.isEmpty() ? pq(py) : default_python(p.repo);
+    // A model already somewhere: the setup checks it and installs only the packages.
+    std::error_code ec;
+    const fs::path found = first_existing(genfill_base_candidates(p.repo), "transformer/config.json");
+    p.base = fs::exists(found / "transformer" / "config.json", ec)
+                 ? found
+                 : pq(default_download_root()) / "Wan2.1-VACE-1.3B-diffusers";
+    return p;
 }
 
 GenFillJob::GenFillJob(QObject* parent) : parent_(parent) {}

@@ -26,6 +26,7 @@ struct AcesV2Request {
     bool smoothing = true;                        // the package's hybrid64 contract
     std::string g1_sha256;                        // recorded in each frame's provenance
     bool forbid_new_negative_y = false;           // the package's appearance_constraint.forbid_new_negative_y (last: keeps aggregate order)
+    aces_v2::UserBand band{};                     // the user's tau bands (off: the model's output as it is)
 };
 
 struct AcesV2Decoded {

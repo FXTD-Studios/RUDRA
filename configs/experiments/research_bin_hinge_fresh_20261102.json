@@ -1,0 +1,14 @@
+{
+ "registered_before_evaluation": true,
+ "author": "FXTD Studios Research, 2 Nov 2026",
+ "purpose": "0 EV training kit (training/aces_bin_hinge.py). Evidence so far: the 0 EV failure is all in partially clipped highlights (RESULT_FULL_ONLY_ROUTE_2026_11_02.md); any per-frame tightening at inference breaks the aligned-residual motion gate (RESULT_PARTIAL_TIGHTEN_2026_11_02.md: bisect .01251, halving .01506 vs .010367). So the bound goes into training: a hinge on the RAW prediction's 0 EV view more than half a code from the SOURCE codes, so the model lands in the bin itself and the shipped 1-code constraint has little left to do. Inference unchanged.",
+ "grade_set_registration": "configs/experiments/research_fresh_fxtd_grade_v2_20261026.json",
+ "grade_set_registration_sha256": "e635921673556da949a72eedf4d258e4874afbd2a5b44650b1262365d3032cb4",
+ "arms": {
+  "primary": "learned"
+ },
+ "decision_rule": "original limits, unchanged: every paired gate of research_d6400_neg_y_guard_eval_20261025 including aligned residual <= 0.010367; grade -3/0/+3 EV <= 18.6199 / 0.060382 / 0.0025029 on old_coherent; Hunyuan48 <= 0.02 EV and all video checks; no new negative Y with the luminance guard; plus fresh FXTD v2 (rebuilt): 0 EV RMS <= analytic RMS + 0.1 code (0.338), -3 / +3 EV and H no worse than analytic.",
+ "honesty": "All sets here have been looked at; development evidence only.",
+ "limits": "Rebuilt fresh set: 8 of 42 sources differ by rounding.",
+ "release_authorized": false
+}

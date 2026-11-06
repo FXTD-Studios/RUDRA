@@ -51,6 +51,9 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSlider>
+#include <QToolButton>
+#include <QMenu>
+#include <QTimer>
 #include <QSettings>
 #include <QStackedWidget>
 #include <QStandardPaths>
@@ -421,6 +424,7 @@ void MainWindow::bind_handlers() {
     h["recent-clear"] = [this] {
         QSettings().remove("recent/sources");
         fill_recent();
+        refresh_library();   // 4 Nov 2026: the rows on the left emptied too
     };
     h["remeasure"] = [this] {
         measure_now();
@@ -680,6 +684,8 @@ void MainWindow::session_changed(std::uint32_t what) {
                                      });
         if (!same) start_engine(frames_, current_);
     }
+    // 6 Nov 2026: the learned route takes the reconstruction region too: a change shows again.
+    if ((what & Session::Grade) && aces_routed() && !(session_.grade.region == aces_region_sent_)) aces_request(current_);
     if (what & (Session::Grade | Session::Delivery)) {
         // The headroom route snapshots the grade after every change, undo and
         // restore included, and takes the frame on screen again (or switches
@@ -692,9 +698,21 @@ void MainWindow::session_changed(std::uint32_t what) {
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         if (what & Session::Grade) viewer_->set_composite(session_.composite_params());
-        if (what & (Session::Peak | Session::Wipe | Session::View | Session::Delivery)) {
+        if (what & (Session::Peak | Session::Wipe | Session::View | Session::Delivery | Session::Grade)) {
             auto v = viewer_->view();
             v.display_nits = session_.display_nits();
+            // The SDR's reading (1 Nov 2026): the anchor and the Sdr source read each
+            // code as the masters do, through the Source picker's curve
+            // (composite.hpp anchor_target_knots); the app left these empty, so the
+            // viewer read every code as sRGB. The learned ACES route's server feeds
+            // the model BT.1886 codes: that curve there.
+            if (aces_routed()) {
+                CompositeParams bt;
+                bt.source = SourceCurve::Bt1886;
+                v.anchor_knots = anchor_target_knots(bt);
+            } else {
+                v.anchor_knots = anchor_target_knots(session_.composite_params());
+            }
             // The anchor (3.3): the Deliver setting, live, with the hold the
             // last measure computed for this knee (a stale hold until the
             // measure after a knee move lands; the per-pixel part is current).
@@ -705,8 +723,19 @@ void MainWindow::session_changed(std::uint32_t what) {
             v.mode = session_.view_layer == 1   ? ViewMode::FalseColour
                      : session_.view_layer == 2 ? ViewMode::Difference
                      : session_.view_layer == 3 ? ViewMode::Invented
+                     : session_.view_layer == 4 ? ViewMode::Range
                                                 : ViewMode::Image;
-            v.show = session_.show == "baseline" ? ViewSource::Baseline : ViewSource::Model;
+            auto source = [](const std::string& s) {
+                return s == "baseline" ? ViewSource::Baseline : s == "sdr" ? ViewSource::Sdr : ViewSource::Model;
+            };
+            v.show = source(session_.show);
+            // Revision 6: the viewer's own controls (viewer_toolbar.cpp).
+            v.view_ev = session_.view_ev;
+            v.view_gamma = session_.view_gamma;
+            v.wipe_left = source(session_.wipe_left);
+            v.wipe_right = source(session_.wipe_right);
+            v.clamp_zebra = session_.clamp_zebra;
+            v.clip_zebra = session_.clip_zebra;
             v.show_changes = session_.show_changes;
             // The mask being painted (3.3), tinted in its band's colour.
             static const std::array<float, 3> kBandTints[kMaxMaskBands] = {
@@ -714,6 +743,9 @@ void MainWindow::session_changed(std::uint32_t what) {
             const int band = session_.show_masks ? session_.painted_band() : -1;
             v.paint_band = band;
             if (band >= 0) v.paint_tint = kBandTints[band];
+            // RUDRA 1.1: the reconstruction region, tinted where the composite lets it act.
+            v.region_overlay = session_.show_region && session_.grade.region.enabled;
+            v.overlay_region = session_.grade.region;
             viewer_->set_view(v);
         }
     }
@@ -1183,7 +1215,10 @@ void MainWindow::step_to(int i) {
     waiting_ = true;
     frame_ready_ok_ = false;
     engine_->show(current_);
-    sync_ui();
+    // Playing: only the playhead moves, so only it is drawn again. sync_ui()
+    // rebuilt every panel for every frame (4 Nov 2026); the stop calls it.
+    if (play_.isActive()) sync_playhead();
+    else sync_ui();
 }
 
 void MainWindow::toggle_play() {
@@ -1209,16 +1244,40 @@ void MainWindow::toggle_play() {
                         aces_rt_stop();
                         return;
                     }
-                    current_ = (current_ + 1) % int(frames_.size());
+                    // By the clock (4 Nov 2026): the frame due now, so playback keeps the shot's speed;
+                    // a late tick drops frames (counted) instead of slowing down.
+                    const double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - aces_rt_t0_).count();
+                    const int n = int(frames_.size());
+                    const int due = (aces_rt_from_ + int(el * aces_rt_timer_fps_)) % n;
+                    if (due == current_) return;
+                    aces_rt_dropped_ += ((due - current_ + n) % n) - 1;
+                    ++aces_rt_shown_;
+                    current_ = due;
                     aces_shown_ = current_;
                     aces_model_img_ = aces_cache_[std::size_t(current_)];
+                    // View revision 6: the cached baseline and SDR, so A | B, the
+                    // zebras and Range work while playing (it showed the model twice).
+                    const AcesCachedSide side = current_ < int(aces_cache_side_.size()) ? aces_cache_side_[std::size_t(current_)]
+                                                                                        : AcesCachedSide{};
+                    if (side.base) aces_base_img_ = side.base;
+                    aces_sdr_img_ = side.sdr;
+                    aces_codes_ = side.codes;
 #ifdef RUDRA_APP_VIEWER
-                    if (viewer_) viewer_->set_composited(*aces_model_img_, *aces_model_img_, {});
+                    if (viewer_) {
+                        viewer_->set_composited(*aces_model_img_, side.base ? *side.base : *aces_model_img_, side.codes);
+                        if (side.sdr) viewer_->set_source_sdr(*side.sdr);
+                    }
 #endif
-                    sync_ui();
+                    apply_fill_view();
+                    if (aces_rt_shown_ % 6 == 0) sync_ui();   // the whole UI 4 times a second, not every frame
                 });
             }
-            aces_rt_timer_->setInterval(std::max(1, int(std::lround(1000.0 / std::max(1.0, fps)))));
+            aces_rt_timer_fps_ = std::max(1.0, fps);
+            aces_rt_timer_->setInterval(std::max(1, int(std::lround(500.0 / aces_rt_timer_fps_))));   // ticks twice a frame
+            aces_rt_t0_ = std::chrono::steady_clock::now();
+            aces_rt_from_ = current_;
+            aces_rt_shown_ = aces_rt_dropped_ = 0;
+            fill_view_cache_.clear();   // fills at the playback size while playing
             aces_rt_playing_ = true;
             btn_play_->set_glyph(IconButton::Glyph::Pause);
             log(QStringLiteral("playing the cached learned frames in real time (%1 fps)").arg(fps, 0, 'f', 3));
@@ -1227,6 +1286,8 @@ void MainWindow::toggle_play() {
         }
         aces_playing_ = true;
         btn_play_->set_glyph(IconButton::Glyph::Pause);
+        statusBar()->showMessage(QStringLiteral("Playback is being prepared: %1 of %2 frames. Play is real time once all are ready "
+                                                "(meanwhile it plays as frames render).").arg(aces_cached_frames()).arg(frames_.size()), 8000);
         log(QStringLiteral("playing through the learned ACES model as frames render, caching them: play again for real time"));
         aces_request(current_ + 1 < int(frames_.size()) ? current_ + 1 : 0);
         return;
@@ -1279,7 +1340,10 @@ void MainWindow::start_feeder(int at) {
 #ifdef RUDRA_HAVE_STILL_DECODE
     if (!shot_video_ || at >= int(frames_.size())) return;
     auto f = MovieFeeder::start(shot_video_->path, play_fps(), at, int(frames_.size()), preview_max_side_);
-    if (f) feeder_slot_->feeder = std::move(*f);
+    if (f) {
+        if ((*f)->scaled()) played_scaled_ = true;
+        feeder_slot_->feeder = std::move(*f);
+    }
     else log("playback decodes frame by frame: " + qs(f.error().message));
 #else
     (void)at;
@@ -1322,6 +1386,7 @@ void MainWindow::show_own_values() {
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) viewer_->set_frame({cur->sdr, cur->fields, cur->scalars, cur->model});
 #endif
+    apply_fill_view(/*quiet=*/true);
     current_frame_ = std::move(cur);
     run_stats();
 }
@@ -1336,6 +1401,12 @@ void MainWindow::stop_playback() {
                 .arg(st.shown / st.seconds, 0, 'f', 1)
                 .arg(play_fps(), 0, 'f', 3)
                 .arg(st.skipped ? QStringLiteral(", %1 skipped to keep time").arg(st.skipped) : QString()));
+    // The frames ffmpeg made small while playing are not the paused path's
+    // pixels: dropped, so where it stopped (and any scrub back) decodes as before.
+    if (played_scaled_ && engine_) {
+        played_scaled_ = false;
+        engine_->set_sequence(int(frames_.size()));
+    }
     // Where it stopped: the frame again, at full size if it was a playback proxy.
     step_to(current_);
 }
@@ -1349,7 +1420,12 @@ MainWindow::PlaybackStats MainWindow::playback_stats() const {
 }
 
 void MainWindow::play_tick() {
-    if (waiting_ || frames_.empty()) return;   // the frame asked for is not here yet: held
+    if (frames_.empty()) return;
+    if (waiting_) {   // the frame asked for is not here yet: held, and stepped as soon as it is shown
+        play_tick_missed_ = true;
+        return;
+    }
+    play_tick_missed_ = false;
     const int n = int(frames_.size());
     int next = current_ + 1;
     if (realtime_) {
@@ -1428,6 +1504,17 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
         pixel = play_hold_.pixel_step();
     }
     present_frame(*f.sdr, f.fields->fields, scalars, model, header, own, pixel);
+    // A tick came while this frame was on its way: the next step now, not a
+    // whole tick later (that halved the rate whenever a frame ran a little long).
+    if (play_.isActive() && play_tick_missed_) {
+        play_tick_missed_ = false;
+        QPointer<MainWindow> self(this);
+        QMetaObject::invokeMethod(this, [self] {
+            if (self && self->play_.isActive()) self->play_tick();
+        }, Qt::QueuedConnection);
+    }
+    // Playing: the source panel and the status line every few frames, not every frame.
+    if (play_.isActive() && (play_shown_ % 6) != 1) return;
     inspect_source();
     const auto st = engine_->stats();
     frame_info_ = QStringLiteral("%1  %2/%3  ·  %4")
@@ -1468,6 +1555,12 @@ static QString timecode(int frame, double fps) {
            pad(f % rate);
 }
 
+void MainWindow::sync_playhead() {
+    const int n = int(frames_.size());
+    tc_->setText(timecode(n ? current_ : 0, 24.0));
+    scrub_->set_position(n > 1 ? double(current_) / double(n - 1) : 0.0);
+}
+
 void MainWindow::inspect_source() {
     std::optional<StillColour> still;
     if (!shot_video_ && source_sizes_) {
@@ -1477,6 +1570,31 @@ void MainWindow::inspect_source() {
     }
     source_panel_->inspect_source(!frames_.empty(), shot_video_.has_value(),
                                   shot_video_ ? shot_video_->stream : std::nullopt, still);
+}
+
+void MainWindow::refresh_view_region() {
+    const ReconstructionRegion& rg = session_.grade.region;
+    if (region_hist_) {
+        if (!rg.enabled || !current_frame_) {
+            region_hist_->clear();
+            region_hist_frame_ = nullptr;
+        } else if (region_hist_frame_ != current_frame_.get() || !(region_hist_region_ == rg)) {
+            region_hist_->set(region_histogram(current_frame_->sdr, rg), ViewParams{}.region_tint);
+            region_hist_frame_ = current_frame_.get();
+            region_hist_region_ = rg;
+        }
+    }
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) {
+        ViewParams v = viewer_->view();
+        const bool on = session_.show_region && rg.enabled;
+        if (v.region_overlay != on || !(v.overlay_region == rg)) {
+            v.region_overlay = on;
+            v.overlay_region = rg;
+            viewer_->set_view(v);
+        }
+    }
+#endif
 }
 
 void MainWindow::sync_ui() {
@@ -1496,6 +1614,23 @@ void MainWindow::sync_ui() {
     peak_val_->setText(QLocale(QLocale::English).toString(qlonglong(std::floor(session_.display_nits() + 0.5))));
     preserve_->set_on(g.preserve);
     preserve_->set_hint(g.preserve ? "do-no-harm" : "raw prediction");
+    {   // the reconstruction region (spec rev 2)
+        const ReconstructionRegion& rg = g.region;
+        region_on_->set_on(rg.enabled);
+        region_on_->set_hint(!rg.enabled ? "off" : rg.band ? "band" : "highlights + shadows");
+        region_box_->setVisible(rg.enabled);
+        region_show_->set_on(session_.show_region);
+        region_show_->set_hint(session_.show_region ? "tinted" : "off");
+        refresh_view_region();
+        region_kind_->set_on(rg.band ? "band" : "tones");
+        for (const auto& rs : region_sliders_) {
+            const QSignalBlocker b(rs.slider);
+            const double v = double(rg.*(rs.field));
+            rs.slider->setValue(int(std::lround(v * rs.scale)));
+            rs.value->setText(QString::number(v, 'f', 2));
+            rs.row->setVisible(rs.kind == 0 || (rs.kind == 2) == rg.band);
+        }
+    }
     anchor_->set_on(session_.anchor);
     anchor_->set_hint(session_.anchor ? "conform" : "raw ITM level");
     {
@@ -1506,9 +1641,14 @@ void MainWindow::sync_ui() {
     anchor_knee_->setEnabled(session_.anchor);
     carry_chroma_->set_on(session_.carry_chroma);
     carry_chroma_->set_hint(session_.carry_chroma ? "below the clip" : "per-channel");
-    const bool aces = session_.container == "aces";
-    container_field_->setText(aces ? "OpenEXR — ACES 2065-1" : "OpenEXR — linear Rec.2020");
-    primaries_field_->setText(aces ? "AP0 (ST 2065-4)" : "Rec.2020");
+    {   // RUDRA 1.1: four analytic containers
+        const std::string& k = session_.container;
+        container_field_->setText(k == "linear"   ? "OpenEXR — linear Rec.2020"
+                                  : k == "acescg" ? "OpenEXR — ACEScg"
+                                  : k == "rec709" ? "OpenEXR — linear Rec.709"
+                                                  : "OpenEXR — ACES 2065-1");
+        primaries_field_->setText(k == "linear" ? "Rec.2020" : k == "acescg" ? "AP1 (ACEScg)" : k == "rec709" ? "Rec.709" : "AP0 (ST 2065-4)");
+    }
     region_count_->setText(QString::number(g.regions.size()));
     regions_->sync();
     mask_panel_->sync();
@@ -1519,6 +1659,7 @@ void MainWindow::sync_ui() {
     guide_btn_->setChecked(guides_on_);
     changes_btn_->setChecked(session_.show_changes);
     invented_btn_->setChecked(session_.view_layer == 3);
+    sync_viewer_toolbar();
     // Window
     rail_left_->setVisible(session_.rail_left);
     rail_right_->setVisible(session_.rail_right);
@@ -1569,6 +1710,7 @@ void MainWindow::sync_ui() {
     sync_deliver();
     sync_aces_trims();
     sync_simple();
+    sync_ai_prompt_bar();
 }
 
 void MainWindow::keyPressEvent(QKeyEvent* e) {
@@ -1631,6 +1773,11 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
     if (!play_.isActive())
         cur->baseline = std::make_shared<const NetworkLinearImage>(corrected_baseline(
             sdr, model.corpus_ev, baseline_curve_params(scalars, session_.composite_params(), model.corpus_ev)));
+    // Into the frame first, then one copy for the viewer (it was copied twice: 4 Nov 2026).
+    cur->sdr = std::move(sdr);
+    cur->fields = std::move(fields);
+    cur->scalars = std::move(scalars);
+    cur->model = model;
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         ViewerHold hold;
@@ -1638,14 +1785,13 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
         hold.strength = pixel.strength;
         hold.reset = pixel.reset;
         hold.frame = current_;
-        viewer_->set_frame({sdr, fields, scalars, model, hold});
+        viewer_->set_frame({cur->sdr, cur->fields, cur->scalars, model, hold});
         viewer_->set_composite(session_.composite_params());
     }
 #endif
-    cur->sdr = std::move(sdr);
-    cur->fields = std::move(fields);
-    cur->scalars = std::move(scalars);
-    cur->model = model;
+    // 6 Nov 2026: the AI fill stays on the viewer on this route too (a new frame replaced it).
+    const bool filled = apply_fill_view(/*quiet=*/true);
+    (void)filled;
     cur->header = std::move(header);
     cur->index = current_;
     frame_ready_ok_ = true;
@@ -1673,11 +1819,12 @@ void MainWindow::run_stats() {
         stats_running_ = true;
         const int gen = ++stats_gen_;
         auto model = aces_model_img_, baseline = aces_base_img_;
+        auto sdr = aces_sdr_img_;   // view revision 6: the range readout
         const int index = aces_shown_;
         QPointer<MainWindow> self(this);
         if (stats_worker_.joinable()) stats_worker_.join();
-        stats_worker_ = std::thread([self, model, baseline, gen, index] {
-            auto m = std::make_shared<const FrameMeasure>(measure_headroom(*model, *baseline));
+        stats_worker_ = std::thread([self, model, baseline, sdr, gen, index] {
+            auto m = std::make_shared<const FrameMeasure>(measure_headroom(*model, *baseline, sdr.get()));
             QMetaObject::invokeMethod(qApp, [self, m, gen, index] {
                 if (!self) return;
                 self->stats_running_ = false;
@@ -1905,6 +2052,13 @@ void MainWindow::update_pipe() {
     findChild<QLabel*>("pipeIn")->setText(in);
     findChild<QLabel*>("pipeWorking")->setText(QString::fromStdString(t.working));
     view_transform_->setText(QString::fromStdString(t.view));
+    if (auto* ds = findChild<QLabel*>("pipeDisplay")) {   // RUDRA 1.1: the signal on the glass
+        DisplayTarget target = DisplayTarget::sdr();
+#ifdef RUDRA_APP_VIEWER
+        if (viewer_) target = viewer_->view().target;
+#endif
+        ds->setText(QString::fromStdString(display_signal_text(target, session_.display_nits())));
+    }
     findChild<QLabel*>("pipeMaster")->setText(QString::fromStdString(t.master).replace("EXR, half", "EXR, float32"));
     if (const QString pipe = deliver_pipe_label(deliver_effective(), deliver_aces()); !pipe.isEmpty())
         findChild<QLabel*>("pipeMaster")->setText(pipe);   // the Deliver tab's learned master or movie
@@ -1955,6 +2109,43 @@ void MainWindow::probe_pixel(std::optional<std::pair<double, double>> px, QPoint
         grid->addWidget(v, r, 1);
         ++r;
     }
+    // View revision 6: the original's codes, which are clamped, and how far
+    // the result goes over the SDR white here.
+    {
+        std::optional<std::array<int, 3>> codes = p->sdr;
+        if (!codes && aces_routed() && aces_sdr_img_ && p->x < aces_sdr_img_->width() && p->y < aces_sdr_img_->height()) {
+            std::array<int, 3> c{};
+            for (int k = 0; k < 3; ++k) c[std::size_t(k)] = int(std::lround(aces_sdr_img_->buffer().at(k, p->y, p->x) * 255.0f));
+            codes = c;
+        }
+        auto add = [&](const QString& k, const QString& val, const char* state) {
+            auto* kl = new QLabel(k, probe_box_);
+            kl->setProperty("role", "key");
+            auto* vl = new QLabel(val, probe_box_);
+            vl->setProperty("role", "value");
+            if (*state) vl->setProperty("state", state);
+            grid->addWidget(kl, r, 0);
+            grid->addWidget(vl, r, 1);
+            ++r;
+        };
+        if (codes) {
+            QString clamped;
+            const char* names[3] = {"R", "G", "B"};
+            for (int k = 0; k < 3; ++k)
+                if ((*codes)[std::size_t(k)] >= 254) clamped += (clamped.isEmpty() ? "" : " ") + QString(names[k]);
+            const bool crushed = std::max({(*codes)[0], (*codes)[1], (*codes)[2]}) <= 1;
+            add("Original", QStringLiteral("%1 %2 %3").arg((*codes)[0]).arg((*codes)[1]).arg((*codes)[2]), "");
+            add("Clamped", clamped.isEmpty() ? (crushed ? QStringLiteral("crushed") : QStringLiteral("no")) : clamped,
+                clamped.isEmpty() && !crushed ? "" : "warn");
+        }
+        const NetworkLinearImage* shown = aces_routed() ? aces_model_img_.get() : (measure_ ? &measure_->model : nullptr);
+        if (shown && p->x < shown->width() && p->y < shown->height()) {
+            const auto& b = shown->buffer();
+            const double mx = std::max({b.at(0, p->y, p->x), b.at(1, p->y, p->x), b.at(2, p->y, p->x)}) * 10000.0;
+            add("Over SDR white", mx > 0.0 ? QString::number(std::log2(mx / 203.0), 'f', 2) + QStringLiteral(" st")
+                                           : QStringLiteral("black"), "");
+        }
+    }
     probe_box_->adjustSize();
     // showProbe's placing: 16 px right of and below the cursor, flipped to the
     // other side at the viewer's edges, at least 4 px in.
@@ -1979,6 +2170,7 @@ MasterRequest MainWindow::master_request() const {
     q.preserve_outside = session_.grade.preserve;
     q.recovery_mode = session_.grade.mode;
     q.strength = session_.grade.strength;
+    q.region = session_.grade.region;   // spec rev 2
     q.exposure_ev = session_.grade.exposure_ev;
     for (const auto& r : session_.grade.regions) q.regions.push_back({r.label, r.low_nits, r.high_nits, r.ev});
     q.anchor = session_.anchor;
@@ -2020,6 +2212,10 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     RenderPlan plan;
     plan.render_dir = folder.toStdString();
     plan.render_name = to_movie ? frames_movie_->name : findChild<QLineEdit*>("renderName")->text().trimmed().toStdString();
+    // RUDRA 1.1: the AI fill after an analytic render picks this render's frames in the folder.
+    analytic_fill_glob_ = to_movie ? QString()
+                                   : QString::fromStdString(plan.render_name) +
+                                         (sequence ? QStringLiteral(".[0-9][0-9][0-9][0-9][0-9][0-9].exr") : QStringLiteral(".exr"));
     plan.render_count = int(n);
     plan.frame_start = to_movie ? 0 : findChild<QSpinBox*>("renderStart")->value();
     plan.sequence = sequence;
@@ -2034,6 +2230,19 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
 
     MasterRequest q = master_request();
     if (to_movie) q.container = "linear";   // Rec.2020 scene linear, what deliver reads
+    q.mattes = deliver_effective().mattes;   // RUDRA 1.1: the masters' mattes
+    if (to_movie && q.mattes) {   // a movie: per frame, in <name>_mattes beside its frames folder (frames only there)
+        q.mattes_dir = frames_movie_->frames_dir.parent_path() / (frames_movie_->name + "_mattes");
+        std::error_code mec;
+        if (std::filesystem::exists(q.mattes_dir, mec) && !std::filesystem::is_empty(q.mattes_dir, mec)) {
+            const QString t = from_path(q.mattes_dir.filename()) + " already holds mattes; move it or pick another name";
+            say("Stopped: " + t);
+            log("Render stopped: " + t);
+            frames_movie_.reset();
+            return;
+        }
+    }
+    q.brackets = !to_movie && deliver_effective().brackets;   // RUDRA 1.1: -2 / 0 / +2 EV and the export check
     const ModelConstants model = frame_constants();
     if (!prepare) {
 #ifdef RUDRA_HAVE_STILL_DECODE
@@ -2045,13 +2254,13 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
             if (!backend) {   // the analytic reconstruction: no network, the clip fill unless it is off
                 Fields fields = analytic_fields_for(d->rgb, q);
                 return MasterFrame{std::move(d->rgb), d->bits, std::move(fields), FrameScalars{}, *file, false,
-                                   primaries_id(d->colour.primaries)};
+                                   primaries_id(d->colour.primaries), std::move(d->alpha)};
             }
             std::lock_guard lock(*mu);
             auto fr = infer_frame(*backend, d->rgb, TileConfig{0, 0});   // full resolution, untiled
             if (!fr) return fr.error();
             return MasterFrame{std::move(d->rgb), d->bits, std::move(fr->fields), std::move(fr->scalars), *file, fr->tiled,
-                               primaries_id(d->colour.primaries)};
+                               primaries_id(d->colour.primaries), std::move(d->alpha)};
         };
 #else
         say("This build has no still decode (RUDRA_WITH_OPENCV=OFF).");
@@ -2107,6 +2316,19 @@ void MainWindow::master_finished(const MasterOutcome& o, const QString& folder) 
     btn_master_->setToolTip({});
     refresh_enabled();
     sync_ui();
+    // RUDRA 1.1: the AI fill of an analytic EXR render (ACES 2065-1), as the learned route does.
+    if (!movie && !o.error && !o.cancelled && o.completed > 0 && !deliver_aces() && deliver_effective().ai_fill) {
+        QString why;
+        GenFillOptions go = deliver_effective().ai;
+        go.glob = analytic_fill_glob_;   // this render's frames only (master_targets' names)
+        QString name = analytic_fill_glob_;   // the render name: the glob without its frame part
+        name = name.contains('[') ? name.left(name.indexOf(QStringLiteral(".[0-9]"))) : name.left(name.size() - 4);
+        const QString base = QDir(folder).filePath(name);
+        if (analytic_fill_glob_.isEmpty() || !start_genfill_with(folder, go, base, {}, &why)) {
+            status->setText(status->text() + QStringLiteral(" \u00b7 AI fill not run: ") + why);
+            log("AI fill not run: " + why);
+        }
+    }
     // The movie's encode goes last, so its "Encoding…" button (a click stops
     // the movie) is what shows while it runs, not "Master EXR".
     if (movie) encode_frames_movie(std::move(*movie));
@@ -2232,6 +2454,18 @@ constexpr int kRecentMax = 10;
 }
 
 QStringList MainWindow::recent_sources() const { return QSettings().value("recent/sources").toStringList(); }
+
+// 4 Nov 2026: one shot off the list on the left (and Open recent). The file or
+// folder itself is never touched.
+void MainWindow::forget_source(const QString& path) {
+    QSettings st;
+    QStringList r = st.value("recent/sources").toStringList();
+    r.removeAll(QDir::cleanPath(QFileInfo(path).absoluteFilePath()));
+    r.removeAll(QDir::cleanPath(path));
+    st.setValue("recent/sources", r);
+    fill_recent();
+    refresh_library();
+}
 
 void MainWindow::remember_source(const QString& path) {
     QSettings st;
@@ -2412,6 +2646,7 @@ void MainWindow::refresh_library() {
     if (!shots) return;
     for (auto* c : shots->findChildren<QWidget*>(Qt::FindDirectChildrenOnly)) c->deleteLater();
     auto* v = static_cast<QVBoxLayout*>(shots->layout());
+    QString current;   // the open shot's path (set below, before its row)
     auto add_row = [&](const QString& name, const QString& sub, const QImage& thumb, bool sel, bool hdr,
                        const QString& open) {
         auto* r = new QWidget(shots);
@@ -2450,10 +2685,36 @@ void MainWindow::refresh_library() {
             r->installEventFilter(this);
             r->setProperty("open", open);
         }
+        // 4 Nov 2026: off the list, from the x or a right click. The open shot is
+        // closed; nothing on disk is touched. Deferred: the row is rebuilt.
+        const QString path = open.isEmpty() ? current : open;
+        const bool is_current = open.isEmpty();
+        auto remove = [this, path, is_current] {
+            QTimer::singleShot(0, this, [this, path, is_current] {
+                if (is_current) close_frames();
+                forget_source(path);
+            });
+        };
+        const QString what = is_current ? QStringLiteral("Close this shot and remove it from the list (the files stay on disk)")
+                                        : QStringLiteral("Remove from the list (the file stays on disk)");
+        auto* x = new QToolButton(r);
+        x->setText(QStringLiteral("\u00d7"));
+        x->setProperty("role", "shot-remove");
+        x->setObjectName(is_current ? "shotRemoveCurrent" : "shotRemove");
+        x->setToolTip(what);
+        x->setAutoRaise(true);
+        x->setFocusPolicy(Qt::NoFocus);
+        connect(x, &QToolButton::clicked, this, remove);
+        h->addWidget(x);
+        r->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(r, &QWidget::customContextMenuRequested, this, [this, r, remove, is_current](const QPoint& at) {
+            QMenu m(this);
+            m.addAction(is_current ? QStringLiteral("Close and remove from list") : QStringLiteral("Remove from list"), remove);
+            m.exec(r->mapToGlobal(at));
+        });
         v->addWidget(r);
     };
     int rows = 0;
-    QString current;
     if (!frames_.empty()) {
         const bool folder = frames_.size() > 1;
         const auto& first = frames_.front();

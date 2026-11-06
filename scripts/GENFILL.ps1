@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   RUDRA layer 3 (generative fill): set up Wan2.1-VACE-1.3B, build the training clips, train the
-  LoRA, and fill a master. Registration: configs\experiments\claude_genfill_v1_20261027.json
+  LoRA, and fill a master. Registration: configs\experiments\research_genfill_v1_20261027.json
 
     powershell -ExecutionPolicy Bypass -File scripts\GENFILL.ps1 -Setup        # packages + the base model (~25 GB to G:)
     powershell -ExecutionPolicy Bypass -File scripts\GENFILL.ps1 -SmokeTest    # 6 sources, 20 updates, fill a test master
@@ -10,6 +10,7 @@
     powershell -ExecutionPolicy Bypass -File scripts\GENFILL.ps1 -Fill -Master <EXR folder> [-Lora <file>]
     powershell -ExecutionPolicy Bypass -File scripts\GENFILL.ps1 -Brightness    # v3: build the brightness set, train the estimator (CPU)
     powershell -ExecutionPolicy Bypass -File scripts\GENFILL.ps1 -Evaluate      # the registered gates (v3, held-out scenes)
+    powershell -ExecutionPolicy Bypass -File scripts\GENFILL.ps1 -PrecachePrompts [-Lora <file>]   # RUDRA 1.1: embed the prompt presets once (umT5 on the CPU)
 
   The GPU must be free: do not run the build or the training while another training run uses it.
   Nothing here changes an app default or releases a model.
@@ -17,11 +18,11 @@
 param(
     [string]$Python = ".venv\Scripts\python.exe",
     [string]$Base = "G:\datasets\models\Wan2.1-VACE-1.3B-diffusers",
-    [string]$Clips = "G:\datasets\corpora\claude_genfill_clips_v2_20261029",
-    [string]$Out = "G:\rudra_training\claude_genfill_v2_20261029",
-    [string]$InitLora = "G:\rudra_training\claude_genfill_v1_20261027\rudra_genfill.safetensors",
-    [string]$V3 = "G:\rudra_training\claude_genfill_v3_20261030",
-    [string]$BSet = "G:\datasets\corpora\claude_brightness_set_20261030",
+    [string]$Clips = "G:\datasets\corpora\research_genfill_clips_v2_20261029",
+    [string]$Out = "G:\rudra_training\research_genfill_v2_20261029",
+    [string]$InitLora = "G:\rudra_training\research_genfill_v1_20261027\rudra_genfill.safetensors",
+    [string]$V3 = "G:\rudra_training\research_genfill_v3_20261030",
+    [string]$BSet = "G:\datasets\corpora\research_brightness_set_20261030",
     [string]$Master = "",
     [string]$Lora = "",
     [int]$Workers = 8,
@@ -30,12 +31,13 @@ param(
     [switch]$BuildOnly,
     [switch]$Fill,
     [switch]$Evaluate,
-    [switch]$Brightness
+    [switch]$Brightness,
+    [switch]$PrecachePrompts
 )
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path $PSScriptRoot -Parent
 Set-Location -LiteralPath $Repo
-$Reg = "configs\experiments\claude_genfill_v2_20261029.json"
+$Reg = "configs\experiments\research_genfill_v2_20261029.json"
 function Say([string]$m) { Write-Host "`n== $m" -ForegroundColor Cyan }
 function Fail([string]$m) { Write-Host "`nFAILED: $m" -ForegroundColor Red; exit 1 }
 function Py([string[]]$a, [string]$logFile) {
@@ -59,6 +61,16 @@ if ($Setup) {
     exit 0
 }
 
+# ---- RUDRA 1.1: the prompt presets' embeddings, beside the LoRA the app uses -----------------
+if ($PrecachePrompts) {
+    $l = if ($Lora) { $Lora } else { Join-Path $V3 "rudra_genfill.safetensors" }
+    if (-not (Test-Path $l)) { Fail "no LoRA at $($l); give -Lora <rudra_genfill.safetensors>" }
+    $cache = Join-Path (Split-Path $l -Parent) "prompt_cache"
+    Say "Prompt presets -> $cache (umT5 loads once on the CPU, about 11 GB of RAM)"
+    if ((Py @("-m", "rudra.genfill.prompts", "precache", "--base", $Base, "--cache", $cache)) -ne 0) { Fail "precache" }
+    exit 0
+}
+
 & $Python -c "import torch, diffusers, peft, OpenEXR, PyOpenColorIO as o; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), 'diffusers', diffusers.__version__, 'peft', peft.__version__, 'OCIO', o.__version__)"
 if ($LASTEXITCODE -ne 0) { Fail "run with -Setup first (the venv needs diffusers, peft, OpenEXR)" }
 if (-not (Test-Path (Join-Path $Base "transformer\config.json"))) { Fail "no base model at $($Base); run with -Setup" }
@@ -79,7 +91,7 @@ if ($Fill) {
 }
 
 # ---- v3: the brightness estimator (shape from the v1 LoRA, brightness from here) ----
-$Reg3 = "configs\experiments\claude_genfill_v3_20261030.json"
+$Reg3 = "configs\experiments\research_genfill_v3_20261030.json"
 if ($Brightness) {
     if (Test-Path (Join-Path $V3 "brightness.json")) { Fail "$V3\brightness.json exists: the registered run writes it once" }
     if (-not (Test-Path (Join-Path $BSet "summary.json"))) {
@@ -107,7 +119,7 @@ if ($Evaluate) {
     if (-not (Test-Path $bm)) { Fail "no brightness estimator $bm (run -Brightness first)" }
     $ev = "$V3`_eval"; $k = 2
     while (Test-Path $ev) { $ev = "$V3`_eval_$k"; $k++ }
-    Say "Evaluate (claude_genfill_v3_20261030 gates) -> $ev"
+    Say "Evaluate (research_genfill_v3_20261030 gates) -> $ev"
     # v3 (30 Oct): v1 shape + estimated brightness, blend at code 255 only, cap 3 stops, Poly Haven 72-95 gated
     $rc = Py @("tools\evaluate_genfill.py", "--out", $ev, "--base", $Base, "--lora", $Lora, "--brightness-model", $bm, "--device", $Dev, "--registration", $Reg3) "$ev.log"
     if ($rc -ne 0) { Fail "evaluation (see $ev.log)" }
@@ -146,7 +158,7 @@ if (-not $SmokeTest -and $Cuda -ne "True") { Fail "no CUDA GPU visible to torch"
 if (Test-Path $Out) { Fail "$Out exists: the registered run writes a new folder" }
 $steps = if ($SmokeTest) { 20 } else { 4000 }
 $every = if ($SmokeTest) { 10 } else { 1000 }
-Say "Train the LoRA (registered: claude_genfill_v1_20261027) -> $Out"
+Say "Train the LoRA (registered: research_genfill_v1_20261027) -> $Out"
 $targs = @("training\genfill_train.py", "--clips", $Clips, "--base", $Base, "--out", $Out, "--device", $Dev,
            "--steps", $steps, "--save-every", $every, "--max-hours", "9.5", "--registration", $Reg,
            "--calib-weight", "0.5", "--calib-sigma", "0.6", "--over-weight", "4")

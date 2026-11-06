@@ -116,7 +116,39 @@ SOURCES: dict[str, dict] = {
         "encoding": "logc4", "gamut": "awg4",
         "camera": "ARRI ALEXA 35 4.6K open gate (LogC4, AWG4), ProRes 4444/XQ 12-bit",
     },
+    # 5 Nov 2026 (the 0 EV fix, option 1). NOT in the default run: name them with --sources.
+    # concave: TRAINING. ARRI ALEXA clips (A569C005_170222_R0ZA ...) stored as LogC3 code values
+    # inside EXR (max 0.90 = the LogC3 sensor clip; nothing above 1.0, so not linear).
+    "concave": {
+        "project": "RND 2017 concave",
+        "path": r"F:\RND\2017\concave",
+        "kind": "exr", "glob": "**/*.exr", "shot_regex": r"^([A-Z]\d{3}C\d{3})_",
+        "encoding": "logc3", "gamut": "awg3",
+        "camera": "ARRI ALEXA (LogC3 EI800 assumed, AWG3), LogC code values in EXR",
+    },
+    # updown: TRAINING. ARRI ALEXA Mini LF open gate (4448x3096) camera plates, the _V1 files
+    # at the top level only (frames\ holds Nuke comp versions, V4/V5). Nuke tags the
+    # project "ARRI LogC3 (EI800)". TN_09_SC1140_SH1150 is also a flicker test clip.
+    "updown": {
+        "project": "updown (TN_09)",
+        "path": r"D:\updown",
+        "kind": "mov", "glob": "TN_*_SC*_SH*_V1.mov", "shot_regex": r"^(TN_\d+_SC\d+_SH\d+)",
+        "encoding": "logc3", "gamut": "awg3",
+        "camera": "ARRI ALEXA Mini LF open gate (LogC3 EI800, AWG3), ProRes 4444 12-bit",
+    },
+    # thecrew: HOLDOUT ONLY, into its own folder, registered with tools/holdout_kit.py
+    # before any case is built. The camera plates only (Sc_NN_ShNNN_Vnn, Nuke-tagged
+    # AlexaV3LogC); the latest version of each shot.
+    "thecrew": {
+        "project": "The Crew",
+        "path": r"F:\CINEMA\The Crew",
+        "kind": "mov", "glob": "**/Sc_*_Sh*.mov", "shot_regex": r"^(Sc_\d+[A-Za-z]?_Sh\d+[A-Za-z]?)", "latest_only": True,
+        "encoding": "logc3", "gamut": "awg3",
+        "camera": "ARRI ALEXA (LogC3, AWG3), VFX plates ProRes/DNxHR 4444 12-bit",
+    },
 }
+# The sources a plain run ingests: the original four. The new ones are named explicitly.
+DEFAULT_SOURCES = ["manchale", "lab", "elmatareed", "mataha"]
 
 # Camera primaries (x, y for R, G, B; white). All three use D65.
 CAMERA_PRIMARIES = {
@@ -180,6 +212,10 @@ def read_mov_frame(path: Path, index: int, fps: float, width: int, height: int) 
     raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.6f}", "-i", str(path),
                           "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb48le", "-"],
                          capture_output=True, check=True).stdout
+    if len(raw) != width * height * 6:   # a file shorter than its header says: decode up to the frame instead
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-vf", f"select=eq(n\\,{index})",
+                              "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb48le", "-"],
+                             capture_output=True, check=True).stdout
     if len(raw) != width * height * 6:
         raise IOError(f"{path.name} frame {index}: got {len(raw)} bytes")
     return np.frombuffer(raw, np.uint16).reshape(height, width, 3).astype(np.float32) / 65535.0
@@ -189,6 +225,8 @@ def camera_linear(src: dict, item: dict) -> np.ndarray:
     """(H, W, 3) scene-linear in CAMERA primaries, full resolution."""
     if src["kind"] == "exr":
         img = _ptd().read_exr(Path(item["path"]))
+        if src.get("encoding") in ("logc3", "logc4"):   # log code values stored in EXR (concave)
+            img = decode_log(np.asarray(img, dtype=np.float32)[..., :3], src["encoding"])
     else:
         code = read_mov_frame(Path(item["path"]), item["frame"], item["fps"], item["width"], item["height"])
         img = decode_log(code, src["encoding"])
@@ -229,7 +267,11 @@ def plan_source(sid: str, src: dict, root: Path, frames_per_shot: int) -> dict[s
     if src["kind"] == "exr":
         seqs: dict[str, list[Path]] = defaultdict(list)
         for p in root.glob(src["glob"]):
-            shot = p.parent.parent.name if src["shot_from"] == "grandparent" else p.parent.name
+            if "shot_regex" in src:   # the shot from the file name (ARRI clip names)
+                m = re.match(src["shot_regex"], p.name)
+                shot = m.group(1) if m else p.parent.name
+            else:
+                shot = p.parent.parent.name if src["shot_from"] == "grandparent" else p.parent.name
             seqs[shot].append(p)
         for shot, files in seqs.items():
             files.sort(key=_frame_number)
@@ -241,6 +283,9 @@ def plan_source(sid: str, src: dict, root: Path, frames_per_shot: int) -> dict[s
             m = re.match(src["shot_regex"], p.name)
             clips[m.group(1) if m else p.stem].append(p)
         for shot, files in clips.items():
+            if src.get("latest_only"):   # V01, V02 ... of one plate: only the newest
+                ver = lambda p: int(m.group(1)) if (m := re.search(r"_[Vv](\d+)", p.stem)) else 0
+                files = [max(files, key=ver)]
             probed = [(p, *probe_mov(p)) for p in files]
             total = sum(n for _, n, *_ in probed)
             items = []
@@ -327,12 +372,22 @@ def process_shot(sid: str, src: dict, shot: str, items: list[dict], split: str, 
     # Every pick is decoded (the clip test needs the whole shot); only the
     # downsampled frame is kept, so a 4K shot costs ~10 x 18 MB, not 10 x 84 MB.
     smalls, peaks, sizes = [], [], []
+    kept = []
     for it in items:
-        cam = camera_linear(src, it)
+        try:
+            cam = camera_linear(src, it)
+        except (OSError, subprocess.CalledProcessError) as e:   # a damaged or short file: skip the frame
+            print(f"    skipped {Path(it['path']).name} frame {it.get('frame')}: {e}", flush=True)
+            continue
+        kept.append(it)
         peaks.append(frame_peak(cam))
         sizes.append(cam.shape[:2])
         smalls.append(downsample(cam))
         del cam
+    items = kept
+    if not items:
+        print(f"    {shot}: no readable frame", flush=True)
+        return []
     top, clipped = channel_plateaus(peaks)
     ceiling = shot_ceiling_nits(top, clipped, matrix)
     recipe = shot_recipe(scene_id)
@@ -476,7 +531,7 @@ def finalize(out: Path, root: str | None = None) -> dict:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--out", required=True, type=Path)
-    ap.add_argument("--sources", nargs="+", default=list(SOURCES), choices=list(SOURCES))
+    ap.add_argument("--sources", nargs="+", default=list(DEFAULT_SOURCES), choices=list(SOURCES))
     ap.add_argument("--root", action="append", default=[], metavar="ID=PATH",
                     help="where a source is mounted on this machine (default: its Windows path)")
     ap.add_argument("--frames-per-shot", type=int, default=FRAMES_PER_SHOT)

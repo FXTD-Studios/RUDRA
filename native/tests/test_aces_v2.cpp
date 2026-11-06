@@ -3,6 +3,7 @@
 // tools/aces_v2_parity (OCIO + LibTorch builds); these tests pin the contract.
 
 #include <gtest/gtest.h>
+#include <random>
 
 #include <algorithm>
 #include <cmath>
@@ -281,4 +282,278 @@ TEST(AcesV2Job, StopsOnDecodeFailureAndOnCancel) {
     job3.start({}, [&](const AcesV2Outcome& o) { EXPECT_EQ(o.completed, 2u); done = true; });
     while (!done) std::this_thread::yield();
     std::filesystem::remove_all(dir);
+}
+
+// ---- the user's tau bands (stage 5b, 1 Nov 2026) ----
+namespace {
+bool same_buf(const PlanarBuffer& a, const PlanarBuffer& b) {
+    for (int c = 0; c < a.channels(); ++c)
+        for (std::size_t i = 0; i < a.plane_size(); ++i)
+            if (a.plane(c)[i] != b.plane(c)[i]) return false;
+    return true;
+}
+}  // namespace
+
+TEST(AcesV2Band, OffIsTheModelBitForBit) {
+    MockView v;
+    PlanarBuffer s = test_frame();
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    auto a = run_frame(s, v, g1, true, true, true);
+    UserBand off;   // on = false, whatever the taus say
+    off.tau_high = 130;
+    auto b = run_frame(s, v, g1, true, true, true, off);
+    ASSERT_TRUE(a.ok() && b.ok());
+    EXPECT_TRUE(same_buf(a->acescg, b->acescg));
+    EXPECT_TRUE(same_buf(a->mask, b->mask));
+    EXPECT_EQ(b->band.learned_pixels + b->band.analytic_pixels + b->band.ramp_pixels, 0u);
+}
+
+TEST(AcesV2Band, BetweenTheTausIsTheExactAnalyticInverse) {
+    MockView v;
+    PlanarBuffer s = test_frame();
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    UserBand band;
+    band.on = true;   // 254 and 5: the model's own bands
+    auto off = run_frame(s, v, g1, true, true, true);
+    auto on = run_frame(s, v, g1, true, true, true, band);
+    ASSERT_TRUE(off.ok() && on.ok());
+    const PlanarBuffer base = view_inverse(v, s);
+    // The grey background (codes ~0.4) is mid band: the analytic inverse, bit-exact.
+    for (int c = 0; c < 3; ++c) EXPECT_EQ(on->acescg.at(c, 30, 5), base.at(c, 30, 5));
+    // The fully clipped block (code 255) and the crushed strip (max code 2) keep the learned result.
+    for (int c = 0; c < 3; ++c) {
+        EXPECT_EQ(on->acescg.at(c, 15, 20), off->acescg.at(c, 15, 20));
+        EXPECT_EQ(on->acescg.at(c, 2, 10), off->acescg.at(c, 2, 10));
+    }
+    EXPECT_EQ(on->mask.at(0, 30, 5), 0.0f);
+    EXPECT_EQ(on->constraint.remaining_display_errors, 0u);
+    EXPECT_GT(on->band.analytic_pixels, 0u);
+    EXPECT_GT(on->band.learned_pixels, 0u);
+}
+
+TEST(AcesV2Band, BothOffIsTheAnalyticInverseEverywhere) {
+    MockView v;
+    PlanarBuffer s = test_frame();
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    UserBand band;
+    band.on = true;
+    band.tau_high = 256;
+    band.tau_low = -1;
+    auto r = run_frame(s, v, g1, true, true, true, band);
+    ASSERT_TRUE(r.ok());
+    EXPECT_TRUE(same_buf(r->acescg, view_inverse(v, s)));
+    EXPECT_EQ(r->band.analytic_pixels, s.plane_size());
+}
+
+TEST(AcesV2Band, WeightRampsAndLimits) {
+    UserBand b;
+    b.on = true;
+    b.tau_high = 200;
+    b.tau_low = 10;
+    EXPECT_FLOAT_EQ(user_band_weight(200.0f / 255.0f, b), 1.0f);
+    EXPECT_FLOAT_EQ(user_band_weight(198.0f / 255.0f, b), 0.0f);
+    EXPECT_NEAR(user_band_weight(199.0f / 255.0f, b), 0.5f, 1e-4f);
+    EXPECT_FLOAT_EQ(user_band_weight(10.0f / 255.0f, b), 1.0f);
+    EXPECT_FLOAT_EQ(user_band_weight(12.0f / 255.0f, b), 0.0f);
+    EXPECT_FLOAT_EQ(user_band_weight(0.5f, b), 0.0f);
+    b.tau_high = 256;
+    b.tau_low = -1;
+    EXPECT_FLOAT_EQ(user_band_weight(1.0f, b), 0.0f);
+    EXPECT_FLOAT_EQ(user_band_weight(0.0f, b), 0.0f);
+    UserBand bad;
+    bad.on = true;
+    bad.tau_high = 100;
+    MockView v;
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    EXPECT_FALSE(run_frame(test_frame(), v, g1, true, true, true, bad).ok());
+}
+
+// ---- the smoothing on every core (3 Nov 2026): bit-identical to one thread ----
+TEST(AcesV2Smoothing, ThreadedIsBitIdenticalToOneThread) {
+    const int h = 180, w = 320;
+    PlanarBuffer src(3, h, w, 0.4f), pred(3, h, w, 0.0f);
+    std::mt19937 rng(9);
+    std::uniform_real_distribution<float> u(0.5f, 40.0f);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const bool clipped = (x - 160) * (x - 160) / 90.0 + (y - 90) * (y - 90) / 40.0 < 60.0 || (x > 20 && x < 60 && y > 10);
+            for (int c = 0; c < 3; ++c) {
+                src.at(c, y, x) = clipped ? 1.0f : 0.3f + 0.001f * float(x);
+                pred.at(c, y, x) = clipped ? u(rng) : 0.2f;
+            }
+        }
+    auto run = [&](const char* threads) {
+#ifdef _WIN32
+        _putenv_s("RUDRA_SMOOTH_THREADS", threads);
+#else
+        setenv("RUDRA_SMOOTH_THREADS", threads, 1);
+#endif
+        SmoothingStats st;
+        return smooth_clipped_hybrid(pred, src, 64.0, &st);
+    };
+    const PlanarBuffer one = run("1"), many = run("8");
+#ifdef _WIN32
+    _putenv_s("RUDRA_SMOOTH_THREADS", "");
+#else
+    unsetenv("RUDRA_SMOOTH_THREADS");
+#endif
+    ASSERT_EQ(one.plane_size(), many.plane_size());
+    std::size_t differ = 0;
+    for (int c = 0; c < 3; ++c)
+        for (std::size_t i = 0; i < one.plane_size(); ++i) differ += one.plane(c)[i] != many.plane(c)[i];
+    EXPECT_EQ(differ, 0u);
+    std::size_t changed = 0;   // the test means something: the smoothing did act
+    for (std::size_t i = 0; i < one.plane_size(); ++i) changed += one.plane(0)[i] != pred.plane(0)[i];
+    EXPECT_GT(changed, 1000u);
+}
+
+// ---- the highlight ceiling and the view's own limit (3 Nov 2026, 09V) ----
+namespace {
+// As ACES 2.0 near display white: a slightly tinted near-white code inverts far past
+// pure white (09V: 253,255,255 -> 296x, 255,255,253 -> 969x, white -> 128x), and the
+// forward view sends such values back to white, so the round trip is codes off.
+class NearWhiteView final : public AcesView {
+public:
+    void forward(float* rgb, std::size_t n) const override {
+        for (std::size_t p = 0; p < n; ++p) {
+            float* c = rgb + p * 3;
+            // ACES 2.0 desaturates very bright light to display white: past ~50 in every
+            // channel, a slight tint is gone (253,255,255 cannot come back).
+            const bool white = std::min({c[0], c[1], c[2]}) > 50.0f;
+            for (int k = 0; k < 3; ++k) {
+                const float x = std::max(c[k], 0.0f);
+                c[k] = white ? 1.0f : x / (1.0f + x);
+            }
+        }
+    }
+    void inverse(float* rgb, std::size_t n) const override {
+        for (std::size_t p = 0; p < n; ++p) {
+            float* c = rgb + p * 3;
+            const float mx = std::max({c[0], c[1], c[2]}), mn = std::min({c[0], c[1], c[2]});
+            const bool tinted_white = mx >= 1.0f && mn < 1.0f && mn > 0.97f;
+            for (int k = 0; k < 3; ++k) {
+                const float y = std::min(c[k], 0.999f);
+                c[k] = y / (1.0f - y) * (tinted_white ? 7.0f : 1.0f);
+            }
+        }
+    }
+    std::string identity() const override { return "near-white"; }
+};
+}  // namespace
+
+TEST(AcesV2Ceiling, NearWhiteCodesStopAtTheInverseOfWhite) {
+    NearWhiteView v;
+    PlanarBuffer s = test_frame();
+    for (int y = 30; y < 34; ++y)
+        for (int x = 30; x < 40; ++x) {
+            s.at(0, y, x) = 253.0f / 255.0f;   // the 09V doorway: 253, 255, 255
+            s.at(1, y, x) = 1.0f;
+            s.at(2, y, x) = 1.0f;
+        }
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    auto r = run_frame(s, v, g1, true, true, true);
+    ASSERT_TRUE(r.ok());
+    const float ceiling = inverse_white_luma(v);
+    float peak = 0.0f;
+    for (std::size_t i = 0; i < r->acescg.plane_size(); ++i)
+        peak = std::max(peak, float(kLumaAp1[0] * r->acescg.plane(0)[i] + kLumaAp1[1] * r->acescg.plane(1)[i] +
+                                    kLumaAp1[2] * r->acescg.plane(2)[i]));
+    EXPECT_LE(peak, ceiling * 1.0001f);   // was ~7x past it
+    EXPECT_GT(r->ceiling_pixels, 0u);
+    // The tinted near-white pixels cannot display 253 exactly at any sane value: the
+    // view's limit, not the reconstruction's.
+    EXPECT_GT(r->constraint.inverse_limit_pixels, 0u);
+    EXPECT_EQ(r->constraint.remaining_display_errors, 0u);
+}
+
+TEST(AcesV2Ceiling, OnlyPixelsAboveTheCeilingChange) {
+    MockView v;
+    PlanarBuffer s = test_frame();
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    auto r = run_frame(s, v, g1, true, true, true);
+    ASSERT_TRUE(r.ok());
+    const float ceiling = inverse_white_luma(v);
+    const PlanarBuffer base = view_inverse(v, s);
+    for (std::size_t i = 0; i < r->acescg.plane_size(); ++i) {
+        const double y = kLumaAp1[0] * r->acescg.plane(0)[i] + kLumaAp1[1] * r->acescg.plane(1)[i] + kLumaAp1[2] * r->acescg.plane(2)[i];
+        EXPECT_LE(y, ceiling * 1.0001);
+    }
+    for (int c = 0; c < 3; ++c) EXPECT_EQ(r->acescg.at(c, 30, 5), base.at(c, 30, 5));   // the grey: untouched
+    EXPECT_EQ(r->constraint.inverse_limit_pixels, 0u);   // this view round-trips everywhere
+    PlanarBuffer b(3, 1, 3);
+    for (int c = 0; c < 3; ++c) b.at(c, 0, 0) = 10.0f, b.at(c, 0, 1) = 1000.0f, b.at(c, 0, 2) = -5.0f;
+    EXPECT_EQ(cap_luminance(b, 100.0f), 1u);
+    EXPECT_NEAR(kLumaAp1[0] * b.at(0, 0, 1) + kLumaAp1[1] * b.at(1, 0, 1) + kLumaAp1[2] * b.at(2, 0, 1), 100.0, 1e-3);
+    EXPECT_EQ(b.at(0, 0, 0), 10.0f);
+    EXPECT_EQ(b.at(0, 0, 2), -5.0f);
+}
+
+// ---- Clean shadows (4 Nov 2026): edge-preserving denoise in the shadow band ----
+namespace {
+PlanarBuffer noisy_shadows(unsigned seed) {
+    const int h = 48, w = 64;
+    PlanarBuffer s(3, h, w);
+    std::mt19937 rng(seed);
+    std::uniform_int_distribution<int> noise(-2, 2);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            int base = x < 32 ? 14 : 30;           // two flat dark areas with a sharp edge between
+            if (y >= 40) base = 180;               // a bright strip: never touched
+            const int code = std::clamp(base + (y < 40 ? noise(rng) : 0), 0, 255);
+            for (int c = 0; c < 3; ++c) s.at(c, y, x) = float(code) / 255.0f;
+        }
+    return s;
+}
+double patch_sd(const PlanarBuffer& b, int x0, int x1, int y0, int y1) {
+    double m = 0, m2 = 0;
+    int n = 0;
+    for (int y = y0; y < y1; ++y)
+        for (int x = x0; x < x1; ++x) {
+            const double v = b.at(1, y, x);
+            m += v, m2 += v * v, ++n;
+        }
+    m /= n;
+    return std::sqrt(std::max(0.0, m2 / n - m * m));
+}
+}  // namespace
+
+TEST(AcesV2CleanShadows, NoiseHalvesEdgesStayAndTheViewHolds) {
+    MockView v;
+    const PlanarBuffer s = noisy_shadows(3);
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.0f, 0.0f); };
+    CleanShadows c;
+    c.on = true;
+    auto off = run_frame(s, v, g1, true, true, true);
+    auto on = run_frame(s, v, g1, true, true, true, {}, c);
+    ASSERT_TRUE(off.ok() && on.ok());
+    // Flat noise inside each area (away from the edge and borders): at least halved.
+    EXPECT_LT(patch_sd(on->acescg, 6, 26, 6, 34), 0.5 * patch_sd(off->acescg, 6, 26, 6, 34));
+    EXPECT_LT(patch_sd(on->acescg, 38, 58, 6, 34), 0.5 * patch_sd(off->acescg, 38, 58, 6, 34));
+    // The edge between the two areas (14 vs 30 codes, ~1 stop) survives: the step stays.
+    double left = 0, right = 0;
+    for (int y = 6; y < 34; ++y) left += on->acescg.at(1, y, 29), right += on->acescg.at(1, y, 34);
+    EXPECT_GT(right / left, 1.8);
+    // The bright strip is outside the band: bit-exact with Clean shadows off.
+    for (int x = 0; x < 64; ++x) EXPECT_EQ(on->acescg.at(1, 44, x), off->acescg.at(1, 44, x));
+    // The appearance contract still holds everywhere.
+    EXPECT_EQ(on->constraint.remaining_display_errors, 0u);
+    EXPECT_GT(on->clean_shadow_pixels, 1000u);
+    EXPECT_EQ(off->clean_shadow_pixels, 0u);
+}
+
+TEST(AcesV2CleanShadows, OffIsBitExactAndBadSettingsAreRefused) {
+    MockView v;
+    const PlanarBuffer s = noisy_shadows(5);
+    G1Fn g1 = [](const PlanarBuffer& src, const PlanarBuffer&) -> Result<G1Output> { return fake_g1(src, 0.1f, 0.2f); };
+    auto a = run_frame(s, v, g1, true, true, true);
+    CleanShadows off;   // on = false, whatever else is set
+    off.radius = 8;
+    auto b = run_frame(s, v, g1, true, true, true, {}, off);
+    ASSERT_TRUE(a.ok() && b.ok());
+    for (int c = 0; c < 3; ++c)
+        for (std::size_t i = 0; i < a->acescg.plane_size(); ++i) ASSERT_EQ(a->acescg.plane(c)[i], b->acescg.plane(c)[i]);
+    CleanShadows bad;
+    bad.on = true;
+    bad.radius = 0;
+    EXPECT_FALSE(run_frame(s, v, g1, true, true, true, {}, bad).ok());
 }

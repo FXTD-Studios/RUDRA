@@ -14,7 +14,10 @@
 
 #include <vector>
 
+#include "rudra/core/view.hpp"
 #include "rudra/engine/session.hpp"
+
+#include <array>
 
 namespace rudra::app {
 
@@ -53,6 +56,26 @@ private:
 // The brush card (3.3), shown under the rows while a band is armed: Add /
 // Erase, Size, Softness, Flow, Show, Invert, Clear, Done. Reads the session's
 // brush and masks; every change goes back through the session.
+// RUDRA 1.1 (5 Nov 2026): the Reconstruct card's luminance histogram of the frame on screen,
+// the reconstruction region's weight drawn over it, and how much of the frame it reaches
+// (core/view.hpp region_histogram).
+class RegionHistogramView : public QWidget {
+public:
+    explicit RegionHistogramView(QWidget* parent = nullptr);
+    void set(const RegionHistogram& h, const std::array<float, 3>& tint);
+    void clear();
+    const RegionHistogram& histogram() const { return h_; }
+    QString caption() const;   // "Reaches 12.3 % of this frame"
+
+protected:
+    void paintEvent(QPaintEvent* e) override;
+
+private:
+    RegionHistogram h_;
+    std::array<float, 3> tint_{0.20f, 0.85f, 0.95f};
+    bool valid_ = false;
+};
+
 class MaskPanel : public QWidget {
 public:
     MaskPanel(Session& session, QWidget* parent = nullptr);

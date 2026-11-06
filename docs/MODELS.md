@@ -4,7 +4,7 @@ One table for every model RUDRA has published. The README, the Hugging Face
 model card, the user guide and `models.json` must say the same thing; if they
 disagree, this file is the one to correct them from.
 
-Updated 1 November 2026 (RUDRA 1.0.3).
+Updated 5 November 2026 (RUDRA 1.1.0).
 
 ## In the app (downloaded, not bundled)
 

@@ -8,9 +8,11 @@
 #include <memory>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "rudra/core/color.hpp"
+#include "rudra/core/composite.hpp"
 #include "rudra/core/image.hpp"
 #include "rudra/core/masks.hpp"
 
@@ -19,7 +21,10 @@ namespace rudra {
 // Invented: the invented-pixel map (core/compare.hpp, roadmap 3.5), a graphic
 // over a dimmed picture: magenta where the network made up values the SDR has
 // no information for, cyan where it reinterpreted SDR detail.
-enum class ViewMode : std::uint8_t { Image = 0, FalseColour = 1, Difference = 2, Invented = 3 };
+// Range (revision 6, 1 Nov 2026): stops of max(R, G, B) over the SDR white
+// (203 nits) on a fixed legend, with the pixels the SOURCE clamped hatched;
+// independent of the view exposure, like false colour.
+enum class ViewMode : std::uint8_t { Image = 0, FalseColour = 1, Difference = 2, Invented = 3, Range = 4 };
 
 // Which path the picture takes to the glass. The pipe bar shows it verbatim.
 enum class OutputPath {
@@ -42,7 +47,9 @@ struct DisplayTarget {
     // EDR: 1.0 is the SDR white, which RUDRA holds at diffuse white (203 nits).
     static DisplayTarget edr(double peak, Primaries p = Primaries::P3D65) { return {OutputPath::Edr, p, peak, 203.0}; }
 };
-enum class ViewSource : std::uint8_t { Model, Baseline };
+// Sdr (revision 6): the source plate as light, per channel, the reading the
+// composite uses (sdr_light_rgba), so a clamped code stays flat at its white.
+enum class ViewSource : std::uint8_t { Model = 0, Baseline = 1, Sdr = 2 };
 
 struct ViewParams {
     ViewMode mode = ViewMode::Image;
@@ -81,7 +88,81 @@ struct ViewParams {
     int paint_band = -1;
     std::array<float, 3> paint_tint{1.0f, 0.7f, 0.25f};
     std::shared_ptr<const MaskSet> masks;
+    // ---- revision 6 (1 Nov 2026): the viewer's own controls, as in Nuke's ----
+    // Viewer exposure in stops and viewer gamma, on the Image picture only, in
+    // scene-linear after the anchor: h * 2^view_ev, then x^(1/view_gamma) with
+    // the view peak as 1.0, then the usual exposure to the peak and clip. Never
+    // in a master, a render, a measurement, false colour, Difference, Invented
+    // or Range. 0 and 1 reproduce revision 5 exactly.
+    double view_ev = 0.0;
+    double view_gamma = 1.0;
+    // The wipe's sides (A left, B right). Revision 5 was Baseline | Model.
+    ViewSource wipe_left = ViewSource::Baseline;
+    ViewSource wipe_right = ViewSource::Model;
+    // Image overlays. clamp_zebra: where the SOURCE is clamped (a property of
+    // the plate, the same pixels on both sides, at any exposure): red stripes
+    // where all three channels are at code 254 or above, thin orange ones where
+    // only some are, blue where max(R, G, B) is at code 1 or below.
+    // clip_zebra: where the picture clips ON SCREEN at this view exposure,
+    // gamma and peak (yellow, the other diagonal).
+    bool clamp_zebra = false;
+    bool clip_zebra = false;
+    // RUDRA 1.1 (5 Nov 2026): the reconstruction region (composite.hpp) tinted over the Image
+    // picture, kRegionTintMix times its weight, as the composite gates by it. Off: no change.
+    bool region_overlay = false;
+    ReconstructionRegion overlay_region;
+    std::array<float, 3> region_tint{0.20f, 0.85f, 0.95f};
 };
+inline constexpr float kRegionTintMix = 0.40f;
+
+// The region overlay's weight per pixel as the viewer uploads it (RGBA8, the weight in R, image
+// order): max of region_weights() of the SDR's clamped Rec.709 luma, clipped to [0, 1], to 8 bits.
+// All 0 when the region is off or there is no SDR of that size.
+std::vector<std::uint8_t> region_overlay_rgba8(const SdrImage* sdr, const ReconstructionRegion& region, int width, int height);
+
+// The Reconstruct card's histogram (RUDRA 1.1): the frame's SDR Rec.709 luma in `bins` bins,
+// the region's weight at each bin's centre, and the share of pixels it reaches (weight > 0).
+struct RegionHistogram {
+    std::vector<double> counts;   // pixels per bin, of all pixels (0..1)
+    std::vector<float> weight;    // max(highlight, shadow) weight at the bin's centre, clipped
+    double reached = 0.0;         // share of pixels with weight > 0
+};
+RegionHistogram region_histogram(const SdrImage& sdr, const ReconstructionRegion& region, int bins = 64);
+
+// Revision 6 overlays: stripe period and mix, colours as SDR codes (graphics
+// at the SDR white on the HDR paths).
+inline constexpr int kZebraPeriod = 8;
+inline constexpr float kZebraMix = 0.6f;
+inline constexpr std::array<float, 3> kClampAllColour{0.95f, 0.20f, 0.20f};
+inline constexpr std::array<float, 3> kClampSomeColour{0.98f, 0.55f, 0.15f};
+inline constexpr std::array<float, 3> kCrushColour{0.20f, 0.45f, 0.98f};
+inline constexpr std::array<float, 3> kScreenClipColour{0.98f, 0.90f, 0.15f};
+inline constexpr float kRangeHatchMix = 0.7f;
+
+// Range legend: stops = log2(max(R, G, B) nits / 203). Below -6 one colour,
+// -6..0 a grey ramp (the SDR's own range), then one colour per stop above
+// the SDR white, the last for +4 and above.
+inline constexpr float kSdrWhiteNits = 203.0f;
+std::array<float, 3> range_colour(float stops) noexcept;
+
+// The SDR flags packed into the light texture's alpha: bit 0..2 the R, G, B
+// code at kSdrClipCode or above, bit 3 max(R, G, B) at kSdrCrushCode or below.
+inline constexpr int kFlagClipR = 1, kFlagClipG = 2, kFlagClipB = 4, kFlagCrush = 8;
+
+// The Sdr source and the clamp flags, interleaved RGBA, image order, what the
+// display pass reads (binding 4): rgb the SDR's light per channel in network
+// units, the anchor's reading (sRGB decode times the Source picker's knots,
+// composite.hpp anchor_target_knots) with the code's white at 203 nits; a the
+// flags above, as a small integer. Empty without an SDR.
+std::vector<float> sdr_light_rgba(const SdrImage* sdr, std::span<const float> target_knots = {});
+
+// Whether a view reads the SDR light (the Sdr source on any side, the clamp
+// zebra, the Range layer): the CPU pass and the GPU's binding 4 both ask this.
+inline bool view_needs_sdr_light(const ViewParams& p) noexcept {
+    const bool wiping = p.wipe >= 0.0;
+    return p.show == ViewSource::Sdr || (wiping && (p.wipe_left == ViewSource::Sdr || p.wipe_right == ViewSource::Sdr)) ||
+           (p.mode == ViewMode::Image && p.clamp_zebra) || p.mode == ViewMode::Range;
+}
 inline constexpr float kMaskTintMix = 0.35f;
 
 // A view with the SDR target, for tools and tests: the positional form of
@@ -177,6 +258,29 @@ Probe probe_pixel(const NetworkLinearImage& model, const NetworkLinearImage& bas
 // The SDR picture quantised as the 8-bit framebuffer does: round(255 c).
 Rgb8Image render_view_rgb8(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
                            const ViewParams& params, const SdrImage* sdr = nullptr);
+
+// ---- RUDRA 1.1 priority 4 (5 Nov 2026): exposure brackets and the display signal ----
+
+// The EV brackets RUDRA renders beside a master: -2, 0 and +2 stops.
+inline constexpr std::array<double, 3> kBracketStops{-2.0, 0.0, 2.0};
+
+// One bracket: `picture` (network units, primaries `source`) through the SDR view with the
+// diffuse white (203 nits) at code 1.0, the viewer exposure at `ev` stops, clipped, sRGB,
+// rounded to 8 bits: what the viewer shows on an SDR screen at view peak 203 and EV `ev`.
+// -2 shows the light up to 812 nits, +2 the shadows.
+Rgb8Image exposure_bracket(const NetworkLinearImage& picture, double ev, Primaries source = Primaries::Rec709);
+
+// How far apart two 8-bit pictures of one size are: the largest code difference over every
+// channel, and the share of pixels (0..1) with any difference. size mismatch: {256, 1}.
+struct CodeDelta {
+    int max_code_delta = 0;
+    double pixels_differing = 0.0;
+};
+CodeDelta code_delta(const Rgb8Image& a, const Rgb8Image& b);
+
+// The signal the viewer writes, in one line, e.g. "HDR10 · PQ (ST 2084) · Rec.2020 · reference
+// white 203 nits · display peak 1,000 nits". The SDR path names the view peak it simulates.
+std::string display_signal_text(const DisplayTarget& target, double view_peak_nits);
 
 // The SDR's max(R, G, B) code per pixel, what the display pass reads for the
 // Invented layer (the GPU gets it as the baseline texture's alpha); 0.5, a

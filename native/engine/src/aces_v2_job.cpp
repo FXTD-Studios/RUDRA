@@ -47,7 +47,7 @@ AcesV2Outcome AcesV2Job::run(const std::function<void(const AcesV2FrameReport&)>
             break;
         }
         const auto t0 = std::chrono::steady_clock::now();
-        auto frame = aces_v2::run_frame(decoded->rgb, view_, g1_, request_.smoothing, true, request_.forbid_new_negative_y);
+        auto frame = aces_v2::run_frame(decoded->rgb, view_, g1_, request_.smoothing, true, request_.forbid_new_negative_y, request_.band);
         if (!frame) {
             out.error = frame.error();
             break;

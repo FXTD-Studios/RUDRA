@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <vector>
 
 class QObject;
 class QProcess;
@@ -31,7 +32,21 @@ namespace rudra::app {
 
 struct GenFillSetup {
     std::filesystem::path python, repo, base, lora;
+    // 4 Nov 2026: which LoRA this is. A saved path is kept while it exists, so an
+    // older LoRA (genfill v1, v2) could run as "Ready"; the identity says so.
+    bool lora_is_v3 = false;
+    std::filesystem::path v3_found;   // a verified v3 among the candidates, when there is one
 };
+
+// The published AI fill v3 LoRA (docs/MODELS.md; PUBLISH_HF_MODELS.ps1).
+inline constexpr const char* kGenFillV3Sha256 = "9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a";
+// SHA-256 of a file, cached in QSettings by path, size and modification time
+// (a LoRA is ~100 MB and the setup is asked often). Empty when unreadable.
+QString genfill_file_sha256(const std::filesystem::path& file);
+// Whether `file` is the published v3 LoRA (or `expected`, for tests).
+bool genfill_lora_is_v3(const std::filesystem::path& file, const QString& expected = QString::fromLatin1(kGenFillV3Sha256));
+// The setup's one-line status, with the LoRA's identity (the dialog and Deliver use it).
+QString genfill_ready_text(const GenFillSetup& s);
 
 struct GenFillOptions {
     int tau_high = 250;   // 8-bit code: >= is a clipped highlight to fill (256 = none)
@@ -40,6 +55,14 @@ struct GenFillOptions {
     int steps = 30;
     double brightness = 0.0;  // v3: the artist's offset in stops over the estimated brightness (-3..+3)
     QString prompt_highlight, prompt_shadow;
+    // RUDRA 1.1 (5 Nov 2026), priority 2. Each is sent only when not its default, so a fill
+    // with the defaults runs the command line it always did.
+    double prompt_strength = 1.0;   // how strongly a region prompt steers its region (0..2; 1 = as v3 was gated)
+    double shape_gain = 1.0;        // detail strength: how much the drawn shape varies the brightness (0..2)
+    QString region_json;            // the grade's reconstruction region (deliver reconstruction_region_json); "" = none
+    // RUDRA 1.1 priority 5: a frame whose fill flickers for one frame is written as the master's own
+    // (--fallback spikes). Off here so a bare GenFillOptions is v3; Deliver turns it on by default.
+    bool fallback = false;
     QString glob;         // the master folder's frames to fill ("SH010.*.exr"); "" = every EXR there
     bool operator==(const GenFillOptions&) const = default;
 };
@@ -47,10 +70,41 @@ struct GenFillOptions {
 // The command line (after the Python): -m rudra.genfill.run --master ... --json.
 QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, const QString& master, const QString& out);
 
+// RUDRA 1.1 (5 Nov 2026): prompt presets and a suggestion from the shot's clipped areas
+// (rudra/genfill/prompts.py, no model). The command line after the Python, for one or more
+// SDR frames, and its JSON read back.
+QStringList genfill_suggest_arguments(const GenFillSetup& s, const GenFillOptions& o, const QStringList& frames);
+struct PromptSuggestion {
+    QString id, label, text, region;   // region "highlight" or "shadow": the box it fills
+    QString reason;                    // why it was suggested; empty for a plain preset
+    bool cached = false;               // its embedding is in the prompt cache: no text model to load
+};
+struct PromptSuggestions {
+    std::vector<PromptSuggestion> suggested, presets;
+    double clipped_fraction = 0.0;
+};
+std::optional<PromptSuggestions> parse_prompt_suggestions(const QByteArray& json, QString* why = nullptr);
+
 // A new folder beside the master: <master>_aifill, else _aifill_2, _3 ... (nothing replaced).
 QString genfill_out_dir(const QString& master);
 
-// The setup from QSettings and the defaults; nullopt and `why` when a part is missing.
+// Every place the base model and the LoRA are looked for, in order (4 Nov 2026):
+// beside the app, the repository, RUDRA_GENFILL_DIR, the model download folder,
+// the Hugging Face caches (HF_HUB_CACHE, HF_HOME, ~/.cache/huggingface), then
+// the training workstation's folders.
+std::vector<std::filesystem::path> genfill_base_candidates(const std::filesystem::path& repo);
+std::vector<std::filesystem::path> genfill_lora_candidates(const std::filesystem::path& repo);
+
+// What the automatic setup (rudra/genfill/setup.py, 4 Nov 2026) runs with: the
+// repository, its Python (the saved one, else the repo's .venv), and where the
+// base model goes when none is found (the model download folder).
+struct GenFillInstall {
+    std::filesystem::path repo, python, base;
+};
+GenFillInstall genfill_install_plan();
+
+// The setup: the saved paths while they exist, else the first candidate that
+// does (and it is saved); nullopt and `why` when a part is missing.
 std::optional<GenFillSetup> genfill_setup(QString* why = nullptr);
 
 class GenFillJob {

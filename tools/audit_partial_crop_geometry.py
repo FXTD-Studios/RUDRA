@@ -13,7 +13,7 @@ from tools.summarize_aces_generated import sha
 
 def main():
     root=Path('G:/rudra_training/partial_crop_geometry_20261025');root.mkdir(exist_ok=False)
-    checkpoint='G:/rudra_training/claude_partial_finetune_20261025/ft_rel3_w05/step400.pt'
+    checkpoint='G:/rudra_training/research_partial_finetune_20261025/ft_rel3_w05/step400.pt'
     pilots=['G:/datasets/corpora/aces_consistent_exposures_v2_20261024/train/report.json',
             'G:/datasets/corpora/aces_temporal_context_pairs_20261024/train/report.json']
     registration={'checkpoint':checkpoint,'checkpoint_sha256':sha(checkpoint),'pilots':{p:sha(p) for p in pilots},

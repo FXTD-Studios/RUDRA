@@ -1,0 +1,6 @@
+# ACES Metadata File schema (vendored)
+
+From github.com/ampas/aces-amf at commit e2b9901 (2025-10-06), `schema/`,
+Apache License 2.0 (`LICENSE` here), © Academy of Motion Picture Arts and
+Sciences. Used by `tests/test_aces_amf_schema.py` to validate the AMF files
+RUDRA writes (native/core/src/aces_amf.cpp). Unmodified.

@@ -51,7 +51,7 @@
 
 class QAction;
 class QLabel;
-namespace rudra::app { class GenFillJob; }
+namespace rudra::app { class GenFillJob; class GenFillServer; }
 class QLineEdit;
 class QMenu;
 class QNetworkAccessManager;
@@ -59,6 +59,9 @@ class QPlainTextEdit;
 class QPushButton;
 class QSlider;
 class QStackedWidget;
+class QVBoxLayout;
+class QComboBox;
+class QDoubleSpinBox;
 
 namespace rudra {
 class FrameEngine;
@@ -169,6 +172,13 @@ public:
     bool aces_realtime_playing() const { return aces_rt_playing_; }
     bool aces_playing() const { return aces_playing_; }   // through the model, frame by frame
     QString aces_cache_key() const;   // the shot, trims, monitor and source display it was made with
+    // The playback cache, filled by the view while playing and by the background prefetch (3 Nov 2026).
+    bool aces_cache_put(int index, std::shared_ptr<const NetworkLinearImage> model, std::shared_ptr<const NetworkLinearImage> base,
+                        std::shared_ptr<const SdrImage> sdr, std::vector<float> codes);
+    QJsonObject aces_request_json(int index, const QString& source, bool movie, const QString& prefix);
+    void aces_prefetch_soon(int delay_ms);
+    void aces_prefetch_next();
+    void aces_after_prefetch(const QJsonObject& o, int index, const QString& key, const QJsonObject& req);
     void aces_rt_stop();
     // Per-shot trims (28 Oct 2026 review): remembered with each shot (the movie, the
     // folder or the still); a new shot keeps the trims in hand. Copy / paste between shots.
@@ -208,7 +218,7 @@ public:
     // The AI fill (layer 3, genfill_job.hpp) of a learned EXR render: runs after the
     // render when chosen, or on any master folder; a Render click while it runs stops it.
     bool genfill_running() const;
-    bool start_genfill(const QString& master_dir, QString* why = nullptr);
+    bool start_genfill(const QString& master_dir, QString* why = nullptr, std::function<void(bool, QString)> finished = {});
     // The same with its own options and output base (<base>_aifill) and a
     // callback when it ends (true when done): the batch's AI fill (29 Oct 2026).
     bool start_genfill_with(const QString& master_dir, const GenFillOptions& options, const QString& out_base,
@@ -216,6 +226,27 @@ public:
     QString genfill_last_out() const { return genfill_last_out_; }
     // The review of an AI fill folder (the last one, else one picked); false and why when there is none.
     bool review_genfill(const QString& dir = {}, QString* why = nullptr);
+    // The AI fill preview (genfill_preview.hpp, 4 Nov 2026): the learned master of a
+    // few frames around the playhead, filled with Deliver's AI fill settings by a fill
+    // model kept loaded, and shown in the viewer: "fill", "master" or "mask" (the
+    // invented pixels). A second click on Preview stops it.
+    void preview_genfill();
+    void show_genfill_preview(const QString& which);
+    // RUDRA 1.1: the AI fill's "Suggest" button: rudra.genfill.prompts on the current frame,
+    // then a menu of suggestions and presets that fills the highlight / shadow prompt.
+    void suggest_genfill_prompt();
+    // 6 Nov 2026: the suggestions as buttons, at the top of the AI fill card and in a bar over
+    // the viewer while the AI fill is previewed or shown. `popup`: the menu too (the button).
+    // `quiet`: no message when the fill is not set up (the automatic run on a preview).
+    void run_prompt_suggestions(bool popup, bool quiet = false);
+    void build_ai_prompt_bar(QVBoxLayout* v, QWidget* parent);
+    void refresh_prompt_chips();
+    void sync_ai_prompt_bar();
+    // Applies one suggestion to its prompt box (highlight or shadow).
+    void use_prompt_suggestion(const PromptSuggestion& p);
+    // RUDRA 1.1: the region tint on the viewer and the card's histogram, from the session.
+    void refresh_view_region();
+    bool genfill_previewing() const;
     // The batch queue (28 Oct 2026, batch_queue.hpp): shots rendered one after
     // another through the learned ACES 2.0 model. Its file is the setting
     // batch/file, else batch_queue.json in the app's data folder.
@@ -274,6 +305,7 @@ public:
     void open_paths(const QStringList& paths);
     // Open recent: the shots opened last, newest first, kept between runs.
     QStringList recent_sources() const;
+    void forget_source(const QString& path);   // off the list on the left; nothing on disk touched
     void fill_recent();
     // Settings kept between runs: the window's place and size, the workspace,
     // the rails, the inspector tab, the container and the Render fields.
@@ -561,6 +593,7 @@ private:
     void show_sheet(const QString& title, const std::vector<std::pair<QString, QString>>& rows);
     void sync_checks();
     void sync_ui();
+    void sync_playhead();   // playing: the timecode and the scrub bar only
     // Simple (29 Oct 2026): Look, Check, Deliver; what Full adds is hidden here.
     void build_simple_parts();
     void sync_simple();
@@ -614,6 +647,11 @@ private:
     // The compare line under the Compare bar: what RUDRA changed and how much
     // of it the view peak shows (core/readouts compare_text).
     void update_compare();
+    // The viewer toolbar (view revision 6, viewer_toolbar.cpp).
+    void build_viewer_toolbar(QVBoxLayout* v, QWidget* parent);
+    void sync_viewer_toolbar();
+    bool viewer_has_sdr() const;
+    QString range_readout_text() const;
     void fill_rows(QWidget* ms, const std::vector<MetricRow>& rows);
 
     std::map<std::string, QAction*, std::less<>> actions_;
@@ -636,6 +674,23 @@ private:
     Seg *view_mode_ = nullptr, *view_layer_ = nullptr, *zoom_seg_ = nullptr, *mode_seg_ = nullptr, *tabs_ = nullptr,
         *ws_ = nullptr;
     CheckRow *preserve_ = nullptr, *anchor_ = nullptr, *carry_chroma_ = nullptr;
+    // Spec rev 2 (RUDRA 1.1): the reconstruction region's switch, kind and sliders.
+    CheckRow* region_on_ = nullptr;
+    CheckRow* region_show_ = nullptr;                 // tint it on the viewer
+    class RegionHistogramView* region_hist_ = nullptr;
+    const void* region_hist_frame_ = nullptr;         // the frame and region the histogram was made for
+    ReconstructionRegion region_hist_region_;
+    Seg* region_kind_ = nullptr;
+    QWidget* region_box_ = nullptr;
+    struct RegionSlider {
+        QWidget* row = nullptr;
+        QSlider* slider = nullptr;
+        QLabel* value = nullptr;
+        float ReconstructionRegion::*field = nullptr;
+        double scale = 100.0;   // slider steps per unit
+        int kind = 0;           // 0 both kinds, 1 highlights + shadows only, 2 band only
+    };
+    std::vector<RegionSlider> region_sliders_;
     QSlider *strength_ = nullptr, *peak_ = nullptr, *exposure_ = nullptr;
     QLabel* exposure_val_ = nullptr;
     QLabel *strength_val_ = nullptr, *peak_val_ = nullptr, *shot_count_ = nullptr, *frames_empty_ = nullptr,
@@ -655,6 +710,13 @@ private:
     // and keeps each frame (at the playback size); once every frame of the shot is in,
     // play runs in real time at the shot's rate, for judging flicker.
     std::vector<std::shared_ptr<const NetworkLinearImage>> aces_cache_;
+    // Beside each cached model frame (view revision 6): what playback compares it with.
+    struct AcesCachedSide {
+        std::shared_ptr<const NetworkLinearImage> base;
+        std::shared_ptr<const SdrImage> sdr;
+        std::vector<float> codes;
+    };
+    std::vector<AcesCachedSide> aces_cache_side_;
     QString aces_cache_key_;
     std::size_t aces_cache_bytes_ = 0;
     QTimer* aces_rt_timer_ = nullptr;
@@ -681,6 +743,15 @@ private:
     };
     std::shared_ptr<const Current> current_frame_;
     std::shared_ptr<const FrameMeasure> measure_;
+    // View revision 6 (viewer_toolbar.cpp).
+    QWidget* vtool_ = nullptr;
+    QPushButton *vt_stop_ = nullptr, *vt_reset_ = nullptr, *vt_flip_ = nullptr, *vt_clamp_ = nullptr,
+                *vt_clip_ = nullptr, *vt_range_ = nullptr;
+    std::vector<QPushButton*> vt_brackets_;
+    QSlider* vt_ev_slider_ = nullptr;
+    QDoubleSpinBox *vt_ev_ = nullptr, *vt_gamma_ = nullptr;
+    QComboBox *vt_a_ = nullptr, *vt_b_ = nullptr;
+    QLabel *vt_badge_ = nullptr, *range_line_ = nullptr;
     QTimer stats_timer_;
     int stats_gen_ = 0;
     bool stats_running_ = false, stats_again_ = false;
@@ -705,6 +776,8 @@ private:
     QTimer play_;
     int current_ = 0;
     bool waiting_ = false;
+    bool play_tick_missed_ = false;   // a tick came while waiting_: step when the frame is shown
+    bool played_scaled_ = false;      // a MovieFeeder made preview-size frames: the cache goes at the stop
     bool frame_ready_ok_ = false;
     QString frame_info_;
     QString runtimes_;
@@ -764,10 +837,21 @@ private:
     void sync_aces_trims();
     // The ACES route's frame for the readouts and scopes (the viewer's convention).
     std::shared_ptr<const NetworkLinearImage> aces_model_img_, aces_base_img_;
+    std::shared_ptr<const SdrImage> aces_sdr_img_;   // view revision 6
     std::unique_ptr<BatchQueue> batch_;
     std::unique_ptr<BatchRunner> batch_runner_;
     QPointer<QDialog> batch_window_;
     QString render_name_for_fill_;
+    // 6 Nov 2026: a learned movie with the AI fill is three steps: the EXR masters, their
+    // AI fill, then this "encode" request (aces-v2-serve) makes the movie from the filled
+    // frames. Empty when the render in hand is not one.
+    QJsonObject aifill_movie_req_;
+    // The reconstruction region as the learned engine takes it ({} when off), and the one
+    // the last learned frame was asked with (a change asks for the frame again).
+    QJsonObject aces_region_field() const;
+    ReconstructionRegion aces_region_sent_;
+    void encode_aifill_movie(const QString& master_dir, const QString& fill_dir);
+    QString analytic_fill_glob_;   // RUDRA 1.1: the last analytic render's frames, for its AI fill
     // The Render card's Nuke-style path (29 Oct 2026): its padding and separator.
     int render_padding_ = 4;
     QString render_separator_ = ".";
@@ -778,6 +862,47 @@ private:
     void batch_changed();
     int aces_deliver_id_ = 0;       // the engine's master request running for the Deliver tab
     std::shared_ptr<GenFillJob> genfill_;   // shared_ptr: the type stays incomplete here
+    struct GenFillPreviewFrame {
+        int index = -1;
+        GenFillOptions options;   // what it was filled with: changed since, the preview is stale
+        std::shared_ptr<const NetworkLinearImage> master, fill, mask;
+        double changed = 0;       // share of the frame's pixels the fill invented
+        int first = -1, last = -1;   // 4 Nov 2026: every frame the preview filled, for the viewer's AI fill
+        QString fill_dir;
+    };
+    // The viewer's AI fill (4 Nov 2026): while on, each learned frame that has a fill (the
+    // preview's frames, or every frame of the last finished fill) is shown filled, stepping and
+    // playing. Fills are read once, at the playback size, so real time holds.
+    bool fill_view_on_ = false;
+    std::map<int, std::shared_ptr<const NetworkLinearImage>> fill_view_cache_;
+    QStringList fill_view_files_;   // the last finished fill's frames, in order
+    QString genfill_last_master_;   // the master folder the last fill was for (its frames are the fill once moved in place)
+    QString fill_view_key_;
+    std::shared_ptr<const NetworkLinearImage> fill_view_frame(int index);
+    // The viewer's AI fill, or the preview's pinned Master / Invented picture, over
+    // whatever the route just showed (any route: 6 Nov 2026). quiet: no status message
+    // when this frame has no fill. False when nothing was applied.
+    bool apply_fill_view(bool quiet = false);
+public:
+    void set_fill_view(bool on);
+    bool fill_view_on() const { return fill_view_on_; }
+private:
+    // Real-time playback by the clock (4 Nov 2026): the frame shown is the one due now.
+    std::chrono::steady_clock::time_point aces_rt_t0_{};
+    int aces_rt_from_ = 0, aces_rt_shown_ = 0, aces_rt_dropped_ = 0;
+    double aces_rt_timer_fps_ = 24.0;
+    std::shared_ptr<GenFillServer> genfill_server_;
+    std::optional<GenFillPreviewFrame> genfill_preview_;
+    std::unique_ptr<QTemporaryDir> genfill_preview_tmp_;
+    QString genfill_preview_show_ = "fill";
+    // 6 Nov 2026: Master / Invented stay on the previewed frame when the route re-renders it.
+    bool genfill_preview_pinned_ = false;
+    std::optional<PromptSuggestions> prompt_suggestions_;   // the last suggestion run's
+    int prompt_suggest_frame_ = -1;                          // ... and the frame it looked at
+    bool prompt_suggest_running_ = false;
+    QWidget* ai_prompt_bar_ = nullptr;                       // over the viewer
+    int genfill_preview_master_id_ = 0;   // the engine's master request while the preview's master renders
+    bool genfill_preview_busy_ = false;
     QString genfill_last_out_;
     void sync_deliver();            // the Deliver tab's controls and Signal card from deliver_
     void load_deliver_settings();

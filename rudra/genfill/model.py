@@ -107,6 +107,11 @@ class FillSettings:
     prompt: str = BASE_PROMPT
     prompt_highlight: str = ''               # '' = the base prompt there too
     prompt_shadow: str = ''
+    # RUDRA 1.1 (5 Nov 2026): how strongly a region prompt steers its region. 1 = the region's
+    # prediction replaces the base one there (as before, bit for bit); 0 = the prompt is ignored;
+    # above 1 extrapolates away from the base prompt (stronger adherence, experimental: the v3
+    # gates were passed at 1).
+    prompt_strength: float = 1.0
     extra: dict = field(default_factory=dict)
 
 
@@ -220,7 +225,10 @@ class WanFill:
         for i, t in enumerate(self.scheduler.timesteps):
             eps = self._predict(x, t, base, ctx, scale)
             for w, e in regions:
-                eps = eps * (1 - w) + self._predict(x, t, e, ctx, scale) * w
+                if s.prompt_strength == 1.0:
+                    eps = eps * (1 - w) + self._predict(x, t, e, ctx, scale) * w
+                elif s.prompt_strength != 0.0:
+                    eps = eps + (self._predict(x, t, e, ctx, scale) - eps) * (w * float(s.prompt_strength))
             if neg is not None:
                 un = self._predict(x, t, neg, ctx, scale)
                 eps = un + s.guidance * (eps - un)

@@ -16,7 +16,8 @@
 //             source's PQ is the ACES 2.0 HDR 1000-nit output transform; the
 //             analytic source's is its graded PQ, to the peak and knee).
 //   bits      a movie: 10 (ProRes 422 HQ or 4444) or 16 (uncompressed RGB, 'b48r').
-//   ai_fill   the learned source's EXR still or sequence: also an AI-filled copy
+//   ai_fill   the learned source's EXR still, sequence or movie (6 Nov 2026), the analytic
+//             ACES 2065-1 EXR: also an AI-filled copy
 //             (genfill_job.hpp, layer 3), with its thresholds, prompts, seed and steps.
 //
 // Pure functions, so the tests check every combination without a window.
@@ -38,6 +39,8 @@ struct DeliverChoice {
     int pq_peak = 1000;              // the learned PQ target: 1000, 2000 or 4000 nits (ACES 2.0, P3 D65)
     QString codec = "prores422hq";   // 10-bit: "prores422hq", "prores4444", "prores4444xq" (learned) or "hevc10" (learned, PQ: HDR10 MP4)
     bool keep_exr = false;           // learned movie: the EXR masters beside it
+    bool mattes = false;             // analytic EXR still / sequence: <name>.mattes.exr beside each (RUDRA 1.1)
+    bool brackets = false;           // analytic EXR still / sequence: -2 / 0 / +2 EV PNGs beside each (RUDRA 1.1)
     double fps = 24.0;               // a movie made from stills
     bool ai_fill = false;            // learned EXR still / sequence: then the AI fill of the master
     GenFillOptions ai;               // its thresholds, prompts, seed and steps
@@ -49,7 +52,8 @@ struct DeliverChoice {
 // a 16-bit movie in PQ, a folder's movie in PQ). The learned source takes all.
 DeliverChoice deliver_fit(DeliverChoice c, bool aces_source, bool shot_movie, bool shot_folder);
 
-// Whether this choice can have the AI fill: the learned source's EXR (still or sequence).
+// Whether this choice can have the AI fill: the learned source's EXR (still or sequence) or
+// movie (6 Nov 2026), or the analytic EXR in ACES 2065-1.
 bool ai_fill_possible(const DeliverChoice& c, bool aces_source);
 
 // The learned engine's master request fields (cli/aces_v2_deliver.hpp):
