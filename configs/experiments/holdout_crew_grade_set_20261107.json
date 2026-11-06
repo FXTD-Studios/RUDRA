@@ -1,0 +1,18 @@
+{
+ "registered_before_building": true,
+ "registered_before_evaluation": true,
+ "author": "FXTD Studios Research, 7 Nov 2026",
+ "purpose": "The Crew confirmatory holdout as a grading set: the 48 frames sealed in holdout_crew_20261105.json, processed exactly as the fresh FXTD grade set v2, so the lock arm chosen on 7 Nov is judged once on footage nobody has looked at.",
+ "holdout_registration": "configs/experiments/holdout_crew_20261105.json",
+ "holdout_registration_sha256": "285fb6a60be813974c1c673fc203482d63f5a6ded8076fe87f8ad6331e7e0f40",
+ "holdout_seal_sha256": "e8942eb675599c8c4d2a40c714a2e1c362aab8e7057d44d966b71d9e0f53d4c8",
+ "processing_registration": "configs/experiments/research_fresh_fxtd_grade_v2_20261026.json",
+ "processing_registration_sha256": "e635921673556da949a72eedf4d258e4874afbd2a5b44650b1262365d3032cb4",
+ "frame_selection": "Every registered row, in registration order (48 frames, 24 scenes, 2 per scene, chosen by the seal's stratified draw). No per-scene median rule: the holdout registration already chose the frames.",
+ "selection_file": "tools/holdout_selection.py over the holdout registration, --plate-primaries rec2020 (the FXTD camera ingest stores BT.2020 scene-linear, 1.0 = 203 nits, log2_extended PNG with its _ingest_config.json sentinel). It refuses a registration whose seal does not match.",
+ "processing": "As research_fresh_fxtd_grade_v2_20261026, unchanged (tools/prepare_fresh_fxtd_grade_v2.py): load_plate (rec2020) / (203/10000); area-downsample in linear light to longest side 512; BT.2020 -> AP1; exposures native + 0, +1, +2 stops; source SDR = rint(clip(view.forward(reference),0,1)*255)/255.",
+ "inclusion": "As v2: a (frame, offset) case is kept if it has >= 100 highlight pixels and its median max code is <= 0.9. Whatever is kept is the set; nothing is replaced.",
+ "before_building": "Run tools/holdout_kit.py verify on the holdout registration (seal and every file's SHA-256) and attach its output.",
+ "limits": "One project (The Crew) and one camera (ARRI ALEXA LogC3): a pass says the lock holds on this production's footage, not on footage in general (decision note 2 Nov 2026 asks for projects and cameras). Single frames, not video. Pass means numerical pass on this set only; visual review and release remain separate.",
+ "release_authorized": false
+}
