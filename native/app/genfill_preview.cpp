@@ -1,6 +1,7 @@
 #include "genfill_preview.hpp"
 #include "genfill_swap.hpp"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -16,6 +17,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <functional>
 #include <chrono>
 #include <cmath>
 
@@ -228,14 +230,17 @@ void MainWindow::preview_genfill() {
     };
     if (genfill_preview_busy_) {   // a second click stops it
         if (genfill_preview_master_id_ > 0 && aces_engine_) aces_engine_->cancel_master(genfill_preview_master_id_);
+        if (genfill_preview_job_) genfill_preview_job_->cancel();   // the analytic route's master
         if (genfill_server_) genfill_server_->cancel();
         say(QStringLiteral("AI fill preview: stopping…"));
         return;
     }
-    if (!deliver_aces() || !aces_engine_)
-        return say(QStringLiteral("AI fill preview: it fills the learned ACES 2.0 master, so the learned model must be loaded."));
+    // 7 Nov 2026: either route. The learned one renders its master in the engine; the analytic one
+    // with the same MasterJob as Master EXR (ACEScg float), as its AI fill render does.
+    const bool learned = deliver_aces() && aces_engine_;
     if (frames_.empty()) return say(QStringLiteral("AI fill preview: open a shot first."));
-    if (aces_delivering() || genfill_running() || batch_running())
+    if (!learned && needs_model()) return say(QStringLiteral("AI fill preview: the frames wait for the model package; load it first."));
+    if (aces_delivering() || genfill_running() || batch_running() || mastering())
         return say(QStringLiteral("AI fill preview: a render or an AI fill is running; preview after it."));
     QString why;
     const auto setup = genfill_setup(&why);
@@ -284,9 +289,7 @@ void MainWindow::preview_genfill() {
     const auto t0 = std::chrono::steady_clock::now();
     const QPointer<MainWindow> self(this);
     genfill_preview_master_id_ = -1;
-    const int id = aces_engine_->request(
-        req,
-        [self, setup = *setup, options = c.ai, mdir, fdir, a, b, at, frames, n, t0](const QJsonObject& o) {
+    auto after_master = [self, setup = *setup, options = c.ai, mdir, fdir, a, b, at, frames, n, t0](const QJsonObject& o) {
             if (!self) return;
             self->genfill_preview_master_id_ = 0;
             auto* st2 = self->findChild<QLabel*>("deliverAiPreviewStatus");
@@ -405,16 +408,63 @@ void MainWindow::preview_genfill() {
                 },
                 &why2);
             if (!started) end(why2);
-        },
-        [self, frames](const QJsonObject& o) {
+        };
+    if (learned) {
+        const int id = aces_engine_->request(req, after_master, [self, frames](const QJsonObject& o) {
             if (!self) return;
             const QJsonObject p = o.value("progress").toObject();
             if (auto* st2 = self->findChild<QLabel*>("deliverAiPreviewStatus"))
                 st2->setText(QStringLiteral("AI fill preview: master %1 / %2").arg(p.value("index").toInt()).arg(frames));
         });
-    if (genfill_preview_master_id_ != 0) genfill_preview_master_id_ = id;   // still running (a refusal answers at once)
+        if (genfill_preview_master_id_ != 0) genfill_preview_master_id_ = id;   // still running (a refusal answers at once)
+    } else {
+        start_analytic_preview_master(mdir, a, b, std::move(after_master));
+    }
     refresh_enabled();
     sync_ai_prompt_bar();
+}
+
+// The analytic route's preview master (7 Nov 2026): frames a..b as Master EXR renders them (the
+// grade, the region, the container ACEScg, float), into the preview's master folder under the
+// names the fill and the viewer read (preview.<index>.exr); `done` gets {"ok", "cancelled", "error"}
+// on the UI thread, as the engine's master request answers.
+void MainWindow::start_analytic_preview_master(const QString& mdir, int a, int b, std::function<void(const QJsonObject&)> done) {
+    QDir().mkpath(mdir);
+    std::vector<std::filesystem::path> targets, sources;
+    for (int i = a; i <= b; ++i) {
+        targets.push_back(to_path(QDir(mdir).filePath(preview_name(i))));
+        sources.push_back(frames_[std::size_t(i)]);
+    }
+    MasterRequest q = master_request();
+    q.container = "acescg";
+    q.exr_half = false;
+    q.mattes = false;
+    q.brackets = false;
+    PrepareMasterFrame prepare = master_prepare(sources, q);
+    if (!prepare) {
+        done(QJsonObject{{"ok", false}, {"error", QStringLiteral("this build has no still decode")}});
+        return;
+    }
+    const QPointer<MainWindow> self(this);
+    const int frames = b - a + 1;
+    genfill_preview_job_ = std::make_unique<MasterJob>(frame_constants(), q, std::move(targets), std::move(prepare));
+    genfill_preview_job_->start(
+        [self, frames](std::size_t i) {
+            QMetaObject::invokeMethod(qApp, [self, i, frames] {
+                if (!self) return;
+                if (auto* st = self->findChild<QLabel*>("deliverAiPreviewStatus"))
+                    st->setText(QStringLiteral("AI fill preview: master %1 / %2").arg(int(i) + 1).arg(frames));
+            });
+        },
+        [](const MasterProgress&) {},
+        [self, done](const MasterOutcome& o) {
+            QMetaObject::invokeMethod(qApp, [self, done, o] {
+                if (!self) return;
+                QJsonObject r{{"ok", !o.error && !o.cancelled && o.completed == o.total}, {"cancelled", o.cancelled}};
+                if (o.error) r["error"] = QString::fromStdString(o.error->message);
+                done(r);
+            });
+        });
 }
 
 void MainWindow::show_genfill_preview(const QString& which) {

@@ -62,10 +62,11 @@ private:
 class RegionHistogramView : public QWidget {
 public:
     explicit RegionHistogramView(QWidget* parent = nullptr);
-    void set(const RegionHistogram& h, const std::array<float, 3>& tint);
+    // analytic: the curve is the composite's gate (the built-in priors included), else the region's weight.
+    void set(const RegionHistogram& h, const std::array<float, 3>& tint, bool analytic = false);
     void clear();
     const RegionHistogram& histogram() const { return h_; }
-    QString caption() const;   // "Reaches 12.3 % of this frame"
+    QString caption() const;   // "Acts on 12.3 % of this frame · at half strength or more on 4.1 %"
 
 protected:
     void paintEvent(QPaintEvent* e) override;
@@ -74,6 +75,7 @@ private:
     RegionHistogram h_;
     std::array<float, 3> tint_{0.20f, 0.85f, 0.95f};
     bool valid_ = false;
+    bool analytic_ = false;   // the curve is the analytic gate (tooltip and caption say so)
 };
 
 class MaskPanel : public QWidget {

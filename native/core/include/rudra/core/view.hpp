@@ -51,6 +51,17 @@ struct DisplayTarget {
 // composite uses (sdr_light_rgba), so a clamped code stays flat at its white.
 enum class ViewSource : std::uint8_t { Model = 0, Baseline = 1, Sdr = 2 };
 
+// What the region overlay's strength shows (RUDRA 1.1, 7 Nov 2026). Off: the region's own
+// weight, exact for the learned ACES route and the AI fill. analytic: the analytic composite's gate
+// (composite.hpp reconstruction_gate) with this mode, strength and frame's shadow weight.
+struct RegionOverlayGate {
+    bool analytic = false;
+    RecoveryMode mode = RecoveryMode::All;
+    float strength = 1.0f;
+    float shadow_weight = 1.0f;
+    bool operator==(const RegionOverlayGate&) const = default;
+};
+
 struct ViewParams {
     ViewMode mode = ViewMode::Image;
     double display_nits = 203.0;     // the view peak: exposure to it, then clip
@@ -111,23 +122,31 @@ struct ViewParams {
     // picture, kRegionTintMix times its weight, as the composite gates by it. Off: no change.
     bool region_overlay = false;
     ReconstructionRegion overlay_region;
+    RegionOverlayGate overlay_gate;   // what the tint's strength shows (below)
     std::array<float, 3> region_tint{0.20f, 0.85f, 0.95f};
 };
 inline constexpr float kRegionTintMix = 0.40f;
 
 // The region overlay's weight per pixel as the viewer uploads it (RGBA8, the weight in R, image
-// order): max of region_weights() of the SDR's clamped Rec.709 luma, clipped to [0, 1], to 8 bits.
+// order), of the SDR's clamped Rec.709 luma, clipped to [0, 1], to 8 bits: with `gate` off (the
+// default) max of region_weights(), which is what the learned ACES route and the AI fill apply;
+// with `gate.analytic` the analytic composite's own reconstruction_gate() (the built-in priors
+// times the region, the mode and the strength), so the tint is as strong as the reconstruction
+// is (7 Nov 2026: a region from 0.5 tinted the mid-tones fully where the gate is under 5 %).
 // All 0 when the region is off or there is no SDR of that size.
-std::vector<std::uint8_t> region_overlay_rgba8(const SdrImage* sdr, const ReconstructionRegion& region, int width, int height);
+std::vector<std::uint8_t> region_overlay_rgba8(const SdrImage* sdr, const ReconstructionRegion& region, int width, int height,
+                                               const RegionOverlayGate& gate = {});
 
 // The Reconstruct card's histogram (RUDRA 1.1): the frame's SDR Rec.709 luma in `bins` bins,
 // the region's weight at each bin's centre, and the share of pixels it reaches (weight > 0).
 struct RegionHistogram {
     std::vector<double> counts;   // pixels per bin, of all pixels (0..1)
-    std::vector<float> weight;    // max(highlight, shadow) weight at the bin's centre, clipped
-    double reached = 0.0;         // share of pixels with weight > 0
+    std::vector<float> weight;    // the overlay's weight (region_overlay_rgba8, same gate) at the bin's centre
+    double reached = 0.0;         // share of pixels the tint shows (weight of 1/255 or more)
+    double strong = 0.0;          // share of pixels at half strength or more
 };
-RegionHistogram region_histogram(const SdrImage& sdr, const ReconstructionRegion& region, int bins = 64);
+RegionHistogram region_histogram(const SdrImage& sdr, const ReconstructionRegion& region, int bins = 64,
+                                 const RegionOverlayGate& gate = {});
 
 // Revision 6 overlays: stripe period and mix, colours as SDR codes (graphics
 // at the SDR white on the HDR paths).

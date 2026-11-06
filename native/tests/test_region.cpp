@@ -540,10 +540,50 @@ TEST(Gaps, TheRegionOverlayTintsExactlyWhereTheRegionActs) {
     double total = 0.0;
     for (double c : hist.counts) total += c;
     EXPECT_NEAR(total, 1.0, 1e-9);
-    std::size_t reached = 0;
-    for (std::size_t i = 0; i < std::size_t(w) * std::size_t(h); ++i) reached += bytes[i * 4] > 0 ||
-        [&] { float wh, ws; region_weights(luma(fr.sdr, i), rg, wh, ws); return std::max(wh, ws) > 0.0f; }();
+    std::size_t reached = 0;   // 7 Nov 2026: what the tint shows (an 8-bit weight above 0)
+    for (std::size_t i = 0; i < std::size_t(w) * std::size_t(h); ++i) reached += bytes[i * 4] > 0;
     EXPECT_NEAR(hist.reached, double(reached) / double(std::size_t(w) * std::size_t(h)), 1e-12);
     EXPECT_EQ(hist.weight.front(), 0.0f);
     EXPECT_EQ(hist.weight.back(), 1.0f);
+}
+
+// 7 Nov 2026 (release review R1): on the analytic route the tint is as strong as the composite's
+// gate, not the region's own weight: a region from 0.5 tinted the mid-tones fully where the
+// built-in priors leave the reconstruction under 5 %, and Highlights mode tinted the shadows.
+TEST(Gaps, OnTheAnalyticRouteTheTintIsTheGate) {
+    const Frame fr = main_frame();
+    ReconstructionRegion rg;
+    rg.enabled = true;
+    rg.highlight_from = 0.5f;
+    rg.highlight_softness = 0.1f;
+    rg.shadow_below = 0.15f;
+    const int w = fr.sdr.width(), h = fr.sdr.height();
+    const std::size_t n = std::size_t(w) * std::size_t(h);
+    for (RecoveryMode mode : {RecoveryMode::All, RecoveryMode::Highlights, RecoveryMode::Shadows}) {
+        RegionOverlayGate g;
+        g.analytic = true;
+        g.mode = mode;
+        g.strength = 1.5f;
+        g.shadow_weight = fr.scalars.shadow_weight;
+        const auto gate_bytes = region_overlay_rgba8(&fr.sdr, rg, w, h, g);
+        const auto own_bytes = region_overlay_rgba8(&fr.sdr, rg, w, h);   // learned route, AI fill
+        CompositeParams p;
+        p.region = rg;
+        p.mode = mode;
+        p.strength = 1.5f;
+        for (std::size_t i = 0; i < n; ++i) {
+            const float y = luma(fr.sdr, i);
+            const float gate = std::clamp(reconstruction_gate(y, fr.scalars.shadow_weight, p), 0.0f, 1.0f);
+            ASSERT_EQ(gate_bytes[i * 4], std::uint8_t(std::lround(gate * 255.0f))) << i;
+            if (own_bytes[i * 4] == 0) ASSERT_EQ(gate_bytes[i * 4], 0) << i;   // never outside the region
+        }
+        const RegionHistogram hg = region_histogram(fr.sdr, rg, 64, g), ho = region_histogram(fr.sdr, rg);
+        EXPECT_LE(hg.reached, ho.reached + 1e-12);
+        EXPECT_LE(hg.strong, hg.reached);
+        const std::size_t mid = std::size_t(0.6 * 64);   // luma 0.6: inside the region, the prior near 0
+        EXPECT_EQ(ho.weight[mid], 1.0f);
+        EXPECT_LT(hg.weight[mid], 0.05f);
+        if (mode == RecoveryMode::Highlights) EXPECT_EQ(hg.weight[1], 0.0f);   // the shadows: no tint
+        if (mode == RecoveryMode::Shadows) EXPECT_EQ(hg.weight.back(), 0.0f);
+    }
 }

@@ -143,6 +143,7 @@ struct ViewerWindow::Impl {
     std::unique_ptr<QRhiTexture> light_t;   // revision 6: the SDR as light and its clamp flags (binding 4)
     std::unique_ptr<QRhiTexture> region_t;  // RUDRA 1.1: the region overlay's weights (binding 5)
     ReconstructionRegion uploaded_region;   // what region_t holds (enabled false: nothing yet)
+    RegionOverlayGate uploaded_gate;        // ... and with which gate (7 Nov 2026)
     bool region_dirty = true;
     bool light_dirty = true, light_bound = false;
     std::vector<float> light_knots;         // the anchor knots light_t was made with
@@ -692,14 +693,15 @@ struct ViewerWindow::Impl {
                     light_dirty = false;
                 }
                 if (ev.region_overlay && ev.overlay_region.enabled &&
-                    (region_dirty || !(ev.overlay_region == uploaded_region))) {
+                    (region_dirty || !(ev.overlay_region == uploaded_region) || !(ev.overlay_gate == uploaded_gate))) {
                     // RUDRA 1.1: the region's weights, made on the host by core (render_view reads the same bytes).
                     const SdrImage* s = precomposited ? (pre_sdr ? &*pre_sdr : nullptr) : &frame.sdr;
                     const std::vector<std::uint8_t> rb =
-                        region_overlay_rgba8(s, ev.overlay_region, frame_size.width(), frame_size.height());
+                        region_overlay_rgba8(s, ev.overlay_region, frame_size.width(), frame_size.height(), ev.overlay_gate);
                     u->uploadTexture(region_t.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
                         0, 0, QRhiTextureSubresourceUploadDescription(rb.data(), quint32(rb.size())))));
                     uploaded_region = ev.overlay_region;
+                    uploaded_gate = ev.overlay_gate;
                     region_dirty = false;
                 }
                 const detail::ViewUbo vu = detail::view_ubo(ev, frame_size.width(), needs_light && light_bound);

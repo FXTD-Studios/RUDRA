@@ -106,6 +106,15 @@ struct GenFillInstall {
 };
 GenFillInstall genfill_install_plan();
 
+// The AI fill's own Python (7 Nov 2026): "Set up automatically" on a computer with no Python for
+// it runs genfill_bootstrap (.ps1 on Windows, .sh elsewhere: a package's python/ folder or the
+// repository's scripts/), which puts uv, a private Python 3.12 and the fill's environment under
+// genfill_bootstrap_root() (<AppLocalData>/genfill) and then rudra.genfill.setup. Nothing on the
+// system changes. genfill_bootstrap_script is empty when neither has it.
+std::filesystem::path genfill_bootstrap_root();
+std::filesystem::path genfill_bootstrap_python();
+std::filesystem::path genfill_bootstrap_script(const std::filesystem::path& repo);
+
 // The setup: the saved paths while they exist, else the first candidate that
 // does (and it is saved); nullopt and `why` when a part is missing.
 std::optional<GenFillSetup> genfill_setup(QString* why = nullptr);

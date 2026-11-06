@@ -43,4 +43,6 @@ def test_no_gpu_reason_names_the_actual_problem():
     assert "PyTorch is not installed" in missing and sys.executable in missing
     cpu = no_gpu_reason({"torch": "2.5.1+cpu", "device": "cpu", "memory_gb": None})
     assert "2.5.1+cpu" in cpu and "CUDA build" in cpu
+    gpu_less = no_gpu_reason({"torch": "2.5.1+cu128", "device": "cpu", "memory_gb": None})
+    assert "found no CUDA GPU" in gpu_less and "CPU-only" not in gpu_less
     assert "needs 16 GB" in no_gpu_reason({"torch": "2.5.1", "device": "cuda", "memory_gb": 8.0})

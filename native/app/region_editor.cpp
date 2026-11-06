@@ -303,13 +303,16 @@ void MaskPanel::sync() {
 RegionHistogramView::RegionHistogramView(QWidget* parent) : QWidget(parent) {
     setObjectName("regionHistogram");
     setMinimumHeight(56);
-    setToolTip("The frame's SDR brightness (luma), darkest left; the coloured line is how strongly "
-               "the region lets the reconstruction act at each brightness");
+    setToolTip("The frame's SDR brightness (luma), darkest left; the coloured line is how strongly the "
+               "reconstruction acts at each brightness. On the analytic route that includes its built-in "
+               "highlight and shadow priors, the mode and the strength: the region can narrow the "
+               "reconstruction but not extend it past them. On the learned route it is the region's own weight");
 }
 
-void RegionHistogramView::set(const RegionHistogram& h, const std::array<float, 3>& tint) {
+void RegionHistogramView::set(const RegionHistogram& h, const std::array<float, 3>& tint, bool analytic) {
     h_ = h;
     tint_ = tint;
+    analytic_ = analytic;
     valid_ = !h.counts.empty();
     update();
 }
@@ -322,7 +325,10 @@ void RegionHistogramView::clear() {
 
 QString RegionHistogramView::caption() const {
     if (!valid_) return QStringLiteral("Open a shot to see the region on it");
-    return QStringLiteral("Reaches %1 % of this frame").arg(100.0 * h_.reached, 0, 'f', 1);
+    // 7 Nov 2026: what acts and how much, as the tint shows it (the analytic gate on that route).
+    return QStringLiteral("Acts on %1 % of this frame · at half strength or more on %2 %")
+        .arg(100.0 * h_.reached, 0, 'f', 1)
+        .arg(100.0 * h_.strong, 0, 'f', 1) + (analytic_ ? QStringLiteral(" (with the built-in priors)") : QString());
 }
 
 void RegionHistogramView::paintEvent(QPaintEvent*) {

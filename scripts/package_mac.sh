@@ -103,6 +103,17 @@ if [ -n "$BUNDLE_MODELS" ]; then
   find "$APP/Contents/Resources/models" -name "*.safetensors" -delete -o -name "*.config.json" -delete
 fi
 cp LICENSE NOTICE "$APP/Contents/Resources/"
+# 7 Nov 2026: the Python side of the AI fill (rudra/, config/, the bootstrap), no weights; the app
+# finds it in Resources/python and "Set up automatically" builds its own Python environment from it.
+PYDIR="$APP/Contents/Resources/python"
+mkdir -p "$PYDIR"
+for d in rudra config; do
+  (cd "$d" && find . -name '*.py' -not -path '*/__pycache__/*' -print0 | while IFS= read -r -d '' f; do
+     mkdir -p "$PYDIR/$d/$(dirname "$f")"; cp "$f" "$PYDIR/$d/$f"; done)
+done
+cp scripts/genfill_bootstrap.sh scripts/genfill_bootstrap.ps1 "$PYDIR/"
+chmod +x "$PYDIR/genfill_bootstrap.sh"
+[ -f "$PYDIR/rudra/genfill/run.py" ] || fail "the app has no Resources/python/rudra/genfill"
 if [ -n "$BUNDLE_MODELS" ] && [ -n "${ALLOW_NONCOMMERCIAL_WEIGHTS:-}" ] && [ -f checkpoints/LICENSE ]; then
   cp checkpoints/LICENSE "$APP/Contents/Resources/LICENSE-weights"
 fi

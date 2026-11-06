@@ -77,9 +77,12 @@ def no_gpu_reason(m: dict) -> str:
     if m.get('torch') is None:
         return (f'PyTorch is not installed in {sys.executable}. Install the build for your GPU '
                 '(https://pytorch.org/get-started/locally/: CUDA on Windows and Linux), then run this again')
+    if m['device'] == 'cpu' and '+cpu' in str(m.get('torch')):
+        return (f"PyTorch {m['torch']} is the CPU-only build: install the CUDA build instead "
+                '(https://pytorch.org/get-started/locally/)')
     if m['device'] == 'cpu':
-        return (f"PyTorch {m['torch']} found no CUDA GPU or Apple GPU; a CPU-only build ('+cpu') needs the "
-                'CUDA build instead (https://pytorch.org/get-started/locally/)')
+        return (f"PyTorch {m['torch']} found no CUDA GPU or Apple GPU: the AI fill needs an NVIDIA GPU with 16 GB "
+                'and a current driver (Windows, Linux) or Apple silicon with 16 GB (Mac)')
     return f"the GPU has {m['memory_gb']} GB; the AI fill needs 16 GB"
 
 

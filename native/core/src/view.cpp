@@ -178,7 +178,7 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
     const bool painting = p.paint_band >= 0 && p.masks && p.masks->has(p.paint_band);
     // RUDRA 1.1: the region overlay, from the same 8-bit weights the GPU pass samples.
     const std::vector<std::uint8_t> region_w = p.region_overlay && p.overlay_region.enabled
-                                                   ? region_overlay_rgba8(sdr, p.overlay_region, w, h)
+                                                   ? region_overlay_rgba8(sdr, p.overlay_region, w, h, p.overlay_gate)
                                                    : std::vector<std::uint8_t>{};
     // Revision 6: the Sdr source (the plate as light) and the wipe's A | B.
     const bool have_sdr = sdr && sdr->width() == w && sdr->height() == h;
@@ -501,45 +501,66 @@ std::string display_signal_text(const DisplayTarget& t, double view_peak_nits) {
 // ---- RUDRA 1.1: the region overlay and histogram ------------------------------------
 
 namespace {
-float region_weight_at(const PlanarBuffer& s, std::size_t i, const ReconstructionRegion& r) {
-    auto code = [&](int c) { return std::clamp(s.plane(c)[i], 0.0f, 1.0f); };
-    const float y = 0.2126f * code(0) + 0.7152f * code(1) + 0.0722f * code(2);   // as composite.cpp
-    float wh = 0.0f, ws = 0.0f;
-    region_weights(y, r, wh, ws);
-    return std::clamp(std::max(wh, ws), 0.0f, 1.0f);
-}
+// The overlay's weight at SDR luma y: the region's own, or the analytic composite's gate.
+class OverlayWeight {
+public:
+    OverlayWeight(const ReconstructionRegion& r, const RegionOverlayGate& g) : r_(r), g_(g) {
+        p_.mode = g.mode;
+        p_.strength = g.strength;
+        p_.region = r;
+    }
+    float operator()(float y) const {
+        if (g_.analytic) return std::clamp(reconstruction_gate(y, g_.shadow_weight, p_), 0.0f, 1.0f);
+        float wh = 0.0f, ws = 0.0f;
+        region_weights(y, r_, wh, ws);
+        return std::clamp(std::max(wh, ws), 0.0f, 1.0f);
+    }
+    float at(const PlanarBuffer& s, std::size_t i) const {
+        auto code = [&](int c) { return std::clamp(s.plane(c)[i], 0.0f, 1.0f); };
+        return (*this)(0.2126f * code(0) + 0.7152f * code(1) + 0.0722f * code(2));   // as composite.cpp
+    }
+
+private:
+    ReconstructionRegion r_;
+    RegionOverlayGate g_;
+    CompositeParams p_;
+};
 }  // namespace
 
-std::vector<std::uint8_t> region_overlay_rgba8(const SdrImage* sdr, const ReconstructionRegion& region, int width, int height) {
+std::vector<std::uint8_t> region_overlay_rgba8(const SdrImage* sdr, const ReconstructionRegion& region, int width, int height,
+                                               const RegionOverlayGate& gate) {
     const std::size_t n = std::size_t(std::max(width, 1)) * std::size_t(std::max(height, 1));
     std::vector<std::uint8_t> out(n * 4, 0);
     if (!region.enabled || !sdr || sdr->width() != width || sdr->height() != height) return out;
     const PlanarBuffer& s = sdr->buffer();
-    for (std::size_t i = 0; i < n; ++i) out[i * 4] = std::uint8_t(std::lround(region_weight_at(s, i, region) * 255.0f));
+    const OverlayWeight weight(region, gate);
+    for (std::size_t i = 0; i < n; ++i) out[i * 4] = std::uint8_t(std::lround(weight.at(s, i) * 255.0f));
     return out;
 }
 
-RegionHistogram region_histogram(const SdrImage& sdr, const ReconstructionRegion& region, int bins) {
+RegionHistogram region_histogram(const SdrImage& sdr, const ReconstructionRegion& region, int bins, const RegionOverlayGate& gate) {
     bins = std::max(bins, 2);
     RegionHistogram h;
     h.counts.assign(std::size_t(bins), 0.0);
     h.weight.assign(std::size_t(bins), 0.0f);
     const PlanarBuffer& s = sdr.buffer();
     const std::size_t n = std::size_t(sdr.width()) * std::size_t(sdr.height());
-    std::size_t reached = 0;
+    std::size_t reached = 0, strong = 0;
+    const OverlayWeight weight(region, gate);
     for (std::size_t i = 0; i < n; ++i) {
         auto code = [&](int c) { return std::clamp(s.plane(c)[i], 0.0f, 1.0f); };
         const float y = 0.2126f * code(0) + 0.7152f * code(1) + 0.0722f * code(2);
         h.counts[std::size_t(std::min(bins - 1, int(y * float(bins))))] += 1.0;
-        reached += region.enabled ? region_weight_at(s, i, region) > 0.0f : 1;
+        // as the tint: a pixel is reached when its 8-bit weight is not 0
+        const float w = region.enabled || gate.analytic ? weight(y) : 1.0f;
+        reached += std::lround(w * 255.0f) > 0;
+        strong += w >= 0.5f;
     }
     for (double& c : h.counts) c = n ? c / double(n) : 0.0;
-    for (int b = 0; b < bins; ++b) {
-        float wh = 1.0f, ws = 1.0f;
-        region_weights((float(b) + 0.5f) / float(bins), region, wh, ws);
-        h.weight[std::size_t(b)] = std::clamp(std::max(wh, ws), 0.0f, 1.0f);
-    }
+    for (int b = 0; b < bins; ++b)
+        h.weight[std::size_t(b)] = region.enabled || gate.analytic ? weight((float(b) + 0.5f) / float(bins)) : 1.0f;
     h.reached = n ? double(reached) / double(n) : 0.0;
+    h.strong = n ? double(strong) / double(n) : 0.0;
     return h;
 }
 

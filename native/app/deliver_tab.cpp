@@ -329,7 +329,12 @@ void MainWindow::sync_deliver() {
     if (auto* st = findChild<QLabel*>("deliverAiSetup"); st && ai_possible && c.ai_fill) {
         QString why;
         // Where each part was found (4 Nov 2026); missing: Setup… > Set up automatically.
-        if (const auto s = genfill_setup(&why))
+        const auto s = genfill_setup(&why);
+        if (genfill_ready_ != bool(s)) {   // the prompt bar over the viewer follows (7 Nov 2026)
+            genfill_ready_ = bool(s);
+            sync_ai_prompt_bar();
+        }
+        if (s)
             st->setText(QStringLiteral("Ready: Wan2.1-VACE-1.3B (%1) + %2 · %3")
                             .arg(from_path(s->base), from_path(s->lora.filename()),
                                  s->lora_is_v3 ? QStringLiteral("AI fill v3, verified")

@@ -371,6 +371,18 @@ if ($BundleModels) {
     Get-ChildItem $OutModels -Recurse -Include *.safetensors, *.config.json | Remove-Item -Force
 }
 Copy-Item LICENSE, NOTICE $Out
+# 7 Nov 2026: the Python side of the AI fill (rudra/, config/, the bootstrap), no weights. The
+# app finds it beside itself (genfill_job.cpp find_repo) and "Set up automatically" makes its
+# own Python environment from it (scripts\genfill_bootstrap.ps1), so a package user needs no checkout.
+$OutPy = Join-Path $Out "python"
+New-Item -ItemType Directory -Force -Path $OutPy | Out-Null
+foreach ($d in "rudra", "config") {
+    robocopy $d (Join-Path $OutPy $d) *.py /S /XD __pycache__ /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { Fail "copying $d into the package" }
+}
+$global:LASTEXITCODE = 0
+Copy-Item scripts\genfill_bootstrap.ps1, scripts\genfill_bootstrap.sh $OutPy
+if (-not (Test-Path (Join-Path $OutPy "rudra\genfill\run.py"))) { Fail "the package has no python\rudra\genfill" }
 if ($BundleModels -and $AllowNonCommercialWeights -and (Test-Path checkpoints\LICENSE)) { Copy-Item checkpoints\LICENSE (Join-Path $Out "LICENSE-weights") }
 if ($NoModels) {
     "Analytic evaluation package. No model weights bundled. This is not commercial or legal clearance." |

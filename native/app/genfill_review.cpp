@@ -25,11 +25,13 @@
 #include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
 
 #include "genfill_job.hpp"
+#include "main_window.hpp"
 #include "paths.hpp"
 #include "theme.hpp"
 
@@ -299,13 +301,25 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
             status->setText("AI fill setup: the RUDRA repository (rudra/genfill/setup.py) was not found; set it above.");
             return;
         }
-        if (!QFileInfo::exists(from_path(plan.python))) {
+        // 7 Nov 2026: no Python for the fill: the bootstrap makes RUDRA its own (uv, Python 3.12,
+        // PyTorch, the packages) under the app's data folder, then runs the same setup.
+        const std::filesystem::path script = genfill_bootstrap_script(plan.repo);
+        const bool bootstrap = !QFileInfo::exists(from_path(plan.python)) && !script.empty();
+        if (!QFileInfo::exists(from_path(plan.python)) && !bootstrap) {
             status->setText(QStringLiteral("AI fill setup: no Python at %1. Set the Python above (one with PyTorch for your GPU).")
                                 .arg(from_path(plan.python)));
             return;
         }
         const bool have_model = QFileInfo::exists(from_path(plan.base / "transformer" / "config.json"));
-        const QString what = have_model
+        const QString what = bootstrap
+            ? QStringLiteral("This computer has no Python for the AI fill. This installs one for RUDRA only, in\n%1\n\n"
+                             "Python 3.12, PyTorch and the fill's packages (about 5 GB), then %2\n\n"
+                             "Nothing else on this computer changes. It needs a 16 GB GPU (NVIDIA, or Apple silicon). "
+                             "A step that stops resumes when you run this again.")
+                  .arg(from_path(genfill_bootstrap_root()),
+                       have_model ? QStringLiteral("checks the base model already at\n%1").arg(from_path(plan.base))
+                                  : QStringLiteral("downloads Wan2.1-VACE-1.3B (Apache 2.0, about 25 GB) into\n%1").arg(from_path(plan.base)))
+            : have_model
             ? QStringLiteral("The base model is already at\n%1\n\nThis installs the missing Python packages into\n%2")
                   .arg(from_path(plan.base), from_path(plan.python))
             : QStringLiteral("This downloads Wan2.1-VACE-1.3B (Apache 2.0, about 25 GB) into\n%1\n\n"
@@ -315,8 +329,19 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         if (QMessageBox::question(this, "Set up AI fill", what) != QMessageBox::Yes) return;
         auto* proc = new QProcess(this);   // the dialog's: closing it ends the setup
         proc->setWorkingDirectory(from_path(plan.repo));
-        proc->setProgram(from_path(plan.python));
-        proc->setArguments({"-m", "rudra.genfill.setup", "--base", from_path(plan.base), "--json"});
+        if (bootstrap) {
+#ifdef _WIN32
+            proc->setProgram(QStringLiteral("powershell.exe"));
+            proc->setArguments({"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", from_path(script), "-Root",
+                                from_path(genfill_bootstrap_root()), "-Base", from_path(plan.base), "-Repo", from_path(plan.repo)});
+#else
+            proc->setProgram(QStringLiteral("/bin/bash"));
+            proc->setArguments({from_path(script), from_path(genfill_bootstrap_root()), from_path(plan.base), from_path(plan.repo)});
+#endif
+        } else {
+            proc->setProgram(from_path(plan.python));
+            proc->setArguments({"-m", "rudra.genfill.setup", "--base", from_path(plan.base), "--json"});
+        }
         auto env = QProcessEnvironment::systemEnvironment();
         env.insert("PYTHONUNBUFFERED", "1");
         proc->setProcessEnvironment(env);
@@ -326,7 +351,7 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         automatic->setEnabled(false);
         status->setText("Setting up the AI fill…");
         auto out_buf = std::make_shared<QByteArray>();
-        connect(proc, &QProcess::readyReadStandardOutput, this, [proc, out_buf, status, log_view] {
+        connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc, out_buf, status, log_view] {
             out_buf->append(proc->readAllStandardOutput());
             for (int nl; (nl = out_buf->indexOf('\n')) >= 0;) {
                 const QByteArray line = out_buf->left(nl).trimmed();
@@ -334,6 +359,11 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
                 const QJsonObject o = QJsonDocument::fromJson(line).object();
                 const QString ev = o.value("event").toString();
                 if (ev == "step") status->setText(o.value("text").toString());
+                else if (ev == "bootstrap") {   // the fill's own Python exists now: it is the one to use
+                    QSettings().setValue("genfill/python", o.value("python").toString());
+                    if (auto* le = findChild<QLineEdit*>("genfillSetup_python")) le->setText(o.value("python").toString());
+                    log_view->appendPlainText(QStringLiteral("Python for the AI fill: ") + o.value("python").toString());
+                }
                 else if (ev == "check")
                     log_view->appendPlainText(QStringLiteral("%1 %2 GB on %3 · %4 GB free · model %5")
                                                   .arg(o.value("gpu").toString(o.value("device").toString()))
@@ -363,6 +393,8 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
             const auto ok = genfill_setup(&w);
             status->setText(ok ? genfill_ready_text(*ok)
                                : QStringLiteral("Packages and base model are set up. ") + w);
+            // The last part, the LoRA, is a model package (7 Nov 2026): one click to it.
+            if (auto* lora = findChild<QPushButton*>("genfillGetLora")) lora->setVisible(!ok && w.contains("no LoRA"));
             refresh_found();
         });
         connect(proc, &QProcess::errorOccurred, this, [status, busy, automatic](QProcess::ProcessError) {
@@ -371,6 +403,17 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
             status->setText("AI fill setup: the Python could not be started.");
         });
         proc->start();
+    });
+    // 7 Nov 2026: the LoRA is File > Model packages > AI fill v3; this opens it (the dialog closes first,
+    // it is modal) when it is the only part missing.
+    auto* get_lora = box->addButton("Download AI fill v3…", QDialogButtonBox::ActionRole);
+    get_lora->setObjectName("genfillGetLora");
+    get_lora->setToolTip("File > Model packages: AI fill v3 (the RUDRA LoRA, Apache 2.0), checked by its SHA-256");
+    get_lora->setVisible(!found && why.contains("no LoRA"));
+    connect(get_lora, &QPushButton::clicked, this, [this] {
+        auto* mw = dynamic_cast<MainWindow*>(parentWidget());
+        accept();
+        if (mw) QTimer::singleShot(0, mw, [mw] { mw->open_model_manager(); });
     });
     auto* check = box->addButton("Save and check", QDialogButtonBox::ApplyRole);
     connect(check, &QPushButton::clicked, this, [this, status] {
@@ -384,6 +427,7 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         const auto ok = genfill_setup(&w);
         status->setText(ok ? genfill_ready_text(*ok) : w);
         if (auto* u = findChild<QPushButton*>(QStringLiteral("genfillUseV3"))) u->setVisible(ok && !ok->lora_is_v3 && !ok->v3_found.empty());
+        if (auto* l = findChild<QPushButton*>(QStringLiteral("genfillGetLora"))) l->setVisible(!ok && w.contains("no LoRA"));
         refresh_found();
     });
     connect(box, &QDialogButtonBox::rejected, this, &QDialog::reject);

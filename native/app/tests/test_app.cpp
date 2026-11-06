@@ -6511,6 +6511,46 @@ TEST(AppFillView, ThePreviewSaysWhyItShowsNothing) {
     EXPECT_TRUE(app::genfill_preview_hint(0.02, false, 1000).isEmpty());
 }
 
+// ---- AI fill from a package (7 Nov 2026): the bootstrap beside the packaged python/, or in the
+// repository's scripts/; the fill's own Python under the app's data folder ----
+TEST(GenFill, TheBootstrapIsFoundInAPackageOrTheRepository) {
+#ifdef _WIN32
+    const char* name = "genfill_bootstrap.ps1";
+#else
+    const char* name = "genfill_bootstrap.sh";
+#endif
+    const auto root = std::filesystem::temp_directory_path() / "rudra_genfill_bootstrap";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root / "package" / "python");
+    std::filesystem::create_directories(root / "repo" / "scripts");
+    std::ofstream(root / "package" / "python" / name) << "#";
+    std::ofstream(root / "repo" / "scripts" / name) << "#";
+    EXPECT_EQ(app::genfill_bootstrap_script(root / "package" / "python"), root / "package" / "python" / name);
+    EXPECT_EQ(app::genfill_bootstrap_script(root / "repo"), root / "repo" / "scripts" / name);
+    EXPECT_TRUE(app::genfill_bootstrap_script(root / "nowhere").empty());
+    EXPECT_TRUE(app::genfill_bootstrap_script({}).empty());
+    EXPECT_EQ(app::genfill_bootstrap_root().filename(), "genfill");
+    const auto py = app::genfill_bootstrap_python();
+    EXPECT_EQ(py.parent_path().parent_path().parent_path(), app::genfill_bootstrap_root());   // <root>/venv/<bin>/python
+    std::filesystem::remove_all(root);
+}
+
+// ---- the region histogram says how much acts, as the tint (7 Nov 2026) ----
+TEST(AppRegion, TheHistogramCaptionSaysHowMuchActs) {
+    app::RegionHistogramView v;
+    RegionHistogram h;
+    h.counts = {0.5, 0.5};
+    h.weight = {0.0f, 1.0f};
+    h.reached = 0.25;
+    h.strong = 0.1;
+    v.set(h, {0.2f, 0.85f, 0.95f}, true);
+    EXPECT_TRUE(v.caption().contains("Acts on 25.0 %")) << v.caption().toStdString();
+    EXPECT_TRUE(v.caption().contains("10.0 %"));
+    EXPECT_TRUE(v.caption().contains("built-in priors"));
+    v.set(h, {0.2f, 0.85f, 0.95f}, false);
+    EXPECT_FALSE(v.caption().contains("built-in priors"));
+}
+
 // ---- the prompt bar over the viewer (6 Nov 2026) ----
 TEST(AppFillView, ThePromptBarShowsWhileTheFillIsShown) {
     app::MainWindow w(false);

@@ -46,28 +46,34 @@ if TORCH_AVAILABLE:
         from .metrics import validation_metrics, highlight_reconstruction_accuracy, exposure_ev_error, psnr, ssim, delta_e_2000
         from .hdrvdp import hdr_vdp3_jod, colorvideovdp_available
         from .sdr2hdr import SDR2HDRNet, TemporalHDRRefiner, SDR2HDROutput, canonicalize_sdr, sdr2hdr_loss
-    except ImportError:
-        from config import RUDRAConfig, RUDRA_MODEL_CONFIGS, FORMAT_NAMES, FORMAT_TO_ID, FORMAT_DIM, make_rudra_config
-        from normalization import normalize_to_scene_linear
-        from descriptor import RUDRADescriptor, format_onehot
-        from spatial_descriptor import RUDRASpatialDescriptor
-        from encoder import RUDRAProjection
-        from dre_transformer import RUDRADynamicRangeEncoder
-        from decoder import RUDRADecoder, RUDRAFullDecoder, load_rudra_decoder
-        from adapter import RUDRALoRALinear, inject_rudra_lora, rudra_gate_regularization_loss
-        from cross_attention import RUDRACrossAttentionProjection, RUDRACrossAttentionInjector, inject_rudra_cross_attention
-        from pipeline import RUDRAPipeline, PipelineMode
-        from augment import RUDRAAugmentConfig, RUDRAHDRAugment
-        from losses import (
-            highlight_preservation_loss, chromaticity_loss, exposure_consistency_loss,
-            perceptual_loss, latent_alignment_loss, rudra_reconstruction_loss,
-        )
-        from stats import DescriptorStats, DescriptorNormalizer
-        from sampler import SampleHDRStats, HighlightBalancedSampler, bucket_from_stats
-        from train_modes import RUDRATrainMode, LossWeights, scheduled_loss_weights
-        from metrics import validation_metrics, highlight_reconstruction_accuracy, exposure_ev_error, psnr, ssim, delta_e_2000
-        from hdrvdp import hdr_vdp3_jod, colorvideovdp_available
-        from sdr2hdr import SDR2HDRNet, TemporalHDRRefiner, SDR2HDROutput, canonicalize_sdr, sdr2hdr_loss
+    except ImportError as _model_import_error:
+        # 7 Nov 2026: the app ships rudra/ for the AI fill and the delivery layer, whose
+        # environments need none of the research model's extras. The flat layout of the
+        # old research checkout is tried, and a failure leaves only the model symbols out.
+        try:
+            from config import RUDRAConfig, RUDRA_MODEL_CONFIGS, FORMAT_NAMES, FORMAT_TO_ID, FORMAT_DIM, make_rudra_config
+            from normalization import normalize_to_scene_linear
+            from descriptor import RUDRADescriptor, format_onehot
+            from spatial_descriptor import RUDRASpatialDescriptor
+            from encoder import RUDRAProjection
+            from dre_transformer import RUDRADynamicRangeEncoder
+            from decoder import RUDRADecoder, RUDRAFullDecoder, load_rudra_decoder
+            from adapter import RUDRALoRALinear, inject_rudra_lora, rudra_gate_regularization_loss
+            from cross_attention import RUDRACrossAttentionProjection, RUDRACrossAttentionInjector, inject_rudra_cross_attention
+            from pipeline import RUDRAPipeline, PipelineMode
+            from augment import RUDRAAugmentConfig, RUDRAHDRAugment
+            from losses import (
+                highlight_preservation_loss, chromaticity_loss, exposure_consistency_loss,
+                perceptual_loss, latent_alignment_loss, rudra_reconstruction_loss,
+            )
+            from stats import DescriptorStats, DescriptorNormalizer
+            from sampler import SampleHDRStats, HighlightBalancedSampler, bucket_from_stats
+            from train_modes import RUDRATrainMode, LossWeights, scheduled_loss_weights
+            from metrics import validation_metrics, highlight_reconstruction_accuracy, exposure_ev_error, psnr, ssim, delta_e_2000
+            from hdrvdp import hdr_vdp3_jod, colorvideovdp_available
+            from sdr2hdr import SDR2HDRNet, TemporalHDRRefiner, SDR2HDROutput, canonicalize_sdr, sdr2hdr_loss
+        except ImportError:
+            MODEL_IMPORT_ERROR = _model_import_error   # rudra.genfill and rudra.delivery still import
 
     __all__ = [
         "TORCH_AVAILABLE",
