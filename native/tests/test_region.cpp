@@ -333,8 +333,7 @@ TEST(ReconstructionMattes, PublishedBesideTheMasterWithThePaintedMasks) {
                                                "rudra.paint.1", "rudra.region", "rudra.shadow"}));
     EXPECT_TRUE(fs::exists(dir / "SH010.regions.png"));                         // priority 5: the class picture
     EXPECT_EQ(r->regions, dir / "SH010.regions.png");
-    std::ifstream side(dir / "SH010.json");
-    const json sj = json::parse(side);
+    const json sj = read_json(dir / "SH010.json");   // closed before remove_all: Windows will not delete an open file
     EXPECT_EQ(sj.at("mattes").at("file"), "SH010.mattes.exr");
     // a second publish refuses, and leaves nothing half-written
     EXPECT_FALSE(publish_master(fr.sdr, 8, fields, FrameScalars{}, kAnalyticConstants, q, dir / "SH010.exr"));
@@ -388,8 +387,7 @@ TEST(Brackets, PublishedWithTheMasterAndThePreviewMatchesTheExport) {
             ASSERT_TRUE(r) << r.error().message << " " << r.error().detail;
             ASSERT_EQ(r->brackets.size(), 3u);
             for (const char* f : {"SH010.ev-2.png", "SH010.ev+0.png", "SH010.ev+2.png"}) EXPECT_TRUE(fs::exists(dir / f)) << f;
-            std::ifstream side(dir / "SH010.json");
-            const json sj = json::parse(side);
+            const json sj = read_json(dir / "SH010.json");   // closed before remove_all: Windows will not delete an open file
             const int delta = sj.at("brackets").at("preview_vs_export").at("max_code_delta").get<int>();
             std::cout << container << (half ? " half" : " float") << ": max code delta " << delta << ", "
                       << sj.at("brackets").at("preview_vs_export").at("pixels_differing_pct") << " % differ\n";
@@ -491,8 +489,7 @@ TEST(Gaps, ACEScgAndRec709ContainersRoundTripToThePreview) {
         const auto r = publish_master(fr.sdr, 8, analytic_fields_for(fr.sdr, q), FrameScalars{}, kAnalyticConstants, q,
                                       dir / "SH010.exr");
         ASSERT_TRUE(r) << container << ": " << r.error().message;
-        std::ifstream side(dir / "SH010.json");
-        const json sj = json::parse(side);
+        const json sj = read_json(dir / "SH010.json");   // closed before remove_all: Windows will not delete an open file
         EXPECT_EQ(sj.at("brackets").at("preview_vs_export").at("max_code_delta").get<int>(), 0) << container;
         EXPECT_EQ(sj.at("container").get<std::string>(), std::string(container) == "acescg" ? "ACEScg (AP1)" : "scene-linear Rec.709");
         auto img = read_exr(dir / "SH010.exr");
