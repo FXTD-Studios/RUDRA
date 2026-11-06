@@ -23,6 +23,7 @@ import json
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -37,11 +38,26 @@ HF_URL = re.compile(r"^https://huggingface\.co/(?P<repo>[^/]+/[^/]+)/resolve/(?P
 USER_AGENT = "Mozilla/5.0 (compatible; RUDRA-models-index/1.1)"
 
 
+class HttpsOnlyRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only to another https URL: an index that came over plain http could have
+    been changed on the way, and its URLs and checksums are what the app trusts."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        """Refuse a non-https target before it is requested, else redirect as urllib does."""
+        if urllib.parse.urlsplit(newurl).scheme.lower() != "https":
+            raise urllib.error.URLError(f"refused a redirect to {newurl} (not https)")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def load(src: str) -> dict:
+    """The published index: from an https URL (redirects only to https) or from a saved file."""
     if src.startswith("https://"):
         req = urllib.request.Request(src, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+        opener = urllib.request.build_opener(HttpsOnlyRedirects)
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:   # noqa: S310 (https only)
+            with opener.open(req, timeout=30) as r:
+                if not r.geturl().startswith("https://"):   # never reached: the handler refuses first
+                    raise SystemExit(f"{src}: ended at {r.geturl()}, not https")
                 return json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             raise SystemExit(f"{src}: the site answered {e.code}. Open it in a browser, save it as a file "
@@ -52,6 +68,7 @@ def load(src: str) -> dict:
 
 
 def pairs(items: list[str], what: str) -> dict[str, str]:
+    """ID=VALUE arguments -> {ID: VALUE}; anything else stops with what was expected."""
     out = {}
     for it in items:
         if "=" not in it:
@@ -74,6 +91,8 @@ def where(entry: dict) -> tuple[str, str]:
 
 
 def update(index: dict, channels: dict[str, str], refresh: dict[str, Path], revision: str | None) -> dict:
+    """The index with the given channels set and the given models' files listed again from their
+    folders (same repo and folder, `revision` or the old one); every other entry is kept as it was."""
     models = index.get("models", [])
     by_id = {m["id"]: m for m in models}
     for mid in list(channels) + list(refresh):
@@ -102,6 +121,7 @@ def update(index: dict, channels: dict[str, str], refresh: dict[str, Path], revi
 
 
 def main(argv: list[str] | None = None) -> int:
+    """The command line: read --in, change it, write --out, print each model's channel and file count."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--in", dest="src", required=True, help="the published models.json (https URL or a file)")
     ap.add_argument("--out", required=True, type=Path)
