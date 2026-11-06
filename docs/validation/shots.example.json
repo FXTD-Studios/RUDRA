@@ -1,0 +1,15 @@
+{
+  "shots": [
+    {"name": "SKY01_blue_partial_clip", "path": "D:/plates/rudra11/sky01.mov", "category": "sky"},
+    {"name": "SKY02_overcast_white", "path": "D:/plates/rudra11/sky02.mov", "category": "sky"},
+    {"name": "SUN01_sunset_disc", "path": "D:/plates/rudra11/sunset01.mov", "category": "sunset"},
+    {"name": "SUN02_backlit_haze", "path": "D:/plates/rudra11/sunset02.mov", "category": "sunset"},
+    {"name": "WIN01_interior_window", "path": "D:/plates/rudra11/window01.mov", "category": "window"},
+    {"name": "WIN02_window_pan", "path": "D:/plates/rudra11/window02.mov", "category": "window"},
+    {"name": "REF01_car_specular", "path": "D:/plates/rudra11/reflection01.mov", "category": "reflection"},
+    {"name": "REF02_water_glints", "path": "D:/plates/rudra11/reflection02.mov", "category": "reflection"},
+    {"name": "FIRE01_campfire", "path": "D:/plates/rudra11/fire01.mov", "category": "fire"},
+    {"name": "FIRE02_candles_handheld", "path": "D:/plates/rudra11/fire02.mov", "category": "fire"},
+    {"name": "MIX01_night_street", "path": "D:/plates/rudra11/night01.mov", "category": "other"}
+  ]
+}

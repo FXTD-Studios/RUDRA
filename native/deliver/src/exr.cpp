@@ -21,6 +21,7 @@ namespace rudra {
 const Chromaticities kAp0Chromaticities{0.7347, 0.2653, 0.0, 1.0, 0.0001, -0.077, 0.32168, 0.33767};
 const Chromaticities kAp1Chromaticities{0.713, 0.293, 0.165, 0.830, 0.128, 0.044, 0.32168, 0.33767};
 const Chromaticities kRec2020Chromaticities{0.708, 0.292, 0.170, 0.797, 0.131, 0.046, 0.3127, 0.3290};
+const Chromaticities kRec709Chromaticities{0.640, 0.330, 0.300, 0.600, 0.150, 0.060, 0.3127, 0.3290};
 
 namespace {
 
@@ -75,6 +76,14 @@ std::uint16_t float_to_half(float f) noexcept {
     return std::uint16_t(sign | h);
 }
 
+namespace {
+// The bytes of an uncompressed scanline EXR whose channel i is `names[i]`, read from `planes[i]`
+// (w x h floats each), written in name order as the format asks.
+std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, const std::vector<const float*>& planes,
+                                       int w, int h, bool half, const std::optional<Chromaticities>& chroma,
+                                       const ExrAttributes& attributes, const ExrTypedAttributes& typed);
+}  // namespace
+
 Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
                                             const std::optional<Chromaticities>& chroma, const ExrAttributes& attributes,
                                             const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed) {
@@ -89,6 +98,43 @@ Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
     std::vector<std::string> names = {"R", "G", "B"};
     if (n_ch == 4) names.push_back("A");
     if (reconstruction_mask) names.push_back("rudra.reconstructed");
+    std::vector<const float*> planes;
+    for (int c = 0; c < n_ch; ++c) planes.push_back(rgb.plane(c));
+    if (reconstruction_mask) planes.push_back(reconstruction_mask->plane(0));
+    return planes_bytes(names, planes, w, h, half, chroma, attributes, typed);
+}
+
+Result<void> write_mattes_exr(const std::filesystem::path& path, const NamedPlanes& planes,
+                              const ExrAttributes& attributes) {
+    if (planes.empty()) return make_error(ErrorCode::InvalidArgument, "a mattes EXR needs at least one matte");
+    const int w = planes.front().second.width(), h = planes.front().second.height();
+    std::vector<std::string> names;
+    std::vector<const float*> data;
+    for (const auto& [name, p] : planes) {
+        if (name.empty() || name == "R" || name == "G" || name == "B" || name == "A" ||
+            std::find(names.begin(), names.end(), name) != names.end())
+            return make_error(ErrorCode::InvalidArgument, "matte names must be unique and not R, G, B or A", name);
+        if (p.channels() != 1 || p.width() != w || p.height() != h ||
+            !std::all_of(p.span().begin(), p.span().end(), [](float v) { return std::isfinite(v) && v >= 0 && v <= 1; }))
+            return make_error(ErrorCode::InvalidArgument, "a matte must be finite HxW values in [0, 1], all one size", name);
+        names.push_back(name);
+        data.push_back(p.plane(0));
+    }
+    const auto bytes = planes_bytes(names, data, w, h, false, std::nullopt, attributes, {});
+    std::error_code ec;
+    if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), ec);
+    std::ofstream out(path, std::ios::binary);
+    if (!out) return make_error(ErrorCode::IoError, "Cannot write the mattes EXR.", path.string());
+    out.write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
+    out.close();
+    if (!out) return make_error(ErrorCode::IoError, "Cannot write the mattes EXR.", path.string());
+    return {};
+}
+
+namespace {
+std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, const std::vector<const float*>& planes,
+                                       int w, int h, bool half, const std::optional<Chromaticities>& chroma,
+                                       const ExrAttributes& attributes, const ExrTypedAttributes& typed) {
     std::vector<int> order(names.size());
     for (std::size_t i = 0; i < names.size(); ++i) order[i] = static_cast<int>(i);
     std::sort(order.begin(), order.end(), [&](int a, int b) { return names[a] < names[b]; });
@@ -151,7 +197,7 @@ Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
         put_i32(out, y);
         put_i32(out, static_cast<std::int32_t>(row_size));
         for (int c : order) {
-            const float* row = (c == n_ch ? reconstruction_mask->plane(0) : rgb.plane(c)) + std::size_t(y) * std::size_t(w);
+            const float* row = planes[std::size_t(c)] + std::size_t(y) * std::size_t(w);
             for (int x = 0; x < w; ++x) {
                 const float v = clean(row[x]);
                 if (half) {
@@ -166,6 +212,7 @@ Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
     }
     return out;
 }
+}  // namespace
 
 Result<void> write_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, bool half,
                        const std::optional<Chromaticities>& chroma, const ExrAttributes& attributes,
@@ -381,7 +428,16 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
             const std::size_t bytes = std::size_t(w) * (half ? 2 : 4);
             if (pos + bytes > raw.size()) return bad("truncated data");
             const bool is_mask = channels[c] == "rudra.reconstructed";
-            if (plane >= 0 || is_mask) {
+            PlanarBuffer* other = nullptr;
+            if (plane < 0 && !is_mask) {   // any other channel, kept by name (5 Nov 2026)
+                auto it = std::find_if(img.other.begin(), img.other.end(), [&](const auto& p) { return p.first == channels[c]; });
+                if (it == img.other.end()) {
+                    img.other.emplace_back(channels[c], PlanarBuffer(1, h, w));
+                    it = img.other.end() - 1;
+                }
+                other = &it->second;
+            }
+            {
                 for (int x = 0; x < w; ++x) {
                     float v;
                     if (half) {
@@ -393,6 +449,7 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
                         std::memcpy(&v, raw.data() + pos + std::size_t(x) * 4, 4);
                     }
                     if (is_mask) img.reconstruction_mask->at(0, y, x) = v;
+                    else if (other) other->at(0, y, x) = v;
                     else img.pixels.at(plane, y, x) = v;
                 }
             }

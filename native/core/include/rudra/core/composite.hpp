@@ -8,6 +8,9 @@
 // training/infer_sdr2hdr.py predict_fields) plus Region EV from
 // rudra/delivery/controls.py, which is also what ui/compositor.js runs.
 
+#include <array>
+#include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -116,6 +119,67 @@ struct CompositeParams {
 // luma y (the shadow one times the frame's shadow weight), the region's weights
 // when it is on, the recovery mode, times the strength.
 float reconstruction_gate(float y, float shadow_weight, const CompositeParams& params) noexcept;
+
+// The reconstruction's mattes (RUDRA 1.1 priority 3, 5 Nov 2026), one plane each, in [0, 1],
+// for compositing downstream (deliver writes them as <master>.mattes.exr):
+//
+//   highlight  the highlight prior as the gate applied it: hp (times the region's highlight
+//              weight), 0 when the mode excludes highlights, times strength, times the
+//              model's recovery mask when Preserve is on; clipped to [0, 1]
+//   shadow     the same for the shadow prior
+//   region     max of the region's highlight and shadow weights, clipped (only when it is on)
+//   changed    1 where the reconstruction (the composite without the grade: no Region EV, no
+//              exposure) differs from the corrected baseline in any channel, else 0: exact by
+//              construction, so it matches the image bit for bit
+//
+// With the region on, a pixel whose highlight and shadow mattes are both 0 is the baseline
+// exactly (changed 0); tests/test_region.cpp holds that.
+struct ReconstructionMattes {
+    PlanarBuffer highlight, shadow, changed;
+    std::optional<PlanarBuffer> region;
+};
+// `reconstruction` is composite(sdr, fields, scalars, model, params with no grade), `baseline` the
+// corrected baseline for the same params (both what master writing already computes).
+ReconstructionMattes reconstruction_mattes(const SdrImage& sdr, const Fields& fields, const FrameScalars& scalars,
+                                           const CompositeParams& params, const NetworkLinearImage& reconstruction,
+                                           const NetworkLinearImage& baseline);
+// RUDRA 1.1 priority 5 (5 Nov 2026): what each pixel of a reconstruction is, and how tightly
+// the SDR pins its value.
+//
+//   0 preserved      bit for bit the corrected baseline: the source, decoded (the original)
+//   1 follows        moved less than kChangeStops (0.1 stop) from it
+//   2 reconstructed  moved more, where the SDR has detail (compare.hpp: reinterpreted)
+//   3 estimated      moved more, where the SDR is clipped or crushed: no information, an
+//                    extrapolation (compare.hpp: invented)
+//   4 generated      drawn by the AI fill (`generated` > 0), whatever else holds
+//
+// confidence, in [0, 1], is a constraint score, not a calibrated probability: 1 for classes
+// 0 and 1; 1 / (1 + |d|) for 2 (the SDR code still brackets the value), 0.5 / (1 + |d|) for 3
+// (the SDR only bounds it from one side), 0 for 4 (plausible, not recovered); d the move in
+// stops of max(R, G, B) against the baseline.
+enum class PixelClass : std::uint8_t { Preserved = 0, Follows = 1, Reconstructed = 2, Estimated = 3, Generated = 4 };
+inline constexpr int kPixelClasses = 5;
+struct PixelClassMap {
+    int width = 0, height = 0;
+    std::vector<std::uint8_t> cls;   // PixelClass per pixel, image order
+    PlanarBuffer confidence;         // 1 plane
+    std::array<double, kPixelClasses> share{};   // of all pixels, 0..1
+};
+// `reconstruction` and `baseline` network units (ungraded, as the mattes); `generated` an
+// optional one-plane AI fill weight of the same size.
+PixelClassMap classify_pixels(const SdrImage& sdr, const NetworkLinearImage& reconstruction,
+                              const NetworkLinearImage& baseline, const PlanarBuffer* generated = nullptr);
+// The class colours of the regions picture (sRGB codes), over the picture's grey.
+inline constexpr std::array<std::array<float, 3>, kPixelClasses> kPixelClassColour{{
+    {0.0f, 0.0f, 0.0f},        // preserved: the grey picture only
+    {0.0f, 0.0f, 0.0f},        // follows: the grey picture only
+    {0.25f, 0.78f, 0.86f},     // reconstructed: the Invented layer's reinterpreted cyan
+    {0.92f, 0.30f, 0.86f},     // estimated: the Invented layer's invented magenta
+    {0.98f, 0.78f, 0.20f},     // generated: amber
+}};
+
+// params without the grade (Region EV bands and exposure), what the mattes compare.
+CompositeParams ungraded(CompositeParams params);
 
 // 2^ev, the grade's exposure gain (1 at 0 EV).
 double exposure_gain(double ev) noexcept;

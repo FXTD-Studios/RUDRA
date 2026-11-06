@@ -245,8 +245,9 @@ public:
         auto pic = tex(QRhiTexture::RGBA16F, QRhiTexture::RenderTarget);
         std::unique_ptr<QRhiTexture> tm(rhi_->newTexture(QRhiTexture::RGBA8, QSize(1, 1)));   // no masks: bound, unread
         std::unique_ptr<QRhiTexture> tl(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(1, 1)));   // no SDR light: bound, unread
+        std::unique_ptr<QRhiTexture> tr(rhi_->newTexture(QRhiTexture::RGBA8, QSize(1, 1)));     // no region overlay: bound, unread
         if (!ta->create() || !tb->create() || !tbase->create() || !model->create() || !pic->create() || !tm->create() ||
-            !tl->create())
+            !tl->create() || !tr->create())
             return make_error(ErrorCode::BackendError, "GPU texture creation failed.");
         std::unique_ptr<QRhiTextureRenderTarget> mrt(rhi_->newTextureRenderTarget({QRhiColorAttachment(model.get())}));
         std::unique_ptr<QRhiRenderPassDescriptor> mrp(mrt->newCompatibleRenderPassDescriptor());
@@ -268,6 +269,7 @@ public:
             QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, tbase.get(), sampler_.get()),
             QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, tm.get(), linear_.get()),
             QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage, tl.get(), sampler_.get()),
+            QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage, tr.get(), sampler_.get()),
         });
         if (!csrb->create() || !dsrb->create()) return make_error(ErrorCode::BackendError, "GPU resource bindings failed.");
         auto pipeline = [&](const QShader& frag, QRhiShaderResourceBindings* srb, QRhiRenderPassDescriptor* rp) {
@@ -601,12 +603,16 @@ private:
         std::vector<float> light = have_sdr ? sdr_light_rgba(sdr, params.anchor_knots) : std::vector<float>(4, 0.0f);
         const QSize light_size = have_sdr ? QSize(w, h) : QSize(1, 1);
         std::unique_ptr<QRhiTexture> tl(rhi_->newTexture(QRhiTexture::RGBA32F, light_size));
+        // RUDRA 1.1: the region overlay's weights (binding 5), core's own bytes; all 0 when off.
+        const std::vector<std::uint8_t> region_bytes = region_overlay_rgba8(
+            params.region_overlay ? sdr : nullptr, params.overlay_region, w, h);
+        std::unique_ptr<QRhiTexture> tr(rhi_->newTexture(QRhiTexture::RGBA8, QSize(w, h)));
         std::unique_ptr<QRhiTexture> ta(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
         std::unique_ptr<QRhiTexture> tb(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
         std::unique_ptr<QRhiTexture> tm(rhi_->newTexture(QRhiTexture::RGBA8, QSize(w, h)));
         std::unique_ptr<QRhiTexture> out(rhi_->newTexture(fmt, QSize(w, h), 1,
                                                           QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
-        if (!ta->create() || !tb->create() || !tm->create() || !tl->create() || !out->create())
+        if (!ta->create() || !tb->create() || !tm->create() || !tl->create() || !tr->create() || !out->create())
             return make_error(ErrorCode::BackendError, "GPU texture creation failed.");
         std::unique_ptr<QRhiTextureRenderTarget> rt(rhi_->newTextureRenderTarget({QRhiColorAttachment(out.get())}));
         std::unique_ptr<QRhiRenderPassDescriptor> rp(rt->newCompatibleRenderPassDescriptor());
@@ -619,6 +625,7 @@ private:
             QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, tb.get(), sampler_.get()),
             QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, tm.get(), sampler_.get()),
             QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage, tl.get(), sampler_.get()),
+            QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage, tr.get(), sampler_.get()),
         });
         if (!srb->create()) return make_error(ErrorCode::BackendError, "GPU resource bindings failed.");
         std::unique_ptr<QRhiGraphicsPipeline> pipe(rhi_->newGraphicsPipeline());
@@ -637,6 +644,8 @@ private:
         up->updateDynamicBuffer(vbuf_.get(), 0, sizeof(ViewUbo), &u);
         up->uploadTexture(tl.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
             0, 0, QRhiTextureSubresourceUploadDescription(light.data(), quint32(light.size() * sizeof(float))))));
+        up->uploadTexture(tr.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
+            0, 0, QRhiTextureSubresourceUploadDescription(region_bytes.data(), quint32(region_bytes.size())))));
         up->uploadTexture(ta.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
             0, 0, QRhiTextureSubresourceUploadDescription(a.data(), quint32(a.size() * sizeof(float))))));
         up->uploadTexture(tb.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(

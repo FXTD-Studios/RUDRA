@@ -40,7 +40,15 @@ int pq12(double nits) noexcept {
     return static_cast<int>(std::clamp(r, 0.0f, 4095.0f));
 }
 
-Result<PlanarBuffer> master_to_peak(const PlanarBuffer& in, double peak, std::optional<double> knee_nits) {
+const char* peak_fit_name(PeakFit fit) noexcept { return fit == PeakFit::KeepLuminance ? "luminance" : "scale"; }
+
+std::optional<PeakFit> peak_fit_from_name(std::string_view name) noexcept {
+    if (name == "luminance") return PeakFit::KeepLuminance;
+    if (name == "scale") return PeakFit::Scale;
+    return std::nullopt;
+}
+
+Result<PlanarBuffer> master_to_peak(const PlanarBuffer& in, double peak, std::optional<double> knee_nits, PeakFit fit) {
     if (!(peak >= 100.0 && peak <= 10000.0))
         return make_error(ErrorCode::InvalidArgument, "peak_nits must be between 100 and 10000");
     const double knee = knee_nits ? *knee_nits : 0.75 * peak;
@@ -56,9 +64,14 @@ Result<PlanarBuffer> master_to_peak(const PlanarBuffer& in, double peak, std::op
         const float compressed = lum <= kf ? lum : kf + span * (1.0f - std::exp(-(lum - kf) / span));
         const float k = compressed / std::max(lum, 1e-6f);
         for (float& v : px) v *= k;
-        const float cmax = std::max({px[0], px[1], px[2]});
-        const float s = std::min(1.0f, pf / std::max(cmax, 1e-6f));
-        for (int c = 0; c < 3; ++c) out.plane(c)[i] = std::clamp(px[c] * s, 0.0f, pf);
+        if (fit == PeakFit::Scale) {   // the Python's arithmetic, bit for bit
+            const float cmax = std::max({px[0], px[1], px[2]});
+            const float s = std::min(1.0f, pf / std::max(cmax, 1e-6f));
+            for (int c = 0; c < 3; ++c) out.plane(c)[i] = std::clamp(px[c] * s, 0.0f, pf);
+            continue;
+        }
+        fit_to_peak(px, compressed, pf, fit);
+        for (int c = 0; c < 3; ++c) out.plane(c)[i] = std::clamp(px[c], 0.0f, pf);
     }
     return out;
 }

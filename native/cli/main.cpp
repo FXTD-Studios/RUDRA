@@ -317,6 +317,16 @@ Result<std::unique_ptr<InferenceBackend>> backend_for(const ModelManifest& m, co
 
 int cmd_master(const fs::path& pkg, const fs::path& image, const fs::path& out, const std::string& runtime,
                Device device, const std::string& params) {
+    if (pkg == "analytic") {   // RUDRA 1.1: no package, no model; the app's default reconstruction
+        auto q = master_request_from_json(params.empty() ? "{}" : params);
+        if (!q) return fail(q.error());
+        auto r = render_analytic_master(image, *q, out);
+        if (!r) return fail(r.error());
+        std::printf("%s  %dx%d, %d-bit source, MaxCLL %d, MaxFALL %d, peak %.1f nits (analytic)\n  sidecar %s\n",
+                    r->exr.string().c_str(), r->width, r->height, r->source_bits, r->maxcll, r->maxfall, r->peak_nits,
+                    r->sidecar.string().c_str());
+        return 0;
+    }
     auto m = read_manifest(pkg);
     if (!m) return fail(m.error());
     auto b = backend_for(*m, runtime, device);
@@ -687,7 +697,7 @@ void usage() {
                  "       rudra-native bench <package> [--runtime ...] [--device ...] [--precision fp32|fp16] [--size WxH[,WxH]] [--iters N]\n"
                  "                          [--json FILE] [--budget FILE --machine LABEL]\n"
                  "       rudra-native aces-v2 <aces-v2-package> <image|folder> --out <dir> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml] [--ocio-threads N] [--no-smoothing] [--luminance-guard|--no-luminance-guard]\n"
-                 "       rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]\n"
+                 "       rudra-native master <package|analytic> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]\n"
                  "       rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]\n"
                  "       rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]\n"
                  "       rudra-native video <package> <input> --output <file> [rudra/video.py options] [--grade FILE] [--shots FILE]\n"

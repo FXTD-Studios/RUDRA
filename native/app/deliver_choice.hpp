@@ -38,6 +38,8 @@ struct DeliverChoice {
     int pq_peak = 1000;              // the learned PQ target: 1000, 2000 or 4000 nits (ACES 2.0, P3 D65)
     QString codec = "prores422hq";   // 10-bit: "prores422hq", "prores4444", "prores4444xq" (learned) or "hevc10" (learned, PQ: HDR10 MP4)
     bool keep_exr = false;           // learned movie: the EXR masters beside it
+    bool mattes = false;             // analytic EXR still / sequence: <name>.mattes.exr beside each (RUDRA 1.1)
+    bool brackets = false;           // analytic EXR still / sequence: -2 / 0 / +2 EV PNGs beside each (RUDRA 1.1)
     double fps = 24.0;               // a movie made from stills
     bool ai_fill = false;            // learned EXR still / sequence: then the AI fill of the master
     GenFillOptions ai;               // its thresholds, prompts, seed and steps

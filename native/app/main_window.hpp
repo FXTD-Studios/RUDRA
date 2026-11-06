@@ -232,6 +232,11 @@ public:
     // invented pixels). A second click on Preview stops it.
     void preview_genfill();
     void show_genfill_preview(const QString& which);
+    // RUDRA 1.1: the AI fill's "Suggest" button: rudra.genfill.prompts on the current frame,
+    // then a menu of suggestions and presets that fills the highlight / shadow prompt.
+    void suggest_genfill_prompt();
+    // RUDRA 1.1: the region tint on the viewer and the card's histogram, from the session.
+    void refresh_view_region();
     bool genfill_previewing() const;
     // The batch queue (28 Oct 2026, batch_queue.hpp): shots rendered one after
     // another through the learned ACES 2.0 model. Its file is the setting
@@ -662,6 +667,10 @@ private:
     CheckRow *preserve_ = nullptr, *anchor_ = nullptr, *carry_chroma_ = nullptr;
     // Spec rev 2 (RUDRA 1.1): the reconstruction region's switch, kind and sliders.
     CheckRow* region_on_ = nullptr;
+    CheckRow* region_show_ = nullptr;                 // tint it on the viewer
+    class RegionHistogramView* region_hist_ = nullptr;
+    const void* region_hist_frame_ = nullptr;         // the frame and region the histogram was made for
+    ReconstructionRegion region_hist_region_;
     Seg* region_kind_ = nullptr;
     QWidget* region_box_ = nullptr;
     struct RegionSlider {
@@ -824,6 +833,7 @@ private:
     std::unique_ptr<BatchRunner> batch_runner_;
     QPointer<QDialog> batch_window_;
     QString render_name_for_fill_;
+    QString analytic_fill_glob_;   // RUDRA 1.1: the last analytic render's frames, for its AI fill
     // The Render card's Nuke-style path (29 Oct 2026): its padding and separator.
     int render_padding_ = 4;
     QString render_separator_ = ".";

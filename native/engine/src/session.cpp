@@ -519,7 +519,7 @@ Result<void> Session::load_state(const GradeSnapshot& g, double peak, bool ancho
     anchor = anchor_on;
     carry_chroma = carry;
     anchor_knee = std::max(0.5, std::min(0.99, knee));
-    container = container_kind == "linear" ? "linear" : "aces";
+    container = container_kind == "linear" || container_kind == "acescg" || container_kind == "rec709" ? container_kind : "aces";
     notify(Grade | Peak | Delivery);
     return {};
 }

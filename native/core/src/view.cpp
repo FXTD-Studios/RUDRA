@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
+#include <string>
 
 namespace rudra {
 namespace {
@@ -174,6 +176,10 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
     const PlanarBuffer& b = baseline.buffer();
     const bool wiping = p.wipe >= 0.0;
     const bool painting = p.paint_band >= 0 && p.masks && p.masks->has(p.paint_band);
+    // RUDRA 1.1: the region overlay, from the same 8-bit weights the GPU pass samples.
+    const std::vector<std::uint8_t> region_w = p.region_overlay && p.overlay_region.enabled
+                                                   ? region_overlay_rgba8(sdr, p.overlay_region, w, h)
+                                                   : std::vector<std::uint8_t>{};
     // Revision 6: the Sdr source (the plate as light) and the wipe's A | B.
     const bool have_sdr = sdr && sdr->width() == w && sdr->height() == h;
     const bool needs_light = view_needs_sdr_light(p);
@@ -317,6 +323,14 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                         c[k] = c[k] * (1.0f - a) + t * a;
                     }
             }
+            if (!region_w.empty() && p.mode == ViewMode::Image) {
+                const float a = kRegionTintMix * (float(region_w[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4]) / 255.0f);
+                if (a > 0.0f)
+                    for (int k = 0; k < 3; ++k) {
+                        const float t = hdr ? graphics_white * srgb_to_linear(p.region_tint[std::size_t(k)]) : p.region_tint[std::size_t(k)];
+                        c[k] = c[k] * (1.0f - a) + t * a;
+                    }
+            }
             if (p.mode == ViewMode::Image && (p.clamp_zebra || p.clip_zebra)) {
                 // Revision 6 overlays, in frame pixels: the source's clamp on one
                 // diagonal, the screen's clip on the other.
@@ -424,6 +438,109 @@ Probe probe_pixel(const NetworkLinearImage& model, const NetworkLinearImage& bas
         return s;
     };
     return {one(model), one(baseline)};
+}
+
+// ---- RUDRA 1.1 priority 4 (5 Nov 2026) --------------------------------------
+
+Rgb8Image exposure_bracket(const NetworkLinearImage& picture, double ev, Primaries source) {
+    ViewParams v = view_params(ViewMode::Image, 203.0);
+    v.view_ev = ev;
+    v.source = source;
+    return render_view_rgb8(picture, picture, v);
+}
+
+CodeDelta code_delta(const Rgb8Image& a, const Rgb8Image& b) {
+    if (a.width != b.width || a.height != b.height || a.rgb.size() != b.rgb.size()) return {256, 1.0};
+    CodeDelta d;
+    std::size_t differing = 0;
+    const std::size_t n = std::size_t(a.width) * std::size_t(a.height);
+    for (std::size_t i = 0; i < n; ++i) {
+        int worst = 0;
+        for (int c = 0; c < 3; ++c) worst = std::max(worst, std::abs(int(a.rgb[i * 3 + c]) - int(b.rgb[i * 3 + c])));
+        d.max_code_delta = std::max(d.max_code_delta, worst);
+        differing += worst > 0;
+    }
+    d.pixels_differing = n ? double(differing) / double(n) : 0.0;
+    return d;
+}
+
+std::string display_signal_text(const DisplayTarget& t, double view_peak_nits) {
+    auto nits = [](double v) {
+        char b[32];
+        std::snprintf(b, sizeof b, "%.0f", v);
+        std::string s = b;
+        for (int i = int(s.size()) - 3; i > 0; i -= 3) s.insert(std::size_t(i), ",");
+        return s + " nits";
+    };
+    auto prim = [](Primaries p) {
+        switch (p) {
+            case Primaries::Rec709: return "Rec.709";
+            case Primaries::Rec2020: return "Rec.2020";
+            case Primaries::P3D65: return "P3-D65";
+            default: return "wide gamut";
+        }
+    };
+    const std::string white = "reference white " + nits(kDiffuseWhite.v);
+    switch (t.path) {
+        case OutputPath::ScRgb:
+            return std::string("HDR \u00b7 scRGB linear (1.0 = 80 nits) \u00b7 ") + prim(t.primaries) + " \u00b7 " + white +
+                   " \u00b7 display peak " + nits(t.peak_nits);
+        case OutputPath::Hdr10:
+            return std::string("HDR10 \u00b7 PQ (ST 2084) \u00b7 ") + prim(t.primaries) + " \u00b7 " + white +
+                   " \u00b7 display peak " + nits(t.peak_nits);
+        case OutputPath::Edr:
+            return std::string("EDR \u00b7 linear (1.0 = 203 nits) \u00b7 ") + prim(t.primaries) + " \u00b7 " + white +
+                   " \u00b7 display peak " + nits(t.peak_nits);
+        case OutputPath::SdrPqSimulation:
+        default:
+            return std::string("SDR \u00b7 sRGB \u00b7 Rec.709 \u00b7 HDR simulated: ") + nits(view_peak_nits) +
+                   " shown as SDR white";
+    }
+}
+
+// ---- RUDRA 1.1: the region overlay and histogram ------------------------------------
+
+namespace {
+float region_weight_at(const PlanarBuffer& s, std::size_t i, const ReconstructionRegion& r) {
+    auto code = [&](int c) { return std::clamp(s.plane(c)[i], 0.0f, 1.0f); };
+    const float y = 0.2126f * code(0) + 0.7152f * code(1) + 0.0722f * code(2);   // as composite.cpp
+    float wh = 0.0f, ws = 0.0f;
+    region_weights(y, r, wh, ws);
+    return std::clamp(std::max(wh, ws), 0.0f, 1.0f);
+}
+}  // namespace
+
+std::vector<std::uint8_t> region_overlay_rgba8(const SdrImage* sdr, const ReconstructionRegion& region, int width, int height) {
+    const std::size_t n = std::size_t(std::max(width, 1)) * std::size_t(std::max(height, 1));
+    std::vector<std::uint8_t> out(n * 4, 0);
+    if (!region.enabled || !sdr || sdr->width() != width || sdr->height() != height) return out;
+    const PlanarBuffer& s = sdr->buffer();
+    for (std::size_t i = 0; i < n; ++i) out[i * 4] = std::uint8_t(std::lround(region_weight_at(s, i, region) * 255.0f));
+    return out;
+}
+
+RegionHistogram region_histogram(const SdrImage& sdr, const ReconstructionRegion& region, int bins) {
+    bins = std::max(bins, 2);
+    RegionHistogram h;
+    h.counts.assign(std::size_t(bins), 0.0);
+    h.weight.assign(std::size_t(bins), 0.0f);
+    const PlanarBuffer& s = sdr.buffer();
+    const std::size_t n = std::size_t(sdr.width()) * std::size_t(sdr.height());
+    std::size_t reached = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        auto code = [&](int c) { return std::clamp(s.plane(c)[i], 0.0f, 1.0f); };
+        const float y = 0.2126f * code(0) + 0.7152f * code(1) + 0.0722f * code(2);
+        h.counts[std::size_t(std::min(bins - 1, int(y * float(bins))))] += 1.0;
+        reached += region.enabled ? region_weight_at(s, i, region) > 0.0f : 1;
+    }
+    for (double& c : h.counts) c = n ? c / double(n) : 0.0;
+    for (int b = 0; b < bins; ++b) {
+        float wh = 1.0f, ws = 1.0f;
+        region_weights((float(b) + 0.5f) / float(bins), region, wh, ws);
+        h.weight[std::size_t(b)] = std::clamp(std::max(wh, ws), 0.0f, 1.0f);
+    }
+    h.reached = n ? double(reached) / double(n) : 0.0;
+    return h;
 }
 
 }  // namespace rudra

@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "rudra/core/baseline.hpp"
+#include "rudra/core/compare.hpp"
 
 namespace rudra {
 namespace {
@@ -137,6 +138,98 @@ float reconstruction_gate(float y, float shadow_weight, const CompositeParams& p
         case RecoveryMode::Off: gate = 0.0f; break;
     }
     return gate * params.strength;
+}
+
+PixelClassMap classify_pixels(const SdrImage& sdr, const NetworkLinearImage& reconstruction,
+                              const NetworkLinearImage& baseline, const PlanarBuffer* generated) {
+    const int h = sdr.height(), w = sdr.width();
+    PixelClassMap m;
+    m.width = w;
+    m.height = h;
+    const std::size_t n = std::size_t(h) * std::size_t(w);
+    m.cls.assign(n, 0);
+    m.confidence = PlanarBuffer(1, h, w);
+    const PlanarBuffer& s = sdr.buffer();
+    const PlanarBuffer& r = reconstruction.buffer();
+    const PlanarBuffer& b = baseline.buffer();
+    const bool gen = generated && generated->channels() == 1 && generated->height() == h && generated->width() == w;
+    std::array<std::size_t, kPixelClasses> count{};
+    for (std::size_t i = 0; i < n; ++i) {
+        bool exact = true;
+        float rm = 0.0f, bm = 0.0f, code = 0.0f;
+        for (int c = 0; c < 3; ++c) {
+            exact = exact && r.plane(c)[i] == b.plane(c)[i];
+            rm = std::max(rm, r.plane(c)[i]);
+            bm = std::max(bm, b.plane(c)[i]);
+            code = std::max(code, std::clamp(s.plane(c)[i], 0.0f, 1.0f));
+        }
+        const double floor = kChangeFloorNits / 10000.0;
+        const double d = std::log2((std::max(double(rm), 0.0) + floor) / (std::max(double(bm), 0.0) + floor));
+        PixelClass k;
+        float conf;
+        if (gen && generated->plane(0)[i] > 0.0f) {
+            k = PixelClass::Generated;
+            conf = 0.0f;
+        } else if (exact) {
+            k = PixelClass::Preserved;
+            conf = 1.0f;
+        } else if (std::abs(d) <= kChangeStops) {
+            k = PixelClass::Follows;
+            conf = 1.0f;
+        } else if (sdr_has_no_information(code)) {
+            k = PixelClass::Estimated;
+            conf = float(0.5 / (1.0 + std::abs(d)));
+        } else {
+            k = PixelClass::Reconstructed;
+            conf = float(1.0 / (1.0 + std::abs(d)));
+        }
+        m.cls[i] = std::uint8_t(k);
+        m.confidence.plane(0)[i] = conf;
+        ++count[std::size_t(k)];
+    }
+    for (int k = 0; k < kPixelClasses; ++k) m.share[std::size_t(k)] = n ? double(count[std::size_t(k)]) / double(n) : 0.0;
+    return m;
+}
+
+CompositeParams ungraded(CompositeParams params) {
+    params.regions.clear();
+    params.exposure_ev = 0.0;
+    return params;
+}
+
+ReconstructionMattes reconstruction_mattes(const SdrImage& sdr, const Fields& fields, const FrameScalars& scalars,
+                                           const CompositeParams& params, const NetworkLinearImage& reconstruction,
+                                           const NetworkLinearImage& baseline) {
+    const int h = sdr.height(), w = sdr.width();
+    assert(reconstruction.height() == h && baseline.height() == h);
+    ReconstructionMattes m{PlanarBuffer(1, h, w), PlanarBuffer(1, h, w), PlanarBuffer(1, h, w), std::nullopt};
+    if (params.region.enabled) m.region.emplace(1, h, w);
+    const PlanarBuffer& s = sdr.buffer();
+    const float* hl = fields.highlight.plane(0);
+    const float* sh = fields.shadow.plane(0);
+    const bool want_h = params.mode == RecoveryMode::All || params.mode == RecoveryMode::Highlights;
+    const bool want_s = params.mode == RecoveryMode::All || params.mode == RecoveryMode::Shadows;
+    const std::size_t n = std::size_t(h) * std::size_t(w);
+    for (std::size_t i = 0; i < n; ++i) {
+        auto code = [&](int c) { return std::clamp(s.plane(c)[i], 0.0f, 1.0f); };
+        const float y = 0.2126f * code(0) + 0.7152f * code(1) + 0.0722f * code(2);
+        float hp = sigmoidf((y - 0.82f) * 24.0f);
+        float sp = sigmoidf((0.10f - y) * 24.0f) * scalars.shadow_weight;
+        float wh = 1.0f, ws = 1.0f;
+        region_weights(y, params.region, wh, ws);
+        if (params.region.enabled) {
+            hp *= wh;
+            sp *= ws;
+            m.region->plane(0)[i] = std::clamp(std::max(wh, ws), 0.0f, 1.0f);
+        }
+        const float rec = params.preserve_outside ? std::max(hl[i], sh[i]) : 1.0f;
+        m.highlight.plane(0)[i] = want_h ? std::clamp(hp * params.strength * rec, 0.0f, 1.0f) : 0.0f;
+        m.shadow.plane(0)[i] = want_s ? std::clamp(sp * params.strength * rec, 0.0f, 1.0f) : 0.0f;
+        bool differs = false;
+        for (int c = 0; c < 3; ++c) differs = differs || reconstruction.buffer().plane(c)[i] != baseline.buffer().plane(c)[i];
+        m.changed.plane(0)[i] = differs ? 1.0f : 0.0f;
+    }
+    return m;
 }
 
 bool any_graded(std::span<const RegionBand> bands) noexcept {

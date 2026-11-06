@@ -6,7 +6,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QCryptographicHash>
@@ -152,8 +154,50 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
     if (!o.prompt_highlight.trimmed().isEmpty()) a << "--prompt-highlight" << o.prompt_highlight.trimmed();
     if (!o.prompt_shadow.trimmed().isEmpty()) a << "--prompt-shadow" << o.prompt_shadow.trimmed();
     if (o.brightness != 0.0) a << "--brightness-offset" << QString::number(o.brightness, 'g', 6);
+    if (o.prompt_strength != 1.0) a << "--prompt-strength" << QString::number(o.prompt_strength, 'g', 6);
+    if (o.shape_gain != 1.0) a << "--shape-gain" << QString::number(o.shape_gain, 'g', 6);
+    if (!o.region_json.isEmpty()) a << "--region" << o.region_json;
+    if (o.fallback) a << "--fallback" << "spikes";
     if (!o.glob.isEmpty()) a << "--glob" << o.glob;
     return a;
+}
+
+QStringList genfill_suggest_arguments(const GenFillSetup& s, const GenFillOptions& o, const QStringList& frames) {
+    QStringList a{"-m", "rudra.genfill.prompts", "suggest"};
+    a << frames;
+    a << "--json" << "--cache" << qp(s.lora.parent_path() / "prompt_cache") << "--tau-high" << QString::number(o.tau_high)
+      << "--tau-low" << QString::number(o.tau_low);
+    return a;
+}
+
+std::optional<PromptSuggestions> parse_prompt_suggestions(const QByteArray& json, QString* why) {
+    // The last JSON line: anything printed before it (a warning) is not ours.
+    QByteArray line = json.trimmed();
+    if (const qsizetype nl = line.lastIndexOf('\n'); nl >= 0) line = line.mid(nl + 1);
+    const QJsonDocument d = QJsonDocument::fromJson(line);
+    if (!d.isObject()) {
+        if (why) *why = QStringLiteral("The prompt suggestion gave no answer.");
+        return std::nullopt;
+    }
+    const QJsonObject o = d.object();
+    if (!o.value("ok").toBool()) {
+        if (why) *why = o.value("error").toString(QStringLiteral("The prompt suggestion failed."));
+        return std::nullopt;
+    }
+    auto read = [](const QJsonArray& arr) {
+        std::vector<PromptSuggestion> v;
+        for (const auto& x : arr) {
+            const QJsonObject e = x.toObject();
+            v.push_back({e.value("id").toString(), e.value("label").toString(), e.value("text").toString(),
+                         e.value("region").toString(), e.value("reason").toString(), e.value("cached").toBool()});
+        }
+        return v;
+    };
+    PromptSuggestions r;
+    r.suggested = read(o.value("suggestions").toArray());
+    r.presets = read(o.value("presets").toArray());
+    r.clipped_fraction = o.value("clipped_fraction").toDouble();
+    return r;
 }
 
 QString genfill_out_dir(const QString& master) {

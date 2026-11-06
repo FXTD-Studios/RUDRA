@@ -187,6 +187,7 @@ public:
     void clear_mask(int band);
     void clear_masks();
     bool show_masks = true;   // the tint on the viewer while a band is armed
+    bool show_region = true;  // RUDRA 1.1: the reconstruction region tinted on the viewer while it is on (view only)
     void toggle_wipe();                          // ACTIONS.wipe
     void set_wipe(double x);                     // a drag on the plate, clamped 0..1
     void set_show(std::string_view source);      // the Compare buttons: also ends a wipe

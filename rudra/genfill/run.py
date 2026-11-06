@@ -41,6 +41,8 @@ from .masks import MaskSettings, TemporalMask, blend_core, feather
 AP0_RED_X = 0.7347
 MASK = 'rudra.reconstructed'
 GENERATED = 'rudra.generated'
+# RUDRA 1.1 (5 Nov 2026): rudra.generated split by region; the two always sum to it exactly.
+GENERATED_PARTS = ('rudra.generated.highlight', 'rudra.generated.shadow')
 
 
 # -------------------------------------------------------------------------------- EXR I/O
@@ -64,8 +66,11 @@ def read_frame(path: Path) -> dict:
             'dtype': ch['R'].dtype}
 
 
-def write_frame(path: Path, fr: dict, out_ap1: np.ndarray, alpha: np.ndarray, attrs: dict):
-    """Writes the frame with the filled pixels replaced; every other pixel bit-identical."""
+def write_frame(path: Path, fr: dict, out_ap1: np.ndarray, alpha: np.ndarray, attrs: dict,
+                highlight: np.ndarray | None = None):
+    """Writes the frame with the filled pixels replaced; every other pixel bit-identical.
+    highlight: the frame's highlight fill region (bool); then rudra.generated.highlight / .shadow
+    split rudra.generated between the regions (one of them is it, the other 0, per pixel)."""
     import OpenEXR
     ch = {k: v.copy() for k, v in fr['channels'].items()}
     idx = alpha > 0
@@ -80,6 +85,10 @@ def write_frame(path: Path, fr: dict, out_ap1: np.ndarray, alpha: np.ndarray, at
     gen = alpha.astype(old.dtype if old is not None else np.float32)
     ch[MASK] = np.maximum(old, gen) if old is not None else gen
     ch[GENERATED] = gen
+    if highlight is not None:
+        hi = np.asarray(highlight, bool)
+        ch[GENERATED_PARTS[0]] = np.where(hi, gen, 0).astype(gen.dtype)
+        ch[GENERATED_PARTS[1]] = np.where(hi, 0, gen).astype(gen.dtype)
     header = {k: v for k, v in fr['header'].items() if k not in ('channels', 'dataWindow', 'displayWindow')}
     header['compression'] = OpenEXR.NO_COMPRESSION        # the app's reader takes uncompressed scanlines
     header['type'] = OpenEXR.scanlineimage
@@ -129,6 +138,7 @@ def list_frames(master: Path, pattern: str = '*.exr') -> list[Path]:
     if master.is_file():
         return [master]
     frames = sorted(p for p in master.iterdir() if p.suffix.lower() == '.exr' and not p.name.startswith('.')
+                    and not p.name.lower().endswith('.mattes.exr')   # RUDRA 1.1: a master's mattes are not frames
                     and fnmatch.fnmatch(p.name.lower(), pattern.lower()))
     if not frames:
         raise ValueError(f'{master}: no EXR frames')
@@ -139,6 +149,11 @@ def list_frames(master: Path, pattern: str = '*.exr') -> list[Path]:
 REVIEW_STOPS = 3.0        # the review pictures are 3 stops down, so the invented highlights show
 REVIEW_SIDE = 960
 TEMPORAL_FLAG = 0.25      # stops of frame-to-frame change the fill adds beyond the master's own
+FALLBACKS = ('none', 'spikes')   # RUDRA 1.1: what a flickering fill frame falls back to (fill_master)
+
+
+def _over(temporal) -> bool:
+    return bool(temporal is not None and temporal > TEMPORAL_FLAG)
 
 
 def review_picture(view, ap1: np.ndarray, side: int = REVIEW_SIDE) -> np.ndarray:
@@ -212,9 +227,22 @@ class Emitter:
 
 
 def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, window=33, overlap=8,
-                max_area=832 * 480, emit=None, cancel=None, pattern='*.exr', brightness=None) -> dict:
+                max_area=832 * 480, emit=None, cancel=None, pattern='*.exr', brightness=None,
+                region=None, fallback: str = 'none') -> dict:
     """brightness: a brightness.BrightnessSettings for the v3 split (shape from the model, brightness
-    from the estimator plus the artist's offset); None keeps the model's own brightness (v1-v2)."""
+    from the estimator plus the artist's offset); None keeps the model's own brightness (v1-v2).
+    region: a rudra.delivery.region.ReconstructionRegion (RUDRA 1.1). On, the fill (and its prompts)
+    acts only inside it: the model's fill regions are cut to it and the blend weight is scaled by it,
+    so every pixel outside is the master's, bit for bit. None or off: unchanged.
+    fallback (RUDRA 1.1 priority 5): 'spikes' writes the master's own frame (no fill) for a frame whose
+    fill jumps more than TEMPORAL_FLAG stops beyond the master's own change both INTO it and OUT of it
+    (a one-frame flicker; a fill appearing or ending jumps on one side only and is kept). 'none' keeps
+    every fill (v3). Either way a fill that is not finite falls back. Each frame is written once the
+    next shows whether it spiked; every fallback is in genfill.json ('fell_back')."""
+    if fallback not in FALLBACKS:
+        raise ValueError(f'fallback must be one of {", ".join(FALLBACKS)}')
+    from rudra.delivery.region import fill_region_weight
+    recon_region = region      # `region` is reused below for each frame's fill mask
     import cv2
     import torch
     emit = emit or (lambda **o: None)
@@ -227,15 +255,38 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     tmask = TemporalMask(ms)
     prev_b = None
     masks: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+    rweights: dict[int, np.ndarray] = {}             # the reconstruction region's weight, per frame (when on)
+    region_on = recon_region is not None and recon_region.enabled
     gen_work: dict[int, np.ndarray] = {}            # encoded fill at working size, frames still needed as kept frames
     t0 = time.time()
+    pending = None                                   # RUDRA 1.1: the frame waiting for the next one
+
+    def commit(e, spike_reason):
+        """Write one frame: its fill, or the master's own frame when it falls back."""
+        fr, out_ap1, alpha = e['fr'], e['out'], e['alpha']
+        reason = e['reason'] or spike_reason
+        if reason and alpha.any():
+            out_ap1, alpha = fr['ap1'], np.zeros_like(alpha)
+        name = frames[e['i']].name
+        write_frame(out / name, fr, out_ap1, alpha, attrs, highlight=e['highlight'])
+        write_review(out, name, view, fr['ap1'], out_ap1, alpha)
+        gen_frac = float((alpha > 0).mean())
+        temporal = e['temporal']
+        per_frame.append({'name': name, 'generated_fraction': gen_frac, 'temporal_excess_stops': temporal,
+                          'flagged': _over(temporal), 'fell_back': reason})
+        stats['generated_pixels'] += int((alpha > 0).sum())
+        stats['region_pixels'] += e['region_px']
+        emit(event='frame', index=e['i'] + 1, of=len(frames), file=str(out / name), generated_fraction=gen_frac,
+             temporal_excess_stops=temporal, fell_back=reason, seconds=round(time.time() - t0, 1))
+
     stats = {'frames': len(frames), 'windows': len(plan), 'generated_pixels': 0, 'region_pixels': 0,
              'windows_generated': 0, 'working_size': [h, w], 'size': [H, W]}
     per_frame = []          # the review: each frame's generated share and the flicker the fill adds
     prev_small = None
     bid = None if brightness is None else {**brightness.identity, 'offset': brightness.offset,
                                            'shape_gain': brightness.shape_gain, 'ema': brightness.ema}
-    attrs = {'rudra:genfill': json.dumps({'model': model.identity, 'settings': asdict(s), 'mask': asdict(ms), 'brightness': bid})}
+    attrs = {'rudra:genfill': json.dumps({'model': model.identity, 'settings': asdict(s), 'mask': asdict(ms), 'brightness': bid,
+                                          **({'region': asdict(recon_region)} if region_on else {})})}
     for wi, (start, new, end) in enumerate(plan):
         if cancel and cancel():
             stats['cancelled'] = True
@@ -249,7 +300,12 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                     raise ValueError(f'{frames[i]}: size differs from the first frame')
                 codes[i] = np.rint(np.clip(view.forward(frs[i]['ap1']), 0, 1) * 255).astype(np.uint8)
                 if i not in masks:
-                    masks[i] = tmask(codes[i])
+                    hi, lo = tmask(codes[i])
+                    if region_on:
+                        rw = fill_region_weight(codes[i], recon_region)
+                        rweights[i] = rw
+                        hi, lo = hi & (rw > 0), lo & (rw > 0)
+                    masks[i] = (hi, lo)
         need = any(masks[i][0].any() or masks[i][1].any() for i in range(new, end))
         n_pad = pad_len(len(idxs))
         if need:
@@ -308,34 +364,41 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                     fill_lin = fill_lin * np.where(yf > lim, lim / yf, 1.0)[..., None].astype(np.float32)
                 core = blend_core(codes[i], ms) & region          # v1.1: only where the source knows nothing
                 weight = feather(core, ms.feather) if ms.feather > 0 else core.astype(np.float32)
+                if region_on:                                     # RUDRA 1.1: only inside the region
+                    weight = (weight * rweights[i]).astype(np.float32)
                 out_ap1, alpha = r_safe_blend(fr['ap1'], fill_lin, weight, view)
             else:
                 if need:
                     gen_work[i] = dec[k]
                 out_ap1, alpha = fr['ap1'], np.zeros((H, W), np.float32)
-            write_frame(out / frames[i].name, fr, out_ap1, alpha, attrs)
-            write_review(out, frames[i].name, view, fr['ap1'], out_ap1, alpha)
+            reason = None if np.isfinite(out_ap1).all() else 'non_finite'
+            if reason:                                     # RUDRA 1.1: never write a broken fill
+                out_ap1, alpha = fr['ap1'], np.zeros((H, W), np.float32)
             cur_small = (small(fr['ap1']), small(out_ap1), small(alpha.astype(np.float32)))
-            temporal = temporal_excess(prev_small, cur_small)
+            temporal = temporal_excess(prev_small, cur_small)   # measured along the fills as made
             prev_small = cur_small
-            gen_frac = float((alpha > 0).mean())
-            per_frame.append({'name': frames[i].name, 'generated_fraction': gen_frac, 'temporal_excess_stops': temporal,
-                              'flagged': bool(temporal is not None and temporal > TEMPORAL_FLAG)})
-            stats['generated_pixels'] += int((alpha > 0).sum())
-            stats['region_pixels'] += int(region.sum())
-            emit(event='frame', index=i + 1, of=len(frames), file=str(out / frames[i].name),
-                 generated_fraction=gen_frac, temporal_excess_stops=temporal, seconds=round(time.time() - t0, 1))
+            entry = {'i': i, 'fr': fr, 'out': out_ap1, 'alpha': alpha, 'highlight': masks[i][0],
+                     'region_px': int(region.sum()), 'temporal': temporal, 'reason': reason}
+            if pending is not None:
+                spike = (fallback == 'spikes' and pending['alpha'].any() and _over(pending['temporal'])
+                         and _over(temporal))
+                commit(pending, 'flicker' if spike else None)
+            pending = entry
         for i in list(gen_work):                         # keep only what the next window reads
             if i < end - overlap:
                 del gen_work[i]
         for i in list(masks):
             if i < start:
                 del masks[i]
+                rweights.pop(i, None)
+    if pending is not None:                              # the last frame: nothing after it to spike against
+        commit(pending, None)
     stats['seconds'] = round(time.time() - t0, 1)
     stats['flagged_frames'] = sum(1 for f in per_frame if f['flagged'])
+    stats['fallback_frames'] = sum(1 for f in per_frame if f['fell_back'])
     stats['generated_fraction'] = stats['generated_pixels'] / float(max(1, len(frames) * H * W))
     report = {'master': str(master), 'out': str(out), 'model': model.identity, 'settings': asdict(s), 'brightness': bid,
-              'mask': asdict(ms), 'window': window, 'overlap': overlap, 'max_area': max_area,
+              'mask': asdict(ms), 'region': asdict(recon_region) if region_on else None, 'fallback': fallback, 'window': window, 'overlap': overlap, 'max_area': max_area,
               'view': getattr(view, 'identity', None), 'stats': stats, 'frames': per_frame,
               'review': {'folder': 'review', 'pictures': '<frame>.a.png master, .b.png fill, .mask.png rudra.generated',
                          'exposure_stops': -REVIEW_STOPS, 'temporal_flag_stops': TEMPORAL_FLAG},
@@ -346,6 +409,38 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     if prov.exists():
         (out / 'master_provenance.json').write_bytes(prov.read_bytes())
     return report
+
+
+def checked_prompt_strength(v) -> float:
+    """--prompt-strength / a request's prompt_strength: 0..2, finite."""
+    x = float(v)
+    if not (math.isfinite(x) and 0.0 <= x <= 2.0):
+        raise ValueError(f'prompt_strength must be 0 to 2 (got {v})')
+    return x
+
+
+def checked_shape_gain(v) -> float:
+    """--shape-gain / a request's shape_gain: 0..2, finite (RUDRA 1.1 exposes it as Detail strength)."""
+    x = float(v)
+    if not (math.isfinite(x) and 0.0 <= x <= 2.0):
+        raise ValueError(f'shape_gain must be 0 to 2 (got {v})')
+    return x
+
+
+def parse_region(text: str):
+    """--region's JSON -> an enabled ReconstructionRegion, or None for ''."""
+    from rudra.delivery.region import region_from_dict
+    if not text or not text.strip():
+        return None
+    return region_from_dict(json.loads(text))
+
+
+def request_region(r: dict, a):
+    """A serve request's region: its own 'region' object (null = off) when it names one, else --region's."""
+    from rudra.delivery.region import region_from_dict
+    if 'region' in r:
+        return region_from_dict(r['region']) if r['region'] else None
+    return parse_region(a.region)
 
 
 def pick_device(requested: str = 'auto'):
@@ -362,7 +457,7 @@ def pick_device(requested: str = 'auto'):
     return 'cpu', torch.float32
 
 
-def brightness_settings(a, offset: float):
+def brightness_settings(a, offset: float, shape_gain: float | None = None):
     """The v3 brightness split (brightness.json beside the LoRA, or --brightness-model), or None."""
     bm = a.brightness_model
     if bm == 'auto':
@@ -372,7 +467,7 @@ def brightness_settings(a, offset: float):
         return None
     from .brightness import BrightnessEstimator, BrightnessSettings
     from .model import sha256_file
-    return BrightnessSettings(BrightnessEstimator.load(bm), offset, a.shape_gain,
+    return BrightnessSettings(BrightnessEstimator.load(bm), offset, a.shape_gain if shape_gain is None else shape_gain,
                               identity={'estimator': bm, 'estimator_sha256': sha256_file(bm)})
 
 
@@ -381,7 +476,8 @@ def serve(model, view, a, emit, FillSettings) -> int:
     previewed again costs the fill, not the 1-2 minutes of loading. One JSON object per stdin line:
         {"id": 3, "master": <EXR folder>, "out": <new folder>, "glob": "*.exr",
          "tau_high": 250, "tau_low": -1, "seed": 0, "steps": 30, "brightness_offset": 0.0,
-         "prompt_highlight": "", "prompt_shadow": "", "window": 33, "overlap": 8}
+         "prompt_highlight": "", "prompt_shadow": "", "window": 33, "overlap": 8,
+         "prompt_strength": 1.0, "shape_gain": 1.0, "region": {...} or null, "fallback": "none"}
     (any field left out takes the command line's value). Every event of a request carries its
     id; it ends with {"event": "done", "ok": true, "id": ..., ...} or an "error". 'cancel'
     stops the request running at its next step; 'quit' or the end of stdin ends the server."""
@@ -417,7 +513,8 @@ def serve(model, view, a, emit, FillSettings) -> int:
             s = FillSettings(steps=int(r.get('steps', a.steps)), seed=int(r.get('seed', a.seed)),
                              guidance=float(r.get('guidance', a.guidance)),
                              prompt_highlight=str(r.get('prompt_highlight', a.prompt_highlight)),
-                             prompt_shadow=str(r.get('prompt_shadow', a.prompt_shadow)))
+                             prompt_shadow=str(r.get('prompt_shadow', a.prompt_shadow)),
+                             prompt_strength=checked_prompt_strength(r.get('prompt_strength', a.prompt_strength)))
             for text in {s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative} - {''}:
                 model.prompts.get(text)
             model.prompts.release()
@@ -430,7 +527,9 @@ def serve(model, view, a, emit, FillSettings) -> int:
             rep = fill_master(Path(r['master']), out, model, view, s, ms, int(r.get('window', a.window)),
                               int(r.get('overlap', a.overlap)), a.max_area, tagged, cancel=stop.is_set,
                               pattern=str(r.get('glob', '*.exr')),
-                              brightness=brightness_settings(a, float(r.get('brightness_offset', a.brightness_offset))))
+                              brightness=brightness_settings(a, float(r.get('brightness_offset', a.brightness_offset)),
+                                                             checked_shape_gain(r.get('shape_gain', a.shape_gain))),
+                              region=request_region(r, a), fallback=str(r.get('fallback', a.fallback)))
             tagged(event='done', ok=True, out=str(out), **rep['stats'])
         except Exception as e:  # noqa: BLE001 - one failed request does not end the server
             tagged(event='error', ok=False, error=type(e).__name__, detail=str(e))
@@ -469,6 +568,13 @@ def main(argv=None):
                     help="v3 brightness estimator (.json): 'auto' = brightness.json beside the LoRA if there, 'none' = the model's own brightness (v1-v2)")
     ap.add_argument('--brightness-offset', type=float, default=0.0, help="the artist's offset, stops, added to every clipped area's estimate")
     ap.add_argument('--shape-gain', type=float, default=1.0, help='how strongly the generated shape varies the brightness inside a clipped area')
+    ap.add_argument('--prompt-strength', type=float, default=1.0,
+                    help='RUDRA 1.1: how strongly a region prompt steers its region (0..2; 1 = as v3 was gated)')
+    ap.add_argument('--fallback', default='none', choices=FALLBACKS,
+                    help="RUDRA 1.1: 'spikes' writes the master's own frame where the fill flickers for one frame")
+    ap.add_argument('--region', default='',
+                    help='RUDRA 1.1: the reconstruction region as JSON (native reconstruction_region_json); '
+                         'the fill acts only inside it')
     ap.add_argument('--glob', default='*.exr', help="the master folder's frames to fill (fnmatch, e.g. 'SH010.*.exr')")
     a = ap.parse_args(argv)
     if not a.serve and (not a.master or not a.out):
@@ -485,8 +591,11 @@ def main(argv=None):
         t0 = time.time()
         cache = Path(a.prompt_cache) if a.prompt_cache else Path(a.lora).with_suffix('').parent / 'prompt_cache'
         model = WanFill.load(a.base, a.lora, device=device, dtype=dtype, prompt_cache=cache, text_device='cpu')  # umT5 (11 GB) never on a 16 GB GPU beside the model
+        checked_shape_gain(a.shape_gain)
+        region = parse_region(a.region)                  # refused before the model loads
         s = FillSettings(steps=a.steps, seed=a.seed, guidance=a.guidance,
-                         prompt_highlight=a.prompt_highlight, prompt_shadow=a.prompt_shadow)
+                         prompt_highlight=a.prompt_highlight, prompt_shadow=a.prompt_shadow,
+                         prompt_strength=checked_prompt_strength(a.prompt_strength))
         for text in {s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative} - {''}:
             model.prompts.get(text)
         model.prompts.release()
@@ -502,7 +611,8 @@ def main(argv=None):
             watch_stdin(stop)
         brightness = brightness_settings(a, a.brightness_offset)
         rep = fill_master(Path(a.master), out, model, view, s, ms, a.window, a.overlap, a.max_area, emit,
-                          cancel=stop.is_set, pattern=a.glob, brightness=brightness)
+                          cancel=stop.is_set, pattern=a.glob, brightness=brightness, region=region,
+                          fallback=a.fallback)
         emit(event='done', ok=True, out=str(out), **rep['stats'])
         return 0
     except Exception as e:  # noqa: BLE001 - every failure goes to the app as one line

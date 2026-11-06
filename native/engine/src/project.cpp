@@ -268,7 +268,8 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
         c.y = std::clamp(c.y, 0.0, 1.0);
         c.nits = std::clamp(c.nits, 0.0, 10000.0);
     }
-    if (p.container != "aces" && p.container != "linear") return damaged("container " + p.container);
+    if (p.container != "aces" && p.container != "linear" && p.container != "acescg" && p.container != "rec709")
+        return damaged("container " + p.container);
     if (!p.grade.reference.empty() &&
         (p.grade.reference.target_log2_nits.size() != 256 || p.grade.reference.samples_per_code.size() != 256))
         return damaged("the reference fit");

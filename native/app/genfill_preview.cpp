@@ -290,7 +290,14 @@ void MainWindow::preview_genfill() {
                              {"steps", options.steps},
                              {"brightness_offset", options.brightness},
                              {"prompt_highlight", options.prompt_highlight.trimmed()},
-                             {"prompt_shadow", options.prompt_shadow.trimmed()}};
+                             {"prompt_shadow", options.prompt_shadow.trimmed()},
+                             {"prompt_strength", options.prompt_strength},
+                             {"shape_gain", options.shape_gain},
+                             {"fallback", options.fallback ? "spikes" : "none"}};
+            // RUDRA 1.1: the region, or null so the warm server drops an earlier request's.
+            fill.insert("region", options.region_json.isEmpty()
+                                      ? QJsonValue(QJsonValue::Null)
+                                      : QJsonValue(QJsonDocument::fromJson(options.region_json.toUtf8()).object()));
             const bool cold = !self->genfill_server_->loaded();
             if (st2)
                 st2->setText(cold ? QStringLiteral("AI fill preview: loading the fill model (once; a minute or two)…")

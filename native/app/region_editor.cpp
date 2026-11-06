@@ -3,6 +3,7 @@
 #include <QHBoxLayout>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QStyle>
 #include <QVBoxLayout>
 
@@ -295,6 +296,63 @@ void MaskPanel::sync() {
     invert_->setEnabled(has);
     clear_->setEnabled(has);
     syncing_ = false;
+}
+
+// ---- RUDRA 1.1: the region histogram ---------------------------------------------------
+
+RegionHistogramView::RegionHistogramView(QWidget* parent) : QWidget(parent) {
+    setObjectName("regionHistogram");
+    setMinimumHeight(56);
+    setToolTip("The frame's SDR brightness (luma), darkest left; the coloured line is how strongly "
+               "the region lets the reconstruction act at each brightness");
+}
+
+void RegionHistogramView::set(const RegionHistogram& h, const std::array<float, 3>& tint) {
+    h_ = h;
+    tint_ = tint;
+    valid_ = !h.counts.empty();
+    update();
+}
+
+void RegionHistogramView::clear() {
+    valid_ = false;
+    h_ = {};
+    update();
+}
+
+QString RegionHistogramView::caption() const {
+    if (!valid_) return QStringLiteral("Open a shot to see the region on it");
+    return QStringLiteral("Reaches %1 % of this frame").arg(100.0 * h_.reached, 0, 'f', 1);
+}
+
+void RegionHistogramView::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    const QRectF r = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -14.5);
+    p.fillRect(r, palette().color(QPalette::Base));
+    if (valid_) {
+        const int n = int(h_.counts.size());
+        double top = 0.0;
+        for (double c : h_.counts) top = std::max(top, std::log1p(c * 1000.0));
+        const double bw = r.width() / n;
+        p.setPen(Qt::NoPen);
+        p.setBrush(palette().color(QPalette::Mid));
+        for (int b = 0; b < n; ++b) {
+            const double hgt = top > 0 ? r.height() * std::log1p(h_.counts[std::size_t(b)] * 1000.0) / top : 0.0;
+            p.drawRect(QRectF(r.left() + b * bw, r.bottom() - hgt, bw * 0.9, hgt));
+        }
+        QPainterPath curve;
+        for (int b = 0; b < n; ++b) {
+            const QPointF pt(r.left() + (b + 0.5) * bw, r.bottom() - r.height() * h_.weight[std::size_t(b)]);
+            if (b == 0) curve.moveTo(pt);
+            else curve.lineTo(pt);
+        }
+        p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(QColor::fromRgbF(tint_[0], tint_[1], tint_[2]), 2.0));
+        p.drawPath(curve);
+    }
+    p.setPen(palette().color(QPalette::Text));
+    p.drawText(QRectF(0, height() - 14, width(), 14), Qt::AlignLeft | Qt::AlignVCenter, caption());
 }
 
 }  // namespace rudra::app

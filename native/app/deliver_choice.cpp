@@ -4,6 +4,7 @@
 #include <QRegularExpression>
 
 #include <algorithm>
+#include <cmath>
 
 namespace rudra::app {
 
@@ -35,6 +36,8 @@ DeliverChoice deliver_fit(DeliverChoice c, bool aces_source, bool shot_movie, bo
     c.ai.steps = std::clamp(c.ai.steps, 1, 100);
     c.ai.seed = std::max(c.ai.seed, 0);
     c.ai.brightness = std::clamp(c.ai.brightness, -3.0, 3.0);
+    c.ai.prompt_strength = std::isfinite(c.ai.prompt_strength) ? std::clamp(c.ai.prompt_strength, 0.0, 2.0) : 1.0;   // RUDRA 1.1
+    c.ai.shape_gain = std::isfinite(c.ai.shape_gain) ? std::clamp(c.ai.shape_gain, 0.0, 2.0) : 1.0;
     if (!ai_fill_possible(c, aces_source)) c.ai_fill = false;
     if (aces_source) {
         if (c.gamut != "ap0" && c.gamut != "acescg") c.gamut = c.gamut == "linear" ? "acescg" : "ap0";
@@ -44,7 +47,7 @@ DeliverChoice deliver_fit(DeliverChoice c, bool aces_source, bool shot_movie, bo
     }
     // The analytic master is a 32-bit EXR in ACES 2065-1 or linear Rec.2020.
     c.image = "exr32";
-    if (c.gamut != "ap0" && c.gamut != "linear") c.gamut = c.gamut == "acescg" ? "linear" : "ap0";
+    if (c.gamut != "ap0" && c.gamut != "linear" && c.gamut != "acescg" && c.gamut != "rec709") c.gamut = "ap0";   // RUDRA 1.1: four
     c.keep_exr = false;
     // Its 16-bit movie and a folder's movie are the graded PQ only.
     if (c.output == "movie" && (c.bits == 16 || !shot_movie)) c.encoding = "pq";
@@ -52,7 +55,9 @@ DeliverChoice deliver_fit(DeliverChoice c, bool aces_source, bool shot_movie, bo
 }
 
 bool ai_fill_possible(const DeliverChoice& c, bool aces_source) {
-    return aces_source && c.output != "movie" && (c.image == "exr32" || c.image == "exr16");
+    // RUDRA 1.1 (5 Nov 2026): the analytic EXR master too, in ACES 2065-1 (the fill reads AP0 and AP1
+    // only), so the luminance region, the mattes and the prompts work on one render.
+    return (aces_source || c.gamut == "ap0") && c.output != "movie" && (c.image == "exr32" || c.image == "exr16");
 }
 
 QJsonObject aces_deliver_fields(const DeliverChoice& c) {
@@ -120,6 +125,10 @@ DeliverSignal deliver_signal(const DeliverChoice& c, bool aces_source) {
     if (c.output == "movie")
         return {movie_container(c), encoding_transfer(c.encoding, aces_source, c.pq_peak), encoding_primaries(c.encoding, aces_source)};
     if (!aces_source) {   // the analytic master, in the words it always had
+        if (c.gamut == "acescg")
+            return {QStringLiteral("OpenEXR — ACEScg"), QStringLiteral("linear (scene-referred)"), QStringLiteral("AP1 (ACEScg)")};
+        if (c.gamut == "rec709")
+            return {QStringLiteral("OpenEXR — linear Rec.709"), QStringLiteral("linear (scene-referred)"), QStringLiteral("Rec.709")};
         const bool ap0 = c.gamut != "linear";
         return {ap0 ? QStringLiteral("OpenEXR — ACES 2065-1") : QStringLiteral("OpenEXR — linear Rec.2020"),
                 QStringLiteral("linear (scene-referred)"), ap0 ? QStringLiteral("AP0 (ST 2065-4)") : QStringLiteral("Rec.2020")};

@@ -16,6 +16,8 @@
 #include "rudra/core/compare.hpp"
 #include "rudra/core/master.hpp"
 #include "rudra/core/measure.hpp"
+#include "rudra/core/view.hpp"
+#include "rudra/platform/png8.hpp"
 #include "rudra/deliver/exr.hpp"
 #include "rudra/deliver/sidecars.hpp"
 #include "rudra/platform/hash.hpp"
@@ -160,6 +162,8 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
             if (const std::string why = reconstruction_region_error(r.region); !why.empty())
                 return make_error(ErrorCode::InvalidArgument, why);
         }
+        r.mattes = j.value("mattes", false);
+        r.brackets = j.value("brackets", false);
         r.clip_fill = j.value("clip_fill", true);
         r.exposure_ev = j.value("exposure_ev", 0.0);
         if (!std::isfinite(r.exposure_ev) || std::fabs(r.exposure_ev) > 8.0)
@@ -205,6 +209,8 @@ std::string master_request_json(const MasterRequest& q) {
     if (!q.exr_half) j["exr_half"] = false;
     if (q.exposure_ev != 0.0) j["exposure_ev"] = q.exposure_ev;
     if (q.region.enabled) j["reconstruction_region"] = region_to_json(q.region);
+    if (q.mattes) j["mattes"] = true;
+    if (q.brackets) j["brackets"] = true;
     if (q.analytic) j["analytic"] = true;
     if (!q.calibration.empty()) {
         auto cal = nlohmann::json::array();
@@ -287,8 +293,8 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
                                   const std::filesystem::path& out) {
     auto src = primaries_of(q.source_space);
     if (!src) return src.error();
-    if (q.container != "aces" && q.container != "linear")
-        return make_error(ErrorCode::InvalidArgument, "container must be aces or linear", q.container);
+    if (q.container != "aces" && q.container != "linear" && q.container != "acescg" && q.container != "rec709")
+        return make_error(ErrorCode::InvalidArgument, "container must be aces, acescg, linear or rec709", q.container);
     auto g = grade_master(sdr, fields, scalars, model, q);
     if (!g) return g.error();
     const CompositeParams& cp = g->params;
@@ -351,16 +357,47 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     if (q.analytic) provenance.emplace_back("rudra:clipFill", clip_fill_text(q));
     if (!cp.reference.empty()) provenance.emplace_back("rudra:reference", cp.reference.file);
     if (cp.masks) provenance.emplace_back("rudra:masks", masks_path.filename().string());
+    std::filesystem::path mattes_path, regions_path;
+    std::array<double, kPixelClasses> class_share{};
+    auto bracket_path = [&](double ev) {
+        char b[32];
+        std::snprintf(b, sizeof b, ".ev%+.0f.png", ev);
+        std::filesystem::path p = out;
+        return p.replace_extension(b);
+    };
+    if (q.brackets) {
+        std::string names;
+        for (double ev : kBracketStops) names += (names.empty() ? "" : ", ") + bracket_path(ev).filename().string();
+        provenance.emplace_back("rudra:brackets", names);
+    }
+    if (q.mattes) {
+        regions_path = out;
+        regions_path.replace_extension(".regions.png");
+        mattes_path = out;
+        mattes_path.replace_extension(".mattes.exr");
+        if (!q.mattes_dir.empty()) {   // a movie's frames: the mattes in their own folder
+            std::error_code mec;
+            std::filesystem::create_directories(q.mattes_dir, mec);
+            if (mec) return make_error(ErrorCode::IoError, "Cannot create the mattes folder.", q.mattes_dir.string());
+            mattes_path = q.mattes_dir / mattes_path.filename();
+            regions_path = q.mattes_dir / regions_path.filename();
+        }
+        provenance.emplace_back("rudra:mattes", mattes_path.filename().string());
+    }
     const bool aces = q.container == "aces";
+    // RUDRA 1.1: ACEScg (AP1) and linear Rec.709 beside ACES 2065-1 and linear Rec.2020.
+    const bool acescg = q.container == "acescg", rec709 = q.container == "rec709";
+    const Primaries container_primaries = aces ? Primaries::Ap0 : acescg ? Primaries::Ap1 : rec709 ? Primaries::Rec709
+                                                                                                  : Primaries::Rec2020;
     // The linear container is scene-linear Rec.2020, converted from the
     // plate's primaries and stamped so (it carried the plate's primaries
     // untagged until 9 Oct 2026, as the Studio did).
     const PlanarBuffer* alpha = q.alpha && q.alpha->height() == linear.height() && q.alpha->width() == linear.width()
                                     ? &*q.alpha : nullptr;
     if (q.alpha && !alpha) return make_error(ErrorCode::InvalidArgument, "The alpha is not the size of the picture.");
-    if (alpha && !aces) provenance.emplace_back("rudra:alpha", "the source's straight alpha as A; RGB premultiplied by it (OpenEXR associated alpha)");
+    if (alpha && !aces && !acescg) provenance.emplace_back("rudra:alpha", "the source's straight alpha as A; RGB premultiplied by it (OpenEXR associated alpha)");
     auto rec2020_rgba = [&] {   // the linear container with A: RGB premultiplied, as the ACES writers do
-        PlanarBuffer rgb = convert_primaries(linear, *src, Primaries::Rec2020);
+        PlanarBuffer rgb = convert_primaries(linear, *src, rec709 ? Primaries::Rec709 : Primaries::Rec2020);
         if (!alpha) return rgb;
         PlanarBuffer rgba(4, rgb.height(), rgb.width());
         for (std::size_t i = 0; i < rgb.plane_size(); ++i) {
@@ -370,17 +407,118 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         }
         return rgba;
     };
-    auto w = aces ? write_aces_exr(out, linear, *src, 1.0, provenance, q.exr_half, nullptr, {}, alpha)
-                  : write_exr(out, rec2020_rgba(), q.exr_half, kRec2020Chromaticities, provenance);
+    auto w = aces     ? write_aces_exr(out, linear, *src, 1.0, provenance, q.exr_half, nullptr, {}, alpha)
+             : acescg ? write_acescg_exr(out, linear, *src, 1.0, provenance, q.exr_half, nullptr, {}, alpha)
+                      : write_exr(out, rec2020_rgba(), q.exr_half, rec709 ? kRec709Chromaticities : kRec2020Chromaticities,
+                                  provenance);
     if (!w) return w.error();
+
+    // RUDRA 1.1 priority 4: the brackets from the EXR as written, and the preview-to-export check.
+    std::vector<std::filesystem::path> bracket_files;
+    CodeDelta bracket_delta;
+    if (q.brackets) {
+        auto back = read_exr(out);
+        if (!back) return back.error();
+        const int bh = back->pixels.height(), bw = back->pixels.width();
+        PlanarBuffer rgb(3, bh, bw);
+        for (int c = 0; c < 3; ++c) std::copy_n(back->pixels.plane(c), rgb.plane_size(), rgb.plane(c));
+        rgb = convert_primaries(rgb, container_primaries, *src);
+        const float to_net = float(kDiffuseWhite.v) / 10000.0f;   // scene linear (203 nits = 1.0) -> network units
+        PlanarBuffer exported(3, bh, bw), shown(3, bh, bw);
+        for (std::size_t i = 0; i < rgb.plane_size(); ++i) {
+            const float a = back->pixels.channels() == 4 ? back->pixels.plane(3)[i] : 1.0f;
+            for (int c = 0; c < 3; ++c) {
+                shown.plane(c)[i] = linear.plane(c)[i] * to_net;
+                // premultiplied A: unpremultiply; where A is 0 there is no colour to compare
+                exported.plane(c)[i] = a > 0.0f ? rgb.plane(c)[i] / a * to_net : shown.plane(c)[i];
+            }
+        }
+        const NetworkLinearImage exp_img(std::move(exported)), shown_img(std::move(shown));
+        for (double ev : kBracketStops) {
+            const Rgb8Image from_file = exposure_bracket(exp_img, ev, *src);
+            const CodeDelta d = code_delta(from_file, exposure_bracket(shown_img, ev, *src));
+            bracket_delta.max_code_delta = std::max(bracket_delta.max_code_delta, d.max_code_delta);
+            bracket_delta.pixels_differing = std::max(bracket_delta.pixels_differing, d.pixels_differing);
+            const auto path = bracket_path(ev);
+            if (auto wp = write_png8(path, Png8{from_file.width, from_file.height, 3, from_file.rgb}); !wp) return wp.error();
+            bracket_files.push_back(path);
+        }
+    }
 
     pyjson::List regions_json;
     for (const auto& b : q.regions) regions_json.push_back(band_json(b));
     // Roadmap 3.5: where this reconstruction departs from what the SDR
     // supports, measured on the composite against its corrected baseline
     // (before the grade, which is the artist's, not the network's).
-    const SupportStats support =
-        support_stats(network, corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, cp, model.corpus_ev)), sdr);
+    const NetworkLinearImage baseline = corrected_baseline(sdr, model.corpus_ev, baseline_curve_params(scalars, cp, model.corpus_ev));
+    const SupportStats support = support_stats(network, baseline, sdr);
+    pyjson::List matte_names;
+    if (q.mattes) {   // RUDRA 1.1 priority 3: the reconstruction's mattes, before the grade
+        const CompositeParams plain = ungraded(cp);
+        const bool graded_any = any_graded(cp.regions) || cp.exposure_ev != 0.0;
+        const NetworkLinearImage recon = graded_any ? composite(sdr, fields, scalars, model, plain) : network;
+        ReconstructionMattes m = reconstruction_mattes(sdr, fields, scalars, plain, recon, baseline);
+        // RUDRA 1.1 priority 5: what each pixel is, how tightly the SDR pins it, and a picture of both.
+        PixelClassMap classes = classify_pixels(sdr, recon, baseline);
+        class_share = classes.share;
+        {
+            const Rgb8Image grey = exposure_bracket(recon, 0.0, *src);
+            const int W = sdr.width(), H = sdr.height();
+            Png8 pic{W, H, 3, std::vector<std::uint8_t>(std::size_t(W) * std::size_t(H) * 3)};
+            auto edge = [&](int x, int y) {   // the region's boundary: weight 0 beside weight > 0
+                if (!m.region) return false;
+                const float* rw = m.region->plane(0);
+                const bool in = rw[std::size_t(y) * std::size_t(W) + std::size_t(x)] > 0.0f;
+                for (auto [dx, dy] : {std::pair{1, 0}, std::pair{-1, 0}, std::pair{0, 1}, std::pair{0, -1}}) {
+                    const int u = x + dx, v = y + dy;
+                    if (u < 0 || v < 0 || u >= W || v >= H) continue;
+                    if ((rw[std::size_t(v) * std::size_t(W) + std::size_t(u)] > 0.0f) != in) return true;
+                }
+                return false;
+            };
+            for (int y = 0; y < H; ++y)
+                for (int x = 0; x < W; ++x) {
+                    const std::size_t i = std::size_t(y) * std::size_t(W) + std::size_t(x);
+                    const float l = (0.2126f * grey.rgb[i * 3] + 0.7152f * grey.rgb[i * 3 + 1] + 0.0722f * grey.rgb[i * 3 + 2]) / 255.0f;
+                    const int k = classes.cls[i];
+                    const float mix = k >= 2 ? kMapMix : 0.0f;
+                    const bool on_edge = edge(x, y);
+                    for (int c = 0; c < 3; ++c) {
+                        float v = (1.0f - mix) * l * kMapGrey + mix * kPixelClassColour[std::size_t(k)][std::size_t(c)];
+                        if (on_edge) v = 1.0f;
+                        pic.data[i * 3 + std::size_t(c)] = std::uint8_t(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f));
+                    }
+                }
+            if (auto wp = write_png8(regions_path, pic); !wp) return wp.error();
+        }
+        PlanarBuffer class_plane(1, sdr.height(), sdr.width());
+        for (std::size_t i = 0; i < classes.cls.size(); ++i)
+            class_plane.plane(0)[i] = float(classes.cls[i]) / float(kPixelClasses - 1);
+        NamedPlanes planes;
+        planes.emplace_back("rudra.class", std::move(class_plane));
+        planes.emplace_back("rudra.confidence", std::move(classes.confidence));
+        planes.emplace_back("rudra.highlight", std::move(m.highlight));
+        planes.emplace_back("rudra.shadow", std::move(m.shadow));
+        planes.emplace_back("rudra.changed", std::move(m.changed));
+        if (m.region) planes.emplace_back("rudra.region", std::move(*m.region));
+        if (cp.masks)
+            for (int band : cp.masks->bands()) {
+                PlanarBuffer p(1, sdr.height(), sdr.width());
+                for (int y = 0; y < sdr.height(); ++y)
+                    for (int x = 0; x < sdr.width(); ++x)
+                        p.at(0, y, x) = cp.masks->weight(band, x, y, sdr.width(), sdr.height());
+                planes.emplace_back("rudra.paint." + std::to_string(band), std::move(p));
+            }
+        for (const auto& pl : planes) matte_names.push_back(pl.first);
+        ExrAttributes ma{{"rudra:mattesOf", out.filename().string()},
+                         {"rudra:mattes", "highlight / shadow: the gate's priors as applied (mode, region, strength, "
+                                          "recovery mask); changed: 1 where the reconstruction differs from the baseline; "
+                                          "region: the luminance region; paint.N: painted mask N; class: 0 preserved, "
+                                          "0.25 follows, 0.5 reconstructed, 0.75 estimated, 1 generated; confidence: "
+                                          "how tightly the SDR pins the value (not a probability). Before the grade."},
+                         {"rudra:appVersion", RUDRA_VERSION_LABEL}};
+        if (auto wm = write_mattes_exr(mattes_path, planes, ma); !wm) return wm.error();
+    }
     auto pct3 = [](double v) {
         char b[64];
         std::snprintf(b, sizeof b, "%.3f", v);
@@ -392,7 +530,8 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         {"peak_nits", py_round1(peak)},
         {"resolution", pyjson::List{sdr.width(), sdr.height()}},
         {"source_bits", source_bits},
-        {"container", aces ? "ACES 2065-1 (AP0)" : "scene-linear Rec.2020"},
+        {"container", aces ? "ACES 2065-1 (AP0)" : acescg ? "ACEScg (AP1)" : rec709 ? "scene-linear Rec.709"
+                                                                                 : "scene-linear Rec.2020"},
         {"transfer", "linear"},
         {"diffuse_white_nits", 203.0},
         {"checkpoint", q.checkpoint},
@@ -416,6 +555,33 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     if (!source_sha.empty()) sidecar_dict.emplace_back("source_sha256", source_sha);
     if (*source != SourceCurve::Unknown) sidecar_dict.emplace_back("source_curve", q.source_curve);
     if (q.exposure_ev != 0.0) sidecar_dict.emplace_back("exposure_ev", q.exposure_ev);
+    if (q.brackets) {
+        pyjson::List files, evs;
+        for (const auto& f : bracket_files) files.push_back(f.filename().string());
+        for (double ev : kBracketStops) evs.push_back(ev);
+        sidecar_dict.emplace_back("brackets", pyjson::Dict{
+            {"files", files}, {"ev", evs},
+            {"view", "SDR, sRGB, Rec.709; diffuse white (203 nits) at code 255 at 0 EV; from the EXR as written"},
+            {"preview_vs_export", pyjson::Dict{
+                 {"max_code_delta", std::int64_t(bracket_delta.max_code_delta)},
+                 {"pixels_differing_pct", py_round(100.0 * bracket_delta.pixels_differing, 3)},
+                 {"basis", "the same brackets from the picture in memory (what the viewer shows) against the EXR read back; "
+                           "a half master differs by its half-float rounding"}}}});
+    }
+    if (q.mattes) {
+        sidecar_dict.emplace_back("mattes", pyjson::Dict{{"file", mattes_path.filename().string()},
+                                                         {"channels", matte_names},
+                                                         {"basis", "before the grade (no Region EV, no exposure)"}});
+        sidecar_dict.emplace_back("pixel_classes", pyjson::Dict{
+            {"picture", regions_path.filename().string()},
+            {"preserved_pct", pct3(100.0 * class_share[0])},
+            {"follows_pct", pct3(100.0 * class_share[1])},
+            {"reconstructed_pct", pct3(100.0 * class_share[2])},
+            {"estimated_pct", pct3(100.0 * class_share[3])},
+            {"generated_pct", pct3(100.0 * class_share[4])},
+            {"confidence", "a constraint score: 1 preserved / follows, 1/(1+|d|) reconstructed, "
+                           "0.5/(1+|d|) estimated, 0 generated; d in stops. Not a probability"}});
+    }
     if (q.region.enabled) {
         const auto rj = region_to_json(q.region);
         pyjson::Dict d;
@@ -477,6 +643,11 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     r.source_bits = source_bits;
     r.exr = out;
     r.sidecar = side;
+    if (cp.masks) r.masks = masks_path;
+    if (q.mattes) r.mattes = mattes_path;
+    if (q.mattes) r.regions = regions_path;
+    r.brackets = bracket_files;
+    if (q.brackets) r.bracket_max_code_delta = bracket_delta.max_code_delta;
     return r;
 }
 
@@ -584,6 +755,33 @@ Result<MasterResult> publish_master(const SdrImage& sdr, int source_bits, const 
     if (auto e = place(staged_side, side)) {
         fs::remove(out, ec);
         return make_error(ErrorCode::IoError, "Refusing to overwrite existing render: " + side.string(), e.message());
+    }
+    // 5 Nov 2026: the files written beside the master go with it (the painted masks were
+    // written into the staging folder and removed with it before this).
+    std::vector<fs::path> placed;
+    r->masks.clear();
+    if (request.mattes_dir.empty()) {   // written in their own folder already when it is set
+        r->mattes.clear();
+        r->regions.clear();
+    }
+    r->brackets.clear();
+    for (const char* ext : {".masks.png", ".mattes.exr", ".regions.png", ".ev-2.png", ".ev+0.png", ".ev+2.png"}) {
+        fs::path from = staged, to = out;
+        from.replace_extension(ext);
+        to.replace_extension(ext);
+        if (!fs::exists(from)) continue;
+        if (auto e = place(from, to)) {
+            for (const auto& p : placed) fs::remove(p, ec);
+            fs::remove(side, ec);
+            fs::remove(out, ec);
+            return make_error(ErrorCode::IoError, "Refusing to overwrite existing render: " + to.string(), e.message());
+        }
+        placed.push_back(to);
+        const std::string e(ext);
+        if (e == ".masks.png") r->masks = to;
+        else if (e == ".mattes.exr") r->mattes = to;
+        else if (e == ".regions.png") r->regions = to;
+        else r->brackets.push_back(to);
     }
     r->exr = out;
     r->sidecar = side;

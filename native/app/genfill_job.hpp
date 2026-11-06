@@ -55,12 +55,35 @@ struct GenFillOptions {
     int steps = 30;
     double brightness = 0.0;  // v3: the artist's offset in stops over the estimated brightness (-3..+3)
     QString prompt_highlight, prompt_shadow;
+    // RUDRA 1.1 (5 Nov 2026), priority 2. Each is sent only when not its default, so a fill
+    // with the defaults runs the command line it always did.
+    double prompt_strength = 1.0;   // how strongly a region prompt steers its region (0..2; 1 = as v3 was gated)
+    double shape_gain = 1.0;        // detail strength: how much the drawn shape varies the brightness (0..2)
+    QString region_json;            // the grade's reconstruction region (deliver reconstruction_region_json); "" = none
+    // RUDRA 1.1 priority 5: a frame whose fill flickers for one frame is written as the master's own
+    // (--fallback spikes). Off here so a bare GenFillOptions is v3; Deliver turns it on by default.
+    bool fallback = false;
     QString glob;         // the master folder's frames to fill ("SH010.*.exr"); "" = every EXR there
     bool operator==(const GenFillOptions&) const = default;
 };
 
 // The command line (after the Python): -m rudra.genfill.run --master ... --json.
 QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, const QString& master, const QString& out);
+
+// RUDRA 1.1 (5 Nov 2026): prompt presets and a suggestion from the shot's clipped areas
+// (rudra/genfill/prompts.py, no model). The command line after the Python, for one or more
+// SDR frames, and its JSON read back.
+QStringList genfill_suggest_arguments(const GenFillSetup& s, const GenFillOptions& o, const QStringList& frames);
+struct PromptSuggestion {
+    QString id, label, text, region;   // region "highlight" or "shadow": the box it fills
+    QString reason;                    // why it was suggested; empty for a plain preset
+    bool cached = false;               // its embedding is in the prompt cache: no text model to load
+};
+struct PromptSuggestions {
+    std::vector<PromptSuggestion> suggested, presets;
+    double clipped_fraction = 0.0;
+};
+std::optional<PromptSuggestions> parse_prompt_suggestions(const QByteArray& json, QString* why = nullptr);
 
 // A new folder beside the master: <master>_aifill, else _aifill_2, _3 ... (nothing replaced).
 QString genfill_out_dir(const QString& master);

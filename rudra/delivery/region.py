@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 
 __all__ = ["ReconstructionRegion", "region_ramp_up", "region_ramp_down", "region_weights",
-           "reconstruction_gate", "MODES"]
+           "reconstruction_gate", "MODES", "region_from_dict", "fill_region_weight"]
 
 MODES = ("all", "highlights", "shadows", "off")
 _F = np.float32
@@ -74,6 +74,49 @@ def region_weights(y: np.ndarray, r: ReconstructionRegion) -> tuple[np.ndarray, 
     hi = region_ramp_up(y, r.highlight_from, r.highlight_softness) * _F(r.highlight_strength)
     lo = region_ramp_down(y, r.shadow_below, r.shadow_softness) * _F(r.shadow_strength)
     return hi.astype(_F), lo.astype(_F)
+
+
+_FIELDS = ("band", "highlight_from", "highlight_softness", "highlight_strength", "shadow_below",
+           "shadow_softness", "shadow_strength", "band_low", "band_high", "band_softness")
+
+
+def region_from_dict(d: dict | None) -> ReconstructionRegion:
+    """The JSON object masters, projects and the app's AI fill pass (native deliver
+    reconstruction_region_json) -> an enabled region, checked. None or {} -> off."""
+    if not d:
+        return ReconstructionRegion()
+    unknown = set(d) - set(_FIELDS) - {"enabled", "outside"}
+    if unknown:
+        raise ValueError("unknown reconstruction region field(s): " + ", ".join(sorted(unknown)))
+    kw = {k: (bool(d[k]) if k == "band" else float(d[k])) for k in _FIELDS if k in d}
+    r = ReconstructionRegion(enabled=bool(d.get("enabled", True)), **kw)
+    vals = [getattr(r, k) for k in _FIELDS if k != "band"]
+    if not all(np.isfinite(vals)):
+        raise ValueError("every reconstruction region value must be finite")
+    for k in ("highlight_from", "shadow_below", "band_low", "band_high"):
+        if not 0.0 <= getattr(r, k) <= 1.0:
+            raise ValueError("reconstruction region thresholds are SDR luma, 0 to 1")
+    for k in ("highlight_softness", "shadow_softness", "band_softness"):
+        if not 0.0 <= getattr(r, k) <= 0.5:
+            raise ValueError("reconstruction region softness is 0 to 0.5")
+    for k in ("highlight_strength", "shadow_strength"):
+        if not 0.0 <= getattr(r, k) <= 2.0:
+            raise ValueError("reconstruction region strength is 0 to 2")
+    if not r.band_low < r.band_high:
+        raise ValueError("the reconstruction band's low must be below its high")
+    return r
+
+
+def fill_region_weight(codes: np.ndarray, r: ReconstructionRegion) -> np.ndarray | None:
+    """The AI fill's weight inside the region (RUDRA 1.1 priority 2): (H, W, 3) uint8 SDR codes of the
+    master's view -> (H, W) float32 in [0, 1], max of the highlight and shadow weights, strengths
+    capped at 1 (a blend weight cannot exceed 1). None when the region is off (the fill is unchanged)."""
+    if not r.enabled:
+        return None
+    c = np.asarray(codes, _F)[..., :3] / _F(255.0)
+    y = (_F(0.2126) * c[..., 0] + _F(0.7152) * c[..., 1] + _F(0.0722) * c[..., 2]).astype(_F)
+    wh, ws = region_weights(y, r)
+    return np.clip(np.maximum(wh, ws), _F(0.0), _F(1.0)).astype(_F)
 
 
 def reconstruction_gate(y: np.ndarray, shadow_weight: float, mode: str, strength: float,

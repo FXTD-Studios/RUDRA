@@ -141,6 +141,9 @@ struct ViewerWindow::Impl {
     QSize frame_size;
     std::unique_ptr<QRhiTexture> in_a, in_b, model_t, base_t, picture, mask_t;
     std::unique_ptr<QRhiTexture> light_t;   // revision 6: the SDR as light and its clamp flags (binding 4)
+    std::unique_ptr<QRhiTexture> region_t;  // RUDRA 1.1: the region overlay's weights (binding 5)
+    ReconstructionRegion uploaded_region;   // what region_t holds (enabled false: nothing yet)
+    bool region_dirty = true;
     bool light_dirty = true, light_bound = false;
     std::vector<float> light_knots;         // the anchor knots light_t was made with
     std::shared_ptr<const MaskSet> uploaded_masks;   // what mask_t holds (3.3); null for none
@@ -488,6 +491,8 @@ struct ViewerWindow::Impl {
         in_b.reset(rhi->newTexture(QRhiTexture::RGBA32F, size));
         mask_t.reset(rhi->newTexture(QRhiTexture::RGBA8, size));
         light_t.reset(rhi->newTexture(QRhiTexture::RGBA32F, size));
+        region_t.reset(rhi->newTexture(QRhiTexture::RGBA8, size));
+        region_dirty = true;
         light_dirty = true;
         light_bound = false;
         uploaded_masks.reset();
@@ -498,7 +503,7 @@ struct ViewerWindow::Impl {
                                       QRhiTexture::RenderTarget | QRhiTexture::MipMapped |
                                           QRhiTexture::UsedWithGenerateMips));
         if (!in_a->create() || !in_b->create() || !mask_t->create() || !base_t->create() || !model_t->create() ||
-            !light_t->create() || !picture->create())
+            !light_t->create() || !region_t->create() || !picture->create())
             return false;
         model_rt.reset(rhi->newTextureRenderTarget({QRhiColorAttachment(model_t.get())}));
         model_rp.reset(model_rt->newCompatibleRenderPassDescriptor());
@@ -522,6 +527,7 @@ struct ViewerWindow::Impl {
             QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, base_t.get(), fetch.get()),
             QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, mask_t.get(), fetch.get()),
             QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage, light_t.get(), fetch.get()),
+            QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage, region_t.get(), fetch.get()),
         });
         if (!composite_srb->create() || !display_srb->create()) return false;
         auto pipeline = [&](const QShader& frag, QRhiShaderResourceBindings* srb, QRhiRenderPassDescriptor* rp) {
@@ -613,6 +619,7 @@ struct ViewerWindow::Impl {
                 }
                 view_dirty = true;
                 light_dirty = true;
+                region_dirty = true;   // a new frame: its own region weights
             }
             upload_dirty = false;
         }
@@ -683,6 +690,17 @@ struct ViewerWindow::Impl {
                     }
                     light_knots = ev.anchor_knots;
                     light_dirty = false;
+                }
+                if (ev.region_overlay && ev.overlay_region.enabled &&
+                    (region_dirty || !(ev.overlay_region == uploaded_region))) {
+                    // RUDRA 1.1: the region's weights, made on the host by core (render_view reads the same bytes).
+                    const SdrImage* s = precomposited ? (pre_sdr ? &*pre_sdr : nullptr) : &frame.sdr;
+                    const std::vector<std::uint8_t> rb =
+                        region_overlay_rgba8(s, ev.overlay_region, frame_size.width(), frame_size.height());
+                    u->uploadTexture(region_t.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
+                        0, 0, QRhiTextureSubresourceUploadDescription(rb.data(), quint32(rb.size())))));
+                    uploaded_region = ev.overlay_region;
+                    region_dirty = false;
                 }
                 const detail::ViewUbo vu = detail::view_ubo(ev, frame_size.width(), needs_light && light_bound);
                 u->updateDynamicBuffer(view_ubo.get(), 0, sizeof(vu), &vu);
@@ -814,6 +832,7 @@ struct ViewerWindow::Impl {
         in_b.reset();
         mask_t.reset();
         light_t.reset();
+        region_t.reset();
         base_t.reset();
         model_t.reset();
         picture.reset();
@@ -937,6 +956,7 @@ void ViewerWindow::set_composited(NetworkLinearImage model, NetworkLinearImage b
 void ViewerWindow::set_source_sdr(SdrImage sdr) {
     d_->pre_sdr = std::move(sdr);
     d_->light_dirty = true;
+    d_->region_dirty = true;
     d_->changed_view();
 }
 
