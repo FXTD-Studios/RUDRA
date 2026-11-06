@@ -6093,7 +6093,7 @@ TEST(GenFill, PromptStrengthDetailAndRegionReachTheFill) {
     QSettings().clear();
 }
 
-// RUDRA 1.1, the Beeble gaps (5 Nov 2026): the AI fill on the analytic route, the four analytic
+// RUDRA 1.1, the workflow gaps (5 Nov 2026): the AI fill on the analytic route, the four analytic
 // containers, and the region's histogram and viewer switch on the Reconstruct card.
 TEST(Gaps, AnalyticFillContainersAndTheRegionCard) {
     app::DeliverChoice c;

@@ -1,4 +1,4 @@
-# RUDRA 1.1 vs a SwitchHDR-style workflow: gap audit (5 Nov 2026)
+# RUDRA 1.1 vs a cloud SDR-to-HDR workflow: gap audit (5 Nov 2026)
 
 Audit only, no code changed. Baseline: RUDRA 1.1.0 (native app, `native/`), spec
 `docs/composite.spec.md` rev 1. HAVE = exists, PART = exists but not as asked, MISS = absent.
@@ -81,7 +81,7 @@ fail in the build container only, they need the Python queue's checkpoint),
 main_window.cpp compile against Qt 6.4 headers. Not run: the Qt app tests and
 GPU parity (Windows / RTX).
 
-## The Beeble gaps closed in code (5 Nov 2026)
+## The workflow gaps closed in code (5 Nov 2026)
 
 1. **Live region view**: the viewer tints the reconstruction region (display.frag binding 5,
    `region_overlay_rgba8`, the same 8-bit weights in core render_view and both GPU paths);
@@ -139,7 +139,7 @@ GPU parity (Windows / RTX).
 - Not done: the Python `rudra deliver` and `video` still scale (port when the Python
   delivery is next touched); the real sky plates should still be run.
 
- (5 Nov 2026, after the priorities; Beeble has one)
+ (5 Nov 2026, after the priorities; cloud tools have one)
 
 - `rudra/genfill/prompts.py`: 9 presets (8 highlight, 1 shadow) and `suggest()`, a heuristic
   over the fully clipped components (area, place, rectangularity, circularity, the colour of

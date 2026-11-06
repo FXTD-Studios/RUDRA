@@ -436,7 +436,7 @@ AcesMasterDialog::AcesMasterDialog(QWidget* parent, std::vector<fs::path> roots,
     guard_->setChecked(true);
     g->addWidget(guard_, row++, 1, 1, 2);
 
-    // The tau bands, as SwitchHDR's thresholds (core/aces_v2.hpp UserBand).
+    // The tau bands: the artist's highlight and shadow thresholds (core/aces_v2.hpp UserBand).
     {
         QSettings bst;
         band_ = new QGroupBox("Rebuild only highlights and shadows", this);

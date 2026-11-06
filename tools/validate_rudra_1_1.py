@@ -1,7 +1,7 @@
 """RUDRA 1.1 validation (the gap audit's priority 6, 5 Nov 2026).
 
 Runs the RUDRA 1.1 features on real footage through `rudra-native` and checks, per shot,
-what docs/RUDRA_1_1_SWITCHHDR_GAP_AUDIT.md promises. Every check is PASS / FAIL against a
+what docs/RUDRA_1_1_GAP_AUDIT.md promises. Every check is PASS / FAIL against a
 stated threshold, INFO (measured, no threshold), or MANUAL (a person looks at the pictures).
 
     python tools/validate_rudra_1_1.py --manifest shots.json --out validation/

@@ -438,7 +438,7 @@ TEST(PixelClasses, TheAiFillWinsAndHasNoConfidence) {
     EXPECT_DOUBLE_EQ(c.share[4], 1.0 / double(c.cls.size()));
 }
 
-// ---- RUDRA 1.1, the Beeble gaps (5 Nov 2026) ----
+// ---- RUDRA 1.1, the workflow gaps (5 Nov 2026) ----
 
 TEST(Gaps, AFramesFolderNeverTakesTheMattesAsFrames) {
     const fs::path dir = fs::temp_directory_path() / "rudra-list-mattes";
