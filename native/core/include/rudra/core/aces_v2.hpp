@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <vector>
 #include <string>
 
 #include "rudra/core/image.hpp"
@@ -136,6 +137,33 @@ float user_band_weight(float top, const UserBand& band) noexcept;
 PlanarBuffer apply_user_band(const PlanarBuffer& prediction, const PlanarBuffer& baseline, const PlanarBuffer& source,
                              const UserBand& band, BandStats* stats = nullptr, PlanarBuffer* weight_out = nullptr);
 
+// Stage 6b, the lock (7 Nov 2026; aces_lock.hpp, training/aces_partial_tighten.py).
+struct LockSettings {
+    bool on = false;
+    double strength = 0.5;     // lambda: the fraction of the way to the full lock (1: the full lock, no guard)
+    int iters = 4;             // Gauss-Newton steps (Python clamps to 3..6)
+    bool dequant = true;       // lock to dequantize_recorded's estimate, not the integer codes
+    int dq_iters = 200;
+    double dq_max_lap = 1.5;
+    bool valid() const noexcept { return strength > 0.0 && strength <= 1.0 && dq_iters >= 0 && dq_max_lap > 0.0; }
+    // lock_dqs050g: strength 0.5, dequantized target, 200 iterations, max Laplacian 1.5, band 0.
+    static LockSettings registered() noexcept {
+        LockSettings s;
+        s.on = true;
+        return s;
+    }
+};
+
+struct LockStats {
+    std::size_t support_pixels = 0;          // partial support: weight > 0, brightest > .5, darkest below the clip
+    std::size_t changed_pixels = 0;          // the solve converged and the result was written
+    std::size_t kept_pixels = 0;             // left as constrain_colour_v2 made them
+    std::size_t strength_raised_pixels = 0;  // the guard went past `strength`
+    std::size_t dequant_channels = 0;        // support channels whose target is the dequantized value
+    double max_recorded_error_codes = 0.0;   // of the full lock, over changed pixels
+    double ms_dequant = 0.0, ms_solve = 0.0;
+};
+
 struct FrameResult {
     PlanarBuffer acescg;   // the master: ACEScg scene-linear, signed, unclamped
     PlanarBuffer mask;     // rudra.reconstructed
@@ -146,14 +174,16 @@ struct FrameResult {
     // (inverse_white_luma): near-white tinted codes invert up to 7x brighter than white.
     std::size_t ceiling_pixels = 0;
     std::size_t clean_shadow_pixels = 0;   // pixels Clean shadows changed (0 when off)
+    LockStats lock;                        // all zero when the lock is off
     // Wall time of each stage, ms (3 Nov 2026): where a frame's time goes.
     struct StageMs {
-        double inverse = 0, network = 0, compose = 0, smoothing = 0, band = 0, constraint = 0;
+        double inverse = 0, network = 0, compose = 0, smoothing = 0, band = 0, constraint = 0, lock = 0;
     } ms;
 };
-// Stages 1-7 for one frame of display codes in [0,1].
+// Stages 1-7 for one frame of display codes in [0,1]; the lock (6b) runs after the
+// constraint when lock.on.
 Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, const G1Fn& g1,
                               bool smoothing = true, bool constrain = true, bool forbid_new_negative_y = false,
-                              const UserBand& band = {}, const CleanShadows& clean = {});
+                              const UserBand& band = {}, const CleanShadows& clean = {}, const LockSettings& lock = {});
 
 }  // namespace rudra::aces_v2

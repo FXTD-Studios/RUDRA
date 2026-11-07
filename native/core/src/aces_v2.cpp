@@ -4,6 +4,7 @@
 // numpy float64 (the clipped smoothing).
 
 #include "rudra/core/aces_v2.hpp"
+#include "rudra/core/aces_lock.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -516,7 +517,10 @@ PlanarBuffer apply_user_band(const PlanarBuffer& prediction, const PlanarBuffer&
 }
 
 Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, const G1Fn& g1, bool smoothing,
-                              bool constrain, bool forbid_new_negative_y, const UserBand& band, const CleanShadows& clean) {
+                              bool constrain, bool forbid_new_negative_y, const UserBand& band, const CleanShadows& clean,
+                              const LockSettings& lock) {
+    if (lock.on && !lock.valid())
+        return make_error(ErrorCode::InvalidArgument, "The lock's strength must be above 0 and at most 1.");
     if (clean.on && !clean.valid())
         return make_error(ErrorCode::InvalidArgument, "Clean shadows: max_code 1..128, radius 1..8, range above 0.");
     if (band.on && !band.valid())
@@ -571,6 +575,9 @@ Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, 
     if (constrain) out.acescg = constrain_colour_v2(source, out.acescg, baseline, g.weight, view, true, &out.constraint,
                                                     forbid_new_negative_y);
     out.ms.constraint = lap();
+    // Stage 6b: the lock, on the constraint's output (registered lock_dqs050g).
+    if (lock.on) out.acescg = lock_observed(source, out.acescg, g.weight, view, lock, &out.lock);
+    out.ms.lock = lap();
     for (float v : out.acescg.span())
         if (!std::isfinite(v)) return make_error(ErrorCode::BackendError, "The reconstruction produced a non-finite value.");
     return out;
