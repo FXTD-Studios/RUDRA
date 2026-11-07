@@ -4,6 +4,7 @@
 // numpy float64 (the clipped smoothing).
 
 #include "rudra/core/aces_v2.hpp"
+#include "rudra/core/aces_lock.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -516,7 +517,13 @@ PlanarBuffer apply_user_band(const PlanarBuffer& prediction, const PlanarBuffer&
 }
 
 Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, const G1Fn& g1, bool smoothing,
-                              bool constrain, bool forbid_new_negative_y, const UserBand& band, const CleanShadows& clean) {
+                              bool constrain, bool forbid_new_negative_y, const UserBand& band, const CleanShadows& clean,
+                              const LockSettings& lock) {
+    if (lock.on && !(lock.strength > 0.0 && lock.strength <= 1.0))
+        return make_error(ErrorCode::InvalidArgument, "The lock's strength must be above 0 and at most 1.");
+    if (lock.on && !lock.valid())
+        return make_error(ErrorCode::InvalidArgument,
+                          "The lock's dequantization needs dq_iters of 0 or more and dq_max_lap above 0.");
     if (clean.on && !clean.valid())
         return make_error(ErrorCode::InvalidArgument, "Clean shadows: max_code 1..128, radius 1..8, range above 0.");
     if (band.on && !band.valid())
@@ -571,6 +578,18 @@ Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, 
     if (constrain) out.acescg = constrain_colour_v2(source, out.acescg, baseline, g.weight, view, true, &out.constraint,
                                                     forbid_new_negative_y);
     out.ms.constraint = lap();
+    // Stage 6b: the lock, on the constraint's output (registered lock_dqs050g). Not where the
+    // user's band chose the analytic inverse (band weight 0): that stays the inverse exactly.
+    if (lock.on) {
+        PlanarBuffer lock_weight = g.weight;
+        if (band.on)
+            for (std::size_t i = 0; i < lock_weight.plane_size(); ++i) {
+                const float top = std::max(std::max(source.plane(0)[i], source.plane(1)[i]), source.plane(2)[i]);
+                if (user_band_weight(top, band) <= 0.0f) lock_weight.plane(0)[i] = 0.0f;
+            }
+        out.acescg = lock_observed(source, out.acescg, lock_weight, view, lock, &out.lock);
+    }
+    out.ms.lock = lap();
     for (float v : out.acescg.span())
         if (!std::isfinite(v)) return make_error(ErrorCode::BackendError, "The reconstruction produced a non-finite value.");
     return out;
