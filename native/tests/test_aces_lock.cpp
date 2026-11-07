@@ -29,6 +29,7 @@ namespace {
 class MixingView final : public AcesView {
 public:
     static constexpr double M[3][3] = {{0.90, 0.08, 0.02}, {0.02, 0.96, 0.02}, {0.01, 0.04, 0.95}};
+    // max(x, 0) mixed by M, then y / (1 + y) per channel, in double, rounded to float.
     void forward(float* rgb, std::size_t n) const override {
         for (std::size_t i = 0; i < n; ++i) {
             double x[3];
@@ -39,10 +40,13 @@ public:
             }
         }
     }
+    // Unused by the lock; run_frame's baseline is then the codes themselves.
     void inverse(float*, std::size_t) const override {}
+    // The view's name in provenance.
     std::string identity() const override { return "mixing"; }
 };
 
+// One golden file: the frame, the oracle's dequantized target and its results per setting.
 struct Golden {
     int h = 0, w = 0;
     PlanarBuffer source, constrained, weight;
@@ -57,6 +61,7 @@ struct Golden {
     std::vector<Case> cases;
 };
 
+// Reads one little-endian value of type T at p and advances p past it.
 template <class T>
 T take(const char*& p) {
     T v;
@@ -65,6 +70,7 @@ T take(const char*& p) {
     return v;
 }
 
+// Reads an h x w x ch float32 array (HWC, as NumPy writes it) into a planar buffer.
 PlanarBuffer take_hwc_f32(const char*& p, int h, int w, int ch) {
     PlanarBuffer b(ch, h, w);
     for (int y = 0; y < h; ++y)
@@ -73,6 +79,7 @@ PlanarBuffer take_hwc_f32(const char*& p, int h, int w, int ch) {
     return b;
 }
 
+// golden/aces_lock/lock_parity_v1.bin, checked for its magic and read to the last byte.
 Golden load_golden() {
     const std::string path = std::string(RUDRA_GOLDEN_DIR) + "/aces_lock/lock_parity_v1.bin";
     std::ifstream f(path, std::ios::binary);
@@ -112,6 +119,7 @@ Golden load_golden() {
     return g;
 }
 
+// training/aces_partial_tighten.py::partial_support: weight > 0, brightest > .5, darkest below the clip.
 std::vector<std::uint8_t> partial_support(const PlanarBuffer& s, const PlanarBuffer& w) {
     std::vector<std::uint8_t> m(s.plane_size());
     const float full = static_cast<float>(kClipCode);
@@ -215,7 +223,39 @@ TEST(AcesLock, RunFrameRefusesABadStrength) {
     };
     LockSettings bad = LockSettings::registered();
     bad.strength = 0.0;
-    EXPECT_FALSE(run_frame(src, view, g1, true, true, false, {}, {}, bad));
+    auto r = run_frame(src, view, g1, true, true, false, {}, {}, bad);
+    ASSERT_FALSE(r);
+    EXPECT_NE(r.error().message.find("strength"), std::string::npos);
+    bad = LockSettings::registered();
+    bad.dq_max_lap = 0.0;
+    r = run_frame(src, view, g1, true, true, false, {}, {}, bad);
+    ASSERT_FALSE(r);
+    EXPECT_NE(r.error().message.find("dq_max_lap"), std::string::npos);
+    bad = LockSettings::registered();
+    bad.dq_iters = -1;
+    r = run_frame(src, view, g1, true, true, false, {}, {}, bad);
+    ASSERT_FALSE(r);
+    EXPECT_NE(r.error().message.find("dq_iters"), std::string::npos);
+}
+
+// Where the user's band chose the analytic inverse, run_frame does not lock.
+TEST(AcesLock, RunFrameLeavesTheAnalyticBandAlone) {
+    const Golden g = load_golden();
+    MixingView view;
+    G1Fn g1 = [](const PlanarBuffer& s, const PlanarBuffer&) -> Result<G1Output> {
+        return G1Output{s, PlanarBuffer(3, s.height(), s.width()), PlanarBuffer(3, s.height(), s.width()),
+                        PlanarBuffer(1, s.height(), s.width(), 1.0f)};
+    };
+    const auto on = run_frame(g.source, view, g1, true, true, false, {}, {}, LockSettings::registered());
+    ASSERT_TRUE(on);
+    EXPECT_GT(on.value().lock.support_pixels, 0u);
+    UserBand analytic;   // no highlights, no shadows: the analytic inverse everywhere
+    analytic.on = true;
+    analytic.tau_high = 256;
+    analytic.tau_low = -1;
+    const auto off = run_frame(g.source, view, g1, true, true, false, analytic, {}, LockSettings::registered());
+    ASSERT_TRUE(off);
+    EXPECT_EQ(off.value().lock.support_pixels, 0u);
 }
 
 // Not a gate, and off in CI: the cost on a full HD frame that is ALL smooth partial

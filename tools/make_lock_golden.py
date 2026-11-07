@@ -31,6 +31,7 @@ class MixingView:
     M = np.array([[0.90, 0.08, 0.02], [0.02, 0.96, 0.02], [0.01, 0.04, 0.95]], np.float64)
 
     def forward(self, x):
+        """ACEScg-like values -> display codes: max(x, 0) mixed by M, then y / (1 + y)."""
         y = np.maximum(np.asarray(x, np.float64), 0) @ self.M.T
         return (y / (1 + y)).astype(np.float32)
 
@@ -60,7 +61,47 @@ def frame(h=40, w=56, seed=7):
 CASES = [(0.5, True), (1.0, True), (0.5, False)]
 
 
+def read_golden(data: bytes) -> dict:
+    """Parse a lock golden written by main(); refuses a bad magic, a short file or trailing bytes."""
+    if data[:4] != b"RLK1":
+        raise ValueError("not a lock golden (magic)")
+    pos = 4
+
+    def take(fmt):
+        nonlocal pos
+        size = struct.calcsize(fmt)
+        if pos + size > len(data):
+            raise ValueError("lock golden is truncated")
+        vals = struct.unpack_from(fmt, data, pos)
+        pos += size
+        return vals
+
+    def arr(dtype, shape):
+        nonlocal pos
+        a = np.dtype(dtype)
+        size = int(np.prod(shape)) * a.itemsize
+        if pos + size > len(data):
+            raise ValueError("lock golden is truncated")
+        out = np.frombuffer(data, a, int(np.prod(shape)), pos).reshape(shape)
+        pos += size
+        return out
+
+    h, w, ncases = take("<iii")
+    if h <= 0 or w <= 0 or ncases < 0:
+        raise ValueError("lock golden header out of range")
+    g = {"header": (h, w, ncases), "source": arr("<f4", (h, w, 3)), "constrained": arr("<f4", (h, w, 3)),
+         "weight": arr("<f4", (h, w)), "dequantized": arr("<f8", (h, w, 3)), "used": arr("u1", (h, w, 3)), "cases": []}
+    for _ in range(ncases):
+        strength, dequant, changed, kept, raised, dq_ch = take("<diiiii")
+        g["cases"].append({"strength": strength, "meta": (dequant, changed, kept, raised, dq_ch),
+                           "result": arr("<f4", (h, w, 3))})
+    if pos != len(data):
+        raise ValueError("lock golden has trailing bytes")
+    return g
+
+
 def main(argv=None) -> int:
+    """Write the golden to the path given; print what each setting changed."""
     out = Path((argv or sys.argv[1:])[0])
     v, src, cur, weight = frame()
     sup = partial_support(src, weight)
