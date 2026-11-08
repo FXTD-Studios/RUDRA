@@ -135,12 +135,37 @@ def staged_reference(g1, source_hwc, smoothing='hybrid64', constrain=True, forbi
 ONNX_LIMIT_CODES = 0.25   # final master, max |display(onnx) - display(torch)| in 8-bit codes; a discrete
                           # constraint step can flip on ULP-level field differences (measured 0.106 on the synthetic probe)
 ONNX_LIMIT_REL = 0.005    # final master, max relative ACEScg difference
+# With the lock (8 Nov 2026). The lock adds discrete per-pixel choices (lock or keep; the guard's
+# strength in quarter steps), so a ULP-level field difference can move a pixel's choice: that pixel
+# can differ by more than the stage-6 limit while both runtimes keep the 1-code contract. The same
+# rule tools/check_aces_masters.py applies between backends for the same reason (PR #48): the
+# 99.9th percentile within ONNX_LIMIT_CODES, every pixel within the contract's 1 code. The master
+# without the lock is still held to the strict limits above, so the network itself is checked as before.
+LOCK_P999_CODES = ONNX_LIMIT_CODES
+LOCK_MAX_CODES = 1.0
+# The relative ACEScg limit, by count (8 Nov 2026, decided by Ahmed after w4's export): a pixel whose
+# halving backtrack or lock choice tips the other way in one runtime can differ by more than 0.5 %
+# while showing no visible difference (w4: one pixel of 1.8 million at 1.9 %, 0.0016 code). At most
+# 0.1 % of all probe pixels together may exceed ONNX_LIMIT_REL; each probe's count and the worst
+# pixel are recorded (w4 + lock: 21 of the 12,288 pixels of the synthetic probe, 0.17 %, on its own).
+REL_FRACTION = 0.001
+
+
+def _compare(a, b, ma, mb):
+    """Display and ACEScg differences between two staged masters of one frame."""
+    v = reference_view()
+    d = np.abs(np.asarray(v.forward(a), np.float64) - np.asarray(v.forward(b), np.float64)).max(-1) * 255
+    rel = (np.abs(a - b) / (np.abs(a) + 1e-3)).max(-1)
+    return {'max_display_code_diff': float(d.max()), 'p999_display_code_diff': float(np.percentile(d, 99.9)),
+            'pixels_over_limit': int((d > ONNX_LIMIT_CODES).sum()), 'pixels': int(d.size),
+            'max_rel': float(rel.max()), 'pixels_rel_over_limit': int((rel > ONNX_LIMIT_REL).sum()),
+            'mask_exact': bool((ma == mb).all())}
 
 
 def export_onnx(g1, example, ex_base, path, probes, forbid_new_negative_y=False, lock=None):
-    """rudra_g1.onnx (opset 17, dynamic H/W) + ORT CPU tolerance vs the LibTorch staged master."""
+    """rudra_g1.onnx (opset 17, dynamic H/W) + ORT CPU tolerance vs the LibTorch staged master,
+    without the lock (strict) and, when the package has one, with it (percentile rule above)."""
     import onnxruntime as ort
-    from training.aces_reference import reference_view
     torch.onnx.register_custom_op_symbolic('aten::asinh', lambda g, x: g.op('Asinh', x), 9)
     names = ['restored_source', 'highlight_fields', 'full_fields', 'weight']
     torch.onnx.export(g1, (example, ex_base), str(path), input_names=['source', 'baseline'], output_names=names,
@@ -150,17 +175,44 @@ def export_onnx(g1, example, ex_base, path, probes, forbid_new_negative_y=False,
     def g_ort(x, b):
         return tuple(torch.from_numpy(v) for v in sess.run(None, {'source': x.numpy(), 'baseline': b.numpy()}))
 
-    rows = []
+    rows, lrows = [], []
     for src in probes:
-        a, ma, _ = staged_reference(g1, src, forbid_new_negative_y=forbid_new_negative_y, lock=lock)
-        b, mb, _ = staged_reference(g_ort, src, forbid_new_negative_y=forbid_new_negative_y, lock=lock)
-        rows.append({'shape': list(src.shape), 'max_display_code_diff': float(np.abs(reference_view().forward(a) - reference_view().forward(b)).max() * 255),
-                     'max_rel': float((np.abs(a - b) / (np.abs(a) + 1e-3)).max()), 'mask_exact': bool((ma == mb).all())})
+        a, ma, _ = staged_reference(g1, src, forbid_new_negative_y=forbid_new_negative_y)
+        b, mb, _ = staged_reference(g_ort, src, forbid_new_negative_y=forbid_new_negative_y)
+        rows.append({'shape': list(src.shape), **_compare(a, b, ma, mb)})
+        if lock is not None:
+            la = apply_lock(src, a, *_lock_inputs(g1, src), lock)
+            lb = apply_lock(src, b, *_lock_inputs(g_ort, src), lock)
+            lrows.append({'shape': list(src.shape), **_compare(la, lb, ma, mb)})
+        print('onnx probe', rows[-1], *(['locked', lrows[-1]] if lrows else []), flush=True)
     out = {'final_max_display_code_diff': max(r['max_display_code_diff'] for r in rows), 'final_max_rel': max(r['max_rel'] for r in rows),
            'mask_exact': all(r['mask_exact'] for r in rows), 'limit_display_codes': ONNX_LIMIT_CODES, 'limit_rel': ONNX_LIMIT_REL,
            'onnxruntime': ort.__version__, 'probes': rows}
-    out['pass'] = out['final_max_display_code_diff'] <= ONNX_LIMIT_CODES and out['final_max_rel'] <= ONNX_LIMIT_REL and out['mask_exact']
+    rel_ok = lambda rs: sum(r['pixels_rel_over_limit'] for r in rs) <= REL_FRACTION * sum(r['pixels'] for r in rs)   # noqa: E731
+    out['rel_fraction_limit'] = REL_FRACTION
+    out['pixels_rel_over_limit'] = sum(r['pixels_rel_over_limit'] for r in rows)
+    out['pass'] = out['final_max_display_code_diff'] <= ONNX_LIMIT_CODES and rel_ok(rows) and out['mask_exact']
+    if lock is not None:
+        out['locked'] = {'p999_display_code_diff': max(r['p999_display_code_diff'] for r in lrows),
+                         'max_display_code_diff': max(r['max_display_code_diff'] for r in lrows),
+                         'max_rel': max(r['max_rel'] for r in lrows),
+                         'pixels_over_limit': sum(r['pixels_over_limit'] for r in lrows), 'pixels': sum(r['pixels'] for r in lrows),
+                         'limit_p999_codes': LOCK_P999_CODES, 'limit_max_codes': LOCK_MAX_CODES, 'probes': lrows}
+        out['locked']['pixels_rel_over_limit'] = sum(r['pixels_rel_over_limit'] for r in lrows)
+        out['locked']['pass'] = (out['locked']['p999_display_code_diff'] <= LOCK_P999_CODES
+                                 and out['locked']['max_display_code_diff'] <= LOCK_MAX_CODES and rel_ok(lrows))
+        out['pass'] = out['pass'] and out['locked']['pass']
     return out
+
+
+def _lock_inputs(g, source_hwc):
+    """The baseline and weight the lock takes, from the same staged run as the master."""
+    from training.aces_ceiling import cap_luminance_torch, inverse_white_luma
+    x = torch.from_numpy(np.ascontiguousarray(source_hwc, np.float32)).permute(2, 0, 1)[None]
+    with torch.inference_mode():
+        baseline, _ = cap_luminance_torch(inverse_aces2_reference(x), inverse_white_luma())
+        _, _, _, weight = g(x, baseline)
+    return baseline[0].permute(1, 2, 0).numpy(), weight[0, 0].numpy()
 
 
 def sha(p):
@@ -182,7 +234,7 @@ def main():
     if bool(a.lock_registration) != bool(a.lock_arm):
         ap.error('--lock-registration and --lock-arm go together')
     lock = lock_arm(a.lock_registration, a.lock_arm) if a.lock_arm else None
-    provenance = json.loads(a.provenance.read_text(encoding='utf-8')) if a.provenance else None
+    provenance = json.loads(a.provenance.read_text(encoding='utf-8-sig')) if a.provenance else None  # utf-8-sig: PowerShell 5.1 writes a BOM
     a.out.mkdir(parents=True, exist_ok=False)
     model, state = load_model(str(a.checkpoint), 'cpu')
     model.eval()
@@ -253,14 +305,18 @@ def main():
                                   'forbid_new_negative_y': bool(a.forbid_new_negative_y)},
         'onnx_file': None if onnx is None else 'rudra_g1.onnx',
         'onnx_sha256': None if onnx is None else sha(a.out / 'rudra_g1.onnx'),
-        'onnx_tolerance': None if onnx is None else {k: onnx[k] for k in ('final_max_display_code_diff', 'final_max_rel', 'mask_exact', 'limit_display_codes', 'limit_rel')},
+        'onnx_tolerance': None if onnx is None else {**{k: onnx[k] for k in ('final_max_display_code_diff', 'final_max_rel', 'mask_exact', 'limit_display_codes', 'limit_rel',
+                                                                     'rel_fraction_limit', 'pixels_rel_over_limit')},
+                                                                  'per_probe_rel_over_limit': [r['pixels_rel_over_limit'] for r in onnx['probes']],
+                                                                  'locked': {k: v for k, v in onnx.get('locked', {}).items() if k != 'probes'} or None,
+                                                                  'locked_per_probe_rel_over_limit': [r['pixels_rel_over_limit'] for r in onnx.get('locked', {}).get('probes', [])]},
         'lock': lock,
         'provenance': provenance,
         'parity_pass': ok, 'release_authorized': False,
     }
     (a.out / 'manifest.json').write_text(json.dumps(manifest, indent=1))
     (a.out / 'parity.json').write_text(json.dumps({'torchscript_and_staged': parity, 'onnx': onnx}, indent=1))
-    print('parity_pass', ok)
+    print('parity_pass', ok, '' if ok else '(torchscript/staged rows above, or the onnx line: pass False)')
     if not ok:
         sys.exit(1)
 

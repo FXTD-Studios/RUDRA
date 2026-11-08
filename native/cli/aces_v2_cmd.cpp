@@ -234,10 +234,11 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
                                  {"new_negative_luminance", r->constraint.new_negative_luminance},
                                  {"lock_support", r->lock.support_pixels}, {"lock_changed", r->lock.changed_pixels},
                                  {"lock_kept", r->lock.kept_pixels}, {"lock_strength_raised", r->lock.strength_raised_pixels},
-                                 {"lock_ms", r->ms.lock}});
-        std::printf("%s -> %s  %.0f ms  remaining_display_errors=%zu  aces_inverse_limit=%zu  ceiling=%zu  lock=%zu/%zu (%.0f ms)\n", f->source.c_str(),
+                                 {"lock_ms", r->ms.lock}, {"lock_dequant_ms", r->lock.ms_dequant}, {"lock_solve_ms", r->lock.ms_solve}});
+        std::printf("%s -> %s  %.0f ms  remaining_display_errors=%zu  aces_inverse_limit=%zu  ceiling=%zu  lock=%zu/%zu (%.0f ms: dequant %.0f, solve %.0f)\n", f->source.c_str(),
                     (opts->writes_exr() ? exr.filename().string() : stem).c_str(), ms, r->constraint.remaining_display_errors,
-                    r->constraint.inverse_limit_pixels, r->ceiling_pixels, r->lock.changed_pixels, r->lock.support_pixels, r->ms.lock);
+                    r->constraint.inverse_limit_pixels, r->ceiling_pixels, r->lock.changed_pixels, r->lock.support_pixels, r->ms.lock,
+                    r->lock.ms_dequant, r->lock.ms_solve);
         std::fflush(stdout);   // one line per frame reaches a pipe (the app's progress) as it happens
     }
     if (logw) {

@@ -59,7 +59,7 @@ $ckSha = (Get-FileHash $Checkpoint -Algorithm SHA256).Hash.ToLower()
         cases = $v.cases; scenes = $v.scenes
     }
     limits = "One production (The Crew), one camera (ARRI ALEXA LogC3), single frames."
-} | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $prov
+} | ConvertTo-Json -Depth 5 | ForEach-Object { [IO.File]::WriteAllText($prov, $_, (New-Object Text.UTF8Encoding $false)) }   # no BOM: Python json refuses it
 $before = Get-ChildItem reports -Directory -Filter "aces_v2_*" -ErrorAction SilentlyContinue | ForEach-Object FullName
 $nativeArgs = @{ Checkpoint = $Checkpoint; Frames = $Frames; Python = $Python; PackageName = $PackageName
                  LockRegistration = $Reg; LockArm = $Arm; Provenance = $prov; ReviewMasters = $true }
