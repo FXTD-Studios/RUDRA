@@ -1294,6 +1294,7 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
     // The SDR's codes (view revision 6): the Sdr source, the clamp zebra and
     // the Range layer. An older engine writes none: those then fall back.
     aces_sdr_img_.reset();
+    region_hist_frame_ = nullptr;   // the next SDR may land at the freed address: never a cache hit on the old frame
     {
         QString sp = model_path;
         sp.replace(QStringLiteral("model_"), QStringLiteral("sdr_"));
@@ -1309,6 +1310,7 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
     }
 #endif
     apply_fill_view();   // the viewer's AI fill, when on and this frame has one
+    refresh_view_region();   // the region's histogram and tint, of this frame's SDR (8 Nov 2026)
     sync_reference_ui();
     show_mode();   // the status bar says the learned model, not the analytic reconstruction
     // The filmstrip's picture of this frame, from what the viewer shows (29 Oct 2026).

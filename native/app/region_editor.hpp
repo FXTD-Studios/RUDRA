@@ -63,7 +63,9 @@ class RegionHistogramView : public QWidget {
 public:
     explicit RegionHistogramView(QWidget* parent = nullptr);
     // analytic: the curve is the composite's gate (the built-in priors included), else the region's weight.
-    void set(const RegionHistogram& h, const std::array<float, 3>& tint, bool analytic = false);
+    // tint: the highlight side's colour; shadow_tint the shadow side's (8 Nov 2026), as the viewer tints them.
+    void set(const RegionHistogram& h, const std::array<float, 3>& tint, bool analytic = false,
+             const std::array<float, 3>& shadow_tint = {0.30f, 0.52f, 1.00f});
     void clear();
     const RegionHistogram& histogram() const { return h_; }
     QString caption() const;   // "Acts on 12.3 % of this frame · at half strength or more on 4.1 %"
@@ -73,7 +75,7 @@ protected:
 
 private:
     RegionHistogram h_;
-    std::array<float, 3> tint_{0.20f, 0.85f, 0.95f};
+    std::array<float, 3> tint_{1.00f, 0.62f, 0.18f}, shadow_tint_{0.30f, 0.52f, 1.00f};
     bool valid_ = false;
     bool analytic_ = false;   // the curve is the analytic gate (tooltip and caption say so)
 };

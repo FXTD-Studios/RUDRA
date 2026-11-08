@@ -324,10 +324,12 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                     }
             }
             if (!region_w.empty() && p.mode == ViewMode::Image) {
-                const float a = kRegionTintMix * (float(region_w[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4]) / 255.0f);
+                const std::size_t ri = (std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4;
+                const float a = kRegionTintMix * (float(region_w[ri]) / 255.0f);
+                const auto& tint = region_w[ri + 1] > 127 ? p.region_shadow_tint : p.region_tint;   // shadows blue, highlights warm
                 if (a > 0.0f)
                     for (int k = 0; k < 3; ++k) {
-                        const float t = hdr ? graphics_white * srgb_to_linear(p.region_tint[std::size_t(k)]) : p.region_tint[std::size_t(k)];
+                        const float t = hdr ? graphics_white * srgb_to_linear(tint[std::size_t(k)]) : tint[std::size_t(k)];
                         c[k] = c[k] * (1.0f - a) + t * a;
                     }
             }
@@ -515,10 +517,19 @@ public:
         region_weights(y, r_, wh, ws);
         return std::clamp(std::max(wh, ws), 0.0f, 1.0f);
     }
-    float at(const PlanarBuffer& s, std::size_t i) const {
-        auto code = [&](int c) { return std::clamp(s.plane(c)[i], 0.0f, 1.0f); };
-        return (*this)(0.2126f * code(0) + 0.7152f * code(1) + 0.0722f * code(2));   // as composite.cpp
+    // Which side of the region acts at this luma (8 Nov 2026): the gate's shadows are below 0.5;
+    // the region's own, where its shadow weight is the larger.
+    bool shadow(float y) const {
+        if (g_.analytic) return y < 0.5f;
+        float wh = 0.0f, ws = 0.0f;
+        region_weights(y, r_, wh, ws);
+        return ws > wh;
     }
+    static float luma(const PlanarBuffer& s, std::size_t i) {
+        auto code = [&](int c) { return std::clamp(s.plane(c)[i], 0.0f, 1.0f); };
+        return 0.2126f * code(0) + 0.7152f * code(1) + 0.0722f * code(2);   // as composite.cpp
+    }
+    float at(const PlanarBuffer& s, std::size_t i) const { return (*this)(luma(s, i)); }
 
 private:
     ReconstructionRegion r_;
@@ -534,7 +545,11 @@ std::vector<std::uint8_t> region_overlay_rgba8(const SdrImage* sdr, const Recons
     if (!region.enabled || !sdr || sdr->width() != width || sdr->height() != height) return out;
     const PlanarBuffer& s = sdr->buffer();
     const OverlayWeight weight(region, gate);
-    for (std::size_t i = 0; i < n; ++i) out[i * 4] = std::uint8_t(std::lround(weight.at(s, i) * 255.0f));
+    for (std::size_t i = 0; i < n; ++i) {
+        const float y = OverlayWeight::luma(s, i);
+        out[i * 4] = std::uint8_t(std::lround(weight(y) * 255.0f));
+        out[i * 4 + 1] = weight.shadow(y) ? 255 : 0;
+    }
     return out;
 }
 
@@ -557,8 +572,12 @@ RegionHistogram region_histogram(const SdrImage& sdr, const ReconstructionRegion
         strong += w >= 0.5f;
     }
     for (double& c : h.counts) c = n ? c / double(n) : 0.0;
-    for (int b = 0; b < bins; ++b)
-        h.weight[std::size_t(b)] = region.enabled || gate.analytic ? weight((float(b) + 0.5f) / float(bins)) : 1.0f;
+    h.shadow.assign(std::size_t(bins), 0);
+    for (int b = 0; b < bins; ++b) {
+        const float y = (float(b) + 0.5f) / float(bins);
+        h.weight[std::size_t(b)] = region.enabled || gate.analytic ? weight(y) : 1.0f;
+        h.shadow[std::size_t(b)] = weight.shadow(y) ? 1 : 0;
+    }
     h.reached = n ? double(reached) / double(n) : 0.0;
     h.strong = n ? double(strong) / double(n) : 0.0;
     return h;

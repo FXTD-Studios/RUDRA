@@ -107,6 +107,7 @@ cp LICENSE NOTICE "$APP/Contents/Resources/"
 # finds it in Resources/python and "Set up automatically" builds its own Python environment from it.
 PYDIR="$APP/Contents/Resources/python"
 mkdir -p "$PYDIR"
+PYDIR=$(cd "$PYDIR" && pwd)   # absolute: the copy below runs inside rudra/ and config/ (8 Nov 2026)
 for d in rudra config; do
   (cd "$d" && find . -name '*.py' -not -path '*/__pycache__/*' -print0 | while IFS= read -r -d '' f; do
      mkdir -p "$PYDIR/$d/$(dirname "$f")"; cp "$f" "$PYDIR/$d/$f"; done)

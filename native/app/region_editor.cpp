@@ -309,9 +309,11 @@ RegionHistogramView::RegionHistogramView(QWidget* parent) : QWidget(parent) {
                "reconstruction but not extend it past them. On the learned route it is the region's own weight");
 }
 
-void RegionHistogramView::set(const RegionHistogram& h, const std::array<float, 3>& tint, bool analytic) {
+void RegionHistogramView::set(const RegionHistogram& h, const std::array<float, 3>& tint, bool analytic,
+                              const std::array<float, 3>& shadow_tint) {
     h_ = h;
     tint_ = tint;
+    shadow_tint_ = shadow_tint;
     analytic_ = analytic;
     valid_ = !h.counts.empty();
     update();
@@ -347,15 +349,15 @@ void RegionHistogramView::paintEvent(QPaintEvent*) {
             const double hgt = top > 0 ? r.height() * std::log1p(h_.counts[std::size_t(b)] * 1000.0) / top : 0.0;
             p.drawRect(QRectF(r.left() + b * bw, r.bottom() - hgt, bw * 0.9, hgt));
         }
-        QPainterPath curve;
-        for (int b = 0; b < n; ++b) {
-            const QPointF pt(r.left() + (b + 0.5) * bw, r.bottom() - r.height() * h_.weight[std::size_t(b)]);
-            if (b == 0) curve.moveTo(pt);
-            else curve.lineTo(pt);
-        }
+        // The weight curve, each stretch in its side's colour (8 Nov 2026): shadows blue, highlights warm.
         p.setBrush(Qt::NoBrush);
-        p.setPen(QPen(QColor::fromRgbF(tint_[0], tint_[1], tint_[2]), 2.0));
-        p.drawPath(curve);
+        auto at = [&](int b) { return QPointF(r.left() + (b + 0.5) * bw, r.bottom() - r.height() * h_.weight[std::size_t(b)]); };
+        for (int b = 0; b + 1 < n; ++b) {
+            const bool sh = b < int(h_.shadow.size()) && h_.shadow[std::size_t(b)];
+            const auto& t = sh ? shadow_tint_ : tint_;
+            p.setPen(QPen(QColor::fromRgbF(t[0], t[1], t[2]), 2.0));
+            p.drawLine(at(b), at(b + 1));
+        }
     }
     p.setPen(palette().color(QPalette::Text));
     p.drawText(QRectF(0, height() - 14, width(), 14), Qt::AlignLeft | Qt::AlignVCenter, caption());

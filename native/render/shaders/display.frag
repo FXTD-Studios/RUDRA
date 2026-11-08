@@ -189,9 +189,13 @@ void main() {
     }
     if (region.x > 0.5 && mode == 0) {
         // RUDRA 1.1: the reconstruction region, as the composite gates by it (core/view.cpp).
-        float a = 0.40 * texelFetch(regionW, p, 0).r;
+        // 8 Nov 2026: g says the shadow side; shadows blue (core ViewParams::region_shadow_tint),
+        // highlights in the uniform's colour (region_tint, warm).
+        vec2 rw = texelFetch(regionW, p, 0).rg;
+        float a = 0.40 * rw.r;
         if (a > 0.0) {
-            vec3 t = target.x < 0.5 ? region.yzw : 203.0 * vec3(srgbToLinear(region.y), srgbToLinear(region.z), srgbToLinear(region.w));
+            vec3 tint = rw.g > 0.5 ? vec3(0.30, 0.52, 1.00) : region.yzw;
+            vec3 t = target.x < 0.5 ? tint : 203.0 * vec3(srgbToLinear(tint.x), srgbToLinear(tint.y), srgbToLinear(tint.z));
             c = c * (1.0 - a) + t * a;
         }
     }

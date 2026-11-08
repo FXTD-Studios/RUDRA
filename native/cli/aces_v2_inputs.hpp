@@ -75,4 +75,24 @@ private:
 // One frame of a still (frame ignored) or a video, for the preview.
 Result<AcesFrameIn> aces_read_one(const std::filesystem::path& source, int frame, const std::filesystem::path& decode_log);
 
+// One frame at a time for the viewer and its playback cache (8 Nov 2026). It keeps the movie's
+// probe and a running decoder: asking for the next frame reads on from it, where aces_read_one
+// started ffprobe and ffmpeg again and decoded from the first frame up to the one asked for (about
+// 2 s for frame 34 of a 1080p clip, growing with the frame number). Any other frame, or another
+// file, starts a decoder there. Stills are read as aces_read_one reads them.
+class AcesFrameReader {
+public:
+    explicit AcesFrameReader(std::filesystem::path decode_log);
+    ~AcesFrameReader();
+    AcesFrameReader(const AcesFrameReader&) = delete;
+    AcesFrameReader& operator=(const AcesFrameReader&) = delete;
+    Result<AcesFrameIn> read(const std::filesystem::path& source, int frame);
+
+private:
+    std::filesystem::path log_, path_;
+    std::optional<VideoSource> video_;
+    std::unique_ptr<VideoDecoder> decoder_;
+    int next_ = -1;   // the frame decoder_ gives next
+};
+
 }  // namespace rudra
