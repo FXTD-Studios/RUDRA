@@ -3452,6 +3452,7 @@ json aces_manifest_any_target() {
     json m = aces_manifest(true, true);
     m["onnx_file"] = "rudra_g1.onnx";
     m["onnx_sha256"] = "880e7b698a099b8d";
+    m["onnx_tolerance"] = json{{"limit_display_codes", 0.25}};   // read with the file (core/aces_v2_manifest.cpp)
     return m;
 }
 
