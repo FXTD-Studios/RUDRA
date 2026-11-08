@@ -15,7 +15,7 @@ reconstruction, which needs no model, is the default.
 
 | Model | Files (SHA-256) | Licence | Commercial use | Status |
 |---|---|---|---|---|
-| **RUDRA ACES 2** (2.0, learned ACES 2.0 reconstruction with the lock; needs RUDRA 1.2.0) | `rudra_g1.ts` `7082eb869d265d6e…`<br>`rudra_g1.onnx` `880e7b698a099b8d…` | Apache 2.0 | Yes | **Preview** until its HDR monitor review is signed. See "Evidence" below |
+| **RUDRA ACES 2** (2.0, learned ACES 2.0 reconstruction with the lock; needs RUDRA 1.2.0) | `rudra_g1.ts` `7082eb869d265d6e…`<br>`rudra_g1.onnx` `880e7b698a099b8d…` | Apache 2.0 | Yes | **Release** (8 Nov 2026). See "Evidence" below |
 | **AI fill v3** (Wan2.1-VACE-1.3B LoRA + brightness estimator) | `rudra_genfill.safetensors` `9fff7eb8492ae626…`<br>`brightness.json` `34892fb840de138f…` | Apache 2.0; base model Wan2.1-VACE-1.3B is Apache 2.0 (Wan-AI) | Yes | **Experimental**, off by default. Passed its pre-registered gates on 25 held-out Poly Haven scenes (30 Oct 2026; `registration_v3.json`, `report_v3.json`) |
 
 Training data for both: Poly Haven HDRIs (CC0), FXTD Studios' own footage and
@@ -42,7 +42,7 @@ Its manifest says `release_authorized: true`, set by hand; no committed report
 names its checkpoint. It was replaced on Hugging Face by 2.0 with RUDRA 1.2.0
 (8 Nov 2026).
 
-**Published with 1.2.0 (2.0, preview): w4 + lock_dqs050g.** The checkpoint
+**Published with 1.2.0 (2.0, release): w4 + lock_dqs050g.** The checkpoint
 `research_bin_hinge_w4_20261102` step 1600, with the lock (stage 6b,
 `training/aces_partial_tighten.py`, native `core/aces_lock.hpp`) at strength
 0.5 toward the dequantized source, and the appearance guard.
@@ -65,9 +65,22 @@ names its checkpoint. It was replaced on Hugging Face by 2.0 with RUDRA 1.2.0
   lock (1.1.0 and older) refuse it rather than run the model without its
   lock. It needs RUDRA 1.2.0.
 
-It leaves preview only through `tools/promote_aces2_release.py`, which
+It left preview on 8 Nov 2026 through `tools/promote_aces2_release.py`, which
 refuses unless every one of these is on file: the holdout verdict, native
 parity with the lock, LibTorch against ONNX Runtime DirectML and CPU, Core ML
 (or a stated reason it was not measured), the provenance record
 (`docs/models/RUDRA_ACES_2.provenance.json`), and a signed visual review.
 `scripts/RELEASE_ACES2_W4.ps1` runs every step that needs no person.
+
+- **Visual review (8 Nov 2026, `reports/aces2_review_2026-11-08_1148`):** 24
+  frames, source against the analytic inverse, the no-lock render and the
+  candidate at −3, 0 and +3 EV, with 1:1 crops of the most-changed regions.
+  No artifact on any frame; the candidate equals or betters the analytic
+  inverse in every clipped region (banded and posterised skies become smooth),
+  and the lock makes no visible difference. At 0 EV it is within 1 code of the
+  analytic inverse on every frame. Reviewed on SDR sheets and the EXR masters,
+  not on an HDR monitor; the sign-off says so. Isolated black pixels on the
+  +3 EV sheets are the ACES 2.0 SDR view (OpenColorIO 2.5.2) on off-neutral
+  values near 130 linear; the masters are finite and ordinary there.
+- **Core ML:** not timed on a Mac for this release; CI's ONNX Runtime CPU
+  against Core ML parity job passed for this package.
