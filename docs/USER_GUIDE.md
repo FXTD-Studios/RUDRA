@@ -106,6 +106,15 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   which is in use and every master's sidecar records it. Movie exports
   follow it too, with your whole grade.
 
+- **Learned ACES 2.0, and when not to use it.** The learned ACES 2.0 model
+  inverts the ACES 2.0 SDR output exactly, so its master renders back to the
+  SDR you delivered. Use it for SDR that was made through ACES 2.0 (set the
+  Source curve to ACES). On a grade made another way, bright areas parked just
+  under white, an open door, a window, a sky, come back far brighter and more
+  saturated than they were, and the Learned ACES 2.0 trims do not reach them;
+  the card and the Deliver page say so and point at the analytic route
+  (Deliver > Source > Analytic).
+
 - **Exposure.** The slider at the top of the Reconstruct card moves the whole
   master brighter or darker, -3 to +3 stops, live on the viewer. It is part of
   your grade: it survives the anchor (mid-tones keep the offset), the Region

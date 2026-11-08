@@ -229,6 +229,11 @@ void MainWindow::sync_deliver() {
     src->button("aces")->setToolTip(engine_ready ? QStringLiteral("The learned ACES 2.0 model renders the files, as the viewer shows them")
                                     : aces_engine_ ? aces_engine_->status_text()
                                                    : QStringLiteral("The learned ACES 2.0 model is not loaded (Deliver > Learned ACES 2.0 master…)"));
+    if (auto* n = dynamic_cast<NoteLabel*>(findChild<QLabel*>("deliverCurveNote"))) {
+        const bool steer = (aces || wanted) && aces_curve_mismatch();
+        if (steer && n->text() != aces_curve_note()) n->setText(aces_curve_note());
+        n->setVisible(steer);
+    }
     auto* out = dynamic_cast<Seg*>(findChild<QWidget*>("deliverOutput"));
     out->set_on(c.output);
     out->button("movie")->setEnabled(movie_shot || folder);

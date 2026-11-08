@@ -69,6 +69,27 @@ void MainWindow::set_aces_trims(const aces_v2::AcesTrims& t) {
     aces_trim_timer_->start();
 }
 
+// 9 Nov 2026 (09V against Beeble): the learned model is the exact inverse of the ACES 2.0 SDR
+// output. On a grade made another way, codes parked just under white (an open door, a window,
+// a sky at 245-254 with no hard clip) come back at 10-20 x diffuse white with the chroma ACES
+// compressed re-expanded, and no trim reaches them (Peak limit and Highlight saturation act
+// inside the reconstructed mask only). The analytic route places them where other tools do.
+// The Source panel's curve is the user's statement of how the SDR was made: anything but ACES
+// is the steer.
+bool MainWindow::aces_curve_mismatch() const {
+    return session_.source_curve() != SourceCurve::Aces;
+}
+
+QString MainWindow::aces_curve_note() const {
+    const auto label = source_curve_label(session_.source_curve());
+    return QStringLiteral("The source's curve is %1 (Source panel), but the learned model inverts the ACES 2.0 SDR output "
+                          "exactly. On a grade that was not made through ACES 2.0, bright areas parked just under white "
+                          "(an open door, a window, a sky) come back far brighter and more saturated than they were, and "
+                          "the trims above do not reach them. For that footage use the analytic reconstruction "
+                          "(Deliver > Source > Analytic); if the SDR was an ACES 2.0 render, set the curve to ACES.")
+        .arg(QString::fromUtf8(label.data(), int(label.size())));
+}
+
 void MainWindow::sync_aces_trims() {
     auto* card = findChild<QWidget*>("acesTrimsCard");
     if (!card) return;
@@ -92,6 +113,11 @@ void MainWindow::sync_aces_trims() {
     if (parade_ && !routed) parade_->clear();   // the parade is the learned frame's
     for (const char* id : {"routeNoteRec", "routeNoteGrade"})
         if (auto* n = findChild<QLabel*>(id)) n->setVisible(routed);
+    if (auto* n = dynamic_cast<NoteLabel*>(findChild<QLabel*>("acesCurveNote"))) {
+        const bool steer = routed && aces_curve_mismatch();
+        if (steer && n->text() != aces_curve_note()) n->setText(aces_curve_note());
+        n->setVisible(steer);
+    }
     const auto& t = aces_trims_;
     auto set = [this](const char* id, int v, const QString& text) {
         if (auto* s = findChild<QSlider*>(id)) {

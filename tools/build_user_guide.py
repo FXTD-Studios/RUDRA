@@ -127,8 +127,8 @@ models = '''<section class="page" id="models" data-title="Models">
 <div class="step"><div><h3>Use it</h3><p>Click <strong>Use</strong>. The model loads once and stays loaded; the status bar says when it is ready and on which device (for example “learned ACES 2.0 (cuda)”).</p></div></div>
 </div>
 <table><thead><tr><th>Model</th><th>What it does</th><th>Use it for</th></tr></thead><tbody>
-<tr><td>Learned ACES 2.0</td><td>Inverts the ACES 2.0 SDR view and rebuilds clipped highlights</td><td>Most shots, once downloaded (about 2 MB). Apache 2.0.</td></tr>
-<tr><td>Analytic (built in)</td><td>The inverse of the curve that made the SDR, with the clipped highlights filled</td><td>Every shot, out of the box. The default until a learned model is installed.</td></tr>
+<tr><td>Learned ACES 2.0</td><td>Inverts the ACES 2.0 SDR view exactly and rebuilds clipped highlights; the master renders back to your SDR to the code</td><td>SDR that was made through ACES 2.0 (set the Source curve to ACES). On a grade made another way, bright areas parked just under white (an open door, a window, a sky) come back far brighter and more saturated than they were; the app says so and points at Analytic. About 2 MB, Apache 2.0.</td></tr>
+<tr><td>Analytic (built in)</td><td>The inverse of the curve that made the SDR, with the clipped highlights filled</td><td>Every shot, out of the box, and the route for grades not made through ACES 2.0. The default until a learned model is installed.</td></tr>
 <tr><td>AI fill v3 (experimental)</td><td>A generative pass for large blown regions: the RUDRA LoRA on Wan2.1-VACE-1.3B draws the shape, a small estimator sets the brightness</td><td>Hero shots, reviewed frame by frame. Needs the Wan2.1-VACE-1.3B base (from Wan-AI) and a 16 GB GPU. Apache 2.0.</td></tr>
 </tbody></table>
 <details><summary>Where are the models kept?</summary><p>In your user folder (on Windows, <strong>%LOCALAPPDATA%\\FXTD Studios\\RUDRA\\models</strong>). <strong>Show in folder</strong> opens it. To move them, choose another folder in Model packages; RUDRA searches every folder listed there.</p></details>
