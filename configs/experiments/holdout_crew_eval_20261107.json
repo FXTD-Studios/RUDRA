@@ -1,0 +1,34 @@
+{
+ "registered_before_evaluation": true,
+ "author": "FXTD Studios Research, 7 Nov 2026",
+ "purpose": "The Crew holdout, run once, on the arm the 7 Nov rule chose: w4 + lock_dqs050g (largest smallest margin 6.7 %; dqs060g 3.8 %, b040 0.7 %; lockguard_20261107 decision table).",
+ "grade_set_registration": "configs/experiments/holdout_crew_grade_set_20261107.json",
+ "grade_set_registration_sha256": "3c864165bcf8cfa97784c08c28333aed930f7853c2b59609d8856d0110623fba",
+ "choice_registration": "configs/experiments/lockguard_fresh_20261107.json",
+ "choice_registration_sha256": "8cdc6b0e8bce314b4e3a9ade8a7f60227be38d473506b1fcb1b88b8456dea963",
+ "arms": {
+  "primary": "lock_dqs050g",
+  "partial_tighten": [
+   {
+    "name": "lock_dqs050g",
+    "mode": "lock",
+    "tol_codes": 0.5,
+    "iters": 4,
+    "band_codes": 0.0,
+    "strength": 0.5,
+    "target": "dequant",
+    "dq_iters": 200,
+    "dq_max_lap": 1.5
+   }
+  ]
+ },
+ "candidates": {
+  "primary": "w4 (research_bin_hinge_w4_20261102 step1600) + lock_dqs050g; the checkpoint's SHA-256 is recorded in the evaluation output"
+ },
+ "decision_rule": "Registered 7 Nov 2026 before the holdout set is built or any model is run on it. The arm passes the holdout if, over its kept cases: 0 EV RMS in codes <= the analytic inverse's 0 EV RMS on the same cases + 0.1 code (the rule the lock arms were chosen under, relative to this set's own analytic); mean -3 EV, +3 EV and H no worse than analytic; no new negative luminance; no remaining display error over 1 code. tools/holdout_verdict.py applies it. Run once: no rerun, no other arm, no change of rule after the result. Reported with it: the evaluator's strict gates, the bootstrap over scenes, and the result whatever it is.",
+ "if_it_passes": "RUDRA ACES 2 = w4 + lock_dqs050g may leave preview, after the separate steps: the lock in the native engine with parity to the Python oracle, export with backend parity, provenance naming this checkpoint and this holdout, visual review.",
+ "if_it_fails": "RUDRA ACES 2 stays preview. The next lever is the one the 2 Nov note lists: real-footage training data; and a holdout across projects and cameras.",
+ "honesty": "Nothing of the holdout has been read: the fresh and development sets are development evidence.",
+ "limits": "One project, one camera (see the grade set registration). Single frames. release_authorized stays false in every output.",
+ "release_authorized": false
+}
