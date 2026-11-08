@@ -145,7 +145,17 @@ void MainWindow::build_ui(bool with_viewer) {
     rail_left_ = build_left_rail();
     rail_right_ = build_right_rail();
     h->addWidget(rail_left_);
-    h->addWidget(build_centre(with_viewer), 1);
+    // 8 Nov 2026: the viewer column takes the width that is left and never asks for more, so the
+    // window fits the screen: the rails (Grade, Deliver on the right) were pushed off a 1080p
+    // screen when a toolbar row was wider than the space between them. Its rows wrap instead.
+    auto* centre = build_centre(with_viewer);
+    {
+        QSizePolicy p = centre->sizePolicy();
+        p.setHorizontalPolicy(QSizePolicy::Ignored);
+        centre->setSizePolicy(p);
+        centre->setMinimumWidth(0);
+    }
+    h->addWidget(centre, 1);
     // The scopes beside the viewer (29 Oct 2026): their own column, shown or hidden
     // with the Scopes button on the viewer bar, the toolbar's scope icon or S.
     {

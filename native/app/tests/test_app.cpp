@@ -6241,6 +6241,23 @@ TEST(AppModels, ADownloadedLoraBecomesTheAiFills) {
 }
 #endif
 
+// 8 Nov 2026: the window fits the screen. A window narrower than the viewer's toolbar row
+// keeps the right rail (Grade, Deliver) inside it: the viewer column takes what is left and
+// its rows wrap, instead of pushing the rail past the window's (and the screen's) edge.
+TEST(AppLayout, ANarrowWindowKeepsTheRightRailInside) {
+    app::MainWindow w(false);
+    w.resize(1280, 800);
+    w.show();
+    QApplication::processEvents();
+    EXPECT_LE(w.width(), 1280);   // nothing forces the window wider than asked
+    auto* rail = w.findChild<QWidget*>("railRight");
+    ASSERT_NE(rail, nullptr);
+    if (rail->isVisible()) {
+        const QPoint edge = rail->mapTo(&w, QPoint(rail->width() - 1, 0));
+        EXPECT_LT(edge.x(), w.width());
+    }
+}
+
 // ---- view revision 6: the viewer toolbar (app/viewer_toolbar.cpp) ----
 TEST(AppViewerToolbar, ControlsDriveTheSessionAndNeverTheGrade) {
     app::MainWindow w(false);

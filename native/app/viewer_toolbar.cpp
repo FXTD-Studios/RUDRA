@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "flow_layout.hpp"
 #include "main_window.hpp"
 
 namespace rudra::app {
@@ -63,9 +64,11 @@ void MainWindow::build_viewer_toolbar(QVBoxLayout* v, QWidget* parent) {
     auto* col = new QVBoxLayout(vtool_);
     col->setContentsMargins(12, 2, 12, 2);
     col->setSpacing(2);
-    auto* row = new QHBoxLayout;
-    row->setSpacing(6);
-    col->addLayout(row);
+    // 8 Nov 2026: a flow, not a fixed row: on a narrow window the buttons wrap onto a second
+    // line instead of widening the viewer past the screen (the right rail was pushed off it).
+    auto* row_host = new QWidget(vtool_);
+    auto* row = new FlowLayout(row_host, 6, 4);
+    col->addWidget(row_host);
 
     // ── exposure and gamma, as Nuke's viewer ──
     vt_stop_ = tool_button("f/stop", "vtStop",
@@ -116,7 +119,7 @@ void MainWindow::build_viewer_toolbar(QVBoxLayout* v, QWidget* parent) {
     }
 
     // ── A | B ──
-    row->addSpacing(8);
+    row->add_gap(8);
     vt_a_ = source_box("vtA", "Left side of the wipe (A)", vtool_);
     vt_b_ = source_box("vtB", "Right side of the wipe (B)", vtool_);
     auto apply_ab = [this] {
@@ -134,7 +137,7 @@ void MainWindow::build_viewer_toolbar(QVBoxLayout* v, QWidget* parent) {
     row->addWidget(vt_flip_);
 
     // ── range inspection ──
-    row->addSpacing(8);
+    row->add_gap(8);
     vt_clamp_ = tool_button("Clamped", "vtClamp",
                             "Where the ORIGINAL is clamped: red stripes all channels at code 254+, thin orange some "
                             "channels, blue crushed at code 1 or below. The same pixels on both sides, at any exposure (Alt+K)",
@@ -159,7 +162,6 @@ void MainWindow::build_viewer_toolbar(QVBoxLayout* v, QWidget* parent) {
                              vtool_, true);
     connect(fill, &QPushButton::toggled, this, [this](bool on) { set_fill_view(on); });
     row->addWidget(fill);
-    row->addStretch(1);
     vt_badge_ = new QLabel(vtool_);
     vt_badge_->setObjectName("vtBadge");
     vt_badge_->setToolTip("The viewer is not neutral: what you see is gained, the master is not");
@@ -169,6 +171,8 @@ void MainWindow::build_viewer_toolbar(QVBoxLayout* v, QWidget* parent) {
     range_line_ = new QLabel(vtool_);
     range_line_->setObjectName("rangeLine");
     range_line_->setTextFormat(Qt::PlainText);
+    range_line_->setWordWrap(true);   // a long readout wraps; it never widens the viewer (8 Nov 2026)
+    range_line_->setMinimumWidth(0);
     range_line_->setToolTip("Range of this frame in absolute nits; the view exposure does not change these numbers");
     col->addWidget(range_line_);
     v->addWidget(vtool_);
