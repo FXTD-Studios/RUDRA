@@ -6152,14 +6152,15 @@ TEST(GenFill, PromptSuggestionsAreReadBack) {
     ASSERT_NE(w.findChild<QPushButton*>("deliverAiSuggest"), nullptr);
 }
 
-// 7 Nov 2026: "More detail in the filled area" (--focus region), off by default (v3 as gated).
+// 7 Nov 2026: "More detail in the filled area", off by default (v3 as gated). 8 Nov 2026: --focus areas
+// (a box per group of clipped areas; one area is the same box as --focus region).
 TEST(GenFill, FocusOnTheFilledAreaIsOptIn) {
     app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/lora.safetensors"};
     app::GenFillOptions o;
     EXPECT_FALSE(app::genfill_arguments(s, o, "m", "o").contains("--focus"));
     o.focus_region = true;
     const QStringList a = app::genfill_arguments(s, o, "m", "o");
-    EXPECT_EQ(a[a.indexOf("--focus") + 1], "region");
+    EXPECT_EQ(a[a.indexOf("--focus") + 1], "areas");
     QSettings().clear();
     app::MainWindow w(false);
     EXPECT_FALSE(w.deliver_choice().ai.focus_region);

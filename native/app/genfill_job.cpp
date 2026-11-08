@@ -192,7 +192,7 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
     if (o.shape_gain != 1.0) a << "--shape-gain" << QString::number(o.shape_gain, 'g', 6);
     if (!o.region_json.isEmpty()) a << "--region" << o.region_json;
     if (o.fallback) a << "--fallback" << "spikes";
-    if (o.focus_region) a << "--focus" << "region";
+    if (o.focus_region) a << "--focus" << "areas";   // 8 Nov 2026: a box per group of areas (one area: as region)
     if (!o.glob.isEmpty()) a << "--glob" << o.glob;
     return a;
 }

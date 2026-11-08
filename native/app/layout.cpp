@@ -1278,10 +1278,12 @@ QWidget* MainWindow::build_right_rail() {
             {   // 7 Nov 2026: the model's pixels spent on the clipped area, not the whole frame
                 auto* fo = new CheckRow("deliverAiFocus", "More detail in the filled area", "deliverAiFocusHint",
                                         "draws only around it", box);
-                fo->setToolTip("The fill model works at about 832 x 480. On, it sees only a box around the shot's "
-                               "clipped areas (the same box for every frame), so a sky in a door a third of the "
-                               "frame wide is drawn at about twice the detail. Small specks far from the main area "
-                               "keep the master. Off = AI fill v3 as tested (the whole frame)");
+                fo->setToolTip("The fill model works at about 832 x 480. On, it sees only boxes around the shot's "
+                               "clipped areas (one per group of areas, the same for every frame), each drawn at up "
+                               "to that size: a lamp or a window in a 4K frame at full resolution, a sky in a door "
+                               "at about twice the detail. Each box is one more model run, so it takes longer. "
+                               "Small specks far from the main areas keep the master. Off = AI fill v3 as tested "
+                               "(the whole frame)");
                 fo->clicked = [this] { set_deliver("ai_focus", deliver_.ai.focus_region ? "0" : "1"); };
                 bv->addWidget(fo);
             }
