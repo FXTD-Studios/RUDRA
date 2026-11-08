@@ -27,6 +27,7 @@ struct AcesV2Request {
     std::string g1_sha256;                        // recorded in each frame's provenance
     bool forbid_new_negative_y = false;           // the package's appearance_constraint.forbid_new_negative_y (last: keeps aggregate order)
     aces_v2::UserBand band{};                     // the user's tau bands (off: the model's output as it is)
+    aces_v2::LockSettings lock{};                 // the package's lock (stage 6b; off when it declares none)
 };
 
 struct AcesV2Decoded {
@@ -47,6 +48,7 @@ struct AcesV2FrameReport {
     double reconstructed_fraction = 0;
     aces_v2::SmoothingStats smoothing;
     aces_v2::ConstraintStats constraint;
+    aces_v2::LockStats lock;
 };
 
 struct AcesV2Outcome {

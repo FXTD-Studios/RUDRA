@@ -16,6 +16,11 @@
   Needs a Hugging Face login with write access to the org, done once:  .venv\Scripts\hf.exe auth login
 #>
 param([string]$Repo = "fxtdstudios/rudra-models", [string]$Python = ".venv\Scripts\python.exe",
+      [ValidateSet("preview", "release")][string]$AcesChannel = "preview",   # release: only a package tools\promote_aces2_release.py staged
+      [string]$AcesVersion = "2.0",
+      # An app older than the native lock reads a package's "lock" as nothing and would run the model
+      # without it (0 EV 0.460, failing the gate): such apps must not download a locked package.
+      [string]$AcesMinApp = "1.2.0",
       [switch]$Private, [switch]$DryRun)
 $ErrorActionPreference = "Stop"
 Set-Location -LiteralPath (Split-Path $PSScriptRoot -Parent)
@@ -29,9 +34,18 @@ Say "Check the staged files"
 $expect = @{
   "models\rudra_genfill_v3\rudra_genfill.safetensors" = "9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a"
   "models\rudra_genfill_v3\brightness.json"           = "34892fb840de138fb3ddd2e2c8e6e3b13c232973ed59ea23338444fcaff2a95a"
-  "models\RUDRA_ACES_2\rudra_g1.ts"                   = "fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b"
-  "models\RUDRA_ACES_2\rudra_g1.onnx"                 = "8ba97cb0ed36f5033958e752afad95d585d50bcefefc3bc66a61b27a6618f237"
 }
+# RUDRA ACES 2: its files against its own manifest (7 Nov 2026: the package is no longer one fixed checkpoint).
+$acesManifest = Get-Content "$Stage\models\RUDRA_ACES_2\manifest.json" -Raw | ConvertFrom-Json
+$expect["models\RUDRA_ACES_2\$($acesManifest.g1_file)"] = $acesManifest.g1_sha256
+if ($acesManifest.onnx_file) { $expect["models\RUDRA_ACES_2\$($acesManifest.onnx_file)"] = $acesManifest.onnx_sha256 }
+if ($AcesChannel -eq "release") {
+    if ($acesManifest.release_authorized -ne $true -or -not $acesManifest.release) {
+        Fail "RUDRA ACES 2 is not release-authorized: stage it with tools\promote_aces2_release.py first"
+    }
+    if (-not $acesManifest.lock) { Fail "the staged RUDRA ACES 2 has no lock; the holdout passed the model with its lock" }
+}
+Write-Host "RUDRA ACES 2 $AcesVersion, channel $AcesChannel, lock $(if ($acesManifest.lock) { $acesManifest.lock.name } else { 'none' })"
 foreach ($k in $expect.Keys) {
     $h = (Get-FileHash (Join-Path $Stage $k) -Algorithm SHA256).Hash.ToLower()
     if ($h -ne $expect[$k]) { Fail "$k has SHA-256 $h, expected $($expect[$k])" }
@@ -71,7 +85,8 @@ Write-Host "uploaded: https://huggingface.co/$Repo/tree/$sha" -ForegroundColor G
 
 Say "models.json for the app"
 & $Python tools\make_models_json.py --repo $Repo --revision $sha --prefix models --out dist\hf\models.json `
-    --model "$Stage\models\RUDRA_ACES_2" --id RUDRA_ACES_2 --title "RUDRA ACES 2" --version 2.0 --channel preview --kind aces_v2 `
+    --model "$Stage\models\RUDRA_ACES_2" --id RUDRA_ACES_2 --title "RUDRA ACES 2" --version $AcesVersion --channel $AcesChannel --kind aces_v2 `
+        --min-app $(if ($acesManifest.lock) { $AcesMinApp } else { "1.0.0" }) `
         --summary "Learned ACES 2.0: rebuilds clipped highlights through the ACES 2.0 view; the SDR codes are kept" `
         --licence "Apache-2.0" --licence-url "https://huggingface.co/$Repo/blob/main/LICENSE" `
     --model "$Stage\models\rudra_genfill_v3" --id rudra_genfill_v3 --title "RUDRA AI fill v3 (experimental)" --version 3.0 --channel preview --kind genfill `

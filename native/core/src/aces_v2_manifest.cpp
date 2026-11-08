@@ -21,9 +21,15 @@ Result<Manifest> read_manifest(const std::filesystem::path& package_root) {
     Manifest m;
     m.root = package_root;
     try {
-        if (j.at("contract").get<std::string>() != kContractId || j.at("contract_major").get<int>() != kContractMajor)
+        const int major = j.at("contract_major").get<int>();
+        if (j.at("contract").get<std::string>() != kContractId || (major != kContractMajor && major != kContractMajorLock))
             return make_error(ErrorCode::ContractMismatch, "This model package was written for a different version of RUDRA.",
-                              "need " + std::string(kContractId) + " major " + std::to_string(kContractMajor));
+                              "need " + std::string(kContractId) + " major " + std::to_string(kContractMajor) + " or " +
+                                  std::to_string(kContractMajorLock));
+        const bool has_lock = j.contains("lock") && !j.at("lock").is_null();
+        if ((major == kContractMajorLock) != has_lock)
+            return make_error(ErrorCode::ContractMismatch, "This model package's lock and its contract version disagree.",
+                              "major " + std::to_string(major) + (has_lock ? " with" : " without") + " a lock");
         m.g1 = package_root / j.at("g1_file").get<std::string>();
         m.g1_sha256 = j.at("g1_sha256").get<std::string>();
         m.checkpoint_sha256 = j.at("checkpoint_sha256").get<std::string>();
@@ -55,6 +61,23 @@ Result<Manifest> read_manifest(const std::filesystem::path& package_root) {
             return make_error(ErrorCode::ContractMismatch, "This package asks for a constraint this build does not implement.",
                               ac.dump());
         m.forbid_new_negative_y = ac.value("forbid_new_negative_y", false);
+        if (has_lock) {
+            const auto& lk = j.at("lock");
+            LockSettings ls;
+            ls.on = true;
+            ls.strength = lk.at("strength").get<double>();
+            ls.iters = lk.value("iters", 4);
+            ls.dq_iters = lk.value("dq_iters", 200);
+            ls.dq_max_lap = lk.value("dq_max_lap", 1.5);
+            const std::string target = lk.value("target", std::string("dequant"));
+            ls.dequant = target == "dequant";
+            if (lk.value("mode", std::string("lock")) != "lock" || lk.value("band_codes", 0.0) != 0.0 ||
+                (target != "dequant" && target != "source") || ls.iters < 3 || ls.iters > 6 || !ls.valid())
+                return make_error(ErrorCode::ContractMismatch, "This package asks for a lock this build does not implement.",
+                                  lk.dump());
+            m.lock = ls;
+            m.lock_name = lk.value("name", std::string());
+        }
         m.parity_pass = j.at("parity_pass").get<bool>();
         m.release_authorized = j.value("release_authorized", false);
     } catch (const std::exception& e) {

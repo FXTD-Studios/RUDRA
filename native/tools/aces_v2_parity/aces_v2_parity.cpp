@@ -1,11 +1,16 @@
 // Cloud parity harness: in.f32 (int32 H, int32 W, HWC float32 codes) ->
-// out_<stage>.f32 (HWC float32) for composed, smoothed, final, mask.
+// out_<stage>.f32 (HWC float32) for composed, smoothed, final, mask; with --lock S also
+// locked.f32, the lock (stage 6b, dequantized target, strength S) on the final master.
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <vector>
 #include "rudra/core/aces_v2.hpp"
+#include "rudra/core/aces_lock.hpp"
 #include "rudra/infer/aces_v2_runtime.hpp"
 using namespace rudra;
 using namespace rudra::aces_v2;
@@ -18,7 +23,7 @@ static void dump(const std::string& path, const PlanarBuffer& b) {
     f.write((const char*)v.data(), v.size() * 4);
 }
 int main(int argc, char** argv) {
-    if (argc < 4) { std::cerr << "parity in.f32 g1.ts outdir\n"; return 2; }
+    if (argc < 4) { std::cerr << "parity in.f32 g1.ts outdir [--forbid-new-negative-y] [--lock S]\n"; return 2; }
     std::ifstream f(argv[1], std::ios::binary);
     int32_t h, w; f.read((char*)&h, 4); f.read((char*)&w, 4);
     std::vector<float> packed((size_t)h * w * 3); f.read((char*)packed.data(), packed.size() * 4);
@@ -36,16 +41,27 @@ int main(int argc, char** argv) {
     auto comp = compose_v2(src, baseline, restored, *net);
     SmoothingStats ss; ConstraintStats cs;
     auto sm = smooth_clipped_hybrid(comp.acescg, src, 64.0, &ss);
-    const bool guard = argc > 4 && std::string(argv[4]) == "--forbid-new-negative-y";
+    bool guard = false;
+    LockSettings lock;   // off unless --lock S: the registered dequantized lock at strength S
+    for (int i = 4; i < argc; ++i) {
+        const std::string a = argv[i];
+        if (a == "--forbid-new-negative-y") guard = true;
+        else if (a == "--lock" && i + 1 < argc) { lock = LockSettings::registered(); lock.strength = std::atof(argv[++i]); }
+        else { std::cerr << "unknown option " << a << "\n"; return 2; }
+    }
     auto fin = constrain_colour_v2(src, sm, baseline, net->weight, **view, true, &cs, guard);
-    auto rf = run_frame(src, **view, *g1, true, true, guard);
-    double maxdiff = 0; for (size_t i = 0; i < fin.span().size(); ++i) maxdiff = std::max(maxdiff, (double)std::abs(fin.span()[i] - rf->acescg.span()[i]));
+    LockStats ls;
+    PlanarBuffer locked = lock.on ? lock_observed(src, fin, net->weight, **view, lock, &ls) : fin;
+    auto rf = run_frame(src, **view, *g1, true, true, guard, {}, {}, lock);
+    double maxdiff = 0; for (size_t i = 0; i < locked.span().size(); ++i) maxdiff = std::max(maxdiff, (double)std::abs(locked.span()[i] - rf->acescg.span()[i]));
+    if (lock.on) dump(out + "/locked.f32", locked);
     dump(out + "/composed.f32", comp.acescg); dump(out + "/smoothed.f32", sm); dump(out + "/final.f32", fin); dump(out + "/mask.f32", comp.mask);
     dump(out + "/weight_g1.f32", net->weight);
     // core reconstruction_weight vs G1 weight
     auto wc = reconstruction_weight(src); double wd = 0;
     for (size_t i = 0; i < wc.span().size(); ++i) wd = std::max(wd, (double)std::abs(wc.span()[i] - net->weight.span()[i]));
-    std::printf("{\"view\":\"%s\",\"full\":%zu,\"interior\":%zu,\"components\":%zu,\"support\":%zu,\"changed\":%zu,\"fallback\":%zu,\"remaining\":%zu,\"new_negative_y\":%zu,\"run_frame_vs_staged\":%g,\"core_weight_vs_g1\":%g}\n",
+    std::printf("{\"view\":\"%s\",\"full\":%zu,\"interior\":%zu,\"components\":%zu,\"support\":%zu,\"changed\":%zu,\"fallback\":%zu,\"remaining\":%zu,\"new_negative_y\":%zu,\"run_frame_vs_staged\":%g,\"core_weight_vs_g1\":%g,\"lock_support\":%zu,\"lock_changed\":%zu,\"lock_kept\":%zu,\"lock_raised\":%zu,\"lock_ms\":%.1f}\n",
                 (*view)->identity().c_str(), ss.full_pixels, ss.interior_pixels, ss.components, cs.support_pixels, cs.changed_pixels,
-                cs.baseline_fallback_pixels, cs.remaining_display_errors, cs.new_negative_luminance, maxdiff, wd);
+                cs.baseline_fallback_pixels, cs.remaining_display_errors, cs.new_negative_luminance, maxdiff, wd,
+                ls.support_pixels, ls.changed_pixels, ls.kept_pixels, ls.strength_raised_pixels, ls.ms_dequant + ls.ms_solve);
 }
