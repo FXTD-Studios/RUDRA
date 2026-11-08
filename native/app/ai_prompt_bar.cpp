@@ -14,6 +14,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QProcess>
+#include <QSizePolicy>
 #include <QProcessEnvironment>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -207,6 +208,11 @@ void MainWindow::build_ai_prompt_bar(QVBoxLayout* v, QWidget* parent) {
     auto* ch = new QHBoxLayout(chips);
     ch->setContentsMargins(0, 0, 0, 0);
     ch->setSpacing(4);
+    // The chips never widen the window (8 Nov 2026): a row of suggestions, or the long "Suggestions
+    // appear here..." note, set the viewer's minimum width and pushed the right rail (Grade, Deliver)
+    // off a 1080p-wide screen. They now get what is left, and are clipped at the edge.
+    chips->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    chips->setMinimumWidth(0);
     h->addWidget(chips, 3);
     auto* run = new QPushButton(QStringLiteral("Suggest"), ai_prompt_bar_);
     run->setObjectName("aiSuggestRun");
