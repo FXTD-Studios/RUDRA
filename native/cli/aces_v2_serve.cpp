@@ -259,6 +259,9 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
           {"release_authorized", m->release_authorized}, {"load_ms", ms_since(t0)}});
 
     Inbox in;
+    // The viewer's frames (8 Nov 2026): one open decoder per session, so the playback cache's
+    // frames in order are read on instead of decoded from the start every time.
+    AcesFrameReader preview_reader(fs::temp_directory_path() / "rudra_aces_preview_decode.log");
     std::thread reader([&in] {
         std::string line;
         while (std::getline(std::cin, line)) {
@@ -319,7 +322,7 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                 const fs::path src = req.at("source").get<std::string>();
                 const int frame_index = req.value("frame", 0);
                 const auto t = Clock::now();
-                auto still = aces_read_one(src, frame_index, fs::temp_directory_path() / "rudra_aces_preview_decode.log");
+                auto still = preview_reader.read(src, frame_index);   // 8 Nov 2026: reads on, no re-decode
                 if (!still) {
                     send(err(id, still.error()));
                     continue;

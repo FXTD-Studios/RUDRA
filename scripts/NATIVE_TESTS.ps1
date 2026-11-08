@@ -44,12 +44,23 @@ if (-not $SkipBuild) {
 $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
 $log = @("RUDRA native tests, $Stamp, build $Build, filter $Filter", "")
 $failed = $false
+# The OpenCV the build was configured with (OpenCV_DIR is its lib\; the DLL is in bin\ beside it).
+# Without it both test programs exit 0xC0000135 (DLL not found) printing nothing at all.
+$CvLib = ([regex]::Match($cache, "OpenCV_DIR:\w+=(.*)")).Groups[1].Value.Trim() -replace "/", "\"
+if ($CvLib) { $env:PATH = (Join-Path (Split-Path $CvLib) "bin") + ";" + $env:PATH }
+function Run-Tests([string]$Exe, [string]$Name) {
+    $out = & $Exe "--gtest_filter=$Filter" 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    $out | Out-Host; $script:log += ""; $script:log += "--- $Name"; $script:log += $out
+    if ($code -ne 0) {
+        $script:failed = $true
+        if (-not $out) { $m = "$Name exited $code (0x$('{0:X8}' -f $code)) without output: a DLL it needs is not on the PATH"; $script:log += $m; Write-Host $m -ForegroundColor Red }
+    }
+}
 $Core = Join-Path $Build "tests\Release\rudra_tests.exe"
 if (-not (Test-Path $Core)) { Fail "not built: $Core" }
 Say "rudra_tests"
-$out = & $Core "--gtest_filter=$Filter" 2>&1 | ForEach-Object { "$_" }
-$out | Out-Host; $log += "--- rudra_tests"; $log += $out
-if ($LASTEXITCODE -ne 0) { $failed = $true }
+Run-Tests $Core "rudra_tests"
 if (-not $NoApp) {
     $App = Join-Path $Build "app\Release\rudra_app_tests.exe"   # add_executable in app/CMakeLists.txt, so app\, not app\tests\
     if (-not (Test-Path $App)) { Fail "not built: $App" }
@@ -58,9 +69,7 @@ if (-not $NoApp) {
     # The Qt the build was configured with: its DLLs and its platform plugins.
     $QtRoot = ([regex]::Match($cache, "Qt6_DIR:PATH=(.*)/lib/cmake/Qt6")).Groups[1].Value -replace "/", "\\"
     if ($QtRoot) { $env:PATH = "$QtRoot\bin;" + $env:PATH; $env:QT_PLUGIN_PATH = "$QtRoot\plugins" }
-    $out = & $App "--gtest_filter=$Filter" 2>&1 | ForEach-Object { "$_" }
-    $out | Out-Host; $log += ""; $log += "--- rudra_app_tests"; $log += $out
-    if ($LASTEXITCODE -ne 0) { $failed = $true }
+    Run-Tests $App "rudra_app_tests"
 }
 $ErrorActionPreference = $prev
 $log | Set-Content -Path $Report -Encoding UTF8

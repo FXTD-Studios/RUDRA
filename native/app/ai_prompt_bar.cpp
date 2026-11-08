@@ -221,7 +221,7 @@ void MainWindow::build_ai_prompt_bar(QVBoxLayout* v, QWidget* parent) {
     h->addWidget(run);
     auto* again = new QPushButton(QStringLiteral("Preview again"), ai_prompt_bar_);
     again->setObjectName("viewerAiPreviewAgain");
-    again->setToolTip(QStringLiteral("Fill the frames around the playhead again with this prompt"));
+    again->setToolTip(QStringLiteral("Fill the frame at the playhead again with this prompt"));
     connect(again, &QPushButton::clicked, this, [this] { preview_genfill(); });
     h->addWidget(again);
     ai_prompt_bar_->hide();

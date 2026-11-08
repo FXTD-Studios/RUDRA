@@ -15,7 +15,7 @@ reconstruction, which needs no model, is the default.
 
 | Model | Files (SHA-256) | Licence | Commercial use | Status |
 |---|---|---|---|---|
-| **RUDRA ACES 2** (learned ACES 2.0 reconstruction) | `rudra_g1.ts` `fb30e3df748f4fa9…`<br>`rudra_g1.onnx` `8ba97cb0ed36f503…` | Apache 2.0 | Yes | **Preview.** See "Evidence" below |
+| **RUDRA ACES 2** (2.0, learned ACES 2.0 reconstruction with the lock; needs RUDRA 1.2.0) | `rudra_g1.ts` `7082eb869d265d6e…`<br>`rudra_g1.onnx` `880e7b698a099b8d…` | Apache 2.0 | Yes | **Preview** until its HDR monitor review is signed. See "Evidence" below |
 | **AI fill v3** (Wan2.1-VACE-1.3B LoRA + brightness estimator) | `rudra_genfill.safetensors` `9fff7eb8492ae626…`<br>`brightness.json` `34892fb840de138f…` | Apache 2.0; base model Wan2.1-VACE-1.3B is Apache 2.0 (Wan-AI) | Yes | **Experimental**, off by default. Passed its pre-registered gates on 25 held-out Poly Haven scenes (30 Oct 2026; `registration_v3.json`, `report_v3.json`) |
 
 Training data for both: Poly Haven HDRIs (CC0), FXTD Studios' own footage and
@@ -36,12 +36,13 @@ non-commercial licence wherever it is. Update to 1.0.3, or delete the
 
 ## Evidence: RUDRA ACES 2
 
-**Published today (1.0, preview):** the checkpoint behind `rudra_g1.ts`
+**Published before 1.2.0 (1.0, preview):** the checkpoint behind `rudra_g1.ts`
 `fb30e3df…` fails the 0 EV grading gate (0.121 against 0.0604, 29 Oct 2026).
 Its manifest says `release_authorized: true`, set by hand; no committed report
-names its checkpoint. It stays preview.
+names its checkpoint. It was replaced on Hugging Face by 2.0 with RUDRA 1.2.0
+(8 Nov 2026).
 
-**Release candidate (2.0): w4 + lock_dqs050g.** The checkpoint
+**Published with 1.2.0 (2.0, preview): w4 + lock_dqs050g.** The checkpoint
 `research_bin_hinge_w4_20261102` step 1600, with the lock (stage 6b,
 `training/aces_partial_tighten.py`, native `core/aces_lock.hpp`) at strength
 0.5 toward the dequantized source, and the appearance guard.

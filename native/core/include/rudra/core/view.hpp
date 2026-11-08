@@ -123,7 +123,11 @@ struct ViewParams {
     bool region_overlay = false;
     ReconstructionRegion overlay_region;
     RegionOverlayGate overlay_gate;   // what the tint's strength shows (below)
-    std::array<float, 3> region_tint{0.20f, 0.85f, 0.95f};
+    // 8 Nov 2026: highlights and shadows in their own colours, so the tint says which side of the
+    // region acts where: warm for highlights, blue for shadows (render/shaders/display.frag holds the
+    // same shadow colour; the highlight one reaches it as a uniform).
+    std::array<float, 3> region_tint{1.00f, 0.62f, 0.18f};
+    std::array<float, 3> region_shadow_tint{0.30f, 0.52f, 1.00f};
 };
 inline constexpr float kRegionTintMix = 0.40f;
 
@@ -133,7 +137,9 @@ inline constexpr float kRegionTintMix = 0.40f;
 // with `gate.analytic` the analytic composite's own reconstruction_gate() (the built-in priors
 // times the region, the mode and the strength), so the tint is as strong as the reconstruction
 // is (7 Nov 2026: a region from 0.5 tinted the mid-tones fully where the gate is under 5 %).
-// All 0 when the region is off or there is no SDR of that size.
+// G (8 Nov 2026): 255 where the pixel is on the region's shadow side, 0 on its highlight side
+// (with the gate: luma below 0.5; without: the shadow weight above the highlight one), so the
+// viewer tints the two sides in their own colours. All 0 when the region is off or there is no SDR.
 std::vector<std::uint8_t> region_overlay_rgba8(const SdrImage* sdr, const ReconstructionRegion& region, int width, int height,
                                                const RegionOverlayGate& gate = {});
 
@@ -142,6 +148,7 @@ std::vector<std::uint8_t> region_overlay_rgba8(const SdrImage* sdr, const Recons
 struct RegionHistogram {
     std::vector<double> counts;   // pixels per bin, of all pixels (0..1)
     std::vector<float> weight;    // the overlay's weight (region_overlay_rgba8, same gate) at the bin's centre
+    std::vector<std::uint8_t> shadow;   // 1 where that bin is on the shadow side (the overlay's G)
     double reached = 0.0;         // share of pixels the tint shows (weight of 1/255 or more)
     double strong = 0.0;          // share of pixels at half strength or more
 };

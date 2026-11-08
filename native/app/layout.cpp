@@ -1340,8 +1340,8 @@ QWidget* MainWindow::build_right_rail() {
                 rh->setContentsMargins(0, 4, 0, 0);
                 auto* pv = new QPushButton("Preview AI fill", row);
                 pv->setObjectName("deliverAiPreview");
-                pv->setToolTip("Fills the 9 frames around the playhead with these settings and shows the result here, "
-                               "before you render the whole shot. The fill model stays loaded, so the next preview is quicker");
+                pv->setToolTip("Fills the frame at the playhead with these settings and shows it here; the render "
+                               "then fills the whole shot. The fill model stays loaded, so the next preview is quicker");
                 connect(pv, &QPushButton::clicked, this, [this] { preview_genfill(); });
                 rh->addWidget(pv);
                 for (auto [id, text, which, tip] :

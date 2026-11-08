@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Rebuild the RUDRA app with Deliver > "Learned ACES 2.0 master…", run its tests,
+  Rebuild the RUDRA app with Deliver > "Learned ACES 2.0 master...", run its tests,
   point it at the ACES v2 engine and model package, and start it.
 
     powershell -ExecutionPolicy Bypass -File scripts\RUN_APP_ACES.ps1
@@ -151,5 +151,5 @@ Write-Host "LibTorch $TorchLib"
 New-ItemProperty -Path $Key -Name "preload" -PropertyType String -Value "true" -Force | Out-Null
 # The main viewer shows every frame through the learned ACES 2.0 model once it is loaded.
 New-ItemProperty -Path $Key -Name "viewer" -PropertyType String -Value "true" -Force | Out-Null
-Say "Start RUDRA: the ACES model loads in the background (status bar); then every frame you open is shown through it. Masters: Deliver > Learned ACES 2.0 master… or Ctrl+Shift+E"
+Say "Start RUDRA: the ACES model loads in the background (status bar); then every frame you open is shown through it. Masters: Deliver > Learned ACES 2.0 master... or Ctrl+Shift+E"
 Start-Process -FilePath (Resolve-Path $App).Path -WorkingDirectory (Split-Path (Resolve-Path $App).Path)

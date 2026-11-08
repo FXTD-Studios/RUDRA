@@ -251,8 +251,10 @@ void MainWindow::preview_genfill() {
 
     const int n = int(frames_.size());
     const bool movie = shot_video_.has_value() && !shot_sources_.empty();
-    // The frames around the playhead: enough for the fill to show how it moves (9 by default).
-    const int half = std::clamp(QSettings().value("genfill/previewHalf", 4).toInt(), 0, 16);
+    // 8 Nov 2026: the frame at the playhead only, by default: a quick look at the fill in the viewer;
+    // the render fills the whole shot (in windows of 33, which also keeps it steady). genfill/previewHalf
+    // > 0 previews that many frames each side, to judge how the fill moves.
+    const int half = std::clamp(QSettings().value("genfill/previewHalf", 0).toInt(), 0, 16);
     const int at = std::clamp(current_, 0, n - 1);
     const int a = std::max(0, at - half), b = std::min(n - 1, at + half);
     genfill_preview_tmp_ = std::make_unique<QTemporaryDir>(QDir::temp().filePath("rudra-aifill-preview-XXXXXX"));
@@ -470,7 +472,7 @@ void MainWindow::start_analytic_preview_master(const QString& mdir, int a, int b
 void MainWindow::show_genfill_preview(const QString& which) {
     auto* st = findChild<QLabel*>("deliverAiPreviewStatus");
     if (!genfill_preview_) {
-        if (st) st->setText(QStringLiteral("No AI fill preview yet: Preview AI fill fills the frames around the playhead."));
+        if (st) st->setText(QStringLiteral("No AI fill preview yet: Preview AI fill fills the frame at the playhead."));
         return;
     }
     // The viewer moved on: back to the previewed frame; the picture asked for goes up when it

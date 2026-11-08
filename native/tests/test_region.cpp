@@ -587,3 +587,47 @@ TEST(Gaps, OnTheAnalyticRouteTheTintIsTheGate) {
         if (mode == RecoveryMode::Shadows) EXPECT_EQ(hg.weight.back(), 0.0f);
     }
 }
+
+// 8 Nov 2026: the tint tells the shadow side from the highlight side (G of the overlay), and the
+// histogram says which side each bin is on, on both routes.
+TEST(Gaps, TheTintTellsShadowsFromHighlights) {
+    const int w = 256, h = 4;
+    SdrImage sdr(h, w);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+            for (int c = 0; c < 3; ++c) sdr.buffer().at(c, y, x) = float(x) / 255.0f;   // a grey ramp, luma = x / 255
+    ReconstructionRegion rg;
+    rg.enabled = true;
+    rg.highlight_from = 0.8f;
+    rg.highlight_softness = 0.05f;
+    rg.shadow_below = 0.2f;
+    rg.shadow_softness = 0.05f;
+    for (bool analytic : {false, true}) {
+        RegionOverlayGate g;
+        g.analytic = analytic;
+        const auto bytes = region_overlay_rgba8(&sdr, rg, w, h, g);
+        std::size_t shadows = 0, highlights = 0;
+        for (int x = 0; x < w; ++x) {
+            const std::size_t i = std::size_t(x) * 4;
+            if (bytes[i] == 0) continue;
+            if (x < 128) { EXPECT_EQ(bytes[i + 1], 255) << x; ++shadows; }
+            else { EXPECT_EQ(bytes[i + 1], 0) << x; ++highlights; }
+        }
+        EXPECT_GT(shadows + highlights, 0u);
+        if (!analytic) {
+            EXPECT_GT(shadows, 0u);
+            EXPECT_GT(highlights, 0u);
+        }
+        const RegionHistogram hist = region_histogram(sdr, rg, 64, g);
+        ASSERT_EQ(hist.shadow.size(), 64u);
+        EXPECT_EQ(hist.shadow.front(), 1);
+        EXPECT_EQ(hist.shadow.back(), 0);
+    }
+    // In the viewer: a shadow pixel goes toward blue, a highlight one toward warm.
+    ViewParams on;
+    on.mode = ViewMode::Image;
+    on.region_overlay = true;
+    on.overlay_region = rg;
+    EXPECT_GT(on.region_shadow_tint[2], on.region_shadow_tint[0]);
+    EXPECT_GT(on.region_tint[0], on.region_tint[2]);
+}

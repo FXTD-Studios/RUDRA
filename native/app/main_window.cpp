@@ -1588,12 +1588,16 @@ void MainWindow::refresh_view_region() {
     const ReconstructionRegion& rg = session_.grade.region;
     const RegionOverlayGate gate = region_overlay_gate();
     if (region_hist_) {
-        if (!rg.enabled || !current_frame_) {
+        // The SDR on screen: the learned route's own (aces_sdr_img_) when it renders, else the analytic
+        // frame's. 8 Nov 2026: on the learned route the histogram said "Open a shot" with a shot open.
+        const SdrImage* sdr = aces_routed() ? aces_sdr_img_.get() : current_frame_ ? &current_frame_->sdr : nullptr;
+        if (!rg.enabled || !sdr) {
             region_hist_->clear();
             region_hist_frame_ = nullptr;
-        } else if (region_hist_frame_ != current_frame_.get() || !(region_hist_region_ == rg) || !(region_hist_gate_ == gate)) {
-            region_hist_->set(region_histogram(current_frame_->sdr, rg, 64, gate), ViewParams{}.region_tint, gate.analytic);
-            region_hist_frame_ = current_frame_.get();
+        } else if (region_hist_frame_ != sdr || !(region_hist_region_ == rg) || !(region_hist_gate_ == gate)) {
+            region_hist_->set(region_histogram(*sdr, rg, 64, gate), ViewParams{}.region_tint, gate.analytic,
+                              ViewParams{}.region_shadow_tint);
+            region_hist_frame_ = sdr;
             region_hist_region_ = rg;
             region_hist_gate_ = gate;
         }

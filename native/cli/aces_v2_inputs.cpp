@@ -201,4 +201,43 @@ Result<AcesFrameIn> aces_read_one(const fs::path& source, int frame, const fs::p
     return from_raw(*raw, source, *vs, frame);
 }
 
+AcesFrameReader::AcesFrameReader(fs::path decode_log) : log_(std::move(decode_log)) {}
+
+AcesFrameReader::~AcesFrameReader() {
+    if (decoder_) decoder_->close();
+}
+
+Result<AcesFrameIn> AcesFrameReader::read(const fs::path& source, int frame) {
+    if (!aces_is_video(source)) return from_still(source);
+    if (source != path_ || !video_) {   // another file: probe it once
+        if (decoder_) decoder_->close();
+        decoder_.reset();
+        video_.reset();
+        path_.clear();
+        auto vs = aces_open_video(source);
+        if (!vs) return vs.error();
+        video_ = std::move(*vs);
+        path_ = source;
+    }
+    const int frames = video_->clock.frames;
+    if (frame < 0 || (frames > 0 && frame >= frames))
+        return make_error(ErrorCode::InvalidArgument, "No such frame in the video.", source.string() + " frame " + std::to_string(frame));
+    if (!decoder_ || frame != next_) {   // not the next one: a decoder from this frame on
+        if (decoder_) decoder_->close();
+        decoder_.reset();
+        auto d = aces_open_video_decoder_range(source, *video_, frame, frames > 0 ? frames - frame : 1, log_);
+        if (!d) return d.error();
+        decoder_ = std::move(*d);
+        next_ = frame;
+    }
+    auto raw = decoder_->next();
+    if (!raw) {   // a broken decoder is not reused
+        decoder_->close();
+        decoder_.reset();
+        return raw.error();
+    }
+    next_ = frame + 1;
+    return from_raw(*raw, source, *video_, frame);
+}
+
 }  // namespace rudra

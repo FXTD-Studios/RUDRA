@@ -3446,6 +3446,15 @@ json aces_manifest(bool parity, bool guard) {
                 {"parity_pass", parity}, {"release_authorized", false}};
 }
 
+// A package that runs on every target: macOS's are all ONNX Runtime, and the dialog refuses a
+// package without an ONNX model there (the 1.1.0 release build's three macOS failures, 6 Nov 2026).
+json aces_manifest_any_target() {
+    json m = aces_manifest(true, true);
+    m["onnx_file"] = "rudra_g1.onnx";
+    m["onnx_sha256"] = "880e7b698a099b8d";
+    return m;
+}
+
 }  // namespace
 
 TEST(AcesMaster, ParsesTheCommandsProgressLines) {
@@ -3650,7 +3659,7 @@ TEST(AcesMaster, PutsTheConfiguredRuntimeFoldersFirstOnThePath) {
 TEST(AcesMaster, RunsTheCommandAndReportsItsMasters) {
     QSettings().clear();
     const auto root = aces_tmp("run");
-    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    write_text(root / "pkg" / "manifest.json", aces_manifest_any_target().dump());
     for (const char* f : {"a.png", "b.png"}) write_text(root / "frames" / f, "x");
     const auto cli = root / "rudra-native";
     write_text(cli, R"(#!/bin/sh
@@ -3688,7 +3697,7 @@ exit 0
 TEST(AcesMaster, CancelStopsTheCommandAndSaysWhatIsLeft) {
     QSettings().clear();
     const auto root = aces_tmp("cancel");
-    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    write_text(root / "pkg" / "manifest.json", aces_manifest_any_target().dump());
     for (const char* f : {"a.png", "b.png"}) write_text(root / "frames" / f, "x");
     const auto cli = root / "rudra-native";
     write_text(cli, R"(#!/bin/sh
@@ -3717,7 +3726,7 @@ exec sleep 30
 TEST(AcesMaster, PreviewsAndMastersThroughTheLoadedModel) {
     QSettings().clear();
     const auto root = aces_tmp("engine");
-    write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
+    write_text(root / "pkg" / "manifest.json", aces_manifest_any_target().dump());
     for (const char* f : {"a.png", "b.png"}) write_text(root / "frames" / f, "x");
     const auto cli = root / "rudra-native";
     write_text(cli, R"(#!/usr/bin/env python3
@@ -5229,7 +5238,10 @@ TEST(GenFill, AFillIsReviewedBeforeItGoesOut) {
     auto s = app::genfill_setup(&why);
     EXPECT_TRUE(s) << why.toStdString();
     if (s) {
-        EXPECT_EQ(s->lora, root / "gf" / "rudra_genfill.safetensors");
+        // 4 Nov 2026: with nothing saved, a LoRA that verifies as v3 wins wherever it is (the
+        // training workstation has one on G:); without one, the first that exists, here ours.
+        if (s->v3_found.empty()) EXPECT_EQ(s->lora, root / "gf" / "rudra_genfill.safetensors");
+        else EXPECT_EQ(s->lora, s->v3_found);
     }
     qunsetenv("RUDRA_GENFILL_DIR");
     QSettings().clear();
@@ -5470,6 +5482,9 @@ TEST(JsonLines, WholeLinesInAnyPiecesAndNothingElse) {
 #ifdef RUDRA_HAVE_STILL_DECODE
 TEST(Deliver, ATypedTimecodeIsCheckedAtTheMoviesOwnRate) {
     // Review 28 Oct: a 29.97 movie's ;29 frames were refused (checked at 24); frames send their rate.
+#ifdef _WIN32
+    GTEST_SKIP() << "the stand-in engine is a Python script, which Windows cannot run as a program";
+#endif
     if (QStandardPaths::findExecutable("ffmpeg").isEmpty()) GTEST_SKIP() << "ffmpeg is not on the PATH";
     QSettings().clear();
     const auto root = aces_tmp("tc2997");
@@ -6600,9 +6615,11 @@ TEST(GenFillSwap, TheViewerFindsTheFillBeforeAndAfterItMovesIntoTheMaster) {
     auto after = app::genfill_filled_frames(app::from_path(f), app::from_path(m));
     ASSERT_EQ(after.size(), 2);
     EXPECT_FALSE(after[0].contains("master_aifill"));
-    std::ifstream in(app::to_path(after[0]));
-    std::string s;
-    std::getline(in, s);
-    EXPECT_EQ(s, "filled");
+    {
+        std::ifstream in(app::to_path(after[0]));   // closed before the folder goes: Windows will not delete an open file
+        std::string s;
+        std::getline(in, s);
+        EXPECT_EQ(s, "filled");
+    }
     std::filesystem::remove_all(root);
 }

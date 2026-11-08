@@ -204,7 +204,11 @@ function Build-Ocio([string]$cmake, [string]$generator) {
         $url = "https://github.com/AcademySoftwareFoundation/OpenColorIO/archive/refs/tags/v$OcioVersion.tar.gz"
         Write-Host "download $url"
         Invoke-WebRequest -Uri $url -OutFile $tgz -UseBasicParsing
-        tar -xzf $tgz -C $Deps | Out-Host   # into the console, not the return value
+        # Windows' own tar (bsdtar): Git's GNU tar, first on a CI runner's PATH, reads "D:\..." as a
+        # host name ("Cannot connect to D:", the 1.1.0 release build, 6 Nov 2026).
+        $tarExe = Join-Path $env:SystemRoot "System32\tar.exe"
+        if (-not (Test-Path $tarExe)) { $tarExe = "tar" }
+        & $tarExe -xzf $tgz -C $Deps | Out-Host   # into the console, not the return value
         if ($LASTEXITCODE -ne 0) { Fail "OpenColorIO source" }
         Remove-Item $tgz
     }
@@ -213,7 +217,9 @@ function Build-Ocio([string]$cmake, [string]$generator) {
         -DOCIO_INSTALL_EXT_PACKAGES=ALL -DOCIO_BUILD_APPS=OFF -DOCIO_BUILD_PYTHON=OFF -DOCIO_BUILD_TESTS=OFF `
         -DOCIO_BUILD_GPU_TESTS=OFF -DOCIO_BUILD_DOCS=OFF -DOCIO_BUILD_OPENFX=OFF | Out-Host   # into the console, not the return value
     if ($LASTEXITCODE -ne 0) { Fail "OpenColorIO configure" }
-    & $cmake --build $ob --config Release --parallel | Out-Host   # into the console, not the return value
+    # Not --parallel: the ext packages are git clones whose submodule updates start Git's sh.exe,
+    # and several at once fail its first init ("add_item ... failed", 8 Nov 2026). Built once.
+    & $cmake --build $ob --config Release | Out-Host   # into the console, not the return value
     if ($LASTEXITCODE -ne 0) { Fail "OpenColorIO build" }
     & $cmake --install $ob --config Release | Out-Host   # into the console, not the return value
     if ($LASTEXITCODE -ne 0) { Fail "OpenColorIO install" }
@@ -419,8 +425,11 @@ if ($WithAcesEngine -or -not $NoOcio) {
     # On its own: PATH reduced to Windows' folders, so a DLL missing from the package shows here.
     $keepPath = $env:PATH
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+    # The usage goes to stderr: under Windows PowerShell 5.1 with Stop, 2>&1 would end the script here.
+    $keepEap = $ErrorActionPreference; $ErrorActionPreference = "Continue"
     $probe = (& (Join-Path $Out "rudra-native.exe") aces-v2 --help 2>&1 | Out-String)
     $probeRc = $LASTEXITCODE
+    $ErrorActionPreference = $keepEap
     $env:PATH = $keepPath
     if ($probe -notmatch "usage: rudra-native aces-v2 <package>") {
         Fail ("the packaged ACES engine does not start on its own (exit {0}; -1073741515 = a DLL is missing)" -f $probeRc)

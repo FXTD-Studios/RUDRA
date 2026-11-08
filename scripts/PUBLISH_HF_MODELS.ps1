@@ -55,7 +55,9 @@ $weights = Get-ChildItem $Stage -Recurse -File | Where-Object { $_.FullName -mat
 if ($weights) { Fail "non-commercial Beta 2 weights are in the stage: $($weights.Name -join ', ')" }
 
 Say "Hugging Face tools"
-& $Python -m pip install --quiet --upgrade "huggingface_hub>=0.34"
+# No --upgrade and an upper bound: the same venv runs the AI fill, whose diffusers and
+# transformers need huggingface_hub < 2 (8 Nov 2026: 2.4.0 broke their import).
+& $Python -m pip install --quiet "huggingface_hub>=0.34,<2"
 if ($LASTEXITCODE -ne 0) { Fail "pip install huggingface_hub" }
 $who = & $Python -c "from huggingface_hub import whoami; print(whoami()['name'])" 2>$null
 if ($LASTEXITCODE -ne 0 -or -not $who) { Fail "not logged in to Hugging Face: run  $(Split-Path $Python)\hf.exe auth login  (a write token for the org)" }
