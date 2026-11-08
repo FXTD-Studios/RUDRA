@@ -28,9 +28,16 @@ param(
     [switch]$SkipBuild,
     [switch]$SkipExport,
     [switch]$InstallBuildTools,
-    [switch]$NoLuminanceGuard          # default: appearance constraint also forbids new negative luminance
+    [switch]$NoLuminanceGuard,         # default: appearance constraint also forbids new negative luminance
+    [string]$LockRegistration = "",    # 7 Nov 2026: the registration holding the lock arm (stage 6b), e.g.
+    [string]$LockArm = "",             #   configs\experiments\holdout_crew_eval_20261107.json + lock_dqs050g
+    [string]$Provenance = "",          # JSON written into the manifest as "provenance"
+    [switch]$ReviewMasters             # also the A/B masters for the visual review: analytic, and the model without its lock
 )
 $Guard = @(); if (-not $NoLuminanceGuard) { $Guard = @('--forbid-new-negative-y') }
+$LockArgs = @(); if ($LockArm) { $LockArgs = @('--lock-registration', $LockRegistration, '--lock-arm', $LockArm) }
+if ([bool]$LockArm -ne [bool]$LockRegistration) { Write-Host "FAILED: -LockRegistration and -LockArm go together" -ForegroundColor Red; exit 1 }
+$ProvArgs = @(); if ($Provenance) { $ProvArgs = @('--provenance', $Provenance) }
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path $PSScriptRoot -Parent   # the repo this script sits in
 Set-Location -LiteralPath $Repo
@@ -72,7 +79,7 @@ if (-not $SkipExport) {
         if ($LASTEXITCODE -ne 0) { Write-Host "onnx / onnxruntime unavailable: exporting without ONNX (DirectML route skipped)" -ForegroundColor Yellow; $NoOnnx = @('--no-onnx') }
     }
     $vals = Get-ChildItem $Frames -Filter "*_source.png" | Sort-Object Name | Select-Object -First 2
-    & $Python tools\export_native_v2.py --checkpoint $Checkpoint --out $Package --frames @($vals.FullName) @Guard @NoOnnx
+    & $Python tools\export_native_v2.py --checkpoint $Checkpoint --out $Package --frames @($vals.FullName) @Guard @NoOnnx @LockArgs @ProvArgs
     if ($LASTEXITCODE -ne 0) { Fail "export_native_v2.py (TorchScript or staged parity failed)" }
 }
 if (-not (Test-Path (Join-Path $Package "manifest.json"))) { Fail "no package at $Package" }
@@ -167,17 +174,39 @@ if ($LASTEXITCODE -ne 0) {
 Say "C++ vs Python, stage by stage ($ParityFrames frames)"
 $pf = Get-ChildItem $Frames -Filter "*_source.png" | Sort-Object Name | Select-Object -First $ParityFrames
 & $Python native\tools\aces_v2_parity\parity_check.py --exe $Par.FullName --checkpoint $Checkpoint `
-    --g1 (Join-Path $Package "rudra_g1.ts") --out (Join-Path $Out "parity.json") @Guard @($pf.FullName)
+    --g1 (Join-Path $Package "rudra_g1.ts") --out (Join-Path $Out "parity.json") @Guard @LockArgs @($pf.FullName)
 if ($LASTEXITCODE -ne 0) { Fail "native parity (see parity.json)" }
 
 Say "Native master: rudra-native aces-v2 ($Device)"
 & $Cli aces-v2 $Package $Frames --out (Join-Path $Out "master") --device $Device --ocio-threads 8
 if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 (exit $LASTEXITCODE; 3 = appearance constraint errors)" }
 
+Say "Round trip of the master (ACES 2.0 SDR view within 1 code of the source)"
+& $Python tools\check_aces_masters.py --source $Frames --master (Join-Path $Out "master") --package $Package `
+    --report (Join-Path $Out "check_master.json")
+if ($LASTEXITCODE -ne 0) { Fail "round trip of the LibTorch master (see check_master.json)" }
+
 if ($OrtArgs.Count -and (Test-Path (Join-Path $Package "rudra_g1.onnx"))) {
     Say "Native master through ONNX Runtime + DirectML (tolerance route)"
     & $Cli aces-v2 $Package $Frames --out (Join-Path $Out "master_directml") --runtime onnxruntime --device directml --ocio-threads 8
     if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --runtime onnxruntime --device directml" }
+    Say "Backends: LibTorch ($Device) against ONNX Runtime + DirectML"
+    & $Python tools\check_aces_masters.py --source $Frames --master (Join-Path $Out "master") --other (Join-Path $Out "master_directml") `
+        --package $Package --report (Join-Path $Out "backends_libtorch_directml.json")
+    if ($LASTEXITCODE -ne 0) { Fail "LibTorch and DirectML masters disagree (see backends_libtorch_directml.json)" }
+    & $Cli aces-v2 $Package $Frames --out (Join-Path $Out "master_ort_cpu") --runtime onnxruntime --device cpu --ocio-threads 8
+    if ($LASTEXITCODE -ne 0) { Fail "rudra-native aces-v2 --runtime onnxruntime --device cpu" }
+    & $Python tools\check_aces_masters.py --source $Frames --master (Join-Path $Out "master") --other (Join-Path $Out "master_ort_cpu") `
+        --package $Package --report (Join-Path $Out "backends_libtorch_ortcpu.json")
+    if ($LASTEXITCODE -ne 0) { Fail "LibTorch and ONNX Runtime CPU masters disagree (see backends_libtorch_ortcpu.json)" }
+}
+
+if ($ReviewMasters) {
+    Say "Visual review masters: the analytic inverse, and the model without its lock"
+    & $Cli aces-v2 $Package $Frames --out (Join-Path $Out "review_analytic") --device $Device --ocio-threads 8 --tau-high 256 --tau-low -1
+    if ($LASTEXITCODE -ne 0) { Fail "analytic review master" }
+    & $Cli aces-v2 $Package $Frames --out (Join-Path $Out "review_nolock") --device $Device --ocio-threads 8 --no-lock
+    if ($LASTEXITCODE -ne 0) { Fail "no-lock review master" }
 }
 
 Say "Native master of a video (every frame, <stem>_<NNNNNN>.exr)"

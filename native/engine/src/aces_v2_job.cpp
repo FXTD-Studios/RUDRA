@@ -47,7 +47,7 @@ AcesV2Outcome AcesV2Job::run(const std::function<void(const AcesV2FrameReport&)>
             break;
         }
         const auto t0 = std::chrono::steady_clock::now();
-        auto frame = aces_v2::run_frame(decoded->rgb, view_, g1_, request_.smoothing, true, request_.forbid_new_negative_y, request_.band);
+        auto frame = aces_v2::run_frame(decoded->rgb, view_, g1_, request_.smoothing, true, request_.forbid_new_negative_y, request_.band, {}, request_.lock);
         if (!frame) {
             out.error = frame.error();
             break;
@@ -63,11 +63,13 @@ AcesV2Outcome AcesV2Job::run(const std::function<void(const AcesV2FrameReport&)>
         rep.reconstructed_fraction = frame->mask.plane_size() ? double(marked) / double(frame->mask.plane_size()) : 0.0;
         rep.smoothing = frame->smoothing;
         rep.constraint = frame->constraint;
+        rep.lock = frame->lock;
         const std::vector<std::pair<std::string, std::string>> prov = {
             {"contract", "rudra_native_aces_v2_staged"}, {"g1_sha256", request_.g1_sha256},
             {"source", src.filename().string()}, {"view", view_.identity()},
             {"clipped_smoothing", request_.smoothing ? "hybrid64" : "none"},
-            {"luminance_guard", request_.forbid_new_negative_y ? "forbid_new_negative_y" : "none"}};
+            {"luminance_guard", request_.forbid_new_negative_y ? "forbid_new_negative_y" : "none"},
+            {"lock", request_.lock.on ? "dequant strength " + std::to_string(request_.lock.strength) : "none"}};
         if (auto w = write_(rep.exr, *frame, prov); !w) {
             out.error = w.error();
             break;

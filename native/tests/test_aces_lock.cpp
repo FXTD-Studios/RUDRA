@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -19,6 +20,7 @@
 
 #include "rudra/core/aces_lock.hpp"
 #include "rudra/core/aces_v2.hpp"
+#include "rudra/core/aces_v2_manifest.hpp"
 
 using namespace rudra;
 using namespace rudra::aces_v2;
@@ -282,4 +284,48 @@ TEST(AcesLock, DISABLED_TimingOnAFullHdFrameIsReported) {
     std::printf("[lock timing] 1920x1080, %zu support pixels: dequant %.0f ms, solve %.0f ms, total %.0f ms\n",
                 s.support_pixels, s.ms_dequant, s.ms_solve, ms);
     EXPECT_GT(s.changed_pixels, 0u);
+}
+
+// The package turns the lock on: manifest.json "lock" (tools/export_native_v2.py --lock-arm).
+namespace {
+std::filesystem::path write_package(const std::string& name, const std::string& lock_json, int major = -1) {
+    if (major < 0) major = lock_json.empty() ? 2 : 3;
+    const auto dir = std::filesystem::temp_directory_path() / ("rudra_lock_manifest_" + name);
+    std::filesystem::create_directories(dir);
+    std::ofstream(dir / "manifest.json") << R"({"contract": "rudra_native_aces_v2_staged", "contract_major": )" << major << R"(,
+      "g1_file": "rudra_g1.ts", "g1_sha256": "00", "checkpoint_sha256": "11",
+      "model_contract": {"id": "aces_v9", "full_context": "independent_pixel_rms", "ocio_version": "2.5.2",
+                         "config": "cg", "view": "v", "display": "d"},
+      "clipped_smoothing": {"name": "hybrid64", "sigma": 64, "ramp": 1, "start": 0, "mode": "hybrid"},
+      "appearance_constraint": {"max_display_error_codes": 1, "include_fully_clipped": true},
+      "parity_pass": true)" << lock_json << "}";
+    return dir;
+}
+}  // namespace
+
+TEST(AcesLock, ManifestTurnsTheRegisteredLockOn) {
+    auto none = aces_v2::read_manifest(write_package("none", ""));
+    ASSERT_TRUE(none) << none.error().detail;
+    EXPECT_FALSE(none->lock.on);
+    auto on = aces_v2::read_manifest(write_package("on", R"(, "lock": {"name": "lock_dqs050g", "mode": "lock", "strength": 0.5,
+        "target": "dequant", "iters": 4, "band_codes": 0.0, "dq_iters": 200, "dq_max_lap": 1.5})"));
+    ASSERT_TRUE(on) << on.error().detail;
+    EXPECT_TRUE(on->lock.on);
+    EXPECT_EQ(on->lock_name, "lock_dqs050g");
+    EXPECT_EQ(on->lock.strength, 0.5);
+    EXPECT_TRUE(on->lock.dequant);
+    EXPECT_EQ(on->lock.dq_iters, 200);
+    for (const char* bad : {R"(, "lock": {"mode": "lock", "strength": 0.5, "band_codes": 0.25})",
+                            R"(, "lock": {"mode": "bisect", "strength": 0.5})",
+                            R"(, "lock": {"mode": "lock", "strength": 0.0})",
+                            R"(, "lock": {"mode": "lock", "strength": 0.5, "target": "other"})"}) {
+        auto r = aces_v2::read_manifest(write_package("bad", bad));
+        ASSERT_FALSE(r) << bad;
+        EXPECT_EQ(r.error().code, ErrorCode::ContractMismatch) << bad;
+    }
+    // Major 3 needs its lock; a lock in a major 2 package is refused too (an older app would drop it).
+    const char* lock = R"(, "lock": {"name": "lock_dqs050g", "mode": "lock", "strength": 0.5, "target": "dequant"})";
+    EXPECT_FALSE(aces_v2::read_manifest(write_package("major3_nolock", "", 3)));
+    EXPECT_FALSE(aces_v2::read_manifest(write_package("major2_lock", lock, 2)));
+    EXPECT_FALSE(aces_v2::read_manifest(write_package("major4", lock, 4)));
 }

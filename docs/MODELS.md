@@ -4,7 +4,7 @@ One table for every model RUDRA has published. The README, the Hugging Face
 model card, the user guide and `models.json` must say the same thing; if they
 disagree, this file is the one to correct them from.
 
-Updated 5 November 2026 (RUDRA 1.1.0).
+Updated 7 November 2026 (RUDRA 1.1.0; RUDRA ACES 2.0 release candidate).
 
 ## In the app (downloaded, not bundled)
 
@@ -36,26 +36,37 @@ non-commercial licence wherever it is. Update to 1.0.3, or delete the
 
 ## Evidence: RUDRA ACES 2
 
-What the repository can show today:
+**Published today (1.0, preview):** the checkpoint behind `rudra_g1.ts`
+`fb30e3df…` fails the 0 EV grading gate (0.121 against 0.0604, 29 Oct 2026).
+Its manifest says `release_authorized: true`, set by hand; no committed report
+names its checkpoint. It stays preview.
 
-- **The export.** `tools/export_native_v2.py` writes `parity_pass` from its
-  own LibTorch/ONNX check and always writes `release_authorized: false`. The
-  published manifest says `release_authorized: true`; that was set by hand, and
-  no committed report names the checkpoint behind it.
-- **The last committed gate result** (29 Oct 2026, `archive/docs/RELEASE_V1.md`,
-  `docs/STATUS.md`): the learned model **fails the 0 EV grading check, 0.121
-  against a limit of 0.0604**. On the fresh FXTD grade set v2 (42 cases, 18
-  scenes, 26 Oct) the release candidate improved grading at −3 EV and +3 EV and
-  highlight accuracy, but its highlight pixels sat about 0.47 code RMS from the
-  reference at the delivered exposure against about 0.24 for the plain inverse.
-- **Not yet measured in CI:** the shipped files on LibTorch, ONNX Runtime CPU,
-  DirectML and Core ML against each other (`docs/RELEASE_NOTES_1.0.3.md`).
+**Release candidate (2.0): w4 + lock_dqs050g.** The checkpoint
+`research_bin_hinge_w4_20261102` step 1600, with the lock (stage 6b,
+`training/aces_partial_tighten.py`, native `core/aces_lock.hpp`) at strength
+0.5 toward the dequantized source, and the appearance guard.
 
-Until a gate report that names this checkpoint is committed, RUDRA ACES 2 is
-labelled **preview** everywhere. To close it, on the training machine:
+- **Crew holdout, run once as registered** (7 Nov 2026,
+  `configs/experiments/holdout_crew_eval_20261107.json`,
+  `docs/competitive/RESULT_CREW_HOLDOUT_2026_11_07.md`): passes every gate.
+  0 EV RMS 0.311 code against a limit of 0.342 (analytic inverse 0.242 + 0.1);
+  −3 EV, +3 EV and highlight colour better than the analytic inverse; no new
+  negative luminance; no pixel more than 1 code off.
+- **What it does not show:** at the delivered exposure it is *worse* than the
+  plain inverse in every case (56 of 56), by less than a tenth of a code. The
+  claim is "within 0.1 code RMS of the plain ACES 2.0 inverse at the delivered
+  exposure", never "better". One production (The Crew), one camera (ARRI
+  ALEXA LogC3), single frames.
+- **Native lock:** bit-exact with the Python oracle on its golden
+  (`native/tests/test_aces_lock.cpp`); on real frames through the real view,
+  `native/tools/aces_v2_parity` with `--lock`.
+- **The package:** contract major 3 (stages plus the lock). Apps before the
+  lock (1.1.0 and older) refuse it rather than run the model without its
+  lock. It needs RUDRA 1.2.0.
 
-    python tools/model_provenance.py dist\models\RUDRA_ACES_2 ^
-        --reports G:\rudra_training reports ^
-        --out docs\models\RUDRA_ACES_2.provenance.json
-
-and commit the record. Exit 2 means no report names the checkpoint.
+It leaves preview only through `tools/promote_aces2_release.py`, which
+refuses unless every one of these is on file: the holdout verdict, native
+parity with the lock, LibTorch against ONNX Runtime DirectML and CPU, Core ML
+(or a stated reason it was not measured), the provenance record
+(`docs/models/RUDRA_ACES_2.provenance.json`), and a signed visual review.
+`scripts/RELEASE_ACES2_W4.ps1` runs every step that needs no person.

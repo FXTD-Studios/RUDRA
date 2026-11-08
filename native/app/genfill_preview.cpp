@@ -321,7 +321,7 @@ void MainWindow::preview_genfill() {
                              {"prompt_strength", options.prompt_strength},
                              {"shape_gain", options.shape_gain},
                              {"fallback", options.fallback ? "spikes" : "none"},
-                             {"focus", options.focus_region ? "region" : "frame"}};
+                             {"focus", options.focus_region ? "areas" : "frame"}};   // as genfill_arguments
             // RUDRA 1.1: the region, or null so the warm server drops an earlier request's.
             fill.insert("region", options.region_json.isEmpty()
                                       ? QJsonValue(QJsonValue::Null)

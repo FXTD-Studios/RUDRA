@@ -251,10 +251,11 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
     // Warm-up on a small grey frame: the first CUDA call is the slow one.
     {
         PlanarBuffer warm(3, 64, 64, 0.5f);
-        (void)aces_v2::run_frame(warm, **view, *g1, smoothing, true, m->forbid_new_negative_y);
+        (void)aces_v2::run_frame(warm, **view, *g1, smoothing, true, m->forbid_new_negative_y, {}, {}, m->lock);
     }
     send({{"event", "ready"}, {"package", pkg.string()}, {"g1_sha256", m->g1_sha256}, {"checkpoint_sha256", m->checkpoint_sha256},
           {"runtime", runtime}, {"device", device}, {"view", (*view)->identity()}, {"luminance_guard_default", m->forbid_new_negative_y},
+          {"lock_default", m->lock.on ? m->lock_name : std::string()},
           {"release_authorized", m->release_authorized}, {"load_ms", ms_since(t0)}});
 
     Inbox in;
@@ -311,6 +312,9 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
             }
             aces_v2::CleanShadows clean;   // 4 Nov 2026: Clean shadows, off unless asked
             clean.on = req.value("clean_shadows", false);
+            // The package's lock (stage 6b, 7 Nov 2026); "lock": false turns it off for this request.
+            aces_v2::LockSettings lock = m->lock;
+            if (!req.value("lock", true)) lock.on = false;
             if (op == "preview") {
                 const fs::path src = req.at("source").get<std::string>();
                 const int frame_index = req.value("frame", 0);
@@ -342,7 +346,7 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     }
                     hdr_view = std::move(*hv);
                 }
-                auto r = aces_v2::run_frame(codes, **view, *g1, smoothing, true, guard, band, clean);
+                auto r = aces_v2::run_frame(codes, **view, *g1, smoothing, true, guard, band, clean, lock);
                 if (!r) {
                     send(err(id, r.error()));
                     continue;
@@ -473,6 +477,7 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                                                             : "1 code, include fully clipped"},
                             {"luminance_guard", guard}, {"luminance_guard_package_default", m->forbid_new_negative_y},
                             {"clean_shadows", clean.on},
+                            {"lock", lock.on ? m->lock_name : std::string()},
                             {"user_band", band.on ? json{{"tau_high", band.tau_high}, {"tau_low", band.tau_low},
                                              {"rule", "learned only at or above tau_high / at or below tau_low (brightest channel, 8-bit codes, 2-code ramp); exact analytic inverse between"}}
                                      : json(nullptr)},
@@ -521,7 +526,7 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     }
                     aces_adapt_source(f->codes, opts->source_display);   // an sRGB or 2.2 source, as BT.1886 codes
                     const auto t = Clock::now();
-                    auto r = aces_v2::run_frame(f->codes, **view, *g1, smoothing, true, guard, band, clean);
+                    auto r = aces_v2::run_frame(f->codes, **view, *g1, smoothing, true, guard, band, clean, lock);
                     if (!r) {
                         failure = r.error();
                         break;

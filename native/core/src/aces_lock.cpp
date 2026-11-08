@@ -7,7 +7,9 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdlib>
+#include <mutex>
 #include <thread>
 
 namespace rudra::aces_v2 {
@@ -39,24 +41,54 @@ void parallel_rows(int h, F&& f, int min_items = 8) {
     for (auto& th : pool) th.join();
 }
 
-// scipy.ndimage.laplace(a, mode='reflect') on an h x w plane: per axis the symmetric
-// [1, -2, 1] correlation x*-2 + (prev + next), axis 0 first, then += axis 1; the
-// border repeats the edge sample (d c b a | a b c d).
-void laplace_reflect(const double* a, double* out, int h, int w) {
-    parallel_rows(h, [&](int y) {
-        const double* row = a + std::size_t(y) * w;
-        const double* up = a + std::size_t(y > 0 ? y - 1 : 0) * w;
-        const double* dn = a + std::size_t(y < h - 1 ? y + 1 : h - 1) * w;
-        double* o = out + std::size_t(y) * w;
-        for (int x = 0; x < w; ++x) {
-            const double c = row[x];
-            const double l = row[x > 0 ? x - 1 : 0], r = row[x < w - 1 ? x + 1 : w - 1];
-            const double dy = c * -2.0 + (up[x] + dn[x]);
-            const double dx = c * -2.0 + (l + r);
-            o[x] = dy + dx;
-        }
-    });
+// scipy.ndimage.laplace(a, mode='reflect'), one row: per axis the symmetric [1, -2, 1] correlation
+// x*-2 + (prev + next), axis 0 first, then += axis 1; the border repeats the edge sample (d c b a | a b c d).
+inline void laplace_row(const double* a, double* o, int y, int h, int w) {
+    const double* row = a + std::size_t(y) * w;
+    const double* up = a + std::size_t(y > 0 ? y - 1 : 0) * w;
+    const double* dn = a + std::size_t(y < h - 1 ? y + 1 : h - 1) * w;
+    auto px = [&](int x, double l, double r) {
+        const double c = row[x];
+        const double dy = c * -2.0 + (up[x] + dn[x]);
+        const double dx = c * -2.0 + (l + r);
+        o[x] = dy + dx;
+    };
+    if (w == 1) {
+        px(0, row[0], row[0]);
+        return;
+    }
+    px(0, row[0], row[1]);
+    for (int x = 1; x < w - 1; ++x) {   // no edge tests inside: the compiler vectorises it
+        const double c = row[x];
+        const double dy = c * -2.0 + (up[x] + dn[x]);
+        const double dx = c * -2.0 + (row[x - 1] + row[x + 1]);
+        o[x] = dy + dx;
+    }
+    px(w - 1, row[w - 2], row[w - 1]);
 }
+
+// A reusable barrier for a fixed set of threads (std::barrier needs macOS 11 in Apple's libc++).
+class Barrier {
+public:
+    explicit Barrier(int n) : n_(n) {}
+    void wait() {
+        std::unique_lock<std::mutex> l(m_);
+        const long gen = gen_;
+        if (++count_ == n_) {
+            count_ = 0;
+            ++gen_;
+            cv_.notify_all();
+        } else {
+            cv_.wait(l, [&] { return gen_ != gen; });
+        }
+    }
+
+private:
+    std::mutex m_;
+    std::condition_variable cv_;
+    int n_, count_ = 0;
+    long gen_ = 0;
+};
 
 // scipy.ndimage.uniform_filter1d(size 5, mode='nearest') along one line, as scipy's C
 // does it: a running sum, divided per sample.
@@ -169,34 +201,70 @@ Dequantized dequantize_recorded(const PlanarBuffer& source, const std::vector<st
     }
     const int h = y1 - y0, w = x1 - x0;
     const std::size_t bn = std::size_t(h) * w;
+    struct Plane {
+        std::vector<double> codes, lo, hi, u, yv, l1;
+        std::vector<std::uint8_t> rec;
+    };
+    std::array<Plane, 3> P;
     for (int c = 0; c < 3; ++c) {
-        std::vector<double> codes(bn), lo(bn), hi(bn);
-        std::vector<std::uint8_t> rec(bn);
+        Plane& q = P[std::size_t(c)];
+        q.codes.resize(bn), q.lo.resize(bn), q.hi.resize(bn), q.rec.resize(bn), q.l1.resize(bn);
         for (int y = 0; y < h; ++y)
             for (int x = 0; x < w; ++x) {
                 const std::size_t k = std::size_t(y) * w + x;
-                codes[k] = static_cast<double>(source.at(c, y0 + y, x0 + x)) * 255.0;
-                rec[k] = codes[k] < 254.5;
-                lo[k] = rec[k] ? codes[k] - half_bin : 254.5;
-                hi[k] = rec[k] ? codes[k] + half_bin : 255.0 + clip_ceiling;
+                q.codes[k] = static_cast<double>(source.at(c, y0 + y, x0 + x)) * 255.0;
+                q.rec[k] = q.codes[k] < 254.5;
+                q.lo[k] = q.rec[k] ? q.codes[k] - half_bin : 254.5;
+                q.hi[k] = q.rec[k] ? q.codes[k] + half_bin : 255.0 + clip_ceiling;
             }
-        // The accelerated projected gradient on ||L u||^2 (||L|| <= 8: a 1/64 step is nonexpansive).
-        std::vector<double> u = codes, yv = codes, l1(bn), g(bn);
+        q.u = q.codes;
+        q.yv = q.codes;
+    }
+    // The accelerated projected gradient on ||L u||^2 (||L|| <= 8: a 1/64 step is nonexpansive), all
+    // three channels, on threads started once (8 Nov 2026: a thread start per step cost ~4 s a frame on
+    // Windows). Each thread owns a band of rows; per step: L(y) on its rows, a barrier, then L(L(y)) and
+    // the update on its rows, a barrier. Every pixel's arithmetic is unchanged, so any thread count
+    // gives the same result.
+    unsigned nt_threads = std::max(1u, std::thread::hardware_concurrency());
+    if (const char* e = std::getenv("RUDRA_SMOOTH_THREADS")) nt_threads = unsigned(std::max(1, std::atoi(e)));
+    const int T = int(std::min<unsigned>(nt_threads, unsigned(std::max(1, h / 4))));
+    Barrier barrier(T);
+    auto worker = [&](int ti) {
+        const int r0 = int(std::int64_t(h) * ti / T), r1 = int(std::int64_t(h) * (ti + 1) / T);
+        std::vector<double> lrow(static_cast<std::size_t>(w));
         double t = 1.0;
         for (int it = 0; it < iters; ++it) {
-            laplace_reflect(yv.data(), l1.data(), h, w);
-            laplace_reflect(l1.data(), g.data(), h, w);
+            for (auto& q : P)
+                for (int y = r0; y < r1; ++y) laplace_row(q.yv.data(), q.l1.data() + std::size_t(y) * w, y, h, w);
+            barrier.wait();
             const double nt = (1.0 + std::sqrt(1.0 + 4.0 * t * t)) / 2.0;
             const double mom = (t - 1.0) / nt;
-            parallel_rows(h, [&](int y) {
-                for (std::size_t k = std::size_t(y) * w, e = k + std::size_t(w); k < e; ++k) {
-                    const double nu = std::min(std::max(yv[k] - g[k] / 64.0, lo[k]), hi[k]);
-                    yv[k] = nu + mom * (nu - u[k]);
-                    u[k] = nu;
+            for (auto& q : P)
+                for (int y = r0; y < r1; ++y) {
+                    laplace_row(q.l1.data(), lrow.data(), y, h, w);
+                    const std::size_t k0 = std::size_t(y) * w;
+                    for (int x = 0; x < w; ++x) {
+                        const std::size_t k = k0 + std::size_t(x);
+                        const double nu = std::min(std::max(q.yv[k] - lrow[std::size_t(x)] / 64.0, q.lo[k]), q.hi[k]);
+                        q.yv[k] = nu + mom * (nu - q.u[k]);
+                        q.u[k] = nu;
+                    }
                 }
-            });
+            barrier.wait();
             t = nt;
         }
+    };
+    if (iters > 0) {
+        std::vector<std::thread> pool;
+        for (int ti = 1; ti < T; ++ti) pool.emplace_back(worker, ti);
+        worker(0);
+        for (auto& th : pool) th.join();
+    }
+    for (int c = 0; c < 3; ++c) {
+        const Plane& q = P[std::size_t(c)];
+        const auto& codes = q.codes;
+        const auto& rec = q.rec;
+        const auto& u = q.u;
         // Smooth content: mean |code Laplacian| over 5x5 (interior, fully recorded crosses only).
         std::vector<double> lapabs(bn, 0.0), okd(bn, 0.0);
         for (int y = 1; y < h - 1; ++y)
