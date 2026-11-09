@@ -22,6 +22,23 @@ Training data for both: Poly Haven HDRIs (CC0), FXTD Studios' own footage and
 renders, procedurally generated scenes, CC0 plates. No non-commercial data,
 no LTX or DiffHDR code, weights or outputs.
 
+### Which route for which footage (9 Nov 2026)
+
+RUDRA ACES 2 is the exact inverse of the ACES 2.0 SDR output transform: its
+master renders back to the SDR you delivered to the code (the lock). That is
+the right tool for an SDR that was made through ACES 2.0. On a grade made
+another way, with bright areas parked just under white (an open door, a
+window, a sky at codes 245-254, no hard clip), the same inverse puts those
+areas at 10-20 x diffuse white with the chroma ACES compressed on the way out
+re-expanded, and no trim reaches them: Peak limit and Highlight saturation
+act inside the reconstructed mask only. Measured on a shot like that against
+another tool (`reports/app_test_09V_2026-11-09/beeble.html`): the analytic
+route placed the door at 714 nits with its hue (G/R 1.27 against the source's
+1.10), the other tool at 506 nits (1.26), the learned route at 2,691 nits
+(2.41). From 1.2.1 the app says so in the Learned ACES 2.0 card and on the
+Deliver page whenever the Source panel's curve is not ACES, and points at the
+analytic route; set the curve to ACES when the SDR was an ACES 2.0 render.
+
 ## Not distributed in packages (research and Beta 2)
 
 | Model | SHA-256 | Licence | Commercial use | Status |

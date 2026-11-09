@@ -4,6 +4,7 @@
 // app/theme/studio.qss styles it the way ui/theme.css styles the element.
 
 #include <QImage>
+#include <QLabel>
 #include <QPushButton>
 #include <QToolButton>
 #include <QWidget>
@@ -13,7 +14,6 @@
 #include <vector>
 
 class QButtonGroup;
-class QLabel;
 
 namespace rudra::app {
 
@@ -56,6 +56,22 @@ private:
     QLabel* label_ = nullptr;
     QLabel* hint_ = nullptr;
     bool on_ = false;
+};
+
+// A wrapped note whose height is its text's at the width it has (9 Nov 2026). QLabel's own
+// heightForWidth can come up a line short in a pinned column, and the note was drawn under
+// its neighbours.
+class NoteLabel : public QLabel {
+public:
+    NoteLabel(const QString& text, const QString& id, const QString& role, QWidget* parent = nullptr);
+    bool hasHeightForWidth() const override { return true; }
+    int heightForWidth(int w) const override;
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
+    void setText(const QString& t);   // not virtual in QLabel: call it on a NoteLabel*
+
+protected:
+    void resizeEvent(QResizeEvent* e) override;
 };
 
 // .plabel: a panel label with an optional note on the right.

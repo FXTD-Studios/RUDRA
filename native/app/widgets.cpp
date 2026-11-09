@@ -146,6 +146,43 @@ void CheckRow::paintEvent(QPaintEvent*) {
     p.drawEllipse(QRectF(kx, track.top() + 2.0, 18.0, 18.0));
 }
 
+NoteLabel::NoteLabel(const QString& text, const QString& id, const QString& role, QWidget* parent) : QLabel(text, parent) {
+    if (!id.isEmpty()) setObjectName(id);
+    if (!role.isEmpty()) setProperty("role", role);
+    setWordWrap(true);
+    setMinimumWidth(0);
+    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+}
+
+int NoteLabel::heightForWidth(int w) const {
+    const QMargins m = contentsMargins();
+    const int inner = std::max(1, w - m.left() - m.right() - 2 * margin());
+    const QRect r = fontMetrics().boundingRect(QRect(0, 0, inner, 100000), Qt::TextWordWrap | int(alignment()), text());
+    return r.height() + m.top() + m.bottom() + 2 * margin();
+}
+
+QSize NoteLabel::sizeHint() const {
+    const int w = width() > 0 ? width() : QLabel::sizeHint().width();
+    return {QLabel::sizeHint().width(), heightForWidth(w)};
+}
+
+QSize NoteLabel::minimumSizeHint() const { return {0, width() > 0 ? heightForWidth(width()) : 0}; }
+
+void NoteLabel::setText(const QString& t) {
+    QLabel::setText(t);
+    updateGeometry();
+}
+
+void NoteLabel::resizeEvent(QResizeEvent* e) {
+    QLabel::resizeEvent(e);
+    // The height follows the width: a layout in a pinned column does not ask for it again.
+    const int h = heightForWidth(width());
+    if (h != minimumHeight()) {
+        setMinimumHeight(h);
+        updateGeometry();
+    }
+}
+
 QWidget* panel_label(const QString& text, const QString& note, const QString& note_id, QWidget* parent) {
     auto* w = new QWidget(parent);
     w->setProperty("role", "plabel");

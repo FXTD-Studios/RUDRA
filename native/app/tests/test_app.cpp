@@ -4576,6 +4576,26 @@ for line in sys.stdin:
 // timecode and reel a render carries.
 // ---------------------------------------------------------------------------
 
+// 9 Nov 2026: the steer away from the learned route on a non-ACES source follows the Source
+// panel's curve; it is only shown while the learned route runs (no engine here: hidden).
+TEST(Colorist, TheCurveSteerFollowsTheSourceCurve) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto* note = w.findChild<QLabel*>("acesCurveNote");
+    auto* dnote = w.findChild<QLabel*>("deliverCurveNote");
+    ASSERT_TRUE(note && dnote);
+    EXPECT_TRUE(w.aces_curve_mismatch());   // the default curve is BT.1886
+    EXPECT_TRUE(w.aces_curve_note().contains("BT.1886"));
+    EXPECT_TRUE(w.aces_curve_note().contains("Deliver > Source > Analytic"));
+    EXPECT_TRUE(note->isHidden() && dnote->isHidden());   // the learned route is not running
+    w.run("source-aces");
+    EXPECT_FALSE(w.aces_curve_mismatch());
+    w.run("source-hable");
+    EXPECT_TRUE(w.aces_curve_mismatch());
+    EXPECT_TRUE(w.aces_curve_note().contains("Filmic"));
+    w.run("source-bt1886");
+}
+
 #ifdef RUDRA_HAVE_STILL_DECODE
 TEST(Colorist, TheLearnedRouteIsMeasuredTrimmedAndStamped) {
 #ifdef _WIN32
@@ -4627,6 +4647,24 @@ for line in sys.stdin:
     ASSERT_TRUE(wait_for([&] { return w.measurement() != nullptr; }));
     EXPECT_GT(w.measurement()->measured.metrics.maxcll, 1000);   // 6 x diffuse white in ACEScg ~ 1200 nits
     EXPECT_FALSE(w.findChild<QWidget*>("acesTrimsCard")->isHidden());
+    // 9 Nov 2026: the source's curve is not ACES (the default is BT.1886): the card and the
+    // Deliver page steer to the analytic route; set to ACES, they stop.
+    {
+        auto* note = w.findChild<QLabel*>("acesCurveNote");
+        auto* dnote = w.findChild<QLabel*>("deliverCurveNote");
+        ASSERT_TRUE(note && dnote);
+        EXPECT_TRUE(w.aces_curve_mismatch());
+        EXPECT_FALSE(note->isHidden());
+        EXPECT_TRUE(note->text().contains("BT.1886") && note->text().contains("Analytic"));
+        w.set_deliver("source", "aces");
+        EXPECT_FALSE(dnote->isHidden());
+        w.run("source-aces");
+        EXPECT_FALSE(w.aces_curve_mismatch());
+        EXPECT_TRUE(note->isHidden());
+        EXPECT_TRUE(dnote->isHidden());
+        w.run("source-bt1886");
+        EXPECT_FALSE(note->isHidden());
+    }
     auto lines = [&](const char* op) {
         std::vector<json> out;
         std::ifstream in(log);

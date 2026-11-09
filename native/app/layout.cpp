@@ -718,6 +718,13 @@ QWidget* MainWindow::build_right_rail() {
         sd->clicked = [this](const QString& k) { set_aces_source_display(k); };
         sdv->addWidget(sd);
         tcv->addWidget(sdrow);
+        // 9 Nov 2026: the model inverts the ACES 2.0 SDR output exactly; on a grade made
+        // another way (the Source panel's curve), bright areas parked just under white come
+        // back far brighter and more saturated than they were. Say so, and point at the
+        // analytic route (sync_aces_trims sets the text and shows it).
+        auto* curve_note = new NoteLabel(aces_curve_note(), "acesCurveNote", "small", tc);
+        curve_note->hide();
+        tcv->addWidget(curve_note);
         // Reference stills: grab the frame, then compare it in the baseline's place.
         {
             auto* row = new QWidget(tc);
@@ -1107,6 +1114,11 @@ QWidget* MainWindow::build_right_rail() {
         field("Source", src, "deliverSourceRow",
               "What renders the files: the learned ACES 2.0 model (what the viewer shows when it is loaded) "
               "or the analytic reconstruction");
+        {   // 9 Nov 2026: the learned route chosen for a source whose curve is not ACES (sync_deliver)
+            auto* n = new NoteLabel(aces_curve_note(), "deliverCurveNote", "small", kc);
+            n->hide();
+            kcv->addWidget(n);
+        }
         auto* out = new Seg("deliverOutput", {{"still", "Still"}, {"sequence", "Sequence"}, {"movie", "MOV"}});
         out->clicked = [this](const QString& k) { set_deliver("output", k); };
         field("Output", out, "deliverOutputRow",

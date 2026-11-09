@@ -843,6 +843,15 @@ private:
     void sync_reference_ui();
     QTimer* aces_trim_timer_ = nullptr;   // a slider drag asks for the frame again, once it settles
     void sync_aces_trims();
+
+public:
+    // 9 Nov 2026: the learned route on a source whose curve (Source panel) is not ACES: the
+    // exact ACES 2.0 inverse over-reaches on it. The Learned ACES 2.0 card and the Deliver
+    // page say so and point at the analytic route.
+    bool aces_curve_mismatch() const;
+    QString aces_curve_note() const;
+
+private:
     // The ACES route's frame for the readouts and scopes (the viewer's convention).
     std::shared_ptr<const NetworkLinearImage> aces_model_img_, aces_base_img_;
     std::shared_ptr<const SdrImage> aces_sdr_img_;   // view revision 6
