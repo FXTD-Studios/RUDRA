@@ -176,15 +176,12 @@ Then enable `rudra_decoder` in the **Radiance HDR VAE Decode** node and pick a
 | file | size |
 |---|---:|
 | `rudra_full_decoder_flux_ema.safetensors` | 21.5 MB |
-| `rudra_full_decoder_ltx-video_ema.safetensors` | 22.0 MB |
 | `rudra_full_decoder_sdxl_ema.safetensors` | 21.4 MB |
 | `rudra_full_decoder_wan_ema.safetensors` | 21.5 MB |
 | `rudra_full_decoder_zimage_ema.safetensors` | 21.5 MB |
 | `rudra_turbo_decoder_flux_ema.safetensors` | 2.2 MB |
 | `rudra_turbo_decoder_flux2_ema.safetensors` | 2.0 MB |
 | `rudra_turbo_decoder_flux2-klein_ema.safetensors` | 3.0 MB |
-| `rudra_turbo_decoder_ltx_ema.safetensors` | 2.4 MB |
-| `rudra_turbo_decoder_ltx-video_ema.safetensors` | 3.5 MB |
 | `rudra_turbo_decoder_qwen_ema.safetensors` | 2.2 MB |
 | `rudra_turbo_decoder_sdxl_ema.safetensors` | 2.1 MB |
 | `rudra_turbo_decoder_wan_ema.safetensors` | 2.2 MB |
@@ -197,7 +194,6 @@ table covers the recommended decoder per backbone, not every file above:
 |---|---|---|---:|
 | Flux.1 | 16ch / 8× | full | 29.77 |
 | Wan | 16ch / 8× | full | 32.45 |
-| LTX | 128ch / 8× | full | 25.47 |
 | SDXL | 4ch / 8× | turbo | 33.86 |
 | Qwen-Image | 16ch / 8× | turbo | 26.67 |
 | Flux.2 Klein | 128ch / **16×** | turbo | 28.57 |
@@ -211,7 +207,7 @@ evaluation, benchmarking and personal use only
 ([`checkpoints/LICENSE`](https://github.com/fxtdstudios/RUDRA/blob/main/checkpoints/LICENSE)),
 because one of their training sources (HdM-HDR-2014 / HdM-HFR-2017) is free
 for academic use only. The code that runs them is licensed under the
-[PolyForm Noncommercial License 1.0.0](https://github.com/fxtdstudios/RUDRA/blob/main/LICENSE).
+[Apache License 2.0](https://github.com/fxtdstudios/RUDRA/blob/main/LICENSE).
 Commercial licensing: [FXTD Studios](https://fxtdstudios.com).
 
 If the SDR→HDR work is useful in yours:

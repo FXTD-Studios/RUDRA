@@ -25,7 +25,9 @@
 
 #include "aces_master.hpp"
 #include "main_window.hpp"
+#include "paths.hpp"
 #include "theme.hpp"
+#include "rudra/core/aces_v2_manifest.hpp"
 #include "rudra/core/hdr_card.hpp"
 
 #ifdef RUDRA_APP_VIEWER
@@ -541,8 +543,22 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
     const bool in_use = !w_->model_package().empty();
     // A learned ACES 2.0 download is not in the catalog (it runs through the ACES
     // engine): without this the step said "No model package found" beside it.
-    const auto aces = find_aces_packages(c.roots);
+    // The ACES dialog's own locations too (aces/package, aces/roots), as the engine searches them.
+    std::vector<std::filesystem::path> aces_roots = c.roots;
+    {
+        QSettings st;
+        if (const QString p = st.value("aces/package").toString(); !p.isEmpty()) aces_roots.push_back(to_path(p));
+        for (const QString& r : st.value("aces/roots").toStringList()) aces_roots.push_back(to_path(r));
+    }
+    const auto aces = find_aces_packages(aces_roots);
     const bool aces_only = !in_use && !pick && !aces.empty();
+    // Found is not checked: the files are hashed against the manifest before the step says so.
+    QString aces_problem;
+    if (aces_only) {
+        const auto m = aces_v2::read_manifest(aces.front().root);
+        const auto ok = m ? aces_v2::verify_files(*m) : Result<void>(m.error());
+        if (!ok) aces_problem = q(ok.error().message);
+    }
     model_ = label(in_use ? q(w_->model_package().filename().string()) + "  ·  in use"
                    : pick ? q(c.entries[*pick].label()) + "  ·  " + q(c.entries[*pick].package.filename().string())
                    : aces_only ? "Learned ACES 2.0 model  ·  " + q(aces.front().root.filename().string())
@@ -551,8 +567,11 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
     body->addWidget(model_);
     model_status_ = label(pick ? "Verified against its hash, then its golden frames run once on the backend you choose; "
                                  "a model that drifts is refused."
-                          : aces_only ? QString("Installed and checked. It loads in the background and runs the learned "
-                                                "ACES 2.0 route; Load and test is for SDR to HDR packages.")
+                          : aces_only && aces_problem.isEmpty()
+                              ? QString("Installed and checked. It loads in the background and runs the learned "
+                                        "ACES 2.0 route; Load and test is for SDR to HDR packages.")
+                          : aces_only ? "Found, but its files do not check: " + aces_problem +
+                                            " Download it again in File > Model packages…"
                                       : QString(),
                           "frModelStatus", "step-sub", right);
     body->addWidget(model_status_);
@@ -579,7 +598,7 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
 
     set_dot(this, "frDotDisplay", card_ ? "busy" : "");
     set_dot(this, "frDotBackend", !gpus ? "" : gpus->empty() ? "fail" : "done");
-    set_dot(this, "frDotModel", in_use || aces_only ? "done" : pick ? "" : "fail");
+    set_dot(this, "frDotModel", in_use || (aces_only && aces_problem.isEmpty()) ? "done" : pick ? "" : "fail");
     connect(test, &QPushButton::clicked, this, [this] { test_model(); });
     connect(start_btn, &QPushButton::clicked, this, [this] { start(); });
     connect(cpu, &QPushButton::clicked, this, [this] {

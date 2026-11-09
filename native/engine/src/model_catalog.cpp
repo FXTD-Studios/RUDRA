@@ -53,9 +53,8 @@ bool hidden(const fs::path& p) {
 }
 
 // A learned ACES 2.0 package (core/aces_v2_manifest.hpp) sits in the same models
-// folder but runs through the ACES engine, not this loader: not listed here,
-// where it read as "unreadable" beside its "Installed and checked" download row.
-bool aces_v2_package(const fs::path& dir) {
+// folder but runs through the ACES engine, not this loader.
+bool aces_v2_contract(const fs::path& dir) {
     try {
         std::ifstream in(dir / "manifest.json");
         const auto j = nlohmann::json::parse(in);
@@ -65,6 +64,11 @@ bool aces_v2_package(const fs::path& dir) {
         return false;
     }
 }
+
+// One the ACES engine can open is not listed here, where it read as "unreadable"
+// beside its "Installed and checked" download row. One it refuses stays listed,
+// with the ACES reader's reason (read_entry), so it is not silently lost.
+bool aces_v2_package(const fs::path& dir) { return aces_v2_contract(dir) && bool(aces_v2::read_manifest(dir)); }
 
 // The package folders in a root: the root itself if it is one, else each
 // folder in it with a manifest.json, by name.
@@ -86,6 +90,13 @@ CatalogEntry read_entry(const fs::path& dir, std::size_t root) {
     CatalogEntry e;
     e.package = dir;
     e.root = root;
+    if (aces_v2_contract(dir)) {
+        const auto a = aces_v2::read_manifest(dir);
+        e.problem = "A learned ACES 2.0 package this build cannot use: " +
+                    (a ? std::string("it opens in the ACES engine only") : a.error().message +
+                                                                             (a.error().detail.empty() ? "" : " " + a.error().detail));
+        return e;
+    }
     auto m = read_manifest(dir);
     if (m) e.manifest = std::move(*m);
     else e.problem = m.error().message + (m.error().detail.empty() ? "" : " " + m.error().detail);

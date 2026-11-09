@@ -20,7 +20,7 @@ reconstruction, which needs no model, is the default.
 
 Training data for both: Poly Haven HDRIs (CC0), FXTD Studios' own footage and
 renders, procedurally generated scenes, CC0 plates. No non-commercial data,
-no LTX or DiffHDR code, weights or outputs.
+and no third-party model code, weights or outputs.
 
 ### Which route for which footage (9 Nov 2026)
 
@@ -31,11 +31,9 @@ another way, with bright areas parked just under white (an open door, a
 window, a sky at codes 245-254, no hard clip), the same inverse puts those
 areas at 10-20 x diffuse white with the chroma ACES compressed on the way out
 re-expanded, and no trim reaches them: Peak limit and Highlight saturation
-act inside the reconstructed mask only. Measured on a shot like that against
-another tool (`reports/app_test_09V_2026-11-09/beeble.html`): the analytic
-route placed the door at 714 nits with its hue (G/R 1.27 against the source's
-1.10), the other tool at 506 nits (1.26), the learned route at 2,691 nits
-(2.41). From 1.2.1 the app says so in the Learned ACES 2.0 card and on the
+act inside the reconstructed mask only. Measured on a shot like that: the
+analytic route placed the door at 714 nits with its hue (G/R 1.27 against the
+source's 1.10), the learned route at 2,691 nits (2.41). From 1.2.1 the app says so in the Learned ACES 2.0 card and on the
 Deliver page whenever the Source panel's curve is not ACES, and points at the
 analytic route; set the curve to ACES when the SDR was an ACES 2.0 render.
 
@@ -64,17 +62,16 @@ names its checkpoint. It was replaced on Hugging Face by 2.0 with RUDRA 1.2.0
 `training/aces_partial_tighten.py`, native `core/aces_lock.hpp`) at strength
 0.5 toward the dequantized source, and the appearance guard.
 
-- **Crew holdout, run once as registered** (7 Nov 2026,
-  `configs/experiments/holdout_crew_eval_20261107.json`,
-  `docs/competitive/RESULT_CREW_HOLDOUT_2026_11_07.md`): passes every gate.
+- **Held-out footage test, run once as registered** (7 Nov 2026, on
+  production footage the model never saw in training): passes every gate.
   0 EV RMS 0.311 code against a limit of 0.342 (analytic inverse 0.242 + 0.1);
   −3 EV, +3 EV and highlight colour better than the analytic inverse; no new
   negative luminance; no pixel more than 1 code off.
 - **What it does not show:** at the delivered exposure it is *worse* than the
   plain inverse in every case (56 of 56), by less than a tenth of a code. The
   claim is "within 0.1 code RMS of the plain ACES 2.0 inverse at the delivered
-  exposure", never "better". One production (The Crew), one camera (ARRI
-  ALEXA LogC3), single frames.
+  exposure", never "better". One production, one camera (ARRI ALEXA
+  LogC3), single frames.
 - **Native lock:** bit-exact with the Python oracle on its golden
   (`native/tests/test_aces_lock.cpp`); on real frames through the real view,
   `native/tools/aces_v2_parity` with `--lock`.
