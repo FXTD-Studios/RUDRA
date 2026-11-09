@@ -69,11 +69,11 @@ void MainWindow::set_aces_trims(const aces_v2::AcesTrims& t) {
     aces_trim_timer_->start();
 }
 
-// 9 Nov 2026 (09V against Beeble): the learned model is the exact inverse of the ACES 2.0 SDR
+// 9 Nov 2026: the learned model is the exact inverse of the ACES 2.0 SDR
 // output. On a grade made another way, codes parked just under white (an open door, a window,
 // a sky at 245-254 with no hard clip) come back at 10-20 x diffuse white with the chroma ACES
 // compressed re-expanded, and no trim reaches them (Peak limit and Highlight saturation act
-// inside the reconstructed mask only). The analytic route places them where other tools do.
+// inside the reconstructed mask only). The analytic route keeps them in range, hue held.
 // The Source panel's curve is the user's statement of how the SDR was made: anything but ACES
 // is the steer.
 bool MainWindow::aces_curve_mismatch() const {

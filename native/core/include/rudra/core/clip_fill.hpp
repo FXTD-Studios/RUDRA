@@ -18,16 +18,14 @@
 //   3. Fully clipped regions, small (practical lamps, the sun, speculars). The
 //      same fill with a peak-and-falloff profile: the peak from the region's
 //      size and the slope of the glow around it, at most source_max_nits.
-//   4. Near-clip detail (9 Nov 2026, measured against Beeble SwitchHDR on 09V,
-//      reports/app_test_09V_2026-11-09/beeble_how.html). An SDR's shoulder parks
+//   4. Near-clip detail (9 Nov 2026). An SDR's shoulder parks
 //      a bright sky, a window, an open door at codes 230-254 with its structure
 //      flattened to a few codes; a display renders it as a flat wall. The
 //      structure that survives (the high-pass of the codes' log luminance,
 //      Gaussian sigma detail_sigma_px) is amplified by detail_gain inside a
 //      luma ramp (detail_from .. detail_to), the same on every channel (hue
 //      held), below a noise floor (detail_floor_stops) left alone. 1.0 is off:
-//      bit-identical. The other tool's sky was the source's own structure at
-//      about 1.8 x (correlation 0.82); 1.5-2.0 is the range to judge.
+//      bit-identical. 1.5-2.0 is the range to judge.
 //
 // A ClipOverride sets one region's peak in nits (the artist's click). The
 // result reaches the composite as Fields (clip_fill_fields), so the CPU

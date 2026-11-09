@@ -153,13 +153,31 @@ TEST(ModelCatalog, ALearnedAces2PackageIsLeftToTheAcesEngine) {
     // 9 Nov 2026 feedback: the downloaded RUDRA ACES 2 read as "unreadable" here.
     const fs::path base = fresh("aces-v2");
     write_package(base / "sdr_model", "sdr_model", "s.pt", stamp(1));
+    // A manifest the ACES reader accepts (app tests' aces_manifest).
+    const json aces{{"contract", "rudra_native_aces_v2_staged"}, {"contract_major", 2},
+                    {"model_contract", {{"id", "aces2_test"}, {"full_context", "independent_pixel_rms"}, {"ocio_version", "2.5.2"},
+                                        {"config", "cg-config-v4.0.0_aces-v2.0_ocio-v2.5"},
+                                        {"view", "ACES 2.0 - SDR 100 nits (Rec.709)"}, {"display", "Rec.1886 Rec.709 - Display"}}},
+                    {"checkpoint_sha256", "f73f14c7e74d5bb54d0cbf949b94365f"}, {"g1_sha256", "dd10d83287efa1ab"},
+                    {"g1_file", "rudra_g1.ts"}, {"onnx_file", nullptr},
+                    {"clipped_smoothing", {{"name", "hybrid64"}, {"sigma", 64.0}, {"ramp", 1.0}, {"start", 0.0}, {"mode", "hybrid"}}},
+                    {"appearance_constraint", {{"max_display_error_codes", 1}, {"include_fully_clipped", true}, {"forbid_new_negative_y", true}}},
+                    {"parity_pass", true}, {"release_authorized", false}};
     fs::create_directories(base / "RUDRA_ACES_2");
-    std::ofstream(base / "RUDRA_ACES_2" / "manifest.json")
-        << R"({"name": "RUDRA_ACES_2_w4", "contract": "rudra_native_aces_v2_staged", "contract_major": 3})";
+    std::ofstream(base / "RUDRA_ACES_2" / "manifest.json") << aces.dump();
     const Catalog cat = scan_packages({base});
     ASSERT_EQ(cat.entries.size(), 1u);
     EXPECT_EQ(cat.entries[0].package.filename(), "sdr_model");
     EXPECT_TRUE(scan_packages({base / "RUDRA_ACES_2"}).entries.empty());   // nor as a root of its own
+    // One the ACES reader refuses stays listed, with its reason (not silently lost).
+    fs::create_directories(base / "ACES_BROKEN");
+    std::ofstream(base / "ACES_BROKEN" / "manifest.json") << R"({"contract": "rudra_native_aces_v2_staged", "contract_major": 3})";
+    const Catalog withBroken = scan_packages({base});
+    ASSERT_EQ(withBroken.entries.size(), 2u);
+    EXPECT_EQ(withBroken.entries[0].package.filename(), "ACES_BROKEN");
+    EXPECT_FALSE(withBroken.entries[0].manifest);
+    EXPECT_EQ(withBroken.entries[0].problem.rfind("A learned ACES 2.0 package this build cannot use: ", 0), 0u)
+        << withBroken.entries[0].problem;
     fs::remove_all(base);
 }
 

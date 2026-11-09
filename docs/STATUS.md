@@ -80,7 +80,7 @@
 > |---|---|---|---|
 > | R1 | the inverse path, every bench | its own PU21/CVVDP on `aces`, `oog`, `mix`, `real` published as the floor | measured: 49.00 / 9.77, 26.44 / 8.08, 25.54 / 8.11, 21.69 / 6.42 |
 > | R2 | the artist controls (roadmap 3.1 to 3.4) | each control under one frame of latency at 4K, scripted exit passing on Windows | met: 1.08-1.33 ms at 4K on four backends, gated (7 Oct); phase 3 exit and the by-hand pass (9 Oct); re-run on the release candidate |
-> | R3 | against the market (roadmap 2.2, 2.3) | the frozen set through every external tool, a table published whatever it says | open-source half in (12-13 Oct, docs/RESULTS.md): on real SDR (Meridian, HDRTV1K) Source = BT.1886, now the default, is +14.0 / +4.2 dB and +2.3 / +2.1 JOD over the ACES inverse and level with BT.2408; v8 level with the inverse, HDRTVDM below; the commercial tools are run by hand (archive/docs/RELEASE_V1.md) |
+> | R3 | external comparison (roadmap 2.2, 2.3) | the frozen set through every external method, a table published whatever it says | open-source half in (12-13 Oct, docs/RESULTS.md): on real SDR (Meridian, HDRTV1K) Source = BT.1886, now the default, is +14.0 / +4.2 dB and +2.3 / +2.1 JOD over the ACES inverse and level with BT.2408; v8 level with the inverse, HDRTVDM below |
 > | R4 | the native app's open items (README, "Still open") | macOS inference and HDR output, signing, by-hand workflow on Windows, budgets per backend | open |
 > | R5 | optional model | the optional model listed with its measured deltas vs the inverse; any model that beats the inverse on `real` with CI excluding zero may join it | `sdr2hdr_image_v8` listed (9 Oct; shadow_v1 retired) |
 >
@@ -102,7 +102,7 @@
 > | 4 | clipped highlights | `measure_clipping.py --score`, 0/+1/+2 EV | error in stops on clipped pixels below the inverse's, CI excluding zero | not run |
 > | 5 | video | v4b/v4c test clips, clip-mode CVVDP + flicker | clip JOD ≥ per-frame JOD on every test clip (N5) | flicker measured on 5 real clips, 11 Oct (docs/TEMPORAL_RESULTS.md): the holds cut the model's fire flicker 72-80 %; clip-mode CVVDP against the masters, analytic (12 Oct): held >= each frame on 4 clips, level on the 5th (-0.003 JOD); v8 flickers a third to a half as much as shadow_v1 |
 > | 6 | commercial weights | `oog`, `mix` | `rudra-studio` within 0.3 dB / 0.03 JOD of the research model (N7) | not trained |
-> | 7 | against the market | N4 set: external SDR→HDR baselines | a table published whatever it says | not run |
+> | 7 | external comparison | N4 set: external SDR→HDR baselines | a table published whatever it says | not run |
 >
 > Rows 1, 2 and 6 were scored by `training/cp7_verdicts.py`. No model passed row 1 or 2.
 
@@ -1237,13 +1237,12 @@ Distilled `RadianceTurbo/FullDecoder` (`fast_vae.py`), trained by
 |---|---|---|---|---|
 | Flux.1 | **full** | 29.77 | 26k | 12,281 |
 | Wan | **full** | 32.45 | 16k | 13,227 |
-| LTX (2.3, **32× fixed**) | **full** | 25.47 | 40k | 13,227 |
 | SDXL | **turbo** | 33.86 | 18k | 963 |
 | Qwen-Image | **turbo** | 26.67 | 20k | 963 |
 | Flux.2 Klein (128ch/16×) | **turbo** | 28.57 | 18k | 963 |
 | Z-Image | use Flux decoder | — | — | (Flux VAE) |
 
-Turbo also exists for flux/wan/ltx/sdxl; the table lists the *best* per backbone.
+Turbo also exists for flux/wan/sdxl; the table lists the *best* per backbone.
 Notes: SDXL/Qwen/Klein are on 963 pairs (data-starved) — regenerate multi-crop pairs to
 lift them. Full is slow on 64×64-latent backbones (decodes at 512×512). Always deploy the
 `*_decoder_ema_best.safetensors`.
@@ -1254,7 +1253,7 @@ lift them. Full is slow on 64×64-latent backbones (decodes at 512×512). Always
 
 | Paper stage | Status | Measured value | Blocker / next |
 |---|---|---|---|
-| **Stage 1** — RUDRA-Lite descriptor + FiLM decoder (§3.6) | ✅ flux/wan/ltx @ 50k | ColorVideoVDP **JOD 9.0–9.2**, PSNR_tm ~25–26, EV-error ~0.05 stops, HRA ~0.18 | done |
+| **Stage 1** — RUDRA-Lite descriptor + FiLM decoder (§3.6) | ✅ flux/wan @ 50k | ColorVideoVDP **JOD 9.0–9.2**, PSNR_tm ~25–26, EV-error ~0.05 stops, HRA ~0.18 | done |
 | **Stage 2** — DR-gated LoRA (RUDRA-Lite conditioning) | ⚠️ partial (400 steps) | — | Flux-16GB OOM; runs on SDXL or 256px pairs |
 | **Stage 3** — DRE transformer + cross-attention injection (§3.4–3.5, *core thesis*) | ❌ not trained (dryrun only) | — | run on **SDXL** (`research_sdxl.py --phase stage3`) |
 | §7.1 component ablation | ❌ TBD | — | derived from Stage 1→3 runs |

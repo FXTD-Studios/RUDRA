@@ -1,6 +1,6 @@
 #pragma once
 // The machine's GPUs, found without a model (the first-run check, 9 Nov 2026):
-// DXGI's hardware adapters on Windows, the Metal GPU every supported Mac has.
+// DXGI's hardware adapters on Windows, the chip's GPU on a Mac (named by the chip).
 
 #include <optional>
 #include <string>
@@ -13,7 +13,7 @@ struct GpuAdapter {
     double vram_gb = 0.0;  // dedicated memory; 0 when none is reported (integrated)
 };
 
-// nullopt: not checked on this system (Linux). Software rasterizers are left out.
+// nullopt: not checked (Linux, or DXGI could not start). Software rasterizers are left out.
 std::optional<std::vector<GpuAdapter>> gpu_adapters();
 
 }  // namespace rudra

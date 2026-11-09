@@ -164,6 +164,7 @@ MainWindow::MainWindow(bool with_viewer, bool headroom_capable)
         if (!st.value("aces/monitorHdr1000Default", false).toBool()) {
             st.setValue("aces/monitorHdr1000Default", true);
             aces_monitor_ = "hdr1000";
+            st.setValue("aces/monitor", aces_monitor_);   // saved: the next start must not restore the old one
         }
         aces_source_display_ = st.value("aces/sourceDisplay", "bt1886").toString();
         // HDR10's mastering display: P3-D65 unless the colorist chose Rec.2020 (Deliver > Export).

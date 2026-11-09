@@ -543,7 +543,7 @@ Result<FrameResult> run_frame(const PlanarBuffer& source, const AcesView& view, 
     };
     FrameResult out;
     // The highlight ceiling (3 Nov 2026): nothing brighter than the inverse of display
-    // white. Near-white tinted codes (253,255,255) invert up to 7x past it (09V: 969x,
+    // white. Near-white tinted codes (253,255,255) invert up to 7x past it (measured: 969x,
     // about 197,000 nits); the master and the baseline the constraint falls back to both
     // stop there, hue kept.
     const float ceiling = inverse_white_luma(view);

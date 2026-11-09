@@ -55,6 +55,7 @@
 #include "paths.hpp"
 #include "json_lines.hpp"
 #include "rudra/core/hdr10.hpp"
+#include "rudra/platform/hash.hpp"
 #include "scope_widgets.hpp"
 #include "genfill_review.hpp"
 #include "export_sheet.hpp"
@@ -3576,16 +3577,34 @@ TEST(AcesMaster, TheFirstRunNamesAnInstalledAcesModel) {
     // "No model package found", and the Model packages list called it unreadable.
     QSettings().clear();
     const auto root = aces_tmp("first-run");
-    write_text(root / "RUDRA_ACES_2" / "manifest.json", aces_manifest(true, true).dump());
-    app::MainWindow w(false);
-    w.add_model_root(root);
-    w.rescan_models();
-    for (const auto& e : w.catalog().entries) EXPECT_NE(e.package.filename(), "RUDRA_ACES_2");
-    app::FirstRun fr(&w, false);
-    EXPECT_TRUE(fr.findChild<QLabel*>("frModel")->text().startsWith("Learned ACES 2.0 model"))
-        << fr.findChild<QLabel*>("frModel")->text().toStdString();
-    EXPECT_TRUE(fr.findChild<QLabel*>("frModelStatus")->text().startsWith("Installed and checked"));
-    EXPECT_EQ(fr.findChild<QLabel*>("frDotModel")->property("state").toString(), "done");
+    const auto pkg = root / "RUDRA_ACES_2";
+    write_text(pkg / "rudra_g1.ts", "the model");
+    json m = aces_manifest(true, true);
+    m["g1_sha256"] = *sha256_file(pkg / "rudra_g1.ts");
+    write_text(pkg / "manifest.json", m.dump());
+    {
+        app::MainWindow w(false);
+        w.add_model_root(root);
+        w.rescan_models();
+        for (const auto& e : w.catalog().entries) EXPECT_NE(e.package.filename(), "RUDRA_ACES_2");
+        app::FirstRun fr(&w, false);
+        EXPECT_TRUE(fr.findChild<QLabel*>("frModel")->text().startsWith("Learned ACES 2.0 model"))
+            << fr.findChild<QLabel*>("frModel")->text().toStdString();
+        EXPECT_TRUE(fr.findChild<QLabel*>("frModelStatus")->text().startsWith("Installed and checked"));
+        EXPECT_EQ(fr.findChild<QLabel*>("frDotModel")->property("state").toString(), "done");
+    }
+    // Found only where the ACES dialog saved it, and damaged: found, not checked.
+    QSettings().clear();
+    QSettings().setValue("aces/package", QString::fromStdU16String(pkg.u16string()));
+    write_text(pkg / "rudra_g1.ts", "changed");
+    {
+        app::MainWindow w(false);
+        app::FirstRun fr(&w, false);
+        EXPECT_TRUE(fr.findChild<QLabel*>("frModel")->text().startsWith("Learned ACES 2.0 model"));
+        EXPECT_TRUE(fr.findChild<QLabel*>("frModelStatus")->text().startsWith("Found, but its files do not check"))
+            << fr.findChild<QLabel*>("frModelStatus")->text().toStdString();
+        EXPECT_EQ(fr.findChild<QLabel*>("frDotModel")->property("state").toString(), "fail");
+    }
     QSettings().clear();
 }
 

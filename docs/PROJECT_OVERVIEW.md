@@ -88,7 +88,7 @@ and a generative fill that is marked pixel by pixel.
 **Scope.** RUDRA is one thing: SDR to HDR for any image or video, whatever made
 it, whether a camera, a phone, an archive or any generative model. It works on
 pixels, not on a model's latent space. The per-backbone VAE decoders (Flux,
-Wan, LTX, SDXL, Qwen, Klein) and the latent-conditioning research pipeline are
+Wan, SDXL, Qwen, Klein) and the latent-conditioning research pipeline are
 **paused** as of 23 Sep 2026. Their code stays in `rudra/` and `training/` and
 their results in [`STATUS.md`](STATUS.md), but they are not part of the product
 and are not maintained.
@@ -237,7 +237,7 @@ scripts\GENFILL.ps1 -Fill -Master <EXR folder>
 ```
 
 The first LoRA (29 Oct 2026) trained on 4,972 clips from 941 scenes (Poly
-Haven HDRIs, CC0, and FXTD Studios' own footage; no DiffHDR, LTX, Netflix or
+Haven HDRIs, CC0, and FXTD Studios' own footage; no third-party model outputs, no Netflix or
 non-commercial data; every evaluation scene excluded); its validation loss fell
 from 0.074 to 0.030. v1, v1.1 and v2, which asked the model for
 brightness too, failed their registered gates. **v3 (30 Oct 2026), which
@@ -268,7 +268,7 @@ output.
 
 ## Results
 
-### Against the market, on real SDR (R3, 12 to 13 Oct 2026)
+### On real SDR (R3, 12 to 13 Oct 2026)
 
 Real SDR video with its own graded HDR: Netflix's *Meridian* (287 held-out
 frames, 1080p) and the HDRTV1K test set (117 frames). Paired against the old
@@ -285,8 +285,7 @@ default (the ACES inverse), 95 % bootstrap intervals; PU21-PSNR and CVVDP.
 
 BT.1886 is level with the best open mapping on both sets and is the default
 for new sessions; CG and games made with a known tone curve still want ACES,
-filmic or AgX in the picker. The commercial tools (Resolve, Topaz, RTX Video
-HDR) are run by hand before 1.0 and published whatever they say.
+filmic or AgX in the picker.
 
 ### The model's bench (rendered SDR)
 

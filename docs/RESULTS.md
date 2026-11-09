@@ -233,7 +233,7 @@ reports mean and spread everywhere.
 
 ---
 
-## Against the market (release row R3, 12 and 13 Oct 2026)
+## On real SDR (release row R3, 12 and 13 Oct 2026)
 
 Two sets of real SDR video with their graded HDR, and the rendered frames of the frozen comparison set:
 
@@ -278,9 +278,7 @@ accurate inside clipped pixels; on the clip frames it loses 3.09 dB [-4.25, -2.0
 stops less accurate there, all of it on the four fireworks clips (-4.9 to -7.7 dB each; the four fireplace
 clips are unchanged). It was measured over the ACES inverse; over BT.1886 it has not been measured yet.
 
-Not in this table yet: the commercial tools (Resolve, Topaz, NVIDIA RTX Video HDR and others), which are run by
-hand on `bench/compare_v1/input709` and imported (`compare_market.py import`), and HDRTVDM's other two
-weights. HDRTVDM ran in fp32 on a CPU (the authors run fp16 on a GPU; outputs within 80 of 65535 codes).
+Not in this table yet: HDRTVDM's other two weights. HDRTVDM ran in fp32 on a CPU (the authors run fp16 on a GPU; outputs within 80 of 65535 codes).
 Per-part tables: `reports/compare_v1/compare.md`, `reports/hdrtv1k_720p/compare.md`.
 
 ## Reproducing the numbers

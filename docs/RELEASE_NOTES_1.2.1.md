@@ -17,7 +17,7 @@ Download it only from this GitHub page; the checksums are listed with each relea
 ## The first start
 
 - **The GPU is found without a model.** *Welcome to RUDRA* now names your graphics card
-  and its memory in the Acceleration step as soon as it opens, and says which backends
+  (and on Windows its memory) in the Acceleration step as soon as it opens, and says which backends
   will run a model on it. Before, the step stayed blank until a model was loaded and
   tested, so it looked as if no GPU had been detected.
 - **No licence to accept.** The Windows installer shows the licence for information only;

@@ -407,10 +407,10 @@ TEST(AcesV2Smoothing, ThreadedIsBitIdenticalToOneThread) {
     EXPECT_GT(changed, 1000u);
 }
 
-// ---- the highlight ceiling and the view's own limit (3 Nov 2026, 09V) ----
+// ---- the highlight ceiling and the view's own limit (3 Nov 2026) ----
 namespace {
 // As ACES 2.0 near display white: a slightly tinted near-white code inverts far past
-// pure white (09V: 253,255,255 -> 296x, 255,255,253 -> 969x, white -> 128x), and the
+// pure white (measured: 253,255,255 -> 296x, 255,255,253 -> 969x, white -> 128x), and the
 // forward view sends such values back to white, so the round trip is codes off.
 class NearWhiteView final : public AcesView {
 public:
@@ -446,7 +446,7 @@ TEST(AcesV2Ceiling, NearWhiteCodesStopAtTheInverseOfWhite) {
     PlanarBuffer s = test_frame();
     for (int y = 30; y < 34; ++y)
         for (int x = 30; x < 40; ++x) {
-            s.at(0, y, x) = 253.0f / 255.0f;   // the 09V doorway: 253, 255, 255
+            s.at(0, y, x) = 253.0f / 255.0f;   // a near-white doorway: 253, 255, 255
             s.at(1, y, x) = 1.0f;
             s.at(2, y, x) = 1.0f;
         }

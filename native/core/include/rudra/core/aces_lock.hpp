@@ -2,8 +2,8 @@
 // The lock (stage 6b, 7 Nov 2026): RUDRA ACES 2's 0 EV fix, applied after
 // constrain_colour_v2 on its output. Executable spec: training/aces_partial_tighten.py
 // (lock_observed with target='dequant', dequantize_recorded, the appearance guard).
-// Registered arm lock_dqs050g (lockguard_fresh_20261107), the arm the Crew holdout
-// passed (docs/competitive/RESULT_CREW_HOLDOUT_2026_11_07.md).
+// Registered arm lock_dqs050g (lockguard_fresh_20261107), the arm that passed the
+// held-out footage test (docs/MODELS.md, "Evidence: RUDRA ACES 2").
 //
 // In a partially clipped pixel the clipped channel(s) show 255 whatever the model
 // rebuilt; the 0 EV error is all in the channels the camera recorded. Per pixel the
