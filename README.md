@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.fxtdstudios.com/rudra#downloads"><img alt="Download RUDRA" src="https://img.shields.io/badge/Download-RUDRA-111111?style=for-the-badge"></a>
+  <a href="https://www.fxtdstudios.com/rudra"><img alt="RUDRA on fxtdstudios.com" src="https://img.shields.io/badge/RUDRA-fxtdstudios.com-111111?style=for-the-badge"></a>
 </p>
 
 <p align="center">
@@ -52,7 +52,7 @@ invent.
 
 ## Download
 
-**[Download RUDRA from fxtdstudios.com](https://www.fxtdstudios.com/rudra#downloads)**:
+**[Download RUDRA from fxtdstudios.com](https://www.fxtdstudios.com/rudra)**:
 Windows 10 / 11 (x64, installer or portable ZIP) and macOS (Apple silicon, DMG).
 
 Checksums and release notes are on the
