@@ -22,6 +22,19 @@ def _codes(view, rgb: np.ndarray) -> np.ndarray:
     return np.rint(np.clip(view.forward(np.ascontiguousarray(rgb, np.float32)), 0.0, 1.0) * 255.0).astype(np.int16)
 
 
+def plain_blend(master: np.ndarray, fill: np.ndarray, weight: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """out = master + weight * (fill - master): the region re-render (v4, 9 Nov 2026). Inside the
+    mask the SDR codes are NOT kept; outside it (weight 0) every pixel is the master's, bit for bit."""
+    if master.shape != fill.shape or master.shape[:2] != weight.shape:
+        raise ValueError('master, fill and weight must agree in size')
+    alpha = np.clip(weight.astype(np.float32), 0.0, 1.0)
+    out = np.array(master, np.float32, copy=True)
+    idx = np.nonzero(alpha > 0)
+    if len(idx[0]):
+        out[idx] = master[idx] + alpha[idx][:, None] * (fill[idx].astype(np.float32) - master[idx])
+    return out, alpha
+
+
 def r_safe_blend(master: np.ndarray, fill: np.ndarray, weight: np.ndarray, view,
                  iterations: int = 6) -> tuple[np.ndarray, np.ndarray]:
     """master, fill (H, W, 3) ACEScg; weight (H, W) in [0, 1] -> (out (H, W, 3), alpha (H, W))."""

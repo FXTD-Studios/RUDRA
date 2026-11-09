@@ -1,5 +1,29 @@
-# RUDRA — current development handoff
+﻿# RUDRA - current development handoff
 
+**Current - 09V vs Beeble follow-up: recommendations 1-4 done or measured, AI fill v4 training (9 Nov):**
+
+Merged to main: #62 (learned route steer when the Source curve is not ACES; CI
+shipped-model hashes), #63 (learned route opens on HDR 1000; AI fill preview
+through the monitor via a new aces-v2-serve 'monitor' op; Highlight detail gain
+as stage 4 of the clip fill, highlight_detail in request/grade/project/sidecar,
+default 1.0 = bit-identical), #64 (tools/compare_hdr_renders.py, the head-to-head
+harness with bright-band level/hue/structure). Open: #65 (AI fill v4 region
+re-render: recipe v4 clips, rudra.genfill.run --region-rerender --source
+--condition, composite.plain_blend, registration, scripts/GENFILL_V4.ps1).
+Evidence: reports/app_test_09V_2026-11-09/FINDINGS.md sections 4-6 and its pages.
+Measured: 09V's door interior is flat in the source at 8 and 10 bit; Beeble's sea
+and hills are generated (corr 0.01 with the source). The 2.0 model departs from
+the ACES inverse by ~1 % inside its mask on 07V, so a non-ACES learned mode has
+nothing to carry: not built. The v4 LoRA run (build then 6000 steps, <= 14 h)
+started 9 Nov night: G:\rudra_training\research_genfill_v4_20261109.run.log,
+out G:\rudra_training\research_genfill_v4_20261109. Next: when it finishes, the
+gates of configs/experiments/research_genfill_v4_20261109.json on 09V through
+tools/compare_hdr_renders.py against D:\Peeple\beebl (Beeble's EXRs); then the
+app toggle only on PASS. Open decisions for Ahmed: temporal tail on codes >= 250
+(breaks the exact round trip there), the analytic default curve (BT.1886 door
+243 nits flat vs ACES 714 nits with hue on 09V), 10-bit as first class.
+Do not switch git branches while the clip build's render stage runs (its worker
+processes re-import tools/build_genfill_clips.py from the working tree).
 **Current - native/research video decode mismatch measured (25 Oct):**
 
 CPU audit tools/audit_aces_video_decoder_difference.py compares existing native
@@ -208,7 +232,7 @@ not established. See production/NATIVE_ACES_CUDA_LOADER_2026-10-25.md.
 1600 latest completed; all3grading gates fail. Goal incomplete; no promotion.
 
 
-**Current —1600 complete,6400 controlled run LIVE (25 Oct):**
+**Current â€”1600 complete,6400 controlled run LIVE (25 Oct):**
 1600 fixedTRAIN0EV1.705618->1.167375 vsanalytic.080820; aggregatephoto/allEV
 improve, motion-3 regresses. DEVall3grades still fail;video/preservation pass.
 Aggregate partial_duration1600_comparison_20261025/comparison.json saved.
@@ -217,7 +241,7 @@ schedule exact; fullhistory required at end. No restart on timeout. Old17987 don
 See production/PARTIAL_DURATION1600_FINAL_2026-10-25.md for settings/next action.
 Goal incomplete; no promotion/default/threshold change.
 
-**Current — duration1600 video/preservation PASS; TRAIN fit LIVE (25 Oct):**
+**Current â€” duration1600 video/preservation PASS; TRAIN fit LIVE (25 Oct):**
 Hunyuan48 all8checks pass,flicker .01378024EV. Independent24frame raw/smoothed/
 constrained full/outside-highlight preservation and frozen weights exact.
 Coordinator17987 now train_fit; do not restart. All3grading failures remain.
@@ -226,7 +250,7 @@ Next finish fit, run tools/summarize_partial_duration.py, then choose next model
 experiment from evidence. See production/PARTIAL_DURATION1600_INTERIM_2026-10-25.md.
 Goal incomplete; no promotion/default/threshold change.
 
-**Current — duration1600 paired/grade complete; video evaluation LIVE (25 Oct):**
+**Current â€” duration1600 paired/grade complete; video evaluation LIVE (25 Oct):**
 NewH .251418,oldH .381858,motion .008860 pass. Legacy .778691 worse thananalytic.
 Grades-3/0/+3=18.763108/.073843/.004582 improve400 but ALL original grade gates
 fail. Correct grading input hashes verified. Coordinator17987 live in video,
@@ -234,7 +258,7 @@ then preservation/TRAINfit; no restart. Run tools/summarize_partial_duration.py
 once complete. See production/PARTIAL_DURATION1600_INTERIM_2026-10-25.md.
 Goal incomplete; no promotion/threshold change.
 
-**Current — native masters verified;1600 training DONE, evaluation LIVE (25 Oct):**
+**Current â€” native masters verified;1600 training DONE, evaluation LIVE (25 Oct):**
 Training97117 exit0; six identity checks pass including complete400history.
 Coordinator17987 live in paired evaluation; queued grade paths corrected before
 grading (Windows separator bug), prior registration retained; verify input hashes.
@@ -243,7 +267,7 @@ DML within tolerance. Derived FFV1 PQ16 decodes exactly. Research weights only.
 Native/audit jobs terminal; see production/NATIVE_ACES_MASTER_VERIFY_2026-10-25.md.
 Next poll17987 and inspect full gates/TRAINfit. Goal incomplete; no promotion.
 
-**Current — Windows native build/tests/parity PASS; training LIVE (25 Oct):**
+**Current â€” Windows native build/tests/parity PASS; training LIVE (25 Oct):**
 Removed obsolete /permissive override; original19.51 builds all4targets.
 394/394native tests pass;2real720p frames C++/Python bit-exact all stages. ONNX
 CPU export passes existing tolerances; guarded600 research package only, no
@@ -252,7 +276,7 @@ Training97117 last1475/1600, coordinator17987 waiting PID29648. Poll existing
 handles. Next duration full evaluation, native master/DirectML checks. See
 production/NATIVE_ACES_WINDOWS_PARITY_2026-10-25.md. Goal incomplete.
 
-**Current — native compiler fallback LIVE; training LIVE (25 Oct):**
+**Current â€” native compiler fallback LIVE; training LIVE (25 Oct):**
 Build63214 failed C2139 in Torch headers with MSVC19.51. Minimal header compile
 passes installed19.44; no dependency edits. Ninja configure succeeds using
 scripts/BUILD_NATIVE_ACES_V2_MSVC1444.cmd; build39003 live,last15/169 in separate
@@ -260,7 +284,7 @@ build/native_aces_v2_msvc1444 (no Release subfolder). Training97117 last725/1600
 coordinator17987 waits PID29648. Poll existing handles. Runtime tests pending.
 See production/NATIVE_ACES_COMPILER_2026-10-25.md. No promotion; goal incomplete.
 
-**Current — native build configured and LIVE; training LIVE (25 Oct):**
+**Current â€” native build configured and LIVE; training LIVE (25 Oct):**
 Found existing pinned OCIO2.5.2 under C:/vcpkg/installed/x64-windows. Configuration
 with LibTorch/OpenCV/ORT succeeds. Build session63214 compiling Release tests,
 CLI and parity tools,parallel2. No runtime pass yet. Training97117 last525/1600;
@@ -268,7 +292,7 @@ coordinator17987 still waiting on PID29648. Poll existing handles, do not restar
 See production/NATIVE_ACES_BUILD_2026-10-25.md and duration operational record.
 Goal incomplete; no promotion. Earlier missing-OCIO concern now resolved.
 
-**Current — native preflight repaired; duration1600 still LIVE (25 Oct):**
+**Current â€” native preflight repaired; duration1600 still LIVE (25 Oct):**
 Training session97117 last325/1600; coordinator17987 waiting on process29648.
 Do not restart. Fixed Windows Torch root resolution (three parent levels->two),
 verified real headers/DLL; full native suite failures now stop gate. PowerShell
@@ -276,7 +300,7 @@ syntax passes. Full native qualification still pending pinned OCIO C++ setup.
 See production/NATIVE_ACES_PREFLIGHT_2026-10-25.md; duration operational details
 remain in production/PARTIAL_DURATION1600_2026-10-25.md. Goal incomplete.
 
-**Current — duration1600 training and verification coordinator LIVE (25 Oct):**
+**Current â€” duration1600 training and verification coordinator LIVE (25 Oct):**
 Training session97117/PID29648, last150/1600; coordinator session17987 waits on
 actual process handle. Pools/first400schedule exact; full history check pending.
 Coordinator then requires identity and runs all DEV/video/preservation/TRAINfit
@@ -285,7 +309,7 @@ timeout. Root G:/rudra_training/partial_pcgrad_duration1600_20261025.
 Six focused tests pass. No promotion; goal incomplete. Operational details in
 production/PARTIAL_DURATION1600_2026-10-25.md. Earlier next actions historical.
 
-**Current — hard TRAIN crop fitting diagnostic complete (25 Oct):**
+**Current â€” hard TRAIN crop fitting diagnostic complete (25 Oct):**
 Eight derivative probes all signs agree,max relative discrepancy .73615%.
 Fixed top4TRAIN crops,100updates each: combined0EV25.666979->.875311 but
 photo .499571->.602405 and-3EV576.609985->620.931152 regress.0EV-only worse.
@@ -295,7 +319,7 @@ require first400schedule/history reproduce saved400control, then full original
 DEV/video/preservation and TRAIN fit evaluation. No promotion/threshold change.
 See production/PARTIAL_HARD_CROP_FIT_2026-10-25.md. Goal incomplete.
 
-**Current — full scheduled TRAIN fit audited (25 Oct):**
+**Current â€” full scheduled TRAIN fit audited (25 Oct):**
 All622unique crops/1600frame/982607pixel exposures, four frozen checkpoints.
 Raw pixel-weighted0EV analytic .080820, initial13.891455,uncapped1.705618,
 capped12.755371,direct12.996763. Both domains remain worse than analytic.
@@ -306,7 +330,7 @@ Next hard-TRAIN-crop finite-gradient check and bounded fixed-batch fitting test
 before longer training; see production/PARTIAL_TRAINING_FIT_2026-10-25.md.
 No promotion/default/threshold change. Goal incomplete; earlier next actions historical.
 
-**Current — direct projected400 complete;0EV still fails (25 Oct):**
+**Current â€” direct projected400 complete;0EV still fails (25 Oct):**
 No Adam moments; normalizedPCGrad with capped-control saved TRAIN step lengths.
 Same pools/schedule/EMA; actual movement99.262% requested due rounding;nozero
 directions. NewH .289495,oldH .381424,motion .008835 pass. Grades-3/0/+3=
@@ -318,7 +342,7 @@ No promotion/default/threshold change. Evidence: production/PARTIAL_PCGRAD_DIREC
 G:/rudra_training/partial_pcgrad_direct_comparison_20261025/comparison.json.
 Goal incomplete; earlier next actions historical.
 
-**Current — deterministic Adam update-cap400 complete (25 Oct):**
+**Current â€” deterministic Adam update-cap400 complete (25 Oct):**
 All400actual steps<=1e-4; identical pools/schedule/EMA versus deterministic control.
 Both freshly evaluated. Cap newH .287594,oldH .381257,motion .008796 pass.
 Cap grades-3/0/+3=12.274305/.103647/.002594:0/+3fail,0worse than control.
@@ -330,7 +354,7 @@ or step-count changes in this comparison. Evidence: production/PARTIAL_PCGRAD_CA
 G:/rudra_training/partial_pcgrad_cap_comparison_20261025/comparison.json.
 Goal incomplete; earlier next actions historical.
 
-**Current — deterministic PCGrad step replay verified (25 Oct):**
+**Current â€” deterministic PCGrad step replay verified (25 Oct):**
 Initial default-mode replay drifted(92trainable tensors,max.003287); not exact.
 Added opt-in deterministic algorithms;2step then400step control/probe pairs match
 final tensors,complete histories,pools/schedule exactly. Seven tests pass.
@@ -343,7 +367,7 @@ Evidence: production/PARTIAL_PCGRAD_STEP_REPLAY_2026-10-25.md;
 G:/rudra_training/partial_pcgrad_deterministic_probe400_20261025/step_probe_summary.json.
 Goal incomplete; no defaults/gates/promotion; earlier actions historical.
 
-**Current — PCGrad400 complete; grading regression prevents promotion (25 Oct):**
+**Current â€” PCGrad400 complete; grading regression prevents promotion (25 Oct):**
 Same pools/schedule/EMA and982607pixel exposures as temporal1. NewH .274009 and
 oldH .380173 pass; grades-3/0/+3=18.927318/.078361/.010324 all fail. Video
 .013881EV/all8checks and independent24frame preservation pass.16tests pass.
@@ -357,7 +381,7 @@ Evidence: production/PARTIAL_PCGRAD_2026-10-25.md and
 G:/rudra_training/partial_pcgrad_comparison_20261025/comparison.json.
 Goal incomplete; earlier next actions historical.
 
-**Current — parameter directions validated by finite steps (25 Oct):**
+**Current â€” parameter directions validated by finite steps (25 Oct):**
 Same32TRAIN cases x2normalizations x4steps. At1e-4,288/288derivative signs agree;
 median relative discrepancy.000125,p95.022912. Large1e-2 has22sign mismatches.
 Local adverse directions confirmed, not causal explanation of0EV DEV failure.
@@ -369,7 +393,7 @@ Evidence: production/PARTIAL_PARAMETER_PROBES_2026-10-25.md and
 G:/rudra_training/partial_parameter_probes_20261025/report.json.
 Goal incomplete; earlier next actions historical.
 
-**Current — parameter-objective conflict audit complete (25 Oct):**
+**Current â€” parameter-objective conflict audit complete (25 Oct):**
 Eight fixed TRAIN control batches x4weights,32cases; weights unchanged.
 Common-controlEMA sum locally adverse to photo10/32,0EV1/32; temporal6/16.
 Fixed normalization0EV adverse0/32; its weighted gradient median much larger
@@ -381,7 +405,7 @@ Evidence: production/PARTIAL_OBJECTIVE_CONFLICT_2026-10-25.md;
 G:/rudra_training/partial_objective_conflict_20261025/report.json.
 Goal incomplete; earlier next actions historical.
 
-**Current — group-preserving coverage400 complete; rejected (25 Oct):**
+**Current â€” group-preserving coverage400 complete; rejected (25 Oct):**
 All original motion scene/exposure slots and still batches retained; identical
 pools. NewH .284811 passes; oldH .383616,0EV .094277,+3EV .002576 fail.
 Motion/detail/video pass(.013259EV), independent24frame preservation exact.
@@ -393,7 +417,7 @@ Evidence: production/PARTIAL_GROUP_COVERAGE_2026-10-25.md and
 G:/rudra_training/partial_group_coverage_comparison_20261025/comparison.json.
 Goal incomplete; earlier next actions historical.
 
-**Current — sampling balance audited; group-preserving schedule prepared (25 Oct):**
+**Current â€” sampling balance audited; group-preserving schedule prepared (25 Oct):**
 Still79crop pool exactly reproduced;8 excluded reachable rows contain only111
 pixels, all rejected by64candidate minimum. No threshold change. Coverage400
 shifted .05-clipped motion frames338->392, so scene/exposure confound confirmed.
@@ -405,7 +429,7 @@ Evidence: production/PARTIAL_SAMPLING_BALANCE_2026-10-25.md and
 G:/rudra_training/partial_group_coverage_schedule_20261025.
 Goal incomplete; earlier next actions historical.
 
-**Current — coverage schedule400 complete; still unqualified (25 Oct):**
+**Current â€” coverage schedule400 complete; still unqualified (25 Oct):**
 Motion pool union coverage62.14%->100%; identical pools/still batches/losses.
 0EV improves .087391->.068653 but fails .060382; +3EV .002155 passes.
 NewH .292812 narrowly fails .292351; oldH .379488, aligned .009776 pass.
@@ -417,7 +441,7 @@ isolated causal explanation. Evidence: production/PARTIAL_COVERAGE_SCHEDULE_2026
 G:/rudra_training/partial_coverage_comparison_20261025/comparison.json.
 Goal incomplete; earlier next actions historical.
 
-**Current — actual TRAIN coverage audited (25 Oct):**
+**Current â€” actual TRAIN coverage audited (25 Oct):**
 351 rows,321 with partial support;223 actually scheduled versus228 pool-eligible.
 Unique supervision320158/2498368 partial pixels(12.81%),27.88% of reachable
 support. Motion covers62.14% of available pool; still100%. Border excludes
@@ -429,7 +453,7 @@ Evidence: production/PARTIAL_TRAINING_COVERAGE_2026-10-25.md and
 G:/rudra_training/partial_training_coverage_20261025/report.json.
 Audit terminal; goal incomplete. Earlier next actions are historical.
 
-**Current — raw/final constraint gap audited (25 Oct):**
+**Current â€” raw/final constraint gap audited (25 Oct):**
 Eight TRAIN crop interiors: EMA0/1168 and fixed1/1168 partial pixels corrected.
 Old DEV:14/24 nonempty partial images,207494pixels;35.19%/35.42% corrected.
 Correction improves mean0/+3EV errors; both already worse than analytic raw.
@@ -441,7 +465,7 @@ Evidence: docs/production/PARTIAL_CONSTRAINT_GAP_2026-10-25.md; roots
 G:/rudra_training/partial_constraint_gap_20261025 and partial_constraint_dev_gap_20261025.
 Goal incomplete; earlier entries historical.
 
-**Current — fixed-scale temporal comparison complete; rejected (25 Oct):**
+**Current â€” fixed-scale temporal comparison complete; rejected (25 Oct):**
 Same pools/schedule/400updates verified. Fixed0EV .085134 and+3EV .003077 remain
 above original limits; oldH .387133 regresses/fails. NewH .290077, aligned .010177
 and video .013332EV pass. Full/outside-highlight preservation exact on24frames.
@@ -451,7 +475,7 @@ Evidence: docs/production/PARTIAL_FIXED_SCALE_2026-10-25.md and
 G:/rudra_training/partial_fixed_comparison_20261025/comparison.json.
 Goal incomplete; earlier entries below are historical.
 
-**Current — display gradient/scaling audit and fixed calibration complete (25 Oct):**
+**Current â€” display gradient/scaling audit and fixed calibration complete (25 Oct):**
 Eight TRAIN scenes x initial/final x3EV,96directions: no sign disagreement at
 .01/.001 probes;4/7 at smaller steps. Moderate medians .28%/.19%; tails larger.
 +3EV effective EMA coefficient varies .279->27.828 (~100x), floor never hit.
@@ -464,7 +488,7 @@ Evidence: docs/production/PARTIAL_DISPLAY_GRADIENT_2026-10-25.md; roots
 G:/rudra_training/partial_display_gradient_20261025 and partial_display_fixed_scale_20261025.
 Goal incomplete; historical entries below are not pending work.
 
-**Current — partial temporal pair complete (25 Oct):**
+**Current â€” partial temporal pair complete (25 Oct):**
 Both400-update runs complete, same538 motion pairs/79still crops,228 frames and
 batch schedules. Temporal1 passes newH .285187, oldH .381566, aligned .009988 and
 video .013195EV. Still fails original0EV .087391 and+3EV .003335; no promotion.
@@ -476,7 +500,7 @@ Evidence: docs/production/PARTIAL_TEMPORAL_PAIR_2026-10-25.md and
 G:/rudra_training/partial_temporal_comparison_20261025/comparison.json.
 Goal incomplete; historical entries below are not pending instructions.
 
-**Current — matched partial crop pair complete (25 Oct):**
+**Current â€” matched partial crop pair complete (25 Oct):**
 400updates each,832 matching centres/212TRAINframes, exact batch schedules.
 Aligned oldH .382479 passes;0EV .084570 improves control .108137 but still fails
 .060382. Both fail newH(.301169 aligned) and aligned residual(.010595).
@@ -488,7 +512,7 @@ Evidence: docs/production/PARTIAL_PHASE_PAIR_2026-10-25.md and
 G:/rudra_training/partial_phase_comparison_20261025/comparison.json.
 Goal incomplete. Earlier entries below are historical, not pending instructions.
 
-**Current — partial crop phase mismatch verified and option fixed (25 Oct):**
+**Current â€” partial crop phase mismatch verified and option fixed (25 Oct):**
 Eight fixed TRAIN scenes: aligned crop/full-frame max asinh difference9.54e-7;
 one-pixel-offset crops .182714, unchanged by48->64px border. This demonstrates
 phase mismatch, not cause of DEV failures. Added explicit --aligned-crops with
@@ -501,7 +525,7 @@ docs/production/PARTIAL_CROP_GEOMETRY_2026-10-25.md and
 G:/rudra_training/partial_crop_geometry_20261025/report.json.
 Goal incomplete; historical entries below are not new pending instructions.
 
-**Current — independent partial preservation verified (25 Oct, Codex):**
+**Current â€” independent partial preservation verified (25 Oct, Codex):**
 rel3_w05 versus guarded_projected600: fully clipped and outside-highlight pixels
 bit exact on all24 old DEV frames, raw/smoothed/constrained stages; nontrained
 weights exact. Audit terminal; no default/weight/gate change. Original old H and
@@ -514,7 +538,7 @@ docs/production/PARTIAL_PRESERVATION_2026-10-25.md and
 G:/rudra_training/research_partial_finetune_20261025/ft_rel3_w05/preservation_independent_20261025.json.
 Earlier entries below are historical; goal remains incomplete.
 
-**Current — partial-highlight fine-tune arms + native ACES v2 staged pipeline (25 Oct):**
+**Current â€” partial-highlight fine-tune arms + native ACES v2 staged pipeline (25 Oct):**
 MODEL: 4 arms fine-tuned only highlight_context (frozen parent bit-exact), 400 steps on 351 CC0 TRAIN
 rows (tools/train_partial_display.py; now snapshots itself). With hybrid64 + 1-code constraint, NONE
 passes all gates. Best 0EV: display_w1 .0732 / rel3_w05 .0833 vs analytic .0604 (baseline .1210);
@@ -539,7 +563,7 @@ Also: tools/rudra_aces_export.py --clipped-smoothing hybrid64; docs/THIRD_PARTY_
 provenance archive G:/rudra_training/provenance_guarded_projected600_20261025 (7-checkpoint chain, all
 10 recorded code hashes resolved; root run05_aces_lower_lr300 records no parent/trainer). Signing: last.
 
-**Current — clipped-region smoothing: first candidate passing video + all 11 paired gates (24 Oct):**
+**Current â€” clipped-region smoothing: first candidate passing video + all 11 paired gates (24 Oct):**
 Spatial600 evaluation finished and is REJECTED (new H .29592, old H .38930 > cap, full detail .07442,
 Hunyuan .02230EV). Diagnosis: inside fully clipped support, predicted log-luminance gradients are
 nearly uncorrelated with the reference (cosine .02 spatial600/.09 parent); optimal texture scale ~0,
@@ -559,7 +583,7 @@ Next (GPU): fine-tune partial-highlight route with a 0EV display-space loss vs t
 at inference, rerun all gates + generated-suite review. Development data reused; not holdout evidence.
 Evidence: G:/rudra_training/research_clipped_smoothing_20261024/README.md. No default changed.
 
-**Current — learned-context TRAIN audit complete (24 October):**
+**Current â€” learned-context TRAIN audit complete (24 October):**
 All four certified-blind images/43 crops audited;110,771 unique/701,385 repeated
 pixels. Parent/local/coarse blind MSE7.25548/7.30995/7.36265; both residuals worsen
 all four images. Coarse remote sensitivity is real but output std only3.38e-8 to
@@ -572,7 +596,7 @@ influence/crop consistency, then matched bounded comparison with unchanged gates
 Evidence: docs/production/ACES_LEARNED_CONTEXT_2026-10-24.md.
 Earlier entries below are historical, not pending instructions.
 
-**Current — local/wider-context comparison complete (24 October):**
+**Current â€” local/wider-context comparison complete (24 October):**
 Both600-update runs and all evaluations terminal. Same3,251 parameters, initial
 weights/schedule/first loss; frozen v9 exact. Eight focused tests pass. New H
 .290632 local/.288728 coarse both pass, but full detail,0EV grading and video
@@ -584,7 +608,7 @@ Next audit trained residual use on four certified-blind TRAIN replay images:
 regional photo/detail, distant-context sensitivity, inherited versus added error.
 Do not blindly extend this recipe. Historical entries below are not pending work.
 
-**Current — receptive-context audit complete (24 October):**
+**Current â€” receptive-context audit complete (24 October):**
 Conservative54px full-branch reach verified structurally and numerically. Four
 replay images contain110,771 certified-blind white pixels with varying HDR targets;
 19.753% of scheduled replay full supervision is in these regions. None certified
@@ -597,7 +621,7 @@ Evidence: docs/production/ACES_RECEPTIVE_CONTEXT_2026-10-24.md.
 Root: G:/rudra_training/aces_receptive_context_20261024.
 Earlier entries below are historical, not new pending instructions.
 
-**Current — balanced-domain gradient audit complete (24 October):**
+**Current â€” balanced-domain gradient audit complete (24 October):**
 All100 frozen TRAIN windows at three states audited;1800 sample-state/300 window
 rows. Replay/motion norm balance reverses1.146 initial ->1.509 sequential ->.740
 accumulated. Better TRAIN fitting still accompanies6/8 new DEV scene regressions.
@@ -610,7 +634,7 @@ Evidence: docs/production/ACES_BALANCED_DOMAIN_AUDIT_2026-10-24.md.
 Root: G:/rudra_training/aces_balanced_domains_20261024.
 Earlier entries below are historical, not new pending instructions.
 
-**Current — balanced accumulation comparison complete (24 October):**
+**Current â€” balanced accumulation comparison complete (24 October):**
 All jobs terminal. Identical600 sample exposures, sequential600 versus accumulated
 100 optimizer updates. Both fail new highlight/full detail/old detail/0EV grade;
 Hunyuan48 .044291 versus .054989EV fails .02. Accumulation improves old H but
@@ -624,7 +648,7 @@ Aggregate: G:/rudra_training/aces_balanced_comparison_20261024/comparison.json.
 Roots aces_balanced_sequential600_20261024 and aces_balanced_accum6600_20261024.
 Earlier entries below are historical, not new pending instructions.
 
-**Current — cyclic panel rotations complete (24 October):**
+**Current â€” cyclic panel rotations complete (24 October):**
 All jobs terminal. Across three folds current-only27/36 accepted, panel-aware7/36
 (6,1,0). Monitor photo mean+2.178% versus+0.372%; no robust reconstruction gain.
 Small fixed-panel safeguard is rejected as main training path. No checkpoint saved
@@ -638,7 +662,7 @@ Evidence: docs/production/ACES_ANCHOR_ROTATION_2026-10-24.md.
 Aggregate: G:/rudra_training/aces_anchor_rotation_20261024/report.json.
 Earlier entries below are historical, not new pending instructions.
 
-**Current — panel-aware direction12 complete (24 October):**
+**Current â€” panel-aware direction12 complete (24 October):**
 Three arms terminal: current-only12/12, rejection-only0/12, panel-direction6/12.
 Panel aggregate metrics preserved but monitor photo mean+1.43%,4/6 members worse;
 one anchor/monitor near-region detail regresses. No broad-training adoption,
@@ -652,7 +676,7 @@ Evidence: docs/production/ACES_ANCHOR_DIRECTION12_2026-10-24.md.
 Root: G:/rudra_training/aces_anchor_direction12_20261024.
 Earlier entries below are historical, not new pending instructions.
 
-**Current — anchor retention12 pilot complete (24 October):**
+**Current â€” anchor retention12 pilot complete (24 October):**
 All jobs terminal. Current-only12/12 accepted; strict anchor gate0/12 with48 scale
 rejections despite local acceptance. Original branch restored; no inference weights
 saved or promoted. Panel gate is not adopted. Current-only averages improve but
@@ -665,7 +689,7 @@ Evidence: docs/production/ACES_ANCHOR_RETENTION12_2026-10-24.md.
 Root: G:/rudra_training/aces_anchor_retention12_20261024.
 Earlier entries below are historical, not new pending instructions.
 
-**Current — guarded600 diagnosis complete (24 October):**
+**Current â€” guarded600 diagnosis complete (24 October):**
 All jobs terminal; no training or default change. Detail regresses in all eight
 new scenes; medium/heavy clipping account for96.3% of net detail regression.
 New deep-region RGB-asinh gradient error +107.2%; selected TRAIN motion also
@@ -678,7 +702,7 @@ metrics or infer cross-scene preservation from current-batch acceptance.
 Evidence: docs/production/ACES_GUARDED_DIAGNOSIS_2026-10-24.md.
 The entries below describe earlier work and are not new pending instructions.
 
-**Current — guarded600 and input-precision work complete (24 October):**
+**Current â€” guarded600 and input-precision work complete (24 October):**
 Both candidates fail qualification; no default promotion. Projected new-highlight
 error .292532550 misses the registered 5% target; full detail and old 0 EV grading
 fail. Opt-in inverse-boundary repair passes 48-frame appearance at 16-bit decode,
@@ -694,7 +718,7 @@ ACES_INPUT_PRECISION_2026-10-24.md. Next diagnose per-scene detail/flicker regre
 before a targeted registered intervention; do not weaken gates or run blindly.
 Entries below are historical, not pending instructions or current run statuses.
 
-**Latest — persistent-Adam five-step TRAIN pilot complete (24 Oct):**
+**Latest â€” persistent-Adam five-step TRAIN pilot complete (24 Oct):**
 Same24 pair starts, both methods, max5 updates and four-scale search; all jobs terminal.
 Protected81 accepted/94 attempted vsAdam45/64; full budget11/24 vs5/24.
 Final trained-pair pass21/24 vs13/24; neighbouring overlapping pair18/24 vs10/24.
@@ -710,7 +734,7 @@ Define replay photo/detail-only acceptance before running; no temporal on stills
 Root G:/rudra_training/aces_protected_trajectory5_20261024.
 Evidence: docs/production/ACES_PROTECTED_TRAJECTORY5_2026-10-24.md.
 
-**Latest — protected-step TRAIN pilot complete (24 Oct):**
+**Latest â€” protected-step TRAIN pilot complete (24 Oct):**
 24 independent probes, four salted-hash groups per clipping stratum; fresh Adam1e-4.
 Matched four-scale search: projected21/24 pass vsAdam13/24 (full Adam10/24).
 8 projection-only passes, none Adam-only; all gains in medium/heavy clipping.
@@ -726,7 +750,7 @@ explicit weight+optimizer rollback on rejection, including all stalled cases.
 Evidence: docs/production/ACES_PROTECTED_STEP_2026-10-24.md. Goal incomplete.
 Roots G:/rudra_training/aces_protected_step_20261024 and aces_protected_step_matched_20261024.
 
-**Latest — gradient alignment/scene audit complete (24 Oct):**
+**Latest â€” gradient alignment/scene audit complete (24 Oct):**
 192 TRAIN pairs at both final checkpoints;384 pair/checkpoint evaluations, no updates.
 Active checkpoint temporal/detail conflict73/192 vs32 prior; photo/detail92 vs61.
 Combined plain-gradient direction is detail-uphill87 vs55, photo-uphill0 in both.
@@ -739,7 +763,7 @@ and actual finite-step changes, including stalled/conflicting cases; no blind re
 Evidence: docs/production/ACES_GRADIENT_ALIGNMENT_2026-10-24.md.
 Root G:/rudra_training/aces_gradient_alignment_20261024.
 
-**Latest — active-union600 complete, rejected (24 Oct):**
+**Latest â€” active-union600 complete, rejected (24 Oct):**
 Matched600 optimization/evaluation complete; same sampling/exclusions, frozen parent.
 Hunyuan48 improves35.12% from0.066582700 to0.043198491EV but fails0.02; other7 pass.
 New H worsens0.310286980->0.342798894; clipped detail0.081728859->0.088140910 fails.
@@ -753,7 +777,7 @@ and scene/clipping-geometry regressions before further optimization; no weight g
 Root G:/rudra_training/aces_full_active600_20261024. Goal incomplete.
 Evidence: docs/production/ACES_FULL_ACTIVE600_2026-10-24.md.
 
-**Latest — temporal support audit complete (24 Oct):**
+**Latest â€” temporal support audit complete (24 Oct):**
 All192 TRAIN pairs/96 groups audited; eight actual parameter-gradient comparisons.
 Active/valid fraction median0.63937, mean0.59403, minimum0.00573; pooled0.30924.
 Frozen-only residuals dilute temporal gradients unevenly; measured scaling identity
@@ -767,7 +791,7 @@ No optimization/default change. All jobs terminal,10 tests pass. Goal incomplete
 Evidence: docs/production/ACES_TEMPORAL_SUPPORT_2026-10-24.md.
 Root G:/rudra_training/aces_temporal_support_20261024.
 
-**Latest — full-temporal600 complete, rejected (24 Oct):**
+**Latest â€” full-temporal600 complete, rejected (24 Oct):**
 Attribution found substantial mask and field contributions on eligible fixed cells;
 a regression exposed newly clipped regions missed by full-only temporal support.
 Matched600 experiment expanded temporal support on composed isolated output.
@@ -784,7 +808,7 @@ Evidence: docs/production/ACES_FLICKER_ATTRIBUTION_2026-10-24.md and
  docs/production/ACES_FULL_TEMPORAL600_2026-10-24.md.
 Root G:/rudra_training/aces_full_temporal600_20261024. Goal incomplete.
 
-**Latest — multi-scene full-context600 complete, rejected (24 Oct):**
+**Latest â€” multi-scene full-context600 complete, rejected (24 Oct):**
 All training/evaluation/audit jobs terminal. Root G:/rudra_training/aces_full_context600_20261024.
 Isolated checkpoint8f4a788d... and shared_control7a7da720... use identical learned
 branch weights from one600-update optimization; not independent runs. Parent frozen.
@@ -800,7 +824,7 @@ fixed Hunyuan48/known-motion TRAIN before a boundary/temporal change; no blind l
 16 focused tests pass; tools compile. Main goal incomplete.
 Evidence: docs/production/ACES_FULL_CONTEXT600_2026-10-24.md.
 
-**Latest — isolated full-branch TRAIN pilot complete (24 Oct):**
+**Latest â€” isolated full-branch TRAIN pilot complete (24 Oct):**
 Experimental v9 full_context branch implemented; initially bit-exact to v8, parent
 frozen and outside-full output exact after training. Three600-step arms complete
 at G:/rudra_training/aces_full_branch_pilot_20261024. No saved inference checkpoint,
@@ -817,7 +841,7 @@ Hard support introduces boundary/temporal risk; no quality acceptance yet.
 Evidence: docs/production/ACES_FULL_BRANCH_PILOT_2026-10-24.md.
 Main goal incomplete; remaining checklist unchanged.
 
-**Latest — highlight-region diagnosis complete (24 Oct):**
+**Latest â€” highlight-region diagnosis complete (24 Oct):**
 All jobs terminal; no training/default changes. Fixed48 TRAIN +96 coherent DEV
 strata audit completed. New full-deep error improves0.394456->0.319450 but still
 fails analytic0.205912; partial error worsens0.142379->0.162722. Old full-deep
@@ -833,7 +857,7 @@ Evidence: docs/production/ACES_HIGHLIGHT_STRATA_2026-10-24.md.
 Reports: G:/rudra_training/aces_highlight_strata_20261024/report.json and
 G:/rudra_training/aces_region_gradients_20261024/report.json. Main goal incomplete.
 
-**Latest — controlled sampler-v2 cycle complete, rejected for adoption (24 Oct):**
+**Latest â€” controlled sampler-v2 cycle complete, rejected for adoption (24 Oct):**
 All jobs terminal. Registered6000-step sampler-only comparison completed; parent
 weights exact and recorded visits match the zero-empty-update audit. Checkpoint:
 G:/rudra_training/aces_context_sampler_v2_6000_20261024/step6000.pt,
@@ -851,7 +875,7 @@ Remaining requirements: docs/production/GOAL_REMAINING_2026-10-24.md.
 Concrete input gap: research video reader uses8-bit RGB;16-bit output is not proof
 of10-bit source precision preservation. Main goal remains incomplete.
 
-**Latest — matched rate trial rejected; replay sampler fixed (24 Oct):**
+**Latest â€” matched rate trial rejected; replay sampler fixed (24 Oct):**
 All jobs from this cycle are terminal. Single-pair fitting succeeds at both rates;
 1e-4 fits faster. Broad matched6000 at1e-4 improves average error and motion, but
 fails new-scene analytic accuracy and fully-clipped detail. No model/default promotion.
@@ -871,7 +895,7 @@ with fixed parent/rate/budget and the existing quality gates; v2 has NOT been tr
 Do not infer model improvement from sampler coverage or promote the higher-rate model.
 Details: docs/production/ACES_FIT_SANITY_2026-10-24.md. Main goal incomplete.
 
-**Latest — balanced context and de-banding cycle complete (24 Oct):**
+**Latest â€” balanced context and de-banding cycle complete (24 Oct):**
 All training, evaluation, export and audit jobs launched in this cycle are terminal.
 No model/export default promoted. Main goal remains incomplete. Saved goal status
 is usageLimited; automatic continuation is not active. No status override was made.
@@ -906,7 +930,7 @@ Evidence: docs/production/ACES_CONTEXT_MOTION_2026-10-24.md,
 docs/production/ACES_CURVATURE_DEQUANT_2026-10-24.md, and
 ACES_REAL_EXPORT_DETAIL_FOLLOWUP_2026-10-24.md. Earlier entries below are historical.
 
-**In progress — real export and detail-loss follow-up (24 Oct):**
+**In progress â€” real export and detail-loss follow-up (24 Oct):**
 Constrained equal-image real export suite and independent delivery verifier running
 at G:/rudra_training/aces_constrained_generated_review_20261024 (18 registered clips).
 Coherent detail/grade audit complete: highlight gradient RMSE improves9.93%,
@@ -917,7 +941,7 @@ Registered gradient-loss head600 trained on same corrected CC0 TRAIN and fixed
 seed/sampler; evaluation running in aces_consistent_gradient_head600_v2_20261024.
 Do not launch overlapping runs or overwrite these output roots. Main goal incomplete.
 
-**Latest — constrained equal-image head passes coherent/motion diagnostics (24 Oct):**
+**Latest â€” constrained equal-image head passes coherent/motion diagnostics (24 Oct):**
 Registered explicit existing colour backtracking on corrected equal-image head
 4904f8c3...; no model/export default promoted. Coherent development24 all checks
 pass: highlight MSE0.3693457005 versus parent0.3825248607 and analytic0.4204336752;
@@ -934,7 +958,7 @@ Next: real generated-clip colour/motion and grading/detail evaluation of constra
 candidate; discrete alpha/chromatic flicker and legacy target conflict remain open.
 Main goal incomplete. Previous summary below remains historical context.
 
-**Latest — generated review complete; corrected highlight pair rejected (24 Oct):**
+**Latest â€” generated review complete; corrected highlight pair rejected (24 Oct):**
 All work launched in this session is terminal; no training/export/audit jobs remain.
 V7 generated review:18/18 registered passes,826 frames. Independent18-video
 verification passes;70 EXR samples exactly match decoded16-bit PQ codes.
@@ -964,7 +988,7 @@ appearance conflict before further training; preserve ordinary/shadow behaviour.
 Then grading/detail, temporal/platform breadth, native integration and independent
 release/licensing checks. Main goal remains incomplete; do not mark complete.
 
-**Correction — first coherent corpora and derived head trials INVALID (24 Oct):**
+**Correction â€” first coherent corpora and derived head trials INVALID (24 Oct):**
 The new builder mistakenly saved Rec709 RGB directly while loaders expect
 canonical Rec2020 storage. Both aces_consistent_pairs_20261024 and
 aces_consistent_exposures_20261024 have BUILD_INVALID.json and build_pass=false.
@@ -980,7 +1004,7 @@ identity, saved target/source display agreement and initial cached-head parity.
 Generated review runner30948 and per-clip independent verifier51089 remain live.
 No model promoted. This correction supersedes all coherent-corpus/trial claims below.
 
-**Latest — coherent highlight-head trial evaluating; 9/18 generated clips pass so far (24 Oct):**
+**Latest â€” coherent highlight-head trial evaluating; 9/18 generated clips pass so far (24 Oct):**
 Generated export runner session30948 remains live. Root:
 G:/rudra_training/aces_v1_generated_review_20261024. No failed completed clips.
 Backtracking diagnostic complete and rejected: colour drift fixed but old natural
@@ -999,7 +1023,7 @@ CPU OCIO threads (export defaults4, reference default1); odd-size signed/HDR
 parity tests pass.19 model/export tests and20 view/video tests passed. New export
 reports record implementation hashes. No native or release claim.
 
-**Latest — generated review running; partial-channel highlight colour defect measured (24 Oct, Codex):**
+**Latest â€” generated review running; partial-channel highlight colour defect measured (24 Oct, Codex):**
 Actual v7 checkpoint/hash and seven acceptance evidence hashes verified; 10 focused
 local tests pass. Registered 18-input review is running via PowerShell runner
 (exec session30948). Four CogVideoX clips complete and pass; remaining clips pending.
@@ -1015,7 +1039,7 @@ A separately registered partial-highlight backtracking diagnostic is running
 (session71571; configs/experiments/aces_colour_backtrack_20261024.json).
 No model/default promoted. Product grading/detail/native/release goals remain open.
 
-**Latest — v1 export workflow built; generated-clip review ready (24 Oct):**
+**Latest â€” v1 export workflow built; generated-clip review ready (24 Oct):**
 tools/rudra_aces_export.py: still/folder/video -> per-frame float32 ACEScg EXR (AP1
 chromaticities, rudra.reconstructed = highlight reconstruction weight, provenance,
 bit-exact read-back) + optional ACES2 HDR1000 PQ FFV1 gbrp16le .mkv + report with
@@ -1027,7 +1051,7 @@ Registered generated-clip review configs/experiments/aces_v1_generated_review_
 -> G:/rudra_training/aces_v1_generated_review_20261024/summary.json.
 Known: fully saturated primaries at code 255 enter highlight reconstruction.
 
-**Latest — v1 analytic-shadow candidate PASSES registered acceptance 12/12 (24 Oct):**
+**Latest â€” v1 analytic-shadow candidate PASSES registered acceptance 12/12 (24 Oct):**
 G:/rudra_training/aces_v1_analytic_shadow_20261024/candidate.pt (sha 63e76ee2...).
 Removes dark-motion negative luminance (coverage4800 66,646/74,211 px -> 0/0),
 lowest dark flicker so far (.00208/.00132 EV), zero shadow lift, outside-shadow
@@ -1036,7 +1060,7 @@ coverage4800 (disclosed, within seed spread). Development candidate, not release
 Next: export workflow for this model (EXR32+mask, RGB16 video), then native app.
 Details: docs/production/ACES_V1_ANALYTIC_SHADOW_2026-10-24.md.
 
-**Latest — owner decision: v1 uses analytic shadows; candidate ready to evaluate (24 Oct):**
+**Latest â€” owner decision: v1 uses analytic shadows; candidate ready to evaluate (24 Oct):**
 training/aces_model.py gains shadow='analytic' (contract v7): in source crushed-
 shadow support, w*exact source inverse + (1-w)*inverse of bounded restored source;
 bit-exact analytic where w==1, outside support unchanged. No training: candidate =
@@ -1047,7 +1071,7 @@ Run scripts/run_aces_analytic_shadow.ps1 -> G:/rudra_training/
 aces_v1_analytic_shadow_20261024/acceptance.json. Expected cost: natural shadow MSE
 = analytic (~2% above single-seed coverage4800, inside +-4% seed spread).
 
-**Latest — 5-seed study: edge shadow supervision has no effect; learned shadows unreliable (24 Oct):**
+**Latest â€” 5-seed study: edge shadow supervision has no effect; learned shadows unreliable (24 Oct):**
 Natural shadow MSE mean control 6.572e-7 (CV .6%) vs edge 6.571e-7 (CV3.1%);
 edge wins 3/5. Seed-20261023 gain was luck. 0/10 runs pass all candidate gates
 (sporadic lift, motion lift, one negativeY). Edge spread +-4% means earlier
@@ -1057,7 +1081,7 @@ analytic inverse in crushed shadows (marked not reconstructed) with learned
 restorer/highlights; validate as registered candidate. Details:
 docs/production/ACES_SHADOW_CONTEXT_2026-10-23.md.
 
-**Latest — edge shadow trial FAIL (narrow); 5-seed study registered (24 Oct):**
+**Latest â€” edge shadow trial FAIL (narrow); 5-seed study registered (24 Oct):**
 aces_shadow_local_edges1200_20261024: natural shadow MSE 6.274e-7, first below
 coverage4800 (6.447e-7), but only 4.81% below control (need 5%), 3 lifted px
 (max1.33 code), original-dev +0.09%, dark motion means .00447/.00376 vs control
@@ -1068,7 +1092,7 @@ G:/rudra_training/aces_shadow_edge_seeds_20261024_summary.json. Registration
 configs/experiments/aces_shadow_edge_seeds_20261024.json. Details:
 docs/production/ACES_SHADOW_CONTEXT_2026-10-23.md.
 
-**Latest — shadow context trial FAIL; edge-supervision trial prepared (24 Oct):**
+**Latest â€” shadow context trial FAIL; edge-supervision trial prepared (24 Oct):**
 Codex ran matched local(radius8) vs wide(radius40) shadow branches on mixed144
 (natural48+original96), frozen coverage4800, 1200 steps; then hit its usage limit
 (locked until 29 Oct) before recording. Wide FAIL: worse original-dev shadow and
@@ -1082,7 +1106,7 @@ scripts/run_aces_shadow_edge_trial.ps1 (train+3 evals+paired report). the assist
 session has no GPU/Windows access: owner launches. Best restoration baseline
 remains coverage4800. Details: docs/production/ACES_SHADOW_CONTEXT_2026-10-23.md.
 
-**Latest — quantized consistency FAIL; shadow data and local-context limit found:**
+**Latest â€” quantized consistency FAIL; shadow data and local-context limit found:**
 Added opt-in --consistency-quantize, defaultfalse. Same600-step/weight10
 experiment with translated inputs rounded8bit; six consistency/shadow testsPASS.
 Candidate G:/rudra_training/aces_shadow_quantized600_20261023/step600.pt SHA
@@ -1108,7 +1132,7 @@ all shadow/temporal/visual gates and fullproductscope. All jobs94220/74137/
 31817/68345 terminal, no livejobs. Details:
 docs/production/ACES_SHADOW_QUANTIZATION_2026-10-23.md. Goal unfinished.
 
-**Latest — shadow TRAIN audit and paired consistency fine-tuning FAIL:**
+**Latest â€” shadow TRAIN audit and paired consistency fine-tuning FAIL:**
 audit_aces_shadow_fit.py fixed168 TRAIN crops (21images x8) shows v5 improves
 TRAIN brightness/chroma but not development: scaledRGB .016153 vs v4.023598,
 luma .006005 vs.011222, chroma .022122 vs.028341. Generalization investigation.
@@ -1132,7 +1156,7 @@ shadow/temporal/visual requirements. No external code/weights/data imported.
 All jobs18553/2199/41423/46189/91418/46395/22011 terminal, none live. Details:
 docs/production/ACES_SHADOW_CONSISTENCY_2026-10-23.md. Full goal unfinished.
 
-**Latest — isolated v5 shadow representation removes negativeY but trial FAIL:**
+**Latest â€” isolated v5 shadow representation removes negativeY but trial FAIL:**
 New training/aces_shadow.py and opt-in ACESModel shadow='sqrt_luma':
 square-root luminance residual plus signed R-Y/B-Y, source shadow support only.
 No RGB clamp/outputfloor/radianceceiling; zero derivative at exactblack/zerofield
@@ -1155,7 +1179,7 @@ Next shadow supervision/generalization/temporal work; not threshold relaxation.
 All jobs38394/13540/64044/11838/88753 terminal, no livejobs. Details:
 docs/production/ACES_SHADOW_SQRT_2026-10-23.md. Full goal remains unfinished.
 
-**Latest — combined coverage4800 passes registered restoration development:**
+**Latest â€” combined coverage4800 passes registered restoration development:**
 TRAIN176 natural48+legacy procedural32+balanced96, explicit batch quotas2/1/1;
 fresh4800 Adam.001 gradientweight1, seed20261023, frozen lower_lr300 HDR.
 All176 visited,9600/4800/4800 crops. Six tests pass, frozen predictor bitexact.
@@ -1164,7 +1188,7 @@ Candidate G:/rudra_training/aces_coverage_restorer4800_20261023/step4800.pt SHA
 Natural24 ordinarycodeMSE .13402769 (13.059%betteranalytic), legacy8 .00934152
 (88.640%better), both beat gradient1200. Balanced24 supplemental .02026255
 (76.160%better). Original five natural gatesPASS,zero lift,H/S unchanged.
-All9 ramp gradient reductions56.2–81.1% versus mixed1200. Registered
+All9 ramp gradient reductions56.2â€“81.1% versus mixed1200. Registered
 coverage_trial_acceptance.json PASS, not visual/release. Plot retains steps
 and ripples. Correction-support probe maxima .428/.386/.367code, no sampled
 corrections above.45code; errors not explained simply by hitting.49 bound.
@@ -1178,7 +1202,7 @@ Worsttransitionmean cell excessEV .001846724/.000410060, higher than v3
 but below.02 in this limited fixed-cell diagnostic; not releaseT.
 All jobs56577/39834/27554/56378/28899 terminal; no live jobs.
 
-**Latest — balanced data fixes ramp metric gap but regresses code fidelity:**
+**Latest â€” balanced data fixes ramp metric gap but regresses code fidelity:**
 Fresh1200 frozen-HDR local restorer, gradient weight1, explicit two natural
 and two procedural crops per batch. New TRAIN144 manifest natural48+balanced96,
 all visited,2400 crops each domain. Five tests pass, frozen predictor bitexact.
@@ -1197,7 +1221,7 @@ Separate shadow luminance/HDR-detail fixes and platform/native/release remain.
 All jobs52787/31432/90348/11322 terminal. Details:
 docs/production/ACES_BALANCED_RESTORER_2026-10-23.md. Goal unfinished.
 
-**Latest — gradient supervision improves both domains; balanced data gap fixed:**
+**Latest â€” gradient supervision improves both domains; balanced data gap fixed:**
 train_aces_restorer.py optional --gradient-weight default0, ordinary-endpoint
 target derivativeMSE in8bit units. Fresh1200 weight1 on same mixed80, frozenHDR.
 Candidate G:/rudra_training/aces_restorer_gradient1200_20261023/step1200.pt SHA
@@ -1224,7 +1248,7 @@ Next balanced-data restoration with controlled domain sampling, plus separately
 fix shadow luminance. HDR-detail/platform/native/independent release stillopen.
 Details docs/production/ACES_RESTORATION_GRADIENT_2026-10-23.md.
 
-**Latest — mixed1200 restoration passes development; new motion reveals shadow defect:**
+**Latest â€” mixed1200 restoration passes development; new motion reveals shadow defect:**
 Mixed80 TRAIN manifest48natural+32procedural under G:/datasets/corpora/
 aces_mixed_restoration80_20261023/report.json. Trainer masks ordinary pixels,
 skips empty support, safely deduplicates matching ancestry, rejects conflicts.
@@ -1255,7 +1279,7 @@ luminance behavior; earlier HDR-detail failure and full release scope remain.
 Docs: ACES_MIXED_RESTORER_2026-10-23.md and ACES_OBJECT_MOTION_2026-10-23.md
 in docs/production. All candidates remain experimental, not production defaults.
 
-**Latest — isolated local restorer learns ramps but regresses natural fidelity:**
+**Latest â€” isolated local restorer learns ramps but regresses natural fidelity:**
 New training/aces_restorer.py: source+5/17/65px local code differences, no norm,
 small dilated CNN. ACESModel opt-in restoration=local_codes contractv4 replaces
 first3 fields only at source weight0; reconstruction regions retain v3 fields.
@@ -1279,7 +1303,7 @@ frozen HDR; require natural code fidelity alongside ramp gains. Frozen HDR
 detail failure remains. Full video/platform/native/release scope still open.
 See docs/production/ACES_LOCAL_RESTORER_2026-10-23.md for results/paths.
 
-**Latest — direct restoration objective and procedural300 tests fail:**
+**Latest â€” direct restoration objective and procedural300 tests fail:**
 Added optional restoration_code_loss: ordinary(source weight0) mean RGB MSE
 in8bit codes against exact OCIO view(target), fixed target/no target gradient.
 Trainer --restoration-weight defaults0. Tests verify units/gradient/mask/empty.
@@ -1304,7 +1328,7 @@ Next isolate a source-restoration branch with explicit local code-difference
 features; current300-step results do not prove fundamental network incapacity.
 See docs/production/ACES_RESTORATION_TRIAL_2026-10-23.md. Goal remains unfinished.
 
-**Latest — stronger detail/headroom audit fails the virtual-RAW quality promise:**
+**Latest â€” stronger detail/headroom audit fails the virtual-RAW quality promise:**
 New tools/audit_aces_learned_detail.py compares lower_lr300 to original CC0 HDR
 on identical positive-luminance support (two-pixel-eroded interiors). Fulldev24
 gradient RMSE analytic/target/model: H6eligible .294416/.033120/.297591;
@@ -1325,7 +1349,7 @@ in display-code units, then reconstruction gradient supervision separately.
 Keep original appearance/shadow gates and release scope; no threshold relaxation.
 Details docs/production/ACES_LEARNED_HEADROOM_2026-10-23.md.
 
-**Latest — ACES temporal18 smoke and learned RGB16 HDR delivery verified:**
+**Latest â€” ACES temporal18 smoke and learned RGB16 HDR delivery verified:**
 tools/evaluate_aces_temporal.py runs lower_lr300 CPU full-frame on existing
 run05_temporal_probe_v2_20261023 (2CC0 camera moves,9frames each). AP1 luminance
 36x64 cell log2 changes relative to analytic; nonpositive cells excluded/count,
@@ -1350,7 +1374,7 @@ wrapper passthrough verified separately, direct official parity still exact.
 Jobs1465/1839/29744 exited0. Next full-resolution grade/detail tests, longer
 object-motion/compressed/generated data and native integration; goal unfinished.
 
-**Latest — smaller learning rate passes numerical development gates:**
+**Latest â€” smaller learning rate passes numerical development gates:**
 Fixed TRAIN144-crop audit shows control300 worse than analytic (.038667/.031026)
 and worse than control200. Added tools/audit_aces_training_curve.py; same crops
 and hashes across snapshots, no optimizer or checkpoint selection. Registered
@@ -1372,7 +1396,7 @@ and temporal behavior of this candidate, expand commercial coverage/independent
 holdout, then signed-AP1 native/video integration. Do not relax release scope.
 Details/research: docs/production/ACES_OPTIMIZATION_DIAGNOSIS_2026-10-23.md.
 
-**Latest — deterministic300 comparison completed; both candidates FAIL:**
+**Latest â€” deterministic300 comparison completed; both candidates FAIL:**
 Registered configs/experiments/aces_deterministic_shadow_pair_20261023.json.
 Fresh weight0/1 runs and CPU full24 development evaluations completed; matched
 recipe/code/data/RNG mechanics pass. Reports under G:/rudra_training/
@@ -1391,7 +1415,7 @@ new signed AP1 model integration; explicit ACES display conversion still needed.
 Next diagnose failed deterministic baseline/target and shadow behavior before
 broader training; independent holdout, temporal/platform data and release remain.
 
-**Latest — shadow scale trial FAIL; deterministic training now verified/default:**
+**Latest â€” shadow scale trial FAIL; deterministic training now verified/default:**
 training/aces_losses.py adds optional view-scaled signed-asinh shadow loss,
 scale=.0036889303 AP1 (official inverse neutral5/255, not physical exposure).
 TRAIN8hi/8shadow parameter probe train_loss_balance.json in spatial300:
@@ -1418,7 +1442,7 @@ All60432/95184/21039/41262/42453/81792 jobs exited0. Next use deterministic
 baseline/objective comparisons; do not promote failed shadow term or prior
 single-run gains as reproducible quality. Whole release goal still unfinished.
 
-**Latest — spatial TRAIN48/dev24 trial completed; overall improves23.73%, shadow gate narrowly fails:**
+**Latest â€” spatial TRAIN48/dev24 trial completed; overall improves23.73%, shadow gate narrowly fails:**
 Builder now supports explicit split/per-look, rejects source-scene overlap,
 stores scene IDs and builder hashes. Initial train48 stopped after40 on17 exact
 black HDR pixels in venice_sunset. Fixed smooth-shadow solver to preserve exact
@@ -1445,7 +1469,7 @@ jobs terminal. Next diagnose TRAIN highlight/shadow loss-scale and gradients
 before next objective trial; current absolute asinh objective may underweight
 dark reconstruction. Broader data/video/native/independent release work remains.
 
-**Latest — full-frame failure found; pixel-local normalization candidate improves11/12:**
+**Latest â€” full-frame failure found; pixel-local normalization candidate improves11/12:**
 tools/evaluate_aces_smoke.py evaluates full1280x720 untiled FP32 TRAIN frames,
 saves predictions/contacts and learnedFLOAT AP1 EXR. GroupNorm smoke fails:
 magenta streaks in sky/opening, target all-image error worse than analytic10/12.
@@ -1470,10 +1494,10 @@ Both fullframe reports/context_audit/comparison saved. All16737/90898/75648
 jobs exited0. Next use v3 explicitly for broader spatial TRAIN sampling and
 separate development evaluation; don't repeat4crop overfit or promote smoke.
 
-**Latest — direct/smooth shadow target probes; first ACEScg learnability run complete:**
+**Latest â€” direct/smooth shadow target probes; first ACEScg learnability run complete:**
 Direct-shadow-reference opt-in bypasses noisy baseline mixing/Poisson in shadows,
 mandatory region bound. New run05_aces_direct_shadow_pilot_20261023 full12:
-ordinary R100%,0lift>1code,max.49code; shadow interior gradient RMSE ~5–7e-7
+ordinary R100%,0lift>1code,max.49code; shadow interior gradient RMSE ~5â€“7e-7
 cases6/7/8 (actual HDR detail retained), but +3EV boundaries cases6/8 worsen
 vs previous region-bound7.212->8.582 and6.358->7.596codes. Not adopted.
 pipeline/aces_shadow_smooth.py opt-in constrained log-exposure field, fixed
@@ -1496,7 +1520,7 @@ Next inspect learned reconstruction on full TRAIN frames and improve target
 transition/headroom criteria before broad training; keep commercial data,
 video/platform/native delivery and independent validation scope intact.
 
-**Latest — coherent shadow scaling preserves interior detail; edge trade-off remains:**
+**Latest â€” coherent shadow scaling preserves interior detail; edge trade-off remains:**
 pipeline/aces_shadow_regions.py applies one verified feasible AP1 exposure scale
 per4-connected shadow component.22 bisection iterations, exact OCIO check;
 doesn't claim optimality for nonmonotonic gamut. Opt-in region_shadows=True,
@@ -1516,7 +1540,7 @@ current coherent bound preserves whatever interior errors were already there.
 Assess direct HDR-guided shadow target with coherent exposure and transition
 constraints; preserve actual detail and no-lift jointly, not just interior scores.
 
-**Latest — real HDR detail measured; per-pixel shadow bound fixes lift but damages gradients:**
+**Latest â€” real HDR detail measured; per-pixel shadow bound fixes lift but damages gradients:**
 tools/audit_aces_reference_detail.py hash-verifies TRAIN sourceHDR/SDR/targets,
 measures scale-invariant log2-luminance gradient RMSE/gain/cosine on eroded
 highlight/shadow/fullyclipped interiors. Test proves exposure invariance and
@@ -1538,7 +1562,7 @@ Next solve shadow constraints jointly with gradient preservation (e.g. coherent
 region scaling versus constrained gradient optimization); don't accept clipped
 detail merely because lift passes. No new training or release claims.
 
-**Latest — gradient-domain target candidate reduces sky seams; mixed results elsewhere:**
+**Latest â€” gradient-domain target candidate reduces sky seams; mixed results elsewhere:**
 pipeline/aces_boundary.py implements original Dirichlet gradient-domain join in
 signed asinh AP1 (Perez et al2003 idea, no external code/weights). Opt-in
 build_target boundary_method=poisson_asinh; scalar remains default. Source
@@ -1558,7 +1582,7 @@ candidate looks closer to analytic and may lose visible recovery). No jobs live:
 builder93622 and comparison85619 exited0. No new training.
 Full notes and primary research link in production/ACES_TARGET_PILOT_REVIEW_2026-10-23.md.
 
-**Latest — ACEScg prototype v2 representability passes; pilot targets rejected visually:**
+**Latest â€” ACEScg prototype v2 representability passes; pilot targets rejected visually:**
 training/aces_model.py now explicit experimental AP1 contract v2, signed linear
 RGB residual with shared max-abs RGB scale+.001; bounded source correction and
 source-defined reconstruction support unchanged. Old exponential four-stop
@@ -1576,7 +1600,7 @@ Next diagnose/fix reference-to-inverse boundary colour/slope mismatch, then
 repeat full-resolution target/headroom review. See production/
 ACES_TARGET_PILOT_REVIEW_2026-10-23.md. Both audits exited0; no training launched.
 
-**Latest — exact ACES reference path passes real sources; gamut constraint found:**
+**Latest â€” exact ACES reference path passes real sources; gamut constraint found:**
 rudra/aces_view.py wraps official OCIO2.5.2 ACES2 SDR100 Rec1886/Rec709
 inverse/forward toACEScg, CPU NumPy only, no assumed physical exposure scale.
 tools/audit_aces2_sources.py full24 savedSDR audit under
@@ -1597,7 +1621,7 @@ Next design/test explicit ACEScg model output/composition and matching targets,
 retaining source-basedR/gradeheadroom tests. Current BT1886 weights not promoted.
 
 
-**Latest — signed repair FAIL; ACES LUT and temporal smoke completed:**
+**Latest â€” signed repair FAIL; ACES LUT and temporal smoke completed:**
 All recovery200 evaluations complete. comparison.json: signed gradient2.081745
 vsrepaircontrol2.066213 (0.7517%worse), clean2.495742vs2.462099, also worse
 earlier goodcontrol. R24pass, S0/3both; banding~.2894FAIL. Do NOT adopt signed.1.
@@ -1618,7 +1642,7 @@ images and a consistent training/export contract before further BT1886-only
 auxiliary trials. ApproximateLUTs are not approved. No known live jobs now.
 
 
-**Latest — repair pair completed200; CPU evaluations and temporal fixtures:**
+**Latest â€” repair pair completed200; CPU evaluations and temporal fixtures:**
 Signed training exited completed200 (run25258df4222244d6a57b422c8a238ef4).
 mechanics200.json allchecks pass, same RNG/code/data except signedweight.1.
 ControlSHA9ba6d9363d49994200dc275d45980f5f57e9a643681915de4c770259411d87a0;
@@ -1640,7 +1664,7 @@ not originalcapturetiming. No temporal model evaluation yet; longer/objectmotion
 and independent platform coverage still required. Builder tool added separately.
 
 
-**Latest — repair control200 done; signed treatment and control audit launched:**
+**Latest â€” repair control200 done; signed treatment and control audit launched:**
 Control run ID4bfc713dd84b44f38b6e0a8576e79fb1 completed200, actual worker50712
 exited before treatment launch. Signed treatment launcher34788 under
 G:/rudra_training/run05_shadow_repair_signed_20261023. Control CPU full24 audit
@@ -1659,7 +1683,7 @@ codeRMSE1.6518vs9.2696; tiny-support equal-pair means need their counts. Negativ
 Rec709 alone is NOT invalidHDR: targets contain some too. No gate substitution.
 
 
-**Latest — signed-shadow recovery trial control launched (23 October):**
+**Latest â€” signed-shadow recovery trial control launched (23 October):**
 Standalone signed source-Rec709 asinh radiance loss implemented and integrated
 opt-in --signed-shadow-weight, default0. Keeps negative channels in supervision;
 target anchored, source max<=16code support, .1nit asinh scale.15 focused tests
@@ -1681,7 +1705,7 @@ launch signed recipe same way. Final200 same-device full24 evaluation, pair
 verifier now supports --treatment signed_shadow_weight --weight .1. No promotion.
 
 
-**Latest — reconstruction-gradient trial FAIL; dark blue artefact diagnosed:**
+**Latest â€” reconstruction-gradient trial FAIL; dark blue artefact diagnosed:**
 Both CPU full24 audits finished; comparison.json under G:/rudra_training/
 run05_reconstruction_comparison_20261022: gradient2.070497->2.549559
 (23.1375% worse), clean2.463664->3.392623. Rallpass and relative H/S guards
@@ -1697,7 +1721,7 @@ fully restore clean codec inputs; details/research links in continuation audit.
 No training/evaluation live expected; recheck processes before new launches.
 
 
-**Latest — reconstruction pair complete; full-image audits live; direct graph parity:**
+**Latest â€” reconstruction pair complete; full-image audits live; direct graph parity:**
 Treatment completed400 and training processes exited. mechanics400.json under
 G:/rudra_training/run05_reconstruction_comparison_20261022 passes all matched
 identity/config/RNG checks; CUDA nondeterminism caveat retained. Treatment SHA
@@ -1715,7 +1739,7 @@ Batch1 only; no frame-conditioned heads, ACES-view/native integration or
 quality claim. Six focused export tests pass (13 expected tracing warnings).
 
 
-**Latest — reconstruction control finished; treatment and CPU audit live (23 Oct Cairo):**
+**Latest â€” reconstruction control finished; treatment and CPU audit live (23 Oct Cairo):**
 Control38568 exited completed400. Treatment run05_reconstruction_gradient_
 20261022 started launcher52116,80/400 observed, errors empty. Keep pinned code
 fixed. Control final400 full24 CPU audit launcher45392 under
@@ -1734,7 +1758,7 @@ and independent OpenEXR types verified; not an ACES-view or production pass.
 Mask marks100% of example because learned subcode corrections affect allpixels;
 do not hide them by changing exported-mask thresholds or the source-based R test.
 
-**Latest — reconstruction-gradient matched control launched:**
+**Latest â€” reconstruction-gradient matched control launched:**
 New multi-exposure reconstruction-gradient term implemented opt-in in resumable
 trainer, default0; rejected dequant term stays disabled. TRAIN12 input-boundary
 probe median candidate/primary norm24.721, tested weight.01 (median.247).
@@ -1752,7 +1776,7 @@ Channel audit24: known channels in high pixels105152, model changes>1code96427,
 target90604. Current pixel mask permits this; mechanism evidence, not a reason
 to silently change policy/rebuild data. Details in continuation audit.
 
-**Latest — branch diagnosis and bounded-diffusion pilot completed:**
+**Latest â€” branch diagnosis and bounded-diffusion pilot completed:**
 No training/evaluation active. audit_dequant_branch.py FP32 CPU TRAIN12:
 raw abs never>3, derivatives healthy; .003 auxiliary gradient comparable to
 primary, median cosine.952 (mostly same direction). Spatial component norm
@@ -1770,7 +1794,7 @@ one clean). NOT integrated/adopted; retain negative evidence. No new weights.
 Next separate spatial-loss learning from pixel bias and reconstruction-boundary
 quality; inspect branch-specific gradient scaling before a registered trial.
 
-**Latest — paired dequant trial FAIL; mask writers verified:**
+**Latest â€” paired dequant trial FAIL; mask writers verified:**
 All training/evaluation/build sessions finished (18247,17198,30286,78102,
 33931 terminal). No known live run. Full24 comparison.json: auxiliary gradient
 2.070899vscontrol2.070258 (-0.03095% improvement), clean2.465394vs2.463009;
@@ -1788,7 +1812,7 @@ RUDRA build passes in native_gate_b. Still NOT wired from model to app/master
 requests; mask provenance semantics must be explicit, do not hide edits in R.
 Full evidence in continuation audit and run05_dequant_comparison_20261022.
 
-**Latest — both400 runs complete; control full24 audit running:**
+**Latest â€” both400 runs complete; control full24 audit running:**
 Auxiliary worker52996 exited completed400, SHA41cf77e10af6db00891c8c54992bce004609016d0f2ace787b41eb7a44732eac.
 verify_run05_pair.py checks all pass at200 AND400 (mechanics200/400.json):
 code/data/parent/config except treatment, sampler/RNG, schedule/AMP, finite.
@@ -1802,7 +1826,7 @@ then compare reports, render review_run05_dequant.py and inspect visuals.
 Separate official ACES2 inverse probe passed sampled99.9% R but not allpixels;
 see audit and aces2_inverse_probe.json. No model/native ACES migration yet.
 
-**Latest — control400 complete, auxiliary training and parent audit live:**
+**Latest â€” control400 complete, auxiliary training and parent audit live:**
 Control worker7124 exited, status completed400; explicit step_0000400.pt SHA
 b3d1787d1425146f61680fe99f28631f9feac88e3f0dc723ef5877fad41ee6d1.
 Auxiliary run05_observed_dequant_20261022 launched34964, same recipe except
@@ -1819,7 +1843,7 @@ gradient means; >=5% overall improvement, no clean mean regression, guards.
 Missing exposure evidence cannot pass. Training identity/mechanics still need
 checkpoint-level verification. Parent audit alone cannot judge trained pair.
 
-**Latest — corrected corpus audited; matched control launched (22 October):**
+**Latest â€” corrected corpus audited; matched control launched (22 October):**
 Corrected624 corpus complete:1872 media decode/hash checks pass,208scenes,
 600train/24val, saved target R624/624; same624 source SDR hashes as old corpus.
 Opt-in dequant code/reference-gradient loss integrated with view/augmentation
@@ -1834,7 +1858,7 @@ Keep pinned code fixed. After control finishes, run auxiliary sequentially and
 evaluate explicit final400 checkpoints on full24 with reference-gradient
 metrics and clean/codec strata. No promotion; banding/ACES/temporal gaps remain.
 
-**Latest — observed clipping policy validated; full rebuild running (22 October):**
+**Latest â€” observed clipping policy validated; full rebuild running (22 October):**
 Expansion2000 completed, worker38808 exited; no training now. Final old-policy
 fullres24: Rpass, highlights.818vs1.920baseline, shadow0/3pairs, banding.2876FAIL.
 Added opt-in observed_clip_v1 across builder/head/checkpoint/trainer/evaluator;
@@ -1848,7 +1872,7 @@ Full624 corrected corpus building(session22197,worker11408),495rows observed.
 Do not edit builder/policy/contract dependencies while building. After completion
 audit all hashes/source identity/targets before training. No model promotion.
 
-**Latest — step1000 review exposes target/metric defects (22 October):**
+**Latest â€” step1000 review exposes target/metric defects (22 October):**
 Fullres24 complete: R24/24, highlight.714vs1.920 baseline, visible shadow lift0
 (3pairs), fidelity.02133vs.03120; banding.2885 FAIL. Four visual comparisons
 inspected; sky patches exist in TARGET and model. New24-target audit finds
@@ -1860,7 +1884,7 @@ all4 reviewed model outputs worsen zero-push reference code/gradient errors.
 Training38808 last verified live1820/2000; let finish, preserve pinned code.
 Review/export/metric evidence paths in continuation audit. No release pass.
 
-**Latest — dequant loss prototype; fullres1000 running (22 October):**
+**Latest â€” dequant loss prototype; fullres1000 running (22 October):**
 Standalone code/reference-gradient objective,5 tests pass; NOT enabled in trainer.
 Real12-crop train diagnostic finite after fixing new loss zero-channel gradient;
 step800 improves9/12 but both uncompressed crops regress. New loss gradient
@@ -1869,7 +1893,7 @@ CPU fullres24 ofstep1000 running(session6187,worker17032), output under
 run05_expansion_eval_20261022/step1000_fullres. Training38808 live1060/2000.
 Keep trainer fixed; no promotion. Full evidence in continuation audit.
 
-**Latest — desktop RGB16 integrated (22 October):**
+**Latest â€” desktop RGB16 integrated (22 October):**
 FFV1 RGB16 now wired through movie CLI/queue, desktop movie and folder export,
 and headroom movie export; full RGB/PQ tags and MKV container. Release builds
 pass;8 native encode/QC and5 distinct focused desktop tests pass, including
@@ -1878,7 +1902,7 @@ Resolve/Nuke and visual UI review remain unverified; PQ video is not a
 scene-linear master. Training worker38808 verified live step680/2000; keep
 pinned trainer unchanged. No model quality pass. See continuation audit.
 
-**Latest — expansion2000 launched (22 October 22:20 Cairo):**
+**Latest â€” expansion2000 launched (22 October 22:20 Cairo):**
 All624 saved targets now pass R across every codec group. Complete data hash,
 decode and input-sheet checks passed. Started run05_expansion_20261022 with
 configs/experiments/run05_expansion.json,2000 scratch steps,2-hour cap, resume
@@ -1886,7 +1910,7 @@ save100. Check actual process/status; do not edit pinned trainer code while
 active. No quality or release pass; no VAE rows in this run. Older pending
 target-check notes below are superseded.
 
-**Latest — expanded data audited; target check pending; Wan VAE verified small (22 October):**
+**Latest â€” expanded data audited; target check pending; Wan VAE verified small (22 October):**
 Expansion624 complete, all1872 media hashes/decode pass, all26 input sheets
 visually reviewed; visual_review.json records limitations. Target-contract check
 still live worker48072/session20160; inspect target_contract.json before launch.
@@ -1895,7 +1919,7 @@ revision, hashes at G:/datasets/models/wan21_vae_run05_20261022.144x256 GPU prob
 and visual roundtrip pass; no fullres/temporal claim. Weight identity+resume
 protection and loader cache added;22 tests pass. No VAE rows in existing624.
 
-**Latest — shadow loss improves but fails; expansion QA begun (22 October):**
+**Latest â€” shadow loss improves but fails; expansion QA begun (22 October):**
 Shadowloss fullres24 complete: R24/24, highlight1.263stops vs baseline1.920,
 shadow lift .303 vs nativecrop .631, fidelity .03020vs.03120; banding .283
 still fails. Expansion builder still live(session5624),473/624 pairs observed.
@@ -1904,7 +1928,7 @@ At snapshot63 pairs have >.1% true shadow target region. Complete full audit
 and all contact sheets before training. Prepared2000-step expansion recipe,
 NOT launched. See continuation audit for evidence and unfinished tasks.
 
-**Latest — expansion conversion and shadow-loss evaluation running (22 October):**
+**Latest â€” expansion conversion and shadow-loss evaluation running (22 October):**
 Shadowloss200 completed: clean/hard PU -1.57627/-.416666dB. Fullres24 evaluation
 running at run05_bounded_eval_20261022/shadowloss200_fullres (session70374).
 CC0 Poly Haven expansion selected/hash-verified200train+8val scenes;58 train
@@ -1914,7 +1938,7 @@ Check live state before relaunching. Initial expansion folder marked REJECTED;
 use v2 only. Needs visual/hash/target audit and broader location-overlap review.
 Detailed evidence in continuation audit; model and goal remain incomplete.
 
-**Latest — target-relative shadow loss experiment (22 October 22:04 Cairo):**
+**Latest â€” target-relative shadow loss experiment (22 October 22:04 Cairo):**
 Nativecrop fullres complete: R24/24, highlights1.288vs1.920 baseline; shadow
 lift .631 and fidelity .03525vs.03120 fail. Train-only dark target audit11/72
 pairs shows all crushed target pixels <.1nit. Existing near_black_log_loss
@@ -1923,7 +1947,7 @@ enabled (weight.05,code16) in matched200-step run05_shadowloss_smoke_20261022.
 Check live worker/status; do not edit pinned trainer modules while active.
 No production pass. See continuation audit for all reports and next evaluation.
 
-**Latest — native RGB16 and crop-smoke result (22 October):**
+**Latest â€” native RGB16 and crop-smoke result (22 October):**
 Native FFV1 RGB16 sequence export implemented;7 SequenceEncode tests pass,
 including actual lossless16-bit decode and HDR tags. Desktop UI/queue unwired.
 Native-crop smoke completed200; clean/hard PU -.890269/-.532466dB, no promotion.
@@ -1931,7 +1955,7 @@ Full-res same24-frame evaluation running at run05_bounded_eval_20261022/
 nativecrop200_fullres. Check process/report before citing results. Next inspect
 dark target distributions to address visible shadow lift; do not resume old runs.
 
-**Latest — native crop correction and matched run (22 October 21:58 Cairo):**
+**Latest â€” native crop correction and matched run (22 October 21:58 Cairo):**
 Bounded full-res24 evaluation complete: R24/24 pass, highlight error1.92->1.27
 stops, fidelity .0312->.0280; shadow lift .284 and banding excess .287 still fail.
 Found dataset resizing invalidates source-preserving pairs (clean R3/24).
@@ -1941,7 +1965,7 @@ targets. Keep stress scores, but do not claim they test the matching contract.
 run05_nativecrop_smoke_20261022 launched for200 steps. Check actual worker/status;
 do not change pinned training files while active. Full audit has evidence paths.
 
-**Latest — bounded smoke completed; full-frame evaluation running (22 October):**
+**Latest â€” bounded smoke completed; full-frame evaluation running (22 October):**
 run05_bounded_smoke_20261022 completed200/200 and worker exited. Clean PU
 +0.076043dB, hard -0.490607dB; no promotion. Full-resolution24-frame evaluation
 started at G:/rudra_training/run05_bounded_eval_20261022/step200_fullres;
@@ -1949,7 +1973,7 @@ inspect report/process for completion. Tiled source-preservation test passed.
 Future source collection now rejects missing/malformed commercial_ok flags;
 20 corpus tests pass. Existing corpora unchanged. Main goal incomplete.
 
-**Latest — bounded output diagnostic running (22 October, 21:51 Cairo):**
+**Latest â€” bounded output diagnostic running (22 October, 21:51 Cairo):**
 Corrected96-pair preservation smoke completed200 steps but regressed clean/hard
 PU -7.62154/-0.34067 dB. Added experimental --bounded-source output head;
 21 focused integration/resume/objective tests passed. Matched200-step run
@@ -1961,7 +1985,7 @@ Python FFV1 RGB16 HDR delivery now tested end-to-end; native UI and grading
 software interoperability remain incomplete. Contract view remains BT.1886,
 not standard ACES display transform. Main goal remains incomplete.
 
-**Latest — run05 development smoke failed; storage defect found (22 October evening):**
+**Latest â€” run05 development smoke failed; storage defect found (22 October evening):**
 Read [continuation audit](production/RUN05_AUDIT_2026-10-22.md). Run05 scratch
 200-step smoke completed, final crop clean/hard PU -4.714/-0.296 dB; full-res
 24-pair diagnostic also fails preservation/shadows. No promotion. Explicit
@@ -1975,7 +1999,7 @@ corpora/checkpoints retained. Native float32 ACES/AP0 and linear master request
 integration builds; 12 export tests pass. FFV1 RGB16 transport byte-exact, but
 HDR video integration remains incomplete. Main goal and release are incomplete.
 
-**Latest — SI-HDR independent check PASSES; dark guard not confirmed (22 October):** frozen run02
+**Latest â€” SI-HDR independent check PASSES; dark guard not confirmed (22 October):** frozen run02
 best.pt passes SI-HDR A1-A3 at both clip levels (full +0.75/+1.12, highlights +0.71/+0.83 dB, CIs > 0;
 simulated SDR, independent captures), but fails the Mataha reserved test from codec-crushed blacks.
 The luminance dark guard fixes Mataha (diagnostic) but costs SI-HDR highlights (C3 fail) -> not
@@ -1983,7 +2007,7 @@ confirmed. Next: training fix for crushed/noisy near-black (run03 draft), checke
 SI-HDR and ToS. No unused footage exists, so no fresh held-out production test is possible.
 release_authorized=false. Details: PRODUCTION_PROGRESS.md 22 Oct (later).
 
-**Latest — frozen candidate FAILED the reserved test (22 October):** run02 best.pt (16,200) passed
+**Latest â€” frozen candidate FAILED the reserved test (22 October):** run02 best.pt (16,200) passed
 full-res validation (clean +0.88 / hard +0.21 dB) but the Mataha test gives clean -0.35 [-0.99,+0.18]
 and hard -0.11 [-0.24,+0.02] dB: both gates fail; CVVDP also lower. Cause: crushed, codec-noisy blacks
 in dark interiors are lifted into coloured blobs with tile seams (A_0027C021, -6.3 dB). ToS: flicker
@@ -1991,7 +2015,7 @@ pass, moving-highlight T2 fail 3/4. Not production-ready; release_authorized=fal
 do not tune on it. See PRODUCTION_PROGRESS.md 22 Oct and G:/rudra_training/production_eval_20261019/
 test_findings_run02_best_step16200/.
 
-**Latest — run02 completed; audit, shortlist and production tooling ready, full-res eval NOT run (21 October):**
+**Latest â€” run02 completed; audit, shortlist and production tooling ready, full-res eval NOT run (21 October):**
 [Report, commands, evidence](ai/PRODUCTION_CONTINUATION_2026-10-21.md). Run02 (`fxtd_native1080_hdr_run02`)
 status completed 20,000/20,000 in 14.3 h, errors.log empty, 0 nonfinite records; 20 numbered
 checkpoints + best.pt (= step 16,200, weights only) hashed and untouched. Read from files: process exit
@@ -2006,7 +2030,7 @@ tools; 169 tests pass (CPU, cloud). Rights: 1,928/2,720 train rows rest only on 
 weight distribution false for all sources; see docs/production/. Implementation complete only:
 no validation pass, no production approval, release_authorized=false.
 
-**Latest — native1080 run lost, restart failed (20 October):** Run01 folder was
+**Latest â€” native1080 run lost, restart failed (20 October):** Run01 folder was
 recreated 21:23 UTC 19 Oct; earlier checkpoints 1000-5000 are gone. The new
 attempt failed before step 1 with `CUDA error: unknown error` at initial
 validation. No resume path exists. Recover GPU (reboot, nvidia-smi, check
@@ -2014,7 +2038,7 @@ nvlddmkm/TDR events), then `train_next_hdr_commercial.ps1 -Action Check` and
 `-Action Start -RunName fxtd_native1080_hdr_run02`. Old highlight step 7000
 remains the evaluation reference. Details in PRODUCTION_PROGRESS.md.
 
-**Latest — parallel production preparation, no GPU use (19 October, evening):**
+**Latest â€” parallel production preparation, no GPU use (19 October, evening):**
 [Details, commands, evidence](ai/PRODUCTION_PARALLEL_PREP_2026-10-19.md). Native1080
 run read from files (PowerShell Status not run from agent VM): training, step
 5,600/20,000 at 5.09 h, errors empty; untouched. Saved 1000-5000 all fail the
@@ -2030,7 +2054,7 @@ rows rely only on the owner's footage statement; all sources weight
 distribution false. Next: after exit audit/evaluate step 7000 + shortlist,
 then candidate compare. Owner rights confirmation still needed.
 
-**Latest — production evaluation kit prepared (19 October):** Owner authorized
+**Latest â€” production evaluation kit prepared (19 October):** Owner authorized
 parallel production preparation during training. Added training/production_eval_kit.py
 and scripts/evaluate_hdr_production.ps1. Frozen 251 validation pairs /25 scenes
 on G:/rudra_training/production_eval_20261019/validation_kit; verified 502 media
@@ -2042,7 +2066,7 @@ evidence files and 25-scene category review queue; independent SI-HDR/ToS
 colour/overlap and temporal checks remain unresolved. Full commands/evidence
 in [next-run guide](ai/NEXT_NATIVE1080_TRAINING_2026-10-19.md).
 
-**Latest — production checkpoint audit (19 October):** Owner requests production
+**Latest â€” production checkpoint audit (19 October):** Owner requests production
 quality and commercial use. New native1080 worker 51548 observed present at
 initial validation; do not restart or mutate it. Old highlight run stopped at
 14,400/8h; last completed evaluation 14,200. Added read-only CPU checkpoint
@@ -2056,7 +2080,7 @@ Next: compare actual saved shortlist on per-scene validation/deployment path,
 then independently prepared full-resolution and temporal evidence. No new
 training, source admission, release authorization or final quality pass here.
 
-**Latest — native-1080p next-run preparation (19 October):**
+**Latest â€” native-1080p next-run preparation (19 October):**
 Owner asked to prepare the collected sources and provide the next training
 script. [Next-run instructions](ai/NEXT_NATIVE1080_TRAINING_2026-10-19.md).
 Separate candidate: `G:/datasets/corpora/rudra_native1080_expansion_20261019_v3/`.
@@ -2075,7 +2099,7 @@ is admitted. New images are 1080p but the unchanged trainer uses 256px crops.
 The next run is `fxtd_native1080_hdr_run01`; its frozen data snapshot is already
 prepared. Start only after the active trainer exits. No resume support.
 
-**Latest — next high-resolution source collection (19 October):**
+**Latest â€” next high-resolution source collection (19 October):**
 [Collection report](ai/NEXT_HDR_COLLECTION_2026-10-19.md) and
 [source rights](ai/NEXT_HDR_SOURCE_RIGHTS_2026-10-19.md). Separate G: source
 pack `datasets/sources/next_hdr_sources_20261019_v3/`. All 23 8K HDRIs and
@@ -2098,7 +2122,7 @@ upscaling of 360p pairs as new detail. Current highlight trainer is active,
 last observed step 580; unchanged. New source evidence is CC0 / CC BY with
 attribution; release remains false. Completed/remaining details are in report.
 
-**Latest — highlight candidate readiness completed (19 October):**
+**Latest â€” highlight candidate readiness completed (19 October):**
 The user's failed Check was caused by the missing visual review, not failed
 preparation. [Actual review](ai/HIGHLIGHT_VISUAL_REVIEW_2026-10-19.md) records
 complete contact-sheet inspection and representative SDR/HDR/source-EXR views
@@ -2112,7 +2136,7 @@ for a controlled internal pilot, not quality success or release authorization.
 G: contains visual notes and visual_diagnostics/ as well as the frozen corpus.
 Earlier pending-review snapshots below are superseded by this entry.
 
-**Latest — next-run handoff and guarded launcher saved (18 October):**
+**Latest â€” next-run handoff and guarded launcher saved (18 October):**
 next-run handoff
 is the primary continuation document. Also copied to
 the next-run handoff on G:. Current Z run observed at
@@ -2126,7 +2150,7 @@ Eight focused readiness/snapshot tests pass. No next training launched, no
 current-training/preparation-code changes, and no promotion/release. Use the
 new handoff for remaining tasks, commands, storage dependencies and budget caveats.
 
-**Current — v2 fire/reflection preparation RUNNING (18 October):**
+**Current â€” v2 fire/reflection preparation RUNNING (18 October):**
 [Preparation report](ai/FIRE_REFLECTION_EXPANSION_2026-10-18.md). Owner requested
 preparation for the next run. Sources on G: at
 `datasets/sources/fire_reflection_expansion_20261018_v2/`; separate candidate at
@@ -2155,7 +2179,7 @@ loader samples pass. Ground-fire frame took 253 seconds CPU; full fire renders
 may take hours. Fixed fire -2 EV pair exposure reduces near-ceiling target
 values. Full-candidate checks and visual review are still pending.
 
-**Current — supplied F: VFX library audited; zero additions (18 October):**
+**Current â€” supplied F: VFX library audited; zero additions (18 October):**
 [Intake report](ai/F_VFX_LIBRARY_INTAKE_2026-10-18.md). Four owner-supplied paths
 reduce to two non-overlapping roots under `F:/Assets/VFX Library/`: Comp and
 Effects/FX/ActionVFX. 8,245 files / 62.12 GB inventoried; metadata/evidence on
@@ -2171,7 +2195,7 @@ training. Existing 2,767-pair pilot and active trainer unchanged. Next: review
 original camera/renders or applicable rights evidence when supplied; these
 folders have not closed the real-highlight gap.
 
-**Current — next-run highlight pilot prepared (18 October):**
+**Current â€” next-run highlight pilot prepared (18 October):**
 [Expansion report](ai/HIGHLIGHT_EXPANSION_2026-10-18.md). Separate G: corpus
 `datasets/corpora/rudra_highlight_expansion_20261018_v1/`: 328 new synthetic/
 panorama pairs, combined candidate 2,767 (2,256 train / 251 val / 260 test).
@@ -2192,7 +2216,7 @@ Owner subsequently supplied VFX-library paths; see the newer intake above.
 Inspect rights/encoding/coverage before a separately versioned addition. Do not
 infer that the remaining real-camera gaps are already filled.
 
-**Earlier — free Blender/JangaFX gap sources downloaded (18 October):**
+**Earlier â€” free Blender/JangaFX gap sources downloaded (18 October):**
 [Source audit](ai/BLENDER_HDR_GAP_SEARCH_2026-10-18.md). Owner has no Blender
 subscription and prioritizes free downloads. Five free packs on G: at
 `datasets/sources/blender_jangafx_gap_sources_20261018_v1/`: three Charge Blender
@@ -2208,7 +2232,7 @@ Next source work is compatible scene rendering, split freezing and quality
 checks before any separate future training run. Real camera fire/sparks remain
 a gap. No release authorization inferred.
 
-**Earlier — commercial highlight sources downloaded; existing training continues (18 October):**
+**Earlier â€” commercial highlight sources downloaded; existing training continues (18 October):**
 [Collection report](ai/COMMERCIAL_HIGHLIGHT_COLLECTION_2026-10-18.md). Separate source
 pack on G: contains 34 8K HDRIs and 12 metal materials / 86 files / 7.265 GB.
 All publisher checksums and full image decodes passed. Poly Haven CC0 commercial
@@ -2220,7 +2244,7 @@ pair rendering are required before these new sources enter training. Current
 Z run last observed at step 1,700, PID 58624, errors log empty; re-read live status.
 No release/promotion or changes to the active code, data or environment.
 
-**Earlier snapshot — expanded training ACTIVE; preparation complete (18 October):**
+**Earlier snapshot â€” expanded training ACTIVE; preparation complete (18 October):**
 HDR handoff contains
 the verified state, source interpretations, paths, commands and next checks.
 Run `G:/rudra_training/fxtd_z_hdr_run01/` observed training at step 20, worker
@@ -2234,8 +2258,8 @@ at inspection. Step-200 smoke and new model quality remain pending. No restart,
 extra trainer, mutable dataset/code changes, promotion or release. This current
 entry supersedes queued/in-progress snapshots below.
 
-**Earlier snapshot — expanded Z: preparation and subsequent scratch run queued (18 October):**
-Owner requested “all next” and confirmed LogC4 for the remaining seven TAHA UHD
+**Earlier snapshot â€” expanded Z: preparation and subsequent scratch run queued (18 October):**
+Owner requested â€œall nextâ€ and confirmed LogC4 for the remaining seven TAHA UHD
 files and Mataha A_0020C010. [Workflow report](ai/Z_FOOTAGE_PREPARATION_2026-10-18.md).
 172 candidates / 516 sampled frames decoded successfully; seven same-split
 similarities, zero cross-split flags. Frozen plan selects 123 take/version groups,
@@ -2250,7 +2274,7 @@ it waits for existing HDR trainers to exit and starts `fxtd_z_hdr_run01`, scratc
 run02 is untouched. Do not start another job or change preparation code in flight.
 17 focused tests pass. This is launched work, not completed pairs or model quality.
 
-**Earlier snapshot — FXTD scratch training requested and launched (18 October):**
+**Earlier snapshot â€” FXTD scratch training requested and launched (18 October):**
 Owner explicitly requested preparation, starting training and runnable scripts.
 Launcher: `scripts/train_fxtd_commercial.ps1`; [run guide](ai/FXTD_TRAINING_RUN_2026-10-18.md).
 Run: `G:/rudra_training/fxtd_hdr_run02/`; read `status.json`, `console.log`
@@ -2270,7 +2294,7 @@ and no logged errors in the original run. The owner stopped that run and started
 run02. Latest observed run02 status: training, step 12,000/20,000, elapsed
 24,203 seconds; final quality remains unassessed. Preserve the eight-hour cap.
 
-**Latest intake — ten additional Z: footage folders (18 October):**
+**Latest intake â€” ten additional Z: footage folders (18 October):**
 [Intake report](ai/Z_FOOTAGE_INTAKE_2026-10-18.md). All accessible; 260 files,
 1.107 TB, 195 successfully probed video headers. Owner confirmed "alexa logc 4"
 specifically for Sudan, FASHONISTA and FOUAD HAMZA: 84 files. AMIN retains separate
@@ -2281,7 +2305,7 @@ pairs or active-run input changes. Next: pixel/colour QC, take/version and
 cross-corpus deduplication, production splits, then isolated pair preparation.
 All Mataha remains held out; group FASHONISTA folders and Fouad folders by title.
 
-**Latest data request — commercial source selection (18 October):**
+**Latest data request â€” commercial source selection (18 October):**
 Owner broadened the prior FXTD-only preference to commercially usable supplied
 datasets. [Selection report](ai/COMMERCIAL_DATA_SELECTION_2026-10-18.md).
 New manifests: `G:/datasets/corpora/rudra_commercial_review_20261018_v1/`.
@@ -2298,7 +2322,7 @@ checkpoint reuse, promotion, commit or release. Existing source datasets untouch
 The user's request authorized isolated selection artifacts and licence retrieval;
 historical no-dataset-write notes below are not a new block on that completed work.
 
-**Latest — headroom preview wired into the app; export, scopes and source whites (18 October):**
+**Latest â€” headroom preview wired into the app; export, scopes and source whites (18 October):**
 [Integration report](HEADROOM_APP_INTEGRATION_2026-10-17.md).
 
 **What was added**
@@ -2344,7 +2368,7 @@ The 2 app failures are environmental; the baseline fails them too.
 Keep public selection and default readers closed. No training, downloads,
 dataset writes, commit, push or release.
 
-**Latest — remaining-work ledger, session preview foundation and app workflow fixes (17 October):**
+**Latest â€” remaining-work ledger, session preview foundation and app workflow fixes (17 October):**
 The owner requested the full remaining checklist before implementation; it is
 saved in [REMAINING_WORK.md](REMAINING_WORK.md). It now lists only unfinished work;
 record completion evidence in the progress report before removing a task. Partial
@@ -2380,7 +2404,7 @@ clearance, calibrated HDR review, signing, clean machine and Mac are still open.
 No training, downloads, source dataset writes, model promotion, package refresh,
 commit, push or release. Historical approvals are not new pending experiments.
 
-**Latest — asynchronous headroom playback and shared pixel budget complete (17 October):**
+**Latest â€” asynchronous headroom playback and shared pixel budget complete (17 October):**
 [Design contract, validation and measurements](HEADROOM_ASYNC_PLAYBACK_2026-10-17.md).
 `HeadroomPlayback` provides generation-based open/seek/cancel, one decoding worker
 and a cancellation worker. Old decoders are explicitly closed/reaped before new
@@ -2395,7 +2419,7 @@ of this shared allowance; account for it before mixing both paths in the app.
 matching the previous frozen path. No build failure or benchmark timeout this
 increment. Current synchronous feed differs only +1.1% HD / +0.6% UHD in this
 small sample. Background UHD feed is 24.0% faster, with 189.84 MiB native pixels;
-request dispatch measures 0.0027–0.0104 ms. First UHD frame remains ~420 ms after
+request dispatch measures 0.0027â€“0.0104 ms. First UHD frame remains ~420 ms after
 preparation; UHD is 10.52 fps before rendering. Slow consumers still take ~1.56 GiB
 sampled total memory. No real-time, whole-process cap or production-footage claim.
 Evidence/frozen executable/fingerprints: `reports/headroom_playback_20261017/`;
@@ -2413,7 +2437,7 @@ validation and existing commercial/model, calibrated HDR, signing, clean-machine
 and macOS gates persist. App/Python/GPU not rerun; app/packages not rebuilt. No
 training, download, source dataset writes, model promotion, commit or release.
 
-**Latest — reusable protected source and cancellable preparation complete (17 October):**
+**Latest â€” reusable protected source and cancellable preparation complete (17 October):**
 [Ownership contract, measurements and limits](HEADROOM_PREPARATION_2026-10-16.md).
 `PreparedHeadroomSource` shares full probe/hash results and source/decoder leases
 across stream/batch owners; stop tokens cancel probing and chunked hashing.
@@ -2442,7 +2466,7 @@ App/Python/GPU not rerun; app/packages not rebuilt. No training, downloads, sour
 dataset edits, model promotion, commit or release. Existing commercial/model,
 calibrated HDR, signing, clean-machine and macOS release gates persist.
 
-**Latest — FFV1 decoder memory reduction and longer validation complete:**
+**Latest â€” FFV1 decoder memory reduction and longer validation complete:**
 [Measured profile, evidence and limits](HEADROOM_DECODER_MEMORY_2026-10-16.md).
 Float FFV1 uses two input workers, one raw-output worker and one output-queue
 packet. Other codecs retain existing settings. Command identity automatically
@@ -2466,7 +2490,7 @@ Pre-existing ORT API 22/17 warning persists. App/Python/GPU not rerun; app/packa
 not rebuilt. No training, source dataset changes, downloads, commit or release.
 Existing commercial/model, calibrated HDR, signing and clean-machine gates persist.
 
-**Latest — continuous headroom decoder prototype validated:**
+**Latest â€” continuous headroom decoder prototype validated:**
 [Design contract, measurements and next task](HEADROOM_CONTINUOUS_STREAM_2026-10-16.md).
 Added isolated `HeadroomStream`: one decoder per immutable range, provisional
 preview tokens, owner-specific decode completion receipts and explicit verified
@@ -2492,7 +2516,7 @@ corrected build/whitespace checks pass. Pre-existing ORT API 22/17 warning persi
 App/Python/GPU not rerun; app/packages not rebuilt. No training, dataset changes,
 downloads, model promotion, commit or release. Existing release gates persist.
 
-**Latest — headroom HD/UHD performance measured and incrementally improved:**
+**Latest â€” headroom HD/UHD performance measured and incrementally improved:**
 [Measured comparison and next design criteria](HEADROOM_PLAYBACK_PERFORMANCE_2026-10-16.md).
 Added reproducible paired benchmarks/frozen binaries, four-thread float decode,
 guarded FFV1/Matroska clock-based seeking, and better batch-space reclamation.
@@ -2512,7 +2536,7 @@ Pre-existing test ORT API 22/17 warning remains; no neural/GPU acceptance claime
 App/Python/GPU not rerun. No dataset edits, training, downloads, app rebuild,
 package refresh, commit or release. Existing commercial/release gates persist.
 
-**Latest — bounded headroom float cache and asynchronous feeder complete:**
+**Latest â€” bounded headroom float cache and asynchronous feeder complete:**
 [Implementation, evidence and remaining performance work](HEADROOM_FRAME_CACHE_2026-10-16.md).
 `HeadroomFrameSource` owns Windows read leases, source/decoder content identity,
 full-resolution immutable frames and cancellable indexed requests. Budget covers
@@ -2530,7 +2554,7 @@ default reader guard; headroom is still unavailable in app/CLI selections.
 Read leases are Windows-only; other platforms fail closed. No GPU/visual/speed
 claim, training, dataset changes, app rebuild or package refresh. Release gates persist.
 
-**Latest — headroom storage compatibility and indexed decode complete:**
+**Latest â€” headroom storage compatibility and indexed decode complete:**
 [Evidence and next integration criteria](HEADROOM_STORAGE_2026-10-16.md).
 Headroom projects use version 2; legacy writes stay version 1. Current app/default
 readers and Python legacy render paths explicitly refuse unsupported policies.
@@ -2546,7 +2570,7 @@ project-reader guard until those consumers really support the new path. Indexed
 trim traverses preceding frames; full hash costs and performance need measuring.
 No headroom app/CLI selection, GPU/visual/speed pass, training or package refresh.
 
-**Latest — shared headroom grading / delivery boundary validated:**
+**Latest â€” shared headroom grading / delivery boundary validated:**
 [Implementation, restrictions and next wiring](HEADROOM_RENDER_2026-10-16.md).
 `render_headroom_frame` applies exposure, Region EV and masks in linear Rec.2020;
 `master_headroom_video_frame` explicitly adapts units to existing delivery code.
@@ -2560,7 +2584,7 @@ float source/cache identity, then preview/scopes/master/movie caller wiring and
 provenance before UI exposure. Read the report's integration limits first.
 Current eligibility remains tagged 8/10-bit YUV444. Release gates persist.
 
-**Latest — opt-in BT.1886 headroom baseline complete:**
+**Latest â€” opt-in BT.1886 headroom baseline complete:**
 [Implementation, evidence and integration limits](HEADROOM_BASELINE_2026-10-16.md).
 Versioned `bt1886-headroom-v1`, disabled by default, consumes ExtendedVideoFrame
 and returns linear Rec.2020 at 203 nits/unit before grade. Requires analytic
@@ -2573,7 +2597,7 @@ project policy and provenance; verify grading controls before UI exposure.
 No app/GPU/performance/visual pass claimed for this new path. Do not simply feed
 its output through old SDR clamps or network-unit conversion. Release gates persist.
 
-**Latest — isolated float decoder implemented and tested:**
+**Latest â€” isolated float decoder implemented and tested:**
 [Implementation and boundaries](FLOAT_DECODER_2026-10-16.md).
 FloatVideoDecoder / ExtendedVideoFrame preserve signed encoded RGB and source
 contract, without entering the SdrImage/model pipeline. Eligibility is limited
@@ -2585,7 +2609,7 @@ Next: versioned opt-in analytic BT.1886 baseline with unit tests, following
 SUPER_WHITES_REVIEW_2026-10-16.md; shared viewer/export/cache integration follows.
 No new training authorization inferred. Packaging/release gates remain open.
 
-**Latest — super-white preservation review complete:**
+**Latest â€” super-white preservation review complete:**
 [Measured review and implementation gates](SUPER_WHITES_REVIEW_2026-10-16.md).
 20/20 bounded decoder checks pass; float preserves 79/79 tested 10-bit
 above-white levels, existing export and proposed limited-integer RGB keep 1.
@@ -2597,7 +2621,7 @@ No production pixels changed or new native/GPU/quality pass claimed this turn.
 Evidence: `reports/superwhite_review_20261016_final/review.json`; earlier failed
 assumption run retained. Existing release gates and stale-package status persist.
 
-**Latest — source inspection first increment complete:**
+**Latest â€” source inspection first increment complete:**
 [Source inspection review](SOURCE_INSPECTION_2026-10-16.md).
 Movie stream tags and limited-range/HDR warnings are shown in the Source card;
 **60 app / 264 native tests pass**. Updated executable built and opened.
@@ -2608,7 +2632,7 @@ playback and export decode differently, so decoder-only changes are inadequate.
 Routine UI/tests can continue on Light. No new training approval inferred.
 Packages remain stale and all outstanding release gates remain in force.
 
-**Latest — user workflow review and F shortcut complete:**
+**Latest â€” user workflow review and F shortcut complete:**
 [WORKFLOW_REVIEW_2026-10-16.md](WORKFLOW_REVIEW_2026-10-16.md).
 F now invokes Fit without stealing text input; Getting Started copy updated.
 Expanded export matrix found/fixed ProRes log frame-tagging QC failure.
@@ -2618,7 +2642,7 @@ are stale and must be rebuilt before distribution. Next safe engineering:
 analytic mode for standalone workflow-check and fresh evaluation packaging.
 Manual visual/clean-machine/signing/licensing gates remain pending.
 
-**Latest — portable acceptance kit ready; no clean environment available:**
+**Latest â€” portable acceptance kit ready; no clean environment available:**
 Owner confirmed this limitation. See [CLEAN_MACHINE_KIT_2026-10-16.md](CLEAN_MACHINE_KIT_2026-10-16.md).
 Installer, fixture, standalone checks and checklist are bundled. Copied script
 passed on Windows PowerShell 5.1 against the staged package; this is local
@@ -2626,7 +2650,7 @@ portability evidence only. Clean install/uninstall remains pending until a
 separate Windows VM/PC is available. Do not repeatedly substitute local tests.
 Visual review, signing and commercial clearance also remain open.
 
-**Latest — evaluation installer staged:**
+**Latest â€” evaluation installer staged:**
 [MODEL_FREE_INSTALLER_2026-10-16.md](MODEL_FREE_INSTALLER_2026-10-16.md).
 Unsigned 144 MB installer compiled from the tested model-free folder; hash
 recorded. Separate AppId, install folder/shortcuts, no `.rudra` associations.
@@ -2635,7 +2659,7 @@ performed. Windows Sandbox absent here. Next: clean-machine acceptance using
 `docs/CLEAN_MACHINE_ACCEPTANCE.md`; signing, visual review and legal clearance
 remain pending. Do not report installer runtime acceptance as passed.
 
-**Latest — model-free package implemented and tested:**
+**Latest â€” model-free package implemented and tested:**
 [MODEL_FREE_PACKAGE_2026-10-16.md](MODEL_FREE_PACKAGE_2026-10-16.md).
 `PACKAGE_WINDOWS.ps1 -NoModels` stages in a fresh isolated directory and
 excludes model weights/catalogue. Local unsigned ZIP created; restricted-PATH
@@ -2644,7 +2668,7 @@ rejection passed. Existing research packaging remains available. Next:
 installer staging/review and clean-machine/signing checks. Owner is not ready
 for visual HDR assessment; leave it pending. Commercial clearance unresolved.
 
-**Latest — visual review opened / packaging preflight:** see
+**Latest â€” visual review opened / packaging preflight:** see
 [RELEASE_REVIEW_2026-10-16.md](RELEASE_REVIEW_2026-10-16.md).
 HDR review movie verified and opened; owner assessment and calibration details
 pending, no visual pass claimed. Inno Setup exists, signing is not configured.
@@ -2653,11 +2677,11 @@ versioned outputs, so it was not run. Next safe engineering task: explicit
 model-free packaging with isolated output and restricted-PATH smoke checks.
 Commercial clearance remains unresolved even without weights.
 
-**Latest — four-backend latency gate PASSED, 16 October:** after the user
+**Latest â€” four-backend latency gate PASSED, 16 October:** after the user
 removed the competing workload, D3D12/D3D11/Vulkan/OpenGL all pass parity
-and unchanged latency budgets. 4K composite + display: **1.16–1.48 ms**;
+and unchanged latency budgets. 4K composite + display: **1.16â€“1.48 ms**;
 this is not neural inference latency. GPU memory ~1.6 GB, background activity
-32–33%. Evidence: `reports/gpu_idle_20261016_153330/`. Primary-display HDR
+32â€“33%. Evidence: `reports/gpu_idle_20261016_153330/`. Primary-display HDR
 probes already pass and pinned FFmpeg tests pass (264 native / 57 app).
 Next: calibrated HDR/black-level review and remaining release workflow,
 packaging/signing, clean-machine/platform and licensing checks. Historical
@@ -2671,7 +2695,7 @@ checks pass, but latency still fails under 100% GPU load (Python compute PID
 45712 remains present). Next: idle-GPU latency rerun. Evidence:
 `reports/gpu_ready_20261016_153101/`; see the GPU validation report.
 
-**Latest — GPU parity and pinned dependency, 16 October:**
+**Latest â€” GPU parity and pinned dependency, 16 October:**
 [GPU_RELEASE_VALIDATION_2026-10-16.md](GPU_RELEASE_VALIDATION_2026-10-16.md).
 All four backends pass 28 composite + 30 view cases each and real-viewer SDR
 parity. Timing gates fail under concurrent 100% GPU load; both displays report
@@ -2681,7 +2705,7 @@ Approved FFmpeg 7.1.1 download is complete, pinned SHA-256 verified; full-build
 Next: rerun timing/HDR into new reports when the machine is ready. No changes
 to display settings, unrelated workloads, budgets or system PATH were made.
 
-**Latest result — all four Windows failures resolved:**
+**Latest result â€” all four Windows failures resolved:**
 [FFMPEG_VALIDATION_FIX_2026-10-16.md](FFMPEG_VALIDATION_FIX_2026-10-16.md).
 Full Release build: **264/264 native and 57/57 app tests pass**. Synthetic
 input frame tags fixed the self-test/temporal failures; Python independently
@@ -2740,26 +2764,26 @@ only, no test asserts it). Rebuild before the next native release.
 
 **Latest completed milestone:** read-only frozen-checkpoint diagnosis:
 [PUSH_BASELINE_DIAGNOSIS](ai/PUSH_BASELINE_DIAGNOSIS.md). The real-PU21 loss
-is three dark Sparks frames (< 3 nits, −22 to −30 dB in every trained arm).
+is three dark Sparks frames (< 3 nits, âˆ’22 to âˆ’30 dB in every trained arm).
 Without them the deterministic model is +0.44 dB. The likely cause is that
 ~41% of training draws are ACES exposure pushes read through the BT.1886
-baseline, which teaches a 5–13 stop dark lift.
+baseline, which teaches a 5â€“13 stop dark lift.
 
 **Push-baseline A/B: completed 14 Oct, hypothesis refuted.**
 [Result](ai/PUSH_BASELINE_RESULT.md).
 
 - The control reproduced the verified scores exactly.
-- The treatment made real PU21 −2.53 dB worse, the dark frames −4.21 dB
-  worse, and crushed error −2.18 / −3.45 stops worse. Only clipped error
+- The treatment made real PU21 âˆ’2.53 dB worse, the dark frames âˆ’4.21 dB
+  worse, and crushed error âˆ’2.18 / âˆ’3.45 stops worse. Only clipped error
   improved slightly.
 - The BT.1886-labelled ACES pushes are not the cause of the dark lift.
 - No promotion and no retry. There is no running experiment.
 
 **Read-only dark-tone check: done.** [DARK_TONE_TARGETS](ai/DARK_TONE_TARGETS.md).
 
-- Every title's real HDR sits 2.4–7.5 stops above the BT.1886 baseline below
+- Every title's real HDR sits 2.4â€“7.5 stops above the BT.1886 baseline below
   SDR code 20. That includes held-out Meridian, with a tight spread.
-- The training titles ask for about 0.1–0.8 stops more lift than Sparks
+- The training titles ask for about 0.1â€“0.8 stops more lift than Sparks
   between codes 10 and 159.
 
 **Plan 4 check:** [PLAN4_STATUS_CHECK](ai/PLAN4_STATUS_CHECK.md).
@@ -2806,7 +2830,7 @@ The default stays BT.1886. See the update section of
   - **Commit script:** `scripts/release_shadows_2026-10-15.ps1`.
     - It always makes commit 1 (Getting started) and commit 2 (BT.1886
       shadows).
-    - `-IncludeResearch` adds commit 3, the 13–14 Oct research line, which was
+    - `-IncludeResearch` adds commit 3, the 13â€“14 Oct research line, which was
       already uncommitted before.
     - `-Push` pushes; without it nothing is pushed.
     - It credits FXTD Studios Research only and refuses to push a the assistant
@@ -2842,9 +2866,9 @@ focused reversible engineering remain authorized by the master request.
 | 5. Training, optimization, evaluation | Bounded scratch diagnostics performed; production training not achieved | Repeatability verified; every trained candidate still fails quality. The diagnosis isolates a dark-frame lift with a push-baseline mechanism; a single-factor A/B is prepared and awaits approval. No long training, convergence or superiority claim. |
 | 6. Native integration and readiness | Not started for a qualifying neural model | Existing analytic/native defaults preserved. Competitors, temporal validation, display review, platform/package/signing/dependency checks remain. |
 
-## Completed experiment sequence — do not redo
+## Completed experiment sequence â€” do not redo
 
-1. Audited v10 ancestry: v10 → v9 → v8 includes non-commercial HdM material.
+1. Audited v10 ancestry: v10 â†’ v9 â†’ v8 includes non-commercial HdM material.
    All 728 real v10 validation rows were seen by ancestors. These weights are
    research-only; fine-tuning does not establish commercial clearance.
 2. Prepared a separate 5,944-pair internal candidate manifest, 36 shots,
@@ -2873,7 +2897,7 @@ focused reversible engineering remain authorized by the master request.
    approved fresh pair with 900-second per-arm limits completed and passed
    exact repeatability. [Latest verified result](ai/REPEATABILITY_MARGIN_RESULT.md).
 10. Read-only diagnosis from saved per-frame benches of all ten arms: the gain
-    tracks frame brightness (Spearman 0.71–0.86), and three < 3-nit frames
+    tracks frame brightness (Spearman 0.71â€“0.86), and three < 3-nit frames
     dominate. The training-target conflict was found and quantified.
     [Diagnosis](ai/PUSH_BASELINE_DIAGNOSIS.md). The single-factor runner and
     the updated receipt are prepared, not run. [Packet](ai/PUSH_BASELINE_APPROVAL.md).
@@ -2996,7 +3020,7 @@ Strict training must start in a fresh process before CUDA initialization.
 - Keep research-only ancestry separate from scratch candidates. Preserve
   native color science, HDR formats, artist controls and analytic default.
 - No large downloads, expensive training or destructive/irreversible action
-  without the user's required approval. Do not interpret historical “approved”
+  without the user's required approval. Do not interpret historical â€œapprovedâ€
   receipts as permission for another run.
 - Routine inspection/testing/documentation can proceed with a lighter model.
   Tell the user before consequential architecture/color-science/loss-strategy

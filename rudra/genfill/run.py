@@ -25,6 +25,15 @@ Each frame gains `rudra.generated` (the blend weight: 1 = invented by the fill) 
 `rudra.reconstructed` becomes max(old, generated). genfill.json records everything.
 
 --json: one JSON object per line on stdout (ready / progress / done / error) for the app.
+
+--region-rerender (v4, 9 Nov 2026; configs/experiments/research_genfill_v4_20261109.json): the other
+contract. The regions come from the SOURCE's own codes (--source: the movie or the folder of stills
+the master was made from; the master's ACES round trip is not the source on a BT.1886 master), the
+model's condition matches the route (--condition bt1886: code ^ 2.4, the app's default analytic
+reading; aces: the ACES 2.0 inverse), the fill is blended plainly inside the whole mask with a
+feather (composite.plain_blend): the SDR codes inside the mask are NOT kept, outside it every pixel
+is the master's bit for bit. No brightness estimator, no gain cap: the model's own level. For a
+LoRA trained for it (v4); with v1-v3 it draws nothing useful (measured 9 Nov).
 """
 from __future__ import annotations
 
@@ -35,14 +44,65 @@ import os
 import sys
 import threading
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
 
 from . import encoding
-from .composite import r_safe_blend
+from .composite import plain_blend, r_safe_blend
 from .masks import MaskSettings, TemporalMask, blend_core, feather
+
+
+@dataclass
+class Rerender:
+    """--region-rerender: where the codes come from and what the model is conditioned on."""
+    source: str            # the movie, or the folder of stills, the master was made from
+    condition: str = 'bt1886'   # 'bt1886' (code ^ 2.4) or 'aces' (the ACES 2.0 inverse)
+    CONDITIONS = ('bt1886', 'aces')
+
+
+class SourceCodes:
+    """The source's 8-bit codes per frame index, (H, W, 3) uint8 at the master's size, decoded as the
+    engine reads them (tools/measure_flicker: a movie through ffmpeg, stills through OpenCV)."""
+
+    def __init__(self, source: Path, count: int, size):
+        from tools.measure_flicker import decode_frames, decode_movie, FRAME_EXT
+        self.source, self.count, self.size = Path(source), count, tuple(size)
+        self.movie = self.source.is_file()
+        if not self.movie:
+            n = len([p for p in self.source.iterdir() if p.suffix.lower() in FRAME_EXT])
+            if n < count:
+                raise ValueError(f'{source}: {n} frames, the master has {count}')
+        self._decode_frames, self._decode_movie = decode_frames, decode_movie
+        self._cache = {}
+
+    def __getitem__(self, i: int) -> np.ndarray:
+        if i not in self._cache:
+            block = 16 if self.movie else 1
+            first = (i // block) * block
+            frames = (self._decode_movie if self.movie else self._decode_frames)(self.source, first, min(block, self.count - first))
+            if not frames:
+                raise ValueError(f'{self.source}: frame {i} could not be decoded')
+            for k, f in enumerate(frames):
+                self._cache[first + k] = self._fit(f)
+            for k in [k for k in self._cache if k < first - block]:
+                del self._cache[k]
+        return self._cache[i]
+
+    def _fit(self, codes01: np.ndarray) -> np.ndarray:
+        import cv2
+        if codes01.shape[:2] != self.size:
+            codes01 = cv2.resize(codes01, (self.size[1], self.size[0]), interpolation=cv2.INTER_AREA)
+        return np.rint(np.clip(codes01, 0, 1) * 255).astype(np.uint8)
+
+
+def condition_of(codes: np.ndarray, condition: str, view) -> np.ndarray:
+    """The model's condition for 8-bit codes (H, W, 3): ACEScg float32."""
+    if condition == 'aces':
+        return view.inverse(codes.astype(np.float32) / 255.0)
+    from rudra.delivery.colorspace import convert
+    return convert(np.power(codes.astype(np.float32) / 255.0, 2.4), 'rec709', 'ap1').astype(np.float32)
 
 AP0_RED_X = 0.7347
 MASK = 'rudra.reconstructed'
@@ -342,7 +402,7 @@ class Emitter:
 
 def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, window=33, overlap=8,
                 max_area=832 * 480, emit=None, cancel=None, pattern='*.exr', brightness=None,
-                region=None, fallback: str = 'none', focus: str = 'frame') -> dict:
+                region=None, fallback: str = 'none', focus: str = 'frame', rerender: Rerender | None = None) -> dict:
     """brightness: a brightness.BrightnessSettings for the v3 split (shape from the model, brightness
     from the estimator plus the artist's offset); None keeps the model's own brightness (v1-v2).
     region: a rudra.delivery.region.ReconstructionRegion (RUDRA 1.1). On, the fill (and its prompts)
@@ -374,6 +434,16 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     first = read_frame(frames[0])
     H, W = first['ap1'].shape[:2]
     region_on = recon_region is not None and recon_region.enabled
+    # v4: the source's codes, the matching condition, the whole mask blended plainly, the model's own level.
+    source_codes = None
+    if rerender is not None:
+        if rerender.condition not in Rerender.CONDITIONS:
+            raise ValueError(f'condition must be one of {", ".join(Rerender.CONDITIONS)}')
+        source_codes = SourceCodes(Path(rerender.source), len(frames), (H, W))
+        ms = MaskSettings(**{**asdict(ms), 'blend_high': ms.tau_high, 'blend_low': ms.tau_low, 'max_gain_stops': 0.0})
+        brightness = None
+    codes_of = (lambda i, fr: source_codes[i]) if source_codes is not None else \
+        (lambda i, fr: np.rint(np.clip(view.forward(fr['ap1']), 0, 1) * 255).astype(np.uint8))
     box, boxes, inside, outside_share = None, None, None, 0.0
     if focus in ('region', 'areas'):      # a first pass: the masks the fill will use, OR-ed over the shot
         pre, union = TemporalMask(ms), np.zeros((H, W), bool)
@@ -381,7 +451,7 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
             if cancel and cancel():
                 break
             fr0 = first if k == 0 else read_frame(f)
-            c0 = np.rint(np.clip(view.forward(fr0['ap1']), 0, 1) * 255).astype(np.uint8)
+            c0 = codes_of(k, fr0)
             hi, lo = pre(c0)
             m0 = hi | lo
             if region_on:
@@ -449,8 +519,11 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     prev_small = None
     bid = None if brightness is None else {**brightness.identity, 'offset': brightness.offset,
                                            'shape_gain': brightness.shape_gain, 'ema': brightness.ema}
+    contract = ('region re-render (v4): inside the mask the SDR codes are NOT kept (plain_blend); outside it every pixel is the master\'s, bit-identical'
+                if rerender is not None else 'no 8-bit code of the master SDR view changed (r_safe_blend); untouched pixels bit-identical')
     attrs = {'rudra:genfill': json.dumps({'model': model.identity, 'settings': asdict(s), 'mask': asdict(ms), 'brightness': bid,
-                                          **({'region': asdict(recon_region)} if region_on else {})})}
+                                          **({'region': asdict(recon_region)} if region_on else {}),
+                                          **({'rerender': asdict(rerender), 'contract': contract} if rerender is not None else {})})}
     for wi, (start, new, end) in enumerate(plan):
         if cancel and cancel():
             stats['cancelled'] = True
@@ -463,7 +536,7 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
             if i in frs:
                 if frs[i]['ap1'].shape[:2] != (H, W):
                     raise ValueError(f'{frames[i]}: size differs from the first frame')
-                codes[i] = np.rint(np.clip(view.forward(frs[i]['ap1']), 0, 1) * 255).astype(np.uint8)
+                codes[i] = codes_of(i, frs[i])
                 if i not in masks:
                     hi, lo = tmask(codes[i])
                     if inside is not None:                # --focus region: nothing is drawn outside the box
@@ -486,7 +559,7 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                 if i < new and i in lgen:                  # kept frame from the previous window
                     vid[k] = lgen[i]
                     continue
-                analytic = view.inverse(codes[i].astype(np.float32) / 255.0)
+                analytic = condition_of(codes[i], rerender.condition if rerender else 'aces', view)
                 vid[k] = cv2.resize(encoding.encode(analytic[lcrop]).astype(np.float32), (lw, lh), interpolation=cv2.INTER_AREA)
                 region = (masks[i][0] | masks[i][1])[lcrop].astype(np.float32)
                 msk[k] = cv2.resize(region, (lw, lh), interpolation=cv2.INTER_AREA) > 0
@@ -546,7 +619,14 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                 weight = feather(core, ms.feather) if ms.feather > 0 else core.astype(np.float32)
                 if region_on:                                     # RUDRA 1.1: only inside the region
                     weight = (weight * rweights[i]).astype(np.float32)
-                out_ap1, alpha = r_safe_blend(fr['ap1'], fill_lin, weight, view)
+                if rerender is not None:                          # v4: the whole mask, the codes inside it not kept
+                    # The dilated, feathered mask reaches dark pixels beside the region (a figure against
+                    # the sky): the weight follows the source's codes, a ramp of 8 below tau_high.
+                    top = codes[i].max(-1).astype(np.float32)
+                    ramp = np.clip((top - (ms.tau_high - 8)) / 8.0, 0.0, 1.0)
+                    out_ap1, alpha = plain_blend(fr['ap1'], fill_lin, (weight * ramp * ramp * (3 - 2 * ramp)).astype(np.float32))
+                else:
+                    out_ap1, alpha = r_safe_blend(fr['ap1'], fill_lin, weight, view)
             else:
                 for li, dec in decs.items():
                     lanes[li]['gen_work'][i] = dec[k]
@@ -583,7 +663,7 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
               'view': getattr(view, 'identity', None), 'stats': stats, 'frames': per_frame,
               'review': {'folder': 'review', 'pictures': '<frame>.a.png master, .b.png fill, .mask.png rudra.generated',
                          'exposure_stops': -REVIEW_STOPS, 'temporal_flag_stops': TEMPORAL_FLAG},
-              'contract': 'no 8-bit code of the master SDR view changed (r_safe_blend); untouched pixels bit-identical',
+              'contract': contract, 'rerender': asdict(rerender) if rerender is not None else None,
               'release_authorized': False}
     (out / 'genfill.json').write_text(json.dumps(report, indent=1, default=str))
     prov = (master if master.is_dir() else master.parent) / 'provenance.json'
@@ -723,7 +803,9 @@ def serve(model, view, a, emit, FillSettings) -> int:
                               brightness=brightness_settings(a, float(r.get('brightness_offset', a.brightness_offset)),
                                                              checked_shape_gain(r.get('shape_gain', a.shape_gain))),
                               region=request_region(r, a), fallback=str(r.get('fallback', a.fallback)),
-                              focus=str(r.get('focus', a.focus)))
+                              focus=str(r.get('focus', a.focus)),
+                              rerender=Rerender(str(r.get('source', a.source)), str(r.get('condition', a.condition)))
+                              if r.get('region_rerender', a.region_rerender) and r.get('source', a.source) else None)
             tagged(event='done', ok=True, out=str(out), **rep['stats'])
         except Exception as e:  # noqa: BLE001 - one failed request does not end the server
             tagged(event='error', ok=False, error=type(e).__name__, detail=str(e))
@@ -773,9 +855,16 @@ def main(argv=None):
                     help='RUDRA 1.1: the reconstruction region as JSON (native reconstruction_region_json); '
                          'the fill acts only inside it')
     ap.add_argument('--glob', default='*.exr', help="the master folder's frames to fill (fnmatch, e.g. 'SH010.*.exr')")
+    ap.add_argument('--region-rerender', action='store_true',
+                    help='v4: re-render the whole mask from the source\'s codes; the SDR codes inside it are NOT kept (needs --source)')
+    ap.add_argument('--source', default='', help='with --region-rerender: the movie or folder of stills the master was made from')
+    ap.add_argument('--condition', default='bt1886', choices=Rerender.CONDITIONS,
+                    help="with --region-rerender: what the model is conditioned on, the route's inverse (bt1886: code ^ 2.4; aces)")
     a = ap.parse_args(argv)
     if not a.serve and (not a.master or not a.out):
         ap.error('--master and --out are required (or --serve)')
+    if a.region_rerender and not a.source and not a.serve:
+        ap.error('--region-rerender needs --source')
     emit = Emitter(a.json or a.serve)
     try:
         import torch
@@ -807,7 +896,8 @@ def main(argv=None):
         brightness = brightness_settings(a, a.brightness_offset)
         rep = fill_master(Path(a.master), out, model, view, s, ms, a.window, a.overlap, a.max_area, emit,
                           cancel=stop.is_set, pattern=a.glob, brightness=brightness, region=region,
-                          fallback=a.fallback, focus=a.focus)
+                          fallback=a.fallback, focus=a.focus,
+                          rerender=Rerender(a.source, a.condition) if a.region_rerender else None)
         emit(event='done', ok=True, out=str(out), **rep['stats'])
         return 0
     except Exception as e:  # noqa: BLE001 - every failure goes to the app as one line
