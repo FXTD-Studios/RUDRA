@@ -12,8 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.2.3/RUDRA-1.2.3-windows-x64-setup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%2010%20%2F%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white"></a>
-  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.2.3/RUDRA-1.2.3-macos-arm64.dmg"><img alt="Download for macOS" src="https://img.shields.io/badge/Download-macOS%20(Apple%20silicon)-111111?style=for-the-badge&logo=apple&logoColor=white"></a>
+  <a href="https://www.fxtdstudios.com/rudra#downloads"><img alt="Download RUDRA" src="https://img.shields.io/badge/Download-RUDRA-111111?style=for-the-badge"></a>
 </p>
 
 <p align="center">
@@ -53,12 +52,10 @@ invent.
 
 ## Download
 
-| | |
-|---|---|
-| **Windows 10 / 11** (x64) | [Installer](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.2.3/RUDRA-1.2.3-windows-x64-setup.exe) · [Portable ZIP](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.2.3/RUDRA-1.2.3-windows-x64.zip) |
-| **macOS** (Apple silicon) | [DMG](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.2.3/RUDRA-1.2.3-macos-arm64.dmg) |
+**[Download RUDRA from fxtdstudios.com](https://www.fxtdstudios.com/rudra#downloads)**:
+Windows 10 / 11 (x64, installer or portable ZIP) and macOS (Apple silicon, DMG).
 
-All files, checksums and release notes are on the
+Checksums and release notes are on the
 [releases page](https://github.com/FXTD-Studios/RUDRA/releases/latest).
 
 The builds are not code-signed yet. On Windows, choose **More info › Run anyway**

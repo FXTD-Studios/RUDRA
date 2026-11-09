@@ -6730,3 +6730,177 @@ TEST(GenFillSwap, TheViewerFindsTheFillBeforeAndAfterItMovesIntoTheMaster) {
     }
     std::filesystem::remove_all(root);
 }
+
+// ---- review, 9 Nov 2026: the update feed read by type; HTTP errors and whole .part files in the downloader ----
+#include <QTcpServer>
+#include <QTcpSocket>
+
+TEST(AppUpdates, AFeedWithFieldsOfAnotherTypeIsSkippedNotThrown) {
+    // json::value() throws on "draft": null; under the reply's slot nothing caught it.
+    const std::string feed = R"([
+        {"tag_name": "v9.0.0", "html_url": "u9", "draft": null, "prerelease": null},
+        {"tag_name": null, "html_url": "un"},
+        {"tag_name": 7},
+        {"tag_name": "v1.4.0", "html_url": null, "prerelease": false},
+        {"tag_name": "v1.3.0", "html_url": "u13", "prerelease": "no"},
+        "not an object", 3, null])";
+    std::optional<app::ReleaseInfo> r;
+    ASSERT_NO_THROW(r = app::newest_release(feed, false));
+    ASSERT_TRUE(r);
+    EXPECT_EQ(r->version, "9.0.0");   // null flags read as not set
+    EXPECT_EQ(r->url, "u9");
+    ASSERT_NO_THROW(r = app::newest_release(R"([{"tag_name": "v1.4.0", "html_url": 5}])", false));
+    ASSERT_TRUE(r);
+    EXPECT_EQ(r->url, "");
+}
+
+namespace {
+
+// One reply per connection, then closed: what the downloader's requests meet.
+struct TinyHttp {
+    QTcpServer server;
+    int status = 200;
+    QByteArray body;
+    int requests = 0;
+    QByteArray last_request;
+    TinyHttp() {
+        server.listen(QHostAddress::LocalHost);
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [this] {
+            while (QTcpSocket* s = server.nextPendingConnection()) {
+                QObject::connect(s, &QTcpSocket::readyRead, s, [this, s] {
+                    last_request += s->readAll();
+                    if (!last_request.contains("\r\n\r\n")) return;
+                    ++requests;
+                    s->write("HTTP/1.1 " + QByteArray::number(status) + " X\r\nContent-Length: " + QByteArray::number(body.size()) +
+                             "\r\nConnection: close\r\n\r\n" + body);
+                    s->disconnectFromHost();
+                });
+                QObject::connect(s, &QTcpSocket::disconnected, s, &QObject::deleteLater);
+            }
+        });
+    }
+    QString url(const QString& path) const { return QStringLiteral("http://127.0.0.1:%1/%2").arg(server.serverPort()).arg(path); }
+};
+
+app::RemoteModel one_file_model(const QString& url, const QByteArray& content) {
+    app::RemoteModel m;
+    m.id = "demo";
+    m.title = "Demo model";
+    m.version = "1.0";
+    m.folder = "demo_pkg";
+    app::RemoteFile f;
+    f.path = "weights.bin";
+    f.url = url;
+    f.size = content.size();
+    f.sha256 = sha256_of(content);
+    m.files.push_back(f);
+    return m;
+}
+
+}  // namespace
+
+TEST(AppModels, AnHttpErrorIsSaidAndItsPageNeverReachesThePart) {
+    QSettings().clear();
+    QTemporaryDir tmp;
+    const QByteArray weights(50000, 'w');
+    TinyHttp http;
+    ASSERT_TRUE(http.server.isListening());
+    http.status = 404;
+    http.body = QByteArray(700, 'E');   // the error page
+    QNetworkAccessManager net;
+    QObject owner;
+    app::ModelDownloads md(&net, &owner);
+    md.set_root(tmp.path() + "/models");
+    md.set_models({one_file_model(http.url("weights.bin"), weights)});
+    ASSERT_TRUE(md.download("demo"));
+    ASSERT_TRUE(wait_for([&] { return md.active().isEmpty(); }));
+    EXPECT_TRUE(md.error("demo").contains("HTTP 404")) << md.error("demo").toStdString();
+    EXPECT_FALSE(md.error("demo").contains("stopped at")) << md.error("demo").toStdString();
+    const QString part = tmp.path() + "/models/demo_pkg/weights.bin.part";
+    EXPECT_EQ(QFileInfo(part).size(), 0);   // not the 700 bytes of the page
+    // The server is back: the very next try installs it (it took three before).
+    http.status = 200;
+    http.body = weights;
+    ASSERT_TRUE(md.download("demo"));
+    ASSERT_TRUE(wait_for([&] { return md.active().isEmpty(); }));
+    EXPECT_EQ(md.error("demo"), "");
+    EXPECT_EQ(md.state("demo"), app::InstallState::Installed);
+    QSettings().clear();
+}
+
+TEST(AppModels, AnErrorOnResumeKeepsWhatWasDownloaded) {
+    QSettings().clear();
+    QTemporaryDir tmp;
+    const QByteArray weights = QByteArray(30000, 'a') + QByteArray(20000, 'b');
+    TinyHttp http;
+    http.status = 503;
+    http.body = "busy";
+    const QString part = tmp.path() + "/models/demo_pkg/weights.bin.part";
+    QDir().mkpath(tmp.path() + "/models/demo_pkg");
+    {
+        QFile f(part);
+        ASSERT_TRUE(f.open(QIODevice::WriteOnly));
+        f.write(weights.left(30000));
+    }
+    QNetworkAccessManager net;
+    QObject owner;
+    app::ModelDownloads md(&net, &owner);
+    md.set_root(tmp.path() + "/models");
+    md.set_models({one_file_model(http.url("weights.bin"), weights)});
+    ASSERT_TRUE(md.download("demo"));
+    ASSERT_TRUE(wait_for([&] { return md.active().isEmpty(); }));
+    EXPECT_TRUE(md.error("demo").contains("HTTP 503")) << md.error("demo").toStdString();
+    EXPECT_TRUE(http.last_request.contains("Range: bytes=30000-"));
+    EXPECT_EQ(QFileInfo(part).size(), 30000);   // still there to resume from
+    // 416: the part no longer fits the server's file, so it is emptied.
+    http.status = 416;
+    http.body.clear();
+    ASSERT_TRUE(md.download("demo"));
+    ASSERT_TRUE(wait_for([&] { return md.active().isEmpty(); }));
+    EXPECT_TRUE(md.error("demo").contains("HTTP 416")) << md.error("demo").toStdString();
+    EXPECT_EQ(QFileInfo(part).size(), 0);
+    QSettings().clear();
+}
+
+TEST(AppModels, AWholePartIsCheckedNotDownloadedAgain) {
+    QSettings().clear();
+    QTemporaryDir tmp;
+    const QByteArray weights(50000, 'w');
+    TinyHttp http;
+    http.body = weights;
+    const QString part = tmp.path() + "/models/demo_pkg/weights.bin.part";
+    QDir().mkpath(tmp.path() + "/models/demo_pkg");
+    {
+        QFile f(part);
+        ASSERT_TRUE(f.open(QIODevice::WriteOnly));
+        f.write(weights);
+    }
+    QNetworkAccessManager net;
+    QObject owner;
+    app::ModelDownloads md(&net, &owner);
+    md.set_root(tmp.path() + "/models");
+    md.set_models({one_file_model(http.url("weights.bin"), weights)});
+    ASSERT_TRUE(md.download("demo"));
+    ASSERT_TRUE(wait_for([&] { return md.active().isEmpty(); }));
+    EXPECT_EQ(md.error("demo"), "");
+    EXPECT_EQ(md.state("demo"), app::InstallState::Installed);
+    EXPECT_EQ(http.requests, 0);   // nothing was asked of the server
+    EXPECT_FALSE(QFileInfo::exists(part));
+    // A whole part that does not check is dropped and the file fetched fresh, in the same try.
+    md.cancel("demo");
+    QFile::remove(tmp.path() + "/models/demo_pkg/weights.bin");
+    {
+        QFile f(part);
+        ASSERT_TRUE(f.open(QIODevice::WriteOnly));
+        f.write(QByteArray(50000, 'z'));
+    }
+    ASSERT_TRUE(md.download("demo"));
+    ASSERT_TRUE(wait_for([&] { return md.active().isEmpty(); }));
+    EXPECT_EQ(md.error("demo"), "");
+    EXPECT_EQ(md.state("demo"), app::InstallState::Installed);
+    EXPECT_EQ(http.requests, 1);
+    QFile got(tmp.path() + "/models/demo_pkg/weights.bin");
+    ASSERT_TRUE(got.open(QIODevice::ReadOnly));
+    EXPECT_EQ(got.readAll(), weights);
+    QSettings().clear();
+}

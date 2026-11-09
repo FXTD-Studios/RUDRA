@@ -263,6 +263,19 @@ void ModelDownloads::next_file() {
     part_->seek(have);
     file_start_ = done_;
     done_ += have;
+    http_status_ = 0;
+    net_error_.clear();
+    leftover_ = false;
+    // All of it is here already (the app closed while it was checked, or it could
+    // not be put in place): check it. Asking for "the rest" gets a 416 and, before
+    // 9 Nov 2026, the whole file again.
+    if (have == f.size) {
+        leftover_ = true;
+        ranged_ = false;
+        checked_status_ = true;
+        changed();
+        return file_finished();
+    }
     QNetworkRequest req{QUrl(f.url)};
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     req.setHeader(QNetworkRequest::UserAgentHeader, "RUDRA/" + QCoreApplication::applicationVersion());
@@ -273,10 +286,16 @@ void ModelDownloads::next_file() {
     QNetworkReply* r = reply_;
     QObject::connect(r, &QNetworkReply::readyRead, alive_, [this, r] {
         if (r != reply_ || !part_) return;
+        // An error's body (a 404 page, a proxy's 503) is not the file: read and dropped,
+        // so what is in the .part stays what the server sent of the file.
+        const int status = r->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (status >= 400) {
+            r->readAll();
+            return;
+        }
         if (!checked_status_) {
             checked_status_ = true;
             // Asked for the rest and got the whole file (no Range support): start this file again.
-            const int status = r->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
             if (ranged_ && status != 206) {
                 part_->resize(0);
                 part_->seek(0);
@@ -299,6 +318,8 @@ void ModelDownloads::next_file() {
         r->deleteLater();
         if (r != reply_) return;   // paused or cancelled
         reply_ = nullptr;
+        http_status_ = r->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        net_error_ = r->error() == QNetworkReply::NoError ? QString() : r->errorString();
         file_finished();
     });
     changed();
@@ -308,8 +329,19 @@ void ModelDownloads::file_finished() {
     const RemoteModel* m = model(active_);
     if (!m || !part_) return;
     const auto& f = m->files[file_];
+    // The server refused (403, 404, 5xx): say so. The .part keeps what it had, to
+    // resume from; after a 416 (it no longer matches the server's file) it is emptied.
+    if (http_status_ >= 400) {
+        if (http_status_ == 416) part_->resize(0);
+        part_->close();
+        part_.reset();
+        return fail(QStringLiteral("%1 could not be downloaded (HTTP %2 from %3): Download again to retry")
+                        .arg(f.path)
+                        .arg(http_status_)
+                        .arg(QUrl(f.url).host()));
+    }
     // No data came back for a ranged request: start this file again next time.
-    if (!checked_status_ && ranged_) {
+    if (!checked_status_ && ranged_ && net_error_.isEmpty()) {
         part_->resize(0);
         done_ = file_start_;
     }
@@ -318,7 +350,9 @@ void ModelDownloads::file_finished() {
     if (got != f.size) {
         part_->close();
         part_.reset();
-        return fail(QStringLiteral("%1 stopped at %2 of %3: Download again to resume").arg(f.path, human_size(got), human_size(f.size)));
+        return fail(QStringLiteral("%1 stopped at %2 of %3%4: Download again to resume")
+                        .arg(f.path, human_size(got), human_size(f.size),
+                             net_error_.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(net_error_)));
     }
     part_->seek(0);
     QCryptographicHash h(QCryptographicHash::Sha256);
@@ -330,6 +364,7 @@ void ModelDownloads::file_finished() {
     if (sha != f.sha256) {
         QFile::remove(part_name);
         done_ = file_start_;
+        if (leftover_) return next_file();   // a whole .part from an earlier try that does not check: fetched fresh
         return fail(QStringLiteral("%1 did not match its checksum and was deleted: Download again").arg(f.path));
     }
     const QString dest = part_name.chopped(5);
