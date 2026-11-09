@@ -92,6 +92,9 @@ struct MasterRequest {
     // the model's own residual is what fills there.
     bool clip_fill = true;
     std::vector<ClipOverride> clip_peaks;
+    // 9 Nov 2026: the clip fill's near-clip detail gain (ClipFillOptions::detail_gain),
+    // 1 = off; in the JSON and the sidecar only when not 1.
+    double highlight_detail = 1.0;
     // 13 Oct 2026: the master exposure in stops, with the grade (after the
     // anchor, before the Region EV bands). In the JSON and the sidecar only
     // when not 0, so every master before reads the same.

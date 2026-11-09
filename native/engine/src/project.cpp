@@ -146,6 +146,7 @@ std::string project_json(const Project& p, const fs::path& project_file) {
                         : json()},
           {"clip_fill", p.grade.clip_fill},
           {"clip_peaks", clip_peaks},
+          {"highlight_detail", p.grade.highlight_detail},
           {"exposure_ev", p.grade.exposure_ev}}},
         {"view", {{"peak_ev", p.peak_ev}}},
         {"deliver",
@@ -220,6 +221,10 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
         if (version == 2 && g.contains("masks") && !g["masks"].is_null() && !g["masks"].is_string())
             return make_error(ErrorCode::ParseError, "Invalid headroom project's painted-mask reference");
         p.grade.clip_fill = g.value("clip_fill", true);   // projects before 12 Oct 2026: on, the default
+        p.grade.highlight_detail = g.value("highlight_detail", 1.0);   // projects before 9 Nov 2026: off
+        if (!std::isfinite(p.grade.highlight_detail) || p.grade.highlight_detail < kHighlightDetailMin ||
+            p.grade.highlight_detail > kHighlightDetailMax)
+            return make_error(ErrorCode::ParseError, "Invalid project highlight_detail");
         p.grade.exposure_ev = g.value("exposure_ev", 0.0);   // projects before 13 Oct 2026: none
         if (g.contains("reconstruction_region") && !g["reconstruction_region"].is_null()) {
             auto rr = reconstruction_region_from_json(g["reconstruction_region"].dump());

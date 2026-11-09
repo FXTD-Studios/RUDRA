@@ -3,6 +3,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -20,6 +21,8 @@
 #include <functional>
 #include <chrono>
 #include <cmath>
+#include <fstream>
+#include <optional>
 
 #include "aces_engine.hpp"
 #include "main_window.hpp"
@@ -195,7 +198,40 @@ std::optional<PlanarBuffer> read_acescg_rgb(const QString& path, QString* why) {
 
 QString preview_name(int index) { return QStringLiteral("preview.%1.exr").arg(index, 6, 10, QChar('0')); }
 
+// Raw planar float32 (R, G, B) as aces-v2-serve's monitor op writes it.
+std::optional<PlanarBuffer> read_planes(const QString& path, int w, int h) {
+    PlanarBuffer b(3, h, w);
+    std::ifstream in(to_path(path), std::ios::binary);
+    for (int c = 0; c < 3 && in; ++c)
+        in.read(reinterpret_cast<char*>(b.plane(c)), std::streamsize(b.plane_size() * sizeof(float)));
+    if (!in) return std::nullopt;
+    return b;
+}
+
 }  // namespace
+
+// 9 Nov 2026: on the learned route the viewer shows the live frame through the monitor (ACES 2.0
+// SDR 100 or HDR 1000, display light); the preview's master and fill, ACEScg, must go the same way
+// or the fill looks like a different picture (an open door as a cyan wall). The engine applies it.
+void MainWindow::monitor_preview_planes(const QString& exr, int w, int h,
+                                        std::function<void(std::optional<PlanarBuffer>, QString)> done) {
+    if (!aces_engine_ || aces_monitor_ == "scene") {
+        QString why;
+        auto rgb = read_acescg_rgb(exr, &why);
+        return done(std::move(rgb), why);
+    }
+    const QString out = exr + ".monitor.f32";
+    const QPointer<MainWindow> self(this);
+    aces_engine_->request(QJsonObject{{"op", "monitor"}, {"exr", exr}, {"display", aces_monitor_}, {"out", out}},
+                          [self, out, w, h, done = std::move(done)](const QJsonObject& o) {
+                              if (!self) return;
+                              if (!o.value("ok").toBool())
+                                  return done(std::nullopt, (o.value("error").toString() + ' ' + o.value("detail").toString()).trimmed());
+                              auto p = read_planes(out, w, h);
+                              QFile::remove(out);
+                              done(std::move(p), p ? QString() : QStringLiteral("the monitored frame could not be read back"));
+                          });
+}
 
 // Why a finished preview may look like nothing (6 Nov 2026): the fill invents only where
 // the master's SDR view is fully clipped (code 255) or crushed (0), and only above SDR
@@ -365,11 +401,9 @@ void MainWindow::preview_genfill() {
                     auto f = m ? read_acescg_rgb(QDir(fdir).filePath(preview_name(at)), &w) : std::nullopt;
                     if (!m || !f || m->width() != f->width() || m->height() != f->height())
                         return end(QStringLiteral("AI fill preview: the frames could not be read back. ") + w);
-                    GenFillPreviewFrame p;
-                    p.index = at;
-                    p.options = options;
-                    p.master = std::make_shared<const NetworkLinearImage>(preview_view_image(*m));
-                    p.fill = std::make_shared<const NetworkLinearImage>(preview_view_image(*f));
+                    auto p = std::make_shared<GenFillPreviewFrame>();
+                    p->index = at;
+                    p->options = options;
                     // The invented pixels: those the fill changed (it copies every other one bit for
                     // bit), at SDR white over the master 3 stops down.
                     {
@@ -382,31 +416,47 @@ void MainWindow::preview_genfill() {
                             changed += gen ? 1 : 0;
                             for (int c = 0; c < 3; ++c) mk.plane(c)[i] = gen ? 1.0f : m->plane(c)[i] * 0.125f;
                         }
-                        p.mask = std::make_shared<const NetworkLinearImage>(preview_view_image(mk));
-                        p.changed = np ? double(changed) / double(np) : 0.0;
+                        p->mask = std::make_shared<const NetworkLinearImage>(preview_view_image(mk));
+                        p->changed = np ? double(changed) / double(np) : 0.0;
                     }
-                    p.first = a;
-                    p.last = b;
-                    p.fill_dir = fdir;
-                    self->genfill_preview_ = std::move(p);
-                    self->fill_view_cache_.clear();   // a new preview: the viewer's AI fill reads it afresh
-                    // The whole shot at this rate: its master and its fill, per frame (the model's load is once).
-                    const double per_frame = (master_s + fill_s) / std::max(1, frames);
-                    const double whole_min = per_frame * n / 60.0;
-                    end(QStringLiteral("AI fill preview of frames %1–%2: master %3 s, fill %4 s%5 · %6 % of this frame "
-                                       "invented · the whole shot (%7 frames) about %8 min")
-                            .arg(a + 1)
-                            .arg(b + 1)
-                            .arg(master_s, 0, 'f', 0)
-                            .arg(fill_s, 0, 'f', 0)
-                            .arg(cold ? QStringLiteral(" (model load %1 s, once)").arg(self->genfill_server_->load_seconds(), 0, 'f', 0)
-                                      : QString())
-                            .arg(100.0 * self->genfill_preview_->changed, 0, 'f', 2)
-                            .arg(n)
-                            .arg(whole_min, 0, 'f', whole_min < 10 ? 1 : 0) +
-                        genfill_preview_hint(self->genfill_preview_->changed, !options.region_json.isEmpty(),
-                                             self->session_.display_nits()));
-                    self->show_genfill_preview(QStringLiteral("fill"));
+                    p->first = a;
+                    p->last = b;
+                    p->fill_dir = fdir;
+                    const int pw = m->width(), ph = m->height();
+                    const QString mexr = QDir(mdir).filePath(preview_name(at)), fexr = QDir(fdir).filePath(preview_name(at));
+                    // The master and the fill as the viewer shows the live frame: through the monitor.
+                    auto finish = [self, end, options, p, a, b, n, frames, master_s, fill_s, cold] {
+                        self->genfill_preview_ = std::move(*p);
+                        self->fill_view_cache_.clear();   // a new preview: the viewer's AI fill reads it afresh
+                        // The whole shot at this rate: its master and its fill, per frame (the model's load is once).
+                        const double per_frame = (master_s + fill_s) / std::max(1, frames);
+                        const double whole_min = per_frame * n / 60.0;
+                        end(QStringLiteral("AI fill preview of frames %1–%2: master %3 s, fill %4 s%5 · %6 % of this frame "
+                                           "invented · the whole shot (%7 frames) about %8 min")
+                                .arg(a + 1)
+                                .arg(b + 1)
+                                .arg(master_s, 0, 'f', 0)
+                                .arg(fill_s, 0, 'f', 0)
+                                .arg(cold ? QStringLiteral(" (model load %1 s, once)").arg(self->genfill_server_->load_seconds(), 0, 'f', 0)
+                                          : QString())
+                                .arg(100.0 * self->genfill_preview_->changed, 0, 'f', 2)
+                                .arg(n)
+                                .arg(whole_min, 0, 'f', whole_min < 10 ? 1 : 0) +
+                            genfill_preview_hint(self->genfill_preview_->changed, !options.region_json.isEmpty(),
+                                                 self->session_.display_nits()));
+                        self->show_genfill_preview(QStringLiteral("fill"));
+                    };
+                    self->monitor_preview_planes(mexr, pw, ph, [self, end, p, fexr, pw, ph, finish](std::optional<PlanarBuffer> mm, QString why) {
+                        if (!self) return;
+                        if (!mm) return end(QStringLiteral("AI fill preview: the master could not be shown. ") + why);
+                        p->master = std::make_shared<const NetworkLinearImage>(preview_view_image(*mm));
+                        self->monitor_preview_planes(fexr, pw, ph, [self, end, p, finish](std::optional<PlanarBuffer> ff, QString why2) {
+                            if (!self) return;
+                            if (!ff) return end(QStringLiteral("AI fill preview: the fill could not be shown. ") + why2);
+                            p->fill = std::make_shared<const NetworkLinearImage>(preview_view_image(*ff));
+                            finish();
+                        });
+                    });
                 },
                 &why2);
             if (!started) end(why2);
@@ -533,6 +583,12 @@ std::shared_ptr<const NetworkLinearImage> MainWindow::fill_view_frame(int index)
         fill_view_files_ = genfill_filled_frames(genfill_last_out_, genfill_last_master_);
     }
     if (auto it = fill_view_cache_.find(index); it != fill_view_cache_.end()) return it->second;
+    // The previewed frame's fill went through the monitor when the preview came back (9 Nov 2026):
+    // show that one. The frames beside it, and a finished render's, are read here as scene light.
+    if (genfill_preview_ && index == genfill_preview_->index && genfill_preview_->fill && !aces_rt_playing_) {
+        fill_view_cache_[index] = genfill_preview_->fill;
+        return genfill_preview_->fill;
+    }
     QString path;
     if (genfill_preview_ && index >= genfill_preview_->first && index <= genfill_preview_->last && !genfill_preview_->fill_dir.isEmpty())
         path = QDir(genfill_preview_->fill_dir).filePath(preview_name(index));

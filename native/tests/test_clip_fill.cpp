@@ -269,6 +269,97 @@ TEST(ClipFill, TheCompositeAppliesTheFill) {
     }
 }
 
+// ---- stage 4 (9 Nov 2026): the near-clip detail -----------------------------
+
+namespace {
+// A bright sky with a faint structure parked just under white: a 203..450-nit
+// gradient (codes about 225..248 through the corpus curve) with a 10 % sinusoidal
+// ripple, which the shoulder flattens to two or three codes.
+PlanarBuffer shoulder_sky(int h, int w) {
+    PlanarBuffer t(3, h, w);
+    const float white = 203.0f / 10000.0f;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const float k = 1.0f - float(y) / float(h - 1);
+            const float ripple = 1.0f + 0.10f * std::sin(float(x) * 0.5f);
+            const float lum = white * (1.0f + 1.2f * k) * ripple;
+            t.at(0, y, x) = lum * 0.9f;
+            t.at(1, y, x) = lum;
+            t.at(2, y, x) = lum * 1.1f;
+        }
+    return t;
+}
+}  // namespace
+
+TEST(ClipFillDetail, OffIsBitIdenticalAndOnAmplifiesTheStructureHueHeld) {
+    const int h = 64, w = 160;
+    const SdrImage sdr = render(shoulder_sky(h, w));
+    ClipFillOptions off;   // detail_gain 1
+    EXPECT_TRUE(near_clip_detail(sdr, off).empty());
+    ClipFill d_off, d_on;
+    const Fields f_off = clip_fill_fields(sdr, kAnalyticConstants, off, &d_off);
+    ClipFillOptions on;
+    on.detail_gain = 2.0;
+    const Fields f_on = clip_fill_fields(sdr, kAnalyticConstants, on, &d_on);
+    EXPECT_EQ(d_off.detail_pct, 0.0);
+    EXPECT_GT(d_on.detail_pct, 5.0);   // the bright band moved
+    const PlanarBuffer g = near_clip_detail(sdr, on);
+    ASSERT_EQ(g.channels(), 1);
+    // Signed, within the cap, and only where the codes are bright.
+    float lo = 0.0f, hi = 0.0f;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const float v = g.at(0, y, x);
+            lo = std::min(lo, v);
+            hi = std::max(hi, v);
+            const float yl = luma(sdr.buffer(), std::size_t(y * w + x));
+            if (yl < float(on.detail_from)) ASSERT_EQ(v, 0.0f) << x << "," << y;
+            ASSERT_LE(std::abs(v), float(on.detail_max_stops));
+        }
+    EXPECT_LT(lo, -0.01f);
+    EXPECT_GT(hi, 0.01f);
+    // Through the composite: every pixel moves by the stage's gain exactly (to fp32), the
+    // channel ratios stay the baseline's (hue held), and the ripple's contrast grows.
+    CompositeParams p;
+    const PlanarBuffer a = composite(sdr, f_off, FrameScalars{}, kAnalyticConstants, p).buffer();
+    const PlanarBuffer b = composite(sdr, f_on, FrameScalars{}, kAnalyticConstants, p).buffer();
+    for (std::size_t i = 0; i < a.plane_size(); ++i) {
+        const float ya = luma(a, i), yb = luma(b, i);
+        ASSERT_GT(ya, 0.0f);
+        ASSERT_NEAR(std::log2(yb / ya), g.span()[i], 2e-3f) << i;
+        for (int c = 0; c < 3; ++c)
+            ASSERT_NEAR(b.plane(c)[i] / yb, a.plane(c)[i] / ya, 2e-3f) << i << " channel " << c;
+    }
+    // The gain follows the ripple (brighter where the scene was), not the gradient or noise.
+    double sxy = 0.0, sxx = 0.0, syy = 0.0;
+    for (int y = 0; y < h; ++y)
+        for (int x = 20; x < w - 20; ++x) {
+            const float v = g.at(0, y, x);
+            if (v == 0.0f) continue;
+            const double r = std::sin(double(x) * 0.5);
+            sxy += v * r;
+            sxx += double(v) * v;
+            syy += r * r;
+        }
+    ASSERT_GT(sxx, 0.0);
+    EXPECT_GT(sxy / std::sqrt(sxx * syy), 0.7);
+}
+
+TEST(ClipFillDetail, TheNoiseFloorLeavesOneCodeOfDitherAlone) {
+    // A flat bright field with one code of dither: nothing to amplify.
+    const int h = 32, w = 64;
+    PlanarBuffer s(3, h, w);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+            for (int c = 0; c < 3; ++c) s.at(c, y, x) = ((x + y) & 1 ? 249.0f : 250.0f) / 255.0f;
+    const SdrImage sdr(std::move(s));
+    ClipFillOptions on;
+    on.detail_gain = 2.0;
+    const PlanarBuffer g = near_clip_detail(sdr, on);
+    ASSERT_FALSE(g.empty());
+    for (float v : g.span()) ASSERT_EQ(v, 0.0f);
+}
+
 // ---- the settings (12 Oct 2026): request JSON, session, project ------------
 
 #include "rudra/deliver/master.hpp"
@@ -288,6 +379,39 @@ TEST(ClipFillSettings, TheRequestJsonCarriesThemOnlyWhenNotTheDefault) {
     EXPECT_EQ(back->clip_peaks[0].y, 0.75);
     EXPECT_EQ(back->clip_peaks[0].nits, 2500.0);
     EXPECT_TRUE(master_request_from_json("{}")->clip_fill);
+    // 9 Nov 2026: the near-clip detail gain, in the JSON only when not 1.
+    MasterRequest d;
+    EXPECT_EQ(master_request_json(d).find("highlight_detail"), std::string::npos);
+    d.highlight_detail = 1.8;
+    auto dback = master_request_from_json(master_request_json(d));
+    ASSERT_TRUE(dback);
+    EXPECT_EQ(dback->highlight_detail, 1.8);
+    EXPECT_EQ(clip_fill_options(*dback).detail_gain, 1.8);
+    EXPECT_EQ(master_request_from_json("{}")->highlight_detail, 1.0);
+    EXPECT_FALSE(master_request_from_json(R"({"highlight_detail": 9})"));
+}
+
+TEST(ClipFillSettings, TheDetailGainIsUndoneWithTheGradeAndKeptByAProject) {
+    Session s;
+    EXPECT_EQ(s.grade.highlight_detail, 1.0);
+    EXPECT_EQ(s.params_json().find("highlight_detail"), std::string::npos);
+    s.highlight_detail_press();
+    s.highlight_detail_input(1.75);
+    EXPECT_EQ(s.grade.highlight_detail, 1.75);
+    EXPECT_NE(s.params_json().find("\"highlight_detail\":1.75"), std::string::npos) << s.params_json();
+    s.highlight_detail_input(7.0);   // clamped to the range
+    EXPECT_EQ(s.grade.highlight_detail, kHighlightDetailMax);
+    s.undo();
+    EXPECT_EQ(s.grade.highlight_detail, 1.0);
+    Project p;
+    p.grade.highlight_detail = 2.0;
+    const auto file = std::filesystem::temp_directory_path() / "detail.rudra";
+    auto back = parse_project(project_json(p, file), file);
+    ASSERT_TRUE(back) << back.error().message;
+    EXPECT_EQ(back->grade.highlight_detail, 2.0);
+    auto old = parse_project(R"({"rudra_project": 1, "grade": {"mode": "all"}})", file);
+    ASSERT_TRUE(old);
+    EXPECT_EQ(old->grade.highlight_detail, 1.0);
 }
 
 TEST(ClipFillSettings, AnalyticFieldsForFollowsTheRequest) {

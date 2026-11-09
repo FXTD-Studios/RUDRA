@@ -18,6 +18,16 @@
 //   3. Fully clipped regions, small (practical lamps, the sun, speculars). The
 //      same fill with a peak-and-falloff profile: the peak from the region's
 //      size and the slope of the glow around it, at most source_max_nits.
+//   4. Near-clip detail (9 Nov 2026, measured against Beeble SwitchHDR on 09V,
+//      reports/app_test_09V_2026-11-09/beeble_how.html). An SDR's shoulder parks
+//      a bright sky, a window, an open door at codes 230-254 with its structure
+//      flattened to a few codes; a display renders it as a flat wall. The
+//      structure that survives (the high-pass of the codes' log luminance,
+//      Gaussian sigma detail_sigma_px) is amplified by detail_gain inside a
+//      luma ramp (detail_from .. detail_to), the same on every channel (hue
+//      held), below a noise floor (detail_floor_stops) left alone. 1.0 is off:
+//      bit-identical. The other tool's sky was the source's own structure at
+//      about 1.8 x (correlation 0.82); 1.5-2.0 is the range to judge.
 //
 // A ClipOverride sets one region's peak in nits (the artist's click). The
 // result reaches the composite as Fields (clip_fill_fields), so the CPU
@@ -63,7 +73,18 @@ struct ClipFillOptions {
     bool partial = true;                // stage 1 on
     bool slope_from_clean = false;      // the glow's slope from pixels no channel of which is near white
     std::vector<ClipOverride> overrides;
+    // Stage 4: the near-clip detail gain, 1 = off (bit-identical), 1..3 sensible.
+    double detail_gain = 1.0;
+    double detail_from = 0.86;          // SDR Rec.709 luma (0..1) where the ramp starts
+    double detail_to = 0.94;            // and where it reaches 1
+    double detail_sigma_px = 6.0;       // the high-pass's Gaussian, in pixels of the frame
+    double detail_floor_stops = 0.015;  // |high-pass| below this is noise (about one code at 250), left alone
+    double detail_max_stops = 1.0;      // the gain's reach, at most, either way
 };
+
+// Stage 4 alone: log2 gain, one plane, signed, zero outside the ramp; empty at
+// detail_gain 1. Exposed for the tests and the acceptance harness.
+PlanarBuffer near_clip_detail(const SdrImage& sdr, const ClipFillOptions& options = {});
 
 // One fully clipped region, as the readout and the override see it.
 struct ClipRegion {
@@ -85,6 +106,7 @@ struct ClipFill {
     std::vector<ClipRegion> regions;
     double partial_pct = 0.0;   // pixels with some, not all, channels clipped
     double full_pct = 0.0;      // pixels with every channel clipped
+    double detail_pct = 0.0;    // pixels stage 4 moved (clip_fill_fields fills it in)
 };
 
 // The fill in the analytic baseline's terms (baseline.hpp) at `corpus_ev`.

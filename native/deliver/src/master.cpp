@@ -101,6 +101,11 @@ std::string clip_fill_text(const MasterRequest& q) {
         std::snprintf(b, sizeof b, "; peak %.0f nits at (%.3f, %.3f)", c.nits, c.x, c.y);
         t += b;
     }
+    if (q.highlight_detail != 1.0) {
+        char b[64];
+        std::snprintf(b, sizeof b, "; near-clip detail x%.2f", q.highlight_detail);
+        t += b;
+    }
     return t;
 }
 
@@ -165,6 +170,9 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
         r.mattes = j.value("mattes", false);
         r.brackets = j.value("brackets", false);
         r.clip_fill = j.value("clip_fill", true);
+        r.highlight_detail = j.value("highlight_detail", 1.0);
+        if (!std::isfinite(r.highlight_detail) || r.highlight_detail < 0.0 || r.highlight_detail > 4.0)
+            return make_error(ErrorCode::InvalidArgument, "highlight_detail must be within 0 and 4", std::to_string(r.highlight_detail));
         r.exposure_ev = j.value("exposure_ev", 0.0);
         if (!std::isfinite(r.exposure_ev) || std::fabs(r.exposure_ev) > 8.0)
             return make_error(ErrorCode::InvalidArgument, "exposure_ev must be within -8 and +8 stops", std::to_string(r.exposure_ev));
@@ -221,6 +229,7 @@ std::string master_request_json(const MasterRequest& q) {
         j["reference"] = nlohmann::json::parse(reference_fit_json(q.reference));
     if (!q.masks_file.empty()) j["masks_file"] = q.masks_file;
     if (!q.clip_fill) j["clip_fill"] = false;
+    if (q.highlight_detail != 1.0) j["highlight_detail"] = q.highlight_detail;
     if (!q.clip_peaks.empty()) {
         auto peaks = nlohmann::json::array();
         for (const auto& c : q.clip_peaks) peaks.push_back({{"x", c.x}, {"y", c.y}, {"nits", c.nits}});
@@ -233,6 +242,7 @@ ClipFillOptions clip_fill_options(const MasterRequest& q) {
     ClipFillOptions o;
     o.enabled = q.clip_fill;
     o.overrides = q.clip_peaks;
+    o.detail_gain = q.highlight_detail;
     return o;
 }
 

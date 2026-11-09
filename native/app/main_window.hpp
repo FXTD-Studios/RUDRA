@@ -699,8 +699,9 @@ private:
         int kind = 0;           // 0 both kinds, 1 highlights + shadows only, 2 band only
     };
     std::vector<RegionSlider> region_sliders_;
-    QSlider *strength_ = nullptr, *peak_ = nullptr, *exposure_ = nullptr;
-    QLabel* exposure_val_ = nullptr;
+    QSlider *strength_ = nullptr, *peak_ = nullptr, *exposure_ = nullptr, *highlight_detail_ = nullptr;
+    QLabel *exposure_val_ = nullptr, *highlight_detail_val_ = nullptr;
+    QTimer* clip_restart_timer_ = nullptr;   // the frames composed again once a Highlight detail drag settles
     QLabel *strength_val_ = nullptr, *peak_val_ = nullptr, *shot_count_ = nullptr, *frames_empty_ = nullptr,
            *tc_ = nullptr, *src_info_ = nullptr, *zoom_val_ = nullptr, *container_field_ = nullptr,
            *primaries_field_ = nullptr, *ckpt_ = nullptr, *device_ = nullptr, *lamp_ = nullptr,
@@ -896,6 +897,10 @@ private:
     QString genfill_last_master_;   // the master folder the last fill was for (its frames are the fill once moved in place)
     QString fill_view_key_;
     std::shared_ptr<const NetworkLinearImage> fill_view_frame(int index);
+    // An ACEScg EXR of the preview through the learned route's monitor (the engine's "monitor"
+    // op) when one is on; else read as it is. ACEScg planes, 1.0 = 203 nits, or why not.
+    void monitor_preview_planes(const QString& exr, int w, int h,
+                                std::function<void(std::optional<PlanarBuffer>, QString)> done);
     // The viewer's AI fill, or the preview's pinned Master / Invented picture, over
     // whatever the route just showed (any route: 6 Nov 2026). quiet: no status message
     // when this frame has no fill. False when nothing was applied.

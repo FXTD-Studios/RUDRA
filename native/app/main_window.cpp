@@ -156,7 +156,10 @@ MainWindow::MainWindow(bool with_viewer, bool headroom_capable)
         aces_trims_.peak_nits = st.value("aces/trimPeakNits", 0.0).toDouble();
         aces_trims_.exposure_ev = st.value("aces/trimExposure", 0.0).toDouble();
         aces_trims_.contrast = st.value("aces/trimContrast", 1.0).toDouble();
-        aces_monitor_ = st.value("aces/monitor", "scene").toString();
+        // 9 Nov 2026: the learned route opens on the ACES 2.0 HDR 1000 output, a deliverable's
+        // picture. Scene (the unbounded master through exposure and clip) is a colorist's view
+        // and read as broken on first sight (an open door as a cyan wall).
+        aces_monitor_ = st.value("aces/monitor", "hdr1000").toString();
         aces_source_display_ = st.value("aces/sourceDisplay", "bt1886").toString();
         // HDR10's mastering display: P3-D65 unless the colorist chose Rec.2020 (Deliver > Export).
         set_mastering_display_primaries(st.value("deliver/masteringDisplay", "p3d65").toString().toStdString());
@@ -677,12 +680,31 @@ void MainWindow::session_changed(std::uint32_t what) {
     // undo) composes the frames again. With the model it does nothing.
     if ((what & Session::Grade) && !use_model_ && !frames_.empty() && !headroom_routed()) {
         const ClipFillOptions now = session_clip_options();
-        const bool same = now.enabled == engine_clip_.enabled && now.overrides.size() == engine_clip_.overrides.size() &&
+        const bool same = now.enabled == engine_clip_.enabled && now.detail_gain == engine_clip_.detail_gain &&
+                          now.overrides.size() == engine_clip_.overrides.size() &&
                           std::equal(now.overrides.begin(), now.overrides.end(), engine_clip_.overrides.begin(),
                                      [](const ClipOverride& a, const ClipOverride& b) {
                                          return a.x == b.x && a.y == b.y && a.nits == b.nits;
                                      });
-        if (!same) start_engine(frames_, current_);
+        if (!same) {
+            // A slider drag (Highlight detail) changes the options many times a second; the
+            // frames compose again once it settles (9 Nov 2026).
+            if (highlight_detail_ && highlight_detail_->isSliderDown()) {
+                if (!clip_restart_timer_) {
+                    clip_restart_timer_ = new QTimer(this);
+                    clip_restart_timer_->setSingleShot(true);
+                    clip_restart_timer_->setInterval(200);
+                    connect(clip_restart_timer_, &QTimer::timeout, this, [this] {
+                        if (!use_model_ && !frames_.empty() && !headroom_routed() &&
+                            session_clip_options().detail_gain != engine_clip_.detail_gain)
+                            start_engine(frames_, current_);
+                    });
+                }
+                clip_restart_timer_->start();
+            } else {
+                start_engine(frames_, current_);
+            }
+        }
     }
     // 6 Nov 2026: the learned route takes the reconstruction region too: a change shows again.
     if ((what & Session::Grade) && aces_routed() && !(session_.grade.region == aces_region_sent_)) aces_request(current_);
@@ -1623,12 +1645,16 @@ void MainWindow::sync_ui() {
     source_panel_->sync(session_.source_curve(), g.calibration, frame_constants().corpus_ev, g.reference);
     inspect_source();
     {
-        const QSignalBlocker b1(strength_), b2(peak_), b3(exposure_);
+        const QSignalBlocker b1(strength_), b2(peak_), b3(exposure_), b4(highlight_detail_);
         exposure_->setValue(int(std::lround(g.exposure_ev * 20.0)));
         strength_->setValue(int(std::lround(g.strength * 20.0)));
+        highlight_detail_->setValue(int(std::lround(g.highlight_detail * 20.0)));
         peak_->setValue(int(std::lround(session_.peak_ev * 2.0)));
     }
     strength_val_->setText(QString::number(g.strength, 'f', 2));
+    highlight_detail_val_->setText(QString::number(g.highlight_detail, 'f', 2));
+    // The detail is a stage of the clip fill: nothing without it, or with the model (its own residual fills).
+    highlight_detail_->setEnabled(g.clip_fill && !use_model_ && !aces_routed());
     exposure_val_->setText((g.exposure_ev > 0.0 ? QStringLiteral("+") : QString()) + QString::number(g.exposure_ev, 'f', 2));
     peak_val_->setText(QLocale(QLocale::English).toString(qlonglong(std::floor(session_.display_nits() + 0.5))));
     preserve_->set_on(g.preserve);
@@ -2186,6 +2212,7 @@ MasterRequest MainWindow::master_request() const {
     q.checkpoint_sha256 = use_model_ && manifest_ ? manifest_->source_sha256 : std::string();
     q.clip_fill = session_.grade.clip_fill;
     q.clip_peaks = session_.grade.clip_peaks;
+    q.highlight_detail = session_.grade.highlight_detail;
     q.preserve_outside = session_.grade.preserve;
     q.recovery_mode = session_.grade.mode;
     q.strength = session_.grade.strength;
@@ -2923,6 +2950,7 @@ ClipFillOptions MainWindow::session_clip_options() const {
     ClipFillOptions o;
     o.enabled = session_.grade.clip_fill;
     o.overrides = session_.grade.clip_peaks;
+    o.detail_gain = session_.grade.highlight_detail;
     return o;
 }
 
