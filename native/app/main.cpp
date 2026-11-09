@@ -174,6 +174,7 @@ int main(int argc, char** argv) {
             st.setValue("window/workspace", "simple");
     }
     w.restore_settings();   // the window, rails, tab, container and Render fields of the last run
+    w.open_compare_view();  // SDR | RUDRA wipe at 1 000 nits; a project below sets its own peak
     if (const qsizetype t = rest.indexOf("--tab"); t >= 0 && t + 1 < rest.size()) {   // for the review grabs
         w.show_tab(rest[t + 1]);
         rest.remove(t, 2);

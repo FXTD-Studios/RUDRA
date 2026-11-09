@@ -6,7 +6,7 @@ target_link_libraries(rudra_render INTERFACE rudra::rudra_core)
 
 if(RUDRA_BUILD_RENDER)
   find_package(Qt6 6.6 REQUIRED COMPONENTS Gui ShaderTools)
-  rudra_library(rudra_render_gpu SOURCES src/gpu_composite.cpp src/viewer_window.cpp)
+  rudra_library(rudra_render_gpu SOURCES src/gpu_composite.cpp src/viewer_window.cpp src/gpu_adapters.cpp)
   target_link_libraries(rudra_render_gpu PUBLIC rudra::rudra_core PRIVATE Qt6::Gui Qt6::GuiPrivate)
   set_target_properties(rudra_render_gpu PROPERTIES AUTOMOC OFF)
   if(WIN32)
