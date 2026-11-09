@@ -53,6 +53,14 @@ foreach ($k in $expect.Keys) {
 }
 $weights = Get-ChildItem $Stage -Recurse -File | Where-Object { $_.FullName -match 'sdr2hdr_|shadow_v1|\.ckpt$' }
 if ($weights) { Fail "non-commercial Beta 2 weights are in the stage: $($weights.Name -join ', ')" }
+# CI's shipped-model check (scripts\ci_shipped_model.sh) refuses any other files: it must name
+# these before they go up (9 Nov 2026: the 8 Nov publish left it on the previous package).
+$ciScript = Get-Content "scripts\ci_shipped_model.sh" -Raw
+foreach ($pair in @(@("G1_TS", $acesManifest.g1_sha256), @("G1_ONNX", $acesManifest.onnx_sha256))) {
+    if ($pair[1] -and $ciScript -notmatch "(?m)^$($pair[0])=$($pair[1])\s*$") {
+        Fail "scripts\ci_shipped_model.sh does not say $($pair[0])=$($pair[1]): update it (and commit) before publishing"
+    }
+}
 
 Say "Hugging Face tools"
 # No --upgrade and an upper bound: the same venv runs the AI fill, whose diffusers and

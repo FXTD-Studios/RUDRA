@@ -25,8 +25,10 @@ HF_REPO=${HF_REPO:-fxtdstudios/rudra-models}
 HF_REVISION=${HF_REVISION:-main}
 CLIP=native/tests/golden/video/clips/h264_709.mp4
 N=6
-G1_TS=fb30e3df748f4fa9ae17f7db189c8fe49a58d9863af6c1c45a408a72f3b7a59b
-G1_ONNX=8ba97cb0ed36f5033958e752afad95d585d50bcefefc3bc66a61b27a6618f237
+# RUDRA ACES 2 (2.0, w4 + lock), published 8 Nov 2026 (docs/MODELS.md; HF ab8da1b2).
+# Update both with every publish, or this check refuses the model users get.
+G1_TS=7082eb869d265d6e8c4fc209f7cac7e5dce2f40c10df5e73a889fb85efb9dbcc
+G1_ONNX=880e7b698a099b8dd60549444392d51af3022efbae8f68f05c9f0f3a29f8ee49
 fail() { echo "FAILED: $*" >&2; exit 1; }
 say() { printf '\n== %s\n' "$*"; }
 rm -rf "$OUT"; mkdir -p "$OUT"
