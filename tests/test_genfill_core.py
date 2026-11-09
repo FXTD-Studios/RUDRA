@@ -84,6 +84,37 @@ def test_r_safe_blend_keeps_every_code():
     assert (out0 == master).all() and not a0.any()
 
 
+def test_plain_blend_moves_codes_inside_and_nothing_outside():
+    """v4 (9 Nov 2026): the region re-render's composite keeps nothing inside the mask and everything outside."""
+    from rudra.genfill.composite import plain_blend
+    rng = np.random.default_rng(1)
+    master = rng.uniform(0.5, 1.2, (30, 40, 3)).astype(np.float32)
+    fill = (master * 3.0).astype(np.float32)
+    weight = np.zeros((30, 40), np.float32)
+    weight[5:20, 10:30] = 1.0
+    weight[20, 10:30] = 0.5
+    out, alpha = plain_blend(master, fill, weight)
+    assert (out[weight == 0] == master[weight == 0]).all()
+    assert np.allclose(out[5:20, 10:30], fill[5:20, 10:30])
+    assert np.allclose(out[20, 10:30], 2.0 * master[20, 10:30])
+    assert (alpha == weight).all()
+    v = _View()
+    codes = lambda a: np.rint(np.clip(v.forward(a), 0, 1) * 255)
+    assert (codes(out)[5:20, 10:30] != codes(master)[5:20, 10:30]).any()   # the codes inside are not kept
+
+
+def test_condition_of_bt1886_is_the_display_light_in_ap1():
+    from rudra.genfill.run import condition_of
+    codes = np.zeros((2, 3, 3), np.uint8)
+    codes[0, 0] = 255                       # white: 1.0 = diffuse white, neutral in AP1
+    codes[0, 1] = 128
+    cond = condition_of(codes, 'bt1886', view=None)
+    assert cond.shape == codes.shape and cond.dtype == np.float32
+    assert np.allclose(cond[0, 0], 1.0, atol=2e-3)
+    assert np.allclose(cond[0, 1], (128 / 255) ** 2.4, atol=2e-3)
+    assert (cond[1] == 0).all()
+
+
 def test_r_safe_blend_with_the_aces_view():
     pytest.importorskip('PyOpenColorIO')
     from rudra.aces_view import ACES2View

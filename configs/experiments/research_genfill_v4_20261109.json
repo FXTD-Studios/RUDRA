@@ -1,0 +1,37 @@
+{
+  "id": "research_genfill_v4_20261109",
+  "written": "2026-11-09, after the 09V test against Beeble SwitchHDR (reports/app_test_09V_2026-11-09/beeble_how.html) and Ahmed's 'do the recommendations in order'; before any clip was built or any v4 output seen",
+  "author": "FXTD Studios Research; approved by Ahmed (recommendation 4 of the 09V test)",
+  "parents": ["research_genfill_v3_20261030 (PASS, the shipped AI fill: shape from the v1 LoRA, brightness from the estimator, blend at code 255 only)"],
+  "problem": "On a grade not made through ACES 2.0, a bright exterior (an open door, a window, a sky) is parked at codes 230-254 with its structure flattened to two or three codes; the analytic route renders it as a flat wall at about 1.2 x diffuse white (BT.1886) and the AI fill, by its contract, invents only at code 255. Measured on 09V: the door interior is flat in the source at 8 and 10 bit (codes 253-255; 10-bit 1012-1023, 0.004 stops of structure), and the other tool's sea, hills and clouds correlate 0.01 with the source: generated inside its mask, with the source's hue, at 2.4-3.4 x white. Nothing in RUDRA does that, by design (r_safe_blend keeps every SDR code).",
+  "idea": "A LoRA trained to RE-RENDER a bright region, not to fill a hole: the SDR made through a display-referred tone curve (pipeline/sdr_render.py: aces 0.30, hable 0.20, reinhard 0.15, agx 0.15, camera_log 0.20; the video code display-linear ^ 1/2.4), exposed so 2-30 % of frame 0 is at or above code 235, the mask the near-clip band (tau_high jittered 225-250, dilate 2, EMA 0.7), the condition the BT.1886 inverse of the codes (the app's default analytic reading, 1.0 = diffuse white), the truth the scene at 2-8 x white with its structure. Half the clips are these ('region'); the other half the v2 kinds over the ACES 2.0 view, so the hole filling stays. At inference a 'region re-render' mode: the codes from the source itself (not the master's ACES round trip), the condition matching the route, a plain feathered blend inside the mask (no r_safe_blend, no brightness estimator), the SDR codes inside the mask NOT kept, and the provenance says so. The exact-round-trip contract of v1-v3 stays the default; the mode is a toggle.",
+  "data": {
+    "builder": "tools/build_genfill_clips.py --recipe v4 (region_clip): the commercial-clean TRAIN sources of the scale builder's plan, exclusions asserted; 33 frames 512 x 288; clips per HDRI 5, per FXTD plate 2, per other plate 1; seed 20261109; dev 3 % of scenes",
+    "out": "G:/datasets/corpora/research_genfill_clips_v4_20261109",
+    "kept": "region: 0.5 %..50 % of pixels in the mask; others as v2 (0.2 %..60 %)"
+  },
+  "training": {
+    "script": "training/genfill_train.py, as v1/v2: rank 32 on every attention and feed-forward projection and the VACE blocks, rectified flow, shift 3, lr 1e-4, warmup 200, accumulate 4, bf16 frozen transformer",
+    "weight_on": "mask (the region is what the model is for; v2's 'core' weighting was the worse run)",
+    "region_weight": 4.0,
+    "init_lora": "G:/rudra_training/research_genfill_v1_20261027/rudra_genfill.safetensors (sha256 9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a, the shape the shipped v3 uses)",
+    "steps": 6000,
+    "max_hours": 14,
+    "save_every": 1000,
+    "out": "G:/rudra_training/research_genfill_v4_20261109"
+  },
+  "inference": "rudra.genfill.run --region-rerender --source <the shot> --condition bt1886|aces --tau-high <225..250> --feather 8; brightness model none; no cap; steps 30; seed 0; window 33, overlap 8",
+  "evaluation": {
+    "tool": "tools/compare_hdr_renders.py on 09V (the other tool's ACES2065-1 EXRs as the reference method) and tools/evaluate_genfill.py's held-out clips rendered through the v4 curves",
+    "gates_region": {
+      "L": "09V door (source max code >= 245): luminance median within 2.5 x .. 4 x SDR white (the other tool: 2.5-3.4 x), hue G/R within 0.15 of the source's",
+      "S": "09V door interior (mask eroded 18 px): structure std at sigma 6 >= 0.05 stops (the other tool 0.09; the source 0.005) and no banding at -2.5 EV on the review sheet",
+      "T": "flicker excess (measure_flicker cells) <= 0.03 EV on 09V; static clipped p95 <= 0.10 EV",
+      "O": "outside the mask: every SDR code kept (r_safe_blend still holds there), bit-identical",
+      "H": "held-out region clips: PU21 at -3 EV against the truth better than the BT.1886 condition's, CI excluding 0"
+    },
+    "gates_holes": "the v3 gates R, H, S, T, A on the v3 evaluation clips with --region-rerender OFF: the v4 LoRA must not be worse than v3's shipped shape (else v4 ships as a second LoRA, selected by the mode)"
+  },
+  "decision_rule": "PASS on every gate: the region re-render mode may be offered in the app, off by default, with its own provenance, as AI fill v4. FAIL: report and review with Ahmed; no further training without his decision.",
+  "release_authorized": false
+}
