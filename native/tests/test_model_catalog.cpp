@@ -149,6 +149,20 @@ TEST(ModelCatalog, PackagesSayWhatTheyAreWhereABarePtCannot) {
     fs::remove_all(base);
 }
 
+TEST(ModelCatalog, ALearnedAces2PackageIsLeftToTheAcesEngine) {
+    // 9 Nov 2026 feedback: the downloaded RUDRA ACES 2 read as "unreadable" here.
+    const fs::path base = fresh("aces-v2");
+    write_package(base / "sdr_model", "sdr_model", "s.pt", stamp(1));
+    fs::create_directories(base / "RUDRA_ACES_2");
+    std::ofstream(base / "RUDRA_ACES_2" / "manifest.json")
+        << R"({"name": "RUDRA_ACES_2_w4", "contract": "rudra_native_aces_v2_staged", "contract_major": 3})";
+    const Catalog cat = scan_packages({base});
+    ASSERT_EQ(cat.entries.size(), 1u);
+    EXPECT_EQ(cat.entries[0].package.filename(), "sdr_model");
+    EXPECT_TRUE(scan_packages({base / "RUDRA_ACES_2"}).entries.empty());   // nor as a root of its own
+    fs::remove_all(base);
+}
+
 TEST(ModelCatalog, RootsInOrderWithoutRepeats) {
 #ifdef _WIN32
     _putenv_s("RUDRA_PACKAGE_ROOTS", " C:/a ;C:/b;;C:/a");
