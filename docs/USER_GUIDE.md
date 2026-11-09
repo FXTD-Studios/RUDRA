@@ -22,13 +22,18 @@ page.
   one.
 
 **The first start.** *Welcome to RUDRA* checks the display (HDR or SDR, and
-its real peak brightness, shown on an HDR test card) and, if a model package
-is installed, loads and tests it on the backend you pick (**Load and test**).
+its real peak brightness, shown on an HDR test card), names the GPU it found
+(with or without a model), and, if a model package is installed, loads and
+tests it on the backend you pick (**Load and test**).
 The model is optional: **Continue** or **Start on CPU** both get you to work,
 and nothing runs a model until Reconstruct > Use the model is on. Then
 *Getting started* shows the five steps below, once (and once again after an
 update that changes them). Help > Check the display and the model runs the
 check again; Help > Getting started shows the steps.
+
+The viewer opens as a comparison: a wipe with the SDR original on the left
+and RUDRA on the right, at a 1,000-nit display peak. A project opens at the
+peak it was saved with.
 
 ## 2. The five steps
 

@@ -60,6 +60,7 @@ public:
 private:
     MainWindow* w_;
     QLabel *display_ = nullptr, *display_detail_ = nullptr, *model_ = nullptr, *model_status_ = nullptr;
+    QLabel *gpu_ = nullptr, *gpu_detail_ = nullptr;   // the GPU found, before any model is loaded
     QComboBox* backend_ = nullptr;
     QWidget* card_ = nullptr;
 };

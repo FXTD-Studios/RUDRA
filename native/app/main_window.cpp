@@ -160,6 +160,11 @@ MainWindow::MainWindow(bool with_viewer, bool headroom_capable)
         // picture. Scene (the unbounded master through exposure and clip) is a colorist's view
         // and read as broken on first sight (an open door as a cyan wall).
         aces_monitor_ = st.value("aces/monitor", "hdr1000").toString();
+        // Once, for installs that saved SDR 100 or Scene before HDR 1000 became the default.
+        if (!st.value("aces/monitorHdr1000Default", false).toBool()) {
+            st.setValue("aces/monitorHdr1000Default", true);
+            aces_monitor_ = "hdr1000";
+        }
         aces_source_display_ = st.value("aces/sourceDisplay", "bt1886").toString();
         // HDR10's mastering display: P3-D65 unless the colorist chose Rec.2020 (Deliver > Export).
         set_mastering_display_primaries(st.value("deliver/masteringDisplay", "p3d65").toString().toStdString());
@@ -2578,6 +2583,13 @@ void MainWindow::save_queues() const {
     for (const auto& e : queues_->entries())
         q << from_path(e.queue) + "\t" + QString::fromStdString(e.title);
     QSettings().setValue("queue/entries", q);
+}
+
+void MainWindow::open_compare_view() {
+    session_.peak_input(std::log2(1000.0 / 203.0));
+    session_.set_wipe_sources("sdr", "model");   // turns the wipe on, at the middle
+    sync_checks();
+    sync_ui();
 }
 
 void MainWindow::restore_settings() {

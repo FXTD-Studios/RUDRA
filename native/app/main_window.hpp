@@ -315,6 +315,11 @@ public:
     // the rails, the inspector tab, the container and the Render fields.
     void save_settings() const;
     void restore_settings();
+    // The view a start opens on (9 Nov 2026 feedback): a wipe, the SDR original
+    // left and RUDRA right, at a 1 000-nit view peak. main.cpp calls it before a
+    // project opens, so a project's own view peak replaces it; the tests keep the
+    // page's defaults (no wipe, 203 nits).
+    void open_compare_view();
     // The sheet on screen (show_sheet), if any.
     QDialog* sheet() const { return sheet_; }
     // What Deliver > Copy writes (deliveryRecord()).

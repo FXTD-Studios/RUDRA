@@ -19,6 +19,10 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <optional>
+#include <vector>
+
 #include "main_window.hpp"
 #include "theme.hpp"
 #include "rudra/core/hdr_card.hpp"
@@ -27,8 +31,46 @@
 #include "rudra/render/viewer_window.hpp"
 #endif
 
+#ifdef Q_OS_WIN
+#include <dxgi1_6.h>
+#endif
+
 namespace rudra::app {
 namespace {
+
+struct GpuInfo {
+    QString name;
+    double vram_gb = 0.0;   // 0: not reported (integrated, or shared memory only)
+};
+
+// The machine's GPUs, without a model: DXGI's hardware adapters on Windows,
+// the Metal GPU every supported Mac has. nullopt: not checked on this system.
+std::optional<std::vector<GpuInfo>> detect_gpus() {
+#if defined(Q_OS_WIN)
+    std::vector<GpuInfo> out;
+    IDXGIFactory1* factory = nullptr;
+    if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))) return out;
+    IDXGIAdapter1* adapter = nullptr;
+    for (UINT a = 0; factory->EnumAdapters1(a, &adapter) != DXGI_ERROR_NOT_FOUND; ++a) {
+        DXGI_ADAPTER_DESC1 d{};
+        // Skip the software rasterizer (Microsoft Basic Render Driver, vendor 0x1414).
+        if (SUCCEEDED(adapter->GetDesc1(&d)) && !(d.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) && d.VendorId != 0x1414) {
+            GpuInfo g;
+            g.name = QString::fromWCharArray(d.Description).trimmed();
+            g.vram_gb = double(d.DedicatedVideoMemory) / (1024.0 * 1024.0 * 1024.0);
+            const bool seen = std::any_of(out.begin(), out.end(), [&](const GpuInfo& o) { return o.name == g.name; });
+            if (!seen && !g.name.isEmpty()) out.push_back(g);
+        }
+        adapter->Release();
+    }
+    factory->Release();
+    return out;
+#elif defined(Q_OS_MACOS)
+    return std::vector<GpuInfo>{{QStringLiteral("Apple GPU (Metal)"), 0.0}};
+#else
+    return std::nullopt;
+#endif
+}
 
 QLabel* label(const QString& text, const QString& id, const QString& role, QWidget* parent) {
     auto* l = new QLabel(text, parent);
@@ -470,6 +512,32 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
     const Catalog& c = w_->catalog();
     const auto pick = c.pick();
     v->addWidget(step(right, "frDotBackend", "Acceleration", body));
+    // The GPU, found before any model is loaded: "Load and test" needs a
+    // package, so without one the step would otherwise stay blank.
+    const auto gpus = detect_gpus();
+    QStringList gpu_paths;
+    for (const auto& b : backend_choices())
+        if (b.device != Device::Cpu) gpu_paths << q(b.label());
+    gpu_ = label({}, "frGpu", "step-sub", right);
+    gpu_detail_ = label({}, "frGpuDetail", "step-sub", right);
+    if (!gpus) {
+        gpu_->setText("GPU not checked on this system");
+        gpu_detail_->setText("Load and test a model to see which device it runs on.");
+    } else if (gpus->empty()) {
+        gpu_->setText("No GPU found");
+        gpu_detail_->setText("Models run on the CPU. A GPU driver update can make a card visible.");
+    } else {
+        QStringList names;
+        for (const auto& g : *gpus)
+            names << (g.vram_gb >= 1.0 ? g.name + QStringLiteral("  ·  %1 GB").arg(std::lround(g.vram_gb)) : g.name);
+        gpu_->setText(names.join("\n"));
+        gpu_detail_->setText(gpu_paths.isEmpty()
+                                 ? QString("Found. This build runs models on the CPU only; the viewer draws on the GPU.")
+                                 : "Found. Models run on it through " + gpu_paths.join(" or ") +
+                                       "; Automatic picks the fastest that opens.");
+    }
+    body->addWidget(gpu_);
+    body->addWidget(gpu_detail_);
     auto* row = new QWidget(right);
     auto* rh = new QHBoxLayout(row);
     rh->setContentsMargins(0, 2, 0, 0);
@@ -497,8 +565,9 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
                           "frModelStatus", "step-sub", right);
     body->addWidget(model_status_);
     v->addStretch(1);
-    auto* lic = label("Each model shows its licence before you download it. The RUDRA 1.0 models are Apache 2.0; "
-                      "the older Beta 2 weights (sdr2hdr_*) are non-commercial only.", "licenceNote", {},
+    auto* lic = label("RUDRA \u00a9 2026 FXTD Studios, under the Apache License 2.0. Each model shows its licence "
+                      "before you download it: the RUDRA 1.0 models are Apache 2.0; the older Beta 2 weights "
+                      "(sdr2hdr_*) are non-commercial only.", "licenceNote", {},
                       right);
     v->addWidget(lic);
     v->addSpacing(14);
@@ -517,7 +586,7 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
     h->addWidget(right, 1);
 
     set_dot(this, "frDotDisplay", card_ ? "busy" : "");
-    set_dot(this, "frDotBackend", "");
+    set_dot(this, "frDotBackend", !gpus ? "" : gpus->empty() ? "fail" : "done");
     set_dot(this, "frDotModel", in_use ? "done" : pick ? "" : "fail");
     connect(test, &QPushButton::clicked, this, [this] { test_model(); });
     connect(start_btn, &QPushButton::clicked, this, [this] { start(); });

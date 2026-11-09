@@ -40,7 +40,8 @@ PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
-LicenseFile={#SourceDir}\LICENSE
+; Shown for information: Apache 2.0 asks for no acceptance, so no "I accept" page.
+InfoBeforeFile={#SourceDir}\LICENSE
 SetupIconFile=..\icons\rudra.ico
 UninstallDisplayIcon={app}\RUDRA.exe
 #ifdef ModelFreeEvaluation

@@ -17,6 +17,7 @@ if(TARGET rudra_render_gpu)
 endif()
 if(WIN32)
   target_compile_definitions(rudra_app_ui PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_link_libraries(rudra_app_ui PRIVATE dxgi)   # the first-run GPU check (model_dialogs.cpp)
 endif()
 rudra_warnings(rudra_app_ui)
 

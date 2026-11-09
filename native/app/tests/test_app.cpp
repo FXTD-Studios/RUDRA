@@ -1806,12 +1806,28 @@ TEST(AppModels, TheFirstRunReportsTheDisplaysRealPeak) {
     fr->set_display(DisplayTarget::sdr(), "SDR", "swapchain");
     EXPECT_EQ(fr->findChild<QLabel*>("frDisplay")->text(), "SDR display");
     EXPECT_TRUE(fr->findChild<QLabel*>("frModel")->text().startsWith("Beta"));
+    // The GPU step says what it found before any model loads (9 Nov 2026 feedback).
+    EXPECT_FALSE(fr->findChild<QLabel*>("frGpu")->text().isEmpty());
+    EXPECT_FALSE(fr->findChild<QLabel*>("frGpuDetail")->text().isEmpty());
     fr->test_model();
     ASSERT_TRUE(wait_for([&] { return !w.loading_model() && !w.model_package().empty(); }));
     EXPECT_EQ(fr->findChild<QLabel*>("frModelStatus")->text(), "Ready: beta on ONNX Runtime on CPU");
     fr->start();
     EXPECT_TRUE(QSettings().value("firstRun/done").toBool());
     EXPECT_FALSE(fr->isVisible());
+}
+
+TEST(AppView, AStartOpensOnTheSdrRudraWipeAtAThousandNits) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    EXPECT_FALSE(w.session().wipe.has_value());   // the page's defaults until the app's start
+    w.open_compare_view();
+    ASSERT_TRUE(w.session().wipe.has_value());
+    EXPECT_DOUBLE_EQ(*w.session().wipe, 0.5);
+    EXPECT_EQ(w.session().wipe_left, "sdr");
+    EXPECT_EQ(w.session().wipe_right, "model");
+    EXPECT_NEAR(w.session().display_nits(), 1000.0, 1e-9);
+    EXPECT_EQ(w.findChild<QLabel*>("peakVal")->text(), "1,000");
 }
 
 
@@ -4865,6 +4881,8 @@ TEST(Colorist, MonitorStillsAndProxy) {
     GTEST_SKIP() << "the stand-in engine is a Python script, which Windows cannot run as a program";
 #endif
     QSettings().clear();
+    QSettings().setValue("aces/monitor", "scene");   // HDR 1000 is the default: start from Scene
+    QSettings().setValue("aces/monitorHdr1000Default", true);
     const auto root = aces_tmp("monitor");
     write_text(root / "pkg" / "manifest.json", aces_manifest(true, true).dump());
     std::filesystem::create_directories(root / "frames");
