@@ -3571,6 +3571,24 @@ TEST(AcesMaster, FindsOnlyPackagesTheContractAccepts) {
     EXPECT_FALSE(found[0].release_authorized);
 }
 
+TEST(AcesMaster, TheFirstRunNamesAnInstalledAcesModel) {
+    // 9 Nov 2026 feedback: with only RUDRA ACES 2 installed the Model step said
+    // "No model package found", and the Model packages list called it unreadable.
+    QSettings().clear();
+    const auto root = aces_tmp("first-run");
+    write_text(root / "RUDRA_ACES_2" / "manifest.json", aces_manifest(true, true).dump());
+    app::MainWindow w(false);
+    w.add_model_root(root);
+    w.rescan_models();
+    for (const auto& e : w.catalog().entries) EXPECT_NE(e.package.filename(), "RUDRA_ACES_2");
+    app::FirstRun fr(&w, false);
+    EXPECT_TRUE(fr.findChild<QLabel*>("frModel")->text().startsWith("Learned ACES 2.0 model"))
+        << fr.findChild<QLabel*>("frModel")->text().toStdString();
+    EXPECT_TRUE(fr.findChild<QLabel*>("frModelStatus")->text().startsWith("Installed and checked"));
+    EXPECT_EQ(fr.findChild<QLabel*>("frDotModel")->property("state").toString(), "done");
+    QSettings().clear();
+}
+
 TEST(AcesMaster, CommandArgumentsCarryTheChoices) {
     app::AcesRunSettings s;
     s.package = "pkg";

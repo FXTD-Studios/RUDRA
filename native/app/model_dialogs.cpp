@@ -23,6 +23,7 @@
 #include <optional>
 #include <vector>
 
+#include "aces_master.hpp"
 #include "main_window.hpp"
 #include "theme.hpp"
 #include "rudra/core/hdr_card.hpp"
@@ -411,8 +412,10 @@ void set_dot(QWidget* root, const char* id, const char* state) {
 FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
     setObjectName("firstRun");
     setWindowTitle("Welcome to RUDRA");
-    resize(980, 640);
+    resize(980, 720);
     auto* h = new QHBoxLayout(this);
+    // Never shorter than the content: squeezed, the card's native window drew over the next step.
+    h->setSizeConstraint(QLayout::SetMinimumSize);
     h->setContentsMargins(0, 0, 0, 0);
     h->setSpacing(0);
 
@@ -536,14 +539,21 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
     v->addWidget(step(right, "frDotModel", "Model", body));
     // The package in use if there is one (opened on the command line, say), else the catalog's pick.
     const bool in_use = !w_->model_package().empty();
+    // A learned ACES 2.0 download is not in the catalog (it runs through the ACES
+    // engine): without this the step said "No model package found" beside it.
+    const auto aces = find_aces_packages(c.roots);
+    const bool aces_only = !in_use && !pick && !aces.empty();
     model_ = label(in_use ? q(w_->model_package().filename().string()) + "  ·  in use"
                    : pick ? q(c.entries[*pick].label()) + "  ·  " + q(c.entries[*pick].package.filename().string())
+                   : aces_only ? "Learned ACES 2.0 model  ·  " + q(aces.front().root.filename().string())
                           : QString("No model package found. None is needed; add one in File > Model packages… later."),
                    "frModel", "step-sub", right);
     body->addWidget(model_);
     model_status_ = label(pick ? "Verified against its hash, then its golden frames run once on the backend you choose; "
                                  "a model that drifts is refused."
-                               : QString(),
+                          : aces_only ? QString("Installed and checked. It loads in the background and runs the learned "
+                                                "ACES 2.0 route; Load and test is for SDR to HDR packages.")
+                                      : QString(),
                           "frModelStatus", "step-sub", right);
     body->addWidget(model_status_);
     v->addStretch(1);
@@ -569,7 +579,7 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
 
     set_dot(this, "frDotDisplay", card_ ? "busy" : "");
     set_dot(this, "frDotBackend", !gpus ? "" : gpus->empty() ? "fail" : "done");
-    set_dot(this, "frDotModel", in_use ? "done" : pick ? "" : "fail");
+    set_dot(this, "frDotModel", in_use || aces_only ? "done" : pick ? "" : "fail");
     connect(test, &QPushButton::clicked, this, [this] { test_model(); });
     connect(start_btn, &QPushButton::clicked, this, [this] { start(); });
     connect(cpu, &QPushButton::clicked, this, [this] {

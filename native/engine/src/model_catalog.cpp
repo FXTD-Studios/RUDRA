@@ -8,6 +8,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "rudra/core/aces_v2_manifest.hpp"
+
 namespace rudra {
 namespace fs = std::filesystem;
 
@@ -50,17 +52,31 @@ bool hidden(const fs::path& p) {
     return n.empty() || n[0] == '.' || n.rfind("_invalid_", 0) == 0;
 }
 
+// A learned ACES 2.0 package (core/aces_v2_manifest.hpp) sits in the same models
+// folder but runs through the ACES engine, not this loader: not listed here,
+// where it read as "unreadable" beside its "Installed and checked" download row.
+bool aces_v2_package(const fs::path& dir) {
+    try {
+        std::ifstream in(dir / "manifest.json");
+        const auto j = nlohmann::json::parse(in);
+        return j.contains("contract") && j.at("contract").is_string() &&
+               j.at("contract").get<std::string>() == aces_v2::kContractId;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 // The package folders in a root: the root itself if it is one, else each
 // folder in it with a manifest.json, by name.
 std::vector<fs::path> package_dirs(const fs::path& root) {
     std::error_code ec;
-    if (fs::is_regular_file(root / "manifest.json", ec)) return {root};
+    if (fs::is_regular_file(root / "manifest.json", ec)) return aces_v2_package(root) ? std::vector<fs::path>{} : std::vector<fs::path>{root};
     std::vector<fs::path> out;
     if (!fs::is_directory(root, ec)) return out;
     for (const auto& e : fs::directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
         std::error_code e2;
         if (!e.is_directory(e2) || hidden(e.path())) continue;
-        if (fs::is_regular_file(e.path() / "manifest.json", e2)) out.push_back(e.path());
+        if (fs::is_regular_file(e.path() / "manifest.json", e2) && !aces_v2_package(e.path())) out.push_back(e.path());
     }
     std::sort(out.begin(), out.end());
     return out;
