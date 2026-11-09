@@ -729,6 +729,19 @@ TEST(AppLayout, ShellControlsDoWhatShellJsDoes) {
     QTest::mouseDClick(exposure, Qt::LeftButton);
     EXPECT_EQ(w.session().grade.exposure_ev, 0.0);
     EXPECT_EQ(exposure->value(), 0);
+    // The near-clip detail gain (9 Nov 2026): the slider, its label, the master request, undo.
+    auto* detail = w.findChild<QSlider*>("highlightDetail");
+    ASSERT_NE(detail, nullptr);
+    EXPECT_EQ(detail->value(), 20);   // 1.00: off
+    EXPECT_EQ(w.findChild<QLabel*>("highlightDetailVal")->text(), "1.00");
+    detail->setValue(36);
+    EXPECT_DOUBLE_EQ(w.session().grade.highlight_detail, 1.8);
+    EXPECT_EQ(w.findChild<QLabel*>("highlightDetailVal")->text(), "1.80");
+    EXPECT_DOUBLE_EQ(w.master_request().highlight_detail, 1.8);
+    EXPECT_NE(w.session().params_json().find("\"highlight_detail\":1.8"), std::string::npos);
+    w.run("undo");
+    EXPECT_DOUBLE_EQ(w.session().grade.highlight_detail, 1.0);
+    EXPECT_EQ(detail->value(), 20);
 }
 
 // ---- step 6: the panels driven as the page's are, against its golden -------

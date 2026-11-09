@@ -32,6 +32,8 @@ struct RegionState {
 
 // The master exposure's range in stops (13 Oct 2026).
 inline constexpr double kExposureMin = -3.0, kExposureMax = 3.0;
+// The near-clip detail gain's range (9 Nov 2026): 1 is off, 3 the most.
+inline constexpr double kHighlightDetailMin = 1.0, kHighlightDetailMax = 3.0;
 
 // The source curve a new session starts on (13 Oct 2026).
 inline constexpr std::string_view kDefaultSource = "bt1886";
@@ -69,6 +71,9 @@ struct GradeSnapshot {
     // Undone with the grade; not in params() (the Studio has neither).
     bool clip_fill = true;
     std::vector<ClipOverride> clip_peaks;
+    // 9 Nov 2026: the clip fill's near-clip detail gain (ClipFillOptions::detail_gain),
+    // 1 = off. Undone with the grade; in params() only when not 1.
+    double highlight_detail = 1.0;
     // 13 Oct 2026: the master exposure in stops (CompositeParams::exposure_ev,
     // MasterRequest::exposure_ev), -3 to +3. Undone with the grade; in
     // params() only when not 0 (the page has none).
@@ -146,6 +151,9 @@ public:
     void exposure_input(double ev);
     void nudge_exposure(double delta);
     void reset_exposure();
+    // The near-clip detail gain (9 Nov 2026): a slider press pushes the undo entry, input moves it.
+    void highlight_detail_press();
+    void highlight_detail_input(double gain);
     void peak_input(double peak_ev);             // the peak slider: not undone
     void toggle_preserve();                      // the Preserve check
     // The reconstruction region (spec rev 2): a slider press pushes the undo

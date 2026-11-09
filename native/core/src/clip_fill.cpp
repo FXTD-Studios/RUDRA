@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -481,7 +482,69 @@ ClipFill reconstruct_crop(const SdrImage& sdr, float corpus_ev, const ClipFillOp
     return out;
 }
 
+// Separable Gaussian, edges clamped, in place on one plane.
+void gaussian_blur(std::vector<float>& a, int h, int w, double sigma) {
+    const int r = std::max(1, int(std::ceil(3.0 * sigma)));
+    std::vector<float> k(std::size_t(2 * r + 1));
+    double sum = 0.0;
+    for (int i = -r; i <= r; ++i) sum += k[std::size_t(i + r)] = float(std::exp(-0.5 * double(i) * double(i) / (sigma * sigma)));
+    for (float& v : k) v = float(double(v) / sum);
+    std::vector<float> tmp(a.size());
+    for_each_index(std::size_t(h), [&](std::size_t yy) {
+        const int y = int(yy);
+        const float* row = a.data() + std::size_t(y) * std::size_t(w);
+        float* out = tmp.data() + std::size_t(y) * std::size_t(w);
+        for (int x = 0; x < w; ++x) {
+            double s = 0.0;
+            for (int i = -r; i <= r; ++i) s += double(k[std::size_t(i + r)]) * double(row[std::clamp(x + i, 0, w - 1)]);
+            out[x] = float(s);
+        }
+    });
+    for_each_index(std::size_t(w), [&](std::size_t xx) {
+        const int x = int(xx);
+        for (int y = 0; y < h; ++y) {
+            double s = 0.0;
+            for (int i = -r; i <= r; ++i) s += double(k[std::size_t(i + r)]) * double(tmp[std::size_t(std::clamp(y + i, 0, h - 1)) * std::size_t(w) + std::size_t(x)]);
+            a[std::size_t(y) * std::size_t(w) + std::size_t(x)] = float(s);
+        }
+    });
+}
+
 }  // namespace
+
+PlanarBuffer near_clip_detail(const SdrImage& sdr, const ClipFillOptions& opt) {
+    const int h = sdr.height(), w = sdr.width();
+    if (h <= 0 || w <= 0 || !(opt.detail_gain > 0.0) || opt.detail_gain == 1.0 || !(opt.detail_sigma_px > 0.0)) return {};
+    PlanarBuffer gain(1, h, w);
+    const std::size_t n = std::size_t(h) * std::size_t(w);
+    const PlanarBuffer& s = sdr.buffer();
+    // The codes' display-linear luma (BT.1886, 2.4), in stops: the structure an SDR's
+    // shoulder left, with no inverse's flat top in the way (254 and 255 differ here).
+    const float from = float(opt.detail_from), to = float(std::max(opt.detail_to, opt.detail_from + 1e-4));
+    std::vector<float> wgt(n), lum(n), wlum(n);
+    for_each_index(n, [&](std::size_t i) {
+        const float v = std::clamp(kLuma[0] * s.plane(0)[i] + kLuma[1] * s.plane(1)[i] + kLuma[2] * s.plane(2)[i], 0.0f, 1.0f);
+        wgt[i] = smooth01((v - from) / (to - from));
+        lum[i] = 2.4f * std::log2(std::max(v, 1.0f / 4096.0f));
+        wlum[i] = wgt[i] * lum[i];
+    });
+    // The local mean over the band only (a normalised convolution): a dark figure against
+    // the sky must not pull the mean down beside it, or the sky gets a bright rim.
+    std::vector<float> low = std::move(wlum), den = wgt;
+    gaussian_blur(low, h, w, opt.detail_sigma_px);
+    gaussian_blur(den, h, w, opt.detail_sigma_px);
+    const float k = float(opt.detail_gain - 1.0), floor = float(std::max(opt.detail_floor_stops, 0.0));
+    const float cap = float(std::max(opt.detail_max_stops, 0.0));
+    float* g = gain.plane(0);
+    for_each_index(n, [&](std::size_t i) {
+        if (wgt[i] <= 0.0f || den[i] <= 1e-3f) return;
+        const float hp = lum[i] - low[i] / den[i];
+        const float mag = std::max(std::abs(hp) - floor, 0.0f);   // the noise floor, softly
+        if (mag <= 0.0f) return;
+        g[i] = std::clamp(wgt[i] * k * std::copysign(mag, hp), -cap, cap);
+    });
+    return gain;
+}
 
 ClipFill reconstruct_clipped(const SdrImage& sdr, float corpus_ev, const ClipFillOptions& opt) {
     const int h = sdr.height(), w = sdr.width();
@@ -533,30 +596,41 @@ Fields clip_fill_fields(const SdrImage& sdr, const ModelConstants& model, const 
     const int h = sdr.height(), w = sdr.width();
     Fields f = analytic_fields(h, w);
     ClipFill fill = reconstruct_clipped(sdr, model.corpus_ev, options);
-    if (!fill.gain_log2.empty()) {
+    // Stage 4 over the fill (signed, the same on every channel); nothing when it is off.
+    const PlanarBuffer det = near_clip_detail(sdr, options);
+    const bool detailed = !det.empty();
+    if (!fill.gain_log2.empty() || detailed) {
         const std::size_t n = std::size_t(h) * std::size_t(w);
         const PlanarBuffer& s = sdr.buffer();
         const float ls = model.log_scale;
+        const bool filled = !fill.gain_log2.empty();
         float* hl = f.highlight.plane(0);
+        std::atomic<std::size_t> moved{0};
         for_each_index(n, [&](std::size_t i) {
-            float code[3];
+            float code[3], gain[3];
             for (int c = 0; c < 3; ++c) code[c] = std::clamp(s.plane(c)[i], 0.0f, 1.0f);
+            const float d = detailed ? det.plane(0)[i] : 0.0f;
             bool changed = false;
-            for (int c = 0; c < 3; ++c) changed = changed || fill.gain_log2.plane(c)[i] > 0.0f;
+            for (int c = 0; c < 3; ++c) {
+                gain[c] = (filled ? fill.gain_log2.plane(c)[i] : 0.0f) + d;
+                changed = changed || gain[c] != 0.0f;
+            }
             if (!changed) return;
+            if (d != 0.0f) moved.fetch_add(1, std::memory_order_relaxed);
             // composite()'s gate under the defaults (mode All, strength 1, an
             // analytic frame's shadow weight of 1), divided back out.
             const float y = 0.2126f * code[0] + 0.7152f * code[1] + 0.0722f * code[2];
             const float gate = std::max({sigmoidf((y - 0.82f) * 24.0f), sigmoidf((0.10f - y) * 24.0f), 1e-6f});
             for (int c = 0; c < 3; ++c) {
-                const float g = fill.gain_log2.plane(c)[i];
-                if (!(g > 0.0f)) continue;
+                const float g = gain[c];
+                if (g == 0.0f) continue;
                 const float base = baseline_value(code[c], model.corpus_ev);
                 const float target = base * std::exp2(g);
                 f.residual.plane(c)[i] = (std::log1p(target * ls) - std::log1p(base * ls)) / gate;
             }
             hl[i] = 1.0f;
         });
+        fill.detail_pct = 100.0 * double(moved.load()) / double(n);
     }
     if (detail) *detail = std::move(fill);
     return f;

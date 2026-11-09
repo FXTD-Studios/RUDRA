@@ -102,6 +102,10 @@ void MainWindow::sync_aces_trims() {
     const bool routed = aces_routed();
     for (QWidget* w : std::initializer_list<QWidget*>{mode_seg_, exposure_, strength_, preserve_, regions_, mask_panel_})
         if (w) w->setEnabled(!routed);
+    if (routed && aces_monitor_ != "scene") {   // the view peak is the monitor's, from the first frame on
+        const double nits = aces_monitor_ == "sdr100" ? 100.0 : 1000.0;
+        if (std::abs(session_.display_nits() - nits) > 1.0) session_.peak_input(std::log2(nits / 203.0));
+    }
     if (peak_) {
         peak_->setEnabled(!routed || aces_monitor_ == "scene");
         if (!peak_->property("baseTip").isValid()) peak_->setProperty("baseTip", peak_->toolTip());

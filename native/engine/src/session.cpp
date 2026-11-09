@@ -98,6 +98,7 @@ std::string Session::params_json() const {
         append_string(o, grade.source);
     }
     if (grade.exposure_ev != 0.0) o += ",\"exposure_ev\":" + js_number(grade.exposure_ev);
+    if (grade.highlight_detail != 1.0) o += ",\"highlight_detail\":" + js_number(grade.highlight_detail);
     if (grade.headroom_policy != HeadroomPolicy::Disabled) {
         o += ",\"headroom_policy\":";
         append_string(o, headroom_policy_id(grade.headroom_policy));
@@ -330,6 +331,13 @@ void Session::reset_exposure() {
     exposure_input(0.0);
 }
 
+void Session::highlight_detail_press() { push_undo(); }
+
+void Session::highlight_detail_input(double gain) {
+    grade.highlight_detail = std::isfinite(gain) ? std::clamp(gain, kHighlightDetailMin, kHighlightDetailMax) : 1.0;
+    notify(Grade);
+}
+
 void Session::peak_input(double ev) {
     peak_ev = ev;
     notify(Peak);
@@ -382,6 +390,7 @@ void Session::reset_recon() {
     grade.strength = 1.0;
     grade.preserve = true;
     grade.exposure_ev = 0.0;
+    grade.highlight_detail = 1.0;
     grade.region = ReconstructionRegion{};
     notify(Grade);
 }

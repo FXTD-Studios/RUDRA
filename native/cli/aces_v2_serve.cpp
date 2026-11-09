@@ -23,6 +23,9 @@
 //       the kept frame through the ACES 2.0 SDR view at that exposure, 8-bit PPM; "fill" shows the
 //       AI fill's regions (rudra/genfill/masks.py): source codes max(R,G,B) >= "tau_high" (250) in
 //       orange, <= "tau_low" (4) in cyan, over the dimmed model view
+//   {"id":9,"op":"monitor","exr":"<acescg float exr>","display":"hdr1000","out":"<file.f32>"}
+//       the EXR through that monitoring transform, written as preview's model_out (9 Nov 2026:
+//       the AI fill preview shown the way the live frame is)
 //   {"id":3,"op":"master","sources":["<still or video>",...],"out":"<new dir>","guard":true}
 //       a video is mastered frame by frame as <stem>_<NNNNNN>.exr; "log":"logc4" and
 //       "log_formats":"tiff16,dpx10,prores4444xq" add camera-log copies (aces_v2_log.hpp).
@@ -430,6 +433,39 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     continue;
                 }
                 send({{"id", id}, {"ok", true}, {"path", out.string()}, {"width", w}, {"height", h}, {"ms", ms_since(t)}});
+            } else if (op == "monitor") {
+                // 9 Nov 2026: an ACEScg EXR (an AI fill preview's master or fill) through the viewer's
+                // monitoring transform, written as the preview op writes model_out, so the app shows
+                // the fill the way it shows the live frame.
+                const auto t = Clock::now();
+                bool monitor_ok = true;
+                const AcesMonitor monitor = aces_monitor_from(req.value("display", std::string()), &monitor_ok);
+                if (!monitor_ok) {
+                    send(err(id, "display is scene, sdr100 or hdr1000."));
+                    continue;
+                }
+                if (monitor == AcesMonitor::Hdr1000 && !hdr_view) {
+                    auto hv = aces_v2::make_ocio_display_view(aces_v2::kOcioHdrDisplay, aces_v2::kOcioHdrView, threads);
+                    if (!hv) {
+                        send(err(id, hv.error()));
+                        continue;
+                    }
+                    hdr_view = std::move(*hv);
+                }
+                const fs::path exr = req.at("exr").get<std::string>(), out = req.at("out").get<std::string>();
+                auto e = read_exr(exr);
+                if (!e || e->pixels.channels() < 3) {
+                    send(err(id, "The EXR could not be read.", e ? exr.string() : e.error().message));
+                    continue;
+                }
+                PlanarBuffer rgb(3, e->pixels.height(), e->pixels.width());
+                for (int c = 0; c < 3; ++c) std::copy_n(e->pixels.plane(c), rgb.plane_size(), rgb.plane(c));
+                const aces_v2::AcesView& mview = monitor == AcesMonitor::Hdr1000 ? *hdr_view : **view;
+                if (!write_planes(out, aces_monitor_planes(rgb, mview, monitor))) {
+                    send(err(id, "The frame could not be written for the viewer.", out.string()));
+                    continue;
+                }
+                send({{"id", id}, {"ok", true}, {"width", rgb.width()}, {"height", rgb.height()}, {"ms", ms_since(t)}});
             } else if (op == "master") {
                 in.cancel = false;
                 if (in.cancelled(id)) {   // stopped while it waited: nothing made, nothing written

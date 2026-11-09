@@ -918,6 +918,18 @@ QWidget* MainWindow::build_right_rail() {
     });
     exposure_->installEventFilter(this);   // double-click: back to 0 (MainWindow::eventFilter)
     slider("Residual strength", "strengthVal", "\u00d7", "strength", 0, 40, strength_val_, strength_);
+    // 9 Nov 2026: the clip fill's near-clip detail gain, 1 (off) to 3 by 0.05 (n / 20): the
+    // structure an SDR's shoulder flattened (a sky, a window, an open door), amplified. Analytic
+    // route only; the learned route's trims are its own.
+    slider("Highlight detail", "highlightDetailVal", "\u00d7", "highlightDetail", 20, 60, highlight_detail_val_, highlight_detail_);
+    highlight_detail_->setToolTip("The structure that survives just under white (a sky, a window, an open door), amplified; "
+                                  "1.00 leaves it as the source has it. Part of the clipped-highlight fill: off with it.");
+    connect(highlight_detail_, &QSlider::sliderPressed, this, [this] { session_.highlight_detail_press(); });
+    connect(highlight_detail_, &QSlider::valueChanged, this, [this](int n) {
+        if (std::lround(session_.grade.highlight_detail * 20.0) == n) return;   // sync_ui, not a move
+        if (!highlight_detail_->isSliderDown()) session_.highlight_detail_press();
+        session_.highlight_detail_input(n / 20.0);
+    });
     slider("Display peak", "peakVal", "nits", "peak", -2, 10, peak_val_, peak_);
     connect(strength_, &QSlider::sliderPressed, this, [this] { session_.strength_press(); });
     connect(strength_, &QSlider::valueChanged, this, [this](int n) {

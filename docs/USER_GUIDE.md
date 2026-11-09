@@ -113,7 +113,11 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   under white, an open door, a window, a sky, come back far brighter and more
   saturated than they were, and the Learned ACES 2.0 trims do not reach them;
   the card and the Deliver page say so and point at the analytic route
-  (Deliver > Source > Analytic).
+  (Deliver > Source > Analytic). From 1.2.1 the route opens on the **HDR
+  1000** monitor (the ACES 2.0 HDR output, a deliverable's picture) rather
+  than *Scene* (the unbounded master through exposure and clip), and an AI
+  fill preview's Fill and Master pictures go through the same monitor as the
+  live frame.
 
 - **Exposure.** The slider at the top of the Reconstruct card moves the whole
   master brighter or darker, -3 to +3 stops, live on the viewer. It is part of
@@ -134,6 +138,15 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   Where a highlight was only just above the clip the fill can overshoot (by
   about a quarter of a stop), and small bright sparks such as fireworks look
   wrong: lower Strength, set the peak, or turn the fill off for those shots.
+- **Highlight detail** (1.2.1). An SDR's shoulder parks a bright sky, a
+  window or an open door just under white with its structure flattened to a
+  few codes, and the inverse shows it as a flat wall. The slider amplifies
+  the structure that survives there (1.00 leaves it as the source has it;
+  1.5-2 is the range to judge), the same on every channel so the hue holds,
+  and leaves one code of noise alone. It is part of the clipped-highlight
+  fill: off with it, and only on the analytic route. Where the source is
+  truly flat (every pixel at the last two or three codes) there is nothing
+  to amplify, and it changes nothing; that is the AI fill's territory.
 - **Mode** (1 2 3 4): what the model may change: *All*, *Highlights*,
   *Shadows*, or *Off* (the baseline alone).
 - **Strength** ([ and ]): how much of the model's residual is added.
