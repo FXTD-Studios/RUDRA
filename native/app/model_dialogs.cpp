@@ -28,11 +28,8 @@
 #include "rudra/core/hdr_card.hpp"
 
 #ifdef RUDRA_APP_VIEWER
+#include "rudra/render/gpu_adapters.hpp"
 #include "rudra/render/viewer_window.hpp"
-#endif
-
-#ifdef Q_OS_WIN
-#include <dxgi1_6.h>
 #endif
 
 namespace rudra::app {
@@ -43,30 +40,15 @@ struct GpuInfo {
     double vram_gb = 0.0;   // 0: not reported (integrated, or shared memory only)
 };
 
-// The machine's GPUs, without a model: DXGI's hardware adapters on Windows,
-// the Metal GPU every supported Mac has. nullopt: not checked on this system.
+// The machine's GPUs, without a model (render/gpu_adapters). nullopt: not
+// checked (a build without the viewer, or a system the check does not cover).
 std::optional<std::vector<GpuInfo>> detect_gpus() {
-#if defined(Q_OS_WIN)
+#ifdef RUDRA_APP_VIEWER
+    const auto found = gpu_adapters();
+    if (!found) return std::nullopt;
     std::vector<GpuInfo> out;
-    IDXGIFactory1* factory = nullptr;
-    if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))) return out;
-    IDXGIAdapter1* adapter = nullptr;
-    for (UINT a = 0; factory->EnumAdapters1(a, &adapter) != DXGI_ERROR_NOT_FOUND; ++a) {
-        DXGI_ADAPTER_DESC1 d{};
-        // Skip the software rasterizer (Microsoft Basic Render Driver, vendor 0x1414).
-        if (SUCCEEDED(adapter->GetDesc1(&d)) && !(d.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) && d.VendorId != 0x1414) {
-            GpuInfo g;
-            g.name = QString::fromWCharArray(d.Description).trimmed();
-            g.vram_gb = double(d.DedicatedVideoMemory) / (1024.0 * 1024.0 * 1024.0);
-            const bool seen = std::any_of(out.begin(), out.end(), [&](const GpuInfo& o) { return o.name == g.name; });
-            if (!seen && !g.name.isEmpty()) out.push_back(g);
-        }
-        adapter->Release();
-    }
-    factory->Release();
+    for (const auto& a : *found) out.push_back({QString::fromStdString(a.name), a.vram_gb});
     return out;
-#elif defined(Q_OS_MACOS)
-    return std::vector<GpuInfo>{{QStringLiteral("Apple GPU (Metal)"), 0.0}};
 #else
     return std::nullopt;
 #endif
