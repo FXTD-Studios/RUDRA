@@ -74,15 +74,25 @@ std::optional<ReleaseInfo> newest_release(const std::string& text, bool include_
     nlohmann::json j = nlohmann::json::parse(text, nullptr, false);
     if (!j.is_array()) return std::nullopt;
     std::optional<ReleaseInfo> best;
+    // Read by type, never by json::value(): that throws on a field of another
+    // type ("draft": null), and nothing catches it under the reply's slot.
+    auto flag = [](const nlohmann::json& o, const char* key) {
+        const auto it = o.find(key);
+        return it != o.end() && it->is_boolean() && it->get<bool>();
+    };
+    auto text_of = [](const nlohmann::json& o, const char* key) {
+        const auto it = o.find(key);
+        return it != o.end() && it->is_string() ? it->get<std::string>() : std::string();
+    };
     for (const auto& r : j) {
-        if (!r.is_object() || r.value("draft", false)) continue;
-        const bool pre = r.value("prerelease", false);
+        if (!r.is_object() || flag(r, "draft")) continue;
+        const bool pre = flag(r, "prerelease");
         if (pre && !include_prereleases) continue;
-        std::string tag = r.value("tag_name", std::string());
+        std::string tag = text_of(r, "tag_name");
         if (tag.empty()) continue;
         if (tag[0] == 'v' || tag[0] == 'V') tag.erase(0, 1);
         if (tag.empty() || !std::isdigit(static_cast<unsigned char>(tag[0]))) continue;   // not a version tag
-        if (!best || compare_versions(tag, best->version) > 0) best = ReleaseInfo{tag, r.value("html_url", std::string()), pre};
+        if (!best || compare_versions(tag, best->version) > 0) best = ReleaseInfo{tag, text_of(r, "html_url"), pre};
     }
     return best;
 }

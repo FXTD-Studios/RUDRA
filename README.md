@@ -12,8 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.2.3/RUDRA-1.2.3-windows-x64-setup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%2010%20%2F%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white"></a>
-  <a href="https://github.com/FXTD-Studios/RUDRA/releases/download/v1.2.3/RUDRA-1.2.3-macos-arm64.dmg"><img alt="Download for macOS" src="https://img.shields.io/badge/Download-macOS%20(Apple%20silicon)-111111?style=for-the-badge&logo=apple&logoColor=white"></a>
+  <a href="https://www.fxtdstudios.com/rudra"><img alt="RUDRA on fxtdstudios.com" src="https://img.shields.io/badge/RUDRA-fxtdstudios.com-111111?style=for-the-badge"></a>
 </p>
 
 <p align="center">
@@ -22,6 +21,10 @@
   <a href="LICENSE"><img alt="Licence: Apache 2.0" src="https://img.shields.io/badge/licence-Apache%202.0-blue"></a>
   <a href="https://huggingface.co/fxtdstudios/rudra-models"><img alt="Models on Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20models-rudra--models-yellow"></a>
   <a href="https://www.fxtdstudios.com/rudra-docs/"><img alt="User guide" src="https://img.shields.io/badge/user%20guide-rudra--docs-111"></a>
+  <br>
+  <a href="https://github.com/FXTD-Studios/RUDRA/actions/workflows/tests.yml"><img alt="tests" src="https://github.com/FXTD-Studios/RUDRA/actions/workflows/tests.yml/badge.svg"></a>
+  <a href="https://github.com/FXTD-Studios/RUDRA/actions/workflows/native.yml"><img alt="native" src="https://github.com/FXTD-Studios/RUDRA/actions/workflows/native.yml/badge.svg"></a>
+  <a href="https://github.com/FXTD-Studios/RUDRA/actions/workflows/shipped_model.yml"><img alt="shipped model" src="https://github.com/FXTD-Studios/RUDRA/actions/workflows/shipped_model.yml/badge.svg"></a>
 </p>
 
 ---
@@ -38,23 +41,21 @@ the original SDR beside RUDRA's result, and RUDRA marks every pixel it had to
 invent.
 
 <p align="center">
-  <img src="docs/images/rudra_look.png" width="900" alt="RUDRA 1.0.1, the Look tab: a sunset opened in the Simple workspace, with Exposure, Strength and Display peak">
+  <img src="docs/images/rudra_look.png" width="900" alt="RUDRA, the Look tab: a sunset opened in the Simple workspace, with Exposure, Strength and Display peak">
   <br><sub><b>1 Look</b>: open a shot and shape its HDR. Hold B for the original SDR, W for a wipe.</sub>
 </p>
 
 <p align="center">
-  <img src="docs/images/rudra_check.png" width="900" alt="RUDRA 1.0.1, the Check tab: peak 5,856 nits and average 56 nits, with the waveform, histogram, vectorscope and RGB parade beside the picture">
+  <img src="docs/images/rudra_check.png" width="900" alt="RUDRA, the Check tab: peak 5,856 nits and average 56 nits, with the waveform, histogram, vectorscope and RGB parade beside the picture">
   <br><sub><b>2 Check</b>: peak, average and light above SDR white, with the scopes beside the picture.</sub>
 </p>
 
 ## Download
 
-| | |
-|---|---|
-| **Windows 10 / 11** (x64) | [Installer](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.2.3/RUDRA-1.2.3-windows-x64-setup.exe) · [Portable ZIP](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.2.3/RUDRA-1.2.3-windows-x64.zip) |
-| **macOS** (Apple silicon) | [DMG](https://github.com/FXTD-Studios/RUDRA/releases/download/v1.2.3/RUDRA-1.2.3-macos-arm64.dmg) |
+**[Download RUDRA from fxtdstudios.com](https://www.fxtdstudios.com/rudra)**:
+Windows 10 / 11 (x64, installer or portable ZIP) and macOS (Apple silicon, DMG).
 
-All files, checksums and release notes are on the
+Checksums and release notes are on the
 [releases page](https://github.com/FXTD-Studios/RUDRA/releases/latest).
 
 The builds are not code-signed yet. On Windows, choose **More info › Run anyway**
@@ -119,6 +120,27 @@ a plausible guess, not recovered detail, so check every frame.
 - [Report a problem](https://github.com/FXTD-Studios/RUDRA/issues)
 - Developers and researchers: [project overview](docs/PROJECT_OVERVIEW.md),
   [building from source](native/README.md), [training](docs/TRAINING.md)
+
+## For developers
+
+The Python package (reference pipeline, training, the browser Studio) and its tests:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # or your CUDA build
+pip install -e ".[test]"
+pytest tests/ -q
+```
+
+The native app (C++20, Qt 6) builds with CMake; see [native/README.md](native/README.md).
+
+Continuous integration (`native` and `shipped model` run when their files change):
+
+| Workflow | What it checks |
+|---|---|
+| [`tests`](.github/workflows/tests.yml) | pytest on Python 3.10 and 3.13; the WebGL viewer against the EXR it writes |
+| [`native`](.github/workflows/native.yml) | the layer rule; the C++ core against Python goldens on Windows, macOS and Linux; Gate A (LibTorch vs ONNX Runtime); the Qt shell; the Gate B HDR probe |
+| [`shipped model`](.github/workflows/shipped_model.yml) | RUDRA ACES 2, as users download it, through the native engine (weekly too) |
+| [`release`](.github/workflows/release.yml) | on a `v*` tag: the Windows installer and ZIP and the macOS DMG, checked for model weights, published as a release |
 
 ## Licence
 

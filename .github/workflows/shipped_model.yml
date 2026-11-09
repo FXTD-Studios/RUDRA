@@ -13,7 +13,7 @@ name: shipped model
 on:
   push:
     branches: [main, feat/gap-kits]
-    paths: ["native/**", "tools/check_aces_masters.py", "scripts/ci_shipped_model.sh", "scripts/build_ocio.sh",
+    paths: ["native/**", "tools/check_aces_masters.py", "tools/ci_retry.sh", "scripts/ci_shipped_model.sh", "scripts/build_ocio.sh",
             ".github/workflows/shipped_model.yml"]
   pull_request:
     paths: ["native/**", "tools/check_aces_masters.py", "scripts/ci_shipped_model.sh", "scripts/build_ocio.sh"]
@@ -42,13 +42,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e . "opencolorio==${OCIO_VERSION}" openexr opencv-python-headless huggingface_hub
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with: { path: "tmp/native_deps/ocio-${{ env.OCIO_VERSION }}", key: "ocio-${{ env.OCIO_VERSION }}-ubuntu-24.04" }
       - name: OpenColorIO
         run: tools/ci_run.sh "OCIO" scripts/build_ocio.sh
       - name: ONNX Runtime C API
         run: |
-          curl -sSL -o ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          bash tools/ci_retry.sh 4 curl -fsSL -o ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
           tar xzf ort.tgz
           echo "ORT_ROOT=$PWD/onnxruntime-linux-x64-${ORT_VERSION}" >> "$GITHUB_ENV"
       - name: Configure and build the learned engine
@@ -80,13 +80,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch numpy
           pip install -e . "opencolorio==${OCIO_VERSION}" openexr opencv-python-headless huggingface_hub
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with: { path: "tmp/native_deps/ocio-${{ env.OCIO_VERSION }}", key: "ocio-${{ env.OCIO_VERSION }}-macos-15" }
       - name: OpenColorIO
         run: tools/ci_run.sh "OCIO" scripts/build_ocio.sh
       - name: ONNX Runtime C API (with Core ML)
         run: |
-          curl -sSL -o ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-osx-arm64-${ORT_VERSION}.tgz"
+          bash tools/ci_retry.sh 4 curl -fsSL -o ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-osx-arm64-${ORT_VERSION}.tgz"
           tar xzf ort.tgz
           echo "ORT_ROOT=$PWD/onnxruntime-osx-arm64-${ORT_VERSION}" >> "$GITHUB_ENV"
       - name: Configure and build the learned engine

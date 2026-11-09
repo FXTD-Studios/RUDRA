@@ -118,6 +118,9 @@ private:
     qint64 rate_mark_bytes_ = 0;
     qint64 rate_mark_ms_ = 0;
     bool ranged_ = false, checked_status_ = false;
+    bool leftover_ = false;    // a .part already whole when the file came up: checked without a request
+    int http_status_ = 0;      // the reply's, 0 when it has none (file://)
+    QString net_error_;        // the reply's error, empty when there was none
     QPointer<QNetworkReply> reply_;
     std::unique_ptr<QFile> part_;
 };
