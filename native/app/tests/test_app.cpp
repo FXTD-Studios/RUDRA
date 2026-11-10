@@ -6850,7 +6850,8 @@ TEST(AppModels, AnErrorOnResumeKeepsWhatWasDownloaded) {
     ASSERT_TRUE(md.download("demo"));
     ASSERT_TRUE(wait_for([&] { return md.active().isEmpty(); }));
     EXPECT_TRUE(md.error("demo").contains("HTTP 503")) << md.error("demo").toStdString();
-    EXPECT_TRUE(http.last_request.contains("Range: bytes=30000-"));
+    // Header names are case-insensitive, and Qt 6.7 and later send them in lower case.
+    EXPECT_TRUE(http.last_request.toLower().contains("range: bytes=30000-")) << http.last_request.constData();
     EXPECT_EQ(QFileInfo(part).size(), 30000);   // still there to resume from
     // 416: the part no longer fits the server's file, so it is emptied.
     http.status = 416;

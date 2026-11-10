@@ -52,11 +52,9 @@ invent.
 
 ## Download
 
-**[Download RUDRA from fxtdstudios.com](https://www.fxtdstudios.com/rudra)**:
-Windows 10 / 11 (x64, installer or portable ZIP) and macOS (Apple silicon, DMG).
-
-Checksums and release notes are on the
-[releases page](https://github.com/FXTD-Studios/RUDRA/releases/latest).
+**[Download the latest release](https://github.com/FXTD-Studios/RUDRA/releases/latest)**:
+Windows 10 / 11 (x64, installer or portable ZIP) and macOS (Apple silicon, DMG),
+with their checksums and the release notes.
 
 The builds are not code-signed yet. On Windows, choose **More info › Run anyway**
 in the SmartScreen prompt. On macOS, open it once from **System Settings › Privacy
