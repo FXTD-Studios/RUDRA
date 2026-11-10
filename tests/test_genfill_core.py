@@ -115,6 +115,42 @@ def test_condition_of_bt1886_is_the_display_light_in_ap1():
     assert (cond[1] == 0).all()
 
 
+def test_finish_rerender_is_off_by_default_and_sets_hue_level_and_time():
+    from rudra.genfill.composite import LUMA_AP1, finish_rerender, white_scale
+    rng = np.random.default_rng(3)
+    h, w = 96, 128
+    codes = np.full((h, w, 3), 120, np.uint8)
+    codes[20:80, 30:110] = 254
+    codes[20:80, 30:50] = 246                                                   # a darker band inside the region
+    grey = np.power(codes.astype(np.float32) / 255.0, 2.4)
+    source = grey * np.array([1.0, 1.05, 1.05], np.float32)
+    master = grey * 0.9
+    fill = (rng.uniform(1.0, 2.0, (h, w, 1)) * np.array([0.6, 1.0, 2.0])).astype(np.float32)   # blue, about 1.4
+    weight = np.zeros((h, w), np.float32)
+    weight[20:80, 30:110] = 1.0
+    inside = weight > 0
+    lum = lambda x: x @ LUMA_AP1                                                # noqa: E731
+    assert finish_rerender(fill, master, source, codes, weight) is fill         # every step off: untouched
+    white = white_scale(master, codes)
+    assert abs(white - 0.9) < 1e-3
+    out = finish_rerender(fill, master, source, codes, weight, hue='source', level=3.0, white=white)
+    assert np.array_equal(out[~inside], fill[~inside])                          # outside the weight: as given
+    assert abs(float(np.median(lum(out[30:70, 70:100]))) / white - 3.0) < 0.15  # clipped: the level, in SDR whites
+    assert float(np.median(lum(out[30:70, 34:46]))) < 0.8 * float(np.median(lum(out[30:70, 70:100])))   # darker source, darker fill
+    core = out[30:70, 70:100].reshape(-1, 3).mean(0)
+    assert abs(core[1] / core[0] - 1.05) < 0.01 and abs(core[2] / core[0] - 1.05) < 0.01   # the source's colour
+    mixed = finish_rerender(fill, master, source, codes, weight, hue='source', colour=0.5)[30:70, 70:100].reshape(-1, 3).mean(0)
+    assert 1.05 < mixed[2] / mixed[0] < 2.0 / 0.6                               # between the source's and the model's
+    assert np.allclose(lum(finish_rerender(fill, master, source, codes, weight, hue='source')[inside]), lum(fill[inside]), rtol=1e-4)
+    state = {}
+    a = finish_rerender(fill, master, source, codes, weight, smooth=0.8, state=state)
+    assert np.allclose(a[inside], fill[inside], rtol=1e-4)                      # first frame: nothing to follow
+    b = finish_rerender(fill * 2.0, master, source, codes, weight, smooth=0.8, state=state)
+    assert np.allclose(np.log2(lum(b[inside]) / lum(a[inside])), 0.2, atol=1e-3)   # a one-stop jump arrives as 0.2
+    with pytest.raises(ValueError):
+        finish_rerender(fill, master, source, codes, weight, hue='other')
+
+
 def test_r_safe_blend_with_the_aces_view():
     pytest.importorskip('PyOpenColorIO')
     from rudra.aces_view import ACES2View

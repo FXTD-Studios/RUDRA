@@ -34,6 +34,11 @@ reading; aces: the ACES 2.0 inverse), the fill is blended plainly inside the who
 feather (composite.plain_blend): the SDR codes inside the mask are NOT kept, outside it every pixel
 is the master's bit for bit. No brightness estimator, no gain cap: the model's own level. For a
 LoRA trained for it (v4); with v1-v3 it draws nothing useful (measured 9 Nov).
+--rerender-hue source [--rerender-colour <0..1>], --rerender-level <x white>, --rerender-smooth <0..1>
+(10 Nov 2026, after the v4 gates on 09V; composite.finish_rerender): the fill takes the source's
+colour (with a share of the model's own), its level comes from the source (the master's own at
+tau_high, <x white> where the source is clipped) with the model's detail on it, and it follows the
+previous frame. All off by default: the model's own colour and level.
 """
 from __future__ import annotations
 
@@ -50,7 +55,7 @@ from pathlib import Path
 import numpy as np
 
 from . import encoding
-from .composite import plain_blend, r_safe_blend
+from .composite import RERENDER_HUES, finish_rerender, plain_blend, r_safe_blend, white_scale
 from .masks import MaskSettings, TemporalMask, blend_core, feather
 
 
@@ -59,6 +64,10 @@ class Rerender:
     """--region-rerender: where the codes come from and what the model is conditioned on."""
     source: str            # the movie, or the folder of stills, the master was made from
     condition: str = 'bt1886'   # 'bt1886' (code ^ 2.4) or 'aces' (the ACES 2.0 inverse)
+    hue: str = 'model'     # 'source': the fill's luminance with the source's colour (composite.finish_rerender)
+    colour: float = 0.0    # with hue 'source': the share of the model's own colour kept, 0..1
+    level: float = 0.0     # > 0: the level where the source is clipped, in the master's SDR whites; 0 keeps the model's own
+    smooth: float = 0.0    # > 0: the fill's log luminance follows the previous frame's (EMA share kept)
     CONDITIONS = ('bt1886', 'aces')
 
 
@@ -442,6 +451,17 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
         source_codes = SourceCodes(Path(rerender.source), len(frames), (H, W))
         ms = MaskSettings(**{**asdict(ms), 'blend_high': ms.tau_high, 'blend_low': ms.tau_low, 'max_gain_stops': 0.0})
         brightness = None
+        if rerender.hue not in RERENDER_HUES:
+            raise ValueError(f'hue must be one of {", ".join(RERENDER_HUES)}')
+        if rerender.level < 0 or not 0.0 <= rerender.smooth < 1.0 or not 0.0 <= rerender.colour <= 1.0:
+            raise ValueError('level must be >= 0, smooth in [0, 1) and colour in [0, 1]')
+    finish_state: dict = {}                          # v4 finish: the previous frame's fill
+    finish_white = 1.0
+    if rerender is not None and rerender.level > 0:  # the shot's SDR white: up to 9 frames along it
+        picks = sorted({int(k) for k in np.linspace(0, len(frames) - 1, min(9, len(frames)))})
+        seen = [white_scale((first if k == 0 else read_frame(frames[k]))['ap1'], source_codes[k]) for k in picks]
+        seen = [x for x in seen if x]
+        finish_white = float(np.median(seen)) if seen else 1.0
     codes_of = (lambda i, fr: source_codes[i]) if source_codes is not None else \
         (lambda i, fr: np.rint(np.clip(view.forward(fr['ap1']), 0, 1) * 255).astype(np.uint8))
     box, boxes, inside, outside_share = None, None, None, 0.0
@@ -508,6 +528,8 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                        'mask_outside_box': round(outside_share, 4),   # left to the master (specks far away)
                        # the model's pixels per frame pixel, against the whole frame at the same max_area
                        'detail_gain': round((w / float(x1 - x0)) / (working_size(H, W, max_area, model.multiple)[1] / float(W)), 3)}}
+    if rerender is not None and rerender.level > 0:
+        stats['rerender_white'] = round(finish_white, 4)
     if focus == 'areas':
         base_gain = working_size(H, W, max_area, model.multiple)[1] / float(W)
         stats['focus']['box'] = None
@@ -624,7 +646,12 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                     # the sky): the weight follows the source's codes, a ramp of 8 below tau_high.
                     top = codes[i].max(-1).astype(np.float32)
                     ramp = np.clip((top - (ms.tau_high - 8)) / 8.0, 0.0, 1.0)
-                    out_ap1, alpha = plain_blend(fr['ap1'], fill_lin, (weight * ramp * ramp * (3 - 2 * ramp)).astype(np.float32))
+                    w_plain = (weight * ramp * ramp * (3 - 2 * ramp)).astype(np.float32)
+                    if rerender.hue != 'model' or rerender.level > 0 or rerender.smooth > 0:
+                        fill_lin = finish_rerender(fill_lin, fr['ap1'], condition_of(codes[i], 'bt1886', view), codes[i], w_plain,
+                                                   rerender.hue, rerender.colour, rerender.level, rerender.smooth,
+                                                   finish_white, ms.tau_high, finish_state)
+                    out_ap1, alpha = plain_blend(fr['ap1'], fill_lin, w_plain)
                 else:
                     out_ap1, alpha = r_safe_blend(fr['ap1'], fill_lin, weight, view)
             else:
@@ -804,7 +831,10 @@ def serve(model, view, a, emit, FillSettings) -> int:
                                                              checked_shape_gain(r.get('shape_gain', a.shape_gain))),
                               region=request_region(r, a), fallback=str(r.get('fallback', a.fallback)),
                               focus=str(r.get('focus', a.focus)),
-                              rerender=Rerender(str(r.get('source', a.source)), str(r.get('condition', a.condition)))
+                              rerender=Rerender(str(r.get('source', a.source)), str(r.get('condition', a.condition)),
+                                                str(r.get('rerender_hue', a.rerender_hue)), float(r.get('rerender_colour', a.rerender_colour)),
+                                                float(r.get('rerender_level', a.rerender_level)),
+                                                float(r.get('rerender_smooth', a.rerender_smooth)))
                               if r.get('region_rerender', a.region_rerender) and r.get('source', a.source) else None)
             tagged(event='done', ok=True, out=str(out), **rep['stats'])
         except Exception as e:  # noqa: BLE001 - one failed request does not end the server
@@ -860,6 +890,15 @@ def main(argv=None):
     ap.add_argument('--source', default='', help='with --region-rerender: the movie or folder of stills the master was made from')
     ap.add_argument('--condition', default='bt1886', choices=Rerender.CONDITIONS,
                     help="with --region-rerender: what the model is conditioned on, the route's inverse (bt1886: code ^ 2.4; aces)")
+    ap.add_argument('--rerender-hue', default='model', choices=RERENDER_HUES,
+                    help="with --region-rerender: 'source' keeps the fill's luminance and takes the source's colour")
+    ap.add_argument('--rerender-colour', type=float, default=0.0,
+                    help="with --rerender-hue source: the share of the model's own colour kept, 0..1 (e.g. 0.3)")
+    ap.add_argument('--rerender-level', type=float, default=0.0,
+                    help="with --region-rerender: the level where the source is clipped, in SDR whites (e.g. 3), the model's "
+                         "detail on a level that follows the source; 0 keeps the model's own")
+    ap.add_argument('--rerender-smooth', type=float, default=0.0,
+                    help="with --region-rerender: how much of the previous frame's fill luminance is kept, 0..1 (e.g. 0.8); 0 is off")
     a = ap.parse_args(argv)
     if not a.serve and (not a.master or not a.out):
         ap.error('--master and --out are required (or --serve)')
@@ -897,7 +936,8 @@ def main(argv=None):
         rep = fill_master(Path(a.master), out, model, view, s, ms, a.window, a.overlap, a.max_area, emit,
                           cancel=stop.is_set, pattern=a.glob, brightness=brightness, region=region,
                           fallback=a.fallback, focus=a.focus,
-                          rerender=Rerender(a.source, a.condition) if a.region_rerender else None)
+                          rerender=Rerender(a.source, a.condition, a.rerender_hue, a.rerender_colour, a.rerender_level, a.rerender_smooth)
+                          if a.region_rerender else None)
         emit(event='done', ok=True, out=str(out), **rep['stats'])
         return 0
     except Exception as e:  # noqa: BLE001 - every failure goes to the app as one line
