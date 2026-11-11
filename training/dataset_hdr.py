@@ -619,7 +619,7 @@ def load_vae_standalone(path: str, model_type: str = "flux", device: str = "cuda
             from safetensors.torch import load_file
             state_dict = load_file(path)
         else:
-            state_dict = torch.load(path, map_location="cpu")
+            state_dict = torch.load(path, map_location="cpu", weights_only=True)   # tensors only
     else:
         logger.warning(f"[VAE Loader] VAE path '{path}' is not a valid file on disk. Proceeding with state_dict = None.")
     

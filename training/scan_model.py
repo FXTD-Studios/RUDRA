@@ -70,7 +70,8 @@ def _load_into_pipeline(pipeline: RUDRAPipeline, ckpt: Path) -> None:
     if str(ckpt).endswith(".safetensors"):
         pipeline.load_checkpoint(str(ckpt), strict=False)
         return
-    obj = torch.load(str(ckpt), map_location="cpu", weights_only=False)
+    from rudra.torch_compat import load_checkpoint   # tensors only: no code from the file
+    obj = load_checkpoint(str(ckpt), map_location="cpu")
     # Prefer EMA weights when present.
     dec = obj.get("ema_decoder") or obj.get("decoder")
     proj = obj.get("ema_projection") or obj.get("projection")

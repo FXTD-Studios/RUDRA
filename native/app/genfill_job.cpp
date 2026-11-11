@@ -58,6 +58,27 @@ fs::path first_existing(const std::vector<fs::path>& places, const char* probe) 
     return places.empty() ? fs::path() : places.front();
 }
 
+// The training workstation's own folders on G: are looked in only on a developer's machine
+// (security review, 11 Nov 2026). They were in every build: on anyone else's computer a drive that
+// happens to be G: could then supply the base model, which is not checked by hash as the LoRA is.
+// A developer's machine: RUDRA_DEV_PATHS is set, or the app runs from a source checkout (no
+// python\ beside it as a package has, and a folder above it holds both rudra/genfill and .git).
+bool training_workstation() {
+    if (qEnvironmentVariableIsSet("RUDRA_DEV_PATHS")) return true;
+    static const bool checkout = [] {
+        const QDir app(QCoreApplication::applicationDirPath());
+        for (const QString& packaged : {app.filePath("python"), app.filePath("../Resources/python")})
+            if (QFileInfo::exists(packaged + "/rudra/genfill/run.py")) return false;
+        QDir d(app);
+        for (int i = 0; i < 8; ++i) {
+            if (QFileInfo::exists(d.filePath("rudra/genfill/run.py"))) return QFileInfo::exists(d.filePath(".git"));
+            if (!d.cdUp()) break;
+        }
+        return false;
+    }();
+    return checkout;
+}
+
 std::vector<fs::path> genfill_roots(const fs::path& repo) {
     std::vector<fs::path> r = {pq(QCoreApplication::applicationDirPath()) / "models" / "genfill"};
     if (!repo.empty()) r.push_back(repo / "models" / "genfill");
@@ -75,7 +96,7 @@ void hf_cache_snapshots(std::vector<fs::path>& out) {
         if (const QString e = qEnvironmentVariable(v); !e.isEmpty()) hubs.push_back(pq(e));
     if (const QString e = qEnvironmentVariable("HF_HOME"); !e.isEmpty()) hubs.push_back(pq(e) / "hub");
     hubs.push_back(pq(QDir::homePath()) / ".cache" / "huggingface" / "hub");
-    hubs.push_back("G:/datasets/models/_hf_home/hub");   // GENFILL.ps1's HF_HOME on the training workstation
+    if (training_workstation()) hubs.push_back("G:/datasets/models/_hf_home/hub");   // GENFILL.ps1's HF_HOME
     std::error_code ec;
     for (const auto& hub : hubs) {
         const fs::path repo = hub / "models--Wan-AI--Wan2.1-VACE-1.3B-diffusers";
@@ -120,7 +141,7 @@ std::vector<fs::path> genfill_base_candidates(const fs::path& repo) {
     for (const auto& r : genfill_roots(repo)) bases.push_back(r / "Wan2.1-VACE-1.3B-diffusers");
     bases.push_back(pq(default_download_root()) / "Wan2.1-VACE-1.3B-diffusers");
     hf_cache_snapshots(bases);
-    bases.push_back("G:/datasets/models/Wan2.1-VACE-1.3B-diffusers");   // the training workstation
+    if (training_workstation()) bases.push_back("G:/datasets/models/Wan2.1-VACE-1.3B-diffusers");
     return bases;
 }
 
@@ -128,7 +149,8 @@ std::vector<fs::path> genfill_lora_candidates(const fs::path& repo) {
     std::vector<fs::path> loras;
     downloaded_loras(loras);   // File > Model packages (31 Oct 2026)
     for (const auto& r : genfill_roots(repo)) loras.push_back(r / "rudra_genfill.safetensors");
-    loras.push_back("G:/rudra_training/research_genfill_v3_20261030/rudra_genfill.safetensors");   // GENFILL.ps1's v3 run
+    if (training_workstation())   // GENFILL.ps1's v3 run
+        loras.push_back("G:/rudra_training/research_genfill_v3_20261030/rudra_genfill.safetensors");
     return loras;
 }
 

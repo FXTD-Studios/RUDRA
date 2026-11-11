@@ -4,21 +4,24 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rudra-hdr"
-version = "0.3.2"
+version = "1.2.3"   # the app's version: the packages carry this code in python/
 description = "Radiometric dynamic-range conditioning and HDR decoder research"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 license = {file = "LICENSE"}   # Apache-2.0 (code); weights: checkpoints/LICENSE
 classifiers = ["License :: OSI Approved :: Apache Software License"]
+# Floors raised 11 Nov 2026 (security review): torch 2.6 is the first whose torch.load refuses
+# code in a checkpoint by default; Pillow 10.3 and transformers 4.48 carry fixes for flaws in
+# reading crafted files. The AI fill's exact versions: scripts/genfill_constraints.txt.
 dependencies = [
   "numpy>=1.26,<3",
-  "torch>=2.3",
+  "torch>=2.6",
   "safetensors>=0.4",
   "PyYAML>=6",
   "tqdm>=4.66",
   "opencv-python-headless>=4.9",
   "imageio>=2.34",
-  "Pillow>=10",
+  "Pillow>=10.3",
 ]
 
 [project.scripts]
@@ -28,14 +31,14 @@ rudra = "rudra.delivery.cli:main"
 metrics = ["cvvdp>=0.5.1", "lpips>=0.1.4"]
 vae = [
   "diffusers>=0.35",
-  "transformers>=4.45",
+  "transformers>=4.48",
   "accelerate>=1.0",
   "huggingface-hub>=0.25",
   "OpenEXR>=3.2",
 ]
 genfill = [
   "diffusers>=0.35",
-  "transformers>=4.45",
+  "transformers>=4.48",
   "peft>=0.13",
   "accelerate>=1.0",
   "OpenEXR>=3.2",

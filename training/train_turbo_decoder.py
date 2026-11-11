@@ -651,7 +651,8 @@ def load_trained_turbo_decoder(
     else:
         model = RadianceTurboDecoder(latent_channels=latent_channels)
 
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    from rudra.torch_compat import load_checkpoint   # tensors only: no code from the file
+    ckpt = load_checkpoint(checkpoint_path, map_location="cpu")
 
     if isinstance(ckpt, dict) and "ema_shadow" in ckpt and use_ema:
         # Full checkpoint — load EMA weights

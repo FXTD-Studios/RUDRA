@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -31,6 +32,31 @@ bool safe_relative(const QString& p) {
 }
 
 QString join(const QString& a, const QString& b) { return QDir(a).filePath(b); }
+
+// Is the file at `path` the one the list names: its size AND its SHA-256 (11 Nov 2026).
+// Size alone was the test, and RUDRA ACES 2's 2.0 weights are byte for byte as long as 1.0's
+// (rudra_g1.ts 1,037,772, rudra_g1.onnx 1,157,294). Updating the model in place fetched the new
+// manifest and kept the old weights as "already here", so the package no longer checked against
+// its own manifest ("The model file is damaged or was changed") while this list said "Installed
+// and checked" and offered no way to download it again. Hashed once per file as written (path,
+// size, time), so the dialog's refreshes cost nothing after the first.
+bool file_checks(const QString& path, const RemoteFile& f) {
+    const QFileInfo fi(path);
+    if (!fi.isFile() || fi.size() != f.size) return false;
+    static QHash<QString, QString> hashed;
+    const QString key = fi.absoluteFilePath() + QLatin1Char('|') + QString::number(fi.size()) + QLatin1Char('|') +
+                        QString::number(fi.lastModified().toMSecsSinceEpoch());
+    QString sha = hashed.value(key);
+    if (sha.isEmpty()) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) return false;
+        QCryptographicHash h(QCryptographicHash::Sha256);
+        if (!h.addData(&file)) return false;
+        sha = QString::fromLatin1(h.result().toHex());
+        hashed.insert(key, sha);
+    }
+    return sha == f.sha256;
+}
 
 }  // namespace
 
@@ -70,6 +96,8 @@ std::optional<std::vector<RemoteModel>> parse_model_index(const QByteArray& json
         m.summary = o.value("summary").toString();
         m.licence = o.value("licence").toString();
         m.licence_url = o.value("licence_url").toString();
+        // The list is remote data and this link is handed to the system: https only (11 Nov 2026).
+        if (QUrl(m.licence_url).scheme() != "https") m.licence_url.clear();
         m.folder = o.value("folder").toString(m.id);
         m.min_app = o.value("min_app").toString();
         bool ok = !m.id.isEmpty() && safe_relative(m.folder) && !m.folder.contains('/');
@@ -112,8 +140,9 @@ InstallState install_state(const RemoteModel& m, const QString& root) {
     bool any = false;
     for (const auto& f : m.files) {
         const QFileInfo fi(join(dir, f.path));
-        const bool here = fi.isFile() && fi.size() == f.size;
-        any = any || here || QFileInfo::exists(fi.filePath() + ".part");
+        const bool here = file_checks(fi.filePath(), f);
+        // A file that is there but is not the one the list names counts as a part: "Resume" replaces it.
+        any = any || here || fi.isFile() || QFileInfo::exists(fi.filePath() + ".part");
         all = all && here;
     }
     return all ? InstallState::Installed : any ? InstallState::Partial : InstallState::NotInstalled;
@@ -228,8 +257,7 @@ void ModelDownloads::next_file() {
     // What is already here and verified (a file is renamed into place only after its check).
     while (file_ < m->files.size()) {
         const auto& f = m->files[file_];
-        const QFileInfo fi(join(dir, f.path));
-        if (!(fi.isFile() && fi.size() == f.size)) break;
+        if (!file_checks(join(dir, f.path), f)) break;   // by its hash: a same-sized other file is fetched again
         done_ += f.size;
         ++file_;
     }

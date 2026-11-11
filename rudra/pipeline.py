@@ -394,7 +394,8 @@ class RUDRAPipeline(nn.Module):
             import safetensors.torch
             state_dict = safetensors.torch.load_file(path, device="cpu")
         else:
-            ckpt = torch.load(path, map_location="cpu", weights_only=False)
+            from .torch_compat import load_checkpoint
+            ckpt = load_checkpoint(path)   # tensors only: no code from the file
             if isinstance(ckpt, dict):
                 if "state_dict" in ckpt:
                     state_dict = ckpt["state_dict"]

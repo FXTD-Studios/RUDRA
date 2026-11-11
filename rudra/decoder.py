@@ -186,7 +186,8 @@ def load_rudra_decoder(
             import safetensors.torch
             state_dict = safetensors.torch.load_file(checkpoint_path, device="cpu")
         else:
-            ckpt = torch.load(checkpoint_path, map_location="cpu")
+            from .torch_compat import load_checkpoint
+            ckpt = load_checkpoint(checkpoint_path)   # tensors only: no code from the file
             state_dict = ckpt.get("model", ckpt) if isinstance(ckpt, dict) else ckpt
         missing, unexpected = model.load_state_dict(state_dict, strict=False)
         if unexpected:

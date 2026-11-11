@@ -12,12 +12,12 @@ Drafted 25 Oct 2026 for the ACES v2 release. **Status: draft, to verify against 
 | OpenEXR (if linked) | per vcpkg | DLL | BSD-3-Clause | Notice and licence text |
 | LibTorch (from the pip torch used to build) | torch 2.x, record exact | DLLs | BSD-3-Clause style (PyTorch) plus bundled third-party notices | torch `LICENSE` and `NOTICE` |
 | CUDA runtime, cuDNN, cuBLAS (inside CUDA LibTorch) | record exact | DLLs | NVIDIA redistributable terms (CUDA EULA attachment A; cuDNN SLA) | Ship only redistributable files; keep the NVIDIA notices |
-| ONNX Runtime (DirectML build) | 1.22.0 | DLL | MIT | Licence and ThirdPartyNotices.txt |
+| ONNX Runtime (DirectML build) | 1.24.4 | DLL | MIT | Licence and ThirdPartyNotices.txt |
 | DirectML | per ORT nuspec (≈1.15.x) | DLL | Microsoft DirectML redistributable licence | Licence file from the NuGet package |
-| OpenCV | 4.10.0 | `opencv_world` DLL | Apache-2.0 | Licence and NOTICE |
+| OpenCV | 4.14.0 | `opencv_world` DLL | Apache-2.0 | Licence and NOTICE |
 | Qt 6 (app only) | 6.8.3 | DLLs, dynamically linked | LGPL-3.0 (or commercial) | LGPL text; users must be able to relink or replace the Qt DLLs; offer the Qt source or say where it is |
 | nlohmann/json | per vcpkg | header-only | MIT | Notice |
-| FFmpeg (ffmpeg.exe, ffprobe.exe) | 7.1.1 gyan.dev "full", SHA-256 pinned | separate programs | **GPL-3.0** | Already handled: `ffmpeg\LICENSE.txt`, `ffmpeg\SOURCE.txt`, NOTICE section. Run as a separate process, never linked |
+| FFmpeg (ffmpeg.exe, ffprobe.exe) | 8.1.2 gyan.dev "full", SHA-256 pinned | separate programs | **GPL-3.0** | Already handled: `ffmpeg\LICENSE.txt`, `ffmpeg\SOURCE.txt`, NOTICE section. Run as a separate process, never linked |
 
 Not shipped: GoogleTest (tests only, BSD-3), Python and its packages (research tools only).
 

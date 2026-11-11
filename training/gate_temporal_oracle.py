@@ -569,7 +569,8 @@ def main() -> int:
     cfg = json.loads((args.clips / "_ingest_config.json").read_text(encoding="utf-8"))
     storage = HDRStorage(**{k: v for k, v in cfg["storage"].items() if k != "version"})
 
-    payload = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    from rudra.torch_compat import load_checkpoint   # tensors only: no code from the file
+    payload = load_checkpoint(args.checkpoint, map_location="cpu")
     model = SDR2HDRNet.from_config(payload.get("config", {}) or {})
     model.load_state_dict(payload.get("model", payload), strict=True)
     model.eval().to(args.device)

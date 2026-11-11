@@ -116,6 +116,7 @@ a plausible guess, not recovered detail, so check every frame.
 - [User guide](https://www.fxtdstudios.com/rudra-docs/): every control, step by step
 - [Release notes](https://github.com/FXTD-Studios/RUDRA/releases/latest)
 - [Report a problem](https://github.com/FXTD-Studios/RUDRA/issues)
+- [Report a security problem privately](SECURITY.md)
 - Developers and researchers: [project overview](docs/PROJECT_OVERVIEW.md),
   [building from source](native/README.md), [training](docs/TRAINING.md)
 

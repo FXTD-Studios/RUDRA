@@ -61,8 +61,13 @@
 param(
     [string]$Python = "python",
     [string]$QtVersion = "6.8.3",
-    [string]$OrtVersion = "1.22.0",
-    [string]$OpenCvVersion = "4.10.0",
+    # 1.24.4 (11 Nov 2026): the last ONNX Runtime published with DirectML; 1.22.0 read a crafted
+    # model's external data from outside its folder (fixed in 1.24.1).
+    [string]$OrtVersion = "1.24.4",
+    # 4.14.0 (11 Nov 2026): 4.10.0 and 4.11.0 have CVE-2025-53644, a heap write on a crafted JPEG.
+    # The SHA-256 is the release asset's digest as GitHub publishes it; another version needs its own.
+    [string]$OpenCvVersion = "4.14.0",
+    [string]$OpenCvSha256 = "5f266a8b73bed535962d7e861a6457e32a0dd5f463ad0a7cf8707a135469be63",
     [string]$InnoSetup = "",
     [switch]$SkipBuild,
     [switch]$Tests,
@@ -71,10 +76,11 @@ param(
     [string]$BuildDirectory = "",
     [switch]$InstallBuildTools,
     [switch]$NoFfmpeg,
-    [string]$FfmpegVersion = "7.1.1",
-    # The pinned build's SHA-256 (GyanD/codexffmpeg release asset, checked 10 Oct 2026).
+    [string]$FfmpegVersion = "8.1.2",
+    # The pinned build's SHA-256 (GyanD/codexffmpeg release asset, its digest on GitHub, 11 Nov 2026).
+    # 8.1.2 replaces 7.1.1, which has CVE-2025-9951 (JPEG 2000 decoder); gyan.dev has no later 7.1 build.
     # Another -FfmpegVersion needs its own: -FfmpegSha256 <hash>.
-    [string]$FfmpegSha256 = "d760e1b3574402ed18b4865851f87d87e73965a982e6453212df8621fed1c508",
+    [string]$FfmpegSha256 = "b8cdefab5f50590a076c27c2b56b0294a0e6154faded28ba1ba05ebc4f801f57",
     [switch]$WithAcesEngine,
     [string]$AcesBuild = "build\native_aces_v2",
     [string]$TorchPython = ".venv\Scripts\python.exe",
@@ -82,6 +88,7 @@ param(
     # 1 Nov 2026: the learned ACES 2.0 engine is in every package (rudra-native aces-v2 /
     # aces-v2-serve on ONNX Runtime, DirectML or CPU), with OpenColorIO 2.5.2 built here once.
     [string]$OcioVersion = "2.5.2",
+    [string]$OcioSha256 = "722601e01b78b7a12da4829cb450674935f404b0e508f3f20046fa77570e3272",
     [switch]$NoOcio,
     # 1 Nov 2026 (1.0.3): the public package. 1.0.0 to 1.0.2 bundled sdr2hdr_image_v8
     # (non-commercial) from dist\models; a public package now carries no weights.
@@ -155,6 +162,11 @@ if (-not (Test-Path (Join-Path $CvBuild "OpenCVConfig.cmake"))) {
     $url = "https://github.com/opencv/opencv/releases/download/$OpenCvVersion/opencv-$OpenCvVersion-windows.exe"
     Write-Host "download $url"
     Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
+    $cvGot = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+    if ($cvGot -ne $OpenCvSha256.ToLower()) {
+        Remove-Item $exe
+        Fail "OpenCV $OpenCvVersion SHA-256 is $cvGot, expected $OpenCvSha256 (a different file: not run)"
+    }
     $p = Start-Process -FilePath $exe -ArgumentList @("-o`"$CvRoot`"", "-y") -Wait -PassThru
     if ($p.ExitCode -ne 0 -or -not (Test-Path (Join-Path $CvBuild "OpenCVConfig.cmake"))) { Fail "OpenCV extract" }
     Remove-Item $exe
@@ -204,6 +216,13 @@ function Build-Ocio([string]$cmake, [string]$generator) {
         $url = "https://github.com/AcademySoftwareFoundation/OpenColorIO/archive/refs/tags/v$OcioVersion.tar.gz"
         Write-Host "download $url"
         Invoke-WebRequest -Uri $url -OutFile $tgz -UseBasicParsing
+        # The source of 2.5.2 as GitHub archives the tag (SHA-256 taken 11 Nov 2026). Another -OcioVersion,
+        # or an archive GitHub has regenerated, needs its own: -OcioSha256 <hash>.
+        $ocioGot = (Get-FileHash $tgz -Algorithm SHA256).Hash.ToLower()
+        if ($ocioGot -ne $OcioSha256.ToLower()) {
+            Remove-Item $tgz
+            Fail "OpenColorIO $OcioVersion SHA-256 is $ocioGot, expected $OcioSha256 (a different file: not built)"
+        }
         # Windows' own tar (bsdtar): Git's GNU tar, first on a CI runner's PATH, reads "D:\..." as a
         # host name ("Cannot connect to D:", the 1.1.0 release build, 6 Nov 2026).
         $tarExe = Join-Path $env:SystemRoot "System32\tar.exe"
@@ -387,7 +406,7 @@ foreach ($d in "rudra", "config") {
     if ($LASTEXITCODE -ge 8) { Fail "copying $d into the package" }
 }
 $global:LASTEXITCODE = 0
-Copy-Item scripts\genfill_bootstrap.ps1, scripts\genfill_bootstrap.sh $OutPy
+Copy-Item scripts\genfill_bootstrap.ps1, scripts\genfill_bootstrap.sh, scripts\genfill_constraints.txt $OutPy
 if (-not (Test-Path (Join-Path $OutPy "rudra\genfill\run.py"))) { Fail "the package has no python\rudra\genfill" }
 if ($BundleModels -and $AllowNonCommercialWeights -and (Test-Path checkpoints\LICENSE)) { Copy-Item checkpoints\LICENSE (Join-Path $Out "LICENSE-weights") }
 if ($NoModels) {
@@ -478,6 +497,12 @@ if (-not $NoInstaller) {
         $isExe = Join-Path $env:TEMP "innosetup-6.7.3.exe"
         Invoke-WebRequest -Uri "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe" `
             -OutFile $isExe -UseBasicParsing
+        # The installer is run, so it is checked first: the release asset's digest on GitHub (11 Nov 2026).
+        $isGot = (Get-FileHash $isExe -Algorithm SHA256).Hash.ToLower()
+        if ($isGot -ne "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732") {
+            Remove-Item $isExe -ErrorAction SilentlyContinue
+            Fail "the Inno Setup download is not the expected file (SHA-256 $isGot): not run"
+        }
         $head = [System.IO.File]::ReadAllBytes($isExe)[0..1]
         if ((Get-Item $isExe).Length -lt 1MB -or $head[0] -ne 0x4D -or $head[1] -ne 0x5A) {
             Fail "the Inno Setup download is not an installer ($isExe)"

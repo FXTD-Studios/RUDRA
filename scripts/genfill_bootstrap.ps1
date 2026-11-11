@@ -2,7 +2,7 @@
   AI fill bootstrap for Windows (7 Nov 2026): what "Set up automatically" runs when this computer
   has no Python for the fill. Everything goes under -Root (the app's own data folder), and nothing
   on the system changes (no PATH, no registry):
-    Root\uv      uv, the Python installer (downloaded once from its GitHub release)
+    Root\uv      uv, the Python installer (one fixed release, downloaded once and checked by SHA-256)
     Root\python  a private Python 3.12 (uv's managed CPython)
     Root\venv    the fill's environment: PyTorch (CUDA 12.8), diffusers, OpenColorIO, OpenEXR, ...
   then rudra.genfill.setup checks the GPU and the disk and downloads Wan2.1-VACE-1.3B into -Base.
@@ -27,6 +27,11 @@ function Fail([string]$t) { Emit @{ event = 'done'; ok = $false; error = $t }; e
 New-Item -ItemType Directory -Force -Path $Root | Out-Null
 if (-not (Test-Path (Join-Path $Repo 'rudra\genfill\setup.py'))) { Fail "no rudra\genfill in $Repo" }
 
+# uv is a program this script downloads and runs, so it is one fixed release, checked by its SHA-256
+# before it is unpacked (security review, 11 Nov 2026; it was releases/latest, unchecked). The hash is
+# the release asset's digest as GitHub publishes it. A newer uv: change both lines together.
+$UvVersion = '0.13.7'
+$UvSha256 = '0cdc5b38fe5a8168ed6a25814f5ba43c21d313dd3187314fccb37b7cec46e021'   # uv-x86_64-pc-windows-msvc.zip
 $uvDir = Join-Path $Root 'uv'
 $uv = Join-Path $uvDir 'uv.exe'
 if (-not (Test-Path $uv)) {
@@ -36,8 +41,13 @@ if (-not (Test-Path $uv)) {
     New-Item -ItemType Directory -Force -Path $tmp, $uvDir | Out-Null
     $zip = Join-Path $tmp 'uv.zip'
     try {
-        Invoke-WebRequest -ErrorAction Stop -UseBasicParsing -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile $zip
+        Invoke-WebRequest -ErrorAction Stop -UseBasicParsing -Uri "https://github.com/astral-sh/uv/releases/download/$UvVersion/uv-x86_64-pc-windows-msvc.zip" -OutFile $zip
     } catch { Fail "could not download uv (network?): $($_.Exception.Message)" }
+    $got = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+    if ($got -ne $UvSha256) {
+        Remove-Item -Recurse -Force $tmp
+        Fail "the uv download is not the expected file (SHA-256 $got, expected $UvSha256): nothing was installed"
+    }
     Expand-Archive -Path $zip -DestinationPath $tmp -Force -ErrorAction Stop
     $found = Get-ChildItem -Path $tmp -Recurse -Filter 'uv.exe' | Select-Object -First 1
     if (-not $found) { Fail 'the uv download has no uv.exe in it' }
@@ -67,6 +77,9 @@ Step "Installing the AI fill's Python packages"
 $pkgs = @('numpy>=1.26,<3', 'opencv-python-headless>=4.9', 'OpenEXR>=3.2', 'opencolorio>=2.5', 'safetensors>=0.4',
           'diffusers>=0.35', 'transformers>=4.45', 'peft>=0.13', 'accelerate>=1.0', 'sentencepiece', 'ftfy',
           'huggingface-hub>=0.25', 'PyYAML>=6', 'tqdm>=4.66')
+# Fixed versions for every package (genfill_constraints.txt beside this script): the tested set, not the newest.
+$cons = Join-Path $PSScriptRoot 'genfill_constraints.txt'
+if (Test-Path $cons) { $pkgs += @('-c', $cons) } else { [Console]::Error.WriteLine("no genfill_constraints.txt beside the bootstrap: installing unpinned versions") }
 & $uv pip install --python $py @pkgs 2>&1 | ForEach-Object { [Console]::Error.WriteLine("$_") }
 if ($LASTEXITCODE -ne 0) { Fail "the AI fill's packages did not install (see the log)" }
 

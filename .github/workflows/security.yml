@@ -1,0 +1,51 @@
+name: security
+
+# Security review, 11 Nov 2026. Two checks, weekly and on every pull request:
+#   audit   - pip-audit on the Python packages the project and the AI fill install
+#             (pyproject.toml's dependencies, scripts/genfill_constraints.txt)
+#   codeql  - GitHub's static analysis of the Python (the C++ needs the full Qt
+#             build; add it to this matrix once a build job here can make it)
+# Actions are pinned to commits, as in the other workflows.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: pip-audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6
+        with: { python-version: "3.12" }
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+      - name: The AI fill's fixed versions
+        run: pip-audit --requirement scripts/genfill_constraints.txt --disable-pip --no-deps --progress-spinner off
+      - name: The project's own dependencies, as they resolve today
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[genfill,test]"
+          pip-audit --local --skip-editable --progress-spinner off
+
+  codeql:
+    name: CodeQL (Python)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066   # v4
+        with:
+          languages: python
+          build-mode: none
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066   # v4

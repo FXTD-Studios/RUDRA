@@ -29,14 +29,15 @@ VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".mxf", ".webm"}
 
 
 def load_models(image_checkpoint: str, temporal_checkpoint: str | None, device: torch.device):
-    checkpoint = torch.load(image_checkpoint, map_location="cpu", weights_only=False)
+    from rudra.torch_compat import load_checkpoint   # tensors only: no code from the file
+    checkpoint = load_checkpoint(image_checkpoint)
     config = checkpoint.get("config", {})
     image_model = SDR2HDRNet.from_config(config)
     image_model.load_state_dict(checkpoint.get("model", checkpoint), strict=True)
     image_model.to(device).eval()
     temporal = None
     if temporal_checkpoint:
-        temporal_ckpt = torch.load(temporal_checkpoint, map_location="cpu", weights_only=False)
+        temporal_ckpt = load_checkpoint(temporal_checkpoint)
         temporal_config = temporal_ckpt.get("config", {})
         temporal = TemporalHDRRefiner(channels=int(temporal_config.get("temporal_channels", 24)))
         temporal.load_state_dict(temporal_ckpt.get("model", temporal_ckpt), strict=True)

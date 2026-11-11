@@ -173,6 +173,7 @@ int main(int argc, char** argv) {
         if (!st.contains("window/workspace") && !st.value("firstRun/done", false).toBool())
             st.setValue("window/workspace", "simple");
     }
+    w.use_merged_title_bar();   // Windows: one dark bar instead of the caption, the menu row and the toolbar
     w.restore_settings();   // the window, rails, tab, container and Render fields of the last run
     w.open_compare_view();  // SDR | RUDRA wipe at 1 000 nits; a project below sets its own peak
     if (const qsizetype t = rest.indexOf("--tab"); t >= 0 && t + 1 < rest.size()) {   // for the review grabs

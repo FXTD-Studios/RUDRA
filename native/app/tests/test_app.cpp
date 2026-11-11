@@ -6059,6 +6059,34 @@ TEST(AppModels, ADownloadIsCheckedThenInstalledAndAPartIsNeverUsed) {
     QSettings().clear();
 }
 
+// 11 Nov 2026: RUDRA ACES 2's 2.0 weights are exactly as long as 1.0's, and "already here" was
+// decided by size. An update in place kept the old weights under the new manifest: the Welcome said
+// "its files do not check" while Model packages said "Installed and checked", with no Download.
+TEST(AppModels, AnUpdateWithWeightsOfTheSameSizeFetchesThemAgain) {
+    QSettings().clear();
+    QTemporaryDir tmp;
+    const QByteArray old_weights(4000, 'a'), new_weights(4000, 'b');
+    QNetworkAccessManager net;
+    QObject owner;
+    app::ModelDownloads md(&net, &owner);
+    md.set_root(tmp.path() + "/models");
+    md.set_models(*app::parse_model_index(served_index(tmp.path() + "/src1", R"({"v":1})", old_weights)));
+    ASSERT_TRUE(md.download("demo"));
+    ASSERT_TRUE(wait_for([&] { return md.active().isEmpty(); }));
+    ASSERT_EQ(md.state("demo"), app::InstallState::Installed);
+    // The list now names other weights of the same size (and a manifest of another size).
+    md.set_models(*app::parse_model_index(served_index(tmp.path() + "/src2", R"({"v":22})", new_weights)));
+    EXPECT_EQ(md.state("demo"), app::InstallState::Partial);   // not "Installed and checked"
+    ASSERT_TRUE(md.download("demo"));
+    ASSERT_TRUE(wait_for([&] { return md.active().isEmpty(); }));
+    EXPECT_EQ(md.error("demo"), "");
+    EXPECT_EQ(md.state("demo"), app::InstallState::Installed);
+    QFile got(tmp.path() + "/models/demo_pkg/sub/weights.bin");
+    ASSERT_TRUE(got.open(QIODevice::ReadOnly));
+    EXPECT_EQ(got.readAll(), new_weights);
+    QSettings().clear();
+}
+
 TEST(AppModels, AFileThatFailsItsChecksumIsDeletedAndSaysSo) {
     QSettings().clear();
     QTemporaryDir tmp;

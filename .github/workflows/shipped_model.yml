@@ -23,8 +23,16 @@ on:
     inputs:
       hf_revision: { description: "Hugging Face revision of fxtdstudios/rudra-models", default: "main" }
 
+# Security review, 11 Nov 2026: every action is pinned to a commit (the tag it was taken from is in
+# the comment beside it; a tag can be moved, a commit cannot), and the token is read-only unless a
+# job says otherwise. Dependabot (.github/dependabot.yml) proposes the updates.
+permissions:
+  contents: read
+
 env:
-  ORT_VERSION: "1.22.0"
+  ORT_VERSION: "1.24.4"
+  ORT_SHA256_LINUX: "3a211fbea252c1e66290658f1b735b772056149f28321e71c308942cdb54b747"   # the release assets' digests on GitHub
+  ORT_SHA256_MACOS: "93787795f47e1eee369182e43ed51b9e5da0878ab0346aecf4258979b8bba989"
   OCIO_VERSION: "2.5.2"
   HF_REVISION: ${{ inputs.hf_revision || 'main' }}
 
@@ -33,8 +41,8 @@ jobs:
     name: RUDRA_ACES_2, LibTorch vs ONNX Runtime (Linux CPU)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6
         with: { python-version: "3.12" }
       - name: Tools
         run: |
@@ -42,13 +50,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e . "opencolorio==${OCIO_VERSION}" openexr opencv-python-headless huggingface_hub
-      - uses: actions/cache@v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25   # v5
         with: { path: "tmp/native_deps/ocio-${{ env.OCIO_VERSION }}", key: "ocio-${{ env.OCIO_VERSION }}-ubuntu-24.04" }
       - name: OpenColorIO
         run: tools/ci_run.sh "OCIO" scripts/build_ocio.sh
       - name: ONNX Runtime C API
         run: |
           bash tools/ci_retry.sh 4 curl -fsSL -o ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          echo "${ORT_SHA256_LINUX}  ort.tgz" | sha256sum -c -
           tar xzf ort.tgz
           echo "ORT_ROOT=$PWD/onnxruntime-linux-x64-${ORT_VERSION}" >> "$GITHUB_ENV"
       - name: Configure and build the learned engine
@@ -62,7 +71,7 @@ jobs:
           echo "LD_LIBRARY_PATH=$ORT_ROOT/lib:$OCIO_PREFIX/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
       - name: The shipped model
         run: PYTHON=python tools/ci_run.sh "Shipped model" scripts/ci_shipped_model.sh build/cli/rudra-native libtorch:cpu onnxruntime:cpu
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f   # v6
         if: always()
         with: { name: shipped-model-linux, path: "reports/shipped_model/*.json", if-no-files-found: ignore }
 
@@ -70,8 +79,8 @@ jobs:
     name: RUDRA_ACES_2, ONNX Runtime CPU vs Core ML (macOS)
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6
         with: { python-version: "3.12" }
       - name: Tools
         run: |
@@ -80,13 +89,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch numpy
           pip install -e . "opencolorio==${OCIO_VERSION}" openexr opencv-python-headless huggingface_hub
-      - uses: actions/cache@v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25   # v5
         with: { path: "tmp/native_deps/ocio-${{ env.OCIO_VERSION }}", key: "ocio-${{ env.OCIO_VERSION }}-macos-15" }
       - name: OpenColorIO
         run: tools/ci_run.sh "OCIO" scripts/build_ocio.sh
       - name: ONNX Runtime C API (with Core ML)
         run: |
           bash tools/ci_retry.sh 4 curl -fsSL -o ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-osx-arm64-${ORT_VERSION}.tgz"
+          echo "${ORT_SHA256_MACOS}  ort.tgz" | shasum -a 256 -c -
           tar xzf ort.tgz
           echo "ORT_ROOT=$PWD/onnxruntime-osx-arm64-${ORT_VERSION}" >> "$GITHUB_ENV"
       - name: Configure and build the learned engine
@@ -99,6 +109,6 @@ jobs:
           echo "DYLD_LIBRARY_PATH=$ORT_ROOT/lib:$OCIO_PREFIX/lib" >> "$GITHUB_ENV"
       - name: The shipped model
         run: PYTHON=python tools/ci_run.sh "Shipped model" scripts/ci_shipped_model.sh build/cli/rudra-native onnxruntime:cpu onnxruntime:coreml
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f   # v6
         if: always()
         with: { name: shipped-model-macos, path: "reports/shipped_model/*.json", if-no-files-found: ignore }

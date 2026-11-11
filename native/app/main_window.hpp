@@ -527,7 +527,15 @@ protected:
     void dragLeaveEvent(class QDragLeaveEvent* e) override;
     void dropEvent(class QDropEvent* e) override;
     void closeEvent(class QCloseEvent* e) override;
+    // title_bar.cpp: the merged title bar on Windows (the system's frame events, taken over).
+    void showEvent(class QShowEvent* e) override;
+    bool nativeEvent(const QByteArray& type, void* message, qintptr* result) override;
 public:
+    // Windows: the toolbar becomes the window's title bar, dark, with the menus behind one button
+    // (11 Nov 2026). Asked for by main.cpp before the window shows; a no-op elsewhere, with
+    // window/mergedTitleBar = false, or with RUDRA_NATIVE_TITLE_BAR set.
+    void use_merged_title_bar();
+    bool merged_title_bar() const { return merged_title_; }
     // What would be stopped by quitting now ("the Deliver render", "the batch", ...).
     QStringList running_work() const;
     // Asks each to stop after the frame in hand (written whole); the owners wait on destruction.
@@ -618,6 +626,8 @@ private:
     QStringList empty_recent_;                   // the recent shots the empty viewer lists
     QPushButton* view_menu_btn_ = nullptr;
     QLabel* hold_hint_ = nullptr;
+    bool merged_title_ = false, merged_title_styled_ = false;
+    QWidget* title_bar_ = nullptr;   // the toolbar, when it is the window's caption (title_bar.cpp)
     void session_changed(std::uint32_t what);
     void build_ui(bool with_viewer);
     QWidget* build_left_rail();

@@ -5,6 +5,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Security review, 11 Nov 2026: every action is pinned to a commit (the tag it was taken from is in
+# the comment beside it; a tag can be moved, a commit cannot), and the token is read-only unless a
+# job says otherwise. Dependabot (.github/dependabot.yml) proposes the updates.
+permissions:
+  contents: read
+
 jobs:
   pytest:
     name: pytest, Python ${{ matrix.python }}
@@ -14,8 +20,8 @@ jobs:
       matrix:
         python: ["3.10", "3.13"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -46,8 +52,8 @@ jobs:
     name: shader parity
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6
         with:
           python-version: "3.12"
 
