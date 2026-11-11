@@ -136,7 +136,9 @@ def test_finish_rerender_is_off_by_default_and_sets_hue_level_and_time():
     out = finish_rerender(fill, master, source, codes, weight, hue='source', level=3.0, white=white)
     assert np.array_equal(out[~inside], fill[~inside])                          # outside the weight: as given
     assert abs(float(np.median(lum(out[30:70, 70:100]))) / white - 3.0) < 0.15  # clipped: the level, in SDR whites
-    assert float(np.median(lum(out[30:70, 34:46]))) < 0.8 * float(np.median(lum(out[30:70, 70:100])))   # darker source, darker fill
+    assert float(np.median(lum(out[30:70, 34:42]))) < 0.8 * float(np.median(lum(out[30:70, 70:100])))   # darker source, darker fill
+    bright = finish_rerender(fill * 64.0, master, source, codes, weight, level=3.0, white=white)   # the model far brighter
+    assert abs(float(np.median(lum(bright[30:70, 70:100]))) / white - 12.0) < 0.6   # its own level, to the 2-stop ceiling
     core = out[30:70, 70:100].reshape(-1, 3).mean(0)
     assert abs(core[1] / core[0] - 1.05) < 0.01 and abs(core[2] / core[0] - 1.05) < 0.01   # the source's colour
     mixed = finish_rerender(fill, master, source, codes, weight, hue='source', colour=0.5)[30:70, 70:100].reshape(-1, 3).mean(0)
@@ -149,6 +151,16 @@ def test_finish_rerender_is_off_by_default_and_sets_hue_level_and_time():
     assert np.allclose(np.log2(lum(b[inside]) / lum(a[inside])), 0.2, atol=1e-3)   # a one-stop jump arrives as 0.2
     with pytest.raises(ValueError):
         finish_rerender(fill, master, source, codes, weight, hue='other')
+
+
+def test_neutral_weight_leaves_a_saturated_highlight_to_the_master():
+    from rudra.genfill.composite import neutral_weight
+    codes = np.array([[[254, 254, 254], [245, 254, 254], [255, 190, 120], [255, 210, 200], [0, 0, 0]]], np.uint8)
+    w = neutral_weight(codes)[0]
+    assert w[0] == 1.0 and w[1] == 1.0          # white, and a door a little cool: whole
+    assert w[2] == 0.0                          # a sunset: red clipped, blue far below
+    assert 0.0 < w[3] < 1.0                     # between: a soft change, not a step
+    assert w[4] == 0.0                          # black: nothing to say (and no division by zero)
 
 
 def test_r_safe_blend_with_the_aces_view():

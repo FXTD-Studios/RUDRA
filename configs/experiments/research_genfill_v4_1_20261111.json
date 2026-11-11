@@ -1,0 +1,55 @@
+{
+  "id": "research_genfill_v4_1_20261111",
+  "written": "2026-11-11, AFTER the gates of research_genfill_v4_20261109 were run and the registered inference failed two of them. This is an amendment written with the results in view, not a pre-registration: read every PASS below as a description, not as a blind test.",
+  "author": "FXTD Studios Research (Cowork session); the amendment accepted by Ahmed on 11 Nov 2026 ('yes and do the best choice')",
+  "parents": [
+    "research_genfill_v4_20261109 (the registered inference: FAIL on 09V gates L and T; PASS on S, O and H; the v4 LoRA worse than v3 at hole filling)"
+  ],
+  "registration_amended_sha256": "75def6fd580e9c904bccce5740fe465531a9231e3a39e79cb9c2d571bc9c8dc0",
+  "lora": "G:/rudra_training/research_genfill_v4_20261109/rudra_genfill.safetensors (sha256 95d707eb3e5628d7515187c0752018a23182f186edb060d8652f77a64466375c), unchanged: no further training",
+  "what_failed": "09V, registered inference: the door at 1.2-1.7 x SDR white (2.5-4 asked) and drifting 0.85-1.72 along the shot, hue G/R 1.28 against the source's 1.09 (B/R 2.37), static clipped flicker p95 0.174 EV (<= 0.10 asked), jumps of 0.34-0.44 stops at the window joins (frames 33, 58, 83). Structure 0.095 stops and the outside of the mask passed.",
+  "amendment": {
+    "idea": "The model gives the detail; the level, the colour and the steadiness are set at render time (rudra/genfill/composite.py finish_rerender, neutral_weight, white_scale; rudra/genfill/run.py --rerender-hue/-colour/-level/-smooth). No change to the LoRA, the masks or the contract: inside the mask the SDR codes are not kept, outside it every pixel is the master's.",
+    "inference": "rudra.genfill.run --region-rerender --source <shot> --condition bt1886 --tau-high 240 --tau-low -1 --feather 8 --brightness-model none --steps 30 --seed 0 --rerender-hue source --rerender-colour 0.3 --rerender-level 3.3 --rerender-smooth 0.8",
+    "rules": {
+      "colour": "the fill's luminance with the source's colour (display light blurred 8 px), 0.3 of the model's own mixed in",
+      "level": "the source-led level (the master's own at tau_high, 3.3 x the master's SDR white at code 253) is a floor; the model's own level above 64 px (at 1080 lines) is kept where brighter, to 2 stops over; detail finer than that is the model's",
+      "edges": "within 12 px of a darker neighbour the fill is the interior's; a code takes its brightest neighbour's level within 6 px",
+      "time": "the fill's log luminance keeps 0.8 of the previous frame's where both are filled",
+      "scope": "the fill acts only where the source is near white in every channel (min over max code from 0.78 to 0.88); a saturated highlight is left to the master",
+      "white": "the master's SDR white is the median over up to 9 frames of the shot"
+    },
+    "chosen_on": "09V (level 3.3, colour 0.3, smooth 0.8, the edge rules), the 10 FXTD plates and, in view, the 22 gated held-out clips (floor and the 2-stop ceiling), 09V and the 07V still (the near-white range). The held-out gate H is therefore not blind for this version; 7 unused held Poly Haven scenes remain (entries 120-126 of the shuffled list, seed 20261029)."
+  },
+  "results": {
+    "09V_door_gates": {
+      "tool": "tmp/09V_test/v4_gates/shot_gates.py and tools/compare_hdr_renders.py (h2h_finish4)",
+      "L": "about 2.9 x SDR white by the head to head (3.21 by RUDRA's own white), hue G/R 1.11, B/R 1.39 (source 1.09, 1.09; the other tool 1.14, 1.44): PASS",
+      "S": "0.055 / 0.098 / 0.117 stops on frames 1 / 48 / 97 (>= 0.05): PASS, frame 1 only just",
+      "T": "static clipped p95 0.034 EV (the other tool 0.076): PASS; no flagged frame",
+      "O": "0 pixels changed outside the mask on frames 1, 48, 97: PASS"
+    },
+    "H_held_out": {
+      "tool": "tools/evaluate_genfill_region.py --finish --no-raw",
+      "out": "G:/rudra_training/research_genfill_v4_20261109_eval_region_finish4",
+      "gated": "22 Poly Haven clips (entries 96-119): PU21 at -3 EV 85.0 -> 51.1, delta -33.9, CI -45.1 to -22.8, better in 20 of 22; level -0.35 stops against the truth; flicker excess 0.016 EV: PASS",
+      "fxtd_not_gated": "10 plates: 106.2 -> 81.7, level -1.83 stops (without the near-white rule 62.6: the rule costs gain on saturated regions)",
+      "registered_inference_for_comparison": "63.3, delta -21.7, CI -33.7 to -10.2, better in 18 of 22"
+    },
+    "holes": {
+      "tool": "tools/evaluate_genfill.py, the v4 LoRA, re-render off",
+      "out": "G:/rudra_training/research_genfill_v4_20261109_eval_holes",
+      "verdict": "FAIL: H log2 delta -0.097, CI -0.215 to +0.009 (v3: -0.128, CI -0.226 to -0.042); PU21 -5.99 / -4.90 (v3 -7.14 / -6.54). By the registration's own rule v4 ships as a second LoRA selected by the mode; v3 stays the hole-filling LoRA."
+    },
+    "second_shot": "NOT DONE. The only other footage at hand was one 07V frame (a sunset: red clipped, blue far below), panned into 49 stills. Without the near-white rule the mode whitened the sky above a hard contour (structure 0.031-0.040: FAIL, and worse than the master to the eye); with it the mode leaves the shot to the master (0 pixels changed outside the mask). That shows the scope rule, not the re-render: a second shot with a near-white region is still owed.",
+    "tests": "tests/test_genfill_core.py: 11 passed (10 Nov code + neutral_weight)"
+  },
+  "open": [
+    "a second real shot with a near-white window, door or sky, through the same door gates and settings",
+    "the SDR white: RUDRA reads 0.81 on 09V from the shot's own movie, tools/compare_hdr_renders.py 0.90 from the other tool's copy of it; unexplained, and every 'x SDR white' depends on it",
+    "frame 1 of 09V: structure 0.055, only just over the gate",
+    "the level on saturated regions (FXTD plates): left to the master by the scope rule"
+  ],
+  "decision_rule": "The region re-render may be offered in the app as AI fill v4, EXPERIMENTAL and off by default, with the amended inference above, its own provenance (the contract and the rerender settings are in genfill.json and the EXR), loading the v4 LoRA only in this mode. Not before the second shot passes. No further training without Ahmed's decision.",
+  "release_authorized": false
+}

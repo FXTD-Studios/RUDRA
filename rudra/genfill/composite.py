@@ -39,7 +39,25 @@ LUMA_AP1 = np.array([.2722287168, .6740817658, .0536895174], np.float32)
 RERENDER_HUES = ('model', 'source')
 RERENDER_FULL_CODE = 253        # the source's max code at which the fill sits at the whole level
 RERENDER_HUE_SIGMA = 8.0        # pixels: the source's colour is taken from its neighbourhood, not per pixel
-RERENDER_DETAIL_SIGMA = 64.0    # pixels at 1080 lines: the model's luminance below this scale is not kept
+RERENDER_DETAIL_SIGMA = 64.0    # pixels at 1080 lines: above this scale the level is the source's (or the model's, within the ceiling)
+RERENDER_CEILING_STOPS = 2.0    # the model's own level is kept up to this far over the source-led level
+RERENDER_FRINGE_PX = 12.0       # pixels at 1080 lines: this close to a darker neighbour the fill is the interior's
+RERENDER_REACH_PX = 6.0         # pixels at 1080 lines: a source code takes its brightest neighbour's level within this
+
+
+RERENDER_NEUTRAL = (0.78, 0.88) # the source's min over max code: below the first the region is left to the master, whole from the second
+
+
+def neutral_weight(codes: np.ndarray) -> np.ndarray:
+    """(H, W) in [0, 1]: how near white the source is, from its codes (H, W, 3). The region re-render
+    is for an area the source parks near white in every channel: nothing is known there. A saturated
+    highlight (a sunset: red at 255, blue at 120) still carries its colour and its gradient, and a fill
+    at a level of its own draws a contour across it (11 Nov 2026, the 07V still: the mode whitened the
+    sky above a hard edge). There the weight goes to 0 and the master stays."""
+    c = codes.astype(np.float32)
+    lo, hi = RERENDER_NEUTRAL
+    x = np.clip((c.min(-1) / np.maximum(c.max(-1), 1.0) - lo) / (hi - lo), 0.0, 1.0)
+    return (x * x * (3.0 - 2.0 * x)).astype(np.float32)
 
 
 def white_scale(master: np.ndarray, codes: np.ndarray) -> float | None:
@@ -67,10 +85,16 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
       hue 'source'  the fill keeps its luminance and takes the source's colour (the source's display
                     light blurred RERENDER_HUE_SIGMA px, so near-clip noise does not tint it), mixed
                     with `colour` (0..1) of the model's own
-      level > 0     the level comes from the source, the detail from the model: the fill's log
-                    luminance keeps only what is finer than RERENDER_DETAIL_SIGMA, on a level that
-                    goes from the master's own at code tau_high to `level` x `white` (the master's SDR
-                    white, white_scale) at RERENDER_FULL_CODE, so a brighter source stays brighter
+      level > 0     the detail from the model, the level from the source as a floor. The source-led
+                    level goes from the master's own at code tau_high to `level` x `white` (the
+                    master's SDR white, white_scale) at RERENDER_FULL_CODE; the fill keeps what is
+                    finer than RERENDER_DETAIL_SIGMA, and its own level above that scale where it
+                    is brighter than the source-led one, up to RERENDER_CEILING_STOPS over it (11 Nov
+                    2026: on held-out clips the fixed level alone sat 1.3 stops under the truth).
+                    Two edge rules go with it: within RERENDER_FRINGE_PX of a darker neighbour the
+                    fill is taken from the interior (the model's fill is soft and dark beside a
+                    silhouette), and a code takes its brightest neighbour's level within
+                    RERENDER_REACH_PX (an anti-aliased edge is a mix of figure and sky, not a darker sky)
       smooth > 0    the fill's log luminance follows the previous frame's (an EMA, this share kept)
                     wherever both frames are filled; `state` (a dict the caller keeps for the shot)
                     carries it. A newly filled pixel starts from its own value."""
@@ -86,19 +110,35 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
         return fill
     y = np.maximum(fill @ LUMA_AP1, 1e-6).astype(np.float32)
     chroma = fill / y[..., None]
+    log_y = np.log2(y)
+    px = fill.shape[0] / 1080.0
+    top_code = codes.max(-1).astype(np.float32)
+    if level > 0:                                       # the interior's fill beside a darker neighbour
+        r = max(1.0, RERENDER_FRINGE_PX * px)
+        d = np.clip(cv2.distanceTransform((top_code >= tau_high - 8).astype(np.uint8), cv2.DIST_L2, 3) / r, 0.0, 1.0)
+        conf = (d * d * (3.0 - 2.0 * d) * on).astype(np.float32)
+        near_conf = cv2.GaussianBlur(conf, (0, 0), r)
+        known = near_conf > 1e-3
+        inner_y = cv2.GaussianBlur(log_y * conf, (0, 0), r) / np.maximum(near_conf, 1e-3)
+        inner_c = cv2.GaussianBlur(chroma * conf[..., None], (0, 0), r) / np.maximum(near_conf, 1e-3)[..., None]
+        log_y = np.where(known, conf * log_y + (1.0 - conf) * inner_y, log_y).astype(np.float32)
+        chroma = np.where(known[..., None], conf[..., None] * chroma + (1.0 - conf[..., None]) * inner_c, chroma).astype(np.float32)
     if hue == 'source':
         near = cv2.GaussianBlur(np.ascontiguousarray(source_lin, np.float32), (0, 0), RERENDER_HUE_SIGMA)
         chroma = (1.0 - colour) * near / np.maximum(near @ LUMA_AP1, 1e-6)[..., None] + colour * chroma
-    log_y = np.log2(y)
     if level > 0:
-        sigma = RERENDER_DETAIL_SIGMA * fill.shape[0] / 1080.0
+        sigma = RERENDER_DETAIL_SIGMA * px
         inside = on.astype(np.float32)                  # the model's own neighbourhood: filled pixels only
         low = cv2.GaussianBlur(log_y * inside, (0, 0), sigma) / np.maximum(cv2.GaussianBlur(inside, (0, 0), sigma), 1e-3)
-        top = cv2.GaussianBlur(codes.max(-1).astype(np.float32), (0, 0), 2.0)
+        k = int(round(RERENDER_REACH_PX * px))
+        if k > 0:
+            top_code = cv2.dilate(top_code, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * k + 1, 2 * k + 1)))
+        top = cv2.GaussianBlur(top_code, (0, 0), 2.0)
         s = np.clip((top - tau_high) / max(1.0, float(RERENDER_FULL_CODE - tau_high)), 0.0, 1.0)
         s = s * s * (3.0 - 2.0 * s)
         base = np.log2(np.maximum(cv2.GaussianBlur((master @ LUMA_AP1).astype(np.float32), (0, 0), RERENDER_HUE_SIGMA), 1e-6))
-        log_y = (1.0 - s) * base + s * np.float32(np.log2(level * white)) + (log_y - low)
+        led = (1.0 - s) * base + s * np.float32(np.log2(level * white))
+        log_y = np.clip(low, led, led + RERENDER_CEILING_STOPS) + (log_y - low)
     if smooth > 0 and state is not None:
         prev = state.get('log_y')
         if prev is not None and prev.shape == log_y.shape:
