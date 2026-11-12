@@ -40,10 +40,9 @@ MODELS_RADIANCE = COMFY_ROOT / "models" / "radiance"
 BACKBONES = {
     "flux": ("flux",      "hdrdata/hdr_pairs"),
     "wan":  ("wan",       "hdrdata/wan_hdr_pairs"),
-    "ltx":  ("ltx-video", "hdrdata/ltx_pairs"),
 }
-# node scans rudra_full_decoder_<type>_ema; <type> is "flux"/"wan"/"ltx-video".
-DEPLOY_TYPE = {"flux": "flux", "wan": "wan", "ltx": "ltx-video"}
+# node scans rudra_full_decoder_<type>_ema; <type> is "flux"/"wan".
+DEPLOY_TYPE = {"flux": "flux", "wan": "wan"}
 
 
 def build_env() -> dict:
@@ -57,7 +56,7 @@ def build_env() -> dict:
 
 def main():
     ap = argparse.ArgumentParser(description="Train + deploy full HDR decoders for all backbones.")
-    ap.add_argument("--only", default="", help="Comma-separated subset: flux,wan,ltx")
+    ap.add_argument("--only", default="", help="Comma-separated subset: flux,wan")
     ap.add_argument("--steps", type=int, default=20000, help="Training steps (full is heavier; 20k is usually plenty).")
     ap.add_argument("--batch-size", type=int, default=4)
     ap.add_argument("--lr", type=float, default=3e-4)

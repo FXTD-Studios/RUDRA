@@ -122,6 +122,7 @@ def main(argv=None):
     ap.add_argument('--colour', type=float, default=0.3)
     ap.add_argument('--level', type=float, default=3.3)
     ap.add_argument('--smooth', type=float, default=0.8)
+    ap.add_argument('--dip', type=float, default=0.0, help='with --finish: --rerender-dip (the app uses 0.3 since 12 Nov 2026)')
     ap.add_argument('--frames', type=int, default=33)
     ap.add_argument('--height', type=int, default=288)
     ap.add_argument('--width', type=int, default=512)
@@ -148,7 +149,7 @@ def main(argv=None):
     s = FillSettings(steps=a.steps, seed=0)
     variants = {} if (a.no_raw and a.finish) else {'raw': lambda src: Rerender(src, 'bt1886')}
     if a.finish:
-        variants['finish'] = lambda src: Rerender(src, 'bt1886', 'source', a.colour, a.level, a.smooth)
+        variants['finish'] = lambda src: Rerender(src, 'bt1886', 'source', a.colour, a.level, a.smooth, 0, a.dip)
     rows, t0 = [], time.time()
     for i, src in enumerate(srcs):
         picture, native = load_source(src, a)
@@ -191,7 +192,7 @@ def main(argv=None):
     rep = {'registration': a.registration, 'registration_sha256': sha(a.registration) if Path(a.registration).exists() else None,
            'lora': a.lora, 'lora_sha256': sha(a.lora) if Path(a.lora).exists() else None, 'model': model.identity,
            'held_polyhaven': held, 'ph_offset': a.ph_offset, 'clips': len(rows), 'seconds': round(time.time() - t0),
-           'finish': {'colour': a.colour, 'level': a.level, 'smooth': a.smooth} if a.finish else None,
+           'finish': {'colour': a.colour, 'level': a.level, 'smooth': a.smooth, 'dip': a.dip} if a.finish else None,
            'gates': g, 'verdict': {v: 'PASS' if g[v]['pass'] else 'FAIL' for v in g}, 'rows': rows,
            'note': 'master = the BT.1886 reading of the codes (the condition); region = source max code >= tau_high',
            'release_authorized': False}

@@ -106,7 +106,7 @@ def main():
     ap.add_argument("--model-type", default="flux")
     ap.add_argument("--model-size", default="turbo", choices=["turbo", "full"])
     ap.add_argument("--pair_dir", default="", help="Held-out pairs to evaluate on (optional).")
-    ap.add_argument("--curve", default="logc4", help="Target curve (flux/wan=logc4, ltx=slog3).")
+    ap.add_argument("--curve", default="logc4", help="Target curve (flux/wan=logc4).")
     ap.add_argument("--samples", type=int, default=200)
     ap.add_argument("--fast", action="store_true",
                     help="Skip ColorVideoVDP + LPIPS (no hdr_vdp3) for an instant read.")

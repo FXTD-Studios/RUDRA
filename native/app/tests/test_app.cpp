@@ -1755,7 +1755,7 @@ TEST(AppModels, NoPackageAnywhereSaysWhereItLooked) {
     w.boot();
     EXPECT_EQ(text_of(w, "ckpt"), "no model package found");
     EXPECT_TRUE(w.findChild<QPlainTextEdit*>("log")->toPlainText().contains(
-        "no model loaded: no model package found in 2 folder(s)"));
+        "no reconstruction model package in 2 folder(s)"));
 }
 
 TEST(AppModels, TheManagerListsSwitchesAndAddsFolders) {

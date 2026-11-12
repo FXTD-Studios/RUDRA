@@ -285,7 +285,7 @@ def train(
     if cfg:
         latent_channels = cfg.get("latent_channels", 16)
     else:
-        latent_channels = 16 if model_type in ("flux", "wan", "sd3", "sd3.5", "hunyuanvideo", "ltx-video", "lumina2", "cogvideox") else 4
+        latent_channels = 16 if model_type in ("flux", "wan", "sd3", "sd3.5", "hunyuanvideo", "lumina2", "cogvideox") else 4
     # Upsample stages = log2(VAE spatial factor): 8x -> 3, 16x (Flux.2 Klein) -> 4.
     _spatial = cfg.get("vae_spatial_factor", 8) if cfg else 8
     n_upsample = max(1, int(round(math.log2(_spatial))))
@@ -645,7 +645,7 @@ def load_trained_turbo_decoder(
         cfg = resolve_model_vae_config(model_type)
         latent_channels = cfg.get("latent_channels", 16) if cfg else 16
     else:
-        latent_channels = 16 if model_type in ("flux", "wan", "sd3", "sd3.5", "hunyuanvideo", "ltx-video", "lumina2", "cogvideox") else 4
+        latent_channels = 16 if model_type in ("flux", "wan", "sd3", "sd3.5", "hunyuanvideo", "lumina2", "cogvideox") else 4
     if "full" in checkpoint_path.lower():
         model = RadianceFullDecoder(latent_channels=latent_channels)
     else:
@@ -690,7 +690,7 @@ if __name__ == "__main__":
         from config.model_map import MODEL_VAE_CONFIG as _CFG
         _model_choices = list(_CFG.keys())
     except ImportError:
-        _model_choices = ["flux", "sdxl", "wan", "sd3", "hunyuanvideo", "ltx-video",
+        _model_choices = ["flux", "sdxl", "wan", "sd3", "hunyuanvideo",
                           "sd15", "cogvideox", "lumina2", "pixart", "kolors", "aura_flow"]
     parser.add_argument("--model_type",  default="flux",      choices=_model_choices,
                         help="Model family — determines latent channels and scale factor from MODEL_VAE_CONFIG")

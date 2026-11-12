@@ -70,6 +70,8 @@ class Rerender:
     colour: float = 0.0    # with hue 'source': the share of the model's own colour kept, 0..1
     level: float = 0.0     # > 0: the level where the source is clipped, in the master's SDR whites; 0 keeps the model's own
     smooth: float = 0.0    # > 0: the fill's log luminance follows the previous frame's (EMA share kept)
+    start: int = 0         # the source frame the master's first frame was made from (the app's preview of one frame)
+    dip: float = 0.0       # > 0: the fill's fine detail at most this many stops under its surroundings (finish_rerender)
     CONDITIONS = ('bt1886', 'aces')
 
 
@@ -77,18 +79,24 @@ class SourceCodes:
     """The source's 8-bit codes per frame index, (H, W, 3) uint8 at the master's size, decoded as the
     engine reads them (tools/measure_flicker: a movie through ffmpeg, stills through OpenCV)."""
 
-    def __init__(self, source: Path, count: int, size):
+    def __init__(self, source: Path, count: int, size, start: int = 0):
         from tools.measure_flicker import decode_frames, decode_movie, FRAME_EXT
-        self.source, self.count, self.size = Path(source), count, tuple(size)
+        # start (12 Nov 2026): a master that is part of the shot (the app previews the frame at the
+        # playhead) begins at that source frame; index i here is still the master's own.
+        if start < 0:
+            raise ValueError('the source start frame cannot be negative')
+        self.source, self.size, self.start = Path(source), tuple(size), int(start)
+        self.count = count + self.start
         self.movie = self.source.is_file()
         if not self.movie:
             n = len([p for p in self.source.iterdir() if p.suffix.lower() in FRAME_EXT])
-            if n < count:
-                raise ValueError(f'{source}: {n} frames, the master has {count}')
+            if n < self.count:
+                raise ValueError(f'{source}: {n} frames, the master needs {self.count}')
         self._decode_frames, self._decode_movie = decode_frames, decode_movie
         self._cache = {}
 
     def __getitem__(self, i: int) -> np.ndarray:
+        i = i + self.start
         if i not in self._cache:
             block = 16 if self.movie else 1
             first = (i // block) * block
@@ -450,7 +458,7 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     if rerender is not None:
         if rerender.condition not in Rerender.CONDITIONS:
             raise ValueError(f'condition must be one of {", ".join(Rerender.CONDITIONS)}')
-        source_codes = SourceCodes(Path(rerender.source), len(frames), (H, W))
+        source_codes = SourceCodes(Path(rerender.source), len(frames), (H, W), rerender.start)
         ms = MaskSettings(**{**asdict(ms), 'blend_high': ms.tau_high, 'blend_low': ms.tau_low, 'max_gain_stops': 0.0})
         brightness = None
         if rerender.hue not in RERENDER_HUES:
@@ -654,7 +662,7 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                     if rerender.hue != 'model' or rerender.level > 0 or rerender.smooth > 0:
                         fill_lin = finish_rerender(fill_lin, fr['ap1'], condition_of(codes[i], 'bt1886', view), codes[i], w_plain,
                                                    rerender.hue, rerender.colour, rerender.level, rerender.smooth,
-                                                   finish_white, ms.tau_high, finish_state)
+                                                   finish_white, ms.tau_high, finish_state, dip=rerender.dip)
                     out_ap1, alpha = plain_blend(fr['ap1'], fill_lin, w_plain)
                 else:
                     out_ap1, alpha = r_safe_blend(fr['ap1'], fill_lin, weight, view)
@@ -838,7 +846,9 @@ def serve(model, view, a, emit, FillSettings) -> int:
                               rerender=Rerender(str(r.get('source', a.source)), str(r.get('condition', a.condition)),
                                                 str(r.get('rerender_hue', a.rerender_hue)), float(r.get('rerender_colour', a.rerender_colour)),
                                                 float(r.get('rerender_level', a.rerender_level)),
-                                                float(r.get('rerender_smooth', a.rerender_smooth)))
+                                                float(r.get('rerender_smooth', a.rerender_smooth)),
+                                                int(r.get('source_start', a.source_start)),
+                                                float(r.get('rerender_dip', a.rerender_dip)))
                               if r.get('region_rerender', a.region_rerender) and r.get('source', a.source) else None)
             tagged(event='done', ok=True, out=str(out), **rep['stats'])
         except Exception as e:  # noqa: BLE001 - one failed request does not end the server
@@ -892,6 +902,8 @@ def main(argv=None):
     ap.add_argument('--region-rerender', action='store_true',
                     help='v4: re-render the whole mask from the source\'s codes; the SDR codes inside it are NOT kept (needs --source)')
     ap.add_argument('--source', default='', help='with --region-rerender: the movie or folder of stills the master was made from')
+    ap.add_argument('--source-start', type=int, default=0,
+                    help='with --region-rerender: the source frame the first master frame was made from (default 0: the whole shot)')
     ap.add_argument('--condition', default='bt1886', choices=Rerender.CONDITIONS,
                     help="with --region-rerender: what the model is conditioned on, the route's inverse (bt1886: code ^ 2.4; aces)")
     ap.add_argument('--rerender-hue', default='model', choices=RERENDER_HUES,
@@ -903,6 +915,9 @@ def main(argv=None):
                          "detail on it, crossfaded into the master by the source's code; 0 keeps the model's own level")
     ap.add_argument('--rerender-smooth', type=float, default=0.0,
                     help="with --region-rerender: how much of the previous frame's fill luminance is kept, 0..1 (e.g. 0.8); 0 is off")
+    ap.add_argument('--rerender-dip', type=float, default=0.0,
+                    help="with --rerender-level: the fill's fine detail at most this many stops under its surroundings "
+                         "(e.g. 0.3: no dark smudges beside a silhouette); 0 is off, the fill as gated")
     a = ap.parse_args(argv)
     if not a.serve and (not a.master or not a.out):
         ap.error('--master and --out are required (or --serve)')
@@ -940,7 +955,8 @@ def main(argv=None):
         rep = fill_master(Path(a.master), out, model, view, s, ms, a.window, a.overlap, a.max_area, emit,
                           cancel=stop.is_set, pattern=a.glob, brightness=brightness, region=region,
                           fallback=a.fallback, focus=a.focus,
-                          rerender=Rerender(a.source, a.condition, a.rerender_hue, a.rerender_colour, a.rerender_level, a.rerender_smooth)
+                          rerender=Rerender(a.source, a.condition, a.rerender_hue, a.rerender_colour, a.rerender_level, a.rerender_smooth,
+                                            a.source_start, a.rerender_dip)
                           if a.region_rerender else None)
         emit(event='done', ok=True, out=str(out), **rep['stats'])
         return 0

@@ -78,7 +78,7 @@ def white_scale(master: np.ndarray, codes: np.ndarray) -> float | None:
 
 def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray, codes: np.ndarray, weight: np.ndarray,
                     hue: str = 'model', colour: float = 0.0, level: float = 0.0, smooth: float = 0.0,
-                    white: float = 1.0, tau_high: int = 240, state: dict | None = None) -> np.ndarray:
+                    white: float = 1.0, tau_high: int = 240, state: dict | None = None, dip: float = 0.0) -> np.ndarray:
     """The region re-render's fill, finished before the blend (10 Nov 2026, after the v4 gates on 09V:
     the v4 LoRA drew the structure, but too blue, at 1.2 x white where 2.5-4 was asked, its level
     drifting 0.85-1.72 x white along the shot with jumps at the window seams, and brighter where the
@@ -105,13 +105,18 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
                     silhouette), and beside something dark a code takes its brightest neighbour's
                     within RERENDER_REACH_PX (an anti-aliased edge is a mix of figure and sky, not a
                     darker sky; in a gradient there is nothing dark and the codes stand)
+      dip > 0       with a level: the model's fine detail goes at most `dip` stops under its surroundings
+                    (a soft floor from half of it). 12 Nov 2026, 09V in the app: dark smudges 0.6 to 2.4
+                    stops deep beside the figures, a ghost of the silhouette; clouds are 0.05 to 0.12 stops,
+                    and nothing in a region parked at white is that much darker than what is round it.
+                    Brighter detail is not touched. Off (0) is the fill as gated on 11 Nov
       smooth > 0    the fill's log luminance follows the previous frame's (an EMA, this share kept)
                     wherever both frames are filled; `state` (a dict the caller keeps for the shot)
                     carries it. A newly filled pixel starts from its own value."""
     if hue not in RERENDER_HUES:
         raise ValueError(f'hue must be one of {", ".join(RERENDER_HUES)}')
-    if not 0.0 <= smooth < 1.0 or not 0.0 <= colour <= 1.0 or level < 0:
-        raise ValueError('smooth must be in [0, 1), colour in [0, 1], level >= 0')
+    if not 0.0 <= smooth < 1.0 or not 0.0 <= colour <= 1.0 or level < 0 or dip < 0:
+        raise ValueError('smooth must be in [0, 1), colour in [0, 1], level >= 0, dip >= 0')
     if hue == 'model' and level <= 0 and smooth <= 0:
         return fill
     import cv2
@@ -149,7 +154,11 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
         s = np.clip((top - tau_high) / max(1.0, float(RERENDER_FULL_CODE - tau_high)), 0.0, 1.0)
         s = s * s * (3.0 - 2.0 * s)
         floor = np.float32(np.log2(level * white))
-        whole = np.clip(low, floor, floor + RERENDER_CEILING_STOPS) + (log_y - low)
+        detail = log_y - low
+        if dip > 0:
+            half = np.float32(0.5 * dip)
+            detail = np.where(detail < -half, -half - half * np.tanh((-detail - half) / half), detail).astype(np.float32)
+        whole = np.clip(low, floor, floor + RERENDER_CEILING_STOPS) + detail
         y_m = np.maximum(master @ LUMA_AP1, 1e-6).astype(np.float32)
         log_y = ((1.0 - s) * np.log2(y_m) + s * whole).astype(np.float32)
         chroma = ((1.0 - s[..., None]) * (master / y_m[..., None]) + s[..., None] * chroma).astype(np.float32)

@@ -137,6 +137,9 @@ constexpr const char* kKnownModelFiles[] = {
     "a25186b90f16ad0ae397e72bd748a8150ebbfbcedc107057605e64245d36f243",   // prompt_cache/19805c5814225ef6a3c96bad.pt
     "995d82dd6f27b0b3de6bd526d585a8b12aa6ae461fa0de9d1ccc63b7c2653150",   // prompt_cache/c9138bdd2a8e8feabc812558.json
     "6af2658b9e0c99ed3e3446eae0484fd84ec2bdeee3bb90d1f9312eaae3202fe6",   // prompt_cache/c9138bdd2a8e8feabc812558.pt
+    // AI fill v4, region re-render (experimental), folder rudra_genfill_v4. The LoRA only so far: the
+    // package's other files (registration, report) are added here when the package is made.
+    "95d707eb3e5628d7515187c0752018a23182f186edb060d8652f77a64466375c",   // rudra_genfill.safetensors
 };
 
 }  // namespace

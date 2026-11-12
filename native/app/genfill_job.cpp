@@ -117,7 +117,9 @@ void downloaded_loras(std::vector<fs::path>& out) {
     QDir root(default_download_root());
     QStringList dirs = root.entryList({"rudra_genfill*"}, QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
     std::sort(dirs.begin(), dirs.end(), [](const QString& a, const QString& b) { return a > b; });   // v3 before v2
-    for (const QString& d : dirs) out.push_back(pq(root.filePath(d)) / "rudra_genfill.safetensors");
+    // rudra_genfill_v4 (12 Nov 2026) is the region re-render's LoRA, not a hole filler: genfill_v4_lora finds it.
+    for (const QString& d : dirs)
+        if (!d.startsWith("rudra_genfill_v4")) out.push_back(pq(root.filePath(d)) / "rudra_genfill.safetensors");
 }
 
 // A saved path wins while it is there; gone (moved, deleted), the search again.
@@ -204,6 +206,27 @@ fs::path genfill_bootstrap_script(const fs::path& repo) {
 }
 
 QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, const QString& master, const QString& out) {
+    if (o.rerender) {
+        // AI fill v4, region re-render: the amended inference of 11 Nov 2026, exactly as it was
+        // tested (tmp/09V_test/v4_gates/HANDOFF_v4_region_rerender.md). v3's own controls
+        // (thresholds, brightness, detail, focus, the flicker fallback) do not apply to it.
+        QStringList a{"-m", "rudra.genfill.run", "--master", master, "--out", out, "--base", qp(s.base), "--lora", qp(s.lora),
+                      "--region-rerender", "--source", o.source, "--condition", o.condition,
+                      "--tau-high", "240", "--tau-low", "-1", "--feather", "8", "--brightness-model", "none",
+                      "--seed", QString::number(o.seed), "--steps", QString::number(o.steps),
+                      "--rerender-hue", "source", "--rerender-colour", "0.3", "--rerender-level", "3.3",
+                      "--rerender-smooth", "0.8",
+                      // 12 Nov 2026, not part of the 11 Nov gates: no dark smudges beside a silhouette (composite.py)
+                      "--rerender-dip", "0.3", "--json"};
+        if (o.source_start > 0) a << "--source-start" << QString::number(o.source_start);
+        // The highlight prompt is sent when there is one (12 Nov 2026): the 09V reference
+        // (fill_v4_finish5) was rendered with a prompt naming the scene; the held-out gate ran with none.
+        // The shadow prompt is not: v4 does not fill shadows.
+        if (!o.prompt_highlight.trimmed().isEmpty()) a << "--prompt-highlight" << o.prompt_highlight.trimmed();
+        if (!o.region_json.isEmpty()) a << "--region" << o.region_json;
+        if (!o.glob.isEmpty()) a << "--glob" << o.glob;
+        return a;
+    }
     QStringList a{"-m", "rudra.genfill.run", "--master", master, "--out", out, "--base", qp(s.base), "--lora", qp(s.lora),
                   "--tau-high", QString::number(o.tau_high), "--tau-low", QString::number(o.tau_low),
                   "--seed", QString::number(o.seed), "--steps", QString::number(o.steps), "--json"};
@@ -217,6 +240,35 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
     if (o.focus_region) a << "--focus" << "areas";   // 8 Nov 2026: a box per group of areas (one area: as region)
     if (!o.glob.isEmpty()) a << "--glob" << o.glob;
     return a;
+}
+
+fs::path genfill_v4_lora() {
+    std::vector<fs::path> places;
+    if (const QString saved = QSettings().value("genfill/loraV4").toString(); !saved.isEmpty()) places.push_back(pq(saved));
+    // File > Model packages: the published v4 package's folder (12 Nov 2026)
+    places.push_back(pq(default_download_root()) / "rudra_genfill_v4" / "rudra_genfill.safetensors");
+    for (const auto& r : genfill_roots(find_repo())) places.push_back(r / "rudra_genfill_v4.safetensors");
+    if (training_workstation()) places.push_back("G:/rudra_training/research_genfill_v4_20261109/rudra_genfill.safetensors");
+    std::error_code ec;
+    for (const auto& p : places)
+        if (fs::is_regular_file(p, ec) && genfill_lora_is_v3(p, QString::fromLatin1(kGenFillV4Sha256))) return p;
+    return {};
+}
+
+std::optional<GenFillSetup> genfill_setup_for(const GenFillOptions& o, QString* why) {
+    auto s = genfill_setup(why);
+    if (!s || !o.rerender) return s;
+    const fs::path v4 = genfill_v4_lora();
+    if (v4.empty()) {
+        if (why)
+            *why = QStringLiteral("AI fill region re-render: the v4 LoRA was not found. It is experimental and not published: "
+                                  "put rudra_genfill.safetensors of research_genfill_v4_20261109 beside the app as "
+                                  "models/genfill/rudra_genfill_v4.safetensors, or turn Re-render off for AI fill v3.");
+        return std::nullopt;
+    }
+    s->lora = v4;
+    s->rerender = true;
+    return s;
 }
 
 QStringList genfill_suggest_arguments(const GenFillSetup& s, const GenFillOptions& o, const QStringList& frames) {

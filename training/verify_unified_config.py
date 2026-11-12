@@ -52,7 +52,6 @@ def test_config_resolution():
         ("sd3.5", "scale_factor", 1.5305),
         ("sd1.5", "latent_channels", 4),
         ("sd15", "noise_schedule", "ddpm"),
-        ("ltx", "latent_channels", 128),
         ("lumina2", "latent_channels", 16),
     ]
     for hint, param, expected in tests:
@@ -84,7 +83,7 @@ def test_model_vae():
     spec.loader.exec_module(vae_mod)
     load_radiance_decoder_weights = vae_mod.load_radiance_decoder_weights
 
-    for mt in ("flux", "sdxl", "wan", "sd3", "sd15", "ltx-video"):
+    for mt in ("flux", "sdxl", "wan", "sd3", "sd15"):
         cfg = resolve_model_vae_config(mt)
         expected_ch = cfg["latent_channels"]
         model = load_radiance_decoder_weights(model_type=mt, model_size="turbo")
@@ -109,7 +108,7 @@ def test_fast_vae():
     fv = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fv)
 
-    for mt in ("flux", "sdxl", "wan", "sd3", "sd15", "ltx-video"):
+    for mt in ("flux", "sdxl", "wan", "sd3", "sd15"):
         cfg = resolve_model_vae_config(mt)
         expected_ch = cfg["latent_channels"]
         model = fv.load_radiance_decoder_weights(model_type=mt, model_size="turbo")

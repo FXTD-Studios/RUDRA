@@ -1,6 +1,7 @@
 # RUDRA 1.2.4
 
-Security fixes, a repair for model updates, and a new title bar on Windows.
+AI fill's new region re-render (experimental), a calmer screen, security fixes, a repair
+for model updates, and a new title bar on Windows.
 
 ## Opening it the first time
 
@@ -55,3 +56,35 @@ the viewer is taller.
 - Hovering the maximise button does not open the snap layouts; **Win+Z** does.
 - To go back to the system's title bar, set the environment variable
   `RUDRA_NATIVE_TITLE_BAR=1` before starting RUDRA.
+
+## AI fill v4: region re-render (experimental)
+
+AI fill v3 draws only inside pixels that are fully clipped, often a fraction of a per cent
+of the frame. The new mode draws a whole bright region again: a window, an open door, a sky
+parked just under white.
+
+- Turn it on in **Deliver › AI fill › Region re-render (v4)**, or with **Fill: v3 / v4
+  re-render** over the viewer. It uses its own model.
+- Type what is in the bright area in **Prompt**. With no prompt it draws texture with no
+  subject.
+- **Preview AI fill** fills 17 frames round the playhead and shows the one on screen. The
+  model works on moving pictures; of a single frame it draws grain.
+- Inside the region the SDR's codes are not kept, unlike v3. Outside it every pixel is the
+  master's.
+- It is tested on the analytic route (**Source › Analytic**). What it draws is a plausible
+  guess: check every frame.
+
+## A calmer screen
+
+- **The Delivery column is shorter.** The prompt presets are one button, the tuning controls
+  sit behind **Advanced**, the status and the preview result are one line each (the rest on
+  hover), and controls that do not apply to the chosen fill are not shown.
+- **The technical readouts are off until you ask.** The range line, the pipeline bar under
+  the picture and the frame's timings show with **Help › Technical details**.
+
+## Fixes
+
+- Clicking another movie in the Shots list opens it. It was added as one more frame of the
+  shot on screen, and the list seemed dead.
+- The log at start no longer says "no model loaded" when only the optional reconstruction
+  model is absent.

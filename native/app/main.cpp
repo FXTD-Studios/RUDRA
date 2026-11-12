@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "genfill_job.hpp"
 #include "main_window.hpp"
 #include "splash.hpp"
 #include "startup.hpp"
@@ -175,7 +176,16 @@ int main(int argc, char** argv) {
     }
     w.use_merged_title_bar();   // Windows: one dark bar instead of the caption, the menu row and the toolbar
     w.restore_settings();   // the window, rails, tab, container and Render fields of the last run
+    // 12 Nov 2026: where the v4 LoRA is (it is not published: a developer's machine), AI fill starts as
+    // v4, region re-render, until it is switched off; everywhere else it is v3 as released. Only while
+    // the choice has never been made: Deliver > AI fill, or "Fill:" over the viewer, sets it.
+    if (!QSettings().contains("deliver/aiRerender") && !rudra::app::genfill_v4_lora().empty()) {
+        w.set_deliver("ai_rerender", "1");
+        w.log("AI fill: v4, region re-render, is on (the v4 LoRA was found); \"Fill:\" over the viewer switches to v3");
+    }
     w.open_compare_view();  // SDR | RUDRA wipe at 1 000 nits; a project below sets its own peak
+    // 12 Nov 2026: the technical readouts are off until asked for (View > Technical details)
+    w.set_details(QSettings().value("ui/details", false).toBool());
     if (const qsizetype t = rest.indexOf("--tab"); t >= 0 && t + 1 < rest.size()) {   // for the review grabs
         w.show_tab(rest[t + 1]);
         rest.remove(t, 2);

@@ -79,16 +79,6 @@ MODEL_REGISTRY = {
         "pairs_target": 5000,
         "crops_per_image": 6,
     },
-    "ltx-video": {
-        "vae_file": "ltx_vae.safetensors",
-        "vae_aliases": ["ltx-video_vae.safetensors", "LTX_VAE.safetensors"],
-        "steps_turbo": 50_000,
-        "steps_full": 200_000,
-        "batch_turbo": 2,
-        "batch_full": 1,
-        "pairs_target": 3000,
-        "crops_per_image": 4,
-    },
     "sd3": {
         "vae_file": "sd3_vae.safetensors",
         "vae_aliases": ["SD3_VAE.safetensors", "stable_diffusion_3_vae.safetensors"],

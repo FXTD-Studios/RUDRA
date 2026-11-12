@@ -3,7 +3,7 @@
   "written": "2026-10-27, before any data was built, any model trained or any output looked at",
   "author": "FXTD Studios Research (Cowork session), approved direction by Ahmed: layer 3 generative fill",
   "what": "RUDRA layer 3: a Wan2.1-VACE-1.3B (Apache-2.0) LoRA that fills only fully clipped highlights and fully crushed shadows of a RUDRA master; composited so that no 8-bit code of the master's SDR view changes.",
-  "not_used": ["DiffHDR code or weights", "LTX models, weights or outputs", "Netflix", "non-commercial data", "generated video", "any development, validation, holdout or fresh-grade scene"],
+  "not_used": ["DiffHDR code or weights", "Netflix", "non-commercial data", "generated video", "any development, validation, holdout or fresh-grade scene"],
   "base_model": {"repo": "Wan-AI/Wan2.1-VACE-1.3B-diffusers", "licence": "Apache-2.0", "local": "G:/datasets/models/Wan2.1-VACE-1.3B-diffusers"},
   "data": {
     "builder": "tools/build_genfill_clips.py",

@@ -13,6 +13,7 @@
 #include <QProcessEnvironment>
 #include <QPushButton>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QStatusBar>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -54,7 +55,8 @@ GenFillServer::~GenFillServer() {
 }
 
 bool GenFillServer::ensure(const GenFillSetup& s, QString* why) {
-    const bool same = s.python == setup_.python && s.repo == setup_.repo && s.base == setup_.base && s.lora == setup_.lora;
+    const bool same = s.python == setup_.python && s.repo == setup_.repo && s.base == setup_.base && s.lora == setup_.lora &&
+                      s.rerender == setup_.rerender;
     if (proc_ && proc_->state() != QProcess::NotRunning && same) return true;
     if (proc_) {   // another setup (a LoRA downloaded, a path changed): a new server
         proc_->disconnect();
@@ -95,8 +97,10 @@ bool GenFillServer::ensure(const GenFillSetup& s, QString* why) {
             finish(false, {{"event", "error"}, {"ok", false}, {"error", "The AI fill preview could not start"},
                            {"detail", p->program() + ": " + p->errorString()}});
     });
-    p->start(from_path(s.python), {"-m", "rudra.genfill.run", "--serve", "--json", "--base", from_path(s.base), "--lora",
-                                    from_path(s.lora)});
+    QStringList args{"-m", "rudra.genfill.run", "--serve", "--json", "--base", from_path(s.base), "--lora", from_path(s.lora)};
+    // v4, region re-render: the settings a request cannot carry, as it was tested (12 Nov 2026).
+    if (s.rerender) args << "--feather" << "8" << "--brightness-model" << "none";
+    p->start(from_path(s.python), args);
     if (!p->waitForStarted(10000)) {
         if (why) *why = QStringLiteral("AI fill preview: %1 did not start (%2).").arg(from_path(s.python), p->errorString());
         return false;
@@ -279,8 +283,9 @@ void MainWindow::preview_genfill() {
     if (aces_delivering() || genfill_running() || batch_running() || mastering())
         return say(QStringLiteral("AI fill preview: a render or an AI fill is running; preview after it."));
     QString why;
-    const auto setup = genfill_setup(&why);
-    if (!setup) return say(why + QStringLiteral(" Setup… > Set up automatically does it for you."));
+    const bool rerender = deliver_effective().ai.rerender;   // v4: its own LoRA, its own server
+    const auto setup = genfill_setup_for(deliver_effective().ai, &why);
+    if (!setup) return say(rerender ? why : why + QStringLiteral(" Setup… > Set up automatically does it for you."));
     halt_playback();
     // The suggested prompts for this frame, over the viewer while it fills (6 Nov 2026).
     if (prompt_suggest_frame_ != current_ || !prompt_suggestions_) run_prompt_suggestions(false, /*quiet=*/true);
@@ -290,9 +295,20 @@ void MainWindow::preview_genfill() {
     // 8 Nov 2026: the frame at the playhead only, by default: a quick look at the fill in the viewer;
     // the render fills the whole shot (in windows of 33, which also keeps it steady). genfill/previewHalf
     // > 0 previews that many frames each side, to judge how the fill moves.
+    // 12 Nov 2026: v4 previews a whole window of 33 frames round the playhead, as it was gated. It is a
+    // video model: of 1 or 5 frames it drew a woven grain where the 97-frame reference has clouds
+    // (measured on the kept preview: same level, 2.49 against 2.50 x white, no picture).
     const int half = std::clamp(QSettings().value("genfill/previewHalf", 0).toInt(), 0, 16);
     const int at = std::clamp(current_, 0, n - 1);
-    const int a = std::max(0, at - half), b = std::min(n - 1, at + half);
+    int a = std::max(0, at - half), b = std::min(n - 1, at + half);
+    if (rerender) {
+        // 17 frames by default (a trial, 12 Nov 2026: half the wait of the gated 33); genfill/previewV4Frames
+        // sets another count of 4k+1 from 5 to 33.
+        int count = std::clamp(QSettings().value("genfill/previewV4Frames", 17).toInt(), 5, 33);
+        count -= (count - 1) % 4;
+        a = std::clamp(at - count / 2, 0, std::max(0, n - count));
+        b = std::min(n - 1, a + count - 1);
+    }
     genfill_preview_tmp_ = std::make_unique<QTemporaryDir>(QDir::temp().filePath("rudra-aifill-preview-XXXXXX"));
     if (!genfill_preview_tmp_->isValid()) return say(QStringLiteral("AI fill preview: no temporary folder."));
     const QString mdir = genfill_preview_tmp_->filePath("master"), fdir = genfill_preview_tmp_->filePath("fill");
@@ -323,11 +339,24 @@ void MainWindow::preview_genfill() {
     genfill_preview_.reset();
     if (auto* btn = findChild<QPushButton*>("deliverAiPreview")) btn->setText(QStringLiteral("Stop preview"));
     const int frames = b - a + 1;
+    // Which fill this is, in the log and the status (12 Nov 2026: v3 or v4 could not be told apart).
+    log(c.ai.rerender ? QStringLiteral("AI fill preview: v4, region re-render (LoRA %1, condition %2)")
+                            .arg(from_path(setup->lora), learned ? QStringLiteral("aces") : QStringLiteral("bt1886"))
+                      : QStringLiteral("AI fill preview: v3, clipped pixels only (LoRA %1)").arg(from_path(setup->lora)));
+    // 12 Nov 2026: the prompt in the log too (an empty box looked filled: its grey example text)
+    log(c.ai.prompt_highlight.trimmed().isEmpty()
+            ? QStringLiteral("AI fill preview: no highlight prompt%1")
+                  .arg(c.ai.rerender ? QStringLiteral(" (v4 then draws texture with no subject: type what is in the bright region)") : QString())
+            : QStringLiteral("AI fill preview: highlight prompt \"%1\"").arg(c.ai.prompt_highlight.trimmed()));
     say(QStringLiteral("AI fill preview: rendering the master of frames %1–%2…").arg(a + 1).arg(b + 1));
     const auto t0 = std::chrono::steady_clock::now();
     const QPointer<MainWindow> self(this);
     genfill_preview_master_id_ = -1;
-    auto after_master = [self, setup = *setup, options = c.ai, mdir, fdir, a, b, at, frames, n, t0](const QJsonObject& o) {
+    // v4, region re-render: the source the master was made from, and the route's inverse.
+    const QString rr_source = from_path(movie ? shot_sources_.front() : frames_.front().parent_path());
+    const QString rr_condition = learned ? QStringLiteral("aces") : QStringLiteral("bt1886");
+    auto after_master = [self, setup = *setup, options = c.ai, mdir, fdir, a, b, at, frames, n, t0, rr_source,
+                         rr_condition](const QJsonObject& o) {
             if (!self) return;
             self->genfill_preview_master_id_ = 0;
             auto* st2 = self->findChild<QLabel*>("deliverAiPreviewStatus");
@@ -364,6 +393,24 @@ void MainWindow::preview_genfill() {
             fill.insert("region", options.region_json.isEmpty()
                                       ? QJsonValue(QJsonValue::Null)
                                       : QJsonValue(QJsonDocument::fromJson(options.region_json.toUtf8()).object()));
+            if (options.rerender) {   // AI fill v4: the amended inference of 11 Nov 2026, as genfill_arguments
+                fill.insert("region_rerender", true);
+                fill.insert("prompt_shadow", QString());   // the highlight prompt is sent (as genfill_arguments)
+                fill.insert("source", rr_source);
+                fill.insert("source_start", a);
+                fill.insert("condition", rr_condition);
+                fill.insert("tau_high", 240);
+                fill.insert("tau_low", -1);
+                fill.insert("rerender_hue", "source");
+                fill.insert("rerender_colour", 0.3);
+                fill.insert("rerender_level", 3.3);
+                fill.insert("rerender_smooth", 0.8);
+                fill.insert("rerender_dip", 0.3);   // as genfill_arguments
+                fill.insert("brightness_offset", 0.0);
+                fill.insert("shape_gain", 1.0);
+                fill.insert("fallback", "none");
+                fill.insert("focus", "frame");
+            }
             const bool cold = !self->genfill_server_->loaded();
             if (st2)
                 st2->setText(cold ? QStringLiteral("AI fill preview: loading the fill model (once; a minute or two)…")
@@ -424,6 +471,19 @@ void MainWindow::preview_genfill() {
                     p->fill_dir = fdir;
                     const int pw = m->width(), ph = m->height();
                     const QString mexr = QDir(mdir).filePath(preview_name(at)), fexr = QDir(fdir).filePath(preview_name(at));
+                    if (options.rerender) {
+                        // 12 Nov 2026, while v4 is experimental: the last preview's master, fill and report are
+                        // kept beside the log (the temporary folder goes), to compare with the gate runs.
+                        const QString keep = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) +
+                                             QStringLiteral("/logs/last_ai_fill_preview");
+                        QDir().mkpath(keep);
+                        const std::pair<QString, QString> files[] = {{mexr, "master.exr"}, {fexr, "fill.exr"},
+                                                                     {QDir(fdir).filePath("genfill.json"), "genfill.json"}};
+                        for (const auto& [from, name] : files) {
+                            QFile::remove(QDir(keep).filePath(name));
+                            QFile::copy(from, QDir(keep).filePath(name));
+                        }
+                    }
                     // The master and the fill as the viewer shows the live frame: through the monitor.
                     auto finish = [self, end, options, p, a, b, n, frames, master_s, fill_s, cold] {
                         self->genfill_preview_ = std::move(*p);
@@ -431,7 +491,7 @@ void MainWindow::preview_genfill() {
                         // The whole shot at this rate: its master and its fill, per frame (the model's load is once).
                         const double per_frame = (master_s + fill_s) / std::max(1, frames);
                         const double whole_min = per_frame * n / 60.0;
-                        end(QStringLiteral("AI fill preview of frames %1–%2: master %3 s, fill %4 s%5 · %6 % of this frame "
+                        const QString full = (QStringLiteral("AI fill preview of frames %1–%2: master %3 s, fill %4 s%5 · %6 % of this frame "
                                            "invented · the whole shot (%7 frames) about %8 min")
                                 .arg(a + 1)
                                 .arg(b + 1)
@@ -444,6 +504,16 @@ void MainWindow::preview_genfill() {
                                 .arg(whole_min, 0, 'f', whole_min < 10 ? 1 : 0) +
                             genfill_preview_hint(self->genfill_preview_->changed, !options.region_json.isEmpty(),
                                                  self->session_.display_nits()));
+                        end(full);   // the log has all of it
+                        // 12 Nov 2026: the card says it in one line; the timings on hover
+                        if (auto* st3 = self->findChild<QLabel*>("deliverAiPreviewStatus")) {
+                            st3->setToolTip(full);
+                            st3->setText(QStringLiteral("Preview ready \u00b7 %1 % invented \u00b7 whole shot about %2 min")
+                                             .arg(100.0 * self->genfill_preview_->changed, 0, 'f', 1)
+                                             .arg(whole_min, 0, 'f', whole_min < 10 ? 1 : 0) +
+                                         genfill_preview_hint(self->genfill_preview_->changed, !options.region_json.isEmpty(),
+                                                              self->session_.display_nits()));
+                        }
                         self->show_genfill_preview(QStringLiteral("fill"));
                     };
                     self->monitor_preview_planes(mexr, pw, ph, [self, end, p, fexr, pw, ph, finish](std::optional<PlanarBuffer> mm, QString why) {

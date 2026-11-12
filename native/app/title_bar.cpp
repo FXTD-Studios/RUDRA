@@ -105,7 +105,7 @@ void MainWindow::use_merged_title_bar() {
     auto* btn_min = bar_button(bar, "winMin", kGlyphMin, QStringLiteral("Minimise"), 40);
     auto* btn_max = bar_button(bar, "winMax", kGlyphMax, QStringLiteral("Maximise"), 40);
     auto* btn_close = bar_button(bar, "winClose", kGlyphClose, QStringLiteral("Close"), 40);
-    btn_close->setStyleSheet(QStringLiteral("QToolButton:hover { background: #c42b1c; color: #ffffff; }"));
+    // Its hover colour is the theme's (QToolButton#winClose in theme/studio.qss.in): no colour in the sources.
     connect(btn_min, &QToolButton::clicked, this, [this] { showMinimized(); });
     connect(btn_max, &QToolButton::clicked, this, [this] {
         if (isMaximized()) showNormal();

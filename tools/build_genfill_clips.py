@@ -242,7 +242,7 @@ def make_clip(job):
 # 225-254, the video code being display-linear ^ (1/2.4) (what the app's BT.1886 reading undoes).
 # The truth sits at 2-8 x diffuse white where the condition, the BT.1886 inverse, sits at 1: the
 # model learns to re-render the region up, with its structure, which v1-v3 (holes at 255 over the
-# ACES inverse) were never asked to do. Measured need: reports/app_test_09V_2026-11-09/beeble_how.html.
+# ACES inverse) were never asked to do. Measured need: reports/app_test_09V_2026-11-09.
 REGION_CURVES = {'aces': 0.30, 'hable': 0.20, 'reinhard': 0.15, 'agx': 0.15, 'camera_log': 0.20}
 REGION_TAU_LOW, REGION_TAU_HIGH = 225, 251          # tau_high jitter: the near-clip band, not just 255
 REGION_BRIGHT_CODE = 235                            # a clip has a region when 2 %..30 % of frame 0 is at or above this

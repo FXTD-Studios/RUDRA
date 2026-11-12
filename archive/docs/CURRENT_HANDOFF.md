@@ -1,6 +1,6 @@
 ﻿# RUDRA - current development handoff
 
-**Current - 09V vs Beeble follow-up: recommendations 1-4 done or measured, AI fill v4 training (9 Nov):**
+**Current - 09V comparison follow-up: recommendations 1-4 done or measured, AI fill v4 training (9 Nov):**
 
 Merged to main: #62 (learned route steer when the Source curve is not ACES; CI
 shipped-model hashes), #63 (learned route opens on HDR 1000; AI fill preview
@@ -11,14 +11,14 @@ harness with bright-band level/hue/structure). Open: #65 (AI fill v4 region
 re-render: recipe v4 clips, rudra.genfill.run --region-rerender --source
 --condition, composite.plain_blend, registration, scripts/GENFILL_V4.ps1).
 Evidence: reports/app_test_09V_2026-11-09/FINDINGS.md sections 4-6 and its pages.
-Measured: 09V's door interior is flat in the source at 8 and 10 bit; Beeble's sea
+Measured: 09V's door interior is flat in the source at 8 and 10 bit; the other tool's sea
 and hills are generated (corr 0.01 with the source). The 2.0 model departs from
 the ACES inverse by ~1 % inside its mask on 07V, so a non-ACES learned mode has
 nothing to carry: not built. The v4 LoRA run (build then 6000 steps, <= 14 h)
 started 9 Nov night: G:\rudra_training\research_genfill_v4_20261109.run.log,
 out G:\rudra_training\research_genfill_v4_20261109. Next: when it finishes, the
 gates of configs/experiments/research_genfill_v4_20261109.json on 09V through
-tools/compare_hdr_renders.py against D:\Peeple\beebl (Beeble's EXRs); then the
+tools/compare_hdr_renders.py against the other tool's EXRs; then the
 app toggle only on PASS. Open decisions for Ahmed: temporal tail on codes >= 250
 (breaks the exact round trip there), the analytic default curve (BT.1886 door
 243 nits flat vs ACES 714 nits with hue on 09V), 10-bit as first class.
