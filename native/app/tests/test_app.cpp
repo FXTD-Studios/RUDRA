@@ -180,7 +180,7 @@ void flatten(const QMenu* m, std::vector<std::string>& out) {
             out.push_back(">" + a->menu()->title().toStdString());
             flatten(a->menu(), out);
             out.push_back("<");
-        } else if (a->objectName() != "showTips") {   // Help > Show tips: the app's own (simple_ui.cpp), not a page action
+        } else if (a->objectName() != "showTips" && a->objectName() != "showDetails") {   // Help > Show tips, Technical details: the app's own (simple_ui.cpp), not page actions
             out.push_back(id_of(a));
         }
     }
@@ -6087,6 +6087,47 @@ TEST(AppModels, AnUpdateWithWeightsOfTheSameSizeFetchesThemAgain) {
     QSettings().clear();
 }
 
+// 11 Nov 2026: the published list named both the files and their checksums, so the website alone
+// decided what RUDRA downloaded and loaded. From that address a model is now offered only when
+// every one of its files is among the checksums compiled into this RUDRA, over https.
+TEST(AppModels, FromThePublishedListOnlyKnownModelsAreOffered) {
+    const QString released_ts = "7082eb869d265d6e8c4fc209f7cac7e5dce2f40c10df5e73a889fb85efb9dbcc";   // RUDRA ACES 2, 2.0
+    EXPECT_TRUE(app::is_known_model_file(released_ts));
+    EXPECT_TRUE(app::is_known_model_file(released_ts.toUpper()));
+    EXPECT_FALSE(app::is_known_model_file(QString(64, '0')));
+    EXPECT_FALSE(app::is_known_model_file(""));
+    auto model = [](const QString& id, const QString& url, const QString& sha) {
+        app::RemoteModel m;
+        m.id = id;
+        m.folder = id;
+        app::RemoteFile f;
+        f.path = "rudra_g1.ts";
+        f.url = url;
+        f.size = 1037772;
+        f.sha256 = sha;
+        m.files.push_back(f);
+        return m;
+    };
+    int left = -1;
+    const auto kept = app::known_models({model("released", "https://huggingface.co/x/rudra_g1.ts", released_ts),
+                                         model("swapped", "https://huggingface.co/x/rudra_g1.ts", QString(64, 'a')),
+                                         model("not-https", "file:///tmp/rudra_g1.ts", released_ts)},
+                                        &left);
+    ASSERT_EQ(kept.size(), 1u);
+    EXPECT_EQ(kept[0].id, "released");
+    EXPECT_EQ(left, 2);
+    // One unknown file among known ones leaves the whole model out.
+    auto mixed = model("mixed", "https://huggingface.co/x/rudra_g1.ts", released_ts);
+    mixed.files.push_back(mixed.files[0]);
+    mixed.files[1].sha256 = QString(64, 'b');
+    EXPECT_TRUE(app::known_models({mixed}).empty());
+    // The setting can point elsewhere; the compiled-in address does not move with it.
+    QSettings().setValue("models/indexUrl", "https://example.invalid/models.json");
+    EXPECT_EQ(app::published_model_index_url(), "https://www.fxtdstudios.com/rudra-docs/models.json");
+    EXPECT_NE(app::default_model_index_url(), app::published_model_index_url());
+    QSettings().clear();
+}
+
 TEST(AppModels, AFileThatFailsItsChecksumIsDeletedAndSaysSo) {
     QSettings().clear();
     QTemporaryDir tmp;
@@ -6300,6 +6341,58 @@ TEST(GenFill, PromptSuggestionsAreReadBack) {
     EXPECT_FALSE(app::parse_prompt_suggestions("Traceback (most recent call last):", &why));
     app::MainWindow w(false);
     ASSERT_NE(w.findChild<QPushButton*>("deliverAiSuggest"), nullptr);
+}
+
+// 12 Nov 2026: AI fill v4, region re-render, experimental and off by default. On, the fill runs the
+// amended inference of 11 Nov exactly (its own thresholds and finish), from the shot's source, and
+// v3's controls are not sent.
+TEST(GenFill, RegionRerenderIsOptInAndRunsAsTested) {
+    app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/v4.safetensors"};
+    app::GenFillOptions o;
+    EXPECT_FALSE(app::genfill_arguments(s, o, "m", "o").contains("--region-rerender"));
+    o.rerender = true;
+    o.source = "D:/video/09V.mp4";
+    o.tau_high = 250;       // v3's own controls: not what v4 runs with
+    o.brightness = 1.5;
+    o.focus_region = true;
+    o.fallback = true;
+    QStringList a = app::genfill_arguments(s, o, "m", "o");
+    auto after = [&a](const char* flag) { return a.value(a.indexOf(flag) + 1); };
+    EXPECT_TRUE(a.contains("--region-rerender"));
+    EXPECT_EQ(after("--source"), "D:/video/09V.mp4");
+    EXPECT_EQ(after("--condition"), "bt1886");
+    EXPECT_EQ(after("--tau-high"), "240");
+    EXPECT_EQ(after("--tau-low"), "-1");
+    EXPECT_EQ(after("--feather"), "8");
+    EXPECT_EQ(after("--brightness-model"), "none");
+    EXPECT_EQ(after("--rerender-hue"), "source");
+    EXPECT_EQ(after("--rerender-colour"), "0.3");
+    EXPECT_EQ(after("--rerender-level"), "3.3");
+    EXPECT_EQ(after("--rerender-smooth"), "0.8");
+    EXPECT_EQ(after("--rerender-dip"), "0.3");   // 12 Nov 2026: no dark smudges beside a silhouette
+    EXPECT_FALSE(a.contains("--source-start"));
+    EXPECT_FALSE(a.contains("--brightness-offset"));
+    EXPECT_FALSE(a.contains("--focus"));
+    EXPECT_FALSE(a.contains("--fallback"));
+    EXPECT_FALSE(a.contains("--prompt-highlight"));   // none given, none sent
+    o.prompt_highlight = " overcast sky over the sea ";   // 12 Nov 2026: v4 takes the highlight prompt, not the shadow one
+    o.prompt_shadow = "dark detail";
+    a = app::genfill_arguments(s, o, "m", "o");
+    EXPECT_EQ(after("--prompt-highlight"), "overcast sky over the sea");
+    EXPECT_FALSE(a.contains("--prompt-shadow"));
+    o.source_start = 36;   // a master of one frame, the 37th
+    o.condition = "aces";
+    a = app::genfill_arguments(s, o, "m", "o");
+    EXPECT_EQ(after("--source-start"), "36");
+    EXPECT_EQ(after("--condition"), "aces");
+    QSettings().clear();
+    app::MainWindow w(false);
+    EXPECT_FALSE(w.deliver_choice().ai.rerender);
+    w.set_deliver("ai_rerender", "1");
+    EXPECT_TRUE(w.deliver_choice().ai.rerender);
+    EXPECT_TRUE(QSettings().value("deliver/aiRerender").toBool());
+    ASSERT_NE(w.findChild<QWidget*>("deliverAiRerender"), nullptr);
+    QSettings().clear();
 }
 
 // 7 Nov 2026: "More detail in the filled area", off by default (v3 as gated). 8 Nov 2026: --focus areas

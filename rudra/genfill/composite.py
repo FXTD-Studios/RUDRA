@@ -40,9 +40,14 @@ RERENDER_HUES = ('model', 'source')
 RERENDER_FULL_CODE = 253        # the source's max code at which the fill sits at the whole level
 RERENDER_HUE_SIGMA = 8.0        # pixels: the source's colour is taken from its neighbourhood, not per pixel
 RERENDER_DETAIL_SIGMA = 64.0    # pixels at 1080 lines: above this scale the level is the source's (or the model's, within the ceiling)
-RERENDER_CEILING_STOPS = 2.0    # the model's own level is kept up to this far over the source-led level
+# How far over `level` the model's own level may sit. 0 since 11 Nov 2026: the model's level is not steady
+# (Porch: the region's median fell from 5.5 to 3.3 x white over the first 8 frames with 2 stops allowed, and
+# held 2.8-3.2 with none), and with the crossfade by code the allowance bought nothing on the held-out clips
+# (PU21 at -3 EV -28.1 with it, -27.6 without) or on 09V (no pixel moved).
+RERENDER_CEILING_STOPS = 0.0
 RERENDER_FRINGE_PX = 12.0       # pixels at 1080 lines: this close to a darker neighbour the fill is the interior's
-RERENDER_REACH_PX = 6.0         # pixels at 1080 lines: a source code takes its brightest neighbour's level within this
+RERENDER_REACH_PX = 6.0         # pixels at 1080 lines: beside something dark a code takes its brightest neighbour's within this
+RERENDER_DARK_CODES = 40        # "something dark": a neighbour this many codes under tau_high (fully so at 80)
 
 
 RERENDER_NEUTRAL = (0.78, 0.88) # the source's min over max code: below the first the region is left to the master, whole from the second
@@ -85,16 +90,21 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
       hue 'source'  the fill keeps its luminance and takes the source's colour (the source's display
                     light blurred RERENDER_HUE_SIGMA px, so near-clip noise does not tint it), mixed
                     with `colour` (0..1) of the model's own
-      level > 0     the detail from the model, the level from the source as a floor. The source-led
-                    level goes from the master's own at code tau_high to `level` x `white` (the
-                    master's SDR white, white_scale) at RERENDER_FULL_CODE; the fill keeps what is
-                    finer than RERENDER_DETAIL_SIGMA, and its own level above that scale where it
-                    is brighter than the source-led one, up to RERENDER_CEILING_STOPS over it (11 Nov
-                    2026: on held-out clips the fixed level alone sat 1.3 stops under the truth).
+      level > 0     the detail from the model, the level `level` x `white` (the master's SDR white,
+                    white_scale): the fill keeps what is finer than RERENDER_DETAIL_SIGMA; above that
+                    scale its own level is kept only where brighter and only RERENDER_CEILING_STOPS
+                    over (0: not at all; see the constant).
+                    That levelled fill is then crossfaded into the MASTER by the source's code, log
+                    luminance and colour alike: the master itself at tau_high, the whole fill at
+                    RERENDER_FULL_CODE. So the lift starts at nothing where the region starts and a
+                    brighter source stays brighter (11 Nov, the Porch shot: a softbox's hot spots,
+                    a smooth gradient through tau_high, came out as ovals with an edge when the
+                    model's level applied whole from the region's rim).
                     Two edge rules go with it: within RERENDER_FRINGE_PX of a darker neighbour the
                     fill is taken from the interior (the model's fill is soft and dark beside a
-                    silhouette), and a code takes its brightest neighbour's level within
-                    RERENDER_REACH_PX (an anti-aliased edge is a mix of figure and sky, not a darker sky)
+                    silhouette), and beside something dark a code takes its brightest neighbour's
+                    within RERENDER_REACH_PX (an anti-aliased edge is a mix of figure and sky, not a
+                    darker sky; in a gradient there is nothing dark and the codes stand)
       smooth > 0    the fill's log luminance follows the previous frame's (an EMA, this share kept)
                     wherever both frames are filled; `state` (a dict the caller keeps for the shot)
                     carries it. A newly filled pixel starts from its own value."""
@@ -132,13 +142,17 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
         low = cv2.GaussianBlur(log_y * inside, (0, 0), sigma) / np.maximum(cv2.GaussianBlur(inside, (0, 0), sigma), 1e-3)
         k = int(round(RERENDER_REACH_PX * px))
         if k > 0:
-            top_code = cv2.dilate(top_code, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * k + 1, 2 * k + 1)))
+            el = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * k + 1, 2 * k + 1))
+            e = np.clip((tau_high - RERENDER_DARK_CODES - cv2.erode(top_code, el)) / float(RERENDER_DARK_CODES), 0.0, 1.0)
+            top_code = top_code + e * e * (3.0 - 2.0 * e) * (cv2.dilate(top_code, el) - top_code)
         top = cv2.GaussianBlur(top_code, (0, 0), 2.0)
         s = np.clip((top - tau_high) / max(1.0, float(RERENDER_FULL_CODE - tau_high)), 0.0, 1.0)
         s = s * s * (3.0 - 2.0 * s)
-        base = np.log2(np.maximum(cv2.GaussianBlur((master @ LUMA_AP1).astype(np.float32), (0, 0), RERENDER_HUE_SIGMA), 1e-6))
-        led = (1.0 - s) * base + s * np.float32(np.log2(level * white))
-        log_y = np.clip(low, led, led + RERENDER_CEILING_STOPS) + (log_y - low)
+        floor = np.float32(np.log2(level * white))
+        whole = np.clip(low, floor, floor + RERENDER_CEILING_STOPS) + (log_y - low)
+        y_m = np.maximum(master @ LUMA_AP1, 1e-6).astype(np.float32)
+        log_y = ((1.0 - s) * np.log2(y_m) + s * whole).astype(np.float32)
+        chroma = ((1.0 - s[..., None]) * (master / y_m[..., None]) + s[..., None] * chroma).astype(np.float32)
     if smooth > 0 and state is not None:
         prev = state.get('log_y')
         if prev is not None and prev.shape == log_y.shape:

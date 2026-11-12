@@ -1,6 +1,6 @@
 """RUDRA: dynamic-range conditioned adapters for HDR-aware diffusion models.
 
-Version 1.2.3 (the app's version).
+Version 1.2.4 (the app's version).
 
 Exports:
   - RUDRA-Lite: global descriptor + projection + FiLM decoder + DR-gated LoRA.
@@ -21,7 +21,7 @@ import importlib.util as _ilu
 
 TORCH_AVAILABLE = _ilu.find_spec("torch") is not None
 
-__version__ = "1.2.3"
+__version__ = "1.2.4"
 
 if TORCH_AVAILABLE:
     try:

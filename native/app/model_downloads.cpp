@@ -118,8 +118,51 @@ std::optional<std::vector<RemoteModel>> parse_model_index(const QByteArray& json
     return out;
 }
 
-QString default_model_index_url() {
-    return QSettings().value("models/indexUrl", QStringLiteral("https://www.fxtdstudios.com/rudra-docs/models.json")).toString();
+namespace {
+
+// Every file of every model RUDRA has released, by SHA-256 (see model_downloads.hpp). Taken from
+// the published list and checked against the files themselves on 11 Nov 2026.
+constexpr const char* kKnownModelFiles[] = {
+    // RUDRA ACES 2, version 2.0 (w4 + lock), released 8 Nov 2026
+    "db21ffb4a0a652f354d24fd1b6a997717ec862b009a64e5175d1f4c4f25198e8",   // manifest.json
+    "beef682e39f8276147a329f57eca70817c056ef0dcc3b053d0b481dadb634c69",   // parity.json
+    "880e7b698a099b8dd60549444392d51af3022efbae8f68f05c9f0f3a29f8ee49",   // rudra_g1.onnx
+    "7082eb869d265d6e8c4fc209f7cac7e5dce2f40c10df5e73a889fb85efb9dbcc",   // rudra_g1.ts
+    // AI fill v3
+    "9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a",   // rudra_genfill.safetensors
+    "34892fb840de138fb3ddd2e2c8e6e3b13c232973ed59ea23338444fcaff2a95a",   // brightness.json
+    "5b72b3888e37cc1d198594c6f534c5ba1dcbdbb2fdf924f6a93f37d8dfe502f7",   // registration_v3.json
+    "aa11a3cb65a249898af299d184ec7f697e965ccacc69bcaa006f9ecc76df29bf",   // report_v3.json
+    "fbbb1040d9c7f522bdf9327ab04cf3ce21b85f2651846223a3111400805bfecd",   // prompt_cache/19805c5814225ef6a3c96bad.json
+    "a25186b90f16ad0ae397e72bd748a8150ebbfbcedc107057605e64245d36f243",   // prompt_cache/19805c5814225ef6a3c96bad.pt
+    "995d82dd6f27b0b3de6bd526d585a8b12aa6ae461fa0de9d1ccc63b7c2653150",   // prompt_cache/c9138bdd2a8e8feabc812558.json
+    "6af2658b9e0c99ed3e3446eae0484fd84ec2bdeee3bb90d1f9312eaae3202fe6",   // prompt_cache/c9138bdd2a8e8feabc812558.pt
+};
+
+}  // namespace
+
+QString published_model_index_url() { return QStringLiteral("https://www.fxtdstudios.com/rudra-docs/models.json"); }
+
+QString default_model_index_url() { return QSettings().value("models/indexUrl", published_model_index_url()).toString(); }
+
+bool is_known_model_file(const QString& sha256) {
+    const QByteArray want = sha256.toLower().toLatin1();
+    for (const char* known : kKnownModelFiles)
+        if (want == known) return true;
+    return false;
+}
+
+std::vector<RemoteModel> known_models(std::vector<RemoteModel> all, int* left_out) {
+    std::vector<RemoteModel> out;
+    int left = 0;
+    for (auto& m : all) {
+        bool ok = !m.files.empty();
+        for (const auto& f : m.files) ok = ok && QUrl(f.url).scheme() == "https" && is_known_model_file(f.sha256);
+        if (ok) out.push_back(std::move(m));
+        else ++left;
+    }
+    if (left_out) *left_out = left;
+    return out;
 }
 
 QString default_download_root() {
@@ -217,8 +260,16 @@ void ModelDownloads::fetch_index(const QString& url) {
         } else {
             QString why;
             if (auto m = parse_model_index(r->readAll(), &why)) {
-                models_ = std::move(*m);
-                index_status_ = models_.empty() ? QStringLiteral("No models to download yet.") : QString();
+                int left_out = 0;
+                // From the published address, only the models this RUDRA knows by their checksums.
+                if (QUrl(url) == QUrl(published_model_index_url())) models_ = known_models(std::move(*m), &left_out);
+                else models_ = std::move(*m);
+                index_status_ = left_out > 0 ? QStringLiteral("%1 in the list %2 a newer RUDRA: update RUDRA to download %3.")
+                                                   .arg(left_out == 1 ? QStringLiteral("One model") : QStringLiteral("%1 models").arg(left_out),
+                                                        left_out == 1 ? QStringLiteral("needs") : QStringLiteral("need"),
+                                                        left_out == 1 ? QStringLiteral("it") : QStringLiteral("them"))
+                                : models_.empty() ? QStringLiteral("No models to download yet.")
+                                                  : QString();
             } else {
                 index_status_ = why;
             }

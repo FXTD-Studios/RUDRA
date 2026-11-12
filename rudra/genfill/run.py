@@ -36,9 +36,9 @@ is the master's bit for bit. No brightness estimator, no gain cap: the model's o
 LoRA trained for it (v4); with v1-v3 it draws nothing useful (measured 9 Nov).
 --rerender-hue source [--rerender-colour <0..1>], --rerender-level <x white>, --rerender-smooth <0..1>
 (10 Nov 2026, after the v4 gates on 09V; composite.finish_rerender): the fill takes the source's
-colour (with a share of the model's own), its level is at least the source-led one (the master's
-own at tau_high, <x white> where the source is clipped; the model's own where brighter, up to 2 stops
-over) with the model's detail on it, and it follows the previous frame. With a level the fill acts
+colour (with a share of the model's own), its level is <x white> with the model's detail on it,
+crossfaded into the master by the
+source's code (the master at tau_high, the whole fill at code 253), and it follows the previous frame. With a level the fill acts
 only where the source is near white in every channel (composite.neutral_weight): a saturated
 highlight is left to the master. All off by default: the model's own colour and level.
 """
@@ -899,8 +899,8 @@ def main(argv=None):
     ap.add_argument('--rerender-colour', type=float, default=0.0,
                     help="with --rerender-hue source: the share of the model's own colour kept, 0..1 (e.g. 0.3)")
     ap.add_argument('--rerender-level', type=float, default=0.0,
-                    help="with --region-rerender: the least level where the source is clipped, in SDR whites (e.g. 3): the model's "
-                         "detail on a level that follows the source, the model's own level where brighter; 0 keeps the model's own")
+                    help="with --region-rerender: the level where the source is clipped, in SDR whites (e.g. 3): the model's "
+                         "detail on it, crossfaded into the master by the source's code; 0 keeps the model's own level")
     ap.add_argument('--rerender-smooth', type=float, default=0.0,
                     help="with --region-rerender: how much of the previous frame's fill luminance is kept, 0..1 (e.g. 0.8); 0 is off")
     a = ap.parse_args(argv)

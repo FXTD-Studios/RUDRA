@@ -137,8 +137,12 @@ def test_finish_rerender_is_off_by_default_and_sets_hue_level_and_time():
     assert np.array_equal(out[~inside], fill[~inside])                          # outside the weight: as given
     assert abs(float(np.median(lum(out[30:70, 70:100]))) / white - 3.0) < 0.15  # clipped: the level, in SDR whites
     assert float(np.median(lum(out[30:70, 34:42]))) < 0.8 * float(np.median(lum(out[30:70, 70:100])))   # darker source, darker fill
+    from rudra.genfill.composite import RERENDER_CEILING_STOPS
     bright = finish_rerender(fill * 64.0, master, source, codes, weight, level=3.0, white=white)   # the model far brighter
-    assert abs(float(np.median(lum(bright[30:70, 70:100]))) / white - 12.0) < 0.6   # its own level, to the 2-stop ceiling
+    top = 3.0 * 2.0 ** RERENDER_CEILING_STOPS                                   # its own level only to the ceiling (0: not at all)
+    assert abs(float(np.median(lum(bright[30:70, 70:100]))) / white - top) < 0.05 * top
+    edge = finish_rerender(fill, master, source, np.full_like(codes, 240), weight, hue='source', level=3.0, white=white)
+    assert np.allclose(edge[inside], master[inside], rtol=1e-3, atol=1e-5)      # at tau_high the fill is the master: no step
     core = out[30:70, 70:100].reshape(-1, 3).mean(0)
     assert abs(core[1] / core[0] - 1.05) < 0.01 and abs(core[2] / core[0] - 1.05) < 0.01   # the source's colour
     mixed = finish_rerender(fill, master, source, codes, weight, hue='source', colour=0.5)[30:70, 70:100].reshape(-1, 3).mean(0)

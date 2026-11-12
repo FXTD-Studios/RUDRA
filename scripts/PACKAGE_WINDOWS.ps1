@@ -153,6 +153,14 @@ Copy-Item "$OrtPkg\build\native\include\*" "$OrtRoot\include\" -Force
 Copy-Item "$OrtPkg\runtimes\win-x64\native\*" "$OrtRoot\lib\" -Force
 $DmlDll = Get-ChildItem "$DmlPkg\bin\x64-win" -Filter DirectML.dll | Select-Object -First 1
 if (-not $DmlDll) { Fail "DirectML.dll not found in $DmlPkg" }
+# The two NuGet packages are not pinned by hash (11 Nov 2026 security review), so the DLLs that go
+# into the package are checked by their signature instead: valid, and Microsoft's.
+foreach ($dll in @((Join-Path $OrtRoot "lib\onnxruntime.dll"), $DmlDll.FullName)) {
+    $sig = Get-AuthenticodeSignature -FilePath $dll
+    if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notmatch "O=Microsoft Corporation") {
+        Fail "$dll is not signed by Microsoft (signature: $($sig.Status), $($sig.SignerCertificate.Subject)): not packaged"
+    }
+}
 Write-Host "ONNX Runtime $OrtVersion (DirectML), DirectML $DmlVersion"
 
 $CvRoot = Join-Path $Deps "opencv-$OpenCvVersion"

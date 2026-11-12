@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rudra-hdr"
-version = "1.2.3"   # the app's version: the packages carry this code in python/
+version = "1.2.4"   # the app's version: the packages carry this code in python/
 description = "Radiometric dynamic-range conditioning and HDR decoder research"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
