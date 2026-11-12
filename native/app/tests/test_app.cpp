@@ -6370,6 +6370,7 @@ TEST(GenFill, RegionRerenderIsOptInAndRunsAsTested) {
     EXPECT_EQ(after("--rerender-level"), "3.3");
     EXPECT_EQ(after("--rerender-smooth"), "0.8");
     EXPECT_EQ(after("--rerender-dip"), "0.3");   // 12 Nov 2026: no dark smudges beside a silhouette
+    EXPECT_FALSE(a.contains("--rerender-still"));     // 12 Nov 2026: tried on water, cost 09V its structure: off
     EXPECT_FALSE(a.contains("--source-start"));
     EXPECT_FALSE(a.contains("--brightness-offset"));
     EXPECT_FALSE(a.contains("--focus"));

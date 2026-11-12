@@ -51,5 +51,24 @@
     "the level on saturated regions (FXTD plates): left to the master by the scope rule"
   ],
   "decision_rule": "The region re-render may be offered in the app as AI fill v4, EXPERIMENTAL and off by default, with the amended inference above, its own provenance (the contract and the rerender settings are in genfill.json and the EXR), loading the v4 LoRA only in this mode. Not before the second shot passes. No further training without Ahmed's decision.",
-  "release_authorized": false
+  "release_authorized": false,
+  "status_2026_11_13": {
+    "verdict": "PARKED. No second shot passes. v4 is not released; 1.2.4 is held (Ahmed, 12 Nov).",
+    "app_inference": "as 'amendment.inference' plus --rerender-dip 0.3 (12 Nov: caps dark detail beside silhouettes)",
+    "09V": "PASS: 3.11 x white, G/R 1.10, S 0.056/0.092/0.101, T 0.028, O 0 (finish7, own source)",
+    "held_out_H": "PASS: PU21 -3 EV delta -26.5, CI -33.4 to -19.4, better in 21 of 22",
+    "Porch": "FAIL on S only (0.048/0.010): a softbox is flat; not accepted (Ahmed, 12 Nov)",
+    "water": "FAIL: S frame 1 0.035; T static clipped p95 0.19 EV (the analytic master's own: 0.5-2.3 EV)",
+    "tried_after_the_failures": [
+      "--rerender-still 0.9 (hold the fill where the source holds still): water T 0.11, but 09V S fell to 0.048/0.045/0.056. Kept in the code, off in the app.",
+      "a pre-roll of 4 mirrored frames before the first window: water frame 1 S 0.035 -> 0.032, no effect. Removed.",
+      "holding the master's share of the crossfade where the source holds still: no effect on water or 09V (the flicker is the model's own detail at code 255). Removed."
+    ],
+    "stop_rule": "agreed 12 Nov: no further render-time tuning; the next step is a cause, not a setting",
+    "what_would_move_it": [
+      "why frame 1 is the weakest on every shot (09V 0.056, Porch 0.048, water 0.035): not the model's first frame",
+      "the model's detail is not steady from frame to frame on still pixels: training with temporal consistency, or moving bright regions in the clips",
+      "a second test shot of the kind the mode is for: a near-white sky, window or open door"
+    ]
+  }
 }

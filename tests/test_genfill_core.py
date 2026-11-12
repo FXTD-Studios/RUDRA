@@ -157,6 +157,26 @@ def test_finish_rerender_is_off_by_default_and_sets_hue_level_and_time():
         finish_rerender(fill, master, source, codes, weight, hue='other')
 
 
+def test_finish_rerender_holds_the_fill_where_the_source_holds_still():
+    from rudra.genfill.composite import LUMA_AP1, finish_rerender
+    h, w = 32, 48
+    codes = np.full((h, w, 3), 252, np.uint8)
+    source = np.power(codes.astype(np.float32) / 255.0, 2.4)
+    fill = np.full((h, w, 3), 2.0, np.float32)
+    weight = np.ones((h, w), np.float32)
+    lum = lambda x: x @ LUMA_AP1                                                # noqa: E731
+    state = {}
+    a = finish_rerender(fill, source, source, codes, weight, smooth=0.5, still=0.9, state=state)
+    moved = codes.copy()
+    moved[:, : w // 2] = 240                                                    # the left half of the source changes
+    b = finish_rerender(fill * 2.0, source, source, moved, weight, smooth=0.5, still=0.9, state=state)
+    step = np.log2(lum(b) / lum(a))
+    assert np.allclose(step[:, w // 2:], 0.1, atol=1e-3)                       # held: 0.9 kept, a stop arrives as 0.1
+    assert np.allclose(step[:, : w // 2], 0.5, atol=1e-3)                      # moved: smooth 0.5 stands
+    with pytest.raises(ValueError):
+        finish_rerender(fill, source, source, codes, weight, still=1.0)
+
+
 def test_neutral_weight_leaves_a_saturated_highlight_to_the_master():
     from rudra.genfill.composite import neutral_weight
     codes = np.array([[[254, 254, 254], [245, 254, 254], [255, 190, 120], [255, 210, 200], [0, 0, 0]]], np.uint8)

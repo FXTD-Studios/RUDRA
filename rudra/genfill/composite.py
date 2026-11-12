@@ -78,7 +78,8 @@ def white_scale(master: np.ndarray, codes: np.ndarray) -> float | None:
 
 def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray, codes: np.ndarray, weight: np.ndarray,
                     hue: str = 'model', colour: float = 0.0, level: float = 0.0, smooth: float = 0.0,
-                    white: float = 1.0, tau_high: int = 240, state: dict | None = None, dip: float = 0.0) -> np.ndarray:
+                    white: float = 1.0, tau_high: int = 240, state: dict | None = None, dip: float = 0.0,
+                    still: float = 0.0) -> np.ndarray:
     """The region re-render's fill, finished before the blend (10 Nov 2026, after the v4 gates on 09V:
     the v4 LoRA drew the structure, but too blue, at 1.2 x white where 2.5-4 was asked, its level
     drifting 0.85-1.72 x white along the shot with jumps at the window seams, and brighter where the
@@ -112,12 +113,18 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
                     Brighter detail is not touched. Off (0) is the fill as gated on 11 Nov
       smooth > 0    the fill's log luminance follows the previous frame's (an EMA, this share kept)
                     wherever both frames are filled; `state` (a dict the caller keeps for the shot)
-                    carries it. A newly filled pixel starts from its own value."""
+                    carries it. A newly filled pixel starts from its own value.
+      still > 0     where the source holds still (every channel within 2 codes of the previous frame)
+                    this share is kept instead of `smooth`: nothing in the source says the light there
+                    changed, so the fill should not either. 12 Nov 2026, water.mp4: the static clipped
+                    pixels moved 0.19 EV (p95) with smooth 0.8 alone, 0.06 with still 0.9; the
+                    analytic master's own were 0.5 to 2.3 EV. Where the source moves, `smooth` stands.
+                    It also averages the model's detail away (09V's structure halved): off in the app."""
     if hue not in RERENDER_HUES:
         raise ValueError(f'hue must be one of {", ".join(RERENDER_HUES)}')
-    if not 0.0 <= smooth < 1.0 or not 0.0 <= colour <= 1.0 or level < 0 or dip < 0:
-        raise ValueError('smooth must be in [0, 1), colour in [0, 1], level >= 0, dip >= 0')
-    if hue == 'model' and level <= 0 and smooth <= 0:
+    if not 0.0 <= smooth < 1.0 or not 0.0 <= colour <= 1.0 or level < 0 or dip < 0 or not 0.0 <= still < 1.0:
+        raise ValueError('smooth and still must be in [0, 1), colour in [0, 1], level >= 0, dip >= 0')
+    if hue == 'model' and level <= 0 and smooth <= 0 and still <= 0:
         return fill
     import cv2
     on = weight > 0
@@ -162,12 +169,17 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
         y_m = np.maximum(master @ LUMA_AP1, 1e-6).astype(np.float32)
         log_y = ((1.0 - s) * np.log2(y_m) + s * whole).astype(np.float32)
         chroma = ((1.0 - s[..., None]) * (master / y_m[..., None]) + s[..., None] * chroma).astype(np.float32)
-    if smooth > 0 and state is not None:
+    if (smooth > 0 or still > 0) and state is not None:
         prev = state.get('log_y')
         if prev is not None and prev.shape == log_y.shape:
             both = on & state['on']
-            log_y[both] = smooth * prev[both] + (1.0 - smooth) * log_y[both]
-        state['log_y'], state['on'] = log_y, on
+            keep = np.full(log_y.shape, np.float32(smooth))
+            pc = state.get('codes')
+            if still > 0 and pc is not None and pc.shape == codes.shape:
+                held = np.abs(codes.astype(np.int16) - pc.astype(np.int16)).max(-1) <= 2
+                keep[held] = np.float32(still)
+            log_y[both] = keep[both] * prev[both] + (1.0 - keep[both]) * log_y[both]
+        state['log_y'], state['on'], state['codes'] = log_y, on, codes.copy()
     out = np.array(fill, np.float32, copy=True)
     out[on] = (np.exp2(log_y)[..., None] * chroma)[on]
     return out

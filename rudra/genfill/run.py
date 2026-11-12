@@ -72,6 +72,7 @@ class Rerender:
     smooth: float = 0.0    # > 0: the fill's log luminance follows the previous frame's (EMA share kept)
     start: int = 0         # the source frame the master's first frame was made from (the app's preview of one frame)
     dip: float = 0.0       # > 0: the fill's fine detail at most this many stops under its surroundings (finish_rerender)
+    still: float = 0.0     # > 0: the share of the previous frame kept where the source holds still (finish_rerender)
     CONDITIONS = ('bt1886', 'aces')
 
 
@@ -659,10 +660,10 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                     w_plain = (weight * ramp * ramp * (3 - 2 * ramp)).astype(np.float32)
                     if rerender.level > 0:                     # only where the source is near white in every channel
                         w_plain = (w_plain * neutral_weight(codes[i])).astype(np.float32)
-                    if rerender.hue != 'model' or rerender.level > 0 or rerender.smooth > 0:
+                    if rerender.hue != 'model' or rerender.level > 0 or rerender.smooth > 0 or rerender.still > 0:
                         fill_lin = finish_rerender(fill_lin, fr['ap1'], condition_of(codes[i], 'bt1886', view), codes[i], w_plain,
                                                    rerender.hue, rerender.colour, rerender.level, rerender.smooth,
-                                                   finish_white, ms.tau_high, finish_state, dip=rerender.dip)
+                                                   finish_white, ms.tau_high, finish_state, dip=rerender.dip, still=rerender.still)
                     out_ap1, alpha = plain_blend(fr['ap1'], fill_lin, w_plain)
                 else:
                     out_ap1, alpha = r_safe_blend(fr['ap1'], fill_lin, weight, view)
@@ -848,7 +849,8 @@ def serve(model, view, a, emit, FillSettings) -> int:
                                                 float(r.get('rerender_level', a.rerender_level)),
                                                 float(r.get('rerender_smooth', a.rerender_smooth)),
                                                 int(r.get('source_start', a.source_start)),
-                                                float(r.get('rerender_dip', a.rerender_dip)))
+                                                float(r.get('rerender_dip', a.rerender_dip)),
+                                                float(r.get('rerender_still', a.rerender_still)))
                               if r.get('region_rerender', a.region_rerender) and r.get('source', a.source) else None)
             tagged(event='done', ok=True, out=str(out), **rep['stats'])
         except Exception as e:  # noqa: BLE001 - one failed request does not end the server
@@ -918,6 +920,9 @@ def main(argv=None):
     ap.add_argument('--rerender-dip', type=float, default=0.0,
                     help="with --rerender-level: the fill's fine detail at most this many stops under its surroundings "
                          "(e.g. 0.3: no dark smudges beside a silhouette); 0 is off, the fill as gated")
+    ap.add_argument('--rerender-still', type=float, default=0.0,
+                    help="with --region-rerender: the share of the previous frame's fill kept where the source holds still "
+                         "(within 2 codes), in place of --rerender-smooth there (e.g. 0.9); 0 is off")
     a = ap.parse_args(argv)
     if not a.serve and (not a.master or not a.out):
         ap.error('--master and --out are required (or --serve)')
@@ -956,7 +961,7 @@ def main(argv=None):
                           cancel=stop.is_set, pattern=a.glob, brightness=brightness, region=region,
                           fallback=a.fallback, focus=a.focus,
                           rerender=Rerender(a.source, a.condition, a.rerender_hue, a.rerender_colour, a.rerender_level, a.rerender_smooth,
-                                            a.source_start, a.rerender_dip)
+                                            a.source_start, a.rerender_dip, a.rerender_still)
                           if a.region_rerender else None)
         emit(event='done', ok=True, out=str(out), **rep['stats'])
         return 0
