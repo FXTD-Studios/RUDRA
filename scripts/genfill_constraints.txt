@@ -6,18 +6,20 @@
 #   uv pip compile <the bootstrap's package list> -c <these versions> --universal --python-version 3.12
 # PyTorch is not listed: it comes from its own index for the GPU (RUDRA_TORCH_INDEX).
 # To move a version: change it here, run Set up automatically on a clean machine, preview a fill.
-# 13 Nov 2026: pillow 12.3.0 -> 13.0.0 and urllib3 2.7.0 -> 2.8.0 (pip-audit: published flaws in both).
+# 13 Nov 2026 (pip-audit): pillow 12.3.0 -> 13.0.0, urllib3 2.7.0 -> 2.8.0, certifi 2026.6.17 -> 2026.10.18,
+# filelock 3.29.0 -> 4.2.1, fsspec 2026.4.0 -> 2026.6.0. accelerate 1.14.0 has PYSEC-2026-3804 with no fixed
+# release yet: ignored in .github/workflows/security.yml, see the reason there.
 accelerate==1.14.0
 annotated-doc==0.0.6
 annotated-types==0.8.0
 anyio==4.16.0
-certifi==2026.6.17
+certifi==2026.10.18
 charset-normalizer==3.5.2
 click==8.5.1
 colorama==0.4.6 ; sys_platform == 'win32'
 diffusers==0.39.0
-filelock==3.29.0
-fsspec==2026.4.0
+filelock==4.2.1
+fsspec==2026.6.0
 ftfy==6.3.1
 h11==0.16.0
 hf-xet==1.8.0 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'

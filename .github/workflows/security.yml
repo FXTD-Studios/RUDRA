@@ -29,12 +29,12 @@ jobs:
       - name: Install pip-audit
         run: python -m pip install --upgrade pip pip-audit
       - name: The AI fill's fixed versions
-        run: pip-audit --requirement scripts/genfill_constraints.txt --disable-pip --no-deps --progress-spinner off
+        run: pip-audit --requirement scripts/genfill_constraints.txt --disable-pip --no-deps --progress-spinner off --ignore-vuln PYSEC-2026-3804   # accelerate <= 1.14.0, no fix yet: path traversal via a sharded checkpoint index; the AI fill loads only its own base and checksummed LoRA. Remove when fixed.
       - name: The project's own dependencies, as they resolve today
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[genfill,test]"
-          pip-audit --local --skip-editable --progress-spinner off
+          pip-audit --local --skip-editable --progress-spinner off --ignore-vuln PYSEC-2026-3804   # as above
 
   codeql:
     name: CodeQL (Python)

@@ -37,7 +37,8 @@ stale files are fetched again.
   version with a published flaw in reading files or models.
 - **Links from the model list and the update check open only when they are https.**
 - **Checkpoints are loaded as data only.** A `.pt` file can carry code; RUDRA's Python tools
-  no longer run it. For a file you made yourself and trust, set `RUDRA_ALLOW_PICKLE=1`.
+  no longer run it, whatever the settings. An old checkpoint of your own with objects in it is
+  re-saved once as tensors (a state_dict).
 - **RUDRA Studio asks for a token** when it is started for the network rather than for this
   computer alone. Its console prints the address to open.
 - **RUDRA downloads only the models it knows.** The checksums of every released model are

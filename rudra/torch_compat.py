@@ -9,7 +9,6 @@ outside it, on every torch version.
 
 from __future__ import annotations
 
-import os
 import pickle
 
 import torch
@@ -24,19 +23,19 @@ def load_checkpoint(path, map_location="cpu"):
     (dicts, lists, numbers, strings), which is all a RUDRA checkpoint holds:
     every committed one in ``checkpoints/`` references nothing else.
 
-    A file that holds more is refused with a message that says so. For a file
-    you made yourself and trust (an old training checkpoint with objects in
-    it), set ``RUDRA_ALLOW_PICKLE=1`` and run again.
+    A file that holds more is refused with a message that says so. There is no
+    way round it (13 Nov 2026: the ``RUDRA_ALLOW_PICKLE`` opt-in is gone, so no
+    setting makes RUDRA run code from a file). An old training checkpoint with
+    objects in it is re-saved once as tensors and plain values by the code that
+    made it.
     """
-    if os.environ.get("RUDRA_ALLOW_PICKLE") == "1":
-        return torch.load(path, map_location=map_location, weights_only=False)
     try:
         return torch.load(path, map_location=map_location, weights_only=True)
     except pickle.UnpicklingError as exc:
         raise RuntimeError(
             f"{path} holds more than tensors and plain values, so loading it would run code "
-            "from the file. If you made this file yourself and trust it, set "
-            "RUDRA_ALLOW_PICKLE=1 and run again."
+            "from the file, and RUDRA does not. If you made this file, re-save it with only "
+            "tensors and plain values (a state_dict) and load that."
         ) from exc
 
 
