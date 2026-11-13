@@ -6,6 +6,7 @@
 #   uv pip compile <the bootstrap's package list> -c <these versions> --universal --python-version 3.12
 # PyTorch is not listed: it comes from its own index for the GPU (RUDRA_TORCH_INDEX).
 # To move a version: change it here, run Set up automatically on a clean machine, preview a fill.
+# 13 Nov 2026: pillow 12.3.0 -> 13.0.0 and urllib3 2.7.0 -> 2.8.0 (pip-audit: published flaws in both).
 accelerate==1.14.0
 annotated-doc==0.0.6
 annotated-types==0.8.0
@@ -38,7 +39,7 @@ opencv-python-headless==5.0.0.93
 openexr==3.4.13
 packaging==26.3
 peft==0.21.2
-pillow==12.3.0
+pillow==13.0.0
 psutil==7.2.2
 pydantic==2.14.3
 pydantic-core==2.50.4
@@ -57,6 +58,6 @@ transformers==5.13.1
 typer==0.29.1
 typing-extensions==4.16.0
 typing-inspection==0.4.5
-urllib3==2.7.0
+urllib3==2.8.0
 wcwidth==0.9.4
 zipp==4.1.0
