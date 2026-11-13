@@ -6387,12 +6387,28 @@ TEST(GenFill, RegionRerenderIsOptInAndRunsAsTested) {
     EXPECT_EQ(after("--source-start"), "36");
     EXPECT_EQ(after("--condition"), "aces");
     QSettings().clear();
-    app::MainWindow w(false);
-    EXPECT_FALSE(w.deliver_choice().ai.rerender);
-    w.set_deliver("ai_rerender", "1");
-    EXPECT_TRUE(w.deliver_choice().ai.rerender);
-    EXPECT_TRUE(QSettings().value("deliver/aiRerender").toBool());
-    ASSERT_NE(w.findChild<QWidget*>("deliverAiRerender"), nullptr);
+    {   // 13 Nov 2026: v4 is parked. Without RUDRA_GENFILL_V4 it is neither shown nor run, whatever was saved.
+        qunsetenv("RUDRA_GENFILL_V4");
+        QSettings().setValue("deliver/aiRerender", true);
+        app::MainWindow w(false);
+        EXPECT_FALSE(w.deliver_choice().ai.rerender);
+        w.set_deliver("ai_rerender", "1");
+        EXPECT_FALSE(w.deliver_choice().ai.rerender);
+        auto* row = w.findChild<QWidget*>("deliverAiRerender");
+        ASSERT_NE(row, nullptr);
+        EXPECT_TRUE(row->isHidden());
+        QSettings().clear();
+    }
+    qputenv("RUDRA_GENFILL_V4", "1");
+    {
+        app::MainWindow w(false);
+        EXPECT_FALSE(w.deliver_choice().ai.rerender);
+        w.set_deliver("ai_rerender", "1");
+        EXPECT_TRUE(w.deliver_choice().ai.rerender);
+        EXPECT_TRUE(QSettings().value("deliver/aiRerender").toBool());
+        ASSERT_NE(w.findChild<QWidget*>("deliverAiRerender"), nullptr);
+    }
+    qunsetenv("RUDRA_GENFILL_V4");
     QSettings().clear();
 }
 

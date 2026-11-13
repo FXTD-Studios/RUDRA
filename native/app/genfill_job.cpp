@@ -242,6 +242,8 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
     return a;
 }
 
+bool genfill_v4_enabled() { return qEnvironmentVariableIntValue("RUDRA_GENFILL_V4") == 1; }
+
 fs::path genfill_v4_lora() {
     std::vector<fs::path> places;
     if (const QString saved = QSettings().value("genfill/loraV4").toString(); !saved.isEmpty()) places.push_back(pq(saved));

@@ -314,6 +314,7 @@ void MainWindow::sync_ai_prompt_bar() {
     for (auto* row : findChildren<QWidget*>(QStringLiteral("aiSuggestChips"))) row->setEnabled(true);
     for (auto* b : findChildren<QPushButton*>(QStringLiteral("aiSuggestRun"))) b->setVisible(!v4);
     if (auto* mode = findChild<QPushButton*>("viewerAiRerender")) {
+        mode->setVisible(genfill_v4_enabled());   // 13 Nov 2026: v4 is parked
         mode->setChecked(deliver_.ai.rerender);
         mode->setText(deliver_.ai.rerender ? QStringLiteral("Fill: v4 re-render") : QStringLiteral("Fill: v3"));
         mode->setEnabled(!genfill_preview_busy_);

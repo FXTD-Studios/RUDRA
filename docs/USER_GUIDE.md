@@ -226,18 +226,6 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   and every pixel outside it is the master's, bit for bit. No 8-bit code of
   the SDR view ever changes, and every drawn pixel is marked in
   `rudra.generated`.
-- **Region re-render (v4)** (1.2.4, experimental) is AI fill's second mode,
-  with its own model. Where v3 draws only inside fully clipped pixels, v4
-  draws a whole bright region again: a window, an open door, a sky parked just
-  under white. Turn it on in Deliver > AI fill, or with **Fill: v3 / v4
-  re-render** over the viewer. Type what is in the bright area in **Prompt**
-  ("overcast sky over the sea, soft grey clouds"); with no prompt it draws
-  texture with no subject. **Advanced** holds the seed and the steps; another
-  seed draws another plausible picture. **Preview AI fill** fills 17 frames
-  round the playhead (a minute or two) and shows the frame on screen; **Fill**,
-  **Master** and **Invented** switch what the viewer shows. Inside the region
-  the SDR's codes are not kept, unlike v3; outside it every pixel is the
-  master's. It is tested on the analytic route (Source > Analytic).
 - **Master EXR** (M): ACES 2065-1 (or linear Rec.2020) EXR, a frame, all
   frames or a range, with a JSON sidecar describing exactly how it was made.
 - **Containers** (1.1): the analytic master writes ACES 2065-1, ACEScg,

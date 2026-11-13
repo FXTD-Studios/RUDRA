@@ -103,7 +103,7 @@ void MainWindow::load_deliver_settings() {
     c.ai.shape_gain = std::clamp(st.value("deliver/aiShapeGain", c.ai.shape_gain).toDouble(), 0.0, 2.0);
     c.ai.fallback = st.value("deliver/aiFallback", true).toBool();   // RUDRA 1.1: on unless turned off
     c.ai.focus_region = st.value("deliver/aiFocus", false).toBool();  // 7 Nov 2026: off (v3) unless turned on
-    c.ai.rerender = st.value("deliver/aiRerender", false).toBool();   // 12 Nov 2026: v4 region re-render, experimental, off
+    c.ai.rerender = genfill_v4_enabled() && st.value("deliver/aiRerender", false).toBool();   // v4: parked, development only
     c.ai.prompt_highlight = st.value("deliver/aiPromptHighlight").toString();
     c.ai.prompt_shadow = st.value("deliver/aiPromptShadow").toString();
     if (c.source != "aces" && c.source != "analytic") c.source = "aces";
@@ -188,7 +188,7 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
         deliver_.ai.focus_region = value == "1" || value == "true";
         st.setValue("deliver/aiFocus", deliver_.ai.focus_region);
     } else if (key == "ai_rerender") {   // 12 Nov 2026: AI fill v4, region re-render (experimental)
-        deliver_.ai.rerender = value == "1" || value == "true";
+        deliver_.ai.rerender = genfill_v4_enabled() && (value == "1" || value == "true");   // parked 13 Nov 2026
         st.setValue("deliver/aiRerender", deliver_.ai.rerender);
         refresh_prompt_chips();   // v4 shows the presets only
     } else if (key == "ai_fallback") {   // RUDRA 1.1 priority 5
@@ -330,7 +330,10 @@ void MainWindow::sync_deliver() {
         }
     if (auto* fb = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFallback"))) fb->set_on(c.ai.fallback);
     if (auto* fo = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFocus"))) fo->set_on(c.ai.focus_region);
-    if (auto* rr = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiRerender"))) rr->set_on(c.ai.rerender);
+    if (auto* rr = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiRerender"))) {
+        rr->set_on(c.ai.rerender);
+        rr->setVisible(genfill_v4_enabled());   // 13 Nov 2026: v4 is parked
+    }
     if (auto* rn = findChild<QLabel*>("deliverAiRegion"))   // the grade's region reaches the fill
         rn->setVisible(c.ai_fill && !c.ai.region_json.isEmpty());
     auto set_line = [this](const char* id, const QString& v) {

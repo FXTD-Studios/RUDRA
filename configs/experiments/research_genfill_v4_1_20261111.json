@@ -62,11 +62,12 @@
     "tried_after_the_failures": [
       "--rerender-still 0.9 (hold the fill where the source holds still): water T 0.11, but 09V S fell to 0.048/0.045/0.056. Kept in the code, off in the app.",
       "a pre-roll of 4 mirrored frames before the first window: water frame 1 S 0.035 -> 0.032, no effect. Removed.",
-      "holding the master's share of the crossfade where the source holds still: no effect on water or 09V (the flicker is the model's own detail at code 255). Removed."
+      "holding the master's share of the crossfade where the source holds still: no effect on water or 09V (the flicker is the model's own detail at code 255). Removed.",
+      "--rerender-independent (every window from the source alone, the overlaps crossfaded): no change on water (S 0.035/0.12/0.114, T 0.19); 09V still passes (S 0.056/0.072/0.103, T 0.026); held-out unchanged (one window per clip). So the detail does not grow by chaining: it follows the content. Kept in the code, off in the app."
     ],
-    "stop_rule": "agreed 12 Nov: no further render-time tuning; the next step is a cause, not a setting",
+    "stop_rule": "agreed 12 Nov: no further render-time tuning; the next step is a cause, not a setting; 13 Nov: the chunking fix was the last render-time step. Next is training or a proper second shot.",
     "what_would_move_it": [
-      "why frame 1 is the weakest on every shot (09V 0.056, Porch 0.048, water 0.035): not the model's first frame",
+      "the first frames' low structure is not chaining (independent windows changed nothing) and not the model's first frame (pre-roll changed nothing): it follows the content; on water the bright area at frame 1 is small and thin",
       "the model's detail is not steady from frame to frame on still pixels: training with temporal consistency, or moving bright regions in the clips",
       "a second test shot of the kind the mode is for: a near-white sky, window or open door"
     ]

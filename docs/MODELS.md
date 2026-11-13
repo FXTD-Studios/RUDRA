@@ -18,7 +18,6 @@ reconstruction, which needs no model, is the default.
 | **RUDRA ACES 2** (2.0, learned ACES 2.0 reconstruction with the lock; needs RUDRA 1.2.0) | `rudra_g1.ts` `7082eb869d265d6e…`<br>`rudra_g1.onnx` `880e7b698a099b8d…` | Apache 2.0 | Yes | **Release** (8 Nov 2026). See "Evidence" below |
 | **AI fill v3** (Wan2.1-VACE-1.3B LoRA + brightness estimator) | `rudra_genfill.safetensors` `9fff7eb8492ae626…`<br>`brightness.json` `34892fb840de138f…` | Apache 2.0; base model Wan2.1-VACE-1.3B is Apache 2.0 (Wan-AI) | Yes | **Experimental**, off by default. Passed its pre-registered gates on 25 held-out Poly Haven scenes (30 Oct 2026; `registration_v3.json`, `report_v3.json`) |
 
-| **AI fill v4, region re-render** (Wan2.1-VACE-1.3B LoRA; needs RUDRA 1.2.4) | `rudra_genfill.safetensors` `95d707eb3e5628d7…` | Apache 2.0; base model Wan2.1-VACE-1.3B is Apache 2.0 (Wan-AI) | Yes | **Experimental**, off by default. Draws a whole bright region again; it is not a hole filler (v3 stays for that). Gated on the analytic route only |
 
 Training data for RUDRA ACES 2 and AI fill v3: Poly Haven HDRIs (CC0), FXTD Studios' own footage and
 renders, procedurally generated scenes, CC0 plates. No non-commercial data,

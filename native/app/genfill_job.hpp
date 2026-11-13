@@ -139,6 +139,9 @@ std::optional<GenFillSetup> genfill_setup(QString* why = nullptr);
 // then the training workstation's run folder; only a file that is v4 by its SHA-256).
 std::optional<GenFillSetup> genfill_setup_for(const GenFillOptions& o, QString* why = nullptr);
 std::filesystem::path genfill_v4_lora();   // empty when none is found
+// AI fill v4 (region re-render) is parked (13 Nov 2026: it passes 09V and the held-out clips, not a second
+// shot). The app shows and runs it only with RUDRA_GENFILL_V4=1 set, for development.
+bool genfill_v4_enabled();
 
 class GenFillJob {
 public:
