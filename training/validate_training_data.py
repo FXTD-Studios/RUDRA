@@ -1,4 +1,4 @@
-"""validate_training_data.py -- Quick sanity check for .npz training pairs.
+r"""validate_training_data.py -- Quick sanity check for .npz training pairs.
 
 Usage:
     python validate_training_data.py G:\data\checkpoints\wan_hdr_pairs

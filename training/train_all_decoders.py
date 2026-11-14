@@ -1,4 +1,4 @@
-"""
+r"""
 train_all_decoders.py — Train Radiance decoders for ALL supported models in one run.
 
 Usage:
