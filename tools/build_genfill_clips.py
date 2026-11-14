@@ -178,12 +178,13 @@ def make_clip(job):
         recipe = job.get('recipe', 'v2')
         if recipe == 'v1':
             kind = 'highlight' if r < 0.5 else 'shadow' if r < 0.75 else 'random'
-        elif recipe == 'v4':   # v4 (9 Nov): half 'region' (a bright area parked under white by a display-referred curve)
+        elif recipe in ('v4', 'v4_2'):   # v4 (9 Nov): half 'region' (a bright area parked under white by a display-referred curve)
             kind = 'region' if r < 0.5 else 'highlight' if r < 0.7 else 'broad' if r < 0.85 else 'shadow' if r < 0.95 else 'random'
         else:   # v2: 'broad' = large areas only just above the clip (the overshoot case of v1.1)
             kind = 'highlight' if r < 0.4 else 'broad' if r < 0.65 else 'shadow' if r < 0.8 else 'random'
         if kind == 'region':
-            clip = region_clip(job, rng, pano if job['kind'] == 'equirect' else plate, native, F, h, w)
+            clip = region_clip(job, rng, pano if job['kind'] == 'equirect' else plate, native, F, h, w,
+                               static_share=REGION_STATIC_SHARE if recipe == 'v4_2' else 0.0)
             if clip is not None:
                 out.append(clip)
             continue
@@ -246,10 +247,26 @@ def make_clip(job):
 REGION_CURVES = {'aces': 0.30, 'hable': 0.20, 'reinhard': 0.15, 'agx': 0.15, 'camera_log': 0.20}
 REGION_TAU_LOW, REGION_TAU_HIGH = 225, 251          # tau_high jitter: the near-clip band, not just 255
 REGION_BRIGHT_CODE = 235                            # a clip has a region when 2 %..30 % of frame 0 is at or above this
+REGION_STATIC_SHARE = 0.35                          # v4.2: region clips with the camera held still
 
 
-def region_clip(job, rng, source, native, F, h, w):
-    """One 'region' clip (dict as make_clip's), or None when the view has no bright area to park."""
+def region_structure(truth0, mask0, erode=6, sigma=6.0):
+    """v4.2: the truth's structure inside the region on frame 0, in stops: the std of log2 luminance
+    minus its gaussian blur (sigma 6 px), over the mask eroded `erode` px -- the door gates' S measure,
+    taken on the truth. 0 when too little of the mask survives the erosion."""
+    import cv2
+    y = np.log2(np.maximum(np.asarray(truth0, np.float32) @ AP1_Y, 1e-6))
+    hp = y - cv2.GaussianBlur(y, (0, 0), sigma)
+    m = cv2.erode(mask0.astype(np.uint8), np.ones((2 * erode + 1, 2 * erode + 1), np.uint8)) > 0
+    return float(hp[m].std()) if m.sum() >= 64 else 0.0
+
+
+def region_clip(job, rng, source, native, F, h, w, static_share=0.0):
+    """One 'region' clip (dict as make_clip's), or None when the view has no bright area to park.
+
+    static_share (v4.2): this share of the clips holds the camera still (every frame frame 0's view),
+    with grain, when drawn, still changing per frame: the truth does not move while the codes do, so
+    the fill learns to stay put where the picture does (the water shot's T failure)."""
     from pipeline.sdr_render import CURVES
     from rudra.delivery.colorspace import convert
     from rudra.genfill.masks import MaskSettings, TemporalMask
@@ -273,8 +290,11 @@ def region_clip(job, rng, source, native, F, h, w):
     if off is None:
         return None
     ref *= np.float32(2.0 ** (base + off))
+    static = bool(static_share > 0 and rng.uniform() < static_share)
+    if static:
+        ref = np.repeat(ref[:1], F, 0)
     lin = ref
-    noise = bool(rng.uniform() < 0.3)
+    noise = bool(rng.uniform() < (0.6 if static else 0.3))
     if noise:
         sigma = rng.uniform(0.002, 0.01)
         n = rng.standard_normal(ref.shape).astype(np.float32)
@@ -298,7 +318,8 @@ def region_clip(job, rng, source, native, F, h, w):
                                    'licence': job['licence'], 'kind': 'region', 'ev': round(base + off, 4),
                                    'offset': off, 'noise': noise, 'tau_high': ms.tau_high, 'tau_low': ms.tau_low,
                                    'mask_fraction': round(frac, 5), 'core_fraction': round(float(core.mean()), 5),
-                                   'curve': curve, 'condition': 'bt1886', 'split': job['split']}}
+                                   'curve': curve, 'condition': 'bt1886', 'split': job['split'],
+                                   'static': static, 'structure': round(region_structure(ref[0], mask[0]), 5)}}
 
 
 # ------------------------------------------------------------------------------- planning
@@ -321,7 +342,7 @@ def plan(a):
                 and r.get('licence_licence') in COMMERCIAL):
             jobs.append({'kind': 'plate', 'row': r, 'asset_id': r['asset_id'], 'scene_id': r['scene_id'],
                          'source': r['source_id'], 'licence': r.get('licence_licence'),
-                         'clips': a.clips_per_fxtd if (r.get('licence_source') == 'fxtd' and a.recipe in ('v2', 'v4')) else a.clips_per_plate})
+                         'clips': a.clips_per_fxtd if (r.get('licence_source') == 'fxtd' and a.recipe in ('v2', 'v4', 'v4_2')) else a.clips_per_plate})
     for j in jobs:
         j.update({'frames': a.frames, 'h': a.height, 'w': a.width, 'seed': a.seed, 'root': a.root, 'recipe': a.recipe,
                   'split': 'dev' if dev_scene(j['scene_id'], a.dev_fraction) else 'train'})
@@ -346,10 +367,11 @@ def main():
     ap.add_argument('--clips-per-hdri', type=int, default=5)
     ap.add_argument('--clips-per-plate', type=int, default=1)
     ap.add_argument('--clips-per-fxtd', type=int, default=2, help='v2: FXTD own footage weighted up')
-    ap.add_argument('--recipe', choices=('v1', 'v2', 'v4'), default='v2',
+    ap.add_argument('--recipe', choices=('v1', 'v2', 'v4', 'v4_2'), default='v2',
                     help="v2 (29 Oct): 'broad' mildly clipped clips, FXTD x2, code-255/0 core masks and frame-0 truth luminance stored; "
                          "v4 (9 Nov): half the clips 'region': the SDR through a display-referred curve (not the ACES view), "
-                         "a bright area parked just under white, the mask over the near-clip band, the condition the BT.1886 inverse")
+                         "a bright area parked just under white, the mask over the near-clip band, the condition the BT.1886 inverse; "
+                         "v4_2 (14 Nov): as v4, with 35 %% of the region clips held still and the truth's structure in the region stored")
     ap.add_argument('--dev-fraction', type=float, default=0.03)
     ap.add_argument('--limit', type=int, default=0, help='first N jobs (smoke test)')
     ap.add_argument('--previews', type=int, default=12, help='clips kept as raw sdr/truth for review')
@@ -463,9 +485,9 @@ def main():
     flush(); meta_f.close()
     meta = [json.loads(l) for l in (out / 'clips.jsonl').read_text().splitlines()]
     count = lambda k: dict(sorted({str(v): sum(1 for m in meta if m[k] == v) for v in {m[k] for m in meta}}.items()))
-    summary = {'clips': len(meta), 'recipe': a.recipe, 'has_core': a.recipe in ('v2', 'v4') and not a.render_only, 'frames': a.frames, 'size': [a.height, a.width], 'sources_used': len({m['asset_id'] for m in meta}),
+    summary = {'clips': len(meta), 'recipe': a.recipe, 'has_core': a.recipe in ('v2', 'v4', 'v4_2') and not a.render_only, 'frames': a.frames, 'size': [a.height, a.width], 'sources_used': len({m['asset_id'] for m in meta}),
                'scenes_used': len({m['scene_id'] for m in meta}), 'by_source': count('source'), 'by_kind': count('kind'),
-               'by_curve': count('curve') if a.recipe == 'v4' else None,
+               'by_curve': count('curve') if a.recipe in ('v4', 'v4_2') else None,
                'by_split': count('split'), 'by_licence': count('licence'),
                'commercial_clean': all(m['licence'] in COMMERCIAL for m in meta),
                'mask_fraction_mean': float(np.mean([m['mask_fraction'] for m in meta])) if meta else 0.0,
