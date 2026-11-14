@@ -96,11 +96,19 @@ for any other grade the analytic route is the better tool, and the app says so
 when the Source curve is not ACES. The models are also on
 [Hugging Face](https://huggingface.co/fxtdstudios/rudra-models).
 
-**AI fill** (experimental, off by default) can draw detail inside large blown
-areas. It needs the Wan2.1-VACE-1.3B base model and a 16 GB GPU (on a Mac, 16 GB
-of memory or more); set it up with `scripts\GENFILL.ps1 -Setup` on Windows or
-`scripts/genfill_setup.sh` on a Mac. What it draws is
-a plausible guess, not recovered detail, so check every frame.
+**AI fill** (experimental, off by default) can draw detail the SDR never held. It
+has two modes, each its own model download:
+
+- **AI fill v3** fills only the pixels that are fully clipped: a lamp's core, a
+  sun, specular glints.
+- **Region re-render (v4)**, new in 1.2.4, draws a whole bright region again: a
+  window, an open door, a sky parked just under white. Tell it what is there with
+  a short prompt. It is tested on the analytic route.
+
+Both need the Wan2.1-VACE-1.3B base model and a 16 GB GPU (on a Mac, 16 GB of
+memory or more); set it up with `scripts\GENFILL.ps1 -Setup` on Windows or
+`scripts/genfill_setup.sh` on a Mac. What it draws is a plausible guess, not
+recovered detail, so check every frame.
 
 ## System requirements
 
@@ -115,7 +123,9 @@ a plausible guess, not recovered detail, so check every frame.
 
 - [User guide](https://www.fxtdstudios.com/rudra-docs/): every control, step by step
 - [Release notes](https://github.com/FXTD-Studios/RUDRA/releases/latest)
+  ([1.2.4 in this repository](docs/RELEASE_NOTES_1.2.4.md))
 - [Report a problem](https://github.com/FXTD-Studios/RUDRA/issues)
+- [Report a security problem privately](SECURITY.md)
 - Developers and researchers: [project overview](docs/PROJECT_OVERVIEW.md),
   [building from source](native/README.md), [training](docs/TRAINING.md)
 
@@ -143,7 +153,7 @@ Continuous integration (`native` and `shipped model` run when their files change
 ## Licence
 
 Copyright 2026 FXTD Studios. The code and the current models (RUDRA ACES 2,
-AI fill v3) are licensed under the [Apache License 2.0](LICENSE): free for
+AI fill v3 and v4) are licensed under the [Apache License 2.0](LICENSE): free for
 commercial use. Keep the [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE) files when
 you redistribute.
 

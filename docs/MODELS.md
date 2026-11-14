@@ -4,7 +4,7 @@ One table for every model RUDRA has published. The README, the Hugging Face
 model card, the user guide and `models.json` must say the same thing; if they
 disagree, this file is the one to correct them from.
 
-Updated 7 November 2026 (RUDRA 1.1.0; RUDRA ACES 2.0 release candidate).
+Updated 12 November 2026 (RUDRA 1.2.4).
 
 ## In the app (downloaded, not bundled)
 
@@ -18,7 +18,8 @@ reconstruction, which needs no model, is the default.
 | **RUDRA ACES 2** (2.0, learned ACES 2.0 reconstruction with the lock; needs RUDRA 1.2.0) | `rudra_g1.ts` `7082eb869d265d6e…`<br>`rudra_g1.onnx` `880e7b698a099b8d…` | Apache 2.0 | Yes | **Release** (8 Nov 2026). See "Evidence" below |
 | **AI fill v3** (Wan2.1-VACE-1.3B LoRA + brightness estimator) | `rudra_genfill.safetensors` `9fff7eb8492ae626…`<br>`brightness.json` `34892fb840de138f…` | Apache 2.0; base model Wan2.1-VACE-1.3B is Apache 2.0 (Wan-AI) | Yes | **Experimental**, off by default. Passed its pre-registered gates on 25 held-out Poly Haven scenes (30 Oct 2026; `registration_v3.json`, `report_v3.json`) |
 
-Training data for both: Poly Haven HDRIs (CC0), FXTD Studios' own footage and
+
+Training data for RUDRA ACES 2 and AI fill v3: Poly Haven HDRIs (CC0), FXTD Studios' own footage and
 renders, procedurally generated scenes, CC0 plates. No non-commercial data,
 and no third-party model code, weights or outputs.
 

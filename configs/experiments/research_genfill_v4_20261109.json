@@ -1,6 +1,6 @@
 {
   "id": "research_genfill_v4_20261109",
-  "written": "2026-11-09, after the 09V test against Beeble SwitchHDR (reports/app_test_09V_2026-11-09/beeble_how.html) and Ahmed's 'do the recommendations in order'; before any clip was built or any v4 output seen",
+  "written": "2026-11-09, after the 09V test against a commercial SDR-to-HDR tool (reports/app_test_09V_2026-11-09) and Ahmed's 'do the recommendations in order'; before any clip was built or any v4 output seen",
   "author": "FXTD Studios Research; approved by Ahmed (recommendation 4 of the 09V test)",
   "parents": ["research_genfill_v3_20261030 (PASS, the shipped AI fill: shape from the v1 LoRA, brightness from the estimator, blend at code 255 only)"],
   "problem": "On a grade not made through ACES 2.0, a bright exterior (an open door, a window, a sky) is parked at codes 230-254 with its structure flattened to two or three codes; the analytic route renders it as a flat wall at about 1.2 x diffuse white (BT.1886) and the AI fill, by its contract, invents only at code 255. Measured on 09V: the door interior is flat in the source at 8 and 10 bit (codes 253-255; 10-bit 1012-1023, 0.004 stops of structure), and the other tool's sea, hills and clouds correlate 0.01 with the source: generated inside its mask, with the source's hue, at 2.4-3.4 x white. Nothing in RUDRA does that, by design (r_safe_blend keeps every SDR code).",

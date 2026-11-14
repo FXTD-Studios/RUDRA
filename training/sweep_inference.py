@@ -122,7 +122,8 @@ def main() -> int:
     args = parser.parse_args()
 
     device = torch.device(args.device)
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    from rudra.torch_compat import load_checkpoint   # tensors only: no code from the file
+    checkpoint = load_checkpoint(args.checkpoint, map_location="cpu")
     config = checkpoint.get("config", {})
     model = SDR2HDRNet(base_channels=int(config.get("base_channels", 32)))
     model.load_state_dict(checkpoint.get("model", checkpoint), strict=True)

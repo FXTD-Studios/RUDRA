@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -31,6 +32,31 @@ bool safe_relative(const QString& p) {
 }
 
 QString join(const QString& a, const QString& b) { return QDir(a).filePath(b); }
+
+// Is the file at `path` the one the list names: its size AND its SHA-256 (11 Nov 2026).
+// Size alone was the test, and RUDRA ACES 2's 2.0 weights are byte for byte as long as 1.0's
+// (rudra_g1.ts 1,037,772, rudra_g1.onnx 1,157,294). Updating the model in place fetched the new
+// manifest and kept the old weights as "already here", so the package no longer checked against
+// its own manifest ("The model file is damaged or was changed") while this list said "Installed
+// and checked" and offered no way to download it again. Hashed once per file as written (path,
+// size, time), so the dialog's refreshes cost nothing after the first.
+bool file_checks(const QString& path, const RemoteFile& f) {
+    const QFileInfo fi(path);
+    if (!fi.isFile() || fi.size() != f.size) return false;
+    static QHash<QString, QString> hashed;
+    const QString key = fi.absoluteFilePath() + QLatin1Char('|') + QString::number(fi.size()) + QLatin1Char('|') +
+                        QString::number(fi.lastModified().toMSecsSinceEpoch());
+    QString sha = hashed.value(key);
+    if (sha.isEmpty()) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) return false;
+        QCryptographicHash h(QCryptographicHash::Sha256);
+        if (!h.addData(&file)) return false;
+        sha = QString::fromLatin1(h.result().toHex());
+        hashed.insert(key, sha);
+    }
+    return sha == f.sha256;
+}
 
 }  // namespace
 
@@ -70,6 +96,8 @@ std::optional<std::vector<RemoteModel>> parse_model_index(const QByteArray& json
         m.summary = o.value("summary").toString();
         m.licence = o.value("licence").toString();
         m.licence_url = o.value("licence_url").toString();
+        // The list is remote data and this link is handed to the system: https only (11 Nov 2026).
+        if (QUrl(m.licence_url).scheme() != "https") m.licence_url.clear();
         m.folder = o.value("folder").toString(m.id);
         m.min_app = o.value("min_app").toString();
         bool ok = !m.id.isEmpty() && safe_relative(m.folder) && !m.folder.contains('/');
@@ -90,8 +118,54 @@ std::optional<std::vector<RemoteModel>> parse_model_index(const QByteArray& json
     return out;
 }
 
-QString default_model_index_url() {
-    return QSettings().value("models/indexUrl", QStringLiteral("https://www.fxtdstudios.com/rudra-docs/models.json")).toString();
+namespace {
+
+// Every file of every model RUDRA has released, by SHA-256 (see model_downloads.hpp). Taken from
+// the published list and checked against the files themselves on 11 Nov 2026.
+constexpr const char* kKnownModelFiles[] = {
+    // RUDRA ACES 2, version 2.0 (w4 + lock), released 8 Nov 2026
+    "db21ffb4a0a652f354d24fd1b6a997717ec862b009a64e5175d1f4c4f25198e8",   // manifest.json
+    "beef682e39f8276147a329f57eca70817c056ef0dcc3b053d0b481dadb634c69",   // parity.json
+    "880e7b698a099b8dd60549444392d51af3022efbae8f68f05c9f0f3a29f8ee49",   // rudra_g1.onnx
+    "7082eb869d265d6e8c4fc209f7cac7e5dce2f40c10df5e73a889fb85efb9dbcc",   // rudra_g1.ts
+    // AI fill v3
+    "9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a",   // rudra_genfill.safetensors
+    "34892fb840de138fb3ddd2e2c8e6e3b13c232973ed59ea23338444fcaff2a95a",   // brightness.json
+    "5b72b3888e37cc1d198594c6f534c5ba1dcbdbb2fdf924f6a93f37d8dfe502f7",   // registration_v3.json
+    "aa11a3cb65a249898af299d184ec7f697e965ccacc69bcaa006f9ecc76df29bf",   // report_v3.json
+    "fbbb1040d9c7f522bdf9327ab04cf3ce21b85f2651846223a3111400805bfecd",   // prompt_cache/19805c5814225ef6a3c96bad.json
+    "a25186b90f16ad0ae397e72bd748a8150ebbfbcedc107057605e64245d36f243",   // prompt_cache/19805c5814225ef6a3c96bad.pt
+    "995d82dd6f27b0b3de6bd526d585a8b12aa6ae461fa0de9d1ccc63b7c2653150",   // prompt_cache/c9138bdd2a8e8feabc812558.json
+    "6af2658b9e0c99ed3e3446eae0484fd84ec2bdeee3bb90d1f9312eaae3202fe6",   // prompt_cache/c9138bdd2a8e8feabc812558.pt
+    // AI fill v4, region re-render (experimental), folder rudra_genfill_v4. The LoRA only so far: the
+    // package's other files (registration, report) are added here when the package is made.
+    "95d707eb3e5628d7515187c0752018a23182f186edb060d8652f77a64466375c",   // rudra_genfill.safetensors
+};
+
+}  // namespace
+
+QString published_model_index_url() { return QStringLiteral("https://www.fxtdstudios.com/rudra-docs/models.json"); }
+
+QString default_model_index_url() { return QSettings().value("models/indexUrl", published_model_index_url()).toString(); }
+
+bool is_known_model_file(const QString& sha256) {
+    const QByteArray want = sha256.toLower().toLatin1();
+    for (const char* known : kKnownModelFiles)
+        if (want == known) return true;
+    return false;
+}
+
+std::vector<RemoteModel> known_models(std::vector<RemoteModel> all, int* left_out) {
+    std::vector<RemoteModel> out;
+    int left = 0;
+    for (auto& m : all) {
+        bool ok = !m.files.empty();
+        for (const auto& f : m.files) ok = ok && QUrl(f.url).scheme() == "https" && is_known_model_file(f.sha256);
+        if (ok) out.push_back(std::move(m));
+        else ++left;
+    }
+    if (left_out) *left_out = left;
+    return out;
 }
 
 QString default_download_root() {
@@ -112,8 +186,9 @@ InstallState install_state(const RemoteModel& m, const QString& root) {
     bool any = false;
     for (const auto& f : m.files) {
         const QFileInfo fi(join(dir, f.path));
-        const bool here = fi.isFile() && fi.size() == f.size;
-        any = any || here || QFileInfo::exists(fi.filePath() + ".part");
+        const bool here = file_checks(fi.filePath(), f);
+        // A file that is there but is not the one the list names counts as a part: "Resume" replaces it.
+        any = any || here || fi.isFile() || QFileInfo::exists(fi.filePath() + ".part");
         all = all && here;
     }
     return all ? InstallState::Installed : any ? InstallState::Partial : InstallState::NotInstalled;
@@ -188,8 +263,16 @@ void ModelDownloads::fetch_index(const QString& url) {
         } else {
             QString why;
             if (auto m = parse_model_index(r->readAll(), &why)) {
-                models_ = std::move(*m);
-                index_status_ = models_.empty() ? QStringLiteral("No models to download yet.") : QString();
+                int left_out = 0;
+                // From the published address, only the models this RUDRA knows by their checksums.
+                if (QUrl(url) == QUrl(published_model_index_url())) models_ = known_models(std::move(*m), &left_out);
+                else models_ = std::move(*m);
+                index_status_ = left_out > 0 ? QStringLiteral("%1 in the list %2 a newer RUDRA: update RUDRA to download %3.")
+                                                   .arg(left_out == 1 ? QStringLiteral("One model") : QStringLiteral("%1 models").arg(left_out),
+                                                        left_out == 1 ? QStringLiteral("needs") : QStringLiteral("need"),
+                                                        left_out == 1 ? QStringLiteral("it") : QStringLiteral("them"))
+                                : models_.empty() ? QStringLiteral("No models to download yet.")
+                                                  : QString();
             } else {
                 index_status_ = why;
             }
@@ -228,8 +311,7 @@ void ModelDownloads::next_file() {
     // What is already here and verified (a file is renamed into place only after its check).
     while (file_ < m->files.size()) {
         const auto& f = m->files[file_];
-        const QFileInfo fi(join(dir, f.path));
-        if (!(fi.isFile() && fi.size() == f.size)) break;
+        if (!file_checks(join(dir, f.path), f)) break;   // by its hash: a same-sized other file is fetched again
         done_ += f.size;
         ++file_;
     }

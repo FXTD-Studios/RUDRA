@@ -75,7 +75,7 @@ def test_injector_supports_comfy_context_api():
 
 
 # ── SDXL is class-conditional: the U-Net needs a pooled `y` added-cond vector;
-#    Flux/Wan/LTX do not. _maybe_null_y must build the right width or return None.
+#    Flux/Wan do not. _maybe_null_y must build the right width or return None.
 def test_maybe_null_y_for_class_conditional_unet():
     train = pytest.importorskip("training.train_rudra")
 
@@ -93,26 +93,6 @@ def test_maybe_null_y_for_class_conditional_unet():
         num_classes = None
 
     assert train._maybe_null_y(Fluxish(), 2, torch.device("cpu"), torch.float32) is None
-
-
-# ── LTX-2.3 VAE is 32x spatial → the decoder must build log2(32)=5 upsample
-#    stages. A regression to 8x (3 stages) silently breaks real-LTX decode.
-def test_ltx_vae_spatial_factor_drives_five_upsample_stages():
-    import math
-    from config.model_map import resolve_model_vae_config
-    c = resolve_model_vae_config("ltx-video")
-    assert c["vae_spatial_factor"] == 32, "LTX VAE is 32x spatial (AutoencoderKLLTX2Video)"
-    assert c["latent_channels"] == 128
-    n_upsample = max(1, round(math.log2(c["vae_spatial_factor"])))
-    assert n_upsample == 5, "LTX decoder must build 5 upsample stages, not 3"
-
-    from rudra.pipeline import RUDRAPipeline
-    pipe = RUDRAPipeline.from_model_type("ltx-video", decoder_size="turbo").eval()
-    assert pipe.config.vae_spatial_factor == 32
-    assert len(pipe.decoder.upsample) == 5
-    latent = torch.randn(1, 128, 2, 2)
-    cond = torch.zeros(1, pipe.config.dr_proj_dim)
-    assert pipe.decoder(latent, cond).shape == (1, 3, 64, 64)
 
 
 def test_standalone_production_decoders_follow_spatial_factor():

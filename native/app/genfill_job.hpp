@@ -36,10 +36,16 @@ struct GenFillSetup {
     // older LoRA (genfill v1, v2) could run as "Ready"; the identity says so.
     bool lora_is_v3 = false;
     std::filesystem::path v3_found;   // a verified v3 among the candidates, when there is one
+    // 12 Nov 2026: the setup of the region re-render (v4). `lora` is then the v4 LoRA, and the
+    // fill starts with the settings v4 was tested with (feather 8, the model's own brightness).
+    bool rerender = false;
 };
 
 // The published AI fill v3 LoRA (docs/MODELS.md; PUBLISH_HF_MODELS.ps1).
 inline constexpr const char* kGenFillV3Sha256 = "9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a";
+// The v4 LoRA (research_genfill_v4_20261109), loaded only by the region re-render. Not published:
+// experimental, release_authorized false (configs/experiments/research_genfill_v4_1_20261111.json).
+inline constexpr const char* kGenFillV4Sha256 = "95d707eb3e5628d7515187c0752018a23182f186edb060d8652f77a64466375c";
 // SHA-256 of a file, cached in QSettings by path, size and modification time
 // (a LoRA is ~100 MB and the setup is asked often). Empty when unreadable.
 QString genfill_file_sha256(const std::filesystem::path& file);
@@ -67,6 +73,16 @@ struct GenFillOptions {
     // (--focus region): more detail where the fill is. Off = v3 (the whole frame, as gated).
     bool focus_region = false;
     QString glob;         // the master folder's frames to fill ("SH010.*.exr"); "" = every EXR there
+    // 12 Nov 2026, experimental: AI fill v4, region re-render. The whole bright region is drawn again
+    // from the source's codes (v3 fills only the fully clipped pixels), with the v4 LoRA and the
+    // amended inference of 11 Nov: tau-high 240, feather 8, the source's colour with 0.3 of the
+    // model's, the level 3.3 SDR whites, 0.8 of the previous frame's luminance kept. The SDR codes
+    // inside the region are NOT kept. Off = v3. `source`, `source_start` and `condition` are filled
+    // in when a fill starts (the shot, its first frame in the master, the route's inverse).
+    bool rerender = false;
+    QString source;                 // the movie, or the folder of stills, the master was made from
+    int source_start = 0;           // the source frame of the master's first frame
+    QString condition = QStringLiteral("bt1886");   // "bt1886" (the analytic route) or "aces" (the learned one)
     bool operator==(const GenFillOptions&) const = default;
 };
 
@@ -118,6 +134,14 @@ std::filesystem::path genfill_bootstrap_script(const std::filesystem::path& repo
 // The setup: the saved paths while they exist, else the first candidate that
 // does (and it is saved); nullopt and `why` when a part is missing.
 std::optional<GenFillSetup> genfill_setup(QString* why = nullptr);
+// The setup a fill with these options runs with: genfill_setup(), and for the region re-render
+// the v4 LoRA in place of v3's (QSettings genfill/loraV4, <root>/rudra_genfill_v4.safetensors,
+// then the training workstation's run folder; only a file that is v4 by its SHA-256).
+std::optional<GenFillSetup> genfill_setup_for(const GenFillOptions& o, QString* why = nullptr);
+std::filesystem::path genfill_v4_lora();   // empty when none is found
+// AI fill v4 (region re-render) is parked (13 Nov 2026: it passes 09V and the held-out clips, not a second
+// shot). The app shows and runs it only with RUDRA_GENFILL_V4=1 set, for development.
+bool genfill_v4_enabled();
 
 class GenFillJob {
 public:

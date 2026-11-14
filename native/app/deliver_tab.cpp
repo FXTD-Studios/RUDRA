@@ -103,6 +103,7 @@ void MainWindow::load_deliver_settings() {
     c.ai.shape_gain = std::clamp(st.value("deliver/aiShapeGain", c.ai.shape_gain).toDouble(), 0.0, 2.0);
     c.ai.fallback = st.value("deliver/aiFallback", true).toBool();   // RUDRA 1.1: on unless turned off
     c.ai.focus_region = st.value("deliver/aiFocus", false).toBool();  // 7 Nov 2026: off (v3) unless turned on
+    c.ai.rerender = genfill_v4_enabled() && st.value("deliver/aiRerender", false).toBool();   // v4: parked, development only
     c.ai.prompt_highlight = st.value("deliver/aiPromptHighlight").toString();
     c.ai.prompt_shadow = st.value("deliver/aiPromptShadow").toString();
     if (c.source != "aces" && c.source != "analytic") c.source = "aces";
@@ -186,6 +187,10 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
     } else if (key == "ai_focus") {   // 7 Nov 2026: draw the clipped area at more detail
         deliver_.ai.focus_region = value == "1" || value == "true";
         st.setValue("deliver/aiFocus", deliver_.ai.focus_region);
+    } else if (key == "ai_rerender") {   // 12 Nov 2026: AI fill v4, region re-render (experimental)
+        deliver_.ai.rerender = genfill_v4_enabled() && (value == "1" || value == "true");   // parked 13 Nov 2026
+        st.setValue("deliver/aiRerender", deliver_.ai.rerender);
+        refresh_prompt_chips();   // v4 shows the presets only
     } else if (key == "ai_fallback") {   // RUDRA 1.1 priority 5
         deliver_.ai.fallback = value == "1" || value == "true";
         st.setValue("deliver/aiFallback", deliver_.ai.fallback);
@@ -231,7 +236,11 @@ void MainWindow::sync_deliver() {
                                                    : QStringLiteral("The learned ACES 2.0 model is not loaded (Deliver > Learned ACES 2.0 master…)"));
     if (auto* n = dynamic_cast<NoteLabel*>(findChild<QLabel*>("deliverCurveNote"))) {
         const bool steer = (aces || wanted) && aces_curve_mismatch();
-        if (steer && n->text() != aces_curve_note()) n->setText(aces_curve_note());
+        // 12 Nov 2026: one line here, the whole note in the tooltip (it was eight lines in a narrow column)
+        const QString brief = QStringLiteral("This source is not an ACES curve, which the learned model expects. "
+                                             "Analytic is the route for it (hover for more).");
+        if (steer && n->text() != brief) n->setText(brief);
+        if (steer) n->setToolTip(aces_curve_note());
         n->setVisible(steer);
     }
     auto* out = dynamic_cast<Seg*>(findChild<QWidget*>("deliverOutput"));
@@ -321,6 +330,10 @@ void MainWindow::sync_deliver() {
         }
     if (auto* fb = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFallback"))) fb->set_on(c.ai.fallback);
     if (auto* fo = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFocus"))) fo->set_on(c.ai.focus_region);
+    if (auto* rr = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiRerender"))) {
+        rr->set_on(c.ai.rerender);
+        rr->setVisible(genfill_v4_enabled());   // 13 Nov 2026: v4 is parked
+    }
     if (auto* rn = findChild<QLabel*>("deliverAiRegion"))   // the grade's region reaches the fill
         rn->setVisible(c.ai_fill && !c.ai.region_json.isEmpty());
     auto set_line = [this](const char* id, const QString& v) {
@@ -331,6 +344,17 @@ void MainWindow::sync_deliver() {
     };
     set_line("deliverAiPromptHighlight", c.ai.prompt_highlight);
     set_line("deliverAiPromptShadow", c.ai.prompt_shadow);
+    // AI fill v4 runs with its own fixed settings: v3's controls rest while it is on (12 Nov 2026),
+    // so the card does not show thresholds and strengths that are not in use.
+    for (const char* id : {"deliverAiTauHigh", "deliverAiTauLow", "deliverAiBrightness", "deliverAiPromptStrength",
+                           "deliverAiShapeGain", "deliverAiFocus", "deliverAiFallback",
+                           "deliverAiPromptShadow", "deliverAiSuggest"})   // the highlight prompt stays: v4 takes it
+        if (auto* wdg = findChild<QWidget*>(id)) {
+            wdg->setEnabled(!c.ai.rerender);
+            // 12 Nov 2026: and they are not shown (a number box goes with its heading)
+            (qobject_cast<QAbstractSpinBox*>(wdg) ? wdg->parentWidget() : wdg)->setVisible(!c.ai.rerender);
+        }
+    if (auto* l = findChild<QLabel*>("deliverAiPromptShadowLabel")) l->setVisible(!c.ai.rerender);
     if (auto* st = findChild<QLabel*>("deliverAiSetup"); st && ai_possible && c.ai_fill) {
         QString why;
         // Where each part was found (4 Nov 2026); missing: Setup… > Set up automatically.
@@ -339,13 +363,21 @@ void MainWindow::sync_deliver() {
             genfill_ready_ = bool(s);
             sync_ai_prompt_bar();
         }
-        if (s)
-            st->setText(QStringLiteral("Ready: Wan2.1-VACE-1.3B (%1) + %2 · %3")
-                            .arg(from_path(s->base), from_path(s->lora.filename()),
-                                 s->lora_is_v3 ? QStringLiteral("AI fill v3, verified")
-                                               : QStringLiteral("NOT AI fill v3: Setup… to switch")));
-        else
+        if (s && c.ai.rerender) {   // 12 Nov 2026: v4 is on, so the line names v4's LoRA, not v3's
+            const auto v4 = genfill_v4_lora();
+            // One short line (12 Nov 2026); where the parts are is in the tooltip and in Setup…
+            st->setText(v4.empty() ? QStringLiteral("AI fill v4: its LoRA was not found (experimental, not published). "
+                                                    "Turn Re-render off for AI fill v3.")
+                                   : QStringLiteral("Ready · AI fill v4 (experimental)"));
+            st->setToolTip(QStringLiteral("Wan2.1-VACE-1.3B: %1\nLoRA: %2").arg(from_path(s->base), from_path(v4)));
+        } else if (s) {
+            st->setText(s->lora_is_v3 ? QStringLiteral("Ready · AI fill v3")
+                                      : QStringLiteral("Ready, but the LoRA is NOT AI fill v3: Setup… to switch"));
+            st->setToolTip(QStringLiteral("Wan2.1-VACE-1.3B: %1\nLoRA: %2").arg(from_path(s->base), from_path(s->lora)));
+        } else {
             st->setText(why + QStringLiteral(" Setup… > Set up automatically does it for you."));
+            st->setToolTip({});
+        }
     }
     // The preview's buttons: the views once there is one; a setting changed since, it says so.
     for (const char* id : {"deliverAiShowFill", "deliverAiShowMaster", "deliverAiShowMask"})
@@ -396,7 +428,13 @@ void MainWindow::sync_deliver() {
                           : QStringLiteral("The frames are mastered as EXR, then encoded (no audio).");
     }
     if (auto* n = findChild<QLabel*>("deliverNote")) {
-        n->setText(note);
+        // 12 Nov 2026: what is written, in one line; the rest (the AI fill's folders, nothing replaced) on hover
+        const QString brief = note.contains(QStringLiteral(" into the File's folder"))
+                                  ? note.section(QStringLiteral(" into the File's folder"), 0, 0) +
+                                        (c.ai_fill && aces ? QStringLiteral(", then AI fill") : QString())
+                                  : note;
+        n->setText(brief);
+        n->setToolTip(brief == note ? QString() : note);
         n->setVisible(!note.isEmpty());
     }
     if (auto* hint = findChild<QLabel*>("renderHint")) hint->setVisible(!aces);
@@ -428,8 +466,11 @@ QJsonObject MainWindow::aces_deliver_request(QString* why) const {
     };
     if (!deliver_aces()) return refuse(QStringLiteral("The learned ACES 2.0 model is not loaded."));
     if (frames_.empty()) return refuse(QStringLiteral("Open a shot first."));
-    const QString dir = findChild<QLineEdit*>("renderDir")->text().trimmed();
+    QString dir = findChild<QLineEdit*>("renderDir")->text().trimmed();
     if (dir.isEmpty()) return refuse(QStringLiteral("Choose a render folder first."));
+    // "D:" alone is the drive's current folder to Windows, not its root: a render typed to "D:"
+    // went looking in the app's own folder (12 Nov 2026). A bare drive means its root.
+    if (dir.size() == 2 && dir[0].isLetter() && dir[1] == QLatin1Char(':')) dir += QLatin1Char('/');
     QString name = clean_name(findChild<QLineEdit*>("renderName")->text());
     if (name.isEmpty()) name = clean_name(QFileInfo(shot_title()).completeBaseName());
     if (name.isEmpty()) name = QStringLiteral("master");
@@ -450,7 +491,10 @@ QJsonObject MainWindow::aces_deliver_request(QString* why) const {
                                                        QStringLiteral("%1").arg(first, render_padding_, 10, QChar('0')) + "." +
                                                        render_ext(c);
         if (fs::exists(out / to_path(file), ec))
-            return refuse(QStringLiteral("%1 is already there; nothing is replaced. Change the name or version up.").arg(file));
+            // With the folder (12 Nov 2026): the Render folder is remembered from the last session, and
+            // a refusal that named only the file read as "the render does not work".
+            return refuse(QStringLiteral("%1 is already there; nothing is replaced. Change the name or version up. (Render folder: %2)")
+                              .arg(file, QDir::toNativeSeparators(dir)));
     }
     QJsonArray sources;
     QJsonObject req = aces_deliver_fields(c);
@@ -590,7 +634,8 @@ void MainWindow::aces_deliver() {
                                 .arg(p.value("index").toInt())
                                 .arg(n)
                                 .arg(p.value("ms").toDouble(), 0, 'f', 0));
-            self->log("Saved " + p.value("exr").toString());
+            const QString saved = p.value("exr").toString();   // the engine does not always name the file
+            self->log(saved.isEmpty() ? QStringLiteral("Saved frame %1 of %2").arg(p.value("index").toInt()).arg(n) : "Saved " + saved);
         });
     if (aces_deliver_id_ != 0) aces_deliver_id_ = id;   // still running (a refusal answers at once)
     refresh_enabled();
@@ -760,14 +805,28 @@ bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOpti
     };
     if (genfill_running()) return refuse(QStringLiteral("An AI fill is already running."));
     QString w;
-    const auto setup = genfill_setup(&w);
+    // AI fill v4 (region re-render): the fill needs the shot the master was made from, the frame the
+    // master starts at (Current image renders one frame) and the route's inverse; and it runs with
+    // the v4 LoRA. The master is taken to be of the shot that is open.
+    GenFillOptions fill_options = options;
+    if (fill_options.rerender) {
+        if (frames_.empty()) return refuse(QStringLiteral("AI fill region re-render: open the shot the master was made from."));
+        const bool movie = shot_is_video() && !shot_sources_.empty();
+        fill_options.source = qp(movie ? shot_sources_.front() : frames_.front().parent_path());
+        fill_options.condition = deliver_aces() ? QStringLiteral("aces") : QStringLiteral("bt1886");
+        fill_options.source_start = deliver_effective().output == "still" ? std::max(current_, 0) : 0;
+    }
+    const auto setup = genfill_setup_for(fill_options, &w);
     if (!setup) return refuse(w);
     if (!genfill_) genfill_ = std::make_shared<GenFillJob>(this);
+    log(fill_options.rerender ? QStringLiteral("AI fill: v4, region re-render (LoRA %1, condition %2, source %3)")
+                                    .arg(qp(setup->lora), fill_options.condition, fill_options.source)
+                              : QStringLiteral("AI fill: v3, clipped pixels only (LoRA %1)").arg(qp(setup->lora)));
     const QString out = genfill_out_dir(out_base.isEmpty() ? master_dir : out_base);
     auto* status = findChild<QLabel*>("renderStatus");
     const QPointer<MainWindow> self(this);
     const bool ok = genfill_->start(
-        *setup, options, master_dir, out,
+        *setup, fill_options, master_dir, out,
         [self](const QJsonObject& o) {
             if (!self) return;
             auto* st = self->findChild<QLabel*>("renderStatus");

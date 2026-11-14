@@ -4,11 +4,17 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <map>
+#include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -251,6 +257,71 @@ TEST(Exr, AcesMaskKeepsValuesWithoutExposureScaling) {
     ASSERT_TRUE(result->reconstruction_mask);
     for (float v : result->reconstruction_mask->span()) EXPECT_FLOAT_EQ(v, .25f);
     for (float v : result->pixels.span()) EXPECT_NEAR(v, .36f, 1e-6f);
+}
+
+// Security review, 11 Nov 2026: read_exr took its sizes and its scanline rows from the file as
+// given, so a crafted EXR read past the file and wrote outside the pixel buffer. A file that does
+// not hold what its header says is refused, whatever the damage.
+TEST(Exr, HostileFilesAreRefused) {
+    const int h = 2, w = 3;
+    PlanarBuffer rgb(3, h, w, 0.5f);
+    auto made = exr_bytes(rgb, false);
+    ASSERT_TRUE(made);
+    const std::vector<std::uint8_t> good = *made;
+    const auto path = scratch("hostile.exr");
+    auto reads = [&](const std::vector<std::uint8_t>& bytes) {
+        {
+            std::ofstream f(path, std::ios::binary | std::ios::trunc);
+            f.write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
+        }
+        return bool(read_exr(path));
+    };
+    auto put = [](std::vector<std::uint8_t>& b, std::size_t at, std::int32_t v) { std::memcpy(b.data() + at, &v, 4); };
+    auto find = [&](const std::string& key) {
+        const auto it = std::search(good.begin(), good.end(), key.begin(), key.end());
+        EXPECT_NE(it, good.end()) << key;
+        return std::size_t(it - good.begin()) + key.size();
+    };
+    ASSERT_TRUE(reads(good));
+
+    // Cut anywhere: never read, never a crash.
+    for (std::size_t n = 0; n < good.size(); ++n)
+        EXPECT_FALSE(reads(std::vector<std::uint8_t>(good.begin(), good.begin() + std::ptrdiff_t(n)))) << "cut at " << n;
+
+    // A scanline that names a row outside the picture (the write outside the buffer).
+    const std::size_t line = 8 + std::size_t(w) * 4 * 3, first = good.size() - std::size_t(h) * line;
+    for (std::int32_t row : {1000, -5, std::numeric_limits<std::int32_t>::max(), std::numeric_limits<std::int32_t>::min()}) {
+        auto b = good;
+        put(b, first, row);
+        EXPECT_FALSE(reads(b)) << "row " << row;
+    }
+
+    // A data window larger than the file, and one that overflows an int.
+    const std::size_t window = find(std::string("dataWindow\0box2i\0", 17)) + 4;   // past the attribute's size
+    {
+        auto b = good;
+        put(b, window + 12, 1 << 19);   // y1: half a million rows in a file of a few hundred bytes
+        EXPECT_FALSE(reads(b));
+        b = good;
+        put(b, window, std::numeric_limits<std::int32_t>::min());       // x0
+        put(b, window + 8, std::numeric_limits<std::int32_t>::max());   // x1
+        EXPECT_FALSE(reads(b));
+    }
+
+    // An attribute whose size runs past the file, or is negative; a channel list with no end.
+    const std::size_t chlist = find(std::string("channels\0chlist\0", 16));
+    for (std::int32_t size : {std::numeric_limits<std::int32_t>::max(), -1, 3}) {
+        auto b = good;
+        put(b, chlist, size);
+        EXPECT_FALSE(reads(b)) << "chlist size " << size;
+    }
+    {
+        auto b = good;
+        std::int32_t size = 0;
+        std::memcpy(&size, good.data() + chlist, 4);
+        b[chlist + 4 + std::size_t(size) - 1] = 'x';   // the list's terminator
+        EXPECT_FALSE(reads(b));
+    }
 }
 
 TEST(Exr, FilesByteIdentical) {

@@ -44,11 +44,13 @@ import argparse
 import base64
 import http.server
 import hashlib
+import hmac
 import io
 import ipaddress
 import json
 import os
 import re
+import secrets
 import socketserver
 import sys
 import threading
@@ -218,7 +220,8 @@ def load_model(checkpoint: Path | None, device_name: str):
     if checkpoint is None:
         return None, {"loaded": False, "reason": "no checkpoint found",
                       "device": device_name, "demo": True}
-    payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    from rudra.torch_compat import load_checkpoint
+    payload = load_checkpoint(checkpoint)   # tensors only: no code from the file
     config = payload.get("config", {}) or {}
     model = SDR2HDRNet.from_config(config)
     model.load_state_dict(payload.get("model", payload), strict=True)
@@ -277,6 +280,22 @@ def read_body(handler) -> bytes:
     return handler.rfile.read(length) if length > 0 else b""
 
 
+def listed_file(base: Path, parts: tuple[str, ...]) -> Path | None:
+    """The file under ``base`` whose path is ``parts``, as the server lists it.
+
+    The returned path is built from the directory listing, never from the
+    request's own string: what reaches torch.load is a file the server found
+    under one of its roots (CodeQL py/unsafe-deserialization, 14 Nov 2026).
+    """
+    current = base
+    for part in parts:
+        try:
+            current = next(c for c in current.iterdir() if c.name == part)
+        except (StopIteration, OSError):
+            return None
+    return current if current.is_file() else None
+
+
 def allowed_checkpoint(requested: str) -> Path:
     """Resolve a checkpoint override to a path the server may load.
 
@@ -300,10 +319,13 @@ def allowed_checkpoint(requested: str) -> Path:
         raise RequestRefused(f"checkpoint not found: {requested}") from None
     for root in checkpoint_roots():
         try:
-            resolved.relative_to(Path(root).resolve())
-            return resolved
+            base = Path(root).resolve()
+            parts = resolved.relative_to(base).parts
         except (ValueError, OSError):
             continue
+        found = listed_file(base, parts)
+        if found is not None:
+            return found
     raise RequestRefused("checkpoint override must be one of the committed "
                          "models or live under RUDRA_CHECKPOINT_ROOTS")
 
@@ -925,8 +947,47 @@ def host_allowed(host_header: str | None) -> bool:
     return host in {h.strip().lower() for h in extra.split(",") if h.strip()}
 
 
+# Off loopback the Studio is reachable by every machine on the network, and it opens files and
+# writes EXRs for whoever asks (security review, 11 Nov 2026). It then wants a token: main() makes
+# one, prints the address that carries it, and every request must bring it -- in the address once
+# (?token=...), after which the page's own requests carry it as a cookie. On loopback there is no
+# token and nothing changes.
+ACCESS_TOKEN: str | None = None
+TOKEN_COOKIE = "rudra_token"
+
+
+def request_token(path: str, headers) -> str | None:
+    """The token a request brought: its header, its address, or the cookie an earlier one set."""
+    given = headers.get("X-Rudra-Token")
+    if given:
+        return given.strip()
+    query = path.partition("?")[2]
+    for part in query.split("&"):
+        key, _, value = part.partition("=")
+        if key == "token" and value:
+            return value
+    for part in (headers.get("Cookie") or "").split(";"):
+        key, _, value = part.strip().partition("=")
+        if key == TOKEN_COOKIE and value:
+            return value
+    return None
+
+
+def token_allowed(path: str, headers) -> bool:
+    if ACCESS_TOKEN is None:
+        return True
+    given = request_token(path, headers)
+    return given is not None and hmac.compare_digest(given.encode(), ACCESS_TOKEN.encode())
+
+
 def make_handler(args):
     class Handler(http.server.SimpleHTTPRequestHandler):
+        def end_headers(self):
+            # The first request that brought the token in its address leaves it as a cookie.
+            if ACCESS_TOKEN is not None and "token=" in self.path.partition("?")[2]:
+                self.send_header("Set-Cookie", f"{TOKEN_COOKIE}={ACCESS_TOKEN}; Path=/; HttpOnly; SameSite=Strict")
+            super().end_headers()
+
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=str(UI_DIR), **kw)
 
@@ -1061,10 +1122,14 @@ def make_handler(args):
             return self._json(payload)
 
         def _refuse_host(self) -> bool:
-            if host_allowed(self.headers.get("Host")):
-                return False
-            self.send_error(403, "unrecognised Host; set RUDRA_ALLOWED_HOSTS")
-            return True
+            if not host_allowed(self.headers.get("Host")):
+                self.send_error(403, "unrecognised Host; set RUDRA_ALLOWED_HOSTS")
+                return True
+            if not token_allowed(self.path, self.headers):
+                self.send_error(401, "this Studio is shared on the network: open the address "
+                                     "its console printed, the one that ends in ?token=")
+                return True
+            return False
 
         def do_GET(self):
             if self._refuse_host():
@@ -1229,9 +1294,14 @@ def main() -> int:
     print("   RUDRA Studio  --  live inference UI")
     print("=" * 66)
     print(f"   http://localhost:{args.port}")
+    start_url = f"http://localhost:{args.port}"
     if args.host not in ("127.0.0.1", "localhost", "::1"):
-        print(f"   bound to {args.host}: every host that can reach it can open "
-              f"files on this machine")
+        global ACCESS_TOKEN
+        ACCESS_TOKEN = os.environ.get("RUDRA_TOKEN") or secrets.token_urlsafe(24)
+        start_url += f"/?token={ACCESS_TOKEN}"
+        print(f"   bound to {args.host}: reachable from the network, so it asks for a token.")
+        print(f"   open it with the token, here or from another machine (its address in place of localhost):")
+        print(f"   {start_url}")
     found = find_checkpoint(args.checkpoint)
     print(f"   checkpoint : {found if found else 'NONE FOUND -- page will run in demo mode'}")
     print(f"   device     : {args.device}")
@@ -1243,7 +1313,7 @@ def main() -> int:
     if not args.no_browser:
         threading.Thread(
             target=lambda: (time.sleep(0.6),
-                            webbrowser.open(f"http://localhost:{args.port}")),
+                            webbrowser.open(start_url)),
             daemon=True).start()
 
     with ThreadedServer((args.host, args.port), make_handler(args)) as httpd:

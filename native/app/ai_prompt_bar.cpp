@@ -139,13 +139,52 @@ void MainWindow::refresh_prompt_chips() {
     for (auto* row : findChildren<QWidget*>(QStringLiteral("aiSuggestChips"))) {
         clear_row(row);
         auto* h = static_cast<QBoxLayout*>(row->layout());   // a row over the viewer, a column in the card
+        // 12 Nov 2026: in the card the chips are stacked, and a button there may be squeezed below
+        // its text when the card is fuller than the panel (they showed as slivers). Each keeps the
+        // height of its text.
+        const bool column = h->direction() == QBoxLayout::TopToBottom || h->direction() == QBoxLayout::BottomToTop;
+        auto keep_height = [column](QWidget* w) {
+            if (column) w->setMinimumHeight(std::max(24, w->sizeHint().height()));
+        };
+        if (!prompt_suggestions_ && column && deliver_.ai.rerender) continue;   // v4 has no Suggest: nothing to announce
         if (!prompt_suggestions_) {
-            h->addWidget(new QLabel(QStringLiteral("Suggestions appear here for the frame on screen"), row));
+            h->addWidget(new QLabel(column ? QStringLiteral("Suggest a prompt\u2026 lists them here")
+                                           : QStringLiteral("Suggestions appear here for the frame on screen"),
+                                    row));
             h->addStretch(1);
             continue;
         }
-        const auto& r = *prompt_suggestions_;
-        if (r.suggested.empty()) {
+        // 12 Nov 2026: in v4 only the presets. The suggestions are made from v3's clipped specks
+        // ("specular glints" drew speckles over a whole door).
+        const bool v4 = deliver_.ai.rerender;
+        PromptSuggestions shown_set = *prompt_suggestions_;
+        if (v4) shown_set.suggested.clear();
+        const auto& r = shown_set;
+        if (column) {
+            // 12 Nov 2026: in the Deliver card the suggestions are one button with a menu. A stack of
+            // chips there was squeezed into overlapping slivers, and it repeated the row over the viewer.
+            auto* pick = new QPushButton(r.suggested.empty() ? QStringLiteral("Prompt presets \u25BE")
+                                                             : QStringLiteral("%1 suggested \u25BE").arg(r.suggested.size()),
+                                         row);
+            pick->setObjectName("aiSuggestPresets");
+            pick->setFixedHeight(28);
+            auto* m = new QMenu(pick);
+            m->setToolTipsVisible(true);
+            auto add = [this, m](const PromptSuggestion& p, const QString& text) {
+                auto* a = m->addAction(text);
+                a->setToolTip(p.text + (p.reason.isEmpty() ? QString() : QStringLiteral("\n") + p.reason));
+                connect(a, &QAction::triggered, this, [this, p] { use_prompt_suggestion(p); });
+            };
+            if (!r.suggested.empty()) m->addSection(QStringLiteral("Suggested for frame %1").arg(prompt_suggest_frame_ + 1));
+            for (const auto& p : r.suggested) add(p, chip_text(p));
+            if (!r.presets.empty()) m->addSection(QStringLiteral("Presets"));
+            for (const auto& p : r.presets) add(p, p.label + QStringLiteral("  \u2014 ") + p.text);
+            pick->setMenu(m);
+            pick->setEnabled(!m->isEmpty());
+            h->addWidget(pick);
+            continue;
+        }
+        if (r.suggested.empty() && !v4) {
             auto* l = new QLabel(QStringLiteral("Nothing fully clipped on frame %1: nothing for the fill to draw").arg(prompt_suggest_frame_ + 1), row);
             l->setProperty("class", "note");
             h->addWidget(l);
@@ -158,6 +197,7 @@ void MainWindow::refresh_prompt_chips() {
             b->setProperty("class", "chip");
             b->setToolTip(p.text + (p.reason.isEmpty() ? QString() : QStringLiteral("\n") + p.reason));
             connect(b, &QPushButton::clicked, this, [this, p] { use_prompt_suggestion(p); });
+            keep_height(b);
             h->addWidget(b);
         }
         if (!r.presets.empty()) {   // the rest, one click away
@@ -171,6 +211,7 @@ void MainWindow::refresh_prompt_chips() {
                 connect(a, &QAction::triggered, this, [this, p] { use_prompt_suggestion(p); });
             }
             more->setMenu(m);
+            keep_height(more);
             h->addWidget(more);
         }
         h->addStretch(1);
@@ -214,6 +255,20 @@ void MainWindow::build_ai_prompt_bar(QVBoxLayout* v, QWidget* parent) {
     chips->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     chips->setMinimumWidth(0);
     h->addWidget(chips, 3);
+    // 12 Nov 2026: which fill a preview runs, here where the previews are started. v3 fills only the
+    // fully clipped pixels; v4 (experimental) draws the whole bright region again. The same setting as
+    // Deliver > AI fill > Re-render bright regions.
+    auto* mode = new QPushButton(QStringLiteral("Fill: v3"), ai_prompt_bar_);
+    mode->setObjectName("viewerAiRerender");
+    mode->setCheckable(true);
+    mode->setToolTip(QStringLiteral("AI fill v3 draws only inside fully clipped pixels (often under 1 % of the frame). "
+                                    "v4, experimental, draws the whole bright region again from the source: a window, "
+                                    "a door, a sky parked just under white. Click to switch; the next preview uses it"));
+    connect(mode, &QPushButton::clicked, this, [this] {
+        set_deliver("ai_rerender", deliver_.ai.rerender ? "0" : "1");
+        sync_ai_prompt_bar();
+    });
+    h->addWidget(mode);
     auto* run = new QPushButton(QStringLiteral("Suggest"), ai_prompt_bar_);
     run->setObjectName("aiSuggestRun");
     run->setToolTip(QStringLiteral("Suggest prompts from this frame's fully clipped areas"));
@@ -242,6 +297,27 @@ void MainWindow::sync_ai_prompt_bar() {
     if (auto* le = findChild<QLineEdit*>("viewerAiPrompt"); le && !le->hasFocus() && le->text() != deliver_.ai.prompt_highlight) {
         const QSignalBlocker b(le);
         le->setText(deliver_.ai.prompt_highlight);
+    }
+    // v4 (region re-render) was tested with no prompt, and the suggestions are made from v3's
+    // clipped specks ("specular glints" drew speckles over a whole door, 12 Nov 2026): in v4 the
+    // prompt, the chips and Suggest rest, and the fill runs as it was tested.
+    const bool v4 = deliver_.ai.rerender;
+    if (auto* le = findChild<QLineEdit*>("viewerAiPrompt")) {
+        // 12 Nov 2026: v4 takes the highlight prompt (the 09V reference was rendered with one)
+        le->setEnabled(true);
+        le->setPlaceholderText(v4 ? QStringLiteral("EMPTY: type what is in the bright region (a sky, a window, a street)")
+                                  : QStringLiteral("highlight prompt (optional): pick a suggestion or type one"));
+        le->setToolTip(v4 ? QStringLiteral("AI fill v4 draws the whole bright region again: say what is there (a sky, a window, "
+                                           "a street). Empty, it draws texture with no subject")
+                          : QString());
+    }
+    for (auto* row : findChildren<QWidget*>(QStringLiteral("aiSuggestChips"))) row->setEnabled(true);
+    for (auto* b : findChildren<QPushButton*>(QStringLiteral("aiSuggestRun"))) b->setVisible(!v4);
+    if (auto* mode = findChild<QPushButton*>("viewerAiRerender")) {
+        mode->setVisible(genfill_v4_enabled());   // 13 Nov 2026: v4 is parked
+        mode->setChecked(deliver_.ai.rerender);
+        mode->setText(deliver_.ai.rerender ? QStringLiteral("Fill: v4 re-render") : QStringLiteral("Fill: v3"));
+        mode->setEnabled(!genfill_preview_busy_);
     }
     if (auto* again = findChild<QPushButton*>("viewerAiPreviewAgain")) {
         again->setText(genfill_preview_busy_ ? QStringLiteral("Stop preview")

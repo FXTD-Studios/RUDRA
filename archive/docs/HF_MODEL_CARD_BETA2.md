@@ -40,11 +40,10 @@ rudra_{turbo|full}_decoder_{backbone}_ema.safetensors
 | SDXL | `rudra_turbo_decoder_sdxl_ema.safetensors` | 33.86 |
 | Qwen-Image | `rudra_turbo_decoder_qwen_ema.safetensors` | 26.67 |
 | Flux.2 Klein | `rudra_turbo_decoder_flux2-klein_ema.safetensors` | 28.57 |
-| LTX (2.3) | `rudra_full_decoder_ltx-video_ema.safetensors` | 25.47 |
 | Z-Image | use the Flux decoder (shares the FLUX.1 VAE) | — |
 
 `turbo` (~0.5 M params) is fast and strong on simple latents (SDXL); `full` (~5.6 M) wins
-on Flux/Wan/LTX. Both are provided where trained.
+on Flux/Wan. Both are provided where trained.
 
 ## Usage (ComfyUI)
 

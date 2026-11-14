@@ -1,4 +1,4 @@
-"""Find the sources whose HDR decode is wrong, before they are rendered again.
+r"""Find the sources whose HDR decode is wrong, before they are rendered again.
 
     python training\quarantine_broken.py --index E:\RUDRA_v3_20260822\pairs\pairs_index.jsonl
     python training\quarantine_broken.py --index ... --out quarantine.json

@@ -7,9 +7,9 @@ curve (the *baseline*), fills what the SDR clipped, and can add a learned
 model's reconstruction on top (optional, off by default), and it shows you
 where it made something up.
 
-This guide is for the desktop app, RUDRA 1.0 and its release candidates.
-Help > Getting started shows the short version inside the app; F1 opens this
-page.
+This guide is for the desktop app, RUDRA 1.2.4. The illustrated guide is at
+https://www.fxtdstudios.com/rudra-docs/. Help > Getting started shows the short
+version inside the app; F1 opens this page.
 
 ## 1. Install
 
@@ -272,6 +272,9 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
   the master's own frame; a fill that starts or ends is kept. A fill that is
   not a finite number always falls back. `genfill.json` lists every
   fallback (`fell_back`).
+- **Technical details** (1.2.4): the range line under the viewer's tools, the
+  pipe bar under the picture and the frame's timings show when **Help >
+  Technical details** is ticked. RUDRA starts without them.
 - The pipe bar under the viewer ends with the **display signal**: the
   transfer (sRGB, scRGB linear, PQ or EDR linear), primaries, the reference
   white (203 nits) and the display's peak.

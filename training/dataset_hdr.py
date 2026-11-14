@@ -619,7 +619,7 @@ def load_vae_standalone(path: str, model_type: str = "flux", device: str = "cuda
             from safetensors.torch import load_file
             state_dict = load_file(path)
         else:
-            state_dict = torch.load(path, map_location="cpu")
+            state_dict = torch.load(path, map_location="cpu", weights_only=True)   # tensors only
     else:
         logger.warning(f"[VAE Loader] VAE path '{path}' is not a valid file on disk. Proceeding with state_dict = None.")
     
@@ -671,42 +671,6 @@ def load_vae_standalone(path: str, model_type: str = "flux", device: str = "cuda
                             path_dir if (path_dir and os.path.isdir(path_dir)) else "Wan-AI/Wan2.1-T2V-14B", torch_dtype=torch.bfloat16
                         ).to(dev)
                         self.backend = "diffusers_auto"
-                elif m_type in ("ltx-video", "ltx", "ltxav"):
-                    try:
-                        from diffusers import AutoencoderKLLTX2Video, AutoencoderKLLTXVideo
-                        if path and os.path.isfile(path):
-                            config_candidates = [
-                                os.path.join(path_dir, "ltx2_vae_config.json"),
-                                os.path.join(path_dir, "config.json"),
-                            ]
-                            config_path = next((p for p in config_candidates if os.path.isfile(p)), None)
-                            if config_path is None:
-                                raise FileNotFoundError(
-                                    f"LTX VAE config missing next to {path}; expected ltx2_vae_config.json"
-                                )
-                            with open(config_path, "r", encoding="utf-8") as handle:
-                                local_config = json.load(handle)
-                            class_name = local_config.get("_class_name", "")
-                            vae_cls = AutoencoderKLLTX2Video if class_name == "AutoencoderKLLTX2Video" else AutoencoderKLLTXVideo
-                            self.vae_obj = vae_cls.from_config(local_config)
-                            state = load_file(path, device="cpu")
-                            missing, unexpected = self.vae_obj.load_state_dict(state, strict=False)
-                            if missing or unexpected:
-                                raise RuntimeError(
-                                    f"LTX local VAE state mismatch: missing={missing[:5]} unexpected={unexpected[:5]}"
-                                )
-                            self.vae_obj = self.vae_obj.to(device=dev, dtype=torch.bfloat16)
-                        else:
-                            self.vae_obj = AutoencoderKLLTXVideo.from_pretrained(
-                                "Lightricks/LTX-Video", subfolder="vae",
-                                torch_dtype=torch.bfloat16
-                            ).to(dev)
-                        self.backend = "diffusers_ltx"
-                    except (ImportError, Exception):
-                        self.vae_obj = AutoModel.from_pretrained(
-                            path_dir if (path_dir and os.path.isdir(path_dir)) else "Lightricks/LTX-Video", torch_dtype=torch.bfloat16
-                        ).to(dev)
-                        self.backend = "diffusers_auto"
                 elif m_type in ("hunyuanvideo", "hunyuan", "hyvideo"):
                     try:
                         from diffusers import AutoencoderKLHunyuanVideo
@@ -745,11 +709,11 @@ def load_vae_standalone(path: str, model_type: str = "flux", device: str = "cuda
                 t = pixels.permute(0, 3, 1, 2).to(self.device)
             else:
                 raise ValueError(f"Expected 4D image or 5D video pixels, got {tuple(pixels.shape)}")
-            if "wan" not in self.backend and "ltx" not in self.backend:
+            if "wan" not in self.backend:
                 t = t * 2.0 - 1.0  # [0,1] -> [-1,1]
             
             # A single image for a video VAE becomes a one-frame clip.
-            if t.ndim == 4 and ("wan" in self.backend or "ltx" in self.backend or "hunyuan" in self.backend):
+            if t.ndim == 4 and ("wan" in self.backend or "hunyuan" in self.backend):
                 t = t.unsqueeze(2)  # (B, C, H, W) -> (B, C, 1, H, W)
             
             # Match VAE weight data type (e.g., torch.bfloat16)
@@ -820,7 +784,7 @@ if __name__ == "__main__":
         from config.model_map import MODEL_VAE_CONFIG as _CFG
         _vae_choices = list(_CFG.keys())
     except ImportError:
-        _vae_choices = ["flux", "sdxl", "wan", "sd3", "hunyuanvideo", "ltx-video", "sd15", "cogvideox", "lumina2", "pixart", "kolors", "aura_flow"]
+        _vae_choices = ["flux", "sdxl", "wan", "sd3", "hunyuanvideo", "sd15", "cogvideox", "lumina2", "pixart", "kolors", "aura_flow"]
     parser.add_argument("--vae_type", default="flux", choices=_vae_choices,
                         help="VAE architecture — determines latent channels and scale factor")
     parser.add_argument("--size", type=int, default=512, help="Image size (square)")

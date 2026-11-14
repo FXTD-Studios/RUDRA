@@ -39,7 +39,7 @@ class RUDRAConfig:
     latent_channels: int = 16
     # Spatial compression of the source VAE. Decoder output geometry must be
     # exactly latent H/W multiplied by this factor (8 for Flux/SDXL/Wan,
-    # 16 for Flux.2 Klein, 32 for LTX-2/2.3).
+    # 16 for Flux.2 Klein).
     vae_spatial_factor: int = 8
     vae_temporal_factor: int = 1
 
@@ -93,7 +93,6 @@ RUDRA_MODEL_CONFIGS = {
     # is an approximation applied only where a scalar is required.
     "wan": {"latent_channels": 16, "vae_spatial_factor": 8, "vae_temporal_factor": 4, "scale_factor": 0.18215, "log_curve": "ARRI LogC4", "compression_ratio": 0.60},
     "hunyuanvideo": {"latent_channels": 16, "vae_spatial_factor": 8, "vae_temporal_factor": 4, "scale_factor": 0.476986, "log_curve": "ARRI LogC4", "compression_ratio": 0.60},
-    "ltx-video": {"latent_channels": 128, "vae_spatial_factor": 32, "vae_temporal_factor": 8, "scale_factor": 1.0, "log_curve": "Sony S-Log3", "compression_ratio": 0.50, "full_decoder_channels": 256},
     "cogvideox": {"latent_channels": 16, "scale_factor": 0.7, "log_curve": "ARRI LogC4", "compression_ratio": 0.45},
     "sd3": {"latent_channels": 16, "scale_factor": 1.5305, "shift_factor": 0.0609, "log_curve": "ARRI LogC4", "compression_ratio": 0.50},
     "sdxl": {"latent_channels": 4, "scale_factor": 0.13025, "log_curve": "ARRI LogC3", "compression_ratio": 0.40},

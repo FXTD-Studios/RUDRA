@@ -34,6 +34,13 @@ reading; aces: the ACES 2.0 inverse), the fill is blended plainly inside the who
 feather (composite.plain_blend): the SDR codes inside the mask are NOT kept, outside it every pixel
 is the master's bit for bit. No brightness estimator, no gain cap: the model's own level. For a
 LoRA trained for it (v4); with v1-v3 it draws nothing useful (measured 9 Nov).
+--rerender-hue source [--rerender-colour <0..1>], --rerender-level <x white>, --rerender-smooth <0..1>
+(10 Nov 2026, after the v4 gates on 09V; composite.finish_rerender): the fill takes the source's
+colour (with a share of the model's own), its level is <x white> with the model's detail on it,
+crossfaded into the master by the
+source's code (the master at tau_high, the whole fill at code 253), and it follows the previous frame. With a level the fill acts
+only where the source is near white in every channel (composite.neutral_weight): a saturated
+highlight is left to the master. All off by default: the model's own colour and level.
 """
 from __future__ import annotations
 
@@ -50,7 +57,7 @@ from pathlib import Path
 import numpy as np
 
 from . import encoding
-from .composite import plain_blend, r_safe_blend
+from .composite import RERENDER_HUES, finish_rerender, neutral_weight, plain_blend, r_safe_blend, white_scale
 from .masks import MaskSettings, TemporalMask, blend_core, feather
 
 
@@ -59,6 +66,14 @@ class Rerender:
     """--region-rerender: where the codes come from and what the model is conditioned on."""
     source: str            # the movie, or the folder of stills, the master was made from
     condition: str = 'bt1886'   # 'bt1886' (code ^ 2.4) or 'aces' (the ACES 2.0 inverse)
+    hue: str = 'model'     # 'source': the fill's luminance with the source's colour (composite.finish_rerender)
+    colour: float = 0.0    # with hue 'source': the share of the model's own colour kept, 0..1
+    level: float = 0.0     # > 0: the level where the source is clipped, in the master's SDR whites; 0 keeps the model's own
+    smooth: float = 0.0    # > 0: the fill's log luminance follows the previous frame's (EMA share kept)
+    start: int = 0         # the source frame the master's first frame was made from (the app's preview of one frame)
+    dip: float = 0.0       # > 0: the fill's fine detail at most this many stops under its surroundings (finish_rerender)
+    still: float = 0.0     # > 0: the share of the previous frame kept where the source holds still (finish_rerender)
+    independent: bool = False   # every window from the source alone, the overlaps crossfaded (not chained)
     CONDITIONS = ('bt1886', 'aces')
 
 
@@ -66,18 +81,24 @@ class SourceCodes:
     """The source's 8-bit codes per frame index, (H, W, 3) uint8 at the master's size, decoded as the
     engine reads them (tools/measure_flicker: a movie through ffmpeg, stills through OpenCV)."""
 
-    def __init__(self, source: Path, count: int, size):
+    def __init__(self, source: Path, count: int, size, start: int = 0):
         from tools.measure_flicker import decode_frames, decode_movie, FRAME_EXT
-        self.source, self.count, self.size = Path(source), count, tuple(size)
+        # start (12 Nov 2026): a master that is part of the shot (the app previews the frame at the
+        # playhead) begins at that source frame; index i here is still the master's own.
+        if start < 0:
+            raise ValueError('the source start frame cannot be negative')
+        self.source, self.size, self.start = Path(source), tuple(size), int(start)
+        self.count = count + self.start
         self.movie = self.source.is_file()
         if not self.movie:
             n = len([p for p in self.source.iterdir() if p.suffix.lower() in FRAME_EXT])
-            if n < count:
-                raise ValueError(f'{source}: {n} frames, the master has {count}')
+            if n < self.count:
+                raise ValueError(f'{source}: {n} frames, the master needs {self.count}')
         self._decode_frames, self._decode_movie = decode_frames, decode_movie
         self._cache = {}
 
     def __getitem__(self, i: int) -> np.ndarray:
+        i = i + self.start
         if i not in self._cache:
             block = 16 if self.movie else 1
             first = (i // block) * block
@@ -439,9 +460,20 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     if rerender is not None:
         if rerender.condition not in Rerender.CONDITIONS:
             raise ValueError(f'condition must be one of {", ".join(Rerender.CONDITIONS)}')
-        source_codes = SourceCodes(Path(rerender.source), len(frames), (H, W))
+        source_codes = SourceCodes(Path(rerender.source), len(frames), (H, W), rerender.start)
         ms = MaskSettings(**{**asdict(ms), 'blend_high': ms.tau_high, 'blend_low': ms.tau_low, 'max_gain_stops': 0.0})
         brightness = None
+        if rerender.hue not in RERENDER_HUES:
+            raise ValueError(f'hue must be one of {", ".join(RERENDER_HUES)}')
+        if rerender.level < 0 or not 0.0 <= rerender.smooth < 1.0 or not 0.0 <= rerender.colour <= 1.0:
+            raise ValueError('level must be >= 0, smooth in [0, 1) and colour in [0, 1]')
+    finish_state: dict = {}                          # v4 finish: the previous frame's fill
+    finish_white = 1.0
+    if rerender is not None and rerender.level > 0:  # the shot's SDR white: up to 9 frames along it
+        picks = sorted({int(k) for k in np.linspace(0, len(frames) - 1, min(9, len(frames)))})
+        seen = [white_scale((first if k == 0 else read_frame(frames[k]))['ap1'], source_codes[k]) for k in picks]
+        seen = [x for x in seen if x]
+        finish_white = float(np.median(seen)) if seen else 1.0
     codes_of = (lambda i, fr: source_codes[i]) if source_codes is not None else \
         (lambda i, fr: np.rint(np.clip(view.forward(fr['ap1']), 0, 1) * 255).astype(np.uint8))
     box, boxes, inside, outside_share = None, None, None, 0.0
@@ -508,6 +540,8 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                        'mask_outside_box': round(outside_share, 4),   # left to the master (specks far away)
                        # the model's pixels per frame pixel, against the whole frame at the same max_area
                        'detail_gain': round((w / float(x1 - x0)) / (working_size(H, W, max_area, model.multiple)[1] / float(W)), 3)}}
+    if rerender is not None and rerender.level > 0:
+        stats['rerender_white'] = round(finish_white, 4)
     if focus == 'areas':
         base_gain = working_size(H, W, max_area, model.multiple)[1] / float(W)
         stats['focus']['box'] = None
@@ -524,6 +558,13 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     attrs = {'rudra:genfill': json.dumps({'model': model.identity, 'settings': asdict(s), 'mask': asdict(ms), 'brightness': bid,
                                           **({'region': asdict(recon_region)} if region_on else {}),
                                           **({'rerender': asdict(rerender), 'contract': contract} if rerender is not None else {})})}
+    # Independent windows (13 Nov 2026): a chained window takes the previous window's generated frames as
+    # its context, and the model built on its own detail window after window (09V: structure 0.053-0.064
+    # over frames 0-32, 0.101 at 48; water's raw detail 0.04 in the first window, 0.148 by frame 96).
+    # Independent, every window starts from the source alone; the frames two windows share are held back
+    # (carry) and crossfaded, the later window's share rising across the overlap.
+    indep = rerender is not None and rerender.independent
+    carry: dict[int, dict] = {}
     for wi, (start, new, end) in enumerate(plan):
         if cancel and cancel():
             stats['cancelled'] = True
@@ -556,7 +597,7 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
             vid = np.zeros((n_pad, lh, lw, 3), np.float32)
             msk = np.zeros((n_pad, lh, lw), np.float32)
             for k, i in enumerate(padded):
-                if i < new and i in lgen:                  # kept frame from the previous window
+                if i < new and i in lgen and not indep:    # kept frame from the previous window
                     vid[k] = lgen[i]
                     continue
                 analytic = condition_of(codes[i], rerender.condition if rerender else 'aces', view)
@@ -569,7 +610,7 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
             for key, j in (('highlight', 0), ('shadow', 1)):
                 r = np.zeros((n_pad, lh, lw), np.float32)
                 for k, i in enumerate(padded):
-                    if not (i < new and i in lgen):
+                    if indep or not (i < new and i in lgen):
                         r[k] = cv2.resize(masks[i][j][lcrop].astype(np.float32), (lw, lh), interpolation=cv2.INTER_AREA) > 0
                 regions[key] = torch.from_numpy(r)[None, None]
 
@@ -588,19 +629,28 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
             stats['windows_generated'] += 1
         if stats.get('cancelled'):
             break
-        need = bool(decs)
         for k, i in enumerate(idxs):
-            if i < new:
+            if i < new and not (indep and i in carry):
                 continue
+            dk = {li: dec[k] for li, dec in decs.items()}
+            if indep:
+                if i in carry:                           # shared with the previous window: crossfade
+                    t = np.float32((i - start + 1) / float(new - start + 1))
+                    for li, c in carry.pop(i).items():
+                        dk[li] = c if li not in dk else ((1.0 - t) * c + t * dk[li]).astype(np.float32)
+                if wi < len(plan) - 1 and i >= end - overlap:
+                    carry[i] = dk                        # the next window shares it: written then
+                    continue
+            need = bool(dk)
             fr = frs[i]
             region = masks[i][0] | masks[i][1]
             if need and region.any():
                 fill_lin = fr['ap1'].astype(np.float32).copy()   # outside every box the master itself
-                for li, dec in decs.items():
+                for li, dki in dk.items():
                     L = lanes[li]
-                    L['gen_work'][i] = dec[k]
+                    L['gen_work'][i] = dki
                     (a0, a1, b0, b1), lcrop = L['box'], L['crop']
-                    part = cv2.resize(dec[k], (b1 - b0, a1 - a0), interpolation=cv2.INTER_CUBIC)
+                    part = cv2.resize(dki, (b1 - b0, a1 - a0), interpolation=cv2.INTER_CUBIC)
                     fill_lin[lcrop] = encoding.decode(part.astype(np.float32)).astype(np.float32)
                 if brightness is not None:                         # v3: shape from the model, brightness from the estimator
                     from .brightness import compose, excess_map
@@ -624,12 +674,19 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                     # the sky): the weight follows the source's codes, a ramp of 8 below tau_high.
                     top = codes[i].max(-1).astype(np.float32)
                     ramp = np.clip((top - (ms.tau_high - 8)) / 8.0, 0.0, 1.0)
-                    out_ap1, alpha = plain_blend(fr['ap1'], fill_lin, (weight * ramp * ramp * (3 - 2 * ramp)).astype(np.float32))
+                    w_plain = (weight * ramp * ramp * (3 - 2 * ramp)).astype(np.float32)
+                    if rerender.level > 0:                     # only where the source is near white in every channel
+                        w_plain = (w_plain * neutral_weight(codes[i])).astype(np.float32)
+                    if rerender.hue != 'model' or rerender.level > 0 or rerender.smooth > 0 or rerender.still > 0:
+                        fill_lin = finish_rerender(fill_lin, fr['ap1'], condition_of(codes[i], 'bt1886', view), codes[i], w_plain,
+                                                   rerender.hue, rerender.colour, rerender.level, rerender.smooth,
+                                                   finish_white, ms.tau_high, finish_state, dip=rerender.dip, still=rerender.still)
+                    out_ap1, alpha = plain_blend(fr['ap1'], fill_lin, w_plain)
                 else:
                     out_ap1, alpha = r_safe_blend(fr['ap1'], fill_lin, weight, view)
             else:
-                for li, dec in decs.items():
-                    lanes[li]['gen_work'][i] = dec[k]
+                for li, dki in dk.items():
+                    lanes[li]['gen_work'][i] = dki
                 out_ap1, alpha = fr['ap1'], np.zeros((H, W), np.float32)
             reason = None if np.isfinite(out_ap1).all() else 'non_finite'
             if reason:                                     # RUDRA 1.1: never write a broken fill
@@ -804,7 +861,14 @@ def serve(model, view, a, emit, FillSettings) -> int:
                                                              checked_shape_gain(r.get('shape_gain', a.shape_gain))),
                               region=request_region(r, a), fallback=str(r.get('fallback', a.fallback)),
                               focus=str(r.get('focus', a.focus)),
-                              rerender=Rerender(str(r.get('source', a.source)), str(r.get('condition', a.condition)))
+                              rerender=Rerender(str(r.get('source', a.source)), str(r.get('condition', a.condition)),
+                                                str(r.get('rerender_hue', a.rerender_hue)), float(r.get('rerender_colour', a.rerender_colour)),
+                                                float(r.get('rerender_level', a.rerender_level)),
+                                                float(r.get('rerender_smooth', a.rerender_smooth)),
+                                                int(r.get('source_start', a.source_start)),
+                                                float(r.get('rerender_dip', a.rerender_dip)),
+                                                float(r.get('rerender_still', a.rerender_still)),
+                                                bool(r.get('rerender_independent', a.rerender_independent)))
                               if r.get('region_rerender', a.region_rerender) and r.get('source', a.source) else None)
             tagged(event='done', ok=True, out=str(out), **rep['stats'])
         except Exception as e:  # noqa: BLE001 - one failed request does not end the server
@@ -858,8 +922,28 @@ def main(argv=None):
     ap.add_argument('--region-rerender', action='store_true',
                     help='v4: re-render the whole mask from the source\'s codes; the SDR codes inside it are NOT kept (needs --source)')
     ap.add_argument('--source', default='', help='with --region-rerender: the movie or folder of stills the master was made from')
+    ap.add_argument('--source-start', type=int, default=0,
+                    help='with --region-rerender: the source frame the first master frame was made from (default 0: the whole shot)')
     ap.add_argument('--condition', default='bt1886', choices=Rerender.CONDITIONS,
                     help="with --region-rerender: what the model is conditioned on, the route's inverse (bt1886: code ^ 2.4; aces)")
+    ap.add_argument('--rerender-hue', default='model', choices=RERENDER_HUES,
+                    help="with --region-rerender: 'source' keeps the fill's luminance and takes the source's colour")
+    ap.add_argument('--rerender-colour', type=float, default=0.0,
+                    help="with --rerender-hue source: the share of the model's own colour kept, 0..1 (e.g. 0.3)")
+    ap.add_argument('--rerender-level', type=float, default=0.0,
+                    help="with --region-rerender: the level where the source is clipped, in SDR whites (e.g. 3): the model's "
+                         "detail on it, crossfaded into the master by the source's code; 0 keeps the model's own level")
+    ap.add_argument('--rerender-smooth', type=float, default=0.0,
+                    help="with --region-rerender: how much of the previous frame's fill luminance is kept, 0..1 (e.g. 0.8); 0 is off")
+    ap.add_argument('--rerender-dip', type=float, default=0.0,
+                    help="with --rerender-level: the fill's fine detail at most this many stops under its surroundings "
+                         "(e.g. 0.3: no dark smudges beside a silhouette); 0 is off, the fill as gated")
+    ap.add_argument('--rerender-still', type=float, default=0.0,
+                    help="with --region-rerender: the share of the previous frame's fill kept where the source holds still "
+                         "(within 2 codes), in place of --rerender-smooth there (e.g. 0.9); 0 is off")
+    ap.add_argument('--rerender-independent', action='store_true',
+                    help="with --region-rerender: every window from the source alone, the overlaps crossfaded, not chained "
+                         "(the model's detail stays the same along the shot)")
     a = ap.parse_args(argv)
     if not a.serve and (not a.master or not a.out):
         ap.error('--master and --out are required (or --serve)')
@@ -897,7 +981,9 @@ def main(argv=None):
         rep = fill_master(Path(a.master), out, model, view, s, ms, a.window, a.overlap, a.max_area, emit,
                           cancel=stop.is_set, pattern=a.glob, brightness=brightness, region=region,
                           fallback=a.fallback, focus=a.focus,
-                          rerender=Rerender(a.source, a.condition) if a.region_rerender else None)
+                          rerender=Rerender(a.source, a.condition, a.rerender_hue, a.rerender_colour, a.rerender_level, a.rerender_smooth,
+                                            a.source_start, a.rerender_dip, a.rerender_still, a.rerender_independent)
+                          if a.region_rerender else None)
         emit(event='done', ok=True, out=str(out), **rep['stats'])
         return 0
     except Exception as e:  # noqa: BLE001 - every failure goes to the app as one line

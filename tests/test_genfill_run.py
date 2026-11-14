@@ -293,3 +293,44 @@ def test_no_fallback_is_v3(tmp_path):
     with pytest.raises(ValueError):
         fill_master(master, tmp_path / 'c', tiny_fill(), ACES2View(), FillSettings(steps=2), MaskSettings(),
                     fallback='sometimes', **args)
+
+
+def test_independent_windows_write_every_frame_once_in_order(tmp_path):
+    """13 Nov 2026: --rerender-independent. Every window from the source alone, the frames two windows
+    share held back and crossfaded: each frame is still written once, in order, and every pixel outside
+    the fill is the master's."""
+    import cv2
+    from genfill_tiny import tiny_fill
+    from rudra.aces_view import ACES2View
+    from rudra.genfill.run import Rerender
+    view = ACES2View()
+    master = tmp_path / 'master'
+    write_master(master)
+    names = sorted(p.name for p in master.glob('*.exr'))
+    src = tmp_path / 'source'
+    src.mkdir()
+    for k, name in enumerate(names):                     # the stills the master was made from
+        c = np.rint(np.clip(view.forward(read_frame(master / name)['ap1']), 0, 1) * 255).astype(np.uint8)
+        cv2.imwrite(str(src / f'f_{k:04d}.png'), c[..., ::-1])
+    reps = {}
+    for indep in (False, True):
+        out = tmp_path / f'filled_{indep}'
+        events = []
+        reps[indep] = fill_master(master, out, tiny_fill(), view, FillSettings(steps=2, seed=3),
+                                  MaskSettings(dilate=2, feather=3, tau_high=240, tau_low=-1), window=5, overlap=2,
+                                  max_area=48 * 64, emit=lambda **o: events.append(o),
+                                  rerender=Rerender(str(src), 'bt1886', independent=indep))
+        assert [e['index'] for e in events if e['event'] == 'frame'] == list(range(1, len(names) + 1))
+        assert sorted(p.name for p in out.glob('*.exr')) == names
+        for name in names:
+            a, b = read_frame(master / name), read_frame(out / name)
+            untouched = b['channels']['rudra.generated'] <= 0
+            for c in 'RGB':
+                assert np.array_equal(a['channels'][c][untouched].view(np.uint8), b['channels'][c][untouched].view(np.uint8))
+    assert reps[True]['rerender']['independent'] is True and reps[False]['rerender']['independent'] is False
+    assert reps[True]['stats']['windows_generated'] == reps[False]['stats']['windows_generated'] == 2
+    # the first window is the same either way; the second, from the source alone, is not
+    first = names[0]
+    a = read_frame(tmp_path / 'filled_False' / first)['ap1']
+    b = read_frame(tmp_path / 'filled_True' / first)['ap1']
+    assert np.array_equal(a, b)

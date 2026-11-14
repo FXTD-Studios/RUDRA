@@ -58,6 +58,27 @@ fs::path first_existing(const std::vector<fs::path>& places, const char* probe) 
     return places.empty() ? fs::path() : places.front();
 }
 
+// The training workstation's own folders on G: are looked in only on a developer's machine
+// (security review, 11 Nov 2026). They were in every build: on anyone else's computer a drive that
+// happens to be G: could then supply the base model, which is not checked by hash as the LoRA is.
+// A developer's machine: RUDRA_DEV_PATHS is set, or the app runs from a source checkout (no
+// python\ beside it as a package has, and a folder above it holds both rudra/genfill and .git).
+bool training_workstation() {
+    if (qEnvironmentVariableIsSet("RUDRA_DEV_PATHS")) return true;
+    static const bool checkout = [] {
+        const QDir app(QCoreApplication::applicationDirPath());
+        for (const QString& packaged : {app.filePath("python"), app.filePath("../Resources/python")})
+            if (QFileInfo::exists(packaged + "/rudra/genfill/run.py")) return false;
+        QDir d(app);
+        for (int i = 0; i < 8; ++i) {
+            if (QFileInfo::exists(d.filePath("rudra/genfill/run.py"))) return QFileInfo::exists(d.filePath(".git"));
+            if (!d.cdUp()) break;
+        }
+        return false;
+    }();
+    return checkout;
+}
+
 std::vector<fs::path> genfill_roots(const fs::path& repo) {
     std::vector<fs::path> r = {pq(QCoreApplication::applicationDirPath()) / "models" / "genfill"};
     if (!repo.empty()) r.push_back(repo / "models" / "genfill");
@@ -75,7 +96,7 @@ void hf_cache_snapshots(std::vector<fs::path>& out) {
         if (const QString e = qEnvironmentVariable(v); !e.isEmpty()) hubs.push_back(pq(e));
     if (const QString e = qEnvironmentVariable("HF_HOME"); !e.isEmpty()) hubs.push_back(pq(e) / "hub");
     hubs.push_back(pq(QDir::homePath()) / ".cache" / "huggingface" / "hub");
-    hubs.push_back("G:/datasets/models/_hf_home/hub");   // GENFILL.ps1's HF_HOME on the training workstation
+    if (training_workstation()) hubs.push_back("G:/datasets/models/_hf_home/hub");   // GENFILL.ps1's HF_HOME
     std::error_code ec;
     for (const auto& hub : hubs) {
         const fs::path repo = hub / "models--Wan-AI--Wan2.1-VACE-1.3B-diffusers";
@@ -96,7 +117,9 @@ void downloaded_loras(std::vector<fs::path>& out) {
     QDir root(default_download_root());
     QStringList dirs = root.entryList({"rudra_genfill*"}, QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
     std::sort(dirs.begin(), dirs.end(), [](const QString& a, const QString& b) { return a > b; });   // v3 before v2
-    for (const QString& d : dirs) out.push_back(pq(root.filePath(d)) / "rudra_genfill.safetensors");
+    // rudra_genfill_v4 (12 Nov 2026) is the region re-render's LoRA, not a hole filler: genfill_v4_lora finds it.
+    for (const QString& d : dirs)
+        if (!d.startsWith("rudra_genfill_v4")) out.push_back(pq(root.filePath(d)) / "rudra_genfill.safetensors");
 }
 
 // A saved path wins while it is there; gone (moved, deleted), the search again.
@@ -120,7 +143,7 @@ std::vector<fs::path> genfill_base_candidates(const fs::path& repo) {
     for (const auto& r : genfill_roots(repo)) bases.push_back(r / "Wan2.1-VACE-1.3B-diffusers");
     bases.push_back(pq(default_download_root()) / "Wan2.1-VACE-1.3B-diffusers");
     hf_cache_snapshots(bases);
-    bases.push_back("G:/datasets/models/Wan2.1-VACE-1.3B-diffusers");   // the training workstation
+    if (training_workstation()) bases.push_back("G:/datasets/models/Wan2.1-VACE-1.3B-diffusers");
     return bases;
 }
 
@@ -128,7 +151,8 @@ std::vector<fs::path> genfill_lora_candidates(const fs::path& repo) {
     std::vector<fs::path> loras;
     downloaded_loras(loras);   // File > Model packages (31 Oct 2026)
     for (const auto& r : genfill_roots(repo)) loras.push_back(r / "rudra_genfill.safetensors");
-    loras.push_back("G:/rudra_training/research_genfill_v3_20261030/rudra_genfill.safetensors");   // GENFILL.ps1's v3 run
+    if (training_workstation())   // GENFILL.ps1's v3 run
+        loras.push_back("G:/rudra_training/research_genfill_v3_20261030/rudra_genfill.safetensors");
     return loras;
 }
 
@@ -182,6 +206,27 @@ fs::path genfill_bootstrap_script(const fs::path& repo) {
 }
 
 QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, const QString& master, const QString& out) {
+    if (o.rerender) {
+        // AI fill v4, region re-render: the amended inference of 11 Nov 2026, exactly as it was
+        // tested (tmp/09V_test/v4_gates/HANDOFF_v4_region_rerender.md). v3's own controls
+        // (thresholds, brightness, detail, focus, the flicker fallback) do not apply to it.
+        QStringList a{"-m", "rudra.genfill.run", "--master", master, "--out", out, "--base", qp(s.base), "--lora", qp(s.lora),
+                      "--region-rerender", "--source", o.source, "--condition", o.condition,
+                      "--tau-high", "240", "--tau-low", "-1", "--feather", "8", "--brightness-model", "none",
+                      "--seed", QString::number(o.seed), "--steps", QString::number(o.steps),
+                      "--rerender-hue", "source", "--rerender-colour", "0.3", "--rerender-level", "3.3",
+                      "--rerender-smooth", "0.8",
+                      // 12 Nov 2026, not part of the 11 Nov gates: no dark smudges beside a silhouette (composite.py)
+                      "--rerender-dip", "0.3", "--json"};
+        if (o.source_start > 0) a << "--source-start" << QString::number(o.source_start);
+        // The highlight prompt is sent when there is one (12 Nov 2026): the 09V reference
+        // (fill_v4_finish5) was rendered with a prompt naming the scene; the held-out gate ran with none.
+        // The shadow prompt is not: v4 does not fill shadows.
+        if (!o.prompt_highlight.trimmed().isEmpty()) a << "--prompt-highlight" << o.prompt_highlight.trimmed();
+        if (!o.region_json.isEmpty()) a << "--region" << o.region_json;
+        if (!o.glob.isEmpty()) a << "--glob" << o.glob;
+        return a;
+    }
     QStringList a{"-m", "rudra.genfill.run", "--master", master, "--out", out, "--base", qp(s.base), "--lora", qp(s.lora),
                   "--tau-high", QString::number(o.tau_high), "--tau-low", QString::number(o.tau_low),
                   "--seed", QString::number(o.seed), "--steps", QString::number(o.steps), "--json"};
@@ -195,6 +240,37 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
     if (o.focus_region) a << "--focus" << "areas";   // 8 Nov 2026: a box per group of areas (one area: as region)
     if (!o.glob.isEmpty()) a << "--glob" << o.glob;
     return a;
+}
+
+bool genfill_v4_enabled() { return qEnvironmentVariableIntValue("RUDRA_GENFILL_V4") == 1; }
+
+fs::path genfill_v4_lora() {
+    std::vector<fs::path> places;
+    if (const QString saved = QSettings().value("genfill/loraV4").toString(); !saved.isEmpty()) places.push_back(pq(saved));
+    // File > Model packages: the published v4 package's folder (12 Nov 2026)
+    places.push_back(pq(default_download_root()) / "rudra_genfill_v4" / "rudra_genfill.safetensors");
+    for (const auto& r : genfill_roots(find_repo())) places.push_back(r / "rudra_genfill_v4.safetensors");
+    if (training_workstation()) places.push_back("G:/rudra_training/research_genfill_v4_20261109/rudra_genfill.safetensors");
+    std::error_code ec;
+    for (const auto& p : places)
+        if (fs::is_regular_file(p, ec) && genfill_lora_is_v3(p, QString::fromLatin1(kGenFillV4Sha256))) return p;
+    return {};
+}
+
+std::optional<GenFillSetup> genfill_setup_for(const GenFillOptions& o, QString* why) {
+    auto s = genfill_setup(why);
+    if (!s || !o.rerender) return s;
+    const fs::path v4 = genfill_v4_lora();
+    if (v4.empty()) {
+        if (why)
+            *why = QStringLiteral("AI fill region re-render: the v4 LoRA was not found. It is experimental and not published: "
+                                  "put rudra_genfill.safetensors of research_genfill_v4_20261109 beside the app as "
+                                  "models/genfill/rudra_genfill_v4.safetensors, or turn Re-render off for AI fill v3.");
+        return std::nullopt;
+    }
+    s->lora = v4;
+    s->rerender = true;
+    return s;
 }
 
 QStringList genfill_suggest_arguments(const GenFillSetup& s, const GenFillOptions& o, const QStringList& frames) {

@@ -202,7 +202,7 @@ def _compute_dtype(model):
 def _maybe_null_y(diffusion_model, batch_size, device, dtype):
     """SDXL-style class-conditional U-Nets (``num_classes`` set) require a pooled
     *added-conditioning* vector ``y`` (CLIP-pooled text + size/crop embedding,
-    2816-dim for SDXL base). Flux/Wan/LTX transformers have no ``y``.
+    2816-dim for SDXL base). Flux/Wan transformers have no ``y``.
 
     Returns a zero ``y`` of the correct width for training with null conditioning,
     or ``None`` when the model is not class-conditional.
@@ -915,17 +915,17 @@ def train_lora_stage(
             torch.cuda.empty_cache()
 
         # Detect model architecture from the ComfyUI BaseModel wrapper class name.
-        # Raw transformer class names: Flux -> "Flux", Wan -> "WanModel", LTX -> "LTXVModel".
-        # ComfyUI BaseModel class names: Flux -> "Flux"/"Flux2", Wan -> "WAN21", LTX -> "LTXV"/"LTXAV".
+        # Raw transformer class names: Flux -> "Flux", Wan -> "WanModel".
+        # ComfyUI BaseModel class names: Flux -> "Flux"/"Flux2", Wan -> "WAN21".
         # We prefer the comfy_model class name (more reliable) when available.
         _comfy_cls = type(getattr(diffusion_model, "comfy_model", None)).__name__ if hasattr(diffusion_model, "comfy_model") else ""
         _dm_cls = type(diffusion_model).__name__
         # Models that use (x, timestep, context) positional calling convention
         _CONTEXT_MODELS = {
             # raw transformer class names
-            "Flux", "WanModel", "LTXVModel", "LTXAVModel",
+            "Flux", "WanModel",
             # ComfyUI BaseModel subclass names
-            "Flux2", "LongCatImage", "WAN21", "LTXV", "LTXAV",
+            "Flux2", "LongCatImage", "WAN21",
             "HunyuanVideo", "HunyuanVideoI2V", "HunyuanVideoSkyreelsI2V",
         }
         _uses_context = (_dm_cls in _CONTEXT_MODELS) or (_comfy_cls in _CONTEXT_MODELS)
@@ -1094,7 +1094,7 @@ def train_dre_stage(
 
     # 3. Setup RUDRAPipeline in FULL_DRE mode
     # Dynamic text embedding dimension based on architecture family
-    if model_type.strip().lower() in ["flux", "wan", "hunyuanvideo", "ltx-video", "sd3"]:
+    if model_type.strip().lower() in ["flux", "wan", "hunyuanvideo", "sd3"]:
         text_embed_dim = 4096
     elif model_type.strip().lower() == "sdxl":
         text_embed_dim = 2048
@@ -1235,8 +1235,8 @@ def train_dre_stage(
         _comfy_cls_s3 = type(getattr(diffusion_model, "comfy_model", None)).__name__ if hasattr(diffusion_model, "comfy_model") else ""
         _dm_cls_s3 = type(diffusion_model).__name__
         _CONTEXT_MODELS_S3 = {
-            "Flux", "WanModel", "LTXVModel", "LTXAVModel",
-            "Flux2", "LongCatImage", "WAN21", "LTXV", "LTXAV",
+            "Flux", "WanModel",
+            "Flux2", "LongCatImage", "WAN21",
             "HunyuanVideo", "HunyuanVideoI2V", "HunyuanVideoSkyreelsI2V",
         }
         _uses_context_s3 = (_dm_cls_s3 in _CONTEXT_MODELS_S3) or (_comfy_cls_s3 in _CONTEXT_MODELS_S3)

@@ -18,10 +18,6 @@ def test_identity_changes_with_weights_and_config(tmp_path):
     assert second != wan_vae_identity(str(root))
 
 
-def test_identity_requires_weights_and_refuses_ltx(tmp_path):
+def test_identity_requires_weights(tmp_path):
     with pytest.raises(ValueError, match='safetensors'):
         wan_vae_identity(str(tmp_path))
-    p = tmp_path / 'ltx.safetensors'
-    p.write_bytes(b'x')
-    with pytest.raises(ValueError, match='LTX'):
-        wan_vae_identity(str(p))

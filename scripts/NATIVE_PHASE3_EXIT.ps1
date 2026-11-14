@@ -41,8 +41,13 @@ param(
     [string]$Backend = "onnxruntime/directml",
     [string]$Python = "python",
     [string]$QtVersion = "6.8.3",
-    [string]$OrtVersion = "1.22.0",
-    [string]$OpenCvVersion = "4.10.0",
+    # 1.24.4 (11 Nov 2026): the last ONNX Runtime published with DirectML; 1.22.0 read a crafted
+    # model's external data from outside its folder (fixed in 1.24.1).
+    [string]$OrtVersion = "1.24.4",
+    # 4.14.0 (11 Nov 2026): 4.10.0 and 4.11.0 have CVE-2025-53644, a heap write on a crafted JPEG.
+    # The SHA-256 is the release asset's digest as GitHub publishes it; another version needs its own.
+    [string]$OpenCvVersion = "4.14.0",
+    [string]$OpenCvSha256 = "5f266a8b73bed535962d7e861a6457e32a0dd5f463ad0a7cf8707a135469be63",
     [switch]$SkipBuild,
     [switch]$SkipTests,
     [switch]$InstallBuildTools
@@ -111,6 +116,11 @@ if (-not (Test-Path (Join-Path $CvBuild "OpenCVConfig.cmake"))) {
     $url = "https://github.com/opencv/opencv/releases/download/$OpenCvVersion/opencv-$OpenCvVersion-windows.exe"
     Write-Host "download $url"
     Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
+    $cvGot = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+    if ($cvGot -ne $OpenCvSha256.ToLower()) {
+        Remove-Item $exe
+        Fail "OpenCV $OpenCvVersion SHA-256 is $cvGot, expected $OpenCvSha256 (a different file: not run)"
+    }
     $p = Start-Process -FilePath $exe -ArgumentList @("-o`"$CvRoot`"", "-y") -Wait -PassThru
     if ($p.ExitCode -ne 0 -or -not (Test-Path (Join-Path $CvBuild "OpenCVConfig.cmake"))) { Fail "OpenCV extract" }
     Remove-Item $exe

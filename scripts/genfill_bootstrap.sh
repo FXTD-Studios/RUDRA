@@ -2,7 +2,7 @@
 # AI fill bootstrap for macOS and Linux (7 Nov 2026): what "Set up automatically" runs when this
 # computer has no Python for the fill. Everything goes under ROOT (the app's own data folder), and
 # nothing on the system changes:
-#   ROOT/uv      uv, the Python installer (downloaded once from its GitHub release)
+#   ROOT/uv      uv, the Python installer (one fixed release, downloaded once and checked by SHA-256)
 #   ROOT/python  a private Python 3.12 (uv's managed CPython)
 #   ROOT/venv    the fill's environment: PyTorch, diffusers, OpenColorIO, OpenEXR, ...
 # then rudra.genfill.setup checks the GPU and the disk and downloads Wan2.1-VACE-1.3B into BASE.
@@ -20,17 +20,24 @@ mkdir -p "$ROOT"
 
 UV="$ROOT/uv/uv"
 if [ ! -x "$UV" ]; then
+  # uv is a program this script downloads and runs, so it is one fixed release, checked by its SHA-256
+  # before it is unpacked (security review, 11 Nov 2026; it was releases/latest, unchecked). The hashes
+  # are the release assets' digests as GitHub publishes them. A newer uv: change the version and all four.
+  UV_VERSION=0.13.7
   case "$(uname -s)-$(uname -m)" in
-    Darwin-arm64) T=aarch64-apple-darwin ;;
-    Darwin-x86_64) T=x86_64-apple-darwin ;;
-    Linux-x86_64) T=x86_64-unknown-linux-gnu ;;
-    Linux-aarch64) T=aarch64-unknown-linux-gnu ;;
+    Darwin-arm64) T=aarch64-apple-darwin; H=81b811b57e4624df7ed3aac148e0359100d9962f3d9dce00aec533dc2e086731 ;;
+    Darwin-x86_64) T=x86_64-apple-darwin; H=20c47e4c1f630b8abaff8c291fa9b9aa300fef92c4fbff95adf198b55287cda7 ;;
+    Linux-x86_64) T=x86_64-unknown-linux-gnu; H=c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83 ;;
+    Linux-aarch64) T=aarch64-unknown-linux-gnu; H=71279f8d3c67241e807b9d8db872d1bf541579fb9f08b7d1eb1682196d1e57dc ;;
     *) fail "no uv build for $(uname -s) $(uname -m)" ;;
   esac
   step "Downloading uv, the Python installer (about 20 MB)"
   tmp="$ROOT/uv-download"; rm -rf "$tmp"; mkdir -p "$tmp" "$ROOT/uv"
-  curl -fL --retry 3 -o "$tmp/uv.tar.gz" "https://github.com/astral-sh/uv/releases/latest/download/uv-$T.tar.gz" >&2 \
+  curl -fL --retry 3 -o "$tmp/uv.tar.gz" "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$T.tar.gz" >&2 \
     || fail "could not download uv (network?)"
+  if command -v sha256sum >/dev/null 2>&1; then got="$(sha256sum "$tmp/uv.tar.gz" | cut -d' ' -f1)"
+  else got="$(shasum -a 256 "$tmp/uv.tar.gz" | cut -d' ' -f1)"; fi
+  if [ "$got" != "$H" ]; then rm -rf "$tmp"; fail "the uv download is not the expected file (SHA-256 $got, expected $H): nothing was installed"; fi
   tar -xzf "$tmp/uv.tar.gz" -C "$tmp"
   found="$(find "$tmp" -type f -name uv | head -1)"
   [ -n "$found" ] || fail "the uv download has no uv in it"
@@ -52,7 +59,10 @@ if ! "$PY" -c "import torch" 2>/dev/null; then
   else "$UV" pip install --python "$PY" torch >&2 || fail "PyTorch did not install (see the log)"; fi
 fi
 step "Installing the AI fill's Python packages"
-"$UV" pip install --python "$PY" "numpy>=1.26,<3" "opencv-python-headless>=4.9" "OpenEXR>=3.2" "opencolorio>=2.5" \
+# Fixed versions for every package (genfill_constraints.txt beside this script): the tested set, not the newest.
+CONS="$(cd "$(dirname "$0")" && pwd)/genfill_constraints.txt"
+if [ -f "$CONS" ]; then set -- -c "$CONS"; else set --; echo "no genfill_constraints.txt beside the bootstrap: installing unpinned versions" >&2; fi
+"$UV" pip install --python "$PY" "$@" "numpy>=1.26,<3" "opencv-python-headless>=4.9" "OpenEXR>=3.2" "opencolorio>=2.5" \
   "safetensors>=0.4" "diffusers>=0.35" "transformers>=4.45" "peft>=0.13" "accelerate>=1.0" sentencepiece ftfy \
   "huggingface-hub>=0.25" "PyYAML>=6" "tqdm>=4.66" >&2 || fail "the AI fill's packages did not install (see the log)"
 

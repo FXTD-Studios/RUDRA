@@ -180,7 +180,8 @@ def exposure_sdr(hdr_np: np.ndarray, ev: float, curve: str) -> torch.Tensor:
 
 
 def load_model(checkpoint: Path, device: torch.device) -> SDR2HDRNet:
-    payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    from rudra.torch_compat import load_checkpoint
+    payload = load_checkpoint(checkpoint)   # tensors only: no code from the file
     config = payload.get("config", {}) or {}
     model = SDR2HDRNet.from_config(config)
     model.load_state_dict(payload.get("model", payload), strict=True)

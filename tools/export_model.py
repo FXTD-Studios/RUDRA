@@ -508,7 +508,8 @@ class _TileOnly(nn.Module):
 # --------------------------------------------------------------------------
 
 def load_network(checkpoint: Path) -> tuple[SDR2HDRNet, dict]:
-    ck = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    from rudra.torch_compat import load_checkpoint   # tensors only: no code from the file
+    ck = load_checkpoint(checkpoint, map_location="cpu")
     config = ck.get("config", {}) if isinstance(ck, dict) else {}
     net = SDR2HDRNet.from_config(config)
     net.load_state_dict(ck.get("model", ck), strict=True)
