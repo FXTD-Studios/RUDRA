@@ -280,6 +280,22 @@ def read_body(handler) -> bytes:
     return handler.rfile.read(length) if length > 0 else b""
 
 
+def listed_file(base: Path, parts: tuple[str, ...]) -> Path | None:
+    """The file under ``base`` whose path is ``parts``, as the server lists it.
+
+    The returned path is built from the directory listing, never from the
+    request's own string: what reaches torch.load is a file the server found
+    under one of its roots (CodeQL py/unsafe-deserialization, 14 Nov 2026).
+    """
+    current = base
+    for part in parts:
+        try:
+            current = next(c for c in current.iterdir() if c.name == part)
+        except (StopIteration, OSError):
+            return None
+    return current if current.is_file() else None
+
+
 def allowed_checkpoint(requested: str) -> Path:
     """Resolve a checkpoint override to a path the server may load.
 
@@ -303,10 +319,13 @@ def allowed_checkpoint(requested: str) -> Path:
         raise RequestRefused(f"checkpoint not found: {requested}") from None
     for root in checkpoint_roots():
         try:
-            resolved.relative_to(Path(root).resolve())
-            return resolved
+            base = Path(root).resolve()
+            parts = resolved.relative_to(base).parts
         except (ValueError, OSError):
             continue
+        found = listed_file(base, parts)
+        if found is not None:
+            return found
     raise RequestRefused("checkpoint override must be one of the committed "
                          "models or live under RUDRA_CHECKPOINT_ROOTS")
 
