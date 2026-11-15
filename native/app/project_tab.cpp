@@ -349,8 +349,10 @@ void MainWindow::maybe_check_for_updates() {
     check_for_updates(false);
 }
 
+// The guide on the website (www.fxtdstudios.com/rudra-docs/), the same address as About > User guide;
+// it was a GitHub branch that no longer exists.
 QString MainWindow::user_guide_url() {
-    return QStringLiteral("https://github.com/FXTD-Studios/RUDRA/blob/native/docs/USER_GUIDE.md");
+    return QStringLiteral("https://www.fxtdstudios.com/rudra-docs/");
 }
 
 void MainWindow::show_getting_started() {

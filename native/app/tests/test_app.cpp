@@ -2661,7 +2661,7 @@ TEST(AppHelp, GettingStartedTheGuideAndTips) {
     QSettings().setValue("help/gettingStartedShown", true);
     w.show_getting_started_once();
     EXPECT_EQ(QSettings().value("help/gettingStarted").toInt(), 2);
-    EXPECT_TRUE(app::MainWindow::user_guide_url().endsWith("docs/USER_GUIDE.md"));
+    EXPECT_EQ(app::MainWindow::user_guide_url(), QStringLiteral("https://www.fxtdstudios.com/rudra-docs/"));
     EXPECT_EQ(w.action("user-guide")->shortcut(), QKeySequence(Qt::Key_F1));
     EXPECT_EQ(w.action("save-project")->shortcut(), QKeySequence(QKeySequence::Save));
     // Every control a new user asks about says what it does.
