@@ -40,13 +40,8 @@ the original SDR beside RUDRA's result, and RUDRA marks every pixel it had to
 invent.
 
 <p align="center">
-  <img src="docs/images/rudra_look.png" width="900" alt="RUDRA, the Look tab: a sunset opened in the Simple workspace, with Exposure, Strength and Display peak">
-  <br><sub><b>1 Look</b>: open a shot and shape its HDR. Hold B for the original SDR, W for a wipe.</sub>
-</p>
-
-<p align="center">
-  <img src="docs/images/rudra_check.png" width="900" alt="RUDRA, the Check tab: peak 5,856 nits and average 56 nits, with the waveform, histogram, vectorscope and RGB parade beside the picture">
-  <br><sub><b>2 Check</b>: peak, average and light above SDR white, with the scopes beside the picture.</sub>
+  <img src="docs/images/rudra_reconstruct.png" width="900" alt="RUDRA, the Reconstruct page: a night shot of an aircraft on a wet runway as a wipe, the SDR original on the left and the learned ACES 2.0 result on the right, with the scopes and the look controls beside it">
+  <br><sub>Open a shot, compare the SDR original with RUDRA as a wipe, and check it on the scopes.</sub>
 </p>
 
 ## Download
