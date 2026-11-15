@@ -31,12 +31,13 @@ set_source_files_properties("${RUDRA_THEME_DIR}/tokens.txt" PROPERTIES QT_RESOUR
 qt_add_resources(rudra_app_ui theme PREFIX /theme FILES "${RUDRA_THEME_DIR}/studio.qss" "${RUDRA_THEME_DIR}/tokens.txt")
 file(GLOB rudra_fonts CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/fonts/*.ttf")
 qt_add_resources(rudra_app_ui fonts PREFIX / FILES ${rudra_fonts} BASE "${CMAKE_CURRENT_SOURCE_DIR}")
-# The lockup's mark, the page's own asset.
-set_source_files_properties("${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark-256.png" PROPERTIES QT_RESOURCE_ALIAS rudra-mark.png)
+# The mark: the app icon of the 13 Nov 2026 brand (ui/assets/brand/png), the same as the exe and the Dock.
+# It was the earlier half-moon mark on the start screen and in About while the icon had changed.
+set_source_files_properties("${PROJECT_SOURCE_DIR}/../ui/assets/brand/png/rudra-icon-256.png" PROPERTIES QT_RESOURCE_ALIAS rudra-mark.png)
 # The full-size mark for the start screen (splash.cpp), sharp on HiDPI.
-set_source_files_properties("${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark.png" PROPERTIES QT_RESOURCE_ALIAS rudra-mark-large.png)
-qt_add_resources(rudra_app_ui assets PREFIX /assets FILES "${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark-256.png"
-                 "${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark.png")
+set_source_files_properties("${PROJECT_SOURCE_DIR}/../ui/assets/brand/png/rudra-icon-1024.png" PROPERTIES QT_RESOURCE_ALIAS rudra-mark-large.png)
+qt_add_resources(rudra_app_ui assets PREFIX /assets FILES "${PROJECT_SOURCE_DIR}/../ui/assets/brand/png/rudra-icon-256.png"
+                 "${PROJECT_SOURCE_DIR}/../ui/assets/brand/png/rudra-icon-1024.png")
 
 # The executable and its identity: the icon, the version, and on macOS the
 # bundle's Info.plist (HiDPI, the EDR display, the minimum system).

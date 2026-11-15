@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="ui/assets/brand/rudra_logo_dark.png">
-    <img src="ui/assets/brand/rudra_logo_light.png" width="220" alt="RUDRA">
+    <source media="(prefers-color-scheme: dark)" srcset="ui/assets/brand/png/rudra-logo-dark.png">
+    <img src="ui/assets/brand/png/rudra-logo-light.png" width="320" alt="RUDRA">
   </picture>
 </p>
 
