@@ -33,7 +33,8 @@ std::optional<fs::path> find_executable(const std::string& name) {
     if (!path) return std::nullopt;
 #ifdef _WIN32
     constexpr char sep = ';';
-    const std::vector<std::string> exts = {".exe", ".com", ".bat", ""};
+    // No ".bat": CreateProcessW hands one to cmd.exe, which reads the arguments again as a command line.
+    const std::vector<std::string> exts = {".exe", ".com", ""};
 #else
     constexpr char sep = ':';
     const std::vector<std::string> exts = {""};
@@ -98,11 +99,29 @@ void append_quoted(std::wstring& cmd, const std::wstring& arg) {
     cmd += L'"';
 }
 
+// The program to start, as a full path (security review, 11 Nov 2026). Given a bare name
+// ("ffmpeg"), CreateProcessW searches the application's folder, then the CURRENT folder, then the
+// system folders and the PATH: a project folder holding its own ffmpeg.exe had it run. The name is
+// resolved here instead, on the PATH (where the package puts its ffmpeg\ first) and then beside
+// this program; when it is nowhere, the path beside this program is still what is passed, so the
+// start fails rather than falling back to the current folder.
+std::wstring program_path(const std::string& name) {
+    if (name.find('/') != std::string::npos || name.find('\\') != std::string::npos) return widen(name);
+    if (auto found = find_executable(name)) return found->wstring();
+    std::wstring self(32768, L'\0');
+    const DWORD n = GetModuleFileNameW(nullptr, self.data(), DWORD(self.size()));
+    if (n == 0 || n >= self.size()) return widen(name);
+    self.resize(n);
+    fs::path beside = fs::path(self).parent_path() / fs::path(widen(name));
+    if (!beside.has_extension()) beside += L".exe";
+    return beside.wstring();
+}
+
 std::wstring command_line(const std::vector<std::string>& argv) {
     std::wstring cmd;
     for (std::size_t i = 0; i < argv.size(); ++i) {
         if (i) cmd += L' ';
-        append_quoted(cmd, widen(argv[i]));
+        append_quoted(cmd, i == 0 ? program_path(argv[i]) : widen(argv[i]));
     }
     return cmd;
 }

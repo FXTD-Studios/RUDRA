@@ -18,7 +18,7 @@ Usage
 -----
   python training/build_all_decoders.py --list                 # show plan + readiness
   python training/build_all_decoders.py --dry-run
-  python training/build_all_decoders.py --only flux,wan,ltx     # already-paired ones
+  python training/build_all_decoders.py --only flux,wan     # already-paired ones
   python training/build_all_decoders.py --sizes turbo           # turbo only
   python training/build_all_decoders.py --only sdxl             # download+pairs+train
 
@@ -61,13 +61,6 @@ REGISTRY = {
     "wan":       dict(type="wan",       latent=16, deploy_tag="wan",
                       vae=("wan_2.1_vae.safetensors", "vae", ""),       # TODO url if missing
                       pairs="hdrdata/wan_hdr_pairs", supported=True),
-    # LTX-2 / LTX-2.3 Video-VAE (AutoencoderKLLTX2Video): 32x spatial / 8x temporal /
-    # 128ch. Co-locate config.json next to this file so the loader builds the real
-    # 2.3 VAE (see load_vae_standalone ltx branch). 2.44 GB — NOT the 46 GB transformer.
-    "ltx":       dict(type="ltx-video", latent=128, deploy_tag="ltx-video",
-                      vae=("diffusion_pytorch_model.safetensors", "vae/ltx2",
-                           "https://huggingface.co/Lightricks/LTX-2/resolve/main/vae/diffusion_pytorch_model.safetensors"),
-                      pairs="hdrdata/ltx_pairs", supported=True),
     "sdxl":      dict(type="sdxl",      latent=4, deploy_tag="sdxl",
                       vae=("sdxl_vae.safetensors", "vae",
                            "https://huggingface.co/stabilityai/sdxl-vae/resolve/main/sdxl_vae.safetensors"),
@@ -126,7 +119,7 @@ def ensure_vae(spec, dry: bool) -> str | None:
         dest.parent.mkdir(parents=True, exist_ok=True)
         _download(url, dest)
         # diffusers-format VAE folders also need config.json beside the weights so
-        # AutoencoderKL*.from_pretrained(local_dir) can build the model (LTX-2.3).
+        # AutoencoderKL*.from_pretrained(local_dir) can build the model.
         if fname == "diffusion_pytorch_model.safetensors":
             cfg_url = url.rsplit("/", 1)[0] + "/config.json"
             cfg_dest = dest.parent / "config.json"

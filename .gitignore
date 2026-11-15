@@ -61,6 +61,8 @@ training/input.jpg
 # Root README only -- an anchored pattern, so a stray nested markdown cannot
 # slip back in through the negation.
 !/README.md
+# How to report a vulnerability: GitHub shows this file on the Security tab (11 Nov 2026).
+!/SECURITY.md
 # Documentation that is meant to be read, and the two model cards, one of which
 # a test reads off disk.
 !/docs/*.md

@@ -65,7 +65,7 @@
   "initialization": "scratch",
   "promotion": false,
   "resume_supported": true,
-  "data": "unchanged run02 frozen snapshot (same manifest and receipt as run03); no evaluation scene admitted; no LTX model, weight, LoRA or dataset used anywhere",
+  "data": "unchanged run02 frozen snapshot (same manifest and receipt as run03); no evaluation scene admitted; no third-party video model, weight, LoRA or dataset used anywhere",
   "differences_from_run03": {
     "--generator-style-p": 0.35
   },

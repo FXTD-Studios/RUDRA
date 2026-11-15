@@ -275,7 +275,7 @@ QWidget* MainWindow::build_left_rail() {
     auto* sh = new QHBoxLayout(seq);
     sh->setContentsMargins(0, 0, 0, 0);
     sh->setSpacing(6);
-    seq_path_ = new QLineEdit(seq);
+    seq_path_ = new PathEdit(seq);   // elides in the middle when not edited (14 Nov 2026)
     seq_path_->setObjectName("seqPath");
     seq_path_->setPlaceholderText("Open a folder of frames\u2026");
     seq_path_->setToolTip("A folder of frames, read where it sits: nothing is copied.");
@@ -738,6 +738,7 @@ QWidget* MainWindow::build_right_rail() {
             connect(grab, &QPushButton::clicked, this, [this] { run("still-grab"); });
             auto* box = new QComboBox(row);
             box->setObjectName("refStills");
+            box->setPlaceholderText("No still yet");   // 14 Nov 2026: it was an empty, unlabelled box
             box->setToolTip("The reference still to compare with");
             box->setEnabled(false);
             connect(box, &QComboBox::activated, this, [this](int i) { set_reference_compare(ref_compare_, i); });
@@ -1142,8 +1143,13 @@ QWidget* MainWindow::build_right_rail() {
         image->addItem("DPX · 10-bit", "dpx10");
         connect(image, &QComboBox::activated, this, [this, image](int i) { set_deliver("image", image->itemData(i).toString()); });
         field("Format", image, "deliverImageRow", "The file type of a still or a sequence");
-        auto* gamut = new Seg("deliverGamut", {{"ap0", "ACES 2065-1"}, {"acescg", "ACEScg"}, {"linear", "Rec.2020 linear"}, {"rec709", "Rec.709 linear"}});
+        // 12 Nov 2026: short names (four long ones were cut off in the column); the full ones in the tips.
+        auto* gamut = new Seg("deliverGamut", {{"ap0", "AP0"}, {"acescg", "ACEScg"}, {"linear", "2020"}, {"rec709", "709"}});   // "Rec.2020" was still cut off
         gamut->clicked = [this](const QString& k) { set_deliver("gamut", k); };
+        gamut->button("ap0")->setToolTip("ACES 2065-1 (AP0): the archive and interchange master");
+        gamut->button("acescg")->setToolTip("ACEScg (AP1): for compositing");
+        gamut->button("linear")->setToolTip("Rec.2020, linear");
+        gamut->button("rec709")->setToolTip("Rec.709, linear");
         field("Colour", gamut, "deliverGamutRow",
               "The EXR's primaries: ACES 2065-1 (AP0, the archive and interchange master) or ACEScg (AP1, for compositing)");
         auto* bits = new Seg("deliverBits", {{"10", "10-bit"}, {"16", "16-bit"}});
@@ -1221,8 +1227,21 @@ QWidget* MainWindow::build_right_rail() {
             box->setObjectName("deliverAiFillOptions");
             auto* bv = column(box, 0, 2);
             bv->setContentsMargins(14, 0, 0, 4);
+            {   // 12 Nov 2026: AI fill v4, region re-render (experimental). First in the list: it replaces v3's controls below
+                auto* rr = new CheckRow("deliverAiRerender", "Region re-render (v4)",
+                                        "deliverAiRerenderHint", "experimental: redraws bright regions", box);
+                rr->setToolTip("AI fill v3 draws only inside pixels that are fully clipped, often a fraction of a per "
+                               "cent of the frame. On, AI fill v4 draws the whole bright region again from the source "
+                               "(a window, a door, a sky parked just under white): its detail from the model, its "
+                               "colour and level led by the source, steadied over time. The SDR codes inside the "
+                               "region are NOT kept, unlike v3. It uses its own model (the v4 LoRA, not published "
+                               "yet) and its own fixed settings: the thresholds, brightness, detail, focus and "
+                               "flicker controls here do not apply to it. Tested on the analytic BT.1886 route; "
+                               "on the learned route it is untested. Off = AI fill v3");
+                rr->clicked = [this] { set_deliver("ai_rerender", deliver_.ai.rerender ? "0" : "1"); };
+                bv->addWidget(rr);
+            }
             {   // 6 Nov 2026: the suggested prompts first, one click each (Suggest fills them in)
-                bv->addWidget(label("Suggested prompts", {}, "note", box));
                 auto* chips = new QWidget(box);
                 chips->setObjectName("aiSuggestChips");
                 auto* cv = new QVBoxLayout(chips);
@@ -1244,22 +1263,16 @@ QWidget* MainWindow::build_right_rail() {
                 rcol->addWidget(sb);
                 bv->addWidget(r);
             };
-            spin("deliverAiTauHigh", "ai_tau_high", 128, 256, {},
-                 "Highlight threshold (8-bit code)|Codes at or above it are filled; 256 fills no highlights. "
-                 "The ACES window's \"AI fill regions\" view shows them");
-            spin("deliverAiTauLow", "ai_tau_low", -1, 64, "off",
-                 "Shadow threshold (8-bit code)|Codes at or below it are filled; off fills no shadows");
             auto line = [&](const char* id, const QString& key, const QString& head, const QString& placeholder) {
                 auto* le = new QLineEdit(box);
                 le->setObjectName(id);
                 le->setPlaceholderText(placeholder);
                 connect(le, &QLineEdit::editingFinished, this, [this, le, key] { set_deliver(key, le->text()); });
-                bv->addWidget(label(head, {}, "note", box));
+                bv->addWidget(label(head, QString::fromLatin1(id) + QStringLiteral("Label"), "note", box));
                 bv->addWidget(le);
             };
-            line("deliverAiPromptHighlight", "ai_prompt_highlight", "Highlight prompt (optional)",
-                 "e.g. warm sunset sun with soft halo");
-            line("deliverAiPromptShadow", "ai_prompt_shadow", "Shadow prompt (optional)", "e.g. dark wood grain");
+            line("deliverAiPromptHighlight", "ai_prompt_highlight", "Prompt", "what is in the bright area (optional)");
+            line("deliverAiPromptShadow", "ai_prompt_shadow", "Shadow prompt", "what is in the dark area (optional)");
             {   // RUDRA 1.1: suggest a prompt from the frame's clipped areas, or pick a preset
                 auto* sg = new QPushButton("Suggest a prompt\u2026", box);
                 sg->setObjectName("deliverAiSuggest");
@@ -1269,6 +1282,38 @@ QWidget* MainWindow::build_right_rail() {
                 connect(sg, &QPushButton::clicked, this, [this] { suggest_genfill_prompt(); });
                 bv->addWidget(sg);
             }
+            // 12 Nov 2026: the thresholds and the tuning controls fold away behind "Advanced" (the card was
+            // a wall of fields, taller than the panel). Whether it is open is remembered.
+            QWidget* const ai_box = box;
+            QVBoxLayout* const ai_bv = bv;
+            {
+                auto* fold = new QPushButton(box);
+                fold->setObjectName("deliverAiAdvanced");
+                fold->setCheckable(true);
+                fold->setFixedHeight(26);
+                fold->setToolTip("Thresholds, seed, steps, brightness, strengths, detail and the flicker fallback");
+                auto* adv = new QWidget(box);
+                adv->setObjectName("deliverAiAdvancedBox");
+                auto* av = column(adv, 0, 2);
+                const bool open = QSettings().value("deliver/aiAdvancedOpen", false).toBool();
+                fold->setChecked(open);
+                fold->setText(open ? QStringLiteral("Advanced \u25BE") : QStringLiteral("Advanced \u25B8"));
+                adv->setVisible(open);
+                connect(fold, &QPushButton::toggled, this, [fold, adv](bool on) {
+                    adv->setVisible(on);
+                    fold->setText(on ? QStringLiteral("Advanced \u25BE") : QStringLiteral("Advanced \u25B8"));
+                    QSettings().setValue("deliver/aiAdvancedOpen", on);
+                });
+                bv->addWidget(fold);
+                bv->addWidget(adv);
+                box = adv;
+                bv = av;
+            }
+            spin("deliverAiTauHigh", "ai_tau_high", 128, 256, {},
+                 "Highlight threshold (8-bit code)|Codes at or above it are filled; 256 fills no highlights. "
+                 "The ACES window's \"AI fill regions\" view shows them");
+            spin("deliverAiTauLow", "ai_tau_low", -1, 64, "off",
+                 "Shadow threshold (8-bit code)|Codes at or below it are filled; off fills no shadows");
             spin("deliverAiSeed", "ai_seed", 0, 999999, {}, "Seed|Another seed gives another plausible fill");
             spin("deliverAiSteps", "ai_steps", 1, 100, {}, "Steps|Denoising steps: more is slower, often cleaner (30)");
             {   // v3 (30 Oct 2026): the AI draws the shape; how bright it is comes from RUDRA's estimate plus this
@@ -1330,6 +1375,8 @@ QWidget* MainWindow::build_right_rail() {
                 fb->clicked = [this] { set_deliver("ai_fallback", deliver_.ai.fallback ? "0" : "1"); };
                 bv->addWidget(fb);
             }
+            box = ai_box;   // the fold ends: what follows is always shown
+            bv = ai_bv;
             {
                 auto* rn = label("Fills only inside the luminance region set on the Reconstruct card.",
                                  "deliverAiRegion", "small", box);
@@ -1367,9 +1414,15 @@ QWidget* MainWindow::build_right_rail() {
                 pv->setToolTip("Fills the frame at the playhead with these settings and shows it here; the render "
                                "then fills the whole shot. The fill model stays loaded, so the next preview is quicker");
                 connect(pv, &QPushButton::clicked, this, [this] { preview_genfill(); });
-                rh->addWidget(pv);
+                rh->addWidget(pv, 1);
+                bv->addWidget(row);
+                // 12 Nov 2026: four buttons in one row were cut off ("iew A", "/laste"). The views are a row of three.
+                row = new QWidget(box);
+                rh = new QHBoxLayout(row);
+                rh->setContentsMargins(0, 2, 0, 0);
+                rh->setSpacing(4);
                 for (auto [id, text, which, tip] :
-                     {std::tuple{"deliverAiShowFill", "AI fill", "fill", "The previewed frame with the AI fill"},
+                     {std::tuple{"deliverAiShowFill", "Fill", "fill", "The previewed frame with the AI fill"},
                       std::tuple{"deliverAiShowMaster", "Master", "master", "The same frame without it"},
                       std::tuple{"deliverAiShowMask", "Invented", "mask", "White where the AI fill invented the pixels"}}) {
                     auto* b = new QPushButton(QString::fromUtf8(text), row);
@@ -1378,9 +1431,8 @@ QWidget* MainWindow::build_right_rail() {
                     b->setToolTip(QString::fromUtf8(tip));
                     const QString w = QString::fromUtf8(which);
                     connect(b, &QPushButton::clicked, this, [this, w] { show_genfill_preview(w); });
-                    rh->addWidget(b);
+                    rh->addWidget(b, 1);
                 }
-                rh->addStretch(1);
                 bv->addWidget(row);
                 auto* ps = label("", "deliverAiPreviewStatus", "small", box);
                 ps->setWordWrap(true);
@@ -1649,10 +1701,11 @@ QWidget* MainWindow::build_right_rail() {
     // ── scopes, each a card ──
     scopes_ = styled("scopes", "scopes");
     auto* sv = column(scopes_, 0, 12);
-    const struct { const char* title; const char* note; const char* id; int h; } scopes[] = {
-        {"Waveform", "luma percentile \u00b7 nits/log", "wave", 112},
-        {"Histogram", "absolute nits \u00b7 log2 stops \u00b7 DW", "hist", 84},
-        {"Vectorscope", "Rec.2020", "vector", 0}};
+    const struct { const char* title; const char* note; const char* id; int h; const char* tip; } scopes[] = {
+        // 14 Nov 2026: short enough for one line in the scopes column (they wrapped); the long form is the tooltip.
+        {"Waveform", "nits \u00b7 log", "wave", 112, "Luma percentile in absolute nits, log scale"},
+        {"Histogram", "nits \u00b7 stops", "hist", 84, "Absolute nits in log2 stops, with the dynamic range (DW)"},
+        {"Vectorscope", "Rec.2020", "vector", 0, ""}};
     for (const auto& s : scopes) {
         auto [sc, scv] = card(scopes_, 12, 8);
         auto* head = new QWidget(sc);
@@ -1660,7 +1713,9 @@ QWidget* MainWindow::build_right_rail() {
         hh->setContentsMargins(0, 0, 0, 0);
         hh->addWidget(label(s.title, {}, "card-head"));
         hh->addStretch(1);
-        hh->addWidget(label(s.note, {}, "note"));
+        auto* sub = label(s.note, {}, "note");
+        if (*s.tip) sub->setToolTip(s.tip);
+        hh->addWidget(sub);
         scv->addWidget(head);
         auto* plot = styled({}, "plot");
         auto* pl = column(plot);
@@ -1717,10 +1772,18 @@ QWidget* MainWindow::build_pipe() {
     auto* h = new QHBoxLayout(pipe);
     h->setContentsMargins(12, 0, 12, 0);
     h->setSpacing(8);
-    h->addWidget(label("\u2014", "statusMask", "pipe-s", pipe));
-    h->addStretch(1);
-    auto seg = [&](const QString& id, const QString& text) {
-        auto* b = label(text, id, "pipe-b", pipe);
+    // 14 Nov 2026: every part elides instead of being cut mid-word ("SDR 1C", "— clippe"); hover for the whole.
+    // The two side readouts give way first (Ignored: they take what the pipeline leaves).
+    auto side = [&](const char* id, Qt::Alignment align) {
+        auto* l = new ElideLabel("\u2014", id, "pipe-s", Qt::ElideRight, pipe);
+        l->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        l->setMinimumWidth(56);   // 15 Nov 2026: they give way first, but never vanish (a 1600 px window on Deliver squeezed them to 0)
+        l->setAlignment(align | Qt::AlignVCenter);
+        h->addWidget(l, 1);
+    };
+    side("statusMask", Qt::AlignLeft);
+    auto seg = [&](const QString& id, const QString& text) -> QLabel* {
+        auto* b = new ElideLabel(text, id, "pipe-b", Qt::ElideRight, pipe);
         h->addWidget(b);
         return b;
     };
@@ -1735,11 +1798,10 @@ QWidget* MainWindow::build_pipe() {
     seg("pipeDisplay", QString::fromStdString(display_signal_text(DisplayTarget::sdr(), 203.0)));
     arrow();
     seg("pipeMaster", "ACES 2065-1 EXR, float32");
-    auto* warn = label("", "pipeWarn", {}, pipe);
+    auto* warn = new ElideLabel("", "pipeWarn", {}, Qt::ElideRight, pipe);
     warn->hide();
     h->addWidget(warn);
-    h->addStretch(1);
-    h->addWidget(label("\u2014", "statusTime", "pipe-s", pipe));
+    side("statusTime", Qt::AlignRight);
     return pipe;
 }
 

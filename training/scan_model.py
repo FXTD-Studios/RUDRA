@@ -70,7 +70,8 @@ def _load_into_pipeline(pipeline: RUDRAPipeline, ckpt: Path) -> None:
     if str(ckpt).endswith(".safetensors"):
         pipeline.load_checkpoint(str(ckpt), strict=False)
         return
-    obj = torch.load(str(ckpt), map_location="cpu", weights_only=False)
+    from rudra.torch_compat import load_checkpoint   # tensors only: no code from the file
+    obj = load_checkpoint(str(ckpt), map_location="cpu")
     # Prefer EMA weights when present.
     dec = obj.get("ema_decoder") or obj.get("decoder")
     proj = obj.get("ema_projection") or obj.get("projection")
@@ -105,7 +106,7 @@ def main():
     ap.add_argument("--model-type", default="flux")
     ap.add_argument("--model-size", default="turbo", choices=["turbo", "full"])
     ap.add_argument("--pair_dir", default="", help="Held-out pairs to evaluate on (optional).")
-    ap.add_argument("--curve", default="logc4", help="Target curve (flux/wan=logc4, ltx=slog3).")
+    ap.add_argument("--curve", default="logc4", help="Target curve (flux/wan=logc4).")
     ap.add_argument("--samples", type=int, default=200)
     ap.add_argument("--fast", action="store_true",
                     help="Skip ColorVideoVDP + LPIPS (no hdr_vdp3) for an instant read.")

@@ -32,6 +32,11 @@ names that sort in frame order), the same numbers for each, so they can be compa
     python tools/compare_hdr_renders.py --source shot.mp4 --out reports/compare_shot ^
         --method "other tool=renders/other/shot" --method "RUDRA analytic=renders/rudra/shot"
 
+A method made from another copy of the shot is measured against that copy (--source-for NAME=movie
+or folder of stills; 11 Nov 2026: one tool's copy of 09V was an 8-bit 4:2:0 re-encode, its mid-tones
+1 to 5 % lower in code, and every other render read 10 % dim against it). The pictures and the
+bright band then use each method's own source too.
+
 A render a few pixels smaller than the source (one tool delivers 1916 wide) is compared with the source
 resized to it (area). Nothing is written into the renders. Needs ffmpeg, OpenEXR and OpenColorIO.
 """
@@ -65,7 +70,15 @@ def probe(movie: Path) -> dict:
 
 def source_frames(movie: Path, count: int):
     """Yields frames 0..count-1 as display codes in [0, 1] (float32), decoded as the engine does
-    (tools/measure_flicker.py decode_movie), one at a time."""
+    (tools/measure_flicker.py decode_movie, or decode_frames for a folder of stills), one at a time."""
+    if Path(movie).is_dir():
+        from tools.measure_flicker import decode_frames
+        for i in range(count):
+            got = decode_frames(Path(movie), i, 1)
+            if not got:
+                return
+            yield got[0].astype(np.float32)
+        return
     s = probe(movie)
     w, h = int(s["width"]), int(s["height"])
     rng = "pc" if s.get("color_range") == "pc" else "tv"
@@ -166,7 +179,7 @@ def measure(name: str, folder: Path, movie: Path, view, frames: list[int], first
     st = np.concatenate(static_ev) if static_ev else np.zeros(0)
     pct = lambda a, q: float(np.percentile(a, q)) if a.size else None  # noqa: E731
     row = {
-        "name": name, "folder": str(folder), "frames": len(exrs),
+        "name": name, "folder": str(folder), "source": str(movie), "frames": len(exrs),
         "scale_sdr_white": scale,
         "round_trip": {"within_1_code": float((d <= 1.0).mean()), "within_2_codes": float((d <= 2.0).mean()),
                        "median_codes": pct(d, 50), "p99_codes": pct(d, 99)},
@@ -283,7 +296,10 @@ def report_md(shot: str, rows: list[dict]) -> str:
         lines.append(("Bright band: structure correlation with the source", [g(b, "structure_corr_source") for b in bb]))
     body = "".join(f"| {k} | " + " | ".join(v) + " |\n" for k, v in lines)
     errs = "".join(f"\n- {r['name']}: {r['error']}" for r in rows if "error" in r)
-    return f"# {shot}: head to head\n\n{head}{body}{errs}\n"
+    sources = sorted({r.get("source", "") for r in ok})
+    note = "" if len(sources) < 2 else "\nEach method against its own source: " + "; ".join(
+        f"{r['name']}: {Path(r['source']).name}" for r in ok) + ".\n"
+    return f"# {shot}: head to head\n\n{head}{body}{note}{errs}\n"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -291,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", type=Path, required=True, help="the SDR movie every render was made from")
     ap.add_argument("--method", action="append", required=True, help="name=EXR folder (repeat; the first sets the pictures' scale)")
+    ap.add_argument("--source-for", action="append", default=[],
+                    help="name=movie or folder of stills: the source this method was made from, when not --source (repeat)")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--frames", type=int, nargs="*", default=[1, 48, 97], help="frames (1-based) for the pictures")
     ap.add_argument("--name", default="", help="the shot's name in the report")
@@ -298,18 +316,24 @@ def main(argv: list[str] | None = None) -> int:
     from rudra.aces_view import ACES2View
     view = ACES2View(threads=8)
     a.out.mkdir(parents=True, exist_ok=True)
+    own = dict(spec.split("=", 1) for spec in a.source_for)
+    names = [spec.split("=", 1)[0] for spec in a.method]
+    unknown = sorted(set(own) - set(names))
+    if unknown:
+        ap.error(f"--source-for names no method: {', '.join(unknown)}")
     rows, first = [], None
     for spec in a.method:
         name, folder = spec.split("=", 1)
-        print(f"measuring {name} ...", flush=True)
-        row, scale = measure(name, Path(folder), a.source, view, a.frames, first, a.out)
+        source = Path(own.get(name, a.source))
+        print(f"measuring {name} against {source.name} ...", flush=True)
+        row, scale = measure(name, Path(folder), source, view, a.frames, first, a.out)
         if first is None and scale:
             first = scale
         rows.append(row)
         print(json.dumps(row, indent=1), flush=True)
     shot = a.name or a.source.stem
     (a.out / "report.json").write_text(json.dumps({"schema": "rudra_compare_hdr_renders_v2", "shot": shot,
-                                                   "source": str(a.source), "bracket_ev": BRACKET_EV, "methods": rows}, indent=1),
+                                                   "source": str(a.source), "sources": own, "bracket_ev": BRACKET_EV, "methods": rows}, indent=1),
                                        encoding="utf-8")
     md = report_md(shot, rows)
     (a.out / "report.md").write_text(md, encoding="utf-8")

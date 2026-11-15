@@ -331,7 +331,9 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         proc->setWorkingDirectory(from_path(plan.repo));
         if (bootstrap) {
 #ifdef _WIN32
-            proc->setProgram(QStringLiteral("powershell.exe"));
+            // By its full path: a bare name is also looked for in the current folder (11 Nov 2026).
+            proc->setProgram(QDir(qEnvironmentVariable("SystemRoot", QStringLiteral("C:/Windows")))
+                                 .filePath(QStringLiteral("System32/WindowsPowerShell/v1.0/powershell.exe")));
             proc->setArguments({"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", from_path(script), "-Root",
                                 from_path(genfill_bootstrap_root()), "-Base", from_path(plan.base), "-Repo", from_path(plan.repo)});
 #else

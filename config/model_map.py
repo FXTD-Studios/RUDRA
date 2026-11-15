@@ -30,25 +30,6 @@ RADIANCE_MODEL_MAP: dict = {
         "url": "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/ae.safetensors",
         "type": "vae",
     },
-    # LTX-2.3 transformer (46 GB) — only needed for generation, NOT for decoder training.
-    "ltx-2.3-22b-dev.safetensors": {
-        "url": "https://huggingface.co/Lightricks/LTX-2.3/resolve/main/ltx-2.3-22b-dev.safetensors",
-        "type": "diffusion_models",
-    },
-    "ltx-2.3-22b-distilled.safetensors": {
-        "url": "https://huggingface.co/Lightricks/LTX-2.3/resolve/main/ltx-2.3-22b-distilled.safetensors",
-        "type": "diffusion_models",
-    },
-    # LTX-2 Video-VAE (AutoencoderKLLTX2Video, 32x/8x/128ch) — this is all the RUDRA
-    # decoder training needs to encode HDR -> latents. Shared by LTX-2 and LTX-2.3.
-    "ltx2_vae_config.json": {
-        "url": "https://huggingface.co/Lightricks/LTX-2/resolve/main/vae/config.json",
-        "type": "vae",
-    },
-    "ltx2_vae.safetensors": {
-        "url": "https://huggingface.co/Lightricks/LTX-2/resolve/main/vae/diffusion_pytorch_model.safetensors",
-        "type": "vae",
-    },
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -60,23 +41,6 @@ RADIANCE_MODEL_MAP: dict = {
 #  resolve_model_vae_config() rather than hard-coding values.
 
 MODEL_VAE_CONFIG: dict[str, dict] = {
-    "ltx-video": {
-        "latent_channels":     128,
-        "scale_factor":        1.0,
-        "log_curve":           "Sony S-Log3",
-        "compression_ratio":     0.50,
-        "norm_center":         3.0,
-        "vae_spatial_factor":  32,
-        "vae_temporal_factor": 8,
-        "noise_schedule":      "flow",
-        "text_embed_seq_len":  128,
-        "text_embed_hidden":   4096,
-        "clip_slots":          ["llm_encoder", "text_projection"],
-        "notes":               "LTX-Video / LTX-2.3 Video-VAE (AutoencoderKLLTX2Video): "
-                               "spatial_compression_ratio=32, temporal=8, latent_channels=128, "
-                               "scaling_factor=1.0. The 32x spatial factor -> log2(32)=5 decoder "
-                               "upsample stages (was wrongly 8 -> 3 stages, which broke real-LTX decode).",
-    },
     "flux": {
         "latent_channels":     16,
         "scale_factor":        0.3611,
@@ -256,11 +220,6 @@ MODEL_VAE_CONFIG: dict[str, dict] = {
 # Aliases so that architecture detectors (model/detect.py) and CLI args
 # resolve to the same canonical config regardless of naming convention.
 _MODEL_VAE_ALIASES: dict[str, str] = {
-    # LTX variants
-    "ltx":         "ltx-video",
-    "ltxv":        "ltx-video",
-    "ltx-video":   "ltx-video",
-    "ltxav":       "ltx-video",
     # Flux variants
     "flux1":       "flux",
     "flux.1":      "flux",

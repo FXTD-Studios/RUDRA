@@ -192,7 +192,7 @@ void SourcePanel::inspect_source(bool loaded, bool movie, const std::optional<Vi
             text += "\nTags do not identify the original tone mapper. Choose the reconstruction curve below.";
         }
     }
-    if (inspection_->text() != text) inspection_->setText(text);
+    if (inspection_->text() != text) static_cast<NoteLabel*>(inspection_)->setText(text);
 }
 
 SourcePanel::SourcePanel(QWidget* parent) : QWidget(parent) {
@@ -200,11 +200,10 @@ SourcePanel::SourcePanel(QWidget* parent) : QWidget(parent) {
     auto* v = new QVBoxLayout(this);
     v->setContentsMargins(0, 0, 0, 0);
     v->setSpacing(12);
-    inspection_ = new QLabel(this);
-    inspection_->setObjectName("sourceInspection");
+    // 14 Nov 2026: a NoteLabel, whose height is its text's at the column's width; a plain QLabel came up
+    // a line short in the pinned column and its last line was drawn under the curve buttons.
+    inspection_ = new NoteLabel({}, "sourceInspection", {}, this);
     inspection_->setTextFormat(Qt::PlainText);
-    inspection_->setTextFormat(Qt::PlainText);
-    inspection_->setWordWrap(true);
     inspection_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     v->addWidget(inspection_);
     inspect_source(false, false, {});
@@ -212,7 +211,7 @@ SourcePanel::SourcePanel(QWidget* parent) : QWidget(parent) {
     for (SourceCurve c : all_source_curves())
         buttons.push_back({QString::fromUtf8(source_curve_id(c).data(), int(source_curve_id(c).size())),
                            QString::fromUtf8(source_curve_label(c).data(), int(source_curve_label(c).size()))});
-    seg_ = new Seg("source", buttons, this, true, 3);
+    seg_ = new Seg("source", buttons, this, true, 2);   // 14 Nov 2026: two columns; three cut "BT.1886 shadows"
     for (SourceCurve c : all_source_curves()) {
         if (auto* b = seg_->button(QString::fromUtf8(source_curve_id(c).data(), int(source_curve_id(c).size()))))
             b->setToolTip(QString::fromUtf8(source_curve_detail(c).data(), int(source_curve_detail(c).size())));

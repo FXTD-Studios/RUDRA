@@ -21,8 +21,13 @@ param(
     [string]$Build = "build\native_aces_v2",
     [string]$Python = ".venv\Scripts\python.exe",
     [string]$OcioPrefix = "",
-    [string]$OpenCvVersion = "4.10.0",
-    [string]$OrtVersion = "1.22.0",   # ONNX Runtime DirectML package from tmp\native_deps (NATIVE_GATE_A.ps1 fetches it)
+    # 4.14.0 (11 Nov 2026): 4.10.0 and 4.11.0 have CVE-2025-53644, a heap write on a crafted JPEG.
+    # The SHA-256 is the release asset's digest as GitHub publishes it; another version needs its own.
+    [string]$OpenCvVersion = "4.14.0",
+    [string]$OpenCvSha256 = "5f266a8b73bed535962d7e861a6457e32a0dd5f463ad0a7cf8707a135469be63",
+    # 1.24.4 (11 Nov 2026): the last ONNX Runtime published with DirectML; 1.22.0 read a crafted
+    # model's external data from outside its folder (fixed in 1.24.1).
+    [string]$OrtVersion = "1.24.4",   # ONNX Runtime DirectML package from tmp\native_deps (NATIVE_GATE_A.ps1 fetches it)
     [string]$Device = "cuda",
     [string]$PackageName = "RUDRA_ACES_2",   # the package folder in dist\models (was aces_v2_<checkpoint folder>)
     [switch]$SkipBuild,
@@ -107,6 +112,11 @@ $CvBuild = Join-Path $CvRoot "opencv\build"
 if (-not (Test-Path (Join-Path $CvBuild "OpenCVConfig.cmake"))) {
     $exe = Join-Path $Deps "opencv-$OpenCvVersion-windows.exe"
     Invoke-WebRequest -Uri "https://github.com/opencv/opencv/releases/download/$OpenCvVersion/opencv-$OpenCvVersion-windows.exe" -OutFile $exe -UseBasicParsing
+    $cvGot = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+    if ($cvGot -ne $OpenCvSha256.ToLower()) {
+        Remove-Item $exe
+        Fail "OpenCV $OpenCvVersion SHA-256 is $cvGot, expected $OpenCvSha256 (a different file: not run)"
+    }
     $p = Start-Process -FilePath $exe -ArgumentList @("-o`"$CvRoot`"", "-y") -WindowStyle Hidden -Wait -PassThru
     if ($p.ExitCode -ne 0) { Fail "OpenCV extract" }
     Remove-Item $exe

@@ -5,6 +5,7 @@
 
 #include <QImage>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QToolButton>
 #include <QWidget>
@@ -72,6 +73,35 @@ public:
 
 protected:
     void resizeEvent(QResizeEvent* e) override;
+};
+
+// A one-line label that elides when its row is too narrow (14 Nov 2026): the pipeline strip's
+// segments were cut mid-word ("ACES 2.0 SDR 1C", "— clippe"). text() stays whole; the
+// full text shows on hover while it is elided.
+class ElideLabel : public QLabel {
+public:
+    ElideLabel(const QString& text, const QString& id, const QString& role,
+               Qt::TextElideMode mode = Qt::ElideRight, QWidget* parent = nullptr);
+    QSize minimumSizeHint() const override;
+    bool elided() const;
+
+protected:
+    void paintEvent(QPaintEvent* e) override;
+    bool event(QEvent* e) override;
+
+private:
+    QRect text_rect() const;
+    Qt::TextElideMode mode_;
+};
+
+// A path field that elides in the middle while it is not being edited (14 Nov 2026): the
+// shots rail showed "ned\Downloads\09V.mp4", the start cut mid-word. text() stays whole.
+class PathEdit : public QLineEdit {
+public:
+    using QLineEdit::QLineEdit;
+
+protected:
+    void paintEvent(QPaintEvent* e) override;
 };
 
 // .plabel: a panel label with an optional note on the right.

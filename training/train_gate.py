@@ -206,7 +206,8 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    payload = torch.load(args.init_checkpoint, map_location="cpu", weights_only=False)
+    from rudra.torch_compat import load_checkpoint   # tensors only: no code from the file
+    payload = load_checkpoint(args.init_checkpoint, map_location="cpu")
     base_config = payload.get("config", {}) or {}
     model = SDR2HDRNet.from_config(base_config, gate_conditioning=True)
     missing, unexpected = model.load_state_dict(payload.get("model", payload), strict=False)

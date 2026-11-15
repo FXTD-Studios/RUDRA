@@ -198,6 +198,11 @@ public:
     QString render_reel() const;
     int aces_shown() const { return aces_shown_; }      // the frame the ACES route last showed (-1: none)
     QString frame_info() const { return frame_info_; }
+    // 12 Nov 2026: the technical readouts (the range line under the viewer's tools, the pipeline bar under
+    // the picture, the frame's timings) show only when asked: View > Technical details. A window made in
+    // code shows them (as before); the app starts without them (main.cpp).
+    void set_details(bool on);
+    bool details() const { return details_; }
     // The Deliver tab (27 Oct 2026, deliver_choice.hpp): the source (the learned
     // ACES 2.0 model when it is ready, else the analytic reconstruction), still,
     // sequence or MOV, EXR 32/16-bit or DPX 10-bit, ACES 2065-1 or ACEScg, LogC4,
@@ -527,7 +532,15 @@ protected:
     void dragLeaveEvent(class QDragLeaveEvent* e) override;
     void dropEvent(class QDropEvent* e) override;
     void closeEvent(class QCloseEvent* e) override;
+    // title_bar.cpp: the merged title bar on Windows (the system's frame events, taken over).
+    void showEvent(class QShowEvent* e) override;
+    bool nativeEvent(const QByteArray& type, void* message, qintptr* result) override;
 public:
+    // Windows: the toolbar becomes the window's title bar, dark, with the menus behind one button
+    // (11 Nov 2026). Asked for by main.cpp before the window shows; a no-op elsewhere, with
+    // window/mergedTitleBar = false, or with RUDRA_NATIVE_TITLE_BAR set.
+    void use_merged_title_bar();
+    bool merged_title_bar() const { return merged_title_; }
     // What would be stopped by quitting now ("the Deliver render", "the batch", ...).
     QStringList running_work() const;
     // Asks each to stop after the frame in hand (written whole); the owners wait on destruction.
@@ -618,6 +631,8 @@ private:
     QStringList empty_recent_;                   // the recent shots the empty viewer lists
     QPushButton* view_menu_btn_ = nullptr;
     QLabel* hold_hint_ = nullptr;
+    bool merged_title_ = false, merged_title_styled_ = false;
+    QWidget* title_bar_ = nullptr;   // the toolbar, when it is the window's caption (title_bar.cpp)
     void session_changed(std::uint32_t what);
     void build_ui(bool with_viewer);
     QWidget* build_left_rail();
@@ -672,6 +687,9 @@ private:
 
     ViewerWindow* viewer_ = nullptr;
     QString workspace_ = "full", tab_ = "rec";
+    bool details_ = true;        // set_details
+    QString src_info_full_ = QStringLiteral("\u2014");   // the frame's line in full (the page's dash until a frame); srcInfo shows its start when details are off
+    void show_src_info();
     bool guides_on_ = false;
     // The widgets the state is drawn into (the page's ids).
     QWidget *rail_left_ = nullptr, *rail_right_ = nullptr, *scopes_ = nullptr, *scopes_dock_ = nullptr;

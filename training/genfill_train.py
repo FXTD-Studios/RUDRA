@@ -114,6 +114,32 @@ def flow_loss(transformer, z0, ctx, mask, embeds, sigma, noise, region_weight, s
     return loss
 
 
+def temporal_loss(x0, z0, mask):
+    """v4.2: the predicted clean latents should change from frame to frame as the truth's do, inside the
+    region. Latent frames 1.. (each 4 video frames; latent 0 is frame 0 alone, the VAE's causal start, and
+    is not compared): mean over the region of ((x0[t] - x0[t-1]) - (z0[t] - z0[t-1]))^2. On a clip held
+    still the truth's differences are ~0, so this is the steadiness the water shot's T gate asks for."""
+    if x0.shape[2] < 3:
+        return x0.new_zeros(())
+    w = region_weight_latent(mask, tuple(z0.shape[1:]))[:, 2:].to(x0)          # (1, f-2, h, w)
+    if w.sum() < 1:
+        return x0.new_zeros(())
+    dp = x0[0, :, 2:] - x0[0, :, 1:-1]
+    dt = z0[:, 2:] - z0[:, 1:-1]
+    return ((dp - dt) ** 2 * w).sum() / (w.sum() * dp.shape[0])
+
+
+def sampling_weights(meta, boost, ref):
+    """v4.2: region clips are drawn 1 + boost * min(structure / ref, 1) times as often as the others, so the
+    clips whose truth has detail inside the region (clouds, foliage, a lit exterior) are the ones the model
+    sees most -- the flat-plate failure of the second shot. boost 0: every clip equally (v1-v4)."""
+    w = []
+    for m in meta:
+        s = m.get('structure')
+        w.append(1.0 + boost * min(float(s) / ref, 1.0) if (boost > 0 and m.get('kind') == 'region' and s is not None) else 1.0)
+    return torch.tensor(w, dtype=torch.float64)
+
+
 AP1_Y = torch.tensor([.2722287168, .6740817658, .0536895174])
 
 
@@ -158,6 +184,11 @@ def main(argv=None):
     ap.add_argument('--calib-weight', type=float, default=0.0, help='v2: weight of the brightness calibration term (0 = off)')
     ap.add_argument('--calib-sigma', type=float, default=0.6, help='calibrate only at noise levels <= this')
     ap.add_argument('--over-weight', type=float, default=4.0, help='overshoot costs this many times undershoot')
+    ap.add_argument('--structure-boost', type=float, default=0.0,
+                    help='v4.2: region clips drawn up to 1 + this times as often, by the truth structure in the region (0 = off)')
+    ap.add_argument('--structure-ref', type=float, default=0.10, help='structure (stops) at which the boost is full')
+    ap.add_argument('--temporal-weight', type=float, default=0.0, help='v4.2: weight of the frame-to-frame term (0 = off)')
+    ap.add_argument('--temporal-sigma', type=float, default=0.6, help='the frame-to-frame term only at noise levels <= this')
     ap.add_argument('--no-checkpointing', action='store_true')
     ap.add_argument('--tiny', action='store_true', help=argparse.SUPPRESS)   # tests: a random tiny Wan
     a = ap.parse_args(argv)
@@ -244,13 +275,17 @@ def main(argv=None):
         tr.train()
         return tot / len(dev_idx)
 
+    weights = sampling_weights(train.meta, a.structure_boost, a.structure_ref)
+    report_sampling = {'structure_boost': a.structure_boost, 'structure_ref': a.structure_ref,
+                       'weighted_clips': int((weights > 1).sum()), 'mean_weight': round(float(weights.mean()), 4)}
     log = (out / 'log.jsonl').open('w')
     t0 = time.time(); step = 0; order = []
     report = {'clips': str(clips), 'clips_summary_sha256': sha(clips / 'summary.json'), 'base': a.base,
               'train_clips': len(train), 'dev_clips': len(dev), 'lora_params': n_lora, 'args': vars(a),
               'registration_sha256': sha(a.registration) if a.registration else None, 'device': device,
               'dtype': str(dtype), 'release_authorized': False, 'saves': [], 'weight_on': 'core' if use_core else 'mask',
-              'init_lora': a.init_lora or None, 'init_lora_sha256': sha(a.init_lora) if a.init_lora else None}
+              'init_lora': a.init_lora or None, 'init_lora_sha256': sha(a.init_lora) if a.init_lora else None,
+              'sampling': report_sampling}
     d0 = dev_loss()
     log.write(json.dumps({'step': 0, 'dev_loss': d0}) + '\n'); log.flush()
     print(f'LoRA {n_lora / 1e6:.2f} M params; {len(train)} train / {len(dev)} dev clips; dev loss {d0}', flush=True)
@@ -259,9 +294,11 @@ def main(argv=None):
         opt.zero_grad(set_to_none=True)
         acc = 0.0
         cal_acc = []
+        tmp_acc = []
         for _ in range(a.accumulate):
             if not order:
-                order = torch.randperm(len(train), generator=gen).tolist()
+                order = (torch.multinomial(weights, len(train), replacement=True, generator=gen).tolist()
+                         if a.structure_boost > 0 else torch.randperm(len(train), generator=gen).tolist())
             idx = order.pop()
             z0, ctx, m = train.get(idx)
             core = ylog = None
@@ -270,11 +307,17 @@ def main(argv=None):
             sigma = sample_sigma(gen, a.shift)[0].to(device)
             noise = torch.randn((1,) + tuple(z0.shape), generator=gen).to(device)
             calib_now = vae is not None and float(sigma) <= a.calib_sigma and calib_oom < 3
+            temporal_now = a.temporal_weight > 0 and float(sigma) <= a.temporal_sigma
+            want_x0 = calib_now or temporal_now
             with torch.autocast(device_type='cuda' if device == 'cuda' else 'cpu', dtype=dtype, enabled=device == 'cuda'):
                 res = flow_loss(tr, z0.to(device), ctx.to(device), m.to(device), embeds, sigma, noise,
                                 a.region_weight, scale, dtype, weight_mask=core.to(device) if use_core else None,
-                                return_x0=calib_now)
-            loss, x0 = res if calib_now else (res, None)
+                                return_x0=want_x0)
+            loss, x0 = res if want_x0 else (res, None)
+            if temporal_now:
+                tl = temporal_loss(x0.float(), z0.to(device), m.to(device))
+                loss = loss + a.temporal_weight * tl
+                tmp_acc.append(float(tl.detach()))
             cal = None
             if calib_now:
                 try:
@@ -292,7 +335,8 @@ def main(argv=None):
         opt.step(); sched.step(); step += 1
         if step % 20 == 0 or step == 1:
             cm = float(np.mean(cal_acc)) if cal_acc else None
-            log.write(json.dumps({'step': step, 'loss': acc, 'calib': cm, 'lr': sched.get_last_lr()[0],
+            tm_ = float(np.mean(tmp_acc)) if tmp_acc else None
+            log.write(json.dumps({'step': step, 'loss': acc, 'calib': cm, 'temporal': tm_, 'lr': sched.get_last_lr()[0],
                                   'hours': (time.time() - t0) / 3600}) + '\n'); log.flush()
             print(f'step {step} loss {acc:.4f}' + (f' calib {cm:.4f}' if cm is not None else '') + f' {time.time() - t0:.0f} s', flush=True)
         over = a.max_hours and (time.time() - t0) / 3600 >= a.max_hours

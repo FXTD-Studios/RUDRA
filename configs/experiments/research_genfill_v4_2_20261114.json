@@ -1,0 +1,44 @@
+{
+ "id": "research_genfill_v4_2_20261114",
+ "written": "2026-11-14, after research_genfill_v4_1_20261111 was PARKED (no second shot passes) and the testwindow cloud-prompt run failed S (0.018 / 0.022 / 0.030 stops, needs >= 0.05); before any v4.2 clip was built or any v4.2 output seen. Ahmed chose to hold 1.2.4 for v4 training (14 Nov).",
+ "author": "FXTD Studios Research; approved by Ahmed (14 Nov 2026: 'Hold 1.2.4 for v4 training')",
+ "parents": [
+  "research_genfill_v4_20261109 (the v4 LoRA: trained with the brightness calibration term on the code-255 core)",
+  "research_genfill_v4_1_20261111 (the render-time finish, locked; PARKED 13 Nov: 09V passes, Porch, water and testwindow fail S, water fails T)"
+ ],
+ "problem": "The v4 LoRA draws a flat plate inside a large clipped near-white region: testwindow frame 48, 250-700 px inside the mask, the fill sits exactly at the 3.3 x white floor with structure 0.004-0.03 stops, though the source's own sky just under the clip carries 0.05. Naming the clouds in the prompt changed nothing (0.018-0.030). On water the model's detail at code 255 changes from frame to frame on still pixels (static clipped p95 0.19 EV). The stop rule of 12-13 Nov holds: no further render-time tuning; this is a training change.",
+ "hypotheses": {
+  "H1_calibration_flattens": "v4 trained with --calib-weight 0.5: on every code-255 pixel of frame 0 the decoded prediction's log2 luminance is compared with the truth, pixel by pixel, overshoot costing 4 x undershoot. Where the source carries no information, the per-pixel optimum of that term is a low, flat value: it trains the clipped interior towards a plate. The level is now set at render time (the v4.1 finish: a floor at 3.3 x white, the model's own level kept above it to 2 stops), so the term is no longer needed. Change: --calib-weight 0.",
+  "H2_few_structured_truths": "Many region clips' truth inside the mask is itself smooth (a sun's glow, an even sky), so 'flat in, flat out' is often right in training. Change: the builder stores each region clip's truth structure (frame 0, mask eroded 6 px, std of log2 luminance minus its 6 px gaussian blur: the S measure on the truth) and the trainer draws region clips 1 + 3 x min(structure / 0.10 stops, 1) times as often.",
+  "H3_no_still_shots": "Every training clip moves (camera paths on HDRIs, pans on plates), so the model is never shown that a still picture must give a still fill. Change: 35 % of region clips hold the camera still (every frame is frame 0's view) with grain, drawn for 60 % of them, still changing per frame; and a frame-to-frame term on the predicted clean latents inside the region (latent frames 1.., each step's change against the truth's), weight 1.0, at noise levels <= 0.6."
+ },
+ "data": {
+  "builder": "tools/build_genfill_clips.py --recipe v4_2 (as v4, plus REGION_STATIC_SHARE 0.35, the static flag and the region structure in clips.jsonl); seed 20261114; the same sources, exclusions, sizes (33 frames, 512 x 288), clips per source and dev fraction as v4",
+  "out": "G:/datasets/corpora/research_genfill_clips_v4_2_20261114"
+ },
+ "training": {
+  "script": "training/genfill_train.py",
+  "init_lora": "G:/rudra_training/research_genfill_v1_20261027/rudra_genfill.safetensors (as v4: the v4 LoRA is the one that learned the plate)",
+  "args": "--weight-on mask --region-weight 4 --calib-weight 0 --structure-boost 3 --structure-ref 0.10 --temporal-weight 1.0 --temporal-sigma 0.6 --steps 6000 --save-every 1000 --max-hours 14; rank 32, lr 1e-4, warmup 200, accumulate 4, shift 3 (the defaults, as v4)",
+  "out": "G:/rudra_training/research_genfill_v4_2_20261114",
+  "selection": "none: the last LoRA is the result, as every run before"
+ },
+ "inference": "unchanged from v4.1 as tested on 13 Nov (tmp/09V_test/v4_gates/run_v4_confirm.py FINISH): rudra.genfill.run --region-rerender --condition bt1886 --tau-high 240 --tau-low -1 --feather 8 --brightness-model none --steps 30 --seed 0 --rerender-hue source --rerender-colour 0.3 --rerender-level 3.3 --rerender-smooth 0.8 --rerender-dip 0.3 --rerender-independent; only the LoRA changes",
+ "evaluation": {
+  "runner": "tmp/09V_test/v4_gates/run_v4_2_gates.py (stills and analytic masters reused, never re-made)",
+  "shots_gated": {
+   "09V": "prompt 'overcast sky over the sea, soft grey clouds, distant coastline' (as v4.1's confirm)",
+   "testwindow": "prompt 'overcast sky, hazy sun behind thin soft clouds, faint cloud texture continuing into the bright glare' (as the 13 Nov final v4 run)"
+  },
+  "shots_reported_not_gated": {
+   "water": "the 09V prompt; S and T reported against v4.1's (S frame 1 0.035, T 0.19)",
+   "Porch": "the 09V prompt; a softbox is flat, so S there is reported only (Ahmed, 12 Nov)"
+  },
+  "door_gates": "tmp/09V_test/v4_gates/shot_gates.py, thresholds unchanged: L luminance median 2.5-4 x SDR white and hue G/R within 0.15 of the source's; S structure >= 0.05 stops on frames 1, 48, 97; T static clipped p95 <= 0.10 EV; O 0 pixels changed outside the mask",
+  "H_gated": "tools/evaluate_genfill_region.py --finish --no-raw --dip 0.3 --independent, entries 96-119 (as v4.1, not blind): PU21 at -3 EV better than the BT.1886 condition's, CI excluding 0",
+  "H_blind": "the same on entries 120-126 (--ph-offset 120 --scenes 7), never used before: better in at least 5 of the 7 scenes (a scene skipped for having no region counts as not better)",
+  "holes": "not run: v3 stays the hole-filling LoRA; v4.2 is loaded only in the region mode"
+ },
+ "decision_rule": "PASS = 09V and testwindow pass L, S, T and O, and both H gates pass: AI fill v4 (this LoRA) goes into 1.2.4, EXPERIMENTAL and off by default, with its provenance. FAIL on any of them: report to Ahmed; 1.2.4 is not held again for v4 without his decision. No setting is tuned after the results are seen.",
+ "release_authorized": false
+}

@@ -15,7 +15,6 @@ of the dataset actually contains highlights.
 Usage
 -----
   python training/scan_highlights.py hdrdata/hdr_pairs                 # flux/wan = LogC4
-  python training/scan_highlights.py hdrdata/ltx_pairs --curve slog3   # ltx = S-Log3
   python training/scan_highlights.py hdrdata/hdr_pairs --samples 1000
 """
 
@@ -48,7 +47,7 @@ def main():
     ap = argparse.ArgumentParser(description="Scan training pairs for HDR highlight coverage.")
     ap.add_argument("pair_dir", help="Directory of .npz pairs (with a 'log_coded' target).")
     ap.add_argument("--curve", default="logc4", choices=list(CURVE_TO_FMT),
-                    help="Log curve the targets were encoded with (flux/wan=logc4, ltx=slog3).")
+                    help="Log curve the targets were encoded with (flux/wan=logc4).")
     ap.add_argument("--samples", type=int, default=500, help="How many pairs to sample.")
     ap.add_argument("--ev-threshold", type=float, default=2.0,
                     help="Highlight = luminance this many stops above 0.18 grey (matches training).")

@@ -23,12 +23,18 @@ on:
             "ui/compositor.js", "ui/app.js", "ui/style.css", "ui/theme.css", ".github/workflows/native.yml"]
   workflow_dispatch:
 
+# Security review, 11 Nov 2026: every action is pinned to a commit (the tag it was taken from is in
+# the comment beside it; a tag can be moved, a commit cannot), and the token is read-only unless a
+# job says otherwise. Dependabot (.github/dependabot.yml) proposes the updates.
+permissions:
+  contents: read
+
 jobs:
   layers:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6
         with: { python-version: "3.12" }
       - run: python tools/check_layers.py
 
@@ -45,8 +51,8 @@ jobs:
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6
         with: { python-version: "3.12" }
       - name: Python side
         shell: bash
@@ -70,7 +76,7 @@ jobs:
           echo "$(brew --prefix ffmpeg@6)/bin" >> "$GITHUB_PATH"
       - name: vcpkg binary cache (Windows)
         if: runner.os == 'Windows'
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25   # v5
         with:
           path: ${{ github.workspace }}/.vcpkg-cache
           key: vcpkg-x64-windows-gtest-json-opencv4-core-jpeg-png-tiff-webp-v1
@@ -109,10 +115,11 @@ jobs:
     name: Gate A (LibTorch + ONNX Runtime, CPU)
     runs-on: ubuntu-24.04
     env:
-      ORT_VERSION: "1.22.0"
+      ORT_VERSION: "1.24.4"
+      ORT_SHA256_LINUX: "3a211fbea252c1e66290658f1b735b772056149f28321e71c308942cdb54b747"   # the release asset's digest on GitHub
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6
         with: { python-version: "3.12" }
       - name: Python side
         run: |
@@ -132,7 +139,7 @@ jobs:
           tools/ci_run.sh "Goldens moved" git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json
       - name: Export the shipped model package
         run: python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
-      - uses: actions/cache@v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25   # v5
         with: { path: "onnxruntime-linux-x64-${{ env.ORT_VERSION }}", key: "ort-${{ env.ORT_VERSION }}-linux-x64" }
       - name: ONNX Runtime C API
         run: |
@@ -140,6 +147,7 @@ jobs:
           if [ ! -d "$d/lib" ]; then
             # -f: an HTTP error is a failed attempt, not an HTML page handed to tar.
             bash tools/ci_retry.sh 4 curl -fsSL -o ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${d}.tgz"
+            echo "${ORT_SHA256_LINUX}  ort.tgz" | sha256sum -c -
             tar xzf ort.tgz
           fi
           echo "ORT_ROOT=$PWD/$d" >> "$GITHUB_ENV"
@@ -164,7 +172,7 @@ jobs:
           export LD_LIBRARY_PATH="$ORT_ROOT/lib:$LD_LIBRARY_PATH"
           tools/ci_run.sh "Latency" build/cli/rudra-native bench dist/models/sdr2hdr_shadow_v1 --size 1920x1080 --iters 1 \
             --budget native/bench/latency_budgets.json --machine gh-ubuntu-24.04 --json latency.json
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f   # v6
         if: always()
         with: { name: latency-gh-ubuntu-24.04, path: latency.json, if-no-files-found: ignore }
 
@@ -172,7 +180,7 @@ jobs:
     name: Qt shell
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
       - run: sudo apt-get update && sudo apt-get install -y qt6-base-dev libgl-dev nlohmann-json3-dev ninja-build
       - run: cmake -S native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_TESTS=ON -DRUDRA_BUILD_CLI=OFF
       - run: tools/ci_run.sh "Build" cmake --build build --parallel --target RUDRA rudra_app_tests
@@ -197,8 +205,8 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-15, windows-2022]
     steps:
-      - uses: actions/checkout@v7
-      - uses: jurplel/install-qt-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06   # v4
         with:
           version: "6.8.3"
           modules: qtshadertools

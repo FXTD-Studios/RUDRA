@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Publish RUDRA ACES 2 and the AI fill v3 to Hugging Face (Apache 2.0), then
+  Publish RUDRA ACES 2, AI fill v3 and AI fill v4 (region re-render, 1.2.4) to Hugging Face (Apache 2.0), then
   write the models.json the app's Model packages window downloads from.
 
     powershell -ExecutionPolicy Bypass -File scripts\PUBLISH_HF_MODELS.ps1 -DryRun
@@ -8,7 +8,7 @@
     powershell -ExecutionPolicy Bypass -File scripts\PUBLISH_HF_MODELS.ps1 -Private   # a private repo first
 
   Uploads dist\hf\rudra-models\ (README model card, LICENSE, NOTICE,
-  models\RUDRA_ACES_2\, models\rudra_genfill_v3\) to https://huggingface.co/<Repo>.
+  models\RUDRA_ACES_2\, models\rudra_genfill_v3\, models\rudra_genfill_v4\) to https://huggingface.co/<Repo>.
   Before the upload it checks every file against the expected SHA-256 values.
   Writes dist\hf\models.json, pinned to the uploaded commit; put that file at
   https://www.fxtdstudios.com/rudra/models.json (the app's default index).
@@ -34,7 +34,15 @@ Say "Check the staged files"
 $expect = @{
   "models\rudra_genfill_v3\rudra_genfill.safetensors" = "9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a"
   "models\rudra_genfill_v3\brightness.json"           = "34892fb840de138fb3ddd2e2c8e6e3b13c232973ed59ea23338444fcaff2a95a"
+  # AI fill v4 (15 Nov 2026): the same values native/app/model_downloads.cpp builds into 1.2.4
+  "models\rudra_genfill_v4\rudra_genfill.safetensors" = "406b1dc7b7d3ada5406b396a6aa8c7e5ec9eac8d0be0d04e8038d68b5bf1b390"
+  "models\rudra_genfill_v4\registration_v4.json"      = "8f2324358a10feb7599446443af7622a096f360f99d16a12830f5ebc6a68e90d"
+  "models\rudra_genfill_v4\report_v4.json"            = "d2f507bbcfdcc0203bec82050a3f5ef89188b12e8310b8b5f5a12d7816b5db8c"
 }
+# Nothing else may sit in the v4 folder: the app offers a package only when every file is one it knows.
+$v4extra = Get-ChildItem "$Stage\models\rudra_genfill_v4" -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notin @("rudra_genfill.safetensors", "registration_v4.json", "report_v4.json") }
+if ($v4extra) { Fail "unexpected files in models\rudra_genfill_v4 (the app would refuse the package): $($v4extra.Name -join ', ')" }
 # RUDRA ACES 2: its files against its own manifest (7 Nov 2026: the package is no longer one fixed checkpoint).
 $acesManifest = Get-Content "$Stage\models\RUDRA_ACES_2\manifest.json" -Raw | ConvertFrom-Json
 $expect["models\RUDRA_ACES_2\$($acesManifest.g1_file)"] = $acesManifest.g1_sha256
@@ -85,7 +93,7 @@ repo, stage, private = sys.argv[1], sys.argv[2], sys.argv[3] == '1'
 api = HfApi()
 api.create_repo(repo, repo_type='model', private=private, exist_ok=True)
 info = api.upload_folder(repo_id=repo, repo_type='model', folder_path=stage,
-                         commit_message='RUDRA ACES 2 and AI fill v3 (Apache 2.0)')
+                         commit_message='RUDRA ACES 2, AI fill v3 and AI fill v4 (Apache 2.0)')
 print(info.oid)
 "@
 $sha = & $Python -c $py $Repo $Stage $(if ($Private) { "1" } else { "0" })
@@ -101,6 +109,9 @@ Say "models.json for the app"
         --licence "Apache-2.0" --licence-url "https://huggingface.co/$Repo/blob/main/LICENSE" `
     --model "$Stage\models\rudra_genfill_v3" --id rudra_genfill_v3 --title "RUDRA AI fill v3 (experimental)" --version 3.0 --channel preview --kind genfill `
         --summary "LoRA for Wan2.1-VACE-1.3B + brightness estimator: fills fully clipped highlights; needs the base model, Python and a 16 GB GPU" `
+        --licence "Apache-2.0" --licence-url "https://huggingface.co/$Repo/blob/main/LICENSE" `
+    --model "$Stage\models\rudra_genfill_v4" --id rudra_genfill_v4 --title "RUDRA AI fill v4, region re-render (experimental)" --version 4.3 --channel preview --kind genfill --min-app 1.2.4 `
+        --summary "LoRA for Wan2.1-VACE-1.3B: draws a whole bright region again (a window, a door, a sky); tested on the analytic route; needs the base model, Python and a 16 GB GPU" `
         --licence "Apache-2.0" --licence-url "https://huggingface.co/$Repo/blob/main/LICENSE"
 if ($LASTEXITCODE -ne 0) { Fail "make_models_json.py" }
 Write-Host "`nDone. Publish dist\hf\models.json at https://www.fxtdstudios.com/rudra/models.json" -ForegroundColor Green

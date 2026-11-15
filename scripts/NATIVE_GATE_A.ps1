@@ -33,7 +33,9 @@ param(
     [string]$BenchDir = "",
     [int]$BenchLimit = 0,
     [string]$Python = "python",
-    [string]$OrtVersion = "1.22.0",
+    # 1.24.4 (11 Nov 2026): the last ONNX Runtime published with DirectML; 1.22.0 read a crafted
+    # model's external data from outside its folder (fixed in 1.24.1).
+    [string]$OrtVersion = "1.24.4",
     [switch]$SkipExport,
     [switch]$SkipBuild,
     [switch]$NoBench,

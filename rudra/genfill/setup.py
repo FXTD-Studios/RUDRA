@@ -30,7 +30,7 @@ REPO_ID = 'Wan-AI/Wan2.1-VACE-1.3B-diffusers'
 MODEL_GB = 25.0          # the snapshot on disk, rounded up
 MIN_MEMORY_GB = 15.5     # a 16 GB GPU (or a Mac with 16 GB) reports a little under 16
 # pyproject.toml [project.optional-dependencies] genfill, plus OpenColorIO for the AP0 masters.
-PACKAGES = ['diffusers>=0.35', 'transformers>=4.45', 'peft>=0.13', 'accelerate>=1.0', 'OpenEXR>=3.2',
+PACKAGES = ['diffusers>=0.35', 'transformers>=4.48', 'peft>=0.13', 'accelerate>=1.0', 'OpenEXR>=3.2',
             'safetensors>=0.4', 'sentencepiece', 'ftfy', 'huggingface-hub>=0.25', 'opencolorio>=2.4']
 IMPORTS = ['diffusers', 'transformers', 'peft', 'accelerate', 'OpenEXR', 'safetensors', 'sentencepiece',
            'ftfy', 'huggingface_hub', 'PyOpenColorIO']

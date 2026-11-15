@@ -101,7 +101,8 @@ def main() -> int:
     device = torch.device(args.device)
     out_dir = Path(args.output_dir); out_dir.mkdir(parents=True, exist_ok=True)
 
-    payload = torch.load(args.init_checkpoint, map_location="cpu", weights_only=False)
+    from rudra.torch_compat import load_checkpoint   # tensors only: no code from the file
+    payload = load_checkpoint(args.init_checkpoint, map_location="cpu")
     model = SDR2HDRNet.from_config(payload.get("config", {}) or {}, shadow_conditioning=True)
     missing, unexpected = model.load_state_dict(payload.get("model", payload), strict=False)
     stray = [k for k in missing if not k.startswith("shadow_gate.")]

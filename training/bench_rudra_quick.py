@@ -18,7 +18,6 @@ proj = RUDRAProjection(dr_raw_dim=22, format_dim=FORMAT_DIM, proj_dim=64).to(dev
 configs = [
     ('flux (16ch)',  16, 64, 8),
     ('sdxl (4ch)',    4, 64, 8),
-    ('ltx (128ch)', 128,  4, 2),
 ]
 
 print(f"\n{'Model':<15} {'Batch':>5} {'Step ms':>8} {'steps/s':>7} {'VRAM':>6} {'50K turbo':>10} {'200K full':>10}")

@@ -112,7 +112,7 @@ for d in rudra config; do
   (cd "$d" && find . -name '*.py' -not -path '*/__pycache__/*' -print0 | while IFS= read -r -d '' f; do
      mkdir -p "$PYDIR/$d/$(dirname "$f")"; cp "$f" "$PYDIR/$d/$f"; done)
 done
-cp scripts/genfill_bootstrap.sh scripts/genfill_bootstrap.ps1 "$PYDIR/"
+cp scripts/genfill_bootstrap.sh scripts/genfill_bootstrap.ps1 scripts/genfill_constraints.txt "$PYDIR/"
 chmod +x "$PYDIR/genfill_bootstrap.sh"
 [ -f "$PYDIR/rudra/genfill/run.py" ] || fail "the app has no Resources/python/rudra/genfill"
 if [ -n "$BUNDLE_MODELS" ] && [ -n "${ALLOW_NONCOMMERCIAL_WEIGHTS:-}" ] && [ -f checkpoints/LICENSE ]; then

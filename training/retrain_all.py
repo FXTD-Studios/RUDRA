@@ -53,10 +53,9 @@ COMFY_DIFFUSION_DIR = os.environ.get(
 # model_type -> canonical filename in RADIANCE_MODEL_MAP (for auto-download).
 _REGISTRY_FILE = {
     "flux": "flux1-dev-fp8.safetensors",
-    "ltx-video": "ltx-2.3-22b-dev-fp8.safetensors",
     "sdxl": "sd_xl_base_1.0.safetensors",
 }
-_ENV_VAR = {"flux": "FLUX_CKPT", "wan": "WAN_CKPT", "ltx-video": "LTX_CKPT", "sdxl": "SDXL_CKPT"}
+_ENV_VAR = {"flux": "FLUX_CKPT", "wan": "WAN_CKPT", "sdxl": "SDXL_CKPT"}
 
 # Specific, prioritized filename globs per backbone. The "flux" config targets
 # flux1-dev (16-ch latents, T5/4096) — it must NOT match flux-2/Klein, which is a
@@ -64,7 +63,6 @@ _ENV_VAR = {"flux": "FLUX_CKPT", "wan": "WAN_CKPT", "ltx-video": "LTX_CKPT", "sd
 _BACKBONE_PATTERNS = {
     "flux": ["*flux1-dev*.safetensors", "*flux1*dev*.safetensors", "*flux1*.safetensors"],
     "wan": ["*wan*.safetensors"],
-    "ltx-video": ["*ltx*.safetensors"],
     "sdxl": ["*sd_xl*.safetensors", "*sdxl*.safetensors"],
 }
 
@@ -129,7 +127,6 @@ RUNS = [
     _decoder("flux2_turbo", "flux", "turbo", "hdrdata/hdr_pairs",     50_000, 8, 3e-4),
     _decoder("wan21_turbo", "wan",  "turbo", "hdrdata/wan_hdr_pairs", 50_000, 8, 3e-4),
     _decoder("wan22_turbo", "wan",  "turbo", "hdrdata/wan_hdr_pairs", 50_000, 8, 3e-4),
-    _decoder("ltx_turbo",   "ltx-video", "turbo", "hdrdata/ltx_pairs", 50_000, 4, 3e-4),
     # Full decoders are heavy; on a 16 GB card use batch 1 and fewer steps so a
     # run finishes in a day, not a week. (flux2/wan22 are duplicates of flux1/wan21.)
     _decoder("flux1_full",  "flux", "full",  "hdrdata/hdr_pairs",     40_000, 1, 1e-4),

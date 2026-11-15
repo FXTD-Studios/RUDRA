@@ -51,7 +51,8 @@ def convert(src: Path, dest: Path) -> dict:
     import torch
     from safetensors.torch import save_file
 
-    payload = torch.load(src, map_location="cpu", weights_only=False)
+    from rudra.torch_compat import load_checkpoint   # tensors only: no code from the file
+    payload = load_checkpoint(src, map_location="cpu")
     state = payload.get("model", payload)
     meta = {
         "architecture": "SDR2HDRNet",

@@ -328,7 +328,8 @@ void MainWindow::check_for_updates(bool interactive, std::function<void(QString)
             if (newer) {
                 const auto b = QMessageBox::information(self, "Updates", line, QMessageBox::Open | QMessageBox::Close,
                                                         QMessageBox::Open);
-                if (b == QMessageBox::Open) QDesktopServices::openUrl(QUrl(url));
+                // The address is from the release list's reply: https only (11 Nov 2026).
+                if (b == QMessageBox::Open && QUrl(url).scheme() == "https") QDesktopServices::openUrl(QUrl(url));
             } else {
                 QMessageBox::information(self, "Updates", line);
             }

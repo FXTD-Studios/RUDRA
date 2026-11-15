@@ -25,7 +25,7 @@ Pipeline per sample
       → noisy_z = schedule.add_noise(z, noise, t)   [flow-match or DDPM]
       → (noisy_z, z, t, text_embed)
 
-Video models (LTX-Video, Wan, HunyuanVideo)
+Video models (Wan, HunyuanVideo)
     Frame sequences are assembled as (T, H, W, C) tensors.
     Temporal dimension is encoded by the video VAE.
 
@@ -110,7 +110,7 @@ except ImportError:
 class FlowMatchingSchedule:
     CATEGORY = "FXTD STUDIOS/Radiance/◎ Pipeline"
     """
-    Linear flow-matching schedule used by LTX-Video, Flux, SD3, and Wan.
+    Linear flow-matching schedule used by Flux, SD3, and Wan.
 
     Forward process:  z_t = (1 - t) * z_0 + t * noise
     Loss target:      v_t = noise - z_0   (velocity prediction)
@@ -206,7 +206,7 @@ class DDPMSchedule:
 
 def make_schedule(model_name: str) -> "FlowMatchingSchedule | DDPMSchedule":
     """Return the correct noise schedule for a given model family."""
-    flow_models = {"ltx-video", "flux", "wan", "hunyuanvideo", "sd3"}
+    flow_models = {"flux", "wan", "hunyuanvideo", "sd3"}
     preset = _resolve_model(model_name)
     key    = model_name.strip().lower()
     if any(k in key for k in flow_models) or (
@@ -240,7 +240,6 @@ def _null_text_embed(
 
 # Text embedding dimensions per model family
 _TEXT_EMBED_DIMS: Dict[str, Tuple[int, int]] = {
-    "ltx-video":    (128, 4096),   # T5-XXL
     "flux":         (256, 4096),   # T5-XXL + CLIP-L
     "wan":          (128, 4096),   # T5-XXL
     "hunyuanvideo": (128, 4096),   # T5-XXL
@@ -364,7 +363,7 @@ class HDRLoRADataset(Dataset):
     Args:
         exr_dirs:          List of directories with .exr / .hdr files.
         vae:               ComfyUI-compatible VAE (encode method).
-        model_name:        "ltx-video", "flux", "wan", etc.  Used to look up
+        model_name:        "flux", "wan", etc.  Used to look up
                            compression_ratio and text_embed_dims.
         target_hw:         (H, W) spatial resolution for training.
         n_frames:          Number of consecutive frames per video sequence.
@@ -382,7 +381,7 @@ class HDRLoRADataset(Dataset):
         self,
         exr_dirs: List[str],
         vae,
-        model_name: str          = "ltx-video",
+        model_name: str          = "wan",
         target_hw: Tuple[int,int] = (512, 512),
         n_frames: int             = 1,
         compression_ratio: Optional[float] = None,
@@ -405,7 +404,7 @@ class HDRLoRADataset(Dataset):
         self._rng             = np.random.default_rng(seed=42)
 
         # Resolve model preset
-        preset = _resolve_model(model_name) or RADIANCE_MODEL_PRESETS["ltx-video"]
+        preset = _resolve_model(model_name) or RADIANCE_MODEL_PRESETS["wan"]
         self.compression_ratio = (
             compression_ratio if compression_ratio is not None
             else preset["compression_ratio"]
@@ -679,7 +678,7 @@ def add_training_noise(
 def make_lora_dataloader(
     exr_dirs: List[str],
     vae,
-    model_name: str           = "ltx-video",
+    model_name: str           = "wan",
     target_hw: Tuple[int,int] = (512, 512),
     n_frames: int             = 1,
     batch_size: int           = 4,
@@ -698,9 +697,9 @@ def make_lora_dataloader(
         loader = make_lora_dataloader(
             exr_dirs     = ["/data/exr/arri", "/data/exr/hdri_haven"],
             vae          = comfy_vae_object,
-            model_name   = "ltx-video",
+            model_name   = "wan",
             target_hw    = (512, 512),
-            n_frames     = 9,      # 9-frame video clip for LTX temporal VAE
+            n_frames     = 9,      # 9-frame video clip for the temporal VAE
             batch_size   = 2,
             cache_dir    = "/data/hdr_lora_cache",
         )
@@ -746,10 +745,10 @@ if __name__ == "__main__":
                         help="Output directory for .npz latent cache")
     parser.add_argument("--vae_path",   required=True,
                         help="Path to VAE checkpoint (.safetensors / .ckpt)")
-    parser.add_argument("--vae_type",   default="ltx-video",
+    parser.add_argument("--vae_type",   default="wan",
                         choices=list(RADIANCE_MODEL_PRESETS.keys()),
                         help="Model family (for compression_ratio preset)")
-    parser.add_argument("--model_name", default="ltx-video")
+    parser.add_argument("--model_name", default="wan")
     parser.add_argument("--size",       type=int, default=512,
                         help="Training image size (square)")
     parser.add_argument("--n_frames",   type=int, default=1,

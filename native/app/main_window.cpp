@@ -1044,8 +1044,11 @@ void MainWindow::boot() {
         return;
     }
     ckpt_->setText("no model package found");
-    log("no model loaded: no model package found in " + QString::number(catalog_.roots.size()) +
-        " folder(s); File > Model packages… adds one");
+    // 12 Nov 2026: said as what it is. This is the optional reconstruction model's slot; "no model loaded"
+    // at every start read as a fault while the learned ACES 2.0 model loaded on the next line.
+    log("no reconstruction model package in " + QString::number(catalog_.roots.size()) +
+        " folder(s): optional, the analytic reconstruction and the learned ACES 2.0 model run without one "
+        "(File > Model packages… adds one)");
 }
 
 void MainWindow::open_source(const QString& preset, bool folder) {
@@ -1571,7 +1574,8 @@ void MainWindow::show_status() {
                                                        : QString()));
     }
 #endif
-    src_info_->setText(frame_info_.isEmpty() ? QStringLiteral("—") : frame_info_);
+    src_info_full_ = frame_info_.isEmpty() ? QStringLiteral("—") : frame_info_;
+    show_src_info();
     update_badges();
 }
 
@@ -2025,7 +2029,8 @@ void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m, int index,
     sync_check_summary();
     findChild<QLabel*>("statusMask")->setText(QString::fromStdString(t.status_mask));
     findChild<QLabel*>("statusTime")->setText(QString::fromStdString(t.status_time));
-    src_info_->setText(QString::fromStdString(t.src_info));
+    src_info_full_ = QString::fromStdString(t.src_info);
+    show_src_info();
     // The headroom path has no SDR clip measure: no clip bar or lane rather than a false 0 %.
     if (headroom_routed()) {
         clip_bar_->hide();
@@ -2861,7 +2866,14 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e) {
         const QString p = o->property("open").toString();
         if (!p.isEmpty()) {
             QTimer::singleShot(0, this, [this, p] {
+                // 12 Nov 2026: a movie in the list is a shot of its own, as a dropped one is (open_paths). It
+                // was added as one more frame of the shot on screen: "No such frame in the video", and the
+                // list seemed dead.
+                const std::string suf = QFileInfo(p).suffix().toLower().prepend('.').toStdString();
+                const bool movie = QFileInfo(p).isFile() &&
+                                   std::find(video_suffixes().begin(), video_suffixes().end(), suf) != video_suffixes().end();
                 if (QFileInfo(p).isDir()) open_source(p, true);
+                else if (movie) open_source(p);
                 else add_files({to_path(p)});
             });
             return true;

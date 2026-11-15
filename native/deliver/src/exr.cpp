@@ -363,41 +363,61 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
     if (!in) return make_error(ErrorCode::NotFound, "The EXR file could not be opened.", path.string());
     const std::vector<std::uint8_t> raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     auto bad = [&](const char* why) { return make_error(ErrorCode::ParseError, "The EXR file is not readable.", path.string() + ": " + why); };
+    // The file is not trusted (security review, 11 Nov 2026): a reference image or a master can come
+    // from anywhere. Every read is checked against the file's size first, a scanline must name a row
+    // inside the data window, and nothing is allocated until the file is seen to hold the pixels its
+    // header promises. Before this a crafted scanline row wrote outside the pixel buffer.
+    const std::size_t n = raw.size();
+    auto has = [&](std::size_t at, std::size_t len) { return at <= n && len <= n - at; };
     std::size_t pos = 0;
-    auto i32 = [&](std::size_t at) {
+    auto i32 = [&](std::size_t at) {   // the caller has checked has(at, 4)
         std::int32_t v;
         std::memcpy(&v, raw.data() + at, 4);
         return v;
     };
-    if (raw.size() < 8 || i32(0) != kMagic) return bad("not an EXR file");
+    if (n < 8 || i32(0) != kMagic) return bad("not an EXR file");
     if (i32(4) & 0x1a00) return bad("tiled, deep or multi-part");
     pos = 8;
-    auto cstr = [&](std::size_t& at) {
+    auto cstr = [&](std::size_t& at, std::string& s) {   // false: no terminator before the end of the file
         const std::size_t start = at;
-        while (at < raw.size() && raw[at] != 0) ++at;
-        std::string s(raw.begin() + std::ptrdiff_t(start), raw.begin() + std::ptrdiff_t(at));
+        while (at < n && raw[at] != 0) ++at;
+        if (at >= n) return false;
+        s.assign(raw.begin() + std::ptrdiff_t(start), raw.begin() + std::ptrdiff_t(at));
         ++at;
-        return s;
+        return true;
     };
     ExrImage img;
     std::vector<std::string> channels;
     int x0 = 0, y0 = 0, x1 = -1, y1 = -1, compression = 0;
-    while (pos < raw.size() && raw[pos] != 0) {
-        const std::string name = cstr(pos), type = cstr(pos);
-        const auto size = static_cast<std::size_t>(i32(pos));
+    for (;;) {
+        if (pos >= n) return bad("truncated header");
+        if (raw[pos] == 0) break;
+        std::string name, type;
+        if (!cstr(pos, name) || !cstr(pos, type) || !has(pos, 4)) return bad("truncated header");
+        const std::int32_t declared = i32(pos);
         pos += 4;
-        if (pos + size > raw.size()) return bad("truncated header");
+        if (declared < 0 || !has(pos, static_cast<std::size_t>(declared))) return bad("truncated header");
+        const auto size = static_cast<std::size_t>(declared);
         std::vector<std::uint8_t> payload(raw.begin() + std::ptrdiff_t(pos), raw.begin() + std::ptrdiff_t(pos + size));
         if (type == "chlist") {
+            const std::size_t end = pos + size;
             std::size_t c = pos;
-            while (raw[c] != 0) {
-                channels.push_back(cstr(c));
-                img.pixel_types.push_back(i32(c));
+            for (;;) {
+                if (c >= end) return bad("bad channel list");
+                if (raw[c] == 0) break;
+                std::string channel;
+                if (!cstr(c, channel) || c > end || end - c < 16) return bad("bad channel list");
+                const std::int32_t pixel_type = i32(c);
+                if (pixel_type < 0 || pixel_type > 2) return bad("bad channel list");
+                channels.push_back(std::move(channel));
+                img.pixel_types.push_back(pixel_type);
                 c += 16;
             }
         } else if (type == "compression") {
+            if (size < 1) return bad("bad compression attribute");
             compression = payload[0];
         } else if (name == "dataWindow") {
+            if (size < 16) return bad("bad data window");
             x0 = i32(pos); y0 = i32(pos + 4); x1 = i32(pos + 8); y1 = i32(pos + 12);
         }
         img.attribute_types.emplace_back(name, type);
@@ -406,9 +426,21 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
     }
     ++pos;
     if (compression != 0) return bad("compressed");
-    const int w = x1 - x0 + 1, h = y1 - y0 + 1;
-    if (w <= 0 || h <= 0 || channels.empty()) return bad("empty data window");
+    // In 64 bits: x1 - x0 + 1 overflows an int for a hostile window.
+    const std::int64_t w64 = std::int64_t(x1) - std::int64_t(x0) + 1, h64 = std::int64_t(y1) - std::int64_t(y0) + 1;
+    if (w64 <= 0 || h64 <= 0 || channels.empty()) return bad("empty data window");
+    constexpr std::int64_t kMaxSide = 1 << 20;   // far past any frame; keeps the products below in range
+    if (w64 > kMaxSide || h64 > kMaxSide) return bad("data window too large");
+    const int w = static_cast<int>(w64), h = static_cast<int>(h64);
+    // The file must hold the offset table and h scanlines of every channel before anything is allocated.
+    std::size_t line_bytes = 8;   // each scanline: its row, its size, then the channels
+    for (int t : img.pixel_types) {
+        line_bytes += std::size_t(w) * (t == 1 ? 2 : 4);
+        if (line_bytes > n) return bad("truncated data");
+    }
+    if (!has(pos, 8 * std::size_t(h))) return bad("truncated data");
     pos += 8 * std::size_t(h);
+    if ((n - pos) / line_bytes < std::size_t(h)) return bad("truncated data");
     static const char* order[] = {"R", "G", "B", "A"};
     const int nout = int(std::count(channels.begin(), channels.end(), std::string("A"))) ? 4 : 3;
     img.pixels = PlanarBuffer(nout, h, w);
@@ -417,8 +449,10 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
     const bool all_half = std::all_of(img.pixel_types.begin(), img.pixel_types.end(), [](int t) { return t == 1; });
     if (all_half) img.half_bits.assign(std::size_t(nout) * std::size_t(w) * std::size_t(h), 0);
     for (int r = 0; r < h; ++r) {
-        if (pos + 8 > raw.size()) return bad("truncated data");
-        const int y = i32(pos) - y0;
+        if (!has(pos, 8)) return bad("truncated data");
+        const std::int64_t row = std::int64_t(i32(pos)) - std::int64_t(y0);
+        if (row < 0 || row >= h64) return bad("scanline outside the data window");
+        const int y = static_cast<int>(row);
         pos += 8;
         for (std::size_t c = 0; c < channels.size(); ++c) {
             int plane = -1;
@@ -426,7 +460,7 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
                 if (channels[c] == order[k]) plane = k;
             const bool half = img.pixel_types[c] == 1;
             const std::size_t bytes = std::size_t(w) * (half ? 2 : 4);
-            if (pos + bytes > raw.size()) return bad("truncated data");
+            if (!has(pos, bytes)) return bad("truncated data");
             const bool is_mask = channels[c] == "rudra.reconstructed";
             PlanarBuffer* other = nullptr;
             if (plane < 0 && !is_mask) {   // any other channel, kept by name (5 Nov 2026)

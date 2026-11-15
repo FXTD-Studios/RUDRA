@@ -71,7 +71,7 @@ def load_expandnet(clone: Path, weights: Path | None, device):
     if not path.is_file():
         raise SystemExit(f"error: no weights at {path}")
     net = ExpandNet()
-    net.load_state_dict(torch.load(path, map_location=lambda s, l: s))
+    net.load_state_dict(torch.load(path, map_location=lambda s, l: s, weights_only=True))
     net.eval().to(device)
     return net, cv2torch, map_range, torch2cv
 

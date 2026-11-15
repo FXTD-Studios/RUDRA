@@ -1,4 +1,4 @@
-"""run04: generator-style SDR degradations (22 Oct 2026). No LTX model, weight or data.
+"""run04: generator-style SDR degradations (22 Oct 2026). No third-party video model, weight or data.
 
 Why: RUDRA's main use is SDR from video/image generators. Every training SDR
 in the run02 snapshot comes from an ACES output transform on a real plate

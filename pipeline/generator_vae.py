@@ -8,7 +8,7 @@ Default: the Wan 2.1 / 2.2 video VAE (Apache-2.0, Alibaba). It is NOT downloaded
 here. Point RUDRA_GEN_VAE at a local copy, e.g. ComfyUI's
 models/vae/wan_2.1_vae.safetensors (single file) or a diffusers folder that has
 a `vae` subfolder. Needs `pip install diffusers` in the venv; CUDA is used when
-available. No LTX VAE is supported here, by owner decision.
+available. Only the Wan VAE is supported here.
 
     python pipeline/run05_corpus.py build ... --vae pipeline.generator_vae:wan_vae --vae-p 0.3
 """
@@ -30,8 +30,6 @@ def wan_vae_identity(path: str | None = None):
     if not value or not Path(value).exists():
         raise FileNotFoundError('set RUDRA_GEN_VAE to verified local Wan VAE weights')
     root = Path(value).resolve()
-    if 'ltx' in root.name.lower():
-        raise ValueError('LTX weights are not used in RUDRA')
     files = [root] if root.is_file() else sorted(
         p for p in root.rglob('*') if p.is_file() and '.cache' not in p.parts
         and p.suffix in ('.safetensors', '.json'))
@@ -53,8 +51,6 @@ def wan_vae(path: str | None = None, device: str | None = None, multiple: int = 
     path = path or os.environ.get("RUDRA_GEN_VAE")
     if not path or not Path(path).exists():
         raise FileNotFoundError("set RUDRA_GEN_VAE to a local Wan VAE (.safetensors file or diffusers folder)")
-    if "ltx" in Path(path).name.lower():
-        raise ValueError("LTX weights are not used in RUDRA (owner decision, 22 Oct 2026)")
     dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     p = Path(path)
     if p.is_file():

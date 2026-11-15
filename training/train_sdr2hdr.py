@@ -107,7 +107,8 @@ def load_image_checkpoint(path: str | Path, device: torch.device) -> tuple[SDR2H
             f"       Temporal training starts from a trained image model -- run "
             f"--mode image first, or point at an existing checkpoint.{hint}"
         )
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    from rudra.torch_compat import load_checkpoint   # tensors only: no code from the file
+    checkpoint = load_checkpoint(checkpoint_path, map_location="cpu")
     config = checkpoint.get("config", {})
     model = SDR2HDRNet.from_config(config)
     state = checkpoint.get("model", checkpoint)
@@ -560,7 +561,8 @@ def train(args: argparse.Namespace, observer=None) -> Path:
     if args.resume and args.init_checkpoint:
         raise ValueError("--resume and --init-checkpoint are mutually exclusive")
     if args.init_checkpoint:
-        checkpoint = torch.load(args.init_checkpoint, map_location="cpu", weights_only=False)
+        from rudra.torch_compat import load_checkpoint   # tensors only: no code from the file
+        checkpoint = load_checkpoint(args.init_checkpoint, map_location="cpu")
         missing, unexpected = model.load_state_dict(
             checkpoint.get("model", checkpoint), strict=False)
         # Adding the conditioning head to a checkpoint that predates it is the

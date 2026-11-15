@@ -19,11 +19,10 @@ def save_tensor_cache(path: str | Path, tensor: torch.Tensor, metadata: dict[str
 
 
 def load_tensor_cache(path: str | Path) -> tuple[torch.Tensor, dict[str, Any]]:
-    # Try safe load first (PyTorch 2.6+), fall back for legacy pickle caches.
-    try:
-        data = torch.load(path, map_location="cpu", weights_only=True)
-    except Exception:
-        data = torch.load(path, map_location="cpu", weights_only=False)
+    # Tensors and plain values only. The fall back to a full pickle load that was here ran on
+    # exactly the files the safe load refuses, which made the safe load pointless (11 Nov 2026).
+    from .torch_compat import load_checkpoint
+    data = load_checkpoint(path)
     if isinstance(data, dict) and "tensor" in data:
         return data["tensor"], data.get("metadata", {})
     if isinstance(data, torch.Tensor):

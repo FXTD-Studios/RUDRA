@@ -11,6 +11,8 @@
 #include <QPainterPath>
 #include <QStyle>
 #include <QStyleOption>
+#include <QToolTip>
+#include <QHelpEvent>
 
 #include <algorithm>
 
@@ -181,6 +183,66 @@ void NoteLabel::resizeEvent(QResizeEvent* e) {
         setMinimumHeight(h);
         updateGeometry();
     }
+}
+
+ElideLabel::ElideLabel(const QString& text, const QString& id, const QString& role, Qt::TextElideMode mode,
+                       QWidget* parent)
+    : QLabel(text, parent), mode_(mode) {
+    if (!id.isEmpty()) setObjectName(id);
+    if (!role.isEmpty()) setProperty("role", role);
+    setTextFormat(Qt::PlainText);
+    setWordWrap(false);
+    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+}
+
+QSize ElideLabel::minimumSizeHint() const {
+    // Room for a few characters and the ellipsis; the layout gives it more when there is more.
+    const QMargins m = contentsMargins();
+    const int few = fontMetrics().horizontalAdvance(QStringLiteral("MMM\u2026")) + m.left() + m.right() + 2 * margin();
+    const QSize full = QLabel::minimumSizeHint();
+    return {std::min(full.width(), few), full.height()};
+}
+
+QRect ElideLabel::text_rect() const {
+    return contentsRect().adjusted(margin(), margin(), -margin(), -margin());
+}
+
+bool ElideLabel::elided() const { return fontMetrics().horizontalAdvance(text()) > text_rect().width(); }
+
+void ElideLabel::paintEvent(QPaintEvent* e) {
+    QFrame::paintEvent(e);   // the style sheet's background and border
+    QPainter p(this);
+    const QRect r = text_rect();
+    const QString shown = fontMetrics().elidedText(text(), mode_, r.width());
+    style()->drawItemText(&p, r, int(QStyle::visualAlignment(layoutDirection(), alignment())) | Qt::AlignVCenter,
+                          palette(), isEnabled(), shown, foregroundRole());
+}
+
+bool ElideLabel::event(QEvent* e) {
+    if (e->type() == QEvent::ToolTip && toolTip().isEmpty() && elided()) {
+        QToolTip::showText(static_cast<QHelpEvent*>(e)->globalPos(), text(), this);
+        return true;
+    }
+    return QLabel::event(e);
+}
+
+void PathEdit::paintEvent(QPaintEvent* e) {
+    if (hasFocus() || text().isEmpty()) {
+        QLineEdit::paintEvent(e);
+        return;
+    }
+    QStyleOptionFrame opt;
+    initStyleOption(&opt);
+    QRect r = style()->subElementRect(QStyle::SE_LineEditContents, &opt, this).marginsRemoved(textMargins());
+    r.adjust(2, 0, -2, 0);
+    if (fontMetrics().horizontalAdvance(text()) <= r.width()) {   // it fits: Qt draws it as it is
+        QLineEdit::paintEvent(e);
+        return;
+    }
+    QPainter p(this);
+    style()->drawPrimitive(QStyle::PE_PanelLineEdit, &opt, &p, this);
+    p.setPen(palette().color(isEnabled() ? QPalette::Active : QPalette::Disabled, QPalette::Text));
+    p.drawText(r, Qt::AlignLeft | Qt::AlignVCenter, fontMetrics().elidedText(text(), Qt::ElideMiddle, r.width()));
 }
 
 QWidget* panel_label(const QString& text, const QString& note, const QString& note_id, QWidget* parent) {

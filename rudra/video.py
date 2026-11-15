@@ -301,7 +301,8 @@ class Predictor:
         import torch
         from .sdr2hdr import SDR2HDRNet
         self.torch, self.device = torch, torch.device(device)
-        payload = torch.load(checkpoint, map_location='cpu', weights_only=False)
+        from .torch_compat import load_checkpoint
+        payload = load_checkpoint(checkpoint)   # tensors only: no code from the file
         self.model = SDR2HDRNet.from_config(payload.get('config', {}))
         self.model.load_state_dict(payload.get('model',payload),strict=True)
         self.model.to(self.device).eval()

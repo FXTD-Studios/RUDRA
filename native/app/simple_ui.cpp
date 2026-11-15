@@ -101,7 +101,48 @@ void MainWindow::build_simple_parts() {
         m->menu()->insertAction(acts.size() > 1 ? acts[1] : nullptr, tips);
         break;
     }
+    // Help > Technical details (12 Nov 2026), after Show tips: the readouts on or off. The app's own, as
+    // Show tips is: the other menus are the page's spec, entry for entry (AppActions.MenubarIsTheSpec).
+    {
+        QMenu* home = nullptr;
+        for (QAction* m : menuBar()->actions())
+            if (m->menu() && m->text().remove('&') == "Help") home = m->menu();
+        if (home) {
+            auto* d = new QAction("Technical details", home);
+            d->setObjectName("showDetails");
+            d->setCheckable(true);
+            d->setChecked(details_);
+            d->setStatusTip("The range line, the pipeline bar under the picture and the frame's timings");
+            connect(d, &QAction::toggled, this, [this](bool on) { set_details(on); });
+            QAction* after_tips = nullptr;
+            const auto acts = home->actions();
+            for (qsizetype i = 0; i + 1 < acts.size(); ++i)
+                if (acts[i]->objectName() == "showTips") after_tips = acts[i + 1];
+            home->insertAction(after_tips, d);   // null: at the end
+        }
+    }
     coach_ = new CoachMarks(this);
+}
+
+void MainWindow::set_details(bool on) {
+    details_ = on;
+    QSettings().setValue("ui/details", on);
+    if (auto* a = findChild<QAction*>("showDetails")) {
+        const QSignalBlocker b(a);
+        a->setChecked(on);
+    }
+    sync_simple();
+}
+
+void MainWindow::show_src_info() {
+    if (!src_info_) return;
+    if (details_) {
+        src_info_->setText(src_info_full_);
+        return;
+    }
+    // The shot's name and the frame; the timings and the rest on hover.
+    src_info_->setText(src_info_full_.section(QStringLiteral("  \u00b7  "), 0, 0));
+    src_info_->setToolTip(src_info_full_);
 }
 
 void MainWindow::sync_simple() {
@@ -139,7 +180,9 @@ void MainWindow::sync_simple() {
         for (auto* c : hud->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
             if (c->property("role").toString() == "hud-sep") c->setVisible(!simple);
     compare_bar_->setVisible(!simple);
-    vis("pipe", !simple);
+    vis("pipe", !simple && details_);
+    if (range_line_) range_line_->setVisible(details_);   // 12 Nov 2026: the readouts only when asked (set_details)
+    show_src_info();
     // The empty viewer: one target and the recent shots.
     vis("emptyFull", !simple);
     vis("emptySimple", simple && frames_.empty());

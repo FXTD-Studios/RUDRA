@@ -1,0 +1,12 @@
+# Proposes updates for the pinned GitHub Actions and the Python packages (security review, 11 Nov 2026).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions: { patterns: ["*"] }
+  - package-ecosystem: pip
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5

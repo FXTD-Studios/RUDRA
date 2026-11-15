@@ -41,6 +41,7 @@ QLabel#shotSub { font-size: 11px; color: var(--ink-3); }
 QWidget#toolbar QToolButton { background: transparent; border: 0; border-radius: var(--radius); padding: 0; }
 QWidget#toolbar QToolButton:hover { background: var(--raise); }
 QWidget#toolbar QToolButton[on="true"] { background: var(--raise); }
+QWidget#toolbar QToolButton#winClose:hover { background: var(--bad); color: var(--ink); }
 QWidget#toolbar QPushButton#probeBtn { background: transparent; border: 0; border-radius: var(--radius); color: var(--ink-2); padding: 4px 10px; }
 QWidget#toolbar QPushButton#probeBtn:checked { background: var(--raise); color: var(--accent); }
 QWidget#devicePill { background: var(--panel); border: 1px solid var(--line-2); border-radius: 11px; }

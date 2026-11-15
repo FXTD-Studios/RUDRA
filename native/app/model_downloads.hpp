@@ -52,6 +52,18 @@ struct RemoteModel {
 std::optional<std::vector<RemoteModel>> parse_model_index(const QByteArray& json, QString* why = nullptr);
 
 QString default_model_index_url();   // QSettings models/indexUrl, else https://www.fxtdstudios.com/rudra-docs/models.json
+
+// The published list is not the root of trust (security review, 11 Nov 2026). It names both the
+// files and their checksums, so whoever can change that one file on the website could have had
+// RUDRA download anything and load it. The checksums of every file of every released model are
+// compiled in here instead: from the published address, a model is offered only when all its
+// files are among them and come over https. A new model therefore ships with the RUDRA that
+// knows it: add its files' SHA-256 to kKnownModelFiles (model_downloads.cpp) in that release.
+// A list from another address (the models/indexUrl setting, a test's file) is the user's own
+// choice on their own computer and is taken as it is.
+QString published_model_index_url();             // the compiled-in address, whatever the setting says
+bool is_known_model_file(const QString& sha256);
+std::vector<RemoteModel> known_models(std::vector<RemoteModel> all, int* left_out = nullptr);
 QString default_download_root();     // QSettings models/downloadRoot, else <AppLocalData>/models
 
 // "12.4 MB", "2.1 GB".

@@ -5,8 +5,7 @@ train_hdr_lora.py — Radiance HDR LoRA Training
 Trains a LoRA adapter on a frozen diffusion model so that the model learns
 to generate HDR-consistent outputs from HDR-compressed footage.
 
-This mirrors exactly what LTX-Video did for their HDR LoRA — but the
-Radiance implementation is model-agnostic: it works with LTX-Video, Flux,
+The implementation is model-agnostic: it works with Flux,
 Wan 2.1, HunyuanVideo, SD3, SDXL, and SD 1.x / 2.x.
 
 Architecture
@@ -23,7 +22,7 @@ model to shift its mid-tones response without affecting composition.
 
 Loss
 ────
-Flow-matching models (LTX-Video, Flux, Wan, SD3):
+Flow-matching models (Flux, Wan, SD3):
     L = MSE(model(z_noisy, t, text_embed) - v_target)
     where v_target = noise - z_clean   (velocity target)
 
@@ -64,16 +63,16 @@ USAGE
     python dataset_hdr_lora.py \\
         --exr_dirs /data/exr/arri /data/exr/hdri \\
         --cache_dir /data/hdr_lora_cache \\
-        --vae_path /models/vae/ltx_vae.safetensors \\
-        --model_name ltx-video \\
+        --vae_path /models/vae/wan_2.1_vae.safetensors \\
+        --model_name wan \\
         --size 512 --n_frames 9
 
     # 2. Train the LoRA
     python train_hdr_lora.py \\
         --cache_dir    /data/hdr_lora_cache \\
-        --model_path   /models/ltx-video/ltxv.safetensors \\
+        --model_path   /models/wan/wan2.1.safetensors \\
         --output_dir   /checkpoints/hdr_lora \\
-        --model_name   ltx-video \\
+        --model_name   wan \\
         --rank         16 \\
         --steps        5000 \\
         --batch_size   2
@@ -540,7 +539,7 @@ class LoRAEMA:
 
 def load_diffusion_model(
     model_path: str,
-    model_name: str        = "ltx-video",
+    model_name: str        = "wan",
     device: str            = "cuda",
     quantize: Optional[str] = None,    # "nf4" | "int8" | None
 ) -> nn.Module:
@@ -845,7 +844,7 @@ def train(
     cache_dir:          str,
     model_path:         str,
     output_dir:         str,
-    model_name:         str   = "ltx-video",
+    model_name:         str   = "wan",
     rank:               int   = 16,
     alpha:              float = 16.0,
     lora_dropout:       float = 0.0,
@@ -874,7 +873,7 @@ def train(
         cache_dir:        Directory with .npz latent cache (from dataset_hdr_lora.py)
         model_path:       Path to base diffusion model checkpoint
         output_dir:       Where to save LoRA checkpoints
-        model_name:       "ltx-video", "flux", "wan", etc.
+        model_name:       "flux", "wan", etc.
         rank:             LoRA rank (8–32 typical; 16 is good default)
         alpha:            LoRA scaling factor (set = rank for unit scale)
         lora_dropout:     Dropout on LoRA inputs (0.1 helps generalisation)
@@ -908,7 +907,7 @@ def train(
     except ImportError:
         from nodes_hdr_smart import RADIANCE_MODEL_PRESETS, _resolve_model
 
-    preset = _resolve_model(model_name) or RADIANCE_MODEL_PRESETS["ltx-video"]
+    preset = _resolve_model(model_name) or RADIANCE_MODEL_PRESETS["wan"]
     compression_ratio = preset["compression_ratio"]
     logger.info("[Train] model=%s  compression_ratio=%.2f  rank=%d  alpha=%.0f",
                 model_name, compression_ratio, rank, alpha)
@@ -1090,13 +1089,13 @@ def train(
         t_emb = t_emb.to(model_dtype)
 
         # Detect model architecture from the ComfyUI BaseModel wrapper class name.
-        # Raw transformer class names: Flux -> "Flux", Wan -> "WanModel", LTX -> "LTXVModel".
-        # ComfyUI BaseModel subclass names: "Flux"/"Flux2", "WAN21", "LTXV"/"LTXAV", etc.
+        # Raw transformer class names: Flux -> "Flux", Wan -> "WanModel".
+        # ComfyUI BaseModel subclass names: "Flux"/"Flux2", "WAN21", etc.
         _comfy_cls_hdr = type(getattr(diffusion_model, "comfy_model", None)).__name__ if hasattr(diffusion_model, "comfy_model") else ""
         _dm_cls_hdr = type(diffusion_model).__name__
         _CONTEXT_MODELS_HDR = {
-            "Flux", "WanModel", "LTXVModel", "LTXAVModel",
-            "Flux2", "LongCatImage", "WAN21", "LTXV", "LTXAV",
+            "Flux", "WanModel",
+            "Flux2", "LongCatImage", "WAN21",
             "HunyuanVideo", "HunyuanVideoI2V", "HunyuanVideoSkyreelsI2V",
         }
         _uses_context_hdr = (_dm_cls_hdr in _CONTEXT_MODELS_HDR) or (_comfy_cls_hdr in _CONTEXT_MODELS_HDR)
@@ -1122,7 +1121,7 @@ def train(
                     pred = diffusion_model(noisy, t_val, t_emb)
         else:
             try:
-                # 1. Try positional call (works for Flux/Wan/LTX and most diffusers models)
+                # 1. Try positional call (works for Flux/Wan and most diffusers models)
                 if _uses_context_hdr:
                     pred = diffusion_model(noisy, t_val, t_emb)
                 else:
