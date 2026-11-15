@@ -38,7 +38,7 @@ networkx==3.6.1
 numpy==2.5.1
 opencolorio==2.5.2
 opencv-python-headless==5.0.0.93
-openexr==3.4.13
+openexr==3.5.2
 packaging==26.3
 peft==0.21.2
 pillow==13.0.0
