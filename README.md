@@ -1,9 +1,8 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="ui/assets/brand/png/rudra-logo-dark.png">
-    <img src="ui/assets/brand/png/rudra-logo-light.png" width="320" alt="RUDRA">
-  </picture>
+  <img src="ui/assets/brand/png/rudra-icon-512.png" width="160" alt="RUDRA icon">
 </p>
+
+<h1 align="center">RUDRA</h1>
 
 <p align="center">
   <b>SDR in, HDR out.</b><br>
