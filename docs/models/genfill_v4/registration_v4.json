@@ -1,0 +1,32 @@
+{
+ "model": "RUDRA AI fill v4, region re-render",
+ "version": "4.3",
+ "date": "2026-11-15",
+ "status": "experimental, off by default; needs RUDRA 1.2.4",
+ "lora": {
+  "file": "rudra_genfill.safetensors",
+  "sha256": "406b1dc7b7d3ada5406b396a6aa8c7e5ec9eac8d0be0d04e8038d68b5bf1b390",
+  "base": "Wan2.1-VACE-1.3B-diffusers (Apache 2.0, Wan-AI)",
+  "training": "rank 32, 5000 updates, 6087 clips of 33 frames at 512 x 288 from 948 scenes; loss weighted on the region (x4), structure boost 3, temporal weight 1.0, no calibration term"
+ },
+ "training_data": "CC0 HDRIs, FXTD Studios' own footage, CC0 sources with FXTD-authored geometry (source receipts kept); no non-commercial data, no third-party model outputs",
+ "inference": "rudra.genfill.run --region-rerender --condition bt1886 --tau-high 240 --tau-low -1 --feather 8 --brightness-model none --steps 30 --rerender-hue source --rerender-colour 0.3 --rerender-level 3.3 --rerender-smooth 0.8 --rerender-dip 0.3 --rerender-independent --rerender-calm 0.9, with a highlight prompt naming the region",
+ "contract": "inside the region the SDR codes are NOT kept; outside it every pixel is the master's, bit for bit; every generated pixel is marked in rudra.generated",
+ "gates": {
+  "L": "region median 2.5-4 x SDR white, hue G/R within 0.15 of the source",
+  "S": "interior fine structure >= 0.05 stops",
+  "T": "pixels the source clips and holds still: p95 frame-to-frame change <= 0.10 EV",
+  "O": "0 pixels changed outside the mask",
+  "H": "held-out region clips, PU21 at -3 EV against plain BT.1886: 95 % CI below 0 on 22 clips; at least 5 of 7 better on 7 more"
+ },
+ "decision_rule": "shot A must pass L, S, T, O; shots B, C, D must pass L, T, O (S reported: a smooth glare or a softbox has no structure to draw); both H checks must pass",
+ "history": "This rule was set after the v4.2 run (same LoRA) was seen, which failed S on shot B and T on shots C and D. The calm setting and the rule were added after that run; the 7-clip H set had been seen once before. Recorded as such.",
+ "decision": "Shipped in RUDRA 1.2.4 as experimental with a known limit: on fast-moving water (shot C) the fill flickers slightly, p95 0.112 EV against 0.10. Approved by FXTD Studios on 15 Nov 2026.",
+ "known_limits": [
+  "fast-moving specular water: slight flicker (0.11 EV p95 on still pixels)",
+  "a smooth glare such as a hazy sun: the brightness is set, no texture is drawn",
+  "tested on the analytic BT.1886 route only",
+  "inside the region the SDR codes are not kept"
+ ],
+ "release_authorized": true
+}

@@ -13,7 +13,6 @@
 #include <QProcessEnvironment>
 #include <QPushButton>
 #include <QSettings>
-#include <QStandardPaths>
 #include <QStatusBar>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -406,6 +405,8 @@ void MainWindow::preview_genfill() {
                 fill.insert("rerender_level", 3.3);
                 fill.insert("rerender_smooth", 0.8);
                 fill.insert("rerender_dip", 0.3);   // as genfill_arguments
+                fill.insert("rerender_independent", true);
+                fill.insert("rerender_calm", 0.9);
                 fill.insert("brightness_offset", 0.0);
                 fill.insert("shape_gain", 1.0);
                 fill.insert("fallback", "none");
@@ -471,19 +472,6 @@ void MainWindow::preview_genfill() {
                     p->fill_dir = fdir;
                     const int pw = m->width(), ph = m->height();
                     const QString mexr = QDir(mdir).filePath(preview_name(at)), fexr = QDir(fdir).filePath(preview_name(at));
-                    if (options.rerender) {
-                        // 12 Nov 2026, while v4 is experimental: the last preview's master, fill and report are
-                        // kept beside the log (the temporary folder goes), to compare with the gate runs.
-                        const QString keep = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) +
-                                             QStringLiteral("/logs/last_ai_fill_preview");
-                        QDir().mkpath(keep);
-                        const std::pair<QString, QString> files[] = {{mexr, "master.exr"}, {fexr, "fill.exr"},
-                                                                     {QDir(fdir).filePath("genfill.json"), "genfill.json"}};
-                        for (const auto& [from, name] : files) {
-                            QFile::remove(QDir(keep).filePath(name));
-                            QFile::copy(from, QDir(keep).filePath(name));
-                        }
-                    }
                     // The master and the fill as the viewer shows the live frame: through the monitor.
                     auto finish = [self, end, options, p, a, b, n, frames, master_s, fill_s, cold] {
                         self->genfill_preview_ = std::move(*p);

@@ -1,0 +1,178 @@
+{
+ "model": "RUDRA AI fill v4, region re-render",
+ "version": "4.3",
+ "run": "2026-11-15",
+ "verdict_by_the_rule": "FAIL (shot C, T 0.112 EV against 0.10); shipped as experimental with that limit named",
+ "shots": {
+  "A: sky through an open door": {
+   "needs": [
+    "L",
+    "S",
+    "T",
+    "O"
+   ],
+   "pass": true,
+   "gates": {
+    "L": true,
+    "S": true,
+    "T": true,
+    "O": true
+   },
+   "L_x_white": 3.213,
+   "hue_GR_BR": [
+    1.076,
+    1.144
+   ],
+   "source_hue_GR_BR": [
+    1.078,
+    1.077
+   ],
+   "S_stops": [
+    0.101,
+    0.124,
+    0.133
+   ],
+   "T_median_p95_ev": [
+    0.0041,
+    0.0289
+   ],
+   "O_pixels": [
+    0,
+    0,
+    0
+   ]
+  },
+  "B: sun glare behind a building": {
+   "needs": [
+    "L",
+    "T",
+    "O"
+   ],
+   "pass": true,
+   "gates": {
+    "L": true,
+    "S": false,
+    "T": true,
+    "O": true
+   },
+   "L_x_white": 3.257,
+   "hue_GR_BR": [
+    0.999,
+    0.976
+   ],
+   "source_hue_GR_BR": [
+    0.978,
+    0.94
+   ],
+   "S_stops": [
+    0.01,
+    0.006,
+    0.026
+   ],
+   "T_median_p95_ev": [
+    0.0022,
+    0.0151
+   ],
+   "O_pixels": [
+    0,
+    0,
+    0
+   ]
+  },
+  "C: moving water": {
+   "needs": [
+    "L",
+    "T",
+    "O"
+   ],
+   "pass": false,
+   "gates": {
+    "L": true,
+    "S": true,
+    "T": false,
+    "O": true
+   },
+   "L_x_white": 2.981,
+   "hue_GR_BR": [
+    0.997,
+    1.013
+   ],
+   "source_hue_GR_BR": [
+    1.0,
+    1.0
+   ],
+   "S_stops": [
+    0.064,
+    0.14,
+    0.136
+   ],
+   "T_median_p95_ev": [
+    0.0297,
+    0.1123
+   ],
+   "O_pixels": [
+    0,
+    0,
+    0
+   ]
+  },
+  "D: a softbox": {
+   "needs": [
+    "L",
+    "T",
+    "O"
+   ],
+   "pass": true,
+   "gates": {
+    "L": true,
+    "S": false,
+    "T": true,
+    "O": true
+   },
+   "L_x_white": 3.11,
+   "hue_GR_BR": [
+    1.035,
+    1.07
+   ],
+   "source_hue_GR_BR": [
+    1.003,
+    1.014
+   ],
+   "S_stops": [
+    0.073,
+    0.011
+   ],
+   "T_median_p95_ev": [
+    0.0285,
+    0.0578
+   ],
+   "O_pixels": [
+    0,
+    0,
+    0
+   ]
+  }
+ },
+ "H": {
+  "22 clips (CI)": {
+   "clips": 22,
+   "pu21_-3_mean_delta": -26.921806482850435,
+   "ci95": [
+    -33.89349676978276,
+    -19.560495505909866
+   ],
+   "better_in": 21,
+   "pass": true
+  },
+  "7 clips (5 of 7)": {
+   "clips": 7,
+   "pu21_-3_mean_delta": -27.12584764644782,
+   "ci95": [
+    -44.18592986950115,
+    -12.692172049896318
+   ],
+   "better_in": 7,
+   "pass": true
+  }
+ }
+}

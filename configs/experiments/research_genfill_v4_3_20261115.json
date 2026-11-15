@@ -1,0 +1,54 @@
+{
+ "id": "research_genfill_v4_3_20261115",
+ "status": "APPROVED for 1.2.4 by Ahmed on 15 Nov 2026, after the run, with one known limit (below). The decision rule was written after v4.2's results were seen; this record says so.",
+ "written": "2026-11-15, after research_genfill_v4_2_20261114 failed its own rule (testwindow S 0.010 / 0.006 / 0.032; water T 0.19; Porch S 0.018, T 0.102) and Ahmed asked for a fix that ships in this version (15 Nov).",
+ "author": "FXTD Studios Research; approved by Ahmed (15 Nov 2026)",
+ "parents": [
+  "research_genfill_v4_2_20261114 (the LoRA, SHA-256 406b1dc7b7d3ada5406b396a6aa8c7e5ec9eac8d0be0d04e8038d68b5bf1b390; FAIL on its shots, PASS on both H gates)"
+ ],
+ "what_is_post_hoc": [
+  "The inference changes after v4.2's results were seen (v4.2's rule: 'No setting is tuned after the results are seen').",
+  "The decision rule changes: S is no longer required of testwindow.",
+  "Held-out entries 120-126 were seen once by v4.2: they are a regression check here, not a blind test.",
+  "Porch's prompt changes from the sea prompt to one that names a lamp."
+ ],
+ "findings": {
+  "flicker": "Offline, on the v4 raw fills with the finish as shipped: water frames 30-35, the raw fill moves 1.5 EV (p95) on pixels the source holds still, the finished fill 0.115; with the model's detail removed 0.061. The door (09V frames 40-47): raw 0.076, finished 0.013. The flicker is the model's detail jumping on still pixels inside moving highlights.",
+  "structure_on_testwindow": "Frame 0 has no previous frame, so nothing is averaged there, and its S is 0.010: the model itself draws no fine structure in the glare. The level is right (1.2 x white at the rim rising to 3.3-3.9 at the core, the master flat at 1.2-1.4), there is no step at the rim (fill = master in the first 15 px) and no flicker (0.0145 EV). No render-time setting can add structure the model did not draw."
+ },
+ "change": {
+  "inference": "v4.2's, plus --rerender-calm 0.9 (rudra/genfill/composite.py finish_rerender, RERENDER_CALM_STOPS 0.1-0.3): where the source holds still and the fill would move more than 0.1 stops from the previous frame's, 0.9 of the previous frame is kept (fully from 0.3 stops); elsewhere smooth 0.8 stands.",
+  "measured_before_the_run": "water frames 30-35: T p95 0.115 -> 0.063, S 0.112 -> 0.131. 09V frames 40-47: S 0.0957 both ways, 98.4 % of the region within 0.01 stops of the fill without it. v4 raw fills, not v4.2's.",
+  "training": "none; the LoRA is v4.2's"
+ },
+ "evaluation": {
+  "runner": "tmp/09V_test/v4_gates/run_v4_3_gates.py (v4.2's stills and masters; outputs fill_v4_3, gates_v4_3_*.json, v4_3_verdict.json)",
+  "thresholds": "shot_gates.py unchanged: L 2.5-4 x white and hue within 0.15; S >= 0.05 stops; T p95 <= 0.10 EV; O 0 pixels",
+  "shots": {
+   "09V": "L, S, T, O",
+   "testwindow": "L, T, O; S reported",
+   "water": "L, T, O; S reported (was reported only)",
+   "Porch": "L, T, O; S reported (was reported only); prompt 'bright softbox light, smooth even glow, soft falloff'"
+  },
+  "H": "gated 96-119 by CI; 120-126 at least 5 of 7 better; both with --calm 0.9"
+ },
+ "decision_rule": "PASS = every shot passes the gates listed for it and both H checks pass: AI fill v4 (the v4.2 LoRA with this inference) goes into 1.2.4, EXPERIMENTAL and off by default, described as: it sets the level of a bright region and draws detail where the model finds some; in a smooth glare it adds level and no texture. FAIL on any: report to Ahmed. Nothing further is tuned on these four shots.",
+ "release_authorized": true,
+ "result": {
+  "run": "tmp/09V_test/v4_gates/v4_3_verdict.json, 15 Nov 2026 16:29-18:56",
+  "09V": "PASS L S T O: L 3.213, S 0.101 / 0.124 / 0.133, T p95 0.0289, O 0",
+  "testwindow": "PASS L T O: L 3.257, T p95 0.0151, O 0; S 0.010 / 0.006 / 0.026 (reported)",
+  "Porch": "PASS L T O: L 3.11, T p95 0.0578 (v4.2 0.1019), O 0; S 0.073 / 0.011 (reported)",
+  "water": "FAIL T: p95 0.1123 EV against 0.10 (v4.2 0.1921); L 2.981, S 0.064 / 0.14 / 0.136, O 0",
+  "H_gated_96_119": "PASS: PU21 -3 EV delta -26.9, CI [-33.9, -19.6], better in 21 of 22",
+  "H_120_126": "PASS: delta -27.1, better in 7 of 7 (seen once before by v4.2: a regression check, not blind)",
+  "verdict_by_the_rule": "FAIL (water T)"
+ },
+ "decision": "Ship in 1.2.4 as EXPERIMENTAL, off by default, with water named as a known limit: on fast-moving specular water the fill flickers slightly (static clipped p95 0.11 EV, the limit 0.10). Ahmed, 15 Nov 2026: \"yes\" to option 1 (ship as it is, with water named) over option 2 (calm 0.95, a third setting fitted to the same shots). Nothing is tuned further.",
+ "known_limits": [
+  "Fast-moving specular water: slight flicker in the fill (0.11 EV p95 on still pixels).",
+  "A smooth glare (a hazy sun): the level is set and no texture is drawn (testwindow S 0.010).",
+  "Tested on the analytic BT.1886 route only.",
+  "Inside the region the SDR codes are not kept (unlike v3)."
+ ]
+}

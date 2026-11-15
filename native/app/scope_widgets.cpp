@@ -300,6 +300,11 @@ ParadeView::ParadeView(QWidget* parent) : QWidget(parent) {
 
 void ParadeView::set_scope(QcScope s) {
     s_ = std::move(s);
+    setToolTip(s_.empty() ? QString()
+                          : QStringLiteral("Outside P3-D65: %1 % of pixels · outside Rec.2020: %2 % · peak %3 nits")
+                                .arg(100.0 * s_.out_p3, 0, 'f', 2)
+                                .arg(100.0 * s_.out_2020, 0, 'f', 2)
+                                .arg(std::lround(s_.peak_nits)));
     update();
 }
 
@@ -324,12 +329,14 @@ void ParadeView::paintEvent(QPaintEvent*) {
     if (!s_.empty()) {
         p.setRenderHint(QPainter::SmoothPixmapTransform, true);
         p.drawImage(r, s_.parade);
-        const QString gam = QStringLiteral("outside P3-D65 %1 % · Rec.2020 %2 % · peak %3 nits")
+        // 14 Nov 2026: short, and elided if the column is narrower still ("peak 100(" was cut); the long form is the tooltip.
+        const QString gam = QStringLiteral("out of P3 %1 % · 2020 %2 % · peak %3 nits")
                                 .arg(100.0 * s_.out_p3, 0, 'f', 2)
                                 .arg(100.0 * s_.out_2020, 0, 'f', 2)
                                 .arg(std::lround(s_.peak_nits));
         p.setPen(s_.out_p3 > 0.001 ? theme_colour("gold") : theme_colour("ink-4"));
-        p.drawText(QRectF(r.left(), r.bottom() + 2, r.width(), 14), Qt::AlignLeft | Qt::AlignVCenter, gam);
+        const QRectF line(r.left(), r.bottom() + 2, r.width(), 14);
+        p.drawText(line, Qt::AlignLeft | Qt::AlignVCenter, p.fontMetrics().elidedText(gam, Qt::ElideRight, int(line.width())));
     } else {
         p.setPen(theme_colour("ink-4"));
         p.drawText(r, Qt::AlignCenter, "learned frames only");

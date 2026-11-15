@@ -119,7 +119,14 @@ void MainWindow::sync_aces_trims() {
         if (auto* n = findChild<QLabel*>(id)) n->setVisible(routed);
     if (auto* n = dynamic_cast<NoteLabel*>(findChild<QLabel*>("acesCurveNote"))) {
         const bool steer = routed && aces_curve_mismatch();
-        if (steer && n->text() != aces_curve_note()) n->setText(aces_curve_note());
+        // 14 Nov 2026: two lines here, the whole note in the tooltip (it was ten lines above the trims),
+        // as the Deliver column's since 12 Nov.
+        const auto label = source_curve_label(session_.source_curve());
+        const QString brief = QStringLiteral("The source's curve is %1, not ACES: bright areas may come back too bright. "
+                                             "Deliver > Source > Analytic is the route for it (hover for more).")
+                                  .arg(QString::fromUtf8(label.data(), int(label.size())));
+        if (steer && n->text() != brief) n->setText(brief);
+        if (steer) n->setToolTip(aces_curve_note());
         n->setVisible(steer);
     }
     const auto& t = aces_trims_;

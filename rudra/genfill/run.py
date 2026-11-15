@@ -41,6 +41,10 @@ crossfaded into the master by the
 source's code (the master at tau_high, the whole fill at code 253), and it follows the previous frame. With a level the fill acts
 only where the source is near white in every channel (composite.neutral_weight): a saturated
 highlight is left to the master. All off by default: the model's own colour and level.
+--rerender-rise <stops> (13 Nov 2026): with a level, the full-code core keeps climbing with its depth
+instead of sitting flat at the level (sky glare read as a mask-shaped plate). Off by default.
+--rerender-calm <0..1> (15 Nov 2026): where the source holds still and the fill would jump, this share of
+the previous frame's fill is kept (the model's detail flickering inside moving highlights). Off by default.
 """
 from __future__ import annotations
 
@@ -74,6 +78,8 @@ class Rerender:
     dip: float = 0.0       # > 0: the fill's fine detail at most this many stops under its surroundings (finish_rerender)
     still: float = 0.0     # > 0: the share of the previous frame kept where the source holds still (finish_rerender)
     independent: bool = False   # every window from the source alone, the overlaps crossfaded (not chained)
+    rise: float = 0.0      # > 0: with a level, the full-code core climbs up to this many stops with its depth (finish_rerender)
+    calm: float = 0.0      # > 0: the share of the previous frame kept where the source holds still and the fill would jump (finish_rerender)
     CONDITIONS = ('bt1886', 'aces')
 
 
@@ -677,10 +683,11 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                     w_plain = (weight * ramp * ramp * (3 - 2 * ramp)).astype(np.float32)
                     if rerender.level > 0:                     # only where the source is near white in every channel
                         w_plain = (w_plain * neutral_weight(codes[i])).astype(np.float32)
-                    if rerender.hue != 'model' or rerender.level > 0 or rerender.smooth > 0 or rerender.still > 0:
+                    if rerender.hue != 'model' or rerender.level > 0 or rerender.smooth > 0 or rerender.still > 0 or rerender.calm > 0:
                         fill_lin = finish_rerender(fill_lin, fr['ap1'], condition_of(codes[i], 'bt1886', view), codes[i], w_plain,
                                                    rerender.hue, rerender.colour, rerender.level, rerender.smooth,
-                                                   finish_white, ms.tau_high, finish_state, dip=rerender.dip, still=rerender.still)
+                                                   finish_white, ms.tau_high, finish_state, dip=rerender.dip, still=rerender.still,
+                                                   rise=rerender.rise, calm=rerender.calm)
                     out_ap1, alpha = plain_blend(fr['ap1'], fill_lin, w_plain)
                 else:
                     out_ap1, alpha = r_safe_blend(fr['ap1'], fill_lin, weight, view)
@@ -868,7 +875,9 @@ def serve(model, view, a, emit, FillSettings) -> int:
                                                 int(r.get('source_start', a.source_start)),
                                                 float(r.get('rerender_dip', a.rerender_dip)),
                                                 float(r.get('rerender_still', a.rerender_still)),
-                                                bool(r.get('rerender_independent', a.rerender_independent)))
+                                                bool(r.get('rerender_independent', a.rerender_independent)),
+                                                float(r.get('rerender_rise', a.rerender_rise)),
+                                                float(r.get('rerender_calm', a.rerender_calm)))
                               if r.get('region_rerender', a.region_rerender) and r.get('source', a.source) else None)
             tagged(event='done', ok=True, out=str(out), **rep['stats'])
         except Exception as e:  # noqa: BLE001 - one failed request does not end the server
@@ -941,6 +950,12 @@ def main(argv=None):
     ap.add_argument('--rerender-still', type=float, default=0.0,
                     help="with --region-rerender: the share of the previous frame's fill kept where the source holds still "
                          "(within 2 codes), in place of --rerender-smooth there (e.g. 0.9); 0 is off")
+    ap.add_argument('--rerender-calm', type=float, default=0.0,
+                    help="with --region-rerender: the share of the previous frame's fill kept where the source holds still "
+                         "and the fill would jump by more than 0.1 stops (fully from 0.3), e.g. 0.9; 0 is off")
+    ap.add_argument('--rerender-rise', type=float, default=0.0,
+                    help="with --rerender-level: where the source sits at full code the level keeps climbing with the depth "
+                         "into that core, up to this many stops over the level (e.g. 1: no flat plate in sky glare); 0 is off")
     ap.add_argument('--rerender-independent', action='store_true',
                     help="with --region-rerender: every window from the source alone, the overlaps crossfaded, not chained "
                          "(the model's detail stays the same along the shot)")
@@ -982,7 +997,8 @@ def main(argv=None):
                           cancel=stop.is_set, pattern=a.glob, brightness=brightness, region=region,
                           fallback=a.fallback, focus=a.focus,
                           rerender=Rerender(a.source, a.condition, a.rerender_hue, a.rerender_colour, a.rerender_level, a.rerender_smooth,
-                                            a.source_start, a.rerender_dip, a.rerender_still, a.rerender_independent)
+                                            a.source_start, a.rerender_dip, a.rerender_still, a.rerender_independent,
+                                            a.rerender_rise, a.rerender_calm)
                           if a.region_rerender else None)
         emit(event='done', ok=True, out=str(out), **rep['stats'])
         return 0

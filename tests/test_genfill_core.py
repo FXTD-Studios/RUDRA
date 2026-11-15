@@ -177,6 +177,62 @@ def test_finish_rerender_holds_the_fill_where_the_source_holds_still():
         finish_rerender(fill, source, source, codes, weight, still=1.0)
 
 
+def test_finish_rerender_calm_holds_a_jump_on_still_pixels_and_leaves_a_steady_fill():
+    from rudra.genfill.composite import LUMA_AP1, finish_rerender
+    h, w = 32, 48
+    codes = np.full((h, w, 3), 252, np.uint8)                                   # the source holds still everywhere
+    source = np.power(codes.astype(np.float32) / 255.0, 2.4)
+    fill = np.full((h, w, 3), 2.0, np.float32)
+    weight = np.ones((h, w), np.float32)
+    lum = lambda x: x @ LUMA_AP1                                                # noqa: E731
+    state = {}
+    a = finish_rerender(fill, source, source, codes, weight, smooth=0.5, calm=0.9, state=state)
+    nxt = fill.copy()
+    nxt[:, : w // 2] *= 2.0                                                     # left: the fill jumps a stop
+    nxt[:, w // 2:] *= 2.0 ** 0.05                                              # right: it drifts 0.05 stops
+    b = finish_rerender(nxt, source, source, codes, weight, smooth=0.5, calm=0.9, state=state)
+    step = np.log2(lum(b) / lum(a))
+    assert np.allclose(step[:, : w // 2], 0.1, atol=1e-3)                      # a jump: 0.9 kept
+    assert np.allclose(step[:, w // 2:], 0.025, atol=1e-3)                     # steady: smooth 0.5 stands
+    state = {}
+    finish_rerender(fill, source, source, codes, weight, smooth=0.5, calm=0.9, state=state)
+    moved = codes.copy()
+    moved[:, : w // 2] = 240                                                    # the source itself moves: nothing is held
+    c = finish_rerender(nxt, source, source, moved, weight, smooth=0.5, calm=0.9, state=state)
+    assert np.allclose(np.log2(lum(c) / lum(a))[:, : w // 2], 0.5, atol=1e-3)
+    off = finish_rerender(nxt, source, source, codes, weight, smooth=0.5, state={'log_y': state['log_y'] * 0, 'on': weight > 0, 'codes': codes})
+    assert np.array_equal(off, finish_rerender(nxt, source, source, codes, weight, smooth=0.5, calm=0.0,
+                                               state={'log_y': state['log_y'] * 0, 'on': weight > 0, 'codes': codes}))
+    with pytest.raises(ValueError):
+        finish_rerender(fill, source, source, codes, weight, calm=1.0)
+
+
+def test_finish_rerender_rise_lifts_the_core_with_its_depth_and_nothing_else():
+    from rudra.genfill.composite import LUMA_AP1, finish_rerender
+    h, w = 1080, 1080                                                           # px = 1: RERENDER_RISE_PX as written
+    yy, xx = np.mgrid[:h, :w].astype(np.float32)
+    r = np.hypot(yy - h / 2, xx - w / 2)
+    code = np.clip(np.rint(270.0 - r * 0.08), 0, 254).astype(np.uint8)         # glare: a full-code core in a ramp
+    codes = np.repeat(code[..., None], 3, -1)
+    source = np.power(codes.astype(np.float32) / 255.0, 2.4)
+    fill = np.full((h, w, 3), 1.0, np.float32)
+    weight = (code >= 240).astype(np.float32)
+    lum = lambda x: x @ LUMA_AP1                                                # noqa: E731
+    flat = finish_rerender(fill, source, source, codes, weight, level=3.0, white=1.0)
+    up = finish_rerender(fill, source, source, codes, weight, level=3.0, white=1.0, rise=1.0)
+    assert np.allclose(finish_rerender(fill, source, source, codes, weight, level=3.0, white=1.0, rise=0.0), flat)
+    gain = np.log2(lum(up) / lum(flat))
+    assert np.allclose(gain[code <= 240], 0.0, atol=1e-6)                       # nothing at tau_high or under: no step at the rim
+    assert float(gain[(code >= 241) & (code < 253)].max()) < 0.25               # the code ramp: at most a little
+    assert float(gain[h // 2, w // 2]) > 0.5 and float(gain.max()) <= 1.0 + 1e-5   # deep in the core: towards rise, never over
+    ring = (r > 100) & (r < 140)                                                # just inside the core's rim: a little
+    assert 0.0 <= float(gain[ring].mean()) < float(gain[h // 2, w // 2])
+    prof = gain[h // 2, w // 2: w // 2 + 200]
+    assert np.all(np.diff(prof) <= 1e-5)                                        # climbing inward: no plate, no crease
+    with pytest.raises(ValueError):
+        finish_rerender(fill, source, source, codes, weight, level=3.0, rise=-1.0)
+
+
 def test_neutral_weight_leaves_a_saturated_highlight_to_the_master():
     from rudra.genfill.composite import neutral_weight
     codes = np.array([[[254, 254, 254], [245, 254, 254], [255, 190, 120], [255, 210, 200], [0, 0, 0]]], np.uint8)

@@ -96,14 +96,14 @@ for any other grade the analytic route is the better tool, and the app says so
 when the Source curve is not ACES. The models are also on
 [Hugging Face](https://huggingface.co/fxtdstudios/rudra-models).
 
-**AI fill** (experimental, off by default) can draw detail the SDR never held. It
-has two modes, each its own model download:
+**AI fill** (experimental, off by default) draws what the SDR never held. It has
+two modes, each its own model download:
 
-- **AI fill v3** fills only the pixels that are fully clipped: a lamp's core, a
-  sun, specular glints.
+- **AI fill v3** fills only fully clipped pixels: a lamp's core, a sun, glints.
 - **Region re-render (v4)**, new in 1.2.4, draws a whole bright region again: a
-  window, an open door, a sky parked just under white. Tell it what is there with
-  a short prompt. It is tested on the analytic route.
+  window, an open door, a sky parked just under white. Name what is there in a
+  short prompt. It is tested on the analytic route; on fast-moving water it can
+  flicker slightly.
 
 Both need the Wan2.1-VACE-1.3B base model and a 16 GB GPU (on a Mac, 16 GB of
 memory or more); set it up with `scripts\GENFILL.ps1 -Setup` on Windows or
@@ -122,6 +122,7 @@ recovered detail, so check every frame.
 ## Help
 
 - [User guide](https://www.fxtdstudios.com/rudra-docs/): every control, step by step
+  (the same guide as text: [docs/USER_GUIDE.md](docs/USER_GUIDE.md))
 - [Release notes](https://github.com/FXTD-Studios/RUDRA/releases/latest)
   ([1.2.4 in this repository](docs/RELEASE_NOTES_1.2.4.md))
 - [Report a problem](https://github.com/FXTD-Studios/RUDRA/issues)

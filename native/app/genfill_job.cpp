@@ -217,7 +217,10 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
                       "--rerender-hue", "source", "--rerender-colour", "0.3", "--rerender-level", "3.3",
                       "--rerender-smooth", "0.8",
                       // 12 Nov 2026, not part of the 11 Nov gates: no dark smudges beside a silhouette (composite.py)
-                      "--rerender-dip", "0.3", "--json"};
+                      "--rerender-dip", "0.3",
+                      // 15 Nov 2026, as the v4.3 checks ran: windows from the source alone, and a jump
+                      // on still pixels held (the model's detail flickering inside moving highlights)
+                      "--rerender-independent", "--rerender-calm", "0.9", "--json"};
         if (o.source_start > 0) a << "--source-start" << QString::number(o.source_start);
         // The highlight prompt is sent when there is one (12 Nov 2026): the 09V reference
         // (fill_v4_finish5) was rendered with a prompt naming the scene; the held-out gate ran with none.
@@ -250,7 +253,7 @@ fs::path genfill_v4_lora() {
     // File > Model packages: the published v4 package's folder (12 Nov 2026)
     places.push_back(pq(default_download_root()) / "rudra_genfill_v4" / "rudra_genfill.safetensors");
     for (const auto& r : genfill_roots(find_repo())) places.push_back(r / "rudra_genfill_v4.safetensors");
-    if (training_workstation()) places.push_back("G:/rudra_training/research_genfill_v4_20261109/rudra_genfill.safetensors");
+    if (training_workstation()) places.push_back("G:/rudra_training/research_genfill_v4_2_20261114/rudra_genfill.safetensors");
     std::error_code ec;
     for (const auto& p : places)
         if (fs::is_regular_file(p, ec) && genfill_lora_is_v3(p, QString::fromLatin1(kGenFillV4Sha256))) return p;
@@ -264,7 +267,7 @@ std::optional<GenFillSetup> genfill_setup_for(const GenFillOptions& o, QString* 
     if (v4.empty()) {
         if (why)
             *why = QStringLiteral("AI fill region re-render: the v4 LoRA was not found. It is experimental and not published: "
-                                  "put rudra_genfill.safetensors of research_genfill_v4_20261109 beside the app as "
+                                  "put rudra_genfill.safetensors of research_genfill_v4_2_20261114 beside the app as "
                                   "models/genfill/rudra_genfill_v4.safetensors, or turn Re-render off for AI fill v3.");
         return std::nullopt;
     }

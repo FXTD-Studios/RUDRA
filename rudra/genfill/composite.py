@@ -50,6 +50,10 @@ RERENDER_REACH_PX = 6.0         # pixels at 1080 lines: beside something dark a 
 RERENDER_DARK_CODES = 40        # "something dark": a neighbour this many codes under tau_high (fully so at 80)
 
 
+RERENDER_RISE_PX = 150.0        # pixels at 1080 lines: with `rise`, the depth into the full-code core over which the lift approaches it
+
+
+RERENDER_CALM_STOPS = (0.1, 0.3) # stops: with `calm`, a still pixel's fill that would move this much starts to be held; fully from the second
 RERENDER_NEUTRAL = (0.78, 0.88) # the source's min over max code: below the first the region is left to the master, whole from the second
 
 
@@ -79,7 +83,7 @@ def white_scale(master: np.ndarray, codes: np.ndarray) -> float | None:
 def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray, codes: np.ndarray, weight: np.ndarray,
                     hue: str = 'model', colour: float = 0.0, level: float = 0.0, smooth: float = 0.0,
                     white: float = 1.0, tau_high: int = 240, state: dict | None = None, dip: float = 0.0,
-                    still: float = 0.0) -> np.ndarray:
+                    still: float = 0.0, rise: float = 0.0, calm: float = 0.0) -> np.ndarray:
     """The region re-render's fill, finished before the blend (10 Nov 2026, after the v4 gates on 09V:
     the v4 LoRA drew the structure, but too blue, at 1.2 x white where 2.5-4 was asked, its level
     drifting 0.85-1.72 x white along the shot with jumps at the window seams, and brighter where the
@@ -119,12 +123,33 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
                     changed, so the fill should not either. 12 Nov 2026, water.mp4: the static clipped
                     pixels moved 0.19 EV (p95) with smooth 0.8 alone, 0.06 with still 0.9; the
                     analytic master's own were 0.5 to 2.3 EV. Where the source moves, `smooth` stands.
-                    It also averages the model's detail away (09V's structure halved): off in the app."""
+                    It also averages the model's detail away (09V's structure halved): off in the app.
+      calm > 0      where the source holds still (as `still`) AND the fill would move by more than
+                    RERENDER_CALM_STOPS[0] from the previous frame's, this share is kept, fully so from
+                    RERENDER_CALM_STOPS[1]; under it `smooth` stands. 15 Nov 2026: `still` holds every
+                    still pixel and so averages a steady picture away over a shot (09V); the flicker
+                    it was made for is the model's detail jumping on still pixels inside moving
+                    highlights (water: the raw fill moves 1.5 EV p95 there, the door's 0.08). Only a
+                    jump is held. Measured on the v4 raw fills with this finish: water frames 30-35,
+                    static clipped p95 0.115 -> 0.063 EV, structure 0.112 -> 0.131; 09V frames 40-47,
+                    structure 0.0957 both ways, 98.4 % of the region within 0.01 stops of the fill
+                    without it. Off (0) is the fill as gated.
+      rise > 0      with a level: where the source sits at RERENDER_FULL_CODE the level keeps climbing,
+                    up to `rise` stops over `level`, with the depth into that full-code core
+                    (rise * (1 - exp(-depth / RERENDER_RISE_PX)), the depth blurred so the core's
+                    medial axis leaves no crease). 13 Nov 2026, testwindow.mp4 (sky glare): with the
+                    model's level held at the floor (RERENDER_CEILING_STOPS 0) the core was a flat
+                    plate at exactly 3.30 x white from 250 px in, a mask-shaped disc at -3 EV where
+                    glare keeps rising towards its source. In a clipped core the only evidence left
+                    is how far the clip reaches; a wider clip is taken as a brighter one. Fine detail
+                    is untouched (it adds no structure, so it does not move the S gate). Off (0) is
+                    the fill as gated on 11 Nov."""
     if hue not in RERENDER_HUES:
         raise ValueError(f'hue must be one of {", ".join(RERENDER_HUES)}')
-    if not 0.0 <= smooth < 1.0 or not 0.0 <= colour <= 1.0 or level < 0 or dip < 0 or not 0.0 <= still < 1.0:
-        raise ValueError('smooth and still must be in [0, 1), colour in [0, 1], level >= 0, dip >= 0')
-    if hue == 'model' and level <= 0 and smooth <= 0 and still <= 0:
+    if (not 0.0 <= smooth < 1.0 or not 0.0 <= colour <= 1.0 or level < 0 or dip < 0 or rise < 0 or not 0.0 <= still < 1.0
+            or not 0.0 <= calm < 1.0):
+        raise ValueError('smooth, still and calm must be in [0, 1), colour in [0, 1], level, dip and rise >= 0')
+    if hue == 'model' and level <= 0 and smooth <= 0 and still <= 0 and calm <= 0:
         return fill
     import cv2
     on = weight > 0
@@ -166,18 +191,31 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
             half = np.float32(0.5 * dip)
             detail = np.where(detail < -half, -half - half * np.tanh((-detail - half) / half), detail).astype(np.float32)
         whole = np.clip(low, floor, floor + RERENDER_CEILING_STOPS) + detail
+        if rise > 0:                                    # the full-code core keeps climbing with its depth
+            L = RERENDER_RISE_PX * px
+            core = ((s >= 0.999) & on).astype(np.uint8)
+            if core.any():
+                depth = cv2.GaussianBlur(cv2.distanceTransform(core, cv2.DIST_L2, 5).astype(np.float32), (0, 0), 0.5 * L)
+                whole = whole + np.float32(rise) * (1.0 - np.exp(-depth / np.float32(L))) * s
         y_m = np.maximum(master @ LUMA_AP1, 1e-6).astype(np.float32)
         log_y = ((1.0 - s) * np.log2(y_m) + s * whole).astype(np.float32)
         chroma = ((1.0 - s[..., None]) * (master / y_m[..., None]) + s[..., None] * chroma).astype(np.float32)
-    if (smooth > 0 or still > 0) and state is not None:
+    if (smooth > 0 or still > 0 or calm > 0) and state is not None:
         prev = state.get('log_y')
         if prev is not None and prev.shape == log_y.shape:
             both = on & state['on']
             keep = np.full(log_y.shape, np.float32(smooth))
             pc = state.get('codes')
-            if still > 0 and pc is not None and pc.shape == codes.shape:
+            if (still > 0 or calm > 0) and pc is not None and pc.shape == codes.shape:
                 held = np.abs(codes.astype(np.int16) - pc.astype(np.int16)).max(-1) <= 2
-                keep[held] = np.float32(still)
+                if still > 0:
+                    keep[held] = np.float32(still)
+                if calm > 0:                            # only a jump is held; a steady picture keeps `smooth`
+                    lo, hi = RERENDER_CALM_STOPS
+                    t = np.clip((np.abs(log_y - prev) - lo) / (hi - lo), 0.0, 1.0)
+                    t = t * t * (3.0 - 2.0 * t)
+                    jump = np.float32(smooth) + (np.float32(calm) - np.float32(smooth)) * t
+                    keep = np.where(held, np.maximum(keep, jump), keep).astype(np.float32)
             log_y[both] = keep[both] * prev[both] + (1.0 - keep[both]) * log_y[both]
         state['log_y'], state['on'], state['codes'] = log_y, on, codes.copy()
     out = np.array(fill, np.float32, copy=True)

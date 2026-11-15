@@ -275,7 +275,7 @@ QWidget* MainWindow::build_left_rail() {
     auto* sh = new QHBoxLayout(seq);
     sh->setContentsMargins(0, 0, 0, 0);
     sh->setSpacing(6);
-    seq_path_ = new QLineEdit(seq);
+    seq_path_ = new PathEdit(seq);   // elides in the middle when not edited (14 Nov 2026)
     seq_path_->setObjectName("seqPath");
     seq_path_->setPlaceholderText("Open a folder of frames\u2026");
     seq_path_->setToolTip("A folder of frames, read where it sits: nothing is copied.");
@@ -738,6 +738,7 @@ QWidget* MainWindow::build_right_rail() {
             connect(grab, &QPushButton::clicked, this, [this] { run("still-grab"); });
             auto* box = new QComboBox(row);
             box->setObjectName("refStills");
+            box->setPlaceholderText("No still yet");   // 14 Nov 2026: it was an empty, unlabelled box
             box->setToolTip("The reference still to compare with");
             box->setEnabled(false);
             connect(box, &QComboBox::activated, this, [this](int i) { set_reference_compare(ref_compare_, i); });
@@ -1700,10 +1701,11 @@ QWidget* MainWindow::build_right_rail() {
     // ── scopes, each a card ──
     scopes_ = styled("scopes", "scopes");
     auto* sv = column(scopes_, 0, 12);
-    const struct { const char* title; const char* note; const char* id; int h; } scopes[] = {
-        {"Waveform", "luma percentile \u00b7 nits/log", "wave", 112},
-        {"Histogram", "absolute nits \u00b7 log2 stops \u00b7 DW", "hist", 84},
-        {"Vectorscope", "Rec.2020", "vector", 0}};
+    const struct { const char* title; const char* note; const char* id; int h; const char* tip; } scopes[] = {
+        // 14 Nov 2026: short enough for one line in the scopes column (they wrapped); the long form is the tooltip.
+        {"Waveform", "nits \u00b7 log", "wave", 112, "Luma percentile in absolute nits, log scale"},
+        {"Histogram", "nits \u00b7 stops", "hist", 84, "Absolute nits in log2 stops, with the dynamic range (DW)"},
+        {"Vectorscope", "Rec.2020", "vector", 0, ""}};
     for (const auto& s : scopes) {
         auto [sc, scv] = card(scopes_, 12, 8);
         auto* head = new QWidget(sc);
@@ -1711,7 +1713,9 @@ QWidget* MainWindow::build_right_rail() {
         hh->setContentsMargins(0, 0, 0, 0);
         hh->addWidget(label(s.title, {}, "card-head"));
         hh->addStretch(1);
-        hh->addWidget(label(s.note, {}, "note"));
+        auto* sub = label(s.note, {}, "note");
+        if (*s.tip) sub->setToolTip(s.tip);
+        hh->addWidget(sub);
         scv->addWidget(head);
         auto* plot = styled({}, "plot");
         auto* pl = column(plot);
@@ -1768,10 +1772,18 @@ QWidget* MainWindow::build_pipe() {
     auto* h = new QHBoxLayout(pipe);
     h->setContentsMargins(12, 0, 12, 0);
     h->setSpacing(8);
-    h->addWidget(label("\u2014", "statusMask", "pipe-s", pipe));
-    h->addStretch(1);
-    auto seg = [&](const QString& id, const QString& text) {
-        auto* b = label(text, id, "pipe-b", pipe);
+    // 14 Nov 2026: every part elides instead of being cut mid-word ("SDR 1C", "— clippe"); hover for the whole.
+    // The two side readouts give way first (Ignored: they take what the pipeline leaves).
+    auto side = [&](const char* id, Qt::Alignment align) {
+        auto* l = new ElideLabel("\u2014", id, "pipe-s", Qt::ElideRight, pipe);
+        l->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        l->setMinimumWidth(56);   // 15 Nov 2026: they give way first, but never vanish (a 1600 px window on Deliver squeezed them to 0)
+        l->setAlignment(align | Qt::AlignVCenter);
+        h->addWidget(l, 1);
+    };
+    side("statusMask", Qt::AlignLeft);
+    auto seg = [&](const QString& id, const QString& text) -> QLabel* {
+        auto* b = new ElideLabel(text, id, "pipe-b", Qt::ElideRight, pipe);
         h->addWidget(b);
         return b;
     };
@@ -1786,11 +1798,10 @@ QWidget* MainWindow::build_pipe() {
     seg("pipeDisplay", QString::fromStdString(display_signal_text(DisplayTarget::sdr(), 203.0)));
     arrow();
     seg("pipeMaster", "ACES 2065-1 EXR, float32");
-    auto* warn = label("", "pipeWarn", {}, pipe);
+    auto* warn = new ElideLabel("", "pipeWarn", {}, Qt::ElideRight, pipe);
     warn->hide();
     h->addWidget(warn);
-    h->addStretch(1);
-    h->addWidget(label("\u2014", "statusTime", "pipe-s", pipe));
+    side("statusTime", Qt::AlignRight);
     return pipe;
 }
 

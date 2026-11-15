@@ -43,9 +43,10 @@ struct GenFillSetup {
 
 // The published AI fill v3 LoRA (docs/MODELS.md; PUBLISH_HF_MODELS.ps1).
 inline constexpr const char* kGenFillV3Sha256 = "9fff7eb8492ae62619a126d302d9c940403b2e4aa03e02daf79d98142008238a";
-// The v4 LoRA (research_genfill_v4_20261109), loaded only by the region re-render. Not published:
-// experimental, release_authorized false (configs/experiments/research_genfill_v4_1_20261111.json).
-inline constexpr const char* kGenFillV4Sha256 = "95d707eb3e5628d7515187c0752018a23182f186edb060d8652f77a64466375c";
+// The v4 LoRA, loaded only by the region re-render: since 15 Nov 2026 the v4.2 training
+// (research_genfill_v4_2_20261114), run as configs/experiments/research_genfill_v4_3_20261115.json.
+// Experimental; release_authorized false until that decision rule is settled.
+inline constexpr const char* kGenFillV4Sha256 = "406b1dc7b7d3ada5406b396a6aa8c7e5ec9eac8d0be0d04e8038d68b5bf1b390";
 // SHA-256 of a file, cached in QSettings by path, size and modification time
 // (a LoRA is ~100 MB and the setup is asked often). Empty when unreadable.
 QString genfill_file_sha256(const std::filesystem::path& file);

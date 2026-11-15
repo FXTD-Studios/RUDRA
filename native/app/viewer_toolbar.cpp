@@ -253,7 +253,8 @@ bool MainWindow::viewer_has_sdr() const {
 QString MainWindow::range_readout_text() const {
     if (!measure_ || !measure_->range) return QStringLiteral(" ");
     const RangeStats& r = *measure_->range;
-    QString t = QStringLiteral("SDR  clamped %1 (R %2 \u00b7 G %3 \u00b7 B %4) \u00b7 crushed %5 \u00b7 range %6 st     ")
+    // 14 Nov 2026: one readout per line (SDR, RUDRA, the clamped area); one long line wrapped mid-readout.
+    QString t = QStringLiteral("SDR  clamped %1 (R %2 \u00b7 G %3 \u00b7 B %4) \u00b7 crushed %5 \u00b7 range %6 st\n")
                     .arg(pct(r.clamped_pct), pct(r.clamped_channel_pct[0]), pct(r.clamped_channel_pct[1]),
                          pct(r.clamped_channel_pct[2]), pct(r.crushed_pct))
                     .arg(r.sdr_range_stops, 0, 'f', 1);
@@ -262,9 +263,9 @@ QString MainWindow::range_readout_text() const {
                   pct(r.above_1000_pct))
              .arg(r.hdr_range_stops, 0, 'f', 1);
     if (r.clamped_pixels == 0) {
-        t += QStringLiteral("     In the clamped area: none");
+        t += QStringLiteral("\nIn the clamped area: none");
     } else {
-        t += QStringLiteral("     In the clamped area  median %1 st \u00b7 99th %2 st")
+        t += QStringLiteral("\nIn the clamped area  median %1 st \u00b7 99th %2 st")
                  .arg(stops(r.clamped_median_stops), stops(r.clamped_p99_stops));
         if (r.clamped_unchanged_pct)
             t += QStringLiteral(" \u00b7 not rebuilt %1").arg(pct(*r.clamped_unchanged_pct));
