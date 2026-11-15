@@ -9,7 +9,7 @@
 # 13 Nov 2026 (pip-audit): pillow 12.3.0 -> 13.0.0, urllib3 2.7.0 -> 2.8.0, certifi 2026.6.17 -> 2026.10.18,
 # filelock 3.29.0 -> 4.2.1, fsspec 2026.4.0 -> 2026.6.0. accelerate 1.14.0 has PYSEC-2026-3804 with no fixed
 # release yet: ignored in .github/workflows/security.yml, see the reason there.
-accelerate==1.14.0
+accelerate==1.15.0
 annotated-doc==0.0.6
 annotated-types==0.8.0
 anyio==4.16.0
