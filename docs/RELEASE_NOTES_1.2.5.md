@@ -1,15 +1,15 @@
 # RUDRA 1.2.5
 
 RUDRA now checks the computer on the first start and installs what is missing in one place.
-Shots open again for everyone who updated from an older version, and the viewer is colour managed
-as in Nuke.
+Shots open again for everyone who updated from an older version, and the Windows builds are
+code-signed.
 
 ## Opening it the first time
 
-- **Windows**: 1.2.5 is not signed yet, so Windows may ask once: **More info** › **Run anyway**.
-  Code signing with a free certificate for open-source projects from SignPath Foundation is being
-  set up ([code signing policy](CODE_SIGNING_POLICY.md)); the first signed release follows once
-  SignPath has approved RUDRA.
+- **Windows**: RUDRA is now signed, with a free certificate for open-source projects from
+  SignPath Foundation. Right-click the installer › **Properties** › **Digital Signatures** shows
+  it. While the new certificate gathers reputation, Windows may still ask once: **More info** ›
+  **Run anyway**.
 - **macOS**: unchanged. Right-click RUDRA.app › **Open** › **Open** (or System Settings ›
   Privacy & Security › **Open Anyway**).
 
@@ -109,11 +109,10 @@ written down in [PRIVACY.md](PRIVACY.md), and the installer shows it on a page o
 
 ## For developers
 
-- The Windows job of `release.yml` is ready to sign `RUDRA.exe`, `rudra-native.exe` and the
-  installer through SignPath, with two signing requests approved by hand
+- The Windows job of `release.yml` signs `RUDRA.exe`, `rudra-native.exe` and the installer
+  through SignPath, with two signing requests approved by hand
   ([SIGNPATH_SETUP.md](SIGNPATH_SETUP.md), [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)).
-  Until SignPath's approval and its secret are in place it publishes unsigned, with a warning, as
-  1.2.5 is. The `.pfx` secrets are no longer read.
+  The `.pfx` secrets are no longer read.
 - `PACKAGE_WINDOWS.ps1 -NoArchive` stops after the checked package folder;
   `PACKAGE_WINDOWS_ARCHIVE.ps1` makes its ZIP and installer.
 - `rudra-native.exe` has a version resource, and a release's version resources no longer mark it

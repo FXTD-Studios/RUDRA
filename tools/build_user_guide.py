@@ -96,7 +96,7 @@ install = f'''<section class="page" id="installation" data-title="Installation">
 <p class="section-label">Windows 10 / 11 · x64</p>
 <div class="steps">
 <div class="step"><div><h3>Download the installer</h3><p>Get the {VER} setup file from the official release. A SHA-256 file sits beside each download.</p><a class="button" href="{SETUP}">Windows installer ↓</a></div></div>
-<div class="step"><div><h3>Install, then open RUDRA</h3><p>Follow the installer and launch RUDRA from the Start menu. The Windows builds are not signed yet, so SmartScreen may appear once: choose <strong>More info → Run anyway</strong>. Code signing through SignPath Foundation is being set up (see <a class="textlink" href="#privacy">Privacy &amp; signing</a>) and starts with the next release once it is approved. The installer shows what RUDRA sends over the network and asks whether to check for updates automatically. The welcome looks at your display and GPU, then <strong>Check this computer</strong> says whether RUDRA runs here and installs the learned model in one click.</p></div></div>
+<div class="step"><div><h3>Install, then open RUDRA</h3><p>Follow the installer and launch RUDRA from the Start menu. From 1.2.5 the Windows builds are code-signed (certificate by SignPath Foundation, see <a class="textlink" href="#privacy">Privacy &amp; signing</a>); while the new certificate gathers reputation, SmartScreen may still appear once: choose <strong>More info → Run anyway</strong>. The installer shows what RUDRA sends over the network and asks whether to check for updates automatically. The welcome looks at your display and GPU, then <strong>Check this computer</strong> says whether RUDRA runs here and installs the learned model in one click.</p></div></div>
 <div class="step"><div><h3>Add the learned model (optional)</h3><p>RUDRA works without it. For more of the clipped highlights, choose <strong>Download the model…</strong> on the Look tab, or <strong>File → Model packages… → Download</strong>. See <a class="textlink" href="#models">Models</a>.</p></div></div>
 <div class="step"><div><h3>Follow the tips</h3><p>A welcome card explains the three steps; the first time you open a shot, four short tips point at each part. <strong>Help → Show tips</strong> brings them back.</p></div></div>
 </div>
@@ -222,7 +222,7 @@ news = f'''<section class="page" id="whats-new" data-title="What’s new">
 <li><strong>Drag and drop says what it cannot open</strong>: a file that is not a still or a movie is named in the status bar, and a drop of a folder, a movie or a project says what else it left out. A dropped RUDRA ACES 2 folder is used as the learned model.</li>
 <li><strong>File › Model packages</strong> says the list at the top is optional, and <strong>Use</strong> on RUDRA ACES 2 shows the model’s real state.</li>
 <li><strong>A colour-managed viewer, as in Nuke</strong>: the viewer toolbar shows the picture through an OpenColorIO display and view (SDR sRGB, Rec.709, HDR Rec.2100 PQ 1000, P3-D65, Raw; the built-in ACES 2.0 config, <code>$OCIO</code> or your own), in ACEScg or ACES2065-1, with the original beside RUDRA’s result through an input transform, and checks for out-of-gamut and invalid values and what the view clips. <strong>RUDRA view</strong> stays the default.</li>
-<li><strong>Code signing on the way</strong>: RUDRA has applied for SignPath Foundation's free certificate for open source. 1.2.5 is not signed yet; the first release after the approval will be.</li>
+<li><strong>Signed on Windows</strong>: RUDRA.exe, its engine and the installer, with a free certificate for open source from SignPath Foundation.</li>
 <li><strong>Privacy</strong>: no telemetry. The one automatic connection, the daily update check, is now chosen in the installer and in <strong>Help › Check for updates automatically</strong>. See <a class="textlink" href="#privacy">Privacy &amp; signing</a>.</li>
 </ul>
 <h2>In 1.2.4</h2>
@@ -403,7 +403,7 @@ if ARGS.release and 'to fill in' in (_REPO / 'docs/CODE_SIGNING_POLICY.md').read
     raise SystemExit('docs/CODE_SIGNING_POLICY.md: fill in the team roles before a release guide publishes it')
 privacy = (f'''<section class="page" id="privacy" data-title="Privacy & signing">
 <div class="eyebrow">10 / Trust</div><h1>Privacy &amp;<br>code signing.</h1>
-<p class="lede">RUDRA has no account and no telemetry. Its Windows builds will be signed through SignPath Foundation from the first release after the approval. Here is what will be signed, who approves it, and everything RUDRA connects to.</p>
+<p class="lede">RUDRA has no account and no telemetry. Its Windows builds are signed. Here is what is signed, who approves it, and everything RUDRA connects to.</p>
 <h2>Code signing policy</h2>
 {md_page('docs/CODE_SIGNING_POLICY.md', shift=1)}
 {md_page('docs/PRIVACY.md', shift=1, first_id='privacy-policy')}
