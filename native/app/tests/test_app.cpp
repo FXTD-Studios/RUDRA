@@ -4613,11 +4613,13 @@ for line in sys.stdin:
         << status_of(w).toStdString();
     EXPECT_EQ(w.genfill_last_out(), QString::fromStdString((root / "renders" / "SH010_aifill").string()));
     EXPECT_TRUE(status_of(w).contains("1.50 % of pixels generated")) << status_of(w).toStdString();
-    // A missing model: refused with the reason, nothing started.
+    // A missing model: refused with the reason, nothing started. Since 1.2.5 the reason is in
+    // plain words and points to Check this computer (system_check.cpp genfill_missing_text).
     std::filesystem::remove(root / "runs" / "rudra_genfill.safetensors");
     QString why;
     EXPECT_FALSE(w.start_genfill(QString::fromStdString((root / "renders" / "SH010").string()), &why));
-    EXPECT_TRUE(why.contains("no LoRA at"));
+    EXPECT_TRUE(why.contains("the AI fill model is not downloaded")) << why.toStdString();
+    EXPECT_TRUE(why.contains("Check this computer")) << why.toStdString();
     QSettings().clear();
 }
 #endif
