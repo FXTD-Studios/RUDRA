@@ -12,6 +12,15 @@ Region prompts: one prediction per prompt each step, blended by the masks at the
 (the base prompt everywhere else). With no region prompt, one prediction a step.
 
 The VAE runs in float32 on purpose: at bf16 the decoder bands smooth dark gradients.
+
+Memory (16 Nov 2026, RUDRA 1.2.5): set_memory_mode() lets the fill run on GPUs under 16 GB.
+  'swap'  the transformer goes to the CPU while the VAE encodes and decodes, and back for the
+          denoising: the two never hold GPU memory at once. Bit-identical to 'off'; it costs two
+          copies of the transformer (about 3 GB) per window.
+  'tile'  the VAE encodes and decodes in overlapping 256-pixel tiles (diffusers' own tiling). Its
+          peak falls a lot; the result can differ slightly at tile seams, so it is measured
+          (tools/bench_genfill_memory.py) before any card size is offered it.
+  'on'    both. 'off' is the fill as it was gated.
 """
 from __future__ import annotations
 
@@ -131,6 +140,40 @@ class WanFill:
         self._mean = torch.tensor(vae.config.latents_mean, dtype=torch.float32).view(1, z, 1, 1, 1)
         self._inv_std = 1.0 / torch.tensor(vae.config.latents_std, dtype=torch.float32).view(1, z, 1, 1, 1)
         self.identity: dict = {}
+        self.memory_mode = 'off'
+        self._swap = False
+        self._transformer_on_device = True
+
+    MEMORY_MODES = ('off', 'swap', 'tile', 'on')
+
+    def set_memory_mode(self, mode: str) -> str:
+        """'off', 'swap', 'tile' or 'on' (the module docstring). Recorded in identity, so the fill's
+        record says how it ran. Swapping is only for CUDA: elsewhere the memory is the system's."""
+        if mode not in self.MEMORY_MODES:
+            raise ValueError(f"memory mode must be one of {', '.join(self.MEMORY_MODES)} (got {mode!r})")
+        tile = mode in ('tile', 'on')
+        if tile and hasattr(self.vae, 'enable_tiling'):
+            self.vae.enable_tiling()
+        elif hasattr(self.vae, 'use_tiling'):
+            self.vae.use_tiling = False
+        self._swap = mode in ('swap', 'on') and self.device.type == 'cuda'
+        if not self._swap:
+            self._transformer_to_device(True)
+        self.memory_mode = mode
+        self.identity['memory_mode'] = mode
+        return mode
+
+    def _transformer_to_device(self, on_device: bool):
+        """With 'swap': the transformer on the GPU only while it denoises."""
+        if on_device == self._transformer_on_device:
+            return
+        if on_device:
+            self.transformer.to(self.device)
+        else:
+            self.transformer.to('cpu')
+            if self.device.type == 'cuda':
+                torch.cuda.empty_cache()
+        self._transformer_on_device = on_device
 
     @property
     def multiple(self) -> int:
@@ -159,11 +202,15 @@ class WanFill:
     @torch.no_grad()
     def encode_pixels(self, video: torch.Tensor) -> torch.Tensor:
         """(1, 3, F, H, W) in [-1, 1] -> normalised latents (1, 16, 1 + (F-1)/4, H/8, W/8), float32."""
+        if self._swap:
+            self._transformer_to_device(False)
         z = self.vae.encode(video.to(self.device, torch.float32)).latent_dist.mode()
         return (z.float() - self._mean.to(z.device)) * self._inv_std.to(z.device)
 
     @torch.no_grad()
     def decode_latents(self, z: torch.Tensor) -> torch.Tensor:
+        if self._swap:
+            self._transformer_to_device(False)
         z = z.to(self.device, torch.float32) / self._inv_std.to(self.device) + self._mean.to(self.device)
         return self.vae.decode(z, return_dict=False)[0].float().clamp(-1, 1)
 
@@ -214,6 +261,7 @@ class WanFill:
     def denoise(self, ctx: torch.Tensor, s: FillSettings, region_masks: dict | None = None,
                 progress=None) -> torch.Tensor:
         """ctx (1, 96, f, h, w) -> normalised latents (1, 16, f, h, w)."""
+        self._transformer_to_device(True)
         n_layers = len(self.transformer.config.vace_layers)
         scale = torch.full((n_layers,), float(s.conditioning_scale), device=self.device, dtype=self.dtype)
         g = torch.Generator('cpu').manual_seed(int(s.seed))

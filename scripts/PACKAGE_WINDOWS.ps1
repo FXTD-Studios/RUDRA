@@ -93,7 +93,10 @@ param(
     # 1 Nov 2026 (1.0.3): the public package. 1.0.0 to 1.0.2 bundled sdr2hdr_image_v8
     # (non-commercial) from dist\models; a public package now carries no weights.
     [switch]$PublicRelease,
-    [switch]$AllowNonCommercialWeights
+    [switch]$AllowNonCommercialWeights,
+    # 1.2.5: stop after the package folder is built and checked, before the ZIP and the installer.
+    # release.yml signs the folder's executables (SignPath), then PACKAGE_WINDOWS_ARCHIVE.ps1 makes both.
+    [switch]$NoArchive
 )
 
 $ErrorActionPreference = "Stop"
@@ -423,6 +426,8 @@ if ($NoModels) {
     if (Get-ChildItem $OutModels -Force) { Fail "model-free package contains model files" }
 }
 if (Test-Path docs\READ_ME_FIRST.md) { Copy-Item docs\READ_ME_FIRST.md (Join-Path $Out "Read me first.md") }
+# 1.2.5: what RUDRA sends over the network. The installer shows it as a page of its own (rudra.iss).
+Copy-Item docs\PRIVACY.md (Join-Path $Out "PRIVACY.txt")
 if (Test-Path docs\USER_GUIDE.md) { Copy-Item docs\USER_GUIDE.md (Join-Path $Out "User guide.md") }
 if ($FfDir) {
     $OutFf = Join-Path $Out "ffmpeg"
@@ -477,6 +482,12 @@ if ($PublicRelease) {
     Say "No model weights in the public package"
     & $Python (Join-Path $Repo "tools\check_package_weights.py") $Out
     if ($LASTEXITCODE -ne 0) { Fail "the public package carries model weights" }
+}
+
+if ($NoArchive) {
+    Write-Host "`nBuilt and checked, not archived: $Out" -ForegroundColor Green
+    Write-Host "Next: scripts\PACKAGE_WINDOWS_ARCHIVE.ps1 -Package `"$Out`""
+    exit 0
 }
 
 Say "ZIP"
