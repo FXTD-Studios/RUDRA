@@ -1039,6 +1039,8 @@ TEST(AppMeasure, TheCompareLineSaysWhatChangedAndRaisesThePeak) {
 }
 
 TEST(AppMeasure, TheProbeReadsThePixelUnderThePointer) {
+    // Revision 7's probe rows follow the colour settings: RUDRA's view, ACEScg, no checks.
+    for (const char* k : {"viewer/ocioDisplay", "viewer/ocioView", "viewer/working"}) QSettings().remove(k);
     app::MainWindow w(false);
     w.resize(1600, 1000);
     w.show();
@@ -1067,11 +1069,15 @@ TEST(AppMeasure, TheProbeReadsThePixelUnderThePointer) {
         const auto rows = probe_box(*probe);
         const auto labels = w.probe_box()->findChildren<QLabel*>();
         // The page's rows first, then view revision 6's native ones: the
-        // original's codes, which are clamped, and the stops over the SDR white.
-        ASSERT_EQ(labels.size(), qsizetype(rows.size() * 2 + 6));
+        // original's codes, which are clamped, and the stops over the SDR white;
+        // then revision 7's (17 Nov 2026): the pixel in the working space. With no
+        // OCIO view and the checks off, no view code, gamut or invalid row.
+        ASSERT_EQ(labels.size(), qsizetype(rows.size() * 2 + 8));
         EXPECT_EQ(labels[qsizetype(rows.size() * 2)]->text().toStdString(), "Original");
         EXPECT_EQ(labels[qsizetype(rows.size() * 2 + 2)]->text().toStdString(), "Clamped");
         EXPECT_EQ(labels[qsizetype(rows.size() * 2 + 4)]->text().toStdString(), "Over SDR white");
+        EXPECT_EQ(labels[qsizetype(rows.size() * 2 + 6)]->text().toStdString(), "ACEScg");
+        EXPECT_EQ(labels[qsizetype(rows.size() * 2 + 7)]->text().split(' ').size(), 3);   // R G B
         for (std::size_t r = 0; r < rows.size(); ++r) {
             EXPECT_EQ(labels[qsizetype(r * 2)]->text().toStdString(), rows[r].k);
             EXPECT_EQ(labels[qsizetype(r * 2 + 1)]->text().toStdString(), rows[r].v);
