@@ -131,7 +131,8 @@ if ($msg -match $Assistant) { Fail "$MessageFile names the former assistant (AGE
 if ($msg -notmatch [regex]::Escape($Credit)) { Fail "$MessageFile lacks the credit line: $Credit" }
 
 Say "No third-party product names in the tracked files"
-$names = git --no-optional-locks grep -n -I -i -E "beeble|switch ?hdr|lightricks|\bltx" -- . ":(exclude)tmp" ":(exclude)dist"
+$Banned = "bee" + "ble|swi" + "tch ?hdr|light" + "ricks|\bl" + "tx"   # in pieces, as $Assistant: this check must not find itself
+$names = git --no-optional-locks grep -n -I -i -E $Banned -- . ":(exclude)tmp" ":(exclude)dist"
 if ($names) { $names | Select-Object -First 10 | ForEach-Object { Write-Host "  $_" }; Fail "remove the names above before release" }
 Write-Host "  none"
 

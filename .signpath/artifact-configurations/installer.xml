@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RUDRA for Windows: the installer (SignPath artifact configuration "installer").
+  release.yml uploads RUDRA-<version>-windows-x64-setup.exe (scripts/PACKAGE_WINDOWS_ARCHIVE.ps1,
+  built from the folder whose executables were signed first). Its version resource comes from
+  native/app/windows/rudra.iss (VersionInfoProductName, VersionInfoProductTextVersion).
+  Paste into the SignPath project's artifact configuration of the same slug when it changes.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="RUDRA-${version}-windows-x64-setup.exe" product-name="RUDRA" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

@@ -100,6 +100,9 @@ jobs:
   windows:
     name: Windows x64
     runs-on: windows-2022
+    permissions:
+      contents: read
+      actions: read   # SignPath reads this run's job details and its signing-input-* artifacts
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6
@@ -115,30 +118,112 @@ jobs:
         shell: pwsh
         run: |
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
-      - name: Code-signing certificate (when the secrets are set)
-        # WINDOWS_CERT_PFX: the .pfx, base64; WINDOWS_CERT_PASSWORD: its password.
-        # Without them the exe and the installer are unsigned, as before, and
-        # SmartScreen warns on first start.
-        shell: pwsh
-        env:
-          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
-          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-        run: |
-          if (-not $env:WINDOWS_CERT_PFX) {
-            Write-Host "::warning::No WINDOWS_CERT_PFX secret: RUDRA.exe and the installer are not signed"
-            exit 0
-          }
-          $pfx = Join-Path $env:RUNNER_TEMP "rudra-sign.pfx"
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX))
-          "RUDRA_SIGN_PFX=$pfx" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-          "RUDRA_SIGN_PASSWORD=$env:WINDOWS_CERT_PASSWORD" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-      - name: Build and package
+      # 1.2.5: signed by SignPath (free code signing for open source; docs/CODE_SIGNING_POLICY.md).
+      # Two signing requests, each approved by hand in SignPath: first RUDRA.exe and rudra-native.exe
+      # in the package folder, so the ZIP and the installer carry them signed; then the installer.
+      # Tag builds only, and only once the SIGNPATH_API_TOKEN secret and the SIGNPATH_ORGANIZATION_ID
+      # variable are set; otherwise the packages are unsigned, as before. The artifact
+      # configurations are .signpath/artifact-configurations/app.xml and installer.xml.
+      - name: Signing (SignPath)
+        id: signing
         shell: bash
-        run: tools/ci_run.sh "Package" pwsh -NoProfile -File scripts/PACKAGE_WINDOWS.ps1 -Python python -Tests -PublicRelease
-      - name: Remove the certificate
-        if: always()
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+        run: |
+          if [ -n "$SIGNPATH_API_TOKEN" ] && [ -n "$SIGNPATH_ORGANIZATION_ID" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Not signed: SignPath signs v* tag builds once SIGNPATH_API_TOKEN and SIGNPATH_ORGANIZATION_ID are set"
+          fi
+      - name: Build and check the package folder
+        shell: bash
+        run: tools/ci_run.sh "Package" pwsh -NoProfile -File scripts/PACKAGE_WINDOWS.ps1 -Python python -Tests -PublicRelease -NoArchive
+      - name: The package folder
+        id: pkg
         shell: pwsh
-        run: Remove-Item (Join-Path $env:RUNNER_TEMP "rudra-sign.pfx") -ErrorAction SilentlyContinue
+        run: |
+          $d = @(Get-ChildItem dist/beta -Directory | Where-Object { $_.Name -match '^RUDRA-(.+)-windows-x64$' })
+          if ($d.Count -ne 1) { throw "expected one package folder in dist/beta, found $($d.Count)" }
+          $v = $d[0].Name -replace '^RUDRA-(.+)-windows-x64$', '$1'
+          # The tag's version (v1.2.5, or v1.2.5-rc.1 for a pre-release) is the one built.
+          $core = $env:GITHUB_REF_NAME -replace '^v', '' -replace '-.*$', ''
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and ($v -replace '-.*$', '') -ne $core) { throw "tag $env:GITHUB_REF_NAME, package $v" }
+          "dir=dist/beta/$($d[0].Name)" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          "version=$v" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+      - name: The package folder, for signing
+        id: unsigned-app
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f   # v6
+        with:
+          name: signing-input-app
+          path: ${{ steps.pkg.outputs.dir }}
+          retention-days: 1
+      - name: Sign RUDRA.exe and rudra-native.exe (SignPath; approve the request there)
+        if: steps.signing.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092   # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'RUDRA' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: app
+          github-artifact-id: ${{ steps.unsigned-app.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.pkg.outputs.version }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed-app
+      - name: The signed executables into the package folder
+        if: steps.signing.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $dir = "${{ steps.pkg.outputs.dir }}"
+          foreach ($f in "RUDRA.exe", "rudra-native.exe") {
+            Copy-Item (Join-Path "signed-app" $f) (Join-Path $dir $f) -Force
+            $s = Get-AuthenticodeSignature (Join-Path $dir $f)
+            if ($s.Status -ne "Valid") { throw "$f is not signed: $($s.Status) $($s.StatusMessage)" }
+            Write-Host "$f signed by $($s.SignerCertificate.Subject)"
+          }
+      - name: ZIP and installer
+        shell: bash
+        run: tools/ci_run.sh "Archive" pwsh -NoProfile -File scripts/PACKAGE_WINDOWS_ARCHIVE.ps1 -Package "${{ steps.pkg.outputs.dir }}"
+      - name: The installer, for signing
+        id: unsigned-setup
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f   # v6
+        with:
+          name: signing-input-setup
+          path: dist/beta/*-setup.exe
+          retention-days: 1
+      - name: Sign the installer (SignPath; approve the request there)
+        if: steps.signing.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092   # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'RUDRA' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-setup.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.pkg.outputs.version }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed-setup
+      - name: The signed installer and its checksum
+        if: steps.signing.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist/beta -Filter "*-setup.exe" | Select-Object -First 1
+          Copy-Item (Join-Path "signed-setup" $setup.Name) $setup.FullName -Force
+          $s = Get-AuthenticodeSignature $setup.FullName
+          if ($s.Status -ne "Valid") { throw "$($setup.Name) is not signed: $($s.Status) $($s.StatusMessage)" }
+          Write-Host "$($setup.Name) signed by $($s.SignerCertificate.Subject)"
+          $h = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLower()
+          "$h  $($setup.Name)" | Set-Content -Encoding ascii "$($setup.FullName).sha256"
+          Write-Host "$h  $($setup.Name)"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f   # v6
         with:
           name: rudra-windows
@@ -159,7 +244,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131   # v7
-        with: { path: artifacts, merge-multiple: true }
+        # rudra-macos and rudra-windows only: the signing-input-* artifacts are the unsigned files.
+        with: { path: artifacts, pattern: "rudra-*", merge-multiple: true }
       - name: No model weights in what is published
         # The ZIP is checked here; the installer holds the same folder. The DMG
         # was checked on the macOS runner.

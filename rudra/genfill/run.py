@@ -782,6 +782,51 @@ def pick_device(requested: str = 'auto'):
     return 'cpu', torch.float32
 
 
+# 16 Nov 2026 (RUDRA 1.2.5): a GPU under 16 GB runs the fill in a lower-memory mode (model.WanFill
+# set_memory_mode). A 16 GB or larger card runs the fill exactly as it was gated ('off'); a smaller one
+# gets 'on'. Which card sizes AI fill is offered on (setup.py MIN_MEMORY_GB, the app's Check this
+# computer) is decided from tools/bench_genfill_memory.py's measurements, not guessed: still 16 GB.
+LOW_MEMORY_BELOW_GB = 15.5
+
+
+def gpu_memory_gb(device: str) -> float | None:
+    """The memory the fill may use on this GPU: the card's, or the test cap (RUDRA_GENFILL_MEMORY_CAP_GB)."""
+    if device != 'cuda':
+        return None
+    import torch
+    total = torch.cuda.get_device_properties(0).total_memory / 2**30
+    cap = os.environ.get('RUDRA_GENFILL_MEMORY_CAP_GB', '').strip()
+    return min(total, float(cap)) if cap else total
+
+
+def apply_memory_cap(device: str) -> float | None:
+    """RUDRA_GENFILL_MEMORY_CAP_GB=10 makes PyTorch on a bigger card stop at 10 GB, as a 10 GB card would
+    (the benchmark's way to try a card size it does not have). Unset: nothing changes."""
+    cap = os.environ.get('RUDRA_GENFILL_MEMORY_CAP_GB', '').strip()
+    if device != 'cuda' or not cap:
+        return None
+    import torch
+    total = torch.cuda.get_device_properties(0).total_memory / 2**30
+    torch.cuda.set_per_process_memory_fraction(min(1.0, float(cap) / total))
+    return float(cap)
+
+
+def memory_mode(requested: str, memory_gb: float | None) -> str:
+    """--low-memory: 'auto' is 'on' under LOW_MEMORY_BELOW_GB of GPU memory, else 'off' (as gated)."""
+    if requested != 'auto':
+        return requested
+    return 'on' if memory_gb is not None and memory_gb < LOW_MEMORY_BELOW_GB else 'off'
+
+
+def memory_report(device: str) -> dict:
+    """The GPU memory the run used at its peak (torch's own counters), for the log and the benchmark."""
+    if device != 'cuda':
+        return {}
+    import torch
+    return {'peak_allocated_gb': round(torch.cuda.max_memory_allocated() / 2**30, 2),
+            'peak_reserved_gb': round(torch.cuda.max_memory_reserved() / 2**30, 2)}
+
+
 def brightness_settings(a, offset: float, shape_gain: float | None = None):
     """The v3 brightness split (brightness.json beside the LoRA, or --brightness-model), or None."""
     bm = a.brightness_model
@@ -905,6 +950,9 @@ def main(argv=None):
     ap.add_argument('--overlap', type=int, default=8)
     ap.add_argument('--max-area', type=int, default=832 * 480)
     ap.add_argument('--device', default='auto', help='auto (CUDA, else Apple MPS, else CPU), cuda, mps or cpu')
+    ap.add_argument('--low-memory', default='auto', choices=('auto', 'off', 'swap', 'tile', 'on'),
+                    help="GPU memory mode (model.py): 'swap' moves the transformer off the GPU while the VAE runs "
+                         "(same result), 'tile' tiles the VAE, 'on' both; 'auto' is 'on' under 15.5 GB, else 'off'")
     ap.add_argument('--ocio-threads', type=int, default=8)
     ap.add_argument('--json', action='store_true')
     ap.add_argument('--blend-high', type=int, default=MaskSettings.blend_high,
@@ -973,9 +1021,11 @@ def main(argv=None):
         if out is not None and not a.serve and out.exists():
             raise FileExistsError(f'{out} exists: the fill writes a new folder')
         device, dtype = pick_device(a.device)
+        apply_memory_cap(device)                         # the benchmark's stand-in for a smaller card
         t0 = time.time()
         cache = Path(a.prompt_cache) if a.prompt_cache else Path(a.lora).with_suffix('').parent / 'prompt_cache'
         model = WanFill.load(a.base, a.lora, device=device, dtype=dtype, prompt_cache=cache, text_device='cpu')  # umT5 (11 GB) never on a 16 GB GPU beside the model
+        model.set_memory_mode(memory_mode(a.low_memory, gpu_memory_gb(device)))
         checked_shape_gain(a.shape_gain)
         region = parse_region(a.region)                  # refused before the model loads
         s = FillSettings(steps=a.steps, seed=a.seed, guidance=a.guidance,
@@ -1000,7 +1050,8 @@ def main(argv=None):
                                             a.source_start, a.rerender_dip, a.rerender_still, a.rerender_independent,
                                             a.rerender_rise, a.rerender_calm)
                           if a.region_rerender else None)
-        emit(event='done', ok=True, out=str(out), **rep['stats'])
+        emit(event='done', ok=True, out=str(out), memory=memory_report(device) | {'mode': model.memory_mode},
+             **rep['stats'])
         return 0
     except Exception as e:  # noqa: BLE001 - every failure goes to the app as one line
         emit(event='error', ok=False, error=type(e).__name__, detail=str(e))
