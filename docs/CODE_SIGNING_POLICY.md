@@ -26,12 +26,12 @@ them; their own signatures, where they have one, are theirs. The macOS app is si
 
 ## Team roles
 
-<!-- Fill in the GitHub accounts before applying to SignPath Foundation; SignPath asks for names. -->
-
 | Role | Who |
 |---|---|
-| Committers and reviewers | FXTD Studios: _GitHub accounts to fill in_ |
-| Approvers | FXTD Studios: _GitHub accounts to fill in_ |
+| Committers and reviewers | FXTD Studios: [fxtdstudios](https://github.com/fxtdstudios) |
+| Approvers | FXTD Studios: [fxtdstudios](https://github.com/fxtdstudios) |
+
+Contact for signing and security questions: research@fxtdstudios.com.
 
 - **Committers** may change the code. A change from anyone outside the team is reviewed by a
   committer before it is merged.
