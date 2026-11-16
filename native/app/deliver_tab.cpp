@@ -36,6 +36,7 @@
 #include "genfill_swap.hpp"
 #include "genfill_review.hpp"
 #include "main_window.hpp"
+#include "system_check.hpp"   // genfill_missing_text (1.2.5)
 #include "rudra/core/timecode.hpp"
 #include "rudra/platform/png8.hpp"
 #include "widgets.hpp"
@@ -375,8 +376,9 @@ void MainWindow::sync_deliver() {
                                       : QStringLiteral("Ready, but the LoRA is NOT AI fill v3: Setup… to switch"));
             st->setToolTip(QStringLiteral("Wan2.1-VACE-1.3B: %1\nLoRA: %2").arg(from_path(s->base), from_path(s->lora)));
         } else {
-            st->setText(why + QStringLiteral(" Setup… > Set up automatically does it for you."));
-            st->setToolTip({});
+            // 1.2.5: what is missing in plain words, and where it is set up; the paths in the tooltip.
+            st->setText(genfill_missing_text(why));
+            st->setToolTip(why);
         }
     }
     // The preview's buttons: the views once there is one; a setting changed since, it says so.
@@ -817,7 +819,10 @@ bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOpti
         fill_options.source_start = deliver_effective().output == "still" ? std::max(current_, 0) : 0;
     }
     const auto setup = genfill_setup_for(fill_options, &w);
-    if (!setup) return refuse(w);
+    if (!setup) {
+        if (!fill_options.rerender) open_system_check(false);   // 1.2.5: where it is set up
+        return refuse(fill_options.rerender ? w : genfill_missing_text(w));
+    }
     if (!genfill_) genfill_ = std::make_shared<GenFillJob>(this);
     log(fill_options.rerender ? QStringLiteral("AI fill: v4, region re-render (LoRA %1, condition %2, source %3)")
                                     .arg(qp(setup->lora), fill_options.condition, fill_options.source)

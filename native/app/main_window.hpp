@@ -8,6 +8,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <array>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -70,6 +71,10 @@ struct ReadyFrame;
 struct ModelConstants;
 struct ViewerStatus;
 class ViewerWindow;
+struct ViewParams;
+struct OcioViewTransform;
+struct OcioInputTransform;
+namespace ocio_viewer { class Config; }
 }  // namespace rudra
 
 namespace rudra::app {
@@ -304,6 +309,17 @@ public:
     void resume_queue(const std::filesystem::path& queue);
     void forget_queue(const std::filesystem::path& queue);
     void open_first_run();
+    // Check this computer (system_check.hpp, 16 Nov 2026): the window (the welcome opens it with
+    // first_run, and closing it then shows the tips), the toolbar Check button's dot, and the start's
+    // own opening of it: after an update, or when this computer cannot run RUDRA, or when a retired
+    // Beta 2 model was found.
+    void open_system_check(bool first_run = false);
+    void maybe_open_system_check();
+    void refresh_check_attention();
+    // The Beta 2 packages found and no longer opened (drop_beta2, at every rescan).
+    const std::vector<std::filesystem::path>& retired_packages() const { return retired_; }
+    // "Use the model" was turned off this session because nothing could load (release_unloadable_model).
+    bool use_model_released() const { return use_model_released_; }
     // A still, or a folder of frames: both are a sequence to the engine.
     void open_source(const QString& preset = {}, bool folder = false);
     // The page's addFiles (Open, a drop of images): appended to the frames,
@@ -582,6 +598,10 @@ private:
     std::filesystem::path project_path_, autosave_path_, reopen_path_;
     bool dirty_ = false, restoring_ = false;
     bool use_model_ = false;
+    bool use_model_released_ = false;   // 1.2.5: said in Check this computer
+    std::vector<std::filesystem::path> retired_;   // 1.2.5: Beta 2 packages found and not opened
+    bool retired_logged_ = false;
+    std::optional<bool> machine_blocked_;   // judged once a run (system_check.hpp)
     bool clip_pick_armed_ = false;
     ClipFillOptions engine_clip_;   // what start_engine gave the frames
     bool frame_proxy_ = false;
@@ -605,6 +625,11 @@ private:
     void stop_playback();
     void halt_playback();   // stop without the summary or the refine (a new engine, a close, a render)
     bool needs_model() const { return use_model_ && !backend_; }   // frames wait for a package
+    // 16 Nov 2026 (1.2.4 feedback): "Use the model" on with nothing that could ever load held every
+    // Open back for good. Loadable: a package loaded or loading, the one remembered, or one in the catalog.
+    bool model_loadable() const;
+    bool release_unloadable_model(bool remember);   // on with nothing loadable: turned off (true if it was)
+    bool waits_for_model();   // the frames wait for a package: said in the log and the status bar
     class QLabel* mode_label_ = nullptr;   // the status bar's "Analytic" / "AI-assisted: <model>"
     void show_mode();
     QString problem_;   // why the last open or save failed, for its dialog
@@ -679,6 +704,30 @@ private:
     void sync_viewer_toolbar();
     bool viewer_has_sdr() const;
     QString range_readout_text() const;
+    // Revision 7 (17 Nov 2026): the colour-managed viewer (colour_view.cpp): an OpenColorIO
+    // display and view, the working space, the original's input transform, and the range
+    // checks; View > Colour management… picks the config.
+    void build_colour_controls(class FlowLayout* row);
+    void sync_colour_controls();
+    void load_colour_settings();
+    void open_colour_config();          // the config from the settings; the controls refilled
+    void make_colour_transforms();      // the view and input transforms for the controls' state
+    void apply_colour(ViewParams& v) const;   // into the viewer's view
+    void refresh_colour();              // apply_colour on the viewer now
+    void show_colour_status(const ViewerStatus& s);
+    QString colour_check_text() const;  // the frame's out-of-gamut and invalid share, for the range line
+    // The probe's rows for a pixel of the shown picture: working-space values, the view's
+    // codes, the checks (key, value, "warn" or "").
+    std::vector<std::array<QString, 3>> colour_probe_rows(const float rgb[3]) const;
+
+public:
+    void open_colour_dialog();          // View > Colour management…
+    // The OCIO view ("" "" for RUDRA's own view); the learned route's monitor goes to Scene light.
+    void set_colour_view(const QString& display, const QString& view);
+    QString colour_display() const { return ocio_display_; }
+    QString colour_view() const { return ocio_view_; }
+
+private:
     void fill_rows(QWidget* ms, const std::vector<MetricRow>& rows);
 
     std::map<std::string, QAction*, std::less<>> actions_;
@@ -784,6 +833,25 @@ private:
     QDoubleSpinBox *vt_ev_ = nullptr, *vt_gamma_ = nullptr;
     QComboBox *vt_a_ = nullptr, *vt_b_ = nullptr;
     QLabel *vt_badge_ = nullptr, *range_line_ = nullptr;
+    // Revision 7 (colour_view.cpp).
+    std::shared_ptr<const ocio_viewer::Config> ocio_cfg_;
+    QString ocio_cfg_error_;                // why the config could not be opened ("" it is open)
+    QString ocio_transform_error_;          // why the view or input transform could not be made
+    QString ocio_display_, ocio_view_;      // "" "": RUDRA's own view
+    int ocio_working_ = 0;                  // WorkingSpace: 0 ACEScg, 1 ACES2065-1
+    QString ocio_input_;                    // the original's way in (ocio_viewer InputChoice id); "": the Source picker
+    bool gamut_check_ = false, invalid_check_ = false;
+    int gamut_of_ = 0;                      // 0 AP1, 1 Rec.2020, 2 P3-D65, 3 Rec.709
+    std::shared_ptr<const OcioViewTransform> ocio_view_tf_;
+    std::shared_ptr<const OcioInputTransform> ocio_input_tf_;
+    QComboBox *vt_ocio_ = nullptr, *vt_working_ = nullptr, *vt_original_ = nullptr, *vt_gamut_of_ = nullptr;
+    QPushButton *vt_gamut_ = nullptr, *vt_invalid_ = nullptr;
+    QLabel* vt_colour_ = nullptr;           // what the picture goes through
+    const void* colour_filled_ = nullptr;   // the config the view and original boxes were filled from
+    bool colour_filled_once_ = false;
+    mutable const void* check_cache_key_ = nullptr;
+    mutable int check_cache_gamut_ = -1, check_cache_working_ = -1;
+    mutable QString check_cache_text_;
     QTimer stats_timer_;
     int stats_gen_ = 0;
     bool stats_running_ = false, stats_again_ = false;
@@ -820,7 +888,7 @@ private:
     std::thread model_worker_;
     std::thread stats_worker_;   // the measurement off the UI thread; joined, never left running
     std::optional<BackendChoice> backend_choice_;
-    QPointer<QDialog> manager_, first_run_, sheet_, aces_master_;
+    QPointer<QDialog> manager_, first_run_, sheet_, aces_master_, system_check_;
     std::shared_ptr<AcesEngine> aces_engine_;   // shared_ptr: the type stays incomplete here
     QMenu* recent_menu_ = nullptr;
     void remember_source(const QString& path);

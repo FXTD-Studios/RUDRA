@@ -227,7 +227,11 @@ int main(int argc, char** argv) {
         w.maybe_check_for_updates();
         // The five steps once, after the first-run check has been through
         // (the check shows them itself when it closes).
-        if (QSettings().value("firstRun/done", false).toBool()) w.show_getting_started_once();
+        // 1.2.5: Check this computer opens by itself after an update, or when something needs it.
+        if (QSettings().value("firstRun/done", false).toBool()) {
+            w.maybe_open_system_check();
+            w.show_getting_started_once();
+        }
     }
     if (!grab_to.isEmpty()) {
         QTimer::singleShot(grab_delay, &w, [&w, grab_to, dialog] {

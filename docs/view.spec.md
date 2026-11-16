@@ -1,13 +1,16 @@
 # The viewer: specification
 
-Status: revision 6, 1 Nov 2026. Normative for every implementation. Revision 2
+Status: revision 7, 17 Nov 2026. Normative for every implementation. Revision 2
 added the HDR output paths (section 9), revision 3 the viewport (section 10),
 revision 4 the guides (section 11), revision 5 the Changes tint (section 2,
 step 4a) and the compare line (section 12), revision 6 the viewer's own
-controls and the range inspection (section 14). The browser oracle has none
-of revisions 5 and 6: they are native only and held to `core/view.cpp`,
-`core/compare.cpp` and `core/range.cpp`. Revision 6 at its defaults is
-revision 5 bit for bit, so every oracle golden still holds.
+controls and the range inspection (section 14), revision 7 the
+colour-managed viewer: OpenColorIO views, working spaces, the original's
+input transform and the range checks (section 15). The browser oracle has
+none of revisions 5 to 7: they are native only and held to `core/view.cpp`,
+`core/view_ocio.cpp`, `core/compare.cpp` and `core/range.cpp`. Revisions 6
+and 7 at their defaults are revision 5 bit for bit, so every oracle golden
+still holds.
 
 The viewer takes the two float pictures the composite produces, the
 reconstruction and its analytic baseline (docs/composite.spec.md), and turns
@@ -446,3 +449,96 @@ the result's stops over the SDR white at the pixel.
 Defaults: revision 5 exactly (the oracle goldens). Revision 6 cases in
 `rudra-gpu-parity` hold the GPU to `core/view.cpp` at section 8's bounds;
 gamma goes through `pow` on both and is inside them.
+
+## 15. The colour-managed viewer (revision 7)
+
+What the 17 Nov 2026 request asked for: the picture as Nuke's viewer shows it,
+the original beside RUDRA's result, both as a render to ACEScg or ACES2065-1
+holds them, so the artist need not open Nuke to check, and the range checked
+on the way. Like section 14 it is view state only.
+
+### 15.1 Parameters (`ViewParams`, `core/view_ocio.hpp`)
+
+| Field | Default | Meaning |
+|---|---|---|
+| `ocio` | null | an OpenColorIO display and view (`OcioViewTransform`); null is RUDRA's own view (sections 2, 9, 14) |
+| `working` | ACEScg | the space the view is fed and the probe reads: ACEScg (AP1) or ACES2065-1 (AP0) |
+| `original` | null | the Sdr source's input transform (`OcioInputTransform`); null is 14.2 |
+| `gamut_zebra`, `gamut` | off, AP1 | the out-of-gamut overlay and the primaries it reads |
+| `invalid_zebra` | off | the invalid-value overlay |
+
+The app (`app/colour_view.cpp`) makes the transforms with `infer/ocio_viewer.hpp`
+from the built-in ACES 2.0 studio config
+(`studio-config-v4.0.0_aces-v2.0_ocio-v2.5`, OpenColorIO 2.5.2), `$OCIO`, or a
+config file (View › Colour management (OpenColorIO)…). A config without ACES2065-1 or ACEScg
+(roles `aces_interchange`, names `ACES2065-1`, `ACEScg`) is refused.
+
+### 15.2 Working space
+
+`w = M(source → AP1 or AP0) · h · 10000 / 203`: 1.0 is the diffuse white,
+203 nits, as the ACES masters write it (`app/aces_master.cpp`). The view
+reads the config's own ACEScg or ACES2065-1 colour space, so the picture is
+the one Nuke shows for the master read as that space; both working spaces
+show the same picture (within 2·10⁻⁵).
+
+### 15.3 The view (Image only)
+
+After the anchor (section 2, step 3), per pixel:
+
+1. `w = work · (h · 2^view_ev)` (the rows of 15.2).
+2. `e = view(w)`: OpenColorIO's own transform. The GPU runs the GLSL
+   OpenColorIO writes for it (Vulkan flavour, samplers from binding 6, built
+   into `display.frag` at run time with `QShaderBaker`); `render_view` runs
+   its CPU processor. They agree within 0.01 of a 10-bit code (checked on
+   llvmpipe through the GLSL 330 QRhi's OpenGL backend takes).
+3. When `view_gamma ≠ 1`: `e = sign(e) · |e|^(1 / view_gamma)`: on the codes,
+   as Nuke's viewer gamma.
+4. **SDR swapchain:** `clamp(e, 0, 1)` is written as it is, as Nuke writes it.
+   **HDR swapchains:** the codes' light, `XYZ = decode(clamp(e, 0, top))` with
+   the display's own colour space to `cie_xyz_d65_interchange`, then linear
+   Rec.709 nits `= M(XYZ → Rec.709) · XYZ · n`, where `n` is 100 for
+   `hdr-video` and `edr-video` displays (OpenColorIO's display-referred XYZ:
+   PQ 1000 lands at 1 000 nits) and 203 for the others (an SDR view's peak at
+   the SDR white, BT.2408). `top` is 1, or unbounded for `edr-video`. The
+   swapchain's encoding of section 9 follows, through Rec.709 → swapchain
+   primaries. A display that cannot be decoded is shown as SDR graphics.
+5. The ceiling of the HDR paths is the display's peak; the view peak does not
+   apply (the view sets the levels).
+
+False colour, Difference, Invented and Range keep sections 2 and 14 (absolute
+nits); so do the probe's nits, the reductions and the measurements.
+
+### 15.4 The original
+
+With `original` and an OCIO view, the Sdr source of 14.2 is the codes through
+the input transform to the working space, then
+`M(working → source) · w · 203 / 10000`; the clamp flags are the plate's.
+The default is the inverse of the ACES 2.0 SDR view on an sRGB display: the
+original through that view then looks as it was graded (round trip within
+half an 8-bit code), and through an HDR view it is the classic inverse-view
+up-conversion RUDRA is compared against. Texture spaces (sRGB, gamma 2.4,
+gamma 2.2) read the codes as linear light instead.
+
+### 15.5 The range checks (Image only)
+
+Mixed over the picture at 0.6 (graphics at the SDR white on the HDR paths,
+codes over an OCIO view's codes), on `h` before the view exposure.
+
+| Check | Where | Pattern | Colour |
+|---|---|---|---|
+| out of gamut | a channel of `M(source → gamut) · h` below `−(10⁻⁷ + 10⁻³ · max(0, max channel))` | `(y & 7) < 3` | 0.90 0.25 0.95 |
+| invalid | NaN or infinite; or the AP0 test above fails (no colour at all); or `max |w| > 65504` (a half-float EXR's largest value) | solid, replaces | 0.15 1.00 0.35 |
+| clipped by the view | through an OCIO view: any code ≥ 1 − 0.5/1023 (none for `edr-video`), or on an HDR swapchain any Rec.709 channel ≥ the display's peak; else 14.4 | 14.4's `d2 < 2` | 14.4's |
+
+The range line adds the frame's shares (`Checks  outside AP1 …% · invalid …`),
+the probe the working-space values, the view's 10-bit codes (marked
+`clipped`), and the checks at the pixel.
+
+### 15.6 Tolerances
+
+`test_view_ocio.cpp` holds `render_view` to OpenColorIO 2.5.2: ACEScg 0.18
+through the sRGB ACES 2.0 SDR view is 0.34919 (PyOpenColorIO), an HDR10
+swapchain shows the PQ 1000 (Rec.2020) view's own codes within half a 10-bit
+code, every display and view of the built-in config can be made and decoded.
+The parity compositor (`rudra-gpu-parity`) keeps the revision 6 picture: the
+OCIO pass is the live viewer's only, and its GLSL is OpenColorIO's.

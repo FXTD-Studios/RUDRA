@@ -13,6 +13,7 @@
 // macOS and Linux keep the system's title bar.
 
 #include "main_window.hpp"
+#include "widgets.hpp"   // IconButton: the caption buttons are drawn (16 Nov 2026)
 
 #include <algorithm>
 
@@ -37,19 +38,14 @@ namespace rudra::app {
 #ifdef _WIN32
 namespace {
 
-// Segoe MDL2 Assets is on every Windows 10 and 11; these are the system's own caption glyphs.
-constexpr char16_t kGlyphMenu = 0xE700, kGlyphMin = 0xE921, kGlyphMax = 0xE922, kGlyphRestore = 0xE923, kGlyphClose = 0xE8BB;
-
-QToolButton* bar_button(QWidget* bar, const char* id, char16_t glyph, const QString& tip, int width) {
-    auto* b = new QToolButton(bar);
-    b->setObjectName(id);
-    b->setText(QString(QChar(glyph)));
-    b->setToolTip(tip);
-    b->setFocusPolicy(Qt::NoFocus);
+// 16 Nov 2026 (1.2.5): the caption buttons are drawn (IconButton's Menu, Minimise, Maximise, Restore and
+// Close glyphs). They were characters of the Segoe MDL2 Assets font, and on a tester's Windows (an
+// RTX 5070 machine) they came up blank: the font was not the one the buttons were drawn with. A drawn
+// icon needs no font, and takes the toolbar's ink and hover like the other icons.
+IconButton* bar_button(QWidget* bar, const char* id, IconButton::Glyph glyph, const QString& tip, int width) {
+    auto* b = new IconButton(QString::fromLatin1(id), glyph, tip, bar);
+    b->setCursor(Qt::ArrowCursor);   // the caption's buttons, not links
     b->setFixedSize(width, 28);
-    QFont f(QStringLiteral("Segoe MDL2 Assets"));
-    f.setPixelSize(10);
-    b->setFont(f);
     return b;
 }
 
@@ -57,11 +53,11 @@ QToolButton* bar_button(QWidget* bar, const char* id, char16_t glyph, const QStr
 // keyboard too, not only by the button).
 class StateWatch : public QObject {
 public:
-    StateWatch(QWidget* window, QToolButton* button) : QObject(window), window_(window), max_(button) { window->installEventFilter(this); }
+    StateWatch(QWidget* window, IconButton* button) : QObject(window), window_(window), max_(button) { window->installEventFilter(this); }
     bool eventFilter(QObject* o, QEvent* e) override {
         if (o == window_ && e->type() == QEvent::WindowStateChange) {
             const bool on = window_->isMaximized();
-            max_->setText(QString(QChar(on ? kGlyphRestore : kGlyphMax)));
+            max_->set_glyph(on ? IconButton::Glyph::Restore : IconButton::Glyph::Maximise);
             max_->setToolTip(on ? QStringLiteral("Restore") : QStringLiteral("Maximise"));
         }
         return false;
@@ -69,7 +65,7 @@ public:
 
 private:
     QWidget* window_;
-    QToolButton* max_;
+    IconButton* max_;
 };
 
 }  // namespace
@@ -90,10 +86,7 @@ void MainWindow::use_merged_title_bar() {
     setWindowFlag(Qt::FramelessWindowHint, true);
 
     // The menus, behind one button. The same QActions: what Simple hides stays hidden here.
-    auto* menu_btn = bar_button(bar, "iMenu", kGlyphMenu, QStringLiteral("Menu"), 32);
-    QFont mf = menu_btn->font();
-    mf.setPixelSize(14);
-    menu_btn->setFont(mf);
+    auto* menu_btn = bar_button(bar, "iMenu", IconButton::Glyph::Menu, QStringLiteral("Menu"), 32);
     auto* popup = new QMenu(menu_btn);
     for (QAction* a : menuBar()->actions()) popup->addAction(a);
     menu_btn->setMenu(popup);
@@ -102,9 +95,9 @@ void MainWindow::use_merged_title_bar() {
     row->insertWidget(0, menu_btn);
     menuBar()->hide();
 
-    auto* btn_min = bar_button(bar, "winMin", kGlyphMin, QStringLiteral("Minimise"), 40);
-    auto* btn_max = bar_button(bar, "winMax", kGlyphMax, QStringLiteral("Maximise"), 40);
-    auto* btn_close = bar_button(bar, "winClose", kGlyphClose, QStringLiteral("Close"), 40);
+    auto* btn_min = bar_button(bar, "winMin", IconButton::Glyph::Minimise, QStringLiteral("Minimise"), 40);
+    auto* btn_max = bar_button(bar, "winMax", IconButton::Glyph::Maximise, QStringLiteral("Maximise"), 40);
+    auto* btn_close = bar_button(bar, "winClose", IconButton::Glyph::Close, QStringLiteral("Close"), 40);
     // Its hover colour is the theme's (QToolButton#winClose in theme/studio.qss.in): no colour in the sources.
     connect(btn_min, &QToolButton::clicked, this, [this] { showMinimized(); });
     connect(btn_max, &QToolButton::clicked, this, [this] {

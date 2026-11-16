@@ -125,6 +125,10 @@ QWidget#viewerToolbar QPushButton:checked { border-color: var(--gold); color: va
 QWidget#viewerToolbar QPushButton:disabled { color: var(--ink-3); }
 QLabel#vtBadge { background: var(--gold); color: var(--bg); border-radius: 4px; padding: 1px 8px; font-weight: 600; }
 QLabel#rangeLine { color: var(--ink-3); font-size: 11px; }
+/* 17 Nov 2026: what the picture goes through (colour_view.cpp); gold when an OCIO view is not shown */
+QLabel#vtColour { color: var(--ink-2); font-size: 11px; }
+QLabel#vtColour[state="warn"] { color: var(--gold); }
+QWidget#viewerToolbar QComboBox#vtOcio, QWidget#viewerToolbar QComboBox#vtOriginal { min-width: 120px; }
 /* 4 Nov 2026: a shot row's remove button */
 QToolButton[role="shot-remove"] { background: transparent; border: none; color: var(--ink-3); font-size: 14px; padding: 0 4px; }
 QToolButton[role="shot-remove"]:hover { color: var(--ink); }
@@ -398,3 +402,22 @@ QPushButton[role="about-link"] { background: var(--card); border: 0; border-radi
 QPushButton[role="about-link"]:hover { background: var(--raise); color: var(--ink); }
 QWidget#dlList QWidget[role="card"] QProgressBar { background: var(--raise); border: 0; border-radius: 2px; }
 QWidget#dlList QWidget[role="card"] QProgressBar::chunk { background: var(--accent); border-radius: 2px; }
+QDialog#systemCheck QLabel[role="check-heading"] { color: var(--ink); font-size: 20px; font-weight: 600; }
+QDialog#systemCheck QLabel[role="check-summary"] { color: var(--ink-2); font-size: 13px; }
+QDialog#systemCheck QLabel[role="check-summary"][state="warn"] { color: var(--gold); }
+QDialog#systemCheck QLabel[role="check-summary"][state="fail"] { color: var(--bad); }
+QDialog#systemCheck QLabel[role="check-section"] { color: var(--ink-3); font-size: 11px; font-weight: 600; letter-spacing: 1px; }
+QDialog#systemCheck QLabel[role="check-title"] { color: var(--ink); font-weight: 600; }
+QDialog#systemCheck QLabel[role="check-value"] { color: var(--ink-2); }
+QDialog#systemCheck QLabel[role="check-note"] { color: var(--ink-3); font-size: 12px; }
+QDialog#systemCheck QLabel[role="check-state"] { color: var(--ink-3); }
+QDialog#systemCheck QLabel[role="check-state"][state="ok"] { color: var(--ok); }
+QDialog#systemCheck QLabel[role="check-state"][state="warn"] { color: var(--gold); }
+QDialog#systemCheck QLabel[role="check-dot"] { border-radius: 5px; background: var(--ink-4); }
+QDialog#systemCheck QLabel[role="check-dot"][state="ok"] { background: var(--ok); }
+QDialog#systemCheck QLabel[role="check-dot"][state="info"] { background: var(--ink-3); }
+QDialog#systemCheck QLabel[role="check-dot"][state="warn"] { background: var(--gold); }
+QDialog#systemCheck QLabel[role="check-dot"][state="fail"] { background: var(--bad); }
+QDialog#systemCheck QWidget[role="card"] { background: var(--card); border-radius: var(--radius-card); }
+QDialog#systemCheck QProgressBar { background: var(--raise); border: 0; border-radius: 2px; }
+QDialog#systemCheck QProgressBar::chunk { background: var(--accent); border-radius: 2px; }

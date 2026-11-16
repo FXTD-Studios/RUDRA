@@ -123,6 +123,10 @@ const std::vector<ActionSpec> kActions = {
     {"getting-started", "Getting started", "", "", O::Native, E::Always, ""},
     {"user-guide", "User guide", "", "", O::Native, E::Always, "F1"},
     {"check-updates", "Check for updates…", "", "", O::Native, E::Always, ""},
+    // 16 Nov 2026 (1.2.5): can this computer run RUDRA, and what is missing (app/system_check.hpp).
+    {"system-check", "Check this computer…", "", "", O::Native, E::Always, ""},
+    // 16 Nov 2026 (1.2.5): the once-a-day check can be turned off here and in the installer (docs/PRIVACY.md).
+    {"auto-updates", "Check for updates automatically", "", "autoUpdates", O::Native, E::Always, ""},
     {"open-log-folder", "Open log folder", "", "", O::Native, E::Always, ""},
     // 26 Oct 2026: the learned ACES 2.0 model's masters (app/aces_master.hpp).
     {"aces-master", "Learned ACES 2.0 master…", "", "", O::Native, E::Always, "Ctrl+Shift+E"},
@@ -135,6 +139,8 @@ const std::vector<ActionSpec> kActions = {
     {"monitor-hdr1000", "ACES 2.0 HDR 1000 nits (P3 D65, PQ)", "", "monitor:hdr1000", O::Native, E::Always, ""},
     {"still-grab", "Grab reference still", "", "", O::Native, E::AnyFrames, "Ctrl+Alt+G"},
     {"still-compare", "Compare with reference still", "", "stillCompare", O::Native, E::Always, "Ctrl+Alt+W"},
+    // 17 Nov 2026 (view revision 7): the OpenColorIO config of the viewer's views (app/colour_view.cpp).
+    {"colour-management", "Colour management (OpenColorIO)\u2026", "", "", O::Native, E::Always, ""},
 };
 
 const std::vector<MenuSpec> kMenus = {
@@ -154,10 +160,10 @@ const std::vector<MenuSpec> kMenus = {
      {"view-image", "view-false-colour", "view-difference", "-", "wipe", "-", ">Guides", "guides-action",
       "guides-title", "guides-centre", "-", "aspect-none", "aspect-2.39", "aspect-1.85", "aspect-16:9", "aspect-4:3",
       "aspect-1:1", "<", "-", ">Monitor (learned ACES 2.0)", "monitor-scene", "monitor-sdr100", "monitor-hdr1000", "<",
-      "-", "still-grab", "still-compare"}},
+      "-", "still-grab", "still-compare", "-", "colour-management"}},
     {"Window", {"rail-left", "rail-right", "scopes", "-", "zoom-fit", "zoom-actual"}},
     {"Help",
-     {"getting-started", "user-guide", "-", "shortcuts", "about", "first-run", "-", "check-updates", "open-log-folder"}},
+     {"getting-started", "user-guide", "-", "shortcuts", "about", "first-run", "system-check", "-", "check-updates", "auto-updates", "open-log-folder"}},
 };
 
 // The keydown handler: the map, then Space, 1 to 4 and W, which it tests on

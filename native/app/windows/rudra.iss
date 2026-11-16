@@ -31,6 +31,11 @@ DefaultGroupName=RUDRA
 #endif
 AppVersion={#AppVersion}
 AppPublisher=FXTD Studios
+; 1.2.5: the setup's own product name and version, which the signing checks (.signpath/).
+VersionInfoCompany=FXTD Studios
+VersionInfoDescription=RUDRA installer
+VersionInfoProductName=RUDRA
+VersionInfoProductTextVersion={#AppVersion}
 AppPublisherURL=https://fxtdstudios.com
 AppSupportURL=https://github.com/FXTD-Studios/RUDRA/issues
 AppCopyright=Copyright 2026 FXTD Studios. Apache License 2.0.
@@ -64,9 +69,20 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+; 1.2.5: the once-a-day update check, said and chosen here (PRIVACY.txt, the page before).
+Name: "updatecheck"; Description: "Check for updates automatically (once a day, reads RUDRA's release list on GitHub)"; GroupDescription: "Privacy:"
+
+; 1.2.5: 1.0.0 to 1.0.2 put the Beta 2 weights (non-commercial, retired) in {app}\models, and an
+; update installed over them left them there, where a start could open them. Removed here; RUDRA
+; itself no longer opens one wherever it is (native/app/system_check.hpp).
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\models\sdr2hdr_*"
+Type: filesandordirs; Name: "{app}\models\*shadow_v1*"
+Type: filesandordirs; Name: "{app}\models\*temporal_v1*"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\PRIVACY.txt"; Flags: dontcopy
 
 #ifndef ModelFreeEvaluation
 [Registry]
@@ -75,6 +91,12 @@ Root: HKA; Subkey: "Software\Classes\RUDRA.Project"; ValueType: string; ValueNam
 Root: HKA; Subkey: "Software\Classes\RUDRA.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\RUDRA.exe,0"
 Root: HKA; Subkey: "Software\Classes\RUDRA.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\RUDRA.exe"" ""%1"""
 #endif
+
+; The update-check choice, where RUDRA reads it (QSettings: HKCU\Software\FXTD Studios\RUDRA,
+; updates/auto). Kept after an uninstall, as RUDRA's other settings are.
+[Registry]
+Root: HKCU; Subkey: "Software\FXTD Studios\RUDRA\updates"; ValueType: string; ValueName: "auto"; ValueData: "true"; Tasks: updatecheck
+Root: HKCU; Subkey: "Software\FXTD Studios\RUDRA\updates"; ValueType: string; ValueName: "auto"; ValueData: "false"; Tasks: not updatecheck
 
 [Icons]
 #ifdef ModelFreeEvaluation
@@ -87,3 +109,17 @@ Name: "{autodesktop}\RUDRA"; Filename: "{app}\RUDRA.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\RUDRA.exe"; Description: "{cm:LaunchProgram,RUDRA}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+// 1.2.5: what RUDRA sends over the network (docs/PRIVACY.md, packaged as PRIVACY.txt), on a page
+// of its own after the licence. SignPath's code signing conditions ask for it during installation.
+procedure InitializeWizard;
+var
+  PrivacyText: AnsiString;
+begin
+  ExtractTemporaryFile('PRIVACY.txt');
+  if LoadStringFromFile(ExpandConstant('{tmp}\PRIVACY.txt'), PrivacyText) then
+    CreateOutputMsgMemoPage(wpInfoBefore, 'Privacy', 'What RUDRA sends over the network, and when',
+      'RUDRA has no telemetry. You can turn the update check off on a later page, or at any time in Help.',
+      String(PrivacyText));
+end;

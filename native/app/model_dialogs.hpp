@@ -46,6 +46,7 @@ private:
     QLabel *note_ = nullptr, *status_ = nullptr;
     QComboBox* backend_ = nullptr;
     QPushButton* use_ = nullptr;
+    bool aces_listening_ = false;            // status_ follows the ACES engine once its Use was clicked
 };
 
 class FirstRun : public QDialog {

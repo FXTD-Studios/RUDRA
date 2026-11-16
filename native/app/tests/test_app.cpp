@@ -135,6 +135,12 @@ TEST(AppSourceInspection, StillProfileAndFallbackAreExplicitAndPlainText) {
 
 #include "main_window.hpp"
 #include "model_dialogs.hpp"
+#include "system_check.hpp"
+#include "rudra/core/view.hpp"
+#include "rudra/infer/ocio_viewer.hpp"
+#ifdef RUDRA_APP_VIEWER
+#include "rudra/render/viewer_window.hpp"
+#endif
 #include "workflow_check.hpp"
 #include "startup.hpp"
 #include "updates.hpp"
@@ -1818,6 +1824,93 @@ TEST(AppModels, TheFirstRunReportsTheDisplaysRealPeak) {
     EXPECT_FALSE(fr->isVisible());
 }
 
+// 16 Nov 2026 (1.2.5, the RTX 5070 tester): a Beta 2 package left by an older version (1.0.0 to 1.0.2
+// put sdr2hdr_image_v8 beside the app) and the settings that used it. It is never opened by itself:
+// not picked, not the "last package", not loaded by a start; Check this computer moves it aside.
+TEST(AppModels, ARetiredBeta2ModelIsNeverOpenedByItself) {
+    QSettings().clear();
+    QSettings().setValue("firstRun/done", true);
+    app::MainWindow w(false);
+    auto m = fake_models(w, "beta2");
+    const auto old_root = fresh_dir("beta2-old-install");
+    write_manifest(old_root / "sdr2hdr_image_v8", "sdr2hdr_image_v8");
+    w.add_model_root(old_root);
+    QSettings().setValue("model/package", QString::fromStdString((old_root / "sdr2hdr_image_v8").string()));
+    w.rescan_models();
+    for (const auto& e : w.catalog().entries) EXPECT_NE(e.package.filename().string(), "sdr2hdr_image_v8");
+    ASSERT_EQ(w.retired_packages().size(), 1u);
+    EXPECT_FALSE(QSettings().contains("model/package"));
+    EXPECT_TRUE(app::is_beta2_package(old_root / "sdr2hdr_image_v8"));
+    EXPECT_FALSE(app::is_beta2_package(m->root / "beta"));
+    w.boot();
+    ASSERT_TRUE(wait_for([&] { return !w.loading_model(); }));
+    EXPECT_NE(w.model_package().filename().string(), "sdr2hdr_image_v8");
+    EXPECT_TRUE(w.findChild<QPlainTextEdit*>("log")->toPlainText().contains("not opening the retired Beta 2 model"));
+    // Moved aside: into a dot folder the catalog never reads.
+    QString said;
+    EXPECT_TRUE(app::archive_beta2(w.retired_packages().front(), &said)) << said.toStdString();
+    EXPECT_TRUE(std::filesystem::exists(old_root / ".retired-beta2" / "sdr2hdr_image_v8" / "manifest.json"));
+    w.rescan_models();
+    EXPECT_TRUE(w.retired_packages().empty());
+}
+
+// 16 Nov 2026 (1.2.5): Check this computer judges the machine in plain words. The testers' machines:
+// an RTX 4080 with 12 GB (AI fill cannot run, the rest can), an RTX 50 card with 16 GB (AI fill can,
+// with the CUDA 12.8 PyTorch), and machines RUDRA cannot run on at all.
+TEST(AppCheck, TheMachineIsJudgedInPlainWords) {
+    app::MachineFacts f;
+    f.windows = true;
+    f.os = "Windows 11";
+    f.windows_build = 26100;
+    f.cpu_arch = "x86_64";
+    f.gpus = std::vector<app::GpuFact>{{"NVIDIA GeForce RTX 4080 Laptop GPU", 11.7}};
+    f.ram_gb = 32;
+    f.free_gb = 120;
+    f.ffmpeg = true;
+    std::vector<app::CheckLine> lines = app::judge_machine(f);
+    auto line = [&](const char* id) {
+        for (const auto& l : lines)
+            if (l.id == QLatin1String(id)) return l;
+        return app::CheckLine{};
+    };
+    EXPECT_FALSE(app::machine_blocked(lines));
+    EXPECT_EQ(line("os").level, app::CheckLevel::Ok);
+    EXPECT_EQ(line("gpu").level, app::CheckLevel::Ok);
+    EXPECT_EQ(line("aifill").level, app::CheckLevel::Warn);
+    EXPECT_TRUE(line("aifill").note.contains("the NVIDIA GeForce RTX 4080 Laptop GPU has 12 GB")) << line("aifill").note.toStdString();
+    EXPECT_TRUE(line("aifill").note.contains("Everything else in RUDRA runs"));
+    f.gpus = std::vector<app::GpuFact>{{"NVIDIA GeForce RTX 5070 Ti", 15.6}};
+    lines = app::judge_machine(f);
+    EXPECT_EQ(line("aifill").level, app::CheckLevel::Ok);
+    EXPECT_TRUE(line("aifill").note.contains("CUDA 12.8"));
+    EXPECT_TRUE(app::aifill_machine_problem(f).isEmpty());
+    // No GPU, little memory and disk, no ffmpeg: each said, none of them a blocker.
+    f.gpus = std::vector<app::GpuFact>{};
+    f.ram_gb = 4;
+    f.free_gb = 0.5;
+    f.ffmpeg = false;
+    lines = app::judge_machine(f);
+    EXPECT_FALSE(app::machine_blocked(lines));
+    for (const char* id : {"gpu", "memory", "disk", "ffmpeg"}) EXPECT_EQ(line(id).level, app::CheckLevel::Warn) << id;
+    EXPECT_FALSE(app::aifill_machine_problem(f).isEmpty());
+    // Blockers: a 32-bit Windows, an Intel Mac.
+    f.cpu_arch = "i386";
+    EXPECT_TRUE(app::machine_blocked(app::judge_machine(f)));
+    app::MachineFacts mac;
+    mac.mac = true;
+    mac.os = "macOS 14";
+    mac.cpu_arch = "x86_64";
+    EXPECT_TRUE(app::machine_blocked(app::judge_machine(mac)));
+    mac.cpu_arch = "arm64";
+    mac.ram_gb = 8;
+    EXPECT_FALSE(app::machine_blocked(app::judge_machine(mac)));
+    EXPECT_TRUE(app::aifill_machine_problem(mac).contains("16 GB of memory"));
+    // AI fill's setup reasons, as the user reads them.
+    EXPECT_TRUE(app::genfill_missing_text("AI fill: no Wan2.1-VACE-1.3B model at C:/x (run scripts/genfill_setup.sh).")
+                    .startsWith("AI fill is not set up yet: its base model, Wan2.1-VACE-1.3B, is not installed"));
+    EXPECT_TRUE(app::genfill_missing_text("AI fill: no Python at C:/py (run scripts/genfill_setup.sh).").contains("Check this computer"));
+}
+
 TEST(AppView, AStartOpensOnTheSdrRudraWipeAtAThousandNits) {
     QSettings().clear();
     app::MainWindow w(false);
@@ -1987,6 +2080,41 @@ TEST(AppOpen, ADropAddsFramesOpensAShotOrUsesAModel) {
     drop(w, {QString::fromStdString(decode_dir().string())});
     EXPECT_GE(w.frame_count(), 10u);
     EXPECT_EQ(w.current_index(), 0);
+}
+
+// 16 Nov 2026 (1.2.5): a drop says what it cannot open, and what a one-shot drop (a folder, a
+// movie, a project) leaves out, instead of passing an unknown file on as a frame that fails later.
+TEST(AppOpen, ADropSaysWhatItDoesNotOpen) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    const auto dir = fresh_dir("drop-mixed");
+    std::filesystem::create_directories(dir);
+    const QString notes = QString::fromStdString((dir / "notes.txt").string());
+    std::ofstream(dir / "notes.txt") << "not a picture";
+    // A still and a text file: the still is added, the text file named.
+    drop(w, {png("png8_rgb.png"), notes});
+    EXPECT_EQ(w.frame_count(), 1u);
+    const QString log = w.findChild<QPlainTextEdit*>("log")->toPlainText();
+    EXPECT_TRUE(log.contains("RUDRA does not open notes.txt")) << log.toStdString();
+    EXPECT_EQ(last_log(w), "added 1 frame");
+    // Only a text file: nothing is added, and it is said.
+    drop(w, {notes});
+    EXPECT_EQ(w.frame_count(), 1u);
+    EXPECT_TRUE(last_log(w).startsWith("RUDRA does not open notes.txt")) << last_log(w).toStdString();
+    // A folder of frames with a still beside it: the folder is the shot, the still is said.
+    drop(w, {QString::fromStdString(decode_dir().string()), png("bmp24.bmp")});
+    EXPECT_GE(w.frame_count(), 10u);
+    EXPECT_TRUE(w.findChild<QPlainTextEdit*>("log")->toPlainText().contains(
+        "A folder is a shot of its own: the 1 other item dropped with it was not opened"));
+    // A web link dragged in is not offered a drop.
+    {
+        QMimeData mime;
+        mime.setUrls({QUrl("https://www.fxtdstudios.com/a.png")});
+        QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        enter.setAccepted(false);
+        QApplication::sendEvent(&w, &enter);
+        EXPECT_FALSE(enter.isAccepted());
+    }
 }
 
 TEST(AppOpen, RecentShotsNewestFirstAndClearable) {
@@ -2729,6 +2857,74 @@ TEST(AppAnalytic, TheDefaultRunsNoModelAndSaysSo) {
     ASSERT_TRUE(wait_for([&] { return w.frame_fields() && w.frame_fields()->residual.at(0, 0, 0) == 0.0f; }));
 }
 #endif
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+// 16 Nov 2026, the 1.2.4 feedback: "Use the model" remembered on (an older version's setting) with no
+// reconstruction package anywhere (none is offered since the ACES 2 lock, 1.2.0) held every Open back
+// for good, while the learned ACES 2.0 model sat ready. It is turned off and the shot opens; turned on
+// again with nothing to load, it stays off and says so.
+TEST(AppModels, UseTheModelWithNoPackageAnywhereDoesNotHoldTheShotBack) {
+    QSettings().clear();
+    QSettings().setValue("firstRun/done", true);
+    QSettings().setValue("model/use", true);
+    {
+        // Mid-session (no boot): the Open itself lets go of the setting.
+        app::MainWindow w(false);
+        w.set_model_roots({fresh_dir("stuck-open")});
+        ASSERT_TRUE(w.using_model());   // as the settings left it
+        w.session().grade.clip_fill = false;
+        w.open_source(QString::fromStdString(decode_dir().string()), true);
+        EXPECT_GE(w.frame_count(), 3u);
+        EXPECT_FALSE(w.using_model());
+        EXPECT_FALSE(QSettings().value("model/use").toBool());
+        EXPECT_TRUE(w.findChild<QPlainTextEdit*>("log")->toPlainText().contains("turned off, so shots open"));
+    }
+    QSettings().setValue("model/use", true);
+    app::MainWindow w(false);
+    w.set_model_roots({fresh_dir("stuck-boot-a"), fresh_dir("stuck-boot-b")});
+    w.boot();
+    EXPECT_FALSE(w.using_model());
+    EXPECT_FALSE(w.action("use-model")->isChecked());
+    EXPECT_FALSE(QSettings().value("model/use").toBool());
+    EXPECT_EQ(w.findChild<QLabel*>("reconstructionMode")->text(), "Analytic reconstruction");
+    w.session().grade.clip_fill = false;
+    w.open_source(QString::fromStdString(decode_dir().string()), true);
+    EXPECT_GE(w.frame_count(), 3u);
+    EXPECT_FALSE(w.findChild<QPlainTextEdit*>("log")->toPlainText().contains("Open a model package first"));
+    // A click on it with nothing to load: refused, unticked, said.
+    w.run("use-model");
+    EXPECT_FALSE(w.using_model());
+    EXPECT_FALSE(w.action("use-model")->isChecked());
+    EXPECT_FALSE(QSettings().value("model/use").toBool());
+    EXPECT_TRUE(w.findChild<QPlainTextEdit*>("log")->toPlainText().contains("Use the model stays off"));
+}
+#endif
+
+// 16 Nov 2026 (1.2.5, the signing policy's privacy rule): the once-a-day update check is said in the
+// Help menu and turned off there; the installer writes the same setting (native/app/windows/rudra.iss).
+TEST(AppUpdates, TheDailyCheckIsShownAndCanBeTurnedOff) {
+    QSettings().clear();
+    {
+        app::MainWindow w(false);
+        ASSERT_NE(w.action("auto-updates"), nullptr);
+        EXPECT_TRUE(w.action("auto-updates")->isCheckable());
+        EXPECT_TRUE(w.action("auto-updates")->isChecked());   // on by default, as before
+        w.run("auto-updates");
+        EXPECT_FALSE(QSettings().value("updates/auto").toBool());
+        EXPECT_FALSE(w.action("auto-updates")->isChecked());
+        // Off: the start does not ask GitHub (no date is written for a check that did not happen).
+        w.maybe_check_for_updates();
+        EXPECT_FALSE(QSettings().value("updates/last").isValid());
+    }
+    // The installer's "false" (a string in the registry) reads as off too.
+    QSettings().setValue("updates/auto", QStringLiteral("false"));
+    app::MainWindow w2(false);
+    EXPECT_FALSE(w2.action("auto-updates")->isChecked());
+    w2.run("auto-updates");
+    EXPECT_TRUE(QSettings().value("updates/auto").toBool());
+    EXPECT_TRUE(w2.action("auto-updates")->isChecked());
+    QSettings().clear();
+}
 
 #ifdef RUDRA_HAVE_STILL_DECODE
 // Playback with the model (10 Oct 2026): inference ahead of the playhead, a
@@ -5987,6 +6183,57 @@ QByteArray served_index(const QString& src, const QByteArray& a, const QByteArra
 
 }  // namespace
 
+// 16 Nov 2026 (1.2.5): Check this computer offers what is missing, ticks the learned model, installs the
+// ticked ones and says so; the toolbar's Check and Help open it.
+TEST(AppCheck, TheWindowOffersWhatIsMissingAndInstallsTheTickedOnes) {
+    QSettings().clear();
+    QTemporaryDir tmp;
+    QSettings().setValue("models/indexUrl", QUrl::fromLocalFile(tmp.path() + "/none.json").toString());
+    app::MainWindow w(false);
+    w.set_model_roots({std::filesystem::path(tmp.path().toStdString()) / "roots"});
+    auto* md = w.model_downloads();
+    md->set_root(tmp.path() + "/models");
+    auto models = *app::parse_model_index(served_index(tmp.path() + "/src", "{}", QByteArray(100000, 'w')));
+    models[0].kind = "aces_v2";   // the learned model: recommended, ticked
+    models[0].channel = "release";
+    md->set_models(models);
+    ASSERT_NE(find<app::IconButton>(w, "iCheck"), nullptr);
+    EXPECT_EQ(w.action("system-check")->text(), "Check this computer…");
+    w.run("system-check");
+    auto* d = find<app::SystemCheckDialog>(w, "systemCheck");
+    ASSERT_NE(d, nullptr);
+    EXPECT_TRUE(d->isVisible());
+    app::MachineFacts f;
+    f.windows = true;
+    f.os = "Windows 11";
+    f.windows_build = 26100;
+    f.cpu_arch = "x86_64";
+    f.gpus = std::vector<app::GpuFact>{{"NVIDIA GeForce RTX 4080 Laptop GPU", 11.7}};
+    f.ram_gb = 32;
+    f.free_gb = 120;
+    d->set_facts(f);
+    auto* tick = d->findChild<QCheckBox*>("checkTick_demo");
+    ASSERT_NE(tick, nullptr);
+    EXPECT_TRUE(tick->isChecked());
+    EXPECT_EQ(d->findChild<QLabel*>("checkState_demo")->text(), "Not installed");
+    EXPECT_TRUE(d->findChild<QLabel*>("checkSummary")->text().contains("Install selected"));
+    // 12 GB: AI fill's setup is not offered, and says why.
+    auto* setup = d->findChild<QPushButton*>("checkAifillSetup");
+    ASSERT_NE(setup, nullptr);
+    EXPECT_FALSE(setup->isEnabled());
+    EXPECT_EQ(d->findChild<QPushButton*>("checkInstall")->text(), "Install selected (1)");
+    d->install_selected();
+    ASSERT_TRUE(wait_for([&] { return md->state("demo") == app::InstallState::Installed && md->active().isEmpty(); }));
+    QApplication::processEvents();
+    EXPECT_EQ(d->findChild<QLabel*>("checkState_demo")->text(), "Installed and checked");
+    EXPECT_TRUE(d->findChild<QLabel*>("checkProgressText")->text().contains("Demo model: installed and checked"));
+    EXPECT_TRUE(d->report().contains("Demo model 1.0: installed"));
+    EXPECT_TRUE(d->report().contains("[Warning] AI fill (optional)"));
+    d->accept();
+    EXPECT_EQ(QSettings().value("check/seenVersion").toString(), QCoreApplication::applicationVersion());
+    QSettings().clear();
+}
+
 TEST(AppModels, TheIndexIsReadSafely) {
     QTemporaryDir tmp;
     const QByteArray good = served_index(tmp.path() + "/src", "{}", QByteArray(5000, 'x'));
@@ -6564,6 +6811,63 @@ TEST(AppViewerToolbar, AltKeysReachTheViewer) {
     QTest::keyClick(&w, Qt::Key_R, Qt::AltModifier);
     EXPECT_EQ(w.session().view_layer, 4);
 }
+
+// ---- view revision 7: the colour-managed viewer (app/colour_view.cpp, 17 Nov 2026) ----
+#ifdef RUDRA_APP_VIEWER
+TEST(AppColourView, TheViewerOffersTheOcioViewsTheWorkingSpacesAndTheChecks) {
+    QSettings st;
+    for (const char* k : {"viewer/ocioDisplay", "viewer/ocioView", "viewer/ocioSource", "viewer/working", "viewer/original"})
+        st.remove(k);
+    app::MainWindow w(false);
+    w.show();
+    auto* box = w.findChild<QComboBox*>("vtOcio");
+    if (!box || !w.viewer()) GTEST_SKIP() << "the viewer bar is built with the viewer only";
+    // RUDRA's own view first, and by default: nothing changes until a view is picked.
+    EXPECT_TRUE(box->itemData(0).toString().isEmpty());
+    EXPECT_EQ(box->currentIndex(), 0);
+    EXPECT_EQ(w.viewer()->view().ocio, nullptr);
+    if (!ocio_viewer::available()) {
+        EXPECT_FALSE(box->isEnabled());
+        return;
+    }
+    // The views asked for are there (17 Nov 2026): SDR sRGB and Rec.709, HDR PQ 1000, P3-D65, Raw.
+    for (const char* dv : {"sRGB - Display\tACES 2.0 - SDR 100 nits (Rec.709)",
+                           "Rec.1886 Rec.709 - Display\tACES 2.0 - SDR 100 nits (Rec.709)",
+                           "Rec.2100-PQ - Display\tACES 2.0 - HDR 1000 nits (P3 D65)",
+                           "P3-D65 - Display\tACES 2.0 - SDR 100 nits (P3 D65)", "sRGB - Display\tRaw"})
+        EXPECT_GT(box->findData(QString::fromUtf8(dv)), 0) << dv;
+    const int pq = box->findData(QStringLiteral("Rec.2100-PQ - Display\tACES 2.0 - HDR 1000 nits (P3 D65)"));
+    ASSERT_GT(pq, 0);
+    box->setCurrentIndex(pq);
+    emit box->activated(pq);
+    EXPECT_EQ(w.colour_display(), "Rec.2100-PQ - Display");
+    ViewParams v = w.viewer()->view();
+    ASSERT_NE(v.ocio, nullptr);
+    EXPECT_EQ(v.ocio->view, "ACES 2.0 - HDR 1000 nits (P3 D65)");
+    EXPECT_TRUE(v.ocio->hdr);
+    EXPECT_NE(v.original, nullptr);   // the original through the inverse of the SDR view
+    // ACES2065-1: the view is made again for it, and the probe reads it.
+    auto* work = w.findChild<QComboBox*>("vtWorking");
+    work->setCurrentIndex(1);
+    emit work->activated(1);
+    EXPECT_EQ(w.viewer()->view().working, WorkingSpace::Aces2065);
+    EXPECT_EQ(w.viewer()->view().ocio->working, WorkingSpace::Aces2065);
+    // The checks.
+    w.findChild<QPushButton*>("vtGamut")->click();
+    EXPECT_TRUE(w.viewer()->view().gamut_zebra);
+    EXPECT_EQ(w.viewer()->view().gamut, Primaries::Ap1);
+    w.findChild<QPushButton*>("vtInvalid")->click();
+    EXPECT_TRUE(w.viewer()->view().invalid_zebra);
+    // Back to RUDRA's view; the choice is kept for the next start.
+    box->setCurrentIndex(0);
+    emit box->activated(0);
+    EXPECT_EQ(w.viewer()->view().ocio, nullptr);
+    EXPECT_TRUE(QSettings().value("viewer/ocioDisplay").toString().isEmpty());
+    EXPECT_EQ(QSettings().value("viewer/working").toInt(), 1);
+    QSettings().remove("viewer/working");
+    QSettings().remove("viewer/original");
+}
+#endif
 
 // ---- the tau bands of the learned ACES route (core/aces_v2.hpp UserBand, 1 Nov 2026) ----
 TEST(AcesBand, CommandArgumentsOnlyWhenOn) {
