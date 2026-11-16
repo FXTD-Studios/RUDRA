@@ -3,8 +3,9 @@
 Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
 [SignPath Foundation](https://signpath.org/).
 
-RUDRA's Windows releases from 1.2.5 on are signed this way. This page says what is signed, how,
-by whom, and what RUDRA sends over the network.
+RUDRA's Windows releases will be signed this way from the first release after SignPath
+Foundation approves the project (applied for in November 2026; 1.2.5 and earlier are unsigned).
+This page says what is signed, how, by whom, and what RUDRA sends over the network.
 
 ## What is signed
 

@@ -50,18 +50,21 @@ invent.
 Windows 10 / 11 (x64, installer or portable ZIP) and macOS (Apple silicon, DMG),
 with their checksums and the release notes.
 
-The builds are not code-signed yet. On Windows, choose **More info › Run anyway**
-in the SmartScreen prompt. On macOS, open it once from **System Settings › Privacy
-& Security › Open Anyway**.
+The Windows builds are not signed yet, so SmartScreen may ask once: choose
+**More info › Run anyway**. Code signing through SignPath Foundation is being set up
+([code signing policy](#code-signing-policy)) and starts with the next release once it is approved. The macOS builds are not signed yet: open it once from
+**System Settings › Privacy & Security › Open Anyway**.
 
 On the first start, **Welcome to RUDRA** checks your display (HDR or SDR, and its
 real peak), names your GPU, and finds any model you have installed. No licence
-to accept, no account.
+to accept, no account, no telemetry: the only automatic connection is a daily
+update check, which the installer and **Help** let you turn off
+([privacy policy](docs/PRIVACY.md)).
 
 ## Three steps
 
 1. **Look.** Open a still, a folder of frames or a movie (MOV, MP4, MXF, MKV and
-   more). The viewer opens as a wipe, the original SDR on the left and RUDRA on
+   more), or drop it on the window. The viewer opens as a wipe, the original SDR on the left and RUDRA on
    the right, at a 1,000-nit display peak. Set the exposure, the strength and the
    peak; press **W** to turn the wipe off, or hold **B** to see the original SDR.
 2. **Check.** Read the peak, the average light, how much is above SDR white and
@@ -118,7 +121,7 @@ recovered detail, so check every frame.
 - [User guide](https://www.fxtdstudios.com/rudra-docs/): every control, step by step
   (the same guide as text: [docs/USER_GUIDE.md](docs/USER_GUIDE.md))
 - [Release notes](https://github.com/FXTD-Studios/RUDRA/releases/latest)
-  ([1.2.4 in this repository](docs/RELEASE_NOTES_1.2.4.md))
+  ([1.2.5 in this repository](docs/RELEASE_NOTES_1.2.5.md))
 - [Report a problem](https://github.com/FXTD-Studios/RUDRA/issues)
 - [Report a security problem privately](SECURITY.md)
 - Developers and researchers: [project overview](docs/PROJECT_OVERVIEW.md),
@@ -144,6 +147,13 @@ Continuous integration (`native` and `shipped model` run when their files change
 | [`native`](.github/workflows/native.yml) | the layer rule; the C++ core against Python goldens on Windows, macOS and Linux; Gate A (LibTorch vs ONNX Runtime); the Qt shell; the Gate B HDR probe |
 | [`shipped model`](.github/workflows/shipped_model.yml) | RUDRA ACES 2, as users download it, through the native engine (weekly too) |
 | [`release`](.github/workflows/release.yml) | on a `v*` tag: the Windows installer and ZIP and the macOS DMG, checked for model weights, published as a release |
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
+[SignPath Foundation](https://signpath.org/). What is signed, who approves each release, and
+what RUDRA sends over the network: [docs/CODE_SIGNING_POLICY.md](docs/CODE_SIGNING_POLICY.md)
+and [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## Licence
 
