@@ -252,14 +252,17 @@ QWidget* MainWindow::build_toolbar() {
     i_scopes_ = new IconButton("iScopes", IconButton::Glyph::Scopes, "Scopes", bar);
     i_inspector_ = new IconButton("iInspector", IconButton::Glyph::Inspector, "Inspector", bar);
     auto* i_export = new IconButton("iExport", IconButton::Glyph::Export, "Export\u2026", bar);
+    // 16 Nov 2026 (1.2.5): Check this computer, with a dot when something wants a look (system_check.hpp).
+    auto* i_check = new IconButton("iCheck", IconButton::Glyph::Check, "Check this computer", bar);
     auto* i_help = new IconButton("iHelp", IconButton::Glyph::Help, "Keyboard shortcuts", bar);
-    for (auto* b : {i_scopes_, i_inspector_, i_export, i_help}) {
+    for (auto* b : {i_scopes_, i_inspector_, i_export, i_check, i_help}) {
         b->setFixedSize(32, 28);
         h->addWidget(b);
     }
     connect(i_inspector_, &QToolButton::clicked, this, [this] { run("rail-right"); });
     connect(i_scopes_, &QToolButton::clicked, this, [this] { run("scopes"); });
     connect(i_export, &QToolButton::clicked, this, [this] { open_export_sheet(); });
+    connect(i_check, &QToolButton::clicked, this, [this] { run("system-check"); });
     connect(i_help, &QToolButton::clicked, this, [this] { run("shortcuts"); });
     return bar;
 }
@@ -560,8 +563,9 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     auto* empty_full = new QWidget(empty);
     empty_full->setObjectName("emptyFull");
     auto* efv = column(empty_full, 0, 6);
-    efv->addWidget(label("Drop an SDR frame", {}, "empty-b"), 0, Qt::AlignHCenter);
-    efv->addWidget(label("PNG, JPEG or TIFF \u2014 one, or a whole sequence", {}, "empty-t"), 0, Qt::AlignHCenter);
+    efv->addWidget(label("Drop an SDR frame or movie", {}, "empty-b"), 0, Qt::AlignHCenter);
+    // 16 Nov 2026 (1.2.5): movies open too (open_paths), as Simple's empty viewer already said.
+    efv->addWidget(label("A still, a folder of frames, or a movie (MP4, MOV, MKV\u2026)", {}, "empty-t"), 0, Qt::AlignHCenter);
     ev->addWidget(empty_full, 0, Qt::AlignHCenter);
     {   // Simple's empty viewer (29 Oct 2026): one target, a button, the recent shots.
         auto* es = styled("emptySimple", "empty-target");

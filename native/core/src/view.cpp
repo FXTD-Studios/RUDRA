@@ -99,6 +99,12 @@ std::vector<float> sdr_light_rgba(const SdrImage* sdr, std::span<const float> ta
     return out;
 }
 
+std::vector<float> view_sdr_light(const SdrImage* sdr, const ViewParams& p) {
+    if (!sdr) return {};
+    if (p.original && p.original->cpu) return sdr_light_through(*sdr, *p.original, p.source);
+    return sdr_light_rgba(sdr, p.anchor_knots);
+}
+
 std::vector<float> sdr_max_codes(const SdrImage* sdr, int width, int height) {
     const std::size_t n = std::size_t(width) * std::size_t(height);
     std::vector<float> out(n, 0.5f);
@@ -183,7 +189,7 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
     // Revision 6: the Sdr source (the plate as light) and the wipe's A | B.
     const bool have_sdr = sdr && sdr->width() == w && sdr->height() == h;
     const bool needs_light = view_needs_sdr_light(p);
-    const std::vector<float> light = (needs_light && have_sdr) ? sdr_light_rgba(sdr, p.anchor_knots) : std::vector<float>{};
+    const std::vector<float> light = (needs_light && have_sdr) ? view_sdr_light(sdr, p) : std::vector<float>{};
     PlanarBuffer sdr_pic;
     if (!light.empty()) {
         sdr_pic = PlanarBuffer(3, h, w);
@@ -210,7 +216,8 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
     // HDR paths: the picture in absolute nits, clipped at the lower of the view
     // peak and the display's peak, never tone-mapped (ADR-005); overlays (false
     // colour, difference, the wipe handle) are graphics at the SDR white.
-    const float ceiling = float(std::min(p.display_nits, p.target.peak_nits));
+    // Revision 7: through an OCIO view the view sets the levels; the display's own peak is the ceiling.
+    const float ceiling = p.ocio ? float(p.target.peak_nits) : float(std::min(p.display_nits, p.target.peak_nits));
     const Mat3f picture_m = to_float(rgb_to_rgb_matrix(p.source, p.target.primaries));
     const Mat3f graphics_m = to_float(rgb_to_rgb_matrix(Primaries::Rec709, p.target.primaries));
     const float graphics_white = float(kDiffuseWhite.v);
@@ -220,31 +227,74 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
     const float knee = float(p.anchor_knee), softness = float(p.anchor_softness), hold = float(p.anchor_hold);
     const PlanarBuffer* sdr_buf = anchoring ? &sdr->buffer() : nullptr;
 
+    // The picture at a pixel: the side shown, anchored when it is the model's.
+    auto picture_at = [&](int x, int y, float out3[3]) {
+        const float u = (float(x) + 0.5f) / float(w);
+        const PlanarBuffer& pic = wiping ? (u < wipe ? left_pic : right_pic) : source;
+        float hr = pic.at(0, y, x), hg = pic.at(1, y, x), hb = pic.at(2, y, x);
+        // The anchor (3.3) on the model's picture only: the baseline is the
+        // inverse as it is, on its own or on the wipe's left.
+        if (anchoring && &pic == &m) {
+            const std::size_t i = std::size_t(y) * std::size_t(w) + std::size_t(x);
+            float target = 0.0f;
+            for (int k = 0; k < 3; ++k) {
+                const float v = sdr_buf->plane(k)[i];
+                float lt = srgb_to_linear(v);
+                if (!p.anchor_knots.empty()) lt *= std::exp2(anchor_target_log2(v, p.anchor_knots));
+                target += kRec2020Luma[std::size_t(k)] * lt;
+            }
+            if (p.grade_gain && i < p.grade_gain->size()) target *= (*p.grade_gain)[i];
+            const float gain = anchor_gain_f(target, hr, hg, hb, codes[i], knee, softness, hold);
+            hr *= gain, hg *= gain, hb *= gain;
+        }
+        out3[0] = hr, out3[1] = hg, out3[2] = hb;
+    };
+
+    // Revision 7: the OCIO view, run over the whole frame at once (OpenColorIO's CPU
+    // processor is fastest on long spans): the working-space values at the view
+    // exposure, the view's codes, the view gamma on the codes, and their light.
+    const ViewMatrices vm = view_matrices(p.source, p.working, p.gamut, p.ocio ? p.ocio->nits_per_y : 203.0);
+    const bool ocio_on = p.ocio != nullptr && p.mode == ViewMode::Image;
+    const bool decoding = ocio_on && hdr && p.ocio->decodes;
+    std::vector<float> view_codes, view_light;
+    if (ocio_on) {
+        const std::size_t n = std::size_t(w) * std::size_t(h);
+        view_codes.resize(n * 3);
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x) {
+                float hp[3];
+                picture_at(x, y, hp);
+                const float hv[3] = {hp[0] * view_gain, hp[1] * view_gain, hp[2] * view_gain};
+                float* o = &view_codes[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 3];
+                for (int k = 0; k < 3; ++k)
+                    o[k] = vm.work[std::size_t(k) * 3] * hv[0] + vm.work[std::size_t(k) * 3 + 1] * hv[1] +
+                           vm.work[std::size_t(k) * 3 + 2] * hv[2];
+            }
+        if (p.ocio->forward.cpu) p.ocio->forward.cpu(view_codes.data(), n);
+        if (gamma_on)
+            for (float& v : view_codes) v = std::copysign(std::pow(std::abs(v), inv_gamma), v);
+        if (decoding) {
+            view_light.resize(n * 3);
+            const float top = std::max(1.0f, float(p.ocio->clip_code));   // EDR codes go above 1
+            for (std::size_t i = 0; i < n * 3; ++i) view_light[i] = std::clamp(view_codes[i], 0.0f, top);
+            if (p.ocio->decode.cpu) p.ocio->decode.cpu(view_light.data(), n);
+        }
+    }
+
     PlanarBuffer out(3, h, w);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const float u = (float(x) + 0.5f) / float(w);
-            const PlanarBuffer& pic = wiping ? (u < wipe ? left_pic : right_pic) : source;
             const std::size_t pix = std::size_t(y) * std::size_t(w) + std::size_t(x);
             const int flags = light.empty() ? 0 : int(light[pix * 4 + 3]);
-            float hr = pic.at(0, y, x), hg = pic.at(1, y, x), hb = pic.at(2, y, x);
-            // The anchor (3.3) on the model's picture only: the baseline is the
-            // inverse as it is, on its own or on the wipe's left.
-            if (anchoring && &pic == &m) {
-                const std::size_t i = std::size_t(y) * std::size_t(w) + std::size_t(x);
-                float target = 0.0f;
-                for (int k = 0; k < 3; ++k) {
-                    const float v = sdr_buf->plane(k)[i];
-                    float light = srgb_to_linear(v);
-                    if (!p.anchor_knots.empty()) light *= std::exp2(anchor_target_log2(v, p.anchor_knots));
-                    target += kRec2020Luma[std::size_t(k)] * light;
-                }
-                if (p.grade_gain && i < p.grade_gain->size()) target *= (*p.grade_gain)[i];
-                const float gain = anchor_gain_f(target, hr, hg, hb, codes[i], knee, softness, hold);
-                hr *= gain, hg *= gain, hb *= gain;
-            }
+            float hp[3];
+            picture_at(x, y, hp);
+            const float hr = hp[0], hg = hp[1], hb = hp[2];
             float c[3];
             bool screen_clip = false;
+            // What c holds on an HDR path: 0 nits in the source primaries (the
+            // picture), 1 nits in Rec.709 (an OCIO view's light), 2 an SDR code (graphics).
+            int kind = p.mode == ViewMode::Image ? 0 : 2;
             switch (p.mode) {
                 case ViewMode::FalseColour: {
                     const auto fc = false_colour(false_colour_zone(lum2020(hr, hg, hb) * kPeak));
@@ -279,6 +329,23 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                 }
                 case ViewMode::Image:
                 default: {
+                    if (ocio_on) {
+                        const float* e = &view_codes[pix * 3];
+                        const float clip = float(p.ocio->clip_code);
+                        screen_clip = e[0] >= clip || e[1] >= clip || e[2] >= clip;
+                        if (decoding) {
+                            const float* xyz = &view_light[pix * 3];
+                            for (int k = 0; k < 3; ++k)
+                                c[k] = vm.dec[std::size_t(k) * 3] * xyz[0] + vm.dec[std::size_t(k) * 3 + 1] * xyz[1] +
+                                       vm.dec[std::size_t(k) * 3 + 2] * xyz[2];
+                            screen_clip = screen_clip || std::max(std::max(c[0], c[1]), c[2]) >= ceiling;
+                            kind = 1;
+                        } else {
+                            for (int k = 0; k < 3; ++k) c[k] = std::clamp(e[k], 0.0f, 1.0f);
+                            kind = 2;
+                        }
+                        break;
+                    }
                     // Revision 6: the viewer exposure, then the viewer gamma
                     // pivoting on the view peak, then the clip.
                     const float hv[3] = {hr * view_gain, hg * view_gain, hb * view_gain};
@@ -300,6 +367,8 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                     break;
                 }
             }
+            // Overlays mix in as codes on the SDR path and over an OCIO view's codes, else as light.
+            const bool codes_out = !hdr || kind == 2;
             if (p.show_changes && p.mode == ViewMode::Image) {
                 // Model against baseline at this pixel, whichever side is shown.
                 const float mn = std::max(std::max(m.at(0, y, x), m.at(1, y, x)), m.at(2, y, x)) * kPeak;
@@ -309,7 +378,7 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                     const auto& col = cw > 0.0f ? kChangeUp : kChangeDown;
                     const float a = kChangeTintMix * std::abs(cw);
                     for (int k = 0; k < 3; ++k) {
-                        const float t = hdr ? graphics_white * srgb_to_linear(col[std::size_t(k)]) : col[std::size_t(k)];
+                        const float t = !codes_out ? graphics_white * srgb_to_linear(col[std::size_t(k)]) : col[std::size_t(k)];
                         c[k] = c[k] * (1.0f - a) + t * a;
                     }
                 }
@@ -319,7 +388,7 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                 const float a = kMaskTintMix * p.masks->weight(p.paint_band, x, y, w, h);
                 if (a > 0.0f)
                     for (int k = 0; k < 3; ++k) {
-                        const float t = hdr ? graphics_white * srgb_to_linear(p.paint_tint[std::size_t(k)]) : p.paint_tint[std::size_t(k)];
+                        const float t = !codes_out ? graphics_white * srgb_to_linear(p.paint_tint[std::size_t(k)]) : p.paint_tint[std::size_t(k)];
                         c[k] = c[k] * (1.0f - a) + t * a;
                     }
             }
@@ -329,16 +398,16 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                 const auto& tint = region_w[ri + 1] > 127 ? p.region_shadow_tint : p.region_tint;   // shadows blue, highlights warm
                 if (a > 0.0f)
                     for (int k = 0; k < 3; ++k) {
-                        const float t = hdr ? graphics_white * srgb_to_linear(tint[std::size_t(k)]) : tint[std::size_t(k)];
+                        const float t = !codes_out ? graphics_white * srgb_to_linear(tint[std::size_t(k)]) : tint[std::size_t(k)];
                         c[k] = c[k] * (1.0f - a) + t * a;
                     }
             }
-            if (p.mode == ViewMode::Image && (p.clamp_zebra || p.clip_zebra)) {
+            if (p.mode == ViewMode::Image && (p.clamp_zebra || p.clip_zebra || p.gamut_zebra || p.invalid_zebra)) {
                 // Revision 6 overlays, in frame pixels: the source's clamp on one
                 // diagonal, the screen's clip on the other.
                 auto mix_in = [&](const std::array<float, 3>& col) {
                     for (int k = 0; k < 3; ++k) {
-                        const float t = hdr ? graphics_white * srgb_to_linear(col[std::size_t(k)]) : col[std::size_t(k)];
+                        const float t = !codes_out ? graphics_white * srgb_to_linear(col[std::size_t(k)]) : col[std::size_t(k)];
                         c[k] = c[k] * (1.0f - kZebraMix) + t * kZebraMix;
                     }
                 };
@@ -354,6 +423,11 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                     }
                 }
                 if (p.clip_zebra && screen_clip && d2 < 2) mix_in(kScreenClipColour);
+                // Revision 7: out of the checked gamut (bands every 8 rows) and invalid values (solid).
+                if (p.gamut_zebra && (y & (kZebraPeriod - 1)) < 3 && out_of_gamut(hp, vm.chk)) mix_in(kGamutColour);
+                if (p.invalid_zebra && invalid_value(hp, vm.work, vm.ap0))
+                    for (int k = 0; k < 3; ++k)
+                        c[k] = !codes_out ? graphics_white * srgb_to_linear(kInvalidColour[std::size_t(k)]) : kInvalidColour[std::size_t(k)];
             }
             const bool handle = wiping && std::abs(u - wipe) < half_width;
             if (!hdr) {
@@ -362,14 +436,15 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                 for (int k = 0; k < 3; ++k) out.at(k, y, x) = c[k];
                 continue;
             }
-            // HDR: c is nits in the source primaries (image) or an SDR code (graphics).
-            const bool picture = p.mode == ViewMode::Image;
+            // HDR: c is nits in the source primaries (the picture), nits in Rec.709 (an
+            // OCIO view's light) or an SDR code (graphics, and an OCIO view's codes when
+            // its display cannot be decoded).
             float n[3];
             for (int k = 0; k < 3; ++k) {
-                if (picture) n[k] = handle ? ceiling - c[k] : c[k];
+                if (kind != 2) n[k] = handle ? ceiling - c[k] : c[k];
                 else n[k] = graphics_white * srgb_to_linear(handle ? 1.0f - c[k] : c[k]);
             }
-            const Mat3f& m3 = picture ? picture_m : graphics_m;
+            const Mat3f& m3 = kind == 0 ? picture_m : graphics_m;
             for (int k = 0; k < 3; ++k) {
                 const float v = m3[std::size_t(k) * 3] * n[0] + m3[std::size_t(k) * 3 + 1] * n[1] + m3[std::size_t(k) * 3 + 2] * n[2];
                 out.at(k, y, x) = encode(p.target, v);

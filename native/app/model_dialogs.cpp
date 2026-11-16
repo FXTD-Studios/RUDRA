@@ -23,6 +23,7 @@
 #include <optional>
 #include <vector>
 
+#include "aces_engine.hpp"
 #include "aces_master.hpp"
 #include "main_window.hpp"
 #include "paths.hpp"
@@ -200,8 +201,12 @@ void ModelManager::refresh() {
     if (c.entries.empty()) {
         QStringList roots;
         for (const auto& r : c.roots) roots << q(r.string());
-        note_->setText("No model package in " + (roots.isEmpty() ? QString("any folder") : roots.join(", ")) +
-                       ". Add a folder that holds one (tools/export_model.py writes them).");
+        // 16 Nov 2026: this list is the optional reconstruction packages only; the downloads below
+        // (ACES 2, AI fill) are not listed here, and "No model package" beside them read as a fault.
+        note_->setText("No reconstruction model package in " +
+                       (roots.isEmpty() ? QString("any folder") : roots.join(", ")) +
+                       ". It is optional: the learned ACES 2.0 model and the analytic reconstruction run without "
+                       "one. Add a folder that holds one (tools/export_model.py writes them).");
     }
     use_->setEnabled(list_->currentItem() != nullptr && !w_->loading_model());
 }
@@ -284,7 +289,23 @@ void ModelManager::refresh_downloads() {
                         const auto dir = std::filesystem::path(QDir(md->root()).filePath(m.folder).toStdU16String());
                         if (m.kind == "aces_v2") {
                             QString why;
-                            status_->setText(w_->use_aces_package(dir, &why) ? QStringLiteral("Loading ") + m.title + QStringLiteral("…") : why);
+                            if (!w_->use_aces_package(dir, &why)) {
+                                status_->setText(why);
+                            } else {
+                                // 16 Nov 2026: said as the engine has it. A model already in stays in
+                                // (start() changes nothing), so "Loading" was never replaced before.
+                                AcesEngine* e = w_->aces_engine();
+                                if (!aces_listening_) {
+                                    aces_listening_ = true;
+                                    QPointer<QLabel> st = status_;
+                                    e->listen(this, [st, e] {
+                                        if (st) st->setText(e->status_text());
+                                    });
+                                }
+                                status_->setText(e->state() == AcesEngine::State::Ready
+                                                     ? m.title + QStringLiteral(" is in use. ") + e->status_text()
+                                                     : e->status_text());
+                            }
                         } else {
                             w_->add_model_root(std::filesystem::path(md->root().toStdU16String()));
                             w_->use_model(dir, backend_from_combo(backend_));
@@ -647,7 +668,8 @@ void FirstRun::start() {
     if (w_->model_package().empty() && !w_->loading_model())
         if (const auto p = w_->catalog().pick()) w_->use_model(w_->catalog().entries[*p].package, backend_from_combo(backend_));
     accept();
-    w_->show_getting_started_once();   // the five steps, after the check
+    // 1.2.5: Check this computer next (what can run here, what to install); closing it shows the tips.
+    w_->open_system_check(true);
 }
 
 // ---------------------------------------------------------------------------

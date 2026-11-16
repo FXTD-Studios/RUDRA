@@ -53,8 +53,14 @@ struct ViewUbo {
     float look[4];     // revision 6: x 2^view_ev, y 1 / gamma, z gamma on, w the SDR light bound
     float ab[4];       // revision 6: x shown, y wipe left, z wipe right (0 model, 1 baseline, 2 sdr), w zebras
     float region[4];   // RUDRA 1.1: x 1 when the region overlay texture is bound and on, yzw its tint (sRGB)
+    // Revision 7 (17 Nov 2026, core/view_ocio.hpp): the OCIO view and the range checks.
+    float ocio[4];     // x 1: an OCIO view is set, y nits per decoded Y, z the clip code, w 1: its light is decoded
+    float work[12];    // three vec4 rows: source -> working space x 10000 / 203
+    float dec[12];     // CIE XYZ -> Rec.709 x nits per Y
+    float chk[12];     // source -> the primaries the gamut check reads
+    float ap0[12];     // source -> AP0
 };
-static_assert(sizeof(ViewUbo) == 56 * sizeof(float));
+static_assert(sizeof(ViewUbo) == 108 * sizeof(float));
 
 // The Hold block of shaders/hold.frag (the static hold while playing).
 struct HoldUbo {
@@ -157,7 +163,8 @@ inline ViewUbo view_ubo(const ViewParams& params, int width, bool have_sdr = fal
     u.extra[2] = params.show == ViewSource::Baseline ? 1.0f : 0.0f;
     u.extra[3] = params.show_changes ? 1.0f : 0.0f;
     u.target[0] = float(int(params.target.path));
-    u.target[1] = float(std::min(params.display_nits, params.target.peak_nits));
+    // Revision 7: through an OCIO view the view sets the levels; the display's own peak is the ceiling.
+    u.target[1] = params.ocio ? float(params.target.peak_nits) : float(std::min(params.display_nits, params.target.peak_nits));
     u.target[2] = float(params.target.unit_nits);
     rows_of(rgb_to_rgb_matrix(params.source, params.target.primaries), u.pic);
     rows_of(rgb_to_rgb_matrix(Primaries::Rec709, params.target.primaries), u.gfx);
@@ -175,9 +182,24 @@ inline ViewUbo view_ubo(const ViewParams& params, int width, bool have_sdr = fal
     u.ab[0] = float(int(params.show));
     u.ab[1] = float(int(params.wipe_left));
     u.ab[2] = float(int(params.wipe_right));
-    u.ab[3] = float((params.clamp_zebra ? 1 : 0) | (params.clip_zebra ? 2 : 0));
+    u.ab[3] = float((params.clamp_zebra ? 1 : 0) | (params.clip_zebra ? 2 : 0) | (params.gamut_zebra ? 4 : 0) |
+                    (params.invalid_zebra ? 8 : 0));
     u.region[0] = params.region_overlay && params.overlay_region.enabled ? 1.0f : 0.0f;
     for (int k = 0; k < 3; ++k) u.region[1 + k] = params.region_tint[std::size_t(k)];
+    const OcioViewTransform* o = params.ocio.get();
+    u.ocio[0] = o ? 1.0f : 0.0f;
+    u.ocio[1] = o ? float(o->nits_per_y) : 203.0f;
+    u.ocio[2] = o ? float(o->clip_code) : kViewClipCode;
+    u.ocio[3] = o && o->decodes ? 1.0f : 0.0f;
+    const ViewMatrices vm = view_matrices(params.source, params.working, params.gamut, o ? o->nits_per_y : 203.0);
+    auto put = [](const std::array<float, 9>& m, float* out) {
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c) out[r * 4 + c] = m[std::size_t(r * 3 + c)];
+    };
+    put(vm.work, u.work);
+    put(vm.dec, u.dec);
+    put(vm.chk, u.chk);
+    put(vm.ap0, u.ap0);
     return u;
 }
 

@@ -136,6 +136,10 @@ void MainWindow::build_viewer_toolbar(QVBoxLayout* v, QWidget* parent) {
     connect(vt_flip_, &QPushButton::clicked, this, [this] { session_.flip_ab(); });
     row->addWidget(vt_flip_);
 
+    // ── colour management (revision 7, colour_view.cpp): the OCIO view, the working space,
+    // the original's way in, and the gamut and invalid-value checks ──
+    build_colour_controls(row);
+
     // ── range inspection ──
     row->add_gap(8);
     vt_clamp_ = tool_button("Clamped", "vtClamp",
@@ -242,6 +246,7 @@ void MainWindow::sync_viewer_toolbar() {
         vt_badge_->setText(QStringLiteral("VIEW %1 EV \u00b7 \u03b3 %2").arg(signed_ev(session_.view_ev)).arg(session_.view_gamma, 0, 'f', 2));
         vt_badge_->show();
     }
+    sync_colour_controls();
     range_line_->setText(range_readout_text());
 }
 
@@ -251,7 +256,9 @@ bool MainWindow::viewer_has_sdr() const {
 }
 
 QString MainWindow::range_readout_text() const {
-    if (!measure_ || !measure_->range) return QStringLiteral(" ");
+    // Revision 7: the frame's gamut and invalid-value checks, when on, under the range.
+    const QString checks = colour_check_text();
+    if (!measure_ || !measure_->range) return checks.isEmpty() ? QStringLiteral(" ") : checks;
     const RangeStats& r = *measure_->range;
     // 14 Nov 2026: one readout per line (SDR, RUDRA, the clamped area); one long line wrapped mid-readout.
     QString t = QStringLiteral("SDR  clamped %1 (R %2 \u00b7 G %3 \u00b7 B %4) \u00b7 crushed %5 \u00b7 range %6 st\n")
@@ -270,6 +277,7 @@ QString MainWindow::range_readout_text() const {
         if (r.clamped_unchanged_pct)
             t += QStringLiteral(" \u00b7 not rebuilt %1").arg(pct(*r.clamped_unchanged_pct));
     }
+    if (!checks.isEmpty()) t += QStringLiteral("\n") + checks;
     return t;
 }
 

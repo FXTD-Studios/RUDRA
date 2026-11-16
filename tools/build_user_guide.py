@@ -63,6 +63,7 @@ head = f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <a href="#training" data-keywords="train dataset model gpu resume checkpoint"><span>07</span>Train your model</a>
 <a href="#whats-new" data-keywords="changes release notes version"><span>08</span>What’s new</a>
 <a href="#help" data-keywords="faq troubleshooting licence license support about"><span>09</span>Help &amp; answers</a>
+<a href="#privacy" data-keywords="privacy telemetry network update check code signing certificate signpath smartscreen security"><span>10</span>Privacy &amp; signing</a>
 </nav><p id="empty" hidden>No matching topic.</p>
 <div class="sidebar-foot"><span class="dot"></span>Desktop {VER}<br>Windows x64 · macOS<br><br>Apache 2.0 licence<br>Updated {UPDATED}<br><br><a class="textlink" href="https://www.fxtdstudios.com">www.fxtdstudios.com</a></div></aside>
 <main><div class="breadcrumb">FXTD TOOLS &nbsp;/&nbsp; RUDRA &nbsp;/&nbsp; <b id="crumb">INTRODUCTION</b></div>
@@ -95,7 +96,7 @@ install = f'''<section class="page" id="installation" data-title="Installation">
 <p class="section-label">Windows 10 / 11 · x64</p>
 <div class="steps">
 <div class="step"><div><h3>Download the installer</h3><p>Get the {VER} setup file from the official release. A SHA-256 file sits beside each download.</p><a class="button" href="{SETUP}">Windows installer ↓</a></div></div>
-<div class="step"><div><h3>Install, then open RUDRA</h3><p>Follow the installer and launch RUDRA from the Start menu. The builds are not code-signed yet: if SmartScreen appears, choose <strong>More info → Run anyway</strong>. The first-run check looks at your display and GPU.</p></div></div>
+<div class="step"><div><h3>Install, then open RUDRA</h3><p>Follow the installer and launch RUDRA from the Start menu. From 1.2.5 the Windows builds are code-signed (certificate by SignPath Foundation, see <a class="textlink" href="#privacy">Privacy &amp; signing</a>); while the new certificate gathers reputation, SmartScreen may still appear once: choose <strong>More info → Run anyway</strong>. The installer shows what RUDRA sends over the network and asks whether to check for updates automatically. The welcome looks at your display and GPU, then <strong>Check this computer</strong> says whether RUDRA runs here and installs the learned model in one click.</p></div></div>
 <div class="step"><div><h3>Add the learned model (optional)</h3><p>RUDRA works without it. For more of the clipped highlights, choose <strong>Download the model…</strong> on the Look tab, or <strong>File → Model packages… → Download</strong>. See <a class="textlink" href="#models">Models</a>.</p></div></div>
 <div class="step"><div><h3>Follow the tips</h3><p>A welcome card explains the three steps; the first time you open a shot, four short tips point at each part. <strong>Help → Show tips</strong> brings them back.</p></div></div>
 </div>
@@ -130,6 +131,7 @@ models = '''<section class="page" id="models" data-title="Models">
 <tr><td>Learned ACES 2.0</td><td>Inverts the ACES 2.0 SDR view exactly and rebuilds clipped highlights; the master renders back to your SDR to the code</td><td>SDR that was made through ACES 2.0 (set the Source curve to ACES). On a grade made another way, bright areas parked just under white (an open door, a window, a sky) come back far brighter and more saturated than they were; the app says so and points at Analytic. About 2 MB, Apache 2.0.</td></tr>
 <tr><td>Analytic (built in)</td><td>The inverse of the curve that made the SDR, with the clipped highlights filled</td><td>Every shot, out of the box, and the route for grades not made through ACES 2.0. The default until a learned model is installed.</td></tr>
 <tr><td>AI fill v3 (experimental)</td><td>A generative pass for large blown regions: the RUDRA LoRA on Wan2.1-VACE-1.3B draws the shape, a small estimator sets the brightness</td><td>Hero shots, reviewed frame by frame. Needs the Wan2.1-VACE-1.3B base (from Wan-AI) and a 16 GB GPU. Apache 2.0.</td></tr>
+<tr><td>AI fill v4, region re-render (experimental)</td><td>Draws a whole bright region again (a window, an open door, a sky parked just under white) from the text you type in <strong>Prompt</strong>; outside the region every pixel is the master’s</td><td>Hero shots on the analytic route, reviewed frame by frame. Needs RUDRA 1.2.4, the same Wan2.1-VACE-1.3B base and GPU as v3. On fast-moving water it can flicker slightly; in a smooth glare it sets the brightness and draws no texture. Apache 2.0.</td></tr>
 </tbody></table>
 <details><summary>Where are the models kept?</summary><p>In your user folder (on Windows, <strong>%LOCALAPPDATA%\\FXTD Studios\\RUDRA\\models</strong>). <strong>Show in folder</strong> opens it. To move them, choose another folder in Model packages; RUDRA searches every folder listed there.</p></details>
 <details><summary>Can I use a model I trained?</summary><p>Yes. Export it as a package (a folder with <strong>manifest.json</strong>) and choose <strong>Add folder…</strong> in Model packages. See <a class="textlink" href="#training">Train your model</a>.</p></details>
@@ -211,6 +213,40 @@ export = '''<section class="page" id="export" data-title="Deliver & colour">
 
 news = f'''<section class="page" id="whats-new" data-title="What’s new">
 <div class="eyebrow">08 / Release notes</div><h1>What’s new<br>in {VER}.</h1>
+<h2>In 1.2.5</h2>
+<ul>
+<li><strong>Check this computer</strong>: after the welcome, after each update, and from the shield button in the toolbar. It says whether this computer can run RUDRA, and installs what is missing in one place: the learned ACES 2.0 model is ticked, and AI fill is offered where the GPU can run it (16 GB).</li>
+<li><strong>No more old Beta 2 model by surprise</strong>: one left by RUDRA 1.0.0 to 1.0.2 is never opened again, and can be moved aside.</li>
+<li><strong>Window buttons</strong>: the menu, minimise, maximise and close buttons are drawn, so they no longer come up blank on some Windows machines.</li>
+<li><strong>Shots open again after an update</strong>: if an older version had <strong>Reconstruct › Use the model</strong> on, 1.2.4 refused every shot. RUDRA now turns that setting off when no reconstruction model is installed, says so, and opens the shot.</li>
+<li><strong>Drag and drop says what it cannot open</strong>: a file that is not a still or a movie is named in the status bar, and a drop of a folder, a movie or a project says what else it left out. A dropped RUDRA ACES 2 folder is used as the learned model.</li>
+<li><strong>File › Model packages</strong> says the list at the top is optional, and <strong>Use</strong> on RUDRA ACES 2 shows the model’s real state.</li>
+<li><strong>A colour-managed viewer, as in Nuke</strong>: the viewer toolbar shows the picture through an OpenColorIO display and view (SDR sRGB, Rec.709, HDR Rec.2100 PQ 1000, P3-D65, Raw; the built-in ACES 2.0 config, <code>$OCIO</code> or your own), in ACEScg or ACES2065-1, with the original beside RUDRA’s result through an input transform, and checks for out-of-gamut and invalid values and what the view clips. <strong>RUDRA view</strong> stays the default.</li>
+<li><strong>Signed on Windows</strong>: RUDRA.exe, its engine and the installer, with a free certificate for open source from SignPath Foundation.</li>
+<li><strong>Privacy</strong>: no telemetry. The one automatic connection, the daily update check, is now chosen in the installer and in <strong>Help › Check for updates automatically</strong>. See <a class="textlink" href="#privacy">Privacy &amp; signing</a>.</li>
+</ul>
+<h2>In 1.2.4</h2>
+<ul>
+<li><strong>AI fill v4: region re-render</strong> (experimental, off by default). It draws a whole bright region again, not only the fully clipped pixels. Turn it on in <strong>Deliver › AI fill › Region re-render (v4)</strong>, download its model in <strong>File › Model packages</strong>, and type what is in the bright area in <strong>Prompt</strong>. <strong>Preview AI fill</strong> fills 17 frames round the playhead. What it draws is a plausible guess: check every frame.</li>
+<li><strong>One dark title bar on Windows</strong>: the toolbar is the top of the window, the menus are behind the button at its left. Set <code>RUDRA_NATIVE_TITLE_BAR=1</code> to get the system’s title bar back.</li>
+<li><strong>A calmer screen</strong>: a shorter Delivery column (presets in one button, tuning behind <strong>Advanced</strong>), and the technical readouts only with <strong>Help › Technical details</strong>.</li>
+<li><strong>If RUDRA ACES 2 says “its files do not check”</strong>: open <strong>File › Model packages</strong> and press <strong>Resume</strong>. A file now counts as installed only when its checksum matches.</li>
+<li><strong>Security</strong>: a crafted EXR can no longer write outside RUDRA’s memory; AI fill’s setup installs fixed, checked versions; RUDRA downloads only the models it knows; OpenCV 4.14.0, ffmpeg 8.1.2 and ONNX Runtime 1.24.4.</li>
+<li><strong>Fixed</strong>: clicking another movie in the Shots list opens it.</li>
+</ul>
+<h2>In 1.2.1 to 1.2.3</h2>
+<ul>
+<li><strong>The viewer opens as a comparison</strong>: SDR original on the left, RUDRA on the right, at a 1,000-nit peak; the learned ACES 2.0 route opens on the HDR 1000 monitor.</li>
+<li><strong>The Welcome</strong> names your GPU straight away, recognises an installed RUDRA ACES 2, and says “Installed and checked” only after checking its files.</li>
+<li>The learned ACES 2.0 route points you to <strong>Analytic</strong> when the source’s curve is not ACES.</li>
+</ul>
+<h2>In 1.2.0</h2>
+<ul>
+<li><strong>RUDRA ACES 2 (2.0)</strong>: a new learned ACES 2.0 model with the lock, which ties every frame back to the SDR codes you delivered. A download in <strong>File › Model packages</strong>.</li>
+<li><strong>Real-time playback</strong> on the learned route.</li>
+<li><strong>AI fill preview</strong> on the frame at the playhead before filling the shot, with a box per clipped area.</li>
+<li><strong>macOS</strong>: the learned model through Core ML and AI fill on Apple silicon.</li>
+</ul>
 <h2>In 1.1.0</h2>
 <ul>
 <li><strong>The viewer bar</strong>: f/stop, γ, an SDR | RUDRA wipe, clamp and clip zebras and the <strong>Range</strong> layer (below), and <strong>AI fill</strong>: every frame that has a fill shown filled, stepping and playing; with <strong>Changes</strong> on, what it invented.</li>
@@ -282,6 +318,8 @@ hlp = hlp.replace('Can I use Beta 2 commercially?', 'Can I use RUDRA commerciall
 hlp = re.sub(r'<p>The native code uses PolyForm Noncommercial 1.0.0.*?</p>', '<p>Yes. From 29 October 2026 the RUDRA code is licensed under the Apache License 2.0, which allows commercial use. Each model has its own licence, shown in Model packages before you download it; the Beta 2 weights stay non-commercial because of their training data. Questions: <a class="textlink" href="https://www.fxtdstudios.com">www.fxtdstudios.com</a>.</p>', hlp, flags=re.S)
 hlp = hlp.replace(f'<a class="button outline" href="https://github.com/FXTD-Studios/RUDRA/releases/tag/v0.9.0-beta.2">Release notes ↗</a>',
                   f'<a class="button outline" href="{REL}">Release notes ↗</a><a class="button outline" href="https://www.fxtdstudios.com">www.fxtdstudios.com ↗</a>')
+# The help page's release notes button follows the release (it was left on an old tag).
+hlp = re.sub(r'<a class="button outline" href="https://github\.com/FXTD-Studios/RUDRA/releases/tag/v[^"]*">Release notes ↗</a>', f'<a class="button outline" href="{REL}">Release notes ↗</a>', hlp)
 hlp = re.sub(r'/blob/v[0-9][^/"]*/STATUS\.md', f'/blob/{SRC_TAG}/docs/STATUS.md', hlp)
 hlp = re.sub(r'/blob/v[0-9][^/"]*/', f'/blob/{SRC_TAG}/', hlp)
 hlp = hlp.replace('https://huggingface.co/fxtdstudios/RUDRA"', 'https://huggingface.co/fxtdstudios/rudra-models"')
@@ -292,8 +330,88 @@ hlp = re.sub(r'<p[^>]*>The paper predates[^<]*</p>', '<p class="small">This guid
 hlp = re.sub(r'(<summary>Can I use RUDRA on a Mac\?</summary><p>)Yes: the 1\.0\.1 DMG runs[^<]*(</p>)', r'\1Yes: the DMG runs on Apple silicon with every Look, Check and Deliver tool, the learned ACES 2.0 model (on the CPU or Core ML) and, set up with scripts/genfill_setup.sh, AI fill on the GPU.\2', hlp)
 if 'Can I use RUDRA on a Mac?' not in hlp:
     hlp = hlp.replace('<details><summary>Can I train on a Mac?', '<details><summary>Can I use RUDRA on a Mac?</summary><p>Yes: the DMG runs on Apple silicon with every Look, Check and Deliver tool, the learned ACES 2.0 model (on the CPU or Core ML) and, set up with scripts/genfill_setup.sh, AI fill on the GPU.</p></details><details><summary>Can I train on a Mac?', 1)
+# 1.2.5: Privacy & code signing, written from docs/CODE_SIGNING_POLICY.md and docs/PRIVACY.md, so the
+# website says what the repository says (SignPath asks for the policy on the project's home page).
+_REPO = pathlib.Path(__file__).resolve().parent.parent
+_GH = f'https://github.com/FXTD-Studios/RUDRA/blob/{SRC_TAG}/'
+
+
+def _inline(s):
+    s = s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
+    s = re.sub(r'`([^`]+)`', r'<code>\1</code>', s)
+    s = re.sub(r'(?<![\w*])_(.+?)_(?![\w*])', r'<em>\1</em>', s)
+
+    def link(m):
+        text, url = m.group(1), m.group(2)
+        if url in ('PRIVACY.md', 'docs/PRIVACY.md'):
+            url = '#privacy-policy'
+        elif url in ('CODE_SIGNING_POLICY.md', 'docs/CODE_SIGNING_POLICY.md'):
+            url = '#privacy'
+        elif not re.match(r'https?://', url):
+            url = _GH + str(pathlib.PurePosixPath('docs', url)).replace('docs/../', '')
+        return f'<a class="textlink" href="{url}">{text}</a>'
+    return re.sub(r'\[([^\]]+)\]\(([^)]+)\)', link, s)
+
+
+def md_page(path, shift=1, first_id=None):
+    """The small Markdown of docs/*.md as the guide's HTML: headings (one level down by `shift`),
+    paragraphs, lists and tables. The document's own title is left out."""
+    text = re.sub(r'<!--.*?-->', '', (_REPO / path).read_text(encoding='utf-8'), flags=re.S)
+    html, para, items, rows = [], [], [], []
+
+    def flush():
+        if para:
+            html.append('<p>' + _inline(' '.join(para)) + '</p>'); para.clear()
+        if items:
+            html.append('<ul>' + ''.join(f'<li>{_inline(i)}</li>' for i in items) + '</ul>'); items.clear()
+        if rows:
+            cells = [[c.strip() for c in r.strip('|').split('|')] for r in rows if not re.match(r'^\|[\s|:-]+\|$', r)]
+            head_, body = cells[0], cells[1:]
+            html.append('<table><thead><tr>' + ''.join(f'<th>{_inline(c)}</th>' for c in head_) + '</tr></thead><tbody>' +
+                        ''.join('<tr>' + ''.join(f'<td>{_inline(c)}</td>' for c in r) + '</tr>' for r in body) + '</tbody></table>')
+            rows.clear()
+    for line in text.splitlines():
+        s = line.rstrip()
+        h = re.match(r'^(#+)\s+(.*)', s)
+        if h:
+            flush()
+            level = len(h.group(1))
+            if level == 1:
+                if first_id:
+                    html.append(f'<h2 id="{first_id}">{_inline(h.group(2))}</h2>')
+                continue
+            html.append(f'<h{level + shift}>{_inline(h.group(2))}</h{level + shift}>')
+        elif s.startswith('|'):
+            if para or items: flush()
+            rows.append(s)
+        elif re.match(r'^\s*[-*] ', s):
+            if para or rows: flush()
+            items.append(re.sub(r'^\s*[-*] ', '', s))
+        elif s.startswith('  ') and items:
+            items[-1] += ' ' + s.strip()
+        elif not s.strip():
+            flush()
+        else:
+            if items or rows: flush()
+            para.append(s.strip())
+    flush()
+    return '\n'.join(html)
+
+
+if ARGS.release and 'to fill in' in (_REPO / 'docs/CODE_SIGNING_POLICY.md').read_text(encoding='utf-8'):
+    raise SystemExit('docs/CODE_SIGNING_POLICY.md: fill in the team roles before a release guide publishes it')
+privacy = (f'''<section class="page" id="privacy" data-title="Privacy & signing">
+<div class="eyebrow">10 / Trust</div><h1>Privacy &amp;<br>code signing.</h1>
+<p class="lede">RUDRA has no account and no telemetry. Its Windows builds are signed. Here is what is signed, who approves it, and everything RUDRA connects to.</p>
+<h2>Code signing policy</h2>
+{md_page('docs/CODE_SIGNING_POLICY.md', shift=1)}
+{md_page('docs/PRIVACY.md', shift=1, first_id='privacy-policy')}
+<p class="small">The same pages in the repository: <a class="textlink" href="{_GH}docs/CODE_SIGNING_POLICY.md">CODE_SIGNING_POLICY.md</a> · <a class="textlink" href="{_GH}docs/PRIVACY.md">PRIVACY.md</a></p>
+</section>
+''')
 foot = f'<footer><span>FXTD STUDIOS / RUDRA DOCUMENTATION · <a href="https://www.fxtdstudios.com">WWW.FXTDSTUDIOS.COM</a></span><span>{VER.upper()} · USER GUIDE</span></footer></main></div></body></html>'
-out = head + intro + install + models + workspace + first + export + training + news + hlp + foot
+out = head + intro + install + models + workspace + first + export + training + news + hlp + privacy + foot
 (ARGS.out / 'index.html').write_text(out, encoding='utf-8')
 print(f"wrote {ARGS.out / 'index.html'} ({len(out)} bytes) for {VER}")
 print(len(out))

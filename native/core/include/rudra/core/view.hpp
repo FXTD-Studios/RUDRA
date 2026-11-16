@@ -15,6 +15,7 @@
 #include "rudra/core/composite.hpp"
 #include "rudra/core/image.hpp"
 #include "rudra/core/masks.hpp"
+#include "rudra/core/view_ocio.hpp"
 
 namespace rudra {
 
@@ -128,6 +129,24 @@ struct ViewParams {
     // same shadow colour; the highlight one reaches it as a uniform).
     std::array<float, 3> region_tint{1.00f, 0.62f, 0.18f};
     std::array<float, 3> region_shadow_tint{0.30f, 0.52f, 1.00f};
+    // ---- revision 7 (17 Nov 2026): the colour-managed viewer (core/view_ocio.hpp) ----
+    // The Image picture through an OpenColorIO display and view, as Nuke's viewer:
+    // h x 2^view_ev to the working space, the view's code values, the view gamma on
+    // the codes (Nuke's viewer gamma), then the SDR swapchain takes the codes as they
+    // are and an HDR one their light (decode). Null: RUDRA's own view, as before.
+    // render/ runs it only in the live viewer (a shader made for the view); the
+    // parity compositor keeps the revision 6 picture.
+    std::shared_ptr<const OcioViewTransform> ocio;
+    // The original SDR through an input transform (the Sdr source, everywhere it is
+    // read); null: the Source picker's reading (sdr_light_rgba).
+    std::shared_ptr<const OcioInputTransform> original;
+    // The working space the probe and the invalid check read, and the one `ocio` was made for.
+    WorkingSpace working = WorkingSpace::AcesCg;
+    // Image overlays: magenta bands where the picture is outside `gamut` (horizontal,
+    // every 8 rows), solid green where a value is invalid (core/view_ocio.hpp).
+    bool gamut_zebra = false;
+    Primaries gamut = Primaries::Ap1;
+    bool invalid_zebra = false;
 };
 inline constexpr float kRegionTintMix = 0.40f;
 
@@ -189,6 +208,10 @@ inline bool view_needs_sdr_light(const ViewParams& p) noexcept {
     return p.show == ViewSource::Sdr || (wiping && (p.wipe_left == ViewSource::Sdr || p.wipe_right == ViewSource::Sdr)) ||
            (p.mode == ViewMode::Image && p.clamp_zebra) || p.mode == ViewMode::Range;
 }
+
+// The Sdr source's light as the display pass reads it (binding 4): sdr_light_rgba, or
+// with `p.original` its codes through that input transform (sdr_light_through).
+std::vector<float> view_sdr_light(const SdrImage* sdr, const ViewParams& p);
 inline constexpr float kMaskTintMix = 0.35f;
 
 // A view with the SDR target, for tools and tests: the positional form of

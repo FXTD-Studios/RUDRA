@@ -27,9 +27,31 @@ its real peak brightness, shown on an HDR test card), names the GPU it found
 tests it on the backend you pick (**Load and test**).
 The model is optional: **Continue** or **Start on CPU** both get you to work,
 and nothing runs a model until Reconstruct > Use the model is on. Then
-*Getting started* shows the five steps below, once (and once again after an
-update that changes them). Help > Check the display and the model runs the
-check again; Help > Getting started shows the steps.
+*Check this computer* opens (below), then *Getting started* shows the five
+steps, once (and once again after an update that changes them). Help > Check
+the display and the model runs the welcome again; Help > Getting started
+shows the steps.
+
+**Check this computer.** It opens after the welcome, and again after each
+update; the shield button in the toolbar (with a dot when something wants a
+look) and **Help > Check this computer…** open it any time. It says, in plain
+words:
+
+- whether this computer can run RUDRA: the system, the GPU and its memory,
+  memory, free disk where models are kept, ffmpeg for movies, and whether the
+  model list could be read. A blocker is red; a warning (no GPU, little
+  memory) still lets you work;
+- what RUDRA can install, with size and licence: the learned ACES 2.0 model
+  (recommended, ticked) and AI fill's model, and AI fill's base model and
+  Python (**Set up…**). AI fill needs a 16 GB NVIDIA GPU (on a Mac, 16 GB of
+  memory); on a smaller card it is not offered, and the window says why.
+  **Install selected** downloads the ticked models one after the other while
+  you work;
+- what RUDRA put right by itself: an old Beta 2 model it no longer opens
+  (**Move aside** puts it in a `.retired-beta2` folder), and Reconstruct >
+  Use the model turned off when no reconstruction model was installed.
+
+**Copy report** puts the whole check on the clipboard for a support request.
 
 The viewer opens as a comparison: a wipe with the SDR original on the left
 and RUDRA on the right, at a 1,000-nit display peak. A project opens at the
@@ -205,6 +227,33 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
 - **Grade > Region EV** pushes a range of nits up or down; painted masks
   limit a band to part of the frame.
 
+#### Colour-managed viewer (OpenColorIO, as in Nuke)
+
+The viewer toolbar shows the picture the way Nuke's viewer does, so you do not
+need to open the master in Nuke to check it:
+
+- **View** (the first box): *RUDRA view* (absolute nits, no tone mapping, as
+  before) or an OpenColorIO display and view: SDR sRGB, SDR Rec.709 (BT.1886),
+  HDR Rec.2100 PQ 1000 nits, P3-D65, Raw (the working-space values as they
+  are), then every display and view of the config. On an SDR monitor the
+  view's code values are shown as Nuke shows them; on an HDR monitor their
+  light, so PQ 1000 shows at its real level.
+- **ACEScg / ACES2065-1 (AP0)**: the working space, as a render to that space
+  holds the picture (1.0 = diffuse white, 203 nits). The probe shows the
+  values in it, and the view's 10-bit codes.
+- **Original**: how the SDR comes in when you wipe RUDRA against it. The
+  default, the inverse of the ACES 2.0 SDR view, makes the original look as it
+  was graded; through the HDR view it is the plain inverse-view up-conversion.
+- **Gamut** (Alt+G): magenta bands where the picture is outside the gamut on
+  the right (AP1 is what an ACEScg render holds without negative values).
+- **Invalid** (Alt+I): solid green on NaN or infinite values, colours outside
+  AP0, and values above 65,504 (what a half-float EXR can hold).
+- **Clipping**: through an OCIO view, where the view itself clips.
+- **View › Colour management (OpenColorIO)…** picks the config: the built-in ACES 2.0 studio
+  config, `$OCIO`, or a `config.ocio` of your own.
+
+None of these changes the master.
+
 ### Deliver
 
 - **AI fill** (experimental, off by default) draws detail inside fully
@@ -344,8 +393,10 @@ version of the same frame (EXR, or 16-bit PQ PNG/TIFF) when you have one.
 RUDRA asks GitHub once a day whether a newer release exists (a beta looks
 for betas too) and says so in the status bar and the log. Nothing is
 downloaded or installed for you. **Help > Check for updates…** asks now.
-To turn the daily check off, set `updates/auto=false` in RUDRA's settings or
-start it with the environment variable `RUDRA_NO_UPDATE_CHECK=1`.
+To turn the daily check off, untick **Help > Check for updates automatically**
+(the installer asks too), or start RUDRA with the environment variable
+`RUDRA_NO_UPDATE_CHECK=1`. Everything RUDRA connects to, and when:
+[PRIVACY.md](PRIVACY.md).
 
 ## 5. Command line
 
@@ -364,6 +415,8 @@ the PATH.
 
 ## 6. When something goes wrong
 
+- **Help > Check this computer…** first: it names what is missing and
+  installs it.
 - **Help > Open log folder** opens the log (`rudra.log`, kept to 5 MB, three
   old copies). Attach it to a report.
 - A failed write says why: the disk is full (with the space free and

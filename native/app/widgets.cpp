@@ -416,6 +416,13 @@ void IconButton::set_on(bool on) {
     repolish(this);
 }
 
+void IconButton::set_attention(bool on) {
+    if (attention_ == on) return;
+    attention_ = on;
+    setProperty("attention", on);
+    update();
+}
+
 void IconButton::paintEvent(QPaintEvent* e) {
     QToolButton::paintEvent(e);   // the sheet's background and border
     QPainter p(this);
@@ -519,6 +526,61 @@ void IconButton::paintEvent(QPaintEvent* e) {
             p.drawRect(QRectF(5.5, 1, 2.5, 8));
             break;
         }
+        // The caption buttons (16 Nov 2026): Windows' own shapes, 10 px, in thin square lines on the
+        // half pixel so they stay sharp at 100 %; they scale with the display like the rest.
+        case Glyph::Menu: {
+            p.translate(box(14, 10));
+            p.setPen(QPen(ink, 1.2, Qt::SolidLine, Qt::FlatCap));
+            for (const double y : {0.5, 5.0, 9.5}) p.drawLine(QPointF(0, y), QPointF(14, y));
+            break;
+        }
+        case Glyph::Minimise: {
+            p.translate(box(10, 10));
+            p.setPen(QPen(ink, 1.0, Qt::SolidLine, Qt::FlatCap));
+            p.drawLine(QPointF(0, 5.5), QPointF(10, 5.5));
+            break;
+        }
+        case Glyph::Maximise: {
+            p.translate(box(10, 10));
+            p.setPen(QPen(ink, 1.0, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
+            p.drawRect(QRectF(0.5, 0.5, 9, 9));
+            break;
+        }
+        case Glyph::Restore: {
+            p.translate(box(10, 10));
+            p.setPen(QPen(ink, 1.0, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
+            p.drawRect(QRectF(0.5, 2.5, 7, 7));   // the window in front
+            QPainterPath back;                    // the one behind: its top and right edges
+            back.moveTo(2.5, 2.5); back.lineTo(2.5, 0.5); back.lineTo(9.5, 0.5); back.lineTo(9.5, 7.5); back.lineTo(7.5, 7.5);
+            p.drawPath(back);
+            break;
+        }
+        case Glyph::Close: {
+            p.translate(box(10, 10));
+            p.setPen(QPen(ink, 1.0, Qt::SolidLine, Qt::FlatCap));
+            p.drawLine(QPointF(0.5, 0.5), QPointF(9.5, 9.5));
+            p.drawLine(QPointF(9.5, 0.5), QPointF(0.5, 9.5));
+            break;
+        }
+        case Glyph::Check: {   // Check this computer: a shield with a tick
+            p.translate(box(16, 16));
+            QPainterPath s;
+            s.moveTo(8, 1); s.lineTo(14, 3.5); s.lineTo(14, 8);
+            s.cubicTo(14, 11.5, 11.5, 14, 8, 15.2);
+            s.cubicTo(4.5, 14, 2, 11.5, 2, 8);
+            s.lineTo(2, 3.5); s.closeSubpath();
+            p.drawPath(s);
+            QPainterPath tick;
+            tick.moveTo(5.3, 8.2); tick.lineTo(7.3, 10.2); tick.lineTo(10.9, 6.2);
+            p.drawPath(tick);
+            break;
+        }
+    }
+    if (attention_) {   // drawn last, over the glyph: the dot is the message
+        p.resetTransform();
+        p.setPen(Qt::NoPen);
+        p.setBrush(theme_colour("gold"));
+        p.drawEllipse(QPointF(width() - 7.5, 6.5), 3.2, 3.2);
     }
 }
 

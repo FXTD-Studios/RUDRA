@@ -13,6 +13,13 @@ if(RUDRA_WITH_OPENCV AND RUDRA_WITH_OCIO AND (RUDRA_WITH_LIBTORCH OR RUDRA_WITH_
   target_compile_definitions(rudra-native PRIVATE RUDRA_HAVE_ACES_V2
     $<$<BOOL:${RUDRA_WITH_LIBTORCH}>:RUDRA_HAVE_LIBTORCH_ACES> $<$<BOOL:${RUDRA_WITH_ONNXRUNTIME}>:RUDRA_HAVE_ORT_ACES>)
 endif()
+if(WIN32)
+  # 16 Nov 2026 (1.2.5): a version resource, as RUDRA.exe has. SignPath signs a file only when its
+  # product name and version are the release's (docs/CODE_SIGNING_POLICY.md).
+  enable_language(RC)
+  configure_file(windows/rudra-native.rc.in "${CMAKE_CURRENT_BINARY_DIR}/rudra-native.rc" @ONLY)
+  target_sources(rudra-native PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/rudra-native.rc")
+endif()
 rudra_warnings(rudra-native)
 rudra_stage_onnxruntime(rudra-native)
 

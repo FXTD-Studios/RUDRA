@@ -27,6 +27,7 @@
 #include "aces_engine.hpp"
 #include "main_window.hpp"
 #include "paths.hpp"
+#include "system_check.hpp"   // genfill_missing_text (1.2.5)
 #include "rudra/core/gamut.hpp"
 #include "rudra/deliver/exr.hpp"
 #ifdef RUDRA_APP_VIEWER
@@ -284,7 +285,10 @@ void MainWindow::preview_genfill() {
     QString why;
     const bool rerender = deliver_effective().ai.rerender;   // v4: its own LoRA, its own server
     const auto setup = genfill_setup_for(deliver_effective().ai, &why);
-    if (!setup) return say(rerender ? why : why + QStringLiteral(" Setup… > Set up automatically does it for you."));
+    if (!setup) {
+        if (!rerender) open_system_check(false);   // 1.2.5: where it is set up
+        return say(rerender ? why : genfill_missing_text(why));
+    }
     halt_playback();
     // The suggested prompts for this frame, over the viewer while it fills (6 Nov 2026).
     if (prompt_suggest_frame_ != current_ || !prompt_suggestions_) run_prompt_suggestions(false, /*quiet=*/true);

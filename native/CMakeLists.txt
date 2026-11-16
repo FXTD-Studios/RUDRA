@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.24)
 # RUDRA native: the layered C++ app described in docs/NATIVE_ARCHITECTURE.md.
 # The dependency rule (a layer links only to layers below it) is enforced by
 # PRIVATE linkage here and by tools/check_layers.py in CI.
-project(RudraNative VERSION 1.2.4 LANGUAGES CXX)   # 1.2.0: the ACES 2 lock (package contract major 3); 1.2.1-1.2.3: first-run feedback; 1.2.4: security review
+project(RudraNative VERSION 1.2.5 LANGUAGES CXX)   # 1.2.0: the ACES 2 lock (package contract major 3); 1.2.1-1.2.3: first-run feedback; 1.2.4: security review; 1.2.5: 1.2.4 feedback, signed Windows builds
 # The release label after the version: "beta.5" for the fifth public beta,
 # empty for a final release. RUDRA_VERSION_LABEL is what the app shows.
 set(RUDRA_RELEASE "" CACHE STRING "Pre-release tag appended to the version (empty for a release)")
@@ -11,6 +11,12 @@ if(RUDRA_RELEASE)
   set(RUDRA_VERSION_LABEL "${PROJECT_VERSION}-${RUDRA_RELEASE}")
 else()
   set(RUDRA_VERSION_LABEL "${PROJECT_VERSION}")
+endif()
+# The Windows version resources' FILEFLAGS (app/windows, cli/windows): only a pre-release says so.
+if(RUDRA_RELEASE)
+  set(RUDRA_RC_FILEFLAGS "VS_FF_PRERELEASE")
+else()
+  set(RUDRA_RC_FILEFLAGS "0x0L")
 endif()
 
 # The commit the build was configured from, for master provenance (deliver/).

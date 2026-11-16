@@ -6,11 +6,18 @@
 // Texels are fetched by pixel, so output row r is image row r on every API,
 // as in composite.frag. Presenting to a swapchain puts the flip, if the API
 // needs one, in the vertex stage (render/, Phase 2 step 9), never here.
+//
+// Revision 7 (17 Nov 2026): built a second time at run time for an OpenColorIO view
+// (render/src/viewer_window.cpp, QShaderBaker): RUDRA_OCIO defined, and OpenColorIO's
+// own GLSL for the view (vec4 ocioView(vec4)) and its decode to light
+// (vec4 ocioDecode(vec4)) put in at the line below, with their samplers from
+// binding 6 on. The build-time shader has neither and never takes that path.
+// @OCIO@
 
 layout(location = 0) out vec4 frag;
 
 layout(std140, binding = 0) uniform View {
-    vec4 view;    // x mode (0 image, 1 false colour, 2 difference, 3 invented), y exposure (10000 / view peak), z wipe (< 0 off), w wipe half width
+    vec4 view;    // x mode (0 image, 1 false colour, 2 difference, 3 invented, 4 range), y exposure (10000 / view peak), z wipe (< 0 off), w wipe half width
     vec4 extra;   // x log2(1 + diff gain), y frame width, z 1 to show the baseline, w 1 to tint the changes
     vec4 target;  // x path (0 SDR, 1 scRGB, 2 HDR10, 3 EDR), y ceiling nits, z nits per 1.0 (linear paths)
     vec4 pic[3];  // rows of source primaries -> swapchain primaries (xyz)
@@ -18,8 +25,14 @@ layout(std140, binding = 0) uniform View {
     vec4 anchor;  // roadmap 3.3: x 1 to anchor the model's picture, y knee (SDR max code), z softness, w hold gain
     vec4 paint;   // roadmap 3.3: x the painted mask's channel (< 0 none), yzw its tint (sRGB)
     vec4 look;    // revision 6: x 2^view_ev, y 1 / view gamma, z 1 when the gamma is on, w 1 when sdrLight is bound
-    vec4 ab;      // revision 6: x the shown source, y the wipe's left, z its right (0 model, 1 baseline, 2 sdr), w zebras (1 clamp + 2 clip)
+    vec4 ab;      // revision 6: x the shown source, y the wipe's left, z its right (0 model, 1 baseline, 2 sdr), w zebras (1 clamp + 2 clip + 4 gamut + 8 invalid)
     vec4 region;  // RUDRA 1.1: x 1 to tint the reconstruction region, yzw its tint (sRGB)
+    // Revision 7 (core/view_ocio.hpp).
+    vec4 ocio;    // x 1: an OCIO view is set, y nits per decoded Y, z the clip code (huge: none, EDR), w 1: its light is decoded
+    vec4 work[3]; // rows of source -> working space x 10000 / 203
+    vec4 dec[3];  // rows of CIE XYZ -> Rec.709 x nits per Y
+    vec4 chk[3];  // rows of source -> the primaries the gamut check reads
+    vec4 ap0[3];  // rows of source -> AP0
 };
 
 layout(binding = 3) uniform sampler2D masks;      // painted masks (3.3), RGBA8, a band per channel
@@ -43,6 +56,20 @@ const float kSdrClipCode = 254.0 / 255.0;
 const float kSdrCrushCode = 1.0 / 255.0;
 
 float lum2020(vec3 c) { return dot(c, vec3(0.2627, 0.6780, 0.0593)); }
+
+// Rows in the order core/view.cpp sums them.
+vec3 rowsOf(vec4 r0, vec4 r1, vec4 r2, vec3 n) {
+    return vec3(r0.x * n.x + r0.y * n.y + r0.z * n.z,
+                r1.x * n.x + r1.y * n.y + r1.z * n.z,
+                r2.x * n.x + r2.y * n.y + r2.z * n.z);
+}
+
+// core/view_ocio.cpp below_floor: a channel below -(floor + relative x the largest).
+bool belowFloor(vec3 v) {
+    float mx = max(max(v.r, v.g), v.b);
+    float mn = min(min(v.r, v.g), v.b);
+    return mn < -(1e-7 + 1e-3 * max(mx, 0.0));
+}
 
 float linearToSrgb(float x) {
     x = clamp(x, 0.0, 1.0);
@@ -79,6 +106,15 @@ const vec3 kCrushColour = vec3(0.20, 0.45, 0.98);
 const vec3 kScreenClipColour = vec3(0.98, 0.90, 0.15);
 const float kZebraMix = 0.6;
 const float kRangeHatchMix = 0.7;
+// core/view_ocio.hpp revision 7.
+const vec3 kGamutColour = vec3(0.90, 0.25, 0.95);
+const vec3 kInvalidColour = vec3(0.15, 1.00, 0.35);
+const float kHalfMax = 65504.0;
+
+// The overlay colour col in what c holds: the code itself, or light at the SDR white.
+vec3 overlay(vec3 col, bool codes) {
+    return codes ? col : 203.0 * vec3(srgbToLinear(col.r), srgbToLinear(col.g), srgbToLinear(col.b));
+}
 
 vec3 rangeColour(float s) {
     if (!(s >= -6.0)) return vec3(0.08, 0.08, 0.10);
@@ -136,6 +172,10 @@ void main() {
     int mode = int(view.x + 0.5);
     vec3 c;
     bool screenClip = false;
+    // What c holds on an HDR path: 0 nits in the source primaries (the picture), 1 nits
+    // in Rec.709 (an OCIO view's light), 2 an SDR code (graphics; an OCIO view's codes
+    // when its display cannot be decoded). core/view.cpp's `kind`.
+    int kind = mode == 0 ? 0 : 2;
     if (mode == 4) {
         c = rangeColour(log2(max(max(h.r, h.g), h.b) * kPeak / 203.0));
         if ((flags & 7) != 0 && ((p.x + p.y) & 7) == 0) c = c * (1.0 - kRangeHatchMix) + vec3(kRangeHatchMix);
@@ -154,26 +194,51 @@ void main() {
         // Revision 6: the viewer exposure, then the gamma on the view peak, then the clip.
         vec3 hv = h * look.x;
         bool sdrPath = target.x < 0.5;
-        vec3 v = sdrPath ? hv * view.y : hv * kPeak;
-        if (look.z > 0.5) {
-            float pivot = sdrPath ? 1.0 : target.y;
-            v = sign(v) * pivot * pow(abs(v) / pivot, vec3(look.y));
+        bool done = false;
+#ifdef RUDRA_OCIO
+        if (ocio.x > 0.5) {
+            // Revision 7: the working space, the view's codes, Nuke's viewer gamma on the
+            // codes, then the codes (SDR swapchain) or their light (HDR swapchain).
+            vec3 e = ocioView(vec4(rowsOf(work[0], work[1], work[2], hv), 1.0)).rgb;
+            if (look.z > 0.5) e = sign(e) * pow(abs(e), vec3(look.y));
+            screenClip = e.r >= ocio.z || e.g >= ocio.z || e.b >= ocio.z;
+            if (!sdrPath && ocio.w > 0.5) {
+                // Codes above 1 only where the display has them (EDR: the clip code is out of reach).
+                vec3 xyz = ocioDecode(vec4(clamp(e, 0.0, max(1.0, ocio.z)), 1.0)).rgb;
+                c = rowsOf(dec[0], dec[1], dec[2], xyz);
+                screenClip = screenClip || max(max(c.r, c.g), c.b) >= target.y;
+                kind = 1;
+            } else {
+                c = clamp(e, 0.0, 1.0);
+                kind = 2;
+            }
+            done = true;
         }
-        if (sdrPath) {
-            screenClip = v.r >= 1.0 || v.g >= 1.0 || v.b >= 1.0;
-            c = vec3(linearToSrgb(v.r), linearToSrgb(v.g), linearToSrgb(v.b));
-        } else {
-            screenClip = v.r >= target.y || v.g >= target.y || v.b >= target.y;
-            c = clamp(v, 0.0, target.y);
+#endif
+        if (!done) {
+            vec3 v = sdrPath ? hv * view.y : hv * kPeak;
+            if (look.z > 0.5) {
+                float pivot = sdrPath ? 1.0 : target.y;
+                v = sign(v) * pivot * pow(abs(v) / pivot, vec3(look.y));
+            }
+            if (sdrPath) {
+                screenClip = v.r >= 1.0 || v.g >= 1.0 || v.b >= 1.0;
+                c = vec3(linearToSrgb(v.r), linearToSrgb(v.g), linearToSrgb(v.b));
+            } else {
+                screenClip = v.r >= target.y || v.g >= target.y || v.b >= target.y;
+                c = clamp(v, 0.0, target.y);
+            }
         }
     }
+    // Overlays mix in as codes on the SDR path and over an OCIO view's codes, else as light.
+    bool codesOut = target.x < 0.5 || kind == 2;
     if (extra.w > 0.5 && mode == 0) {
         // Model against baseline at this pixel, whichever side is shown.
         float w = changeWeight(m, b);
         if (w != 0.0) {
             vec3 col = w > 0.0 ? kChangeUp : kChangeDown;
             float a = kChangeTintMix * abs(w);
-            vec3 t = target.x < 0.5 ? col : 203.0 * vec3(srgbToLinear(col.r), srgbToLinear(col.g), srgbToLinear(col.b));
+            vec3 t = overlay(col, codesOut);
             c = c * (1.0 - a) + t * a;
         }
     }
@@ -183,7 +248,7 @@ void main() {
         int ch = int(paint.x + 0.5);
         float a = 0.35 * (ch == 0 ? mv.x : ch == 1 ? mv.y : ch == 2 ? mv.z : mv.w);
         if (a > 0.0) {
-            vec3 t = target.x < 0.5 ? paint.yzw : 203.0 * vec3(srgbToLinear(paint.y), srgbToLinear(paint.z), srgbToLinear(paint.w));
+            vec3 t = overlay(paint.yzw, codesOut);
             c = c * (1.0 - a) + t * a;
         }
     }
@@ -195,7 +260,7 @@ void main() {
         float a = 0.40 * rw.r;
         if (a > 0.0) {
             vec3 tint = rw.g > 0.5 ? vec3(0.30, 0.52, 1.00) : region.yzw;
-            vec3 t = target.x < 0.5 ? tint : 203.0 * vec3(srgbToLinear(tint.x), srgbToLinear(tint.y), srgbToLinear(tint.z));
+            vec3 t = overlay(tint, codesOut);
             c = c * (1.0 - a) + t * a;
         }
     }
@@ -204,7 +269,6 @@ void main() {
         // Revision 6: the source's clamp on one diagonal, the screen's clip on the other.
         int d1 = (p.x + p.y) & 7;
         int d2 = (p.x - p.y) & 7;
-        bool hdrPath = target.x >= 0.5;
         vec3 col = vec3(0.0);
         bool on = false;
         if ((zebras & 1) != 0) {
@@ -212,16 +276,17 @@ void main() {
             if (clip == 7) { on = d1 < 3; col = kClampAllColour; }
             else if (clip != 0) { on = d1 < 1; col = kClampSomeColour; }
             else if ((flags & 8) != 0) { on = d1 < 3; col = kCrushColour; }
-            if (on) {
-                vec3 t = hdrPath ? 203.0 * vec3(srgbToLinear(col.r), srgbToLinear(col.g), srgbToLinear(col.b)) : col;
-                c = c * (1.0 - kZebraMix) + t * kZebraMix;
-            }
+            if (on) c = c * (1.0 - kZebraMix) + overlay(col, codesOut) * kZebraMix;
         }
-        if ((zebras & 2) != 0 && screenClip && d2 < 2) {
-            vec3 t = hdrPath ? 203.0 * vec3(srgbToLinear(kScreenClipColour.r), srgbToLinear(kScreenClipColour.g),
-                                            srgbToLinear(kScreenClipColour.b))
-                             : kScreenClipColour;
-            c = c * (1.0 - kZebraMix) + t * kZebraMix;
+        if ((zebras & 2) != 0 && screenClip && d2 < 2) c = c * (1.0 - kZebraMix) + overlay(kScreenClipColour, codesOut) * kZebraMix;
+        // Revision 7: out of the checked gamut (bands every 8 rows), invalid values (solid).
+        if ((zebras & 4) != 0 && (p.y & 7) < 3 && belowFloor(rowsOf(chk[0], chk[1], chk[2], h)))
+            c = c * (1.0 - kZebraMix) + overlay(kGamutColour, codesOut) * kZebraMix;
+        if ((zebras & 8) != 0) {
+            bool bad = any(isnan(h)) || any(isinf(h)) || belowFloor(rowsOf(ap0[0], ap0[1], ap0[2], h));
+            vec3 wk = abs(rowsOf(work[0], work[1], work[2], h));
+            bad = bad || max(max(wk.r, wk.g), wk.b) > kHalfMax;
+            if (bad) c = overlay(kInvalidColour, codesOut);
         }
     }
     bool handle = wiping && abs(u - view.z) < view.w;
@@ -230,20 +295,22 @@ void main() {
         frag = vec4(c, 1.0);
         return;
     }
-    // HDR: the picture in nits (source primaries), or an overlay at the SDR white.
+    // HDR: the picture in nits (source primaries, or Rec.709 through an OCIO view), or an
+    // overlay at the SDR white.
     vec3 n;
     vec4 r0, r1, r2;
-    if (mode == 0) {
+    if (kind == 0) {
         n = handle ? vec3(target.y) - c : c;
         r0 = pic[0]; r1 = pic[1]; r2 = pic[2];
+    } else if (kind == 1) {
+        n = handle ? vec3(target.y) - c : c;
+        r0 = gfx[0]; r1 = gfx[1]; r2 = gfx[2];
     } else {
         vec3 g = handle ? vec3(1.0) - c : c;
         n = 203.0 * vec3(srgbToLinear(g.r), srgbToLinear(g.g), srgbToLinear(g.b));
         r0 = gfx[0]; r1 = gfx[1]; r2 = gfx[2];
     }
     // Row by row in the order core/view.cpp sums them.
-    vec3 o = vec3(r0.x * n.x + r0.y * n.y + r0.z * n.z,
-                  r1.x * n.x + r1.y * n.y + r1.z * n.z,
-                  r2.x * n.x + r2.y * n.y + r2.z * n.z);
+    vec3 o = rowsOf(r0, r1, r2, n);
     frag = vec4(encodeNits(o.r), encodeNits(o.g), encodeNits(o.b), 1.0);
 }

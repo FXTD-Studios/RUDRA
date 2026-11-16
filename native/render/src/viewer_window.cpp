@@ -2,6 +2,7 @@
 #include "rudra/render/gl_format.hpp"
 
 #include <QDropEvent>
+#include <QFile>
 #include <QMimeData>
 #include <QUrl>
 #include <QExposeEvent>
@@ -12,6 +13,7 @@
 #include <QPlatformSurfaceEvent>
 #include <QWheelEvent>
 #include <rhi/qrhi.h>
+#include <rhi/qshaderbaker.h>
 
 #include "rudra/render/qt_vulkan.hpp"
 #if RUDRA_QT_VULKAN
@@ -147,6 +149,7 @@ struct ViewerWindow::Impl {
     bool region_dirty = true;
     bool light_dirty = true, light_bound = false;
     std::vector<float> light_knots;         // the anchor knots light_t was made with
+    std::string light_original;             // ... and the input transform (revision 7; "" the Source picker's reading)
     std::shared_ptr<const MaskSet> uploaded_masks;   // what mask_t holds (3.3); null for none
     bool masks_dirty = false;
     std::unique_ptr<QRhiTextureRenderTarget> model_rt, picture_rt;
@@ -194,6 +197,22 @@ struct ViewerWindow::Impl {
     double pan_x0 = 0, pan_y0 = 0;
 
     std::string peak_from = "swapchain";   // swapchain, DXGI, or placeholder (unknown)
+
+    // Revision 7 (17 Nov 2026): the display pass made again for an OpenColorIO view:
+    // display.frag with RUDRA_OCIO and OpenColorIO's GLSL put in (QShaderBaker, for
+    // whichever API this is), the textures that GLSL samples, and its pipeline. Made
+    // when the view changes; its bindings again when the frame's textures are.
+    QByteArray display_source;     // display.frag as written (resource :/rudra/src/display.frag)
+    std::string ocio_id;           // the view the shader was made for; "" none
+    std::string ocio_error;        // why that view could not be shown; "" it is shown
+    QShader ocio_frag;
+    std::vector<std::unique_ptr<QRhiTexture>> ocio_tex;
+    std::vector<std::unique_ptr<QRhiSampler>> ocio_samp;
+    std::vector<int> ocio_binding;
+    std::unique_ptr<QRhiShaderResourceBindings> ocio_srb;
+    std::unique_ptr<QRhiGraphicsPipeline> ocio_pipe;
+    bool ocio_shown = false;       // the last picture went through the OCIO pipeline
+    bool notify_soon = false;      // tell on_status after this frame
 
     std::function<void(const ViewerStatus&)> status_cb;
     std::function<void(const ViewerWindow::Hover&)> hover_cb;
@@ -484,6 +503,8 @@ struct ViewerWindow::Impl {
         blit_pipe.reset();
         composite_srb.reset();
         display_srb.reset();
+        ocio_pipe.reset();   // its bindings name the frame's textures: made again on the next view
+        ocio_srb.reset();
         model_rt.reset();
         picture_rt.reset();
         model_rp.reset();
@@ -544,6 +565,150 @@ struct ViewerWindow::Impl {
         if (!composite_pipe || !display_pipe) return false;
         frame_size = size;
         return build_blit_pipeline();
+    }
+
+    // ---- revision 7: the OCIO view's pass ----
+    void release_ocio() {
+        ocio_pipe.reset();
+        ocio_srb.reset();
+        ocio_samp.clear();
+        ocio_tex.clear();
+        ocio_binding.clear();
+        ocio_frag = QShader();
+        ocio_id.clear();
+    }
+
+    bool ocio_fail(std::string why) {
+        ocio_error = std::move(why);
+        ocio_pipe.reset();
+        ocio_srb.reset();
+        qWarning("RUDRA viewer: the OCIO view cannot be shown: %s", ocio_error.c_str());
+        return false;
+    }
+
+    // display.frag with the view's GLSL, baked for this API, and the view's textures
+    // uploaded with `u` (the batch the display pass begins with).
+    bool bake_ocio(const OcioViewTransform& t, QRhiResourceUpdateBatch* u) {
+        if (display_source.isEmpty()) {
+            QFile f(QStringLiteral(":/rudra/src/display.frag"));
+            if (f.open(QIODevice::ReadOnly)) display_source = f.readAll();
+        }
+        static const QByteArray marker("// @OCIO@");
+        const qsizetype at = display_source.indexOf(marker);
+        if (at < 0) return ocio_fail("this build has no display shader source to make the view from");
+        QByteArray code = "#define RUDRA_OCIO 1\n" + QByteArray::fromStdString(t.forward.glsl) + "\n";
+        code += t.decodes ? QByteArray::fromStdString(t.decode.glsl) + "\n"
+                          : QByteArray("vec4 ocioDecode(vec4 c) { return c; }\n");
+        QByteArray src = display_source;
+        src.replace(at, marker.size(), code);
+        QShaderBaker baker;
+        baker.setGeneratedShaderVariants({QShader::StandardShader});
+        QList<QShaderBaker::GeneratedShader> targets;
+        switch (rhi->backend()) {
+            case QRhi::Vulkan: targets.append(QShaderBaker::GeneratedShader(QShader::SpirvShader, QShaderVersion(100))); break;
+            case QRhi::OpenGLES2:
+                targets.append(QShaderBaker::GeneratedShader(QShader::GlslShader, QShaderVersion(330)));
+                targets.append(QShaderBaker::GeneratedShader(QShader::GlslShader, QShaderVersion(300, QShaderVersion::GlslEs)));
+                break;
+            case QRhi::D3D11:
+            case QRhi::D3D12: targets.append(QShaderBaker::GeneratedShader(QShader::HlslShader, QShaderVersion(50))); break;
+            case QRhi::Metal: targets.append(QShaderBaker::GeneratedShader(QShader::MslShader, QShaderVersion(12))); break;
+            default: targets.append(QShaderBaker::GeneratedShader(QShader::SpirvShader, QShaderVersion(100))); break;
+        }
+        baker.setGeneratedShaders(targets);
+        baker.setSourceString(src, QShader::FragmentStage, QStringLiteral("display.frag (OCIO view)"));
+        ocio_frag = baker.bake();
+        if (!ocio_frag.isValid()) return ocio_fail("its shader did not compile: " + baker.errorMessage().toStdString());
+        auto add = [&](const OcioTexture& tx) {
+            const bool three = tx.depth > 1;
+            if (three && !rhi->isFeatureSupported(QRhi::ThreeDimensionalTextures))
+                return ocio_fail("the view needs 3D textures, which this graphics API does not offer here");
+            const std::size_t texels = std::size_t(tx.width) * std::size_t(tx.height) * std::size_t(tx.depth);
+            if (tx.width <= 0 || tx.values.size() != texels * std::size_t(tx.channels))
+                return ocio_fail("OpenColorIO handed over a texture of the wrong size (" + tx.sampler + ")");
+            std::unique_ptr<QRhiTexture> tex(
+                three ? rhi->newTexture(QRhiTexture::RGBA32F, tx.width, tx.height, tx.depth, 1, QRhiTexture::ThreeDimensional)
+                      : rhi->newTexture(QRhiTexture::RGBA32F, QSize(tx.width, tx.height)));
+            if (!tex->create()) return ocio_fail("its texture could not be made (" + tx.sampler + ")");
+            std::vector<float> rgba(texels * 4, 0.0f);
+            for (std::size_t i = 0; i < texels; ++i) {
+                for (int k = 0; k < 3; ++k)
+                    rgba[i * 4 + std::size_t(k)] = tx.channels == 1 ? (k == 0 ? tx.values[i] : 0.0f)
+                                                                    : tx.values[i * 3 + std::size_t(k)];
+                rgba[i * 4 + 3] = 1.0f;
+            }
+            if (three) {
+                const std::size_t slice = std::size_t(tx.width) * std::size_t(tx.height) * 4;
+                QList<QRhiTextureUploadEntry> entries;
+                for (int z = 0; z < tx.depth; ++z)
+                    entries.append(QRhiTextureUploadEntry(z, 0, QRhiTextureSubresourceUploadDescription(
+                                                                    rgba.data() + std::size_t(z) * slice,
+                                                                    quint32(slice * sizeof(float)))));
+                QRhiTextureUploadDescription desc;
+                desc.setEntries(entries.cbegin(), entries.cend());
+                u->uploadTexture(tex.get(), desc);
+            } else {
+                u->uploadTexture(tex.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
+                    0, 0, QRhiTextureSubresourceUploadDescription(rgba.data(), quint32(rgba.size() * sizeof(float))))));
+            }
+            const QRhiSampler::Filter f = tx.linear ? QRhiSampler::Linear : QRhiSampler::Nearest;
+            std::unique_ptr<QRhiSampler> samp(rhi->newSampler(f, f, QRhiSampler::None, QRhiSampler::ClampToEdge,
+                                                              QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
+            if (!samp->create()) return ocio_fail("its sampler could not be made");
+            ocio_tex.push_back(std::move(tex));
+            ocio_samp.push_back(std::move(samp));
+            ocio_binding.push_back(tx.binding);
+            return true;
+        };
+        for (const OcioTexture& tx : t.forward.textures)
+            if (!add(tx)) return false;
+        if (t.decodes)
+            for (const OcioTexture& tx : t.decode.textures)
+                if (!add(tx)) return false;
+        return true;
+    }
+
+    // The pipeline for the view in `ev`, made when the view changes; null: the
+    // revision 6 picture (no OCIO view, or one that could not be made).
+    QRhiGraphicsPipeline* ocio_pipeline(const ViewParams& ev, QRhiResourceUpdateBatch* u) {
+        if (!ev.ocio) return nullptr;
+        if (ev.ocio->id != ocio_id) {
+            release_ocio();
+            ocio_id = ev.ocio->id;   // kept on failure: the same view is not tried again every frame
+            ocio_error.clear();
+            if (!bake_ocio(*ev.ocio, u)) return nullptr;
+        }
+        if (!ocio_error.empty()) return nullptr;
+        if (!ocio_pipe) {
+            QList<QRhiShaderResourceBinding> b{
+                QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::FragmentStage, view_ubo.get()),
+                QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, model_t.get(), fetch.get()),
+                QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, base_t.get(), fetch.get()),
+                QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, mask_t.get(), fetch.get()),
+                QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage, light_t.get(), fetch.get()),
+                QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage, region_t.get(), fetch.get()),
+            };
+            for (std::size_t i = 0; i < ocio_tex.size(); ++i)
+                b.append(QRhiShaderResourceBinding::sampledTexture(ocio_binding[i], QRhiShaderResourceBinding::FragmentStage,
+                                                                   ocio_tex[i].get(), ocio_samp[i].get()));
+            ocio_srb.reset(rhi->newShaderResourceBindings());
+            ocio_srb->setBindings(b.cbegin(), b.cend());
+            if (!ocio_srb->create()) {
+                ocio_fail("its resource bindings could not be made");
+                return nullptr;
+            }
+            std::unique_ptr<QRhiGraphicsPipeline> p(rhi->newGraphicsPipeline());
+            p->setShaderStages({{QRhiShaderStage::Vertex, vert}, {QRhiShaderStage::Fragment, ocio_frag}});
+            p->setVertexInputLayout({});
+            p->setShaderResourceBindings(ocio_srb.get());
+            p->setRenderPassDescriptor(picture_rp.get());
+            if (!p->create()) {
+                ocio_fail("its pipeline could not be made (the GPU driver refused the shader)");
+                return nullptr;
+            }
+            ocio_pipe = std::move(p);
+        }
+        return ocio_pipe.get();
     }
 
     void resize_swapchain() {
@@ -679,17 +844,20 @@ struct ViewerWindow::Impl {
                 if (!u) u = rhi->nextResourceUpdateBatch();
                 const ViewParams ev = effective_view();
                 const bool needs_light = view_needs_sdr_light(ev);
-                if (needs_light && (light_dirty || ev.anchor_knots != light_knots)) {
+                const std::string original = ev.original ? ev.original->id : std::string();
+                if (needs_light && (light_dirty || ev.anchor_knots != light_knots || original != light_original)) {
                     // Revision 6: made on the host by core's own function, so the
                     // pass reads what render_view reads; only when a view needs it.
+                    // Revision 7: through the original's input transform when one is set.
                     const SdrImage* s = precomposited ? (pre_sdr ? &*pre_sdr : nullptr) : &frame.sdr;
                     light_bound = s && s->width() == frame_size.width() && s->height() == frame_size.height();
                     if (light_bound) {
-                        const std::vector<float> l = sdr_light_rgba(s, ev.anchor_knots);
+                        const std::vector<float> l = view_sdr_light(s, ev);
                         u->uploadTexture(light_t.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
                             0, 0, QRhiTextureSubresourceUploadDescription(l.data(), quint32(l.size() * sizeof(float))))));
                     }
                     light_knots = ev.anchor_knots;
+                    light_original = original;
                     light_dirty = false;
                 }
                 if (ev.region_overlay && ev.overlay_region.enabled &&
@@ -704,13 +872,22 @@ struct ViewerWindow::Impl {
                     uploaded_gate = ev.overlay_gate;
                     region_dirty = false;
                 }
-                const detail::ViewUbo vu = detail::view_ubo(ev, frame_size.width(), needs_light && light_bound);
+                // Revision 7: an OCIO view runs its own pipeline; without one (or when it
+                // cannot be made) the picture is revision 6's and the uniforms say so.
+                const std::string error_before = ocio_error;
+                QRhiGraphicsPipeline* op = ocio_pipeline(ev, u);
+                ViewParams uv = ev;
+                if (!op) uv.ocio.reset();
+                const bool shown_before = ocio_shown;
+                ocio_shown = op != nullptr;
+                const detail::ViewUbo vu = detail::view_ubo(uv, frame_size.width(), needs_light && light_bound);
                 u->updateDynamicBuffer(view_ubo.get(), 0, sizeof(vu), &vu);
                 cb->beginPass(picture_rt.get(), Qt::black, {1.0f, 0}, u);
                 u = nullptr;
-                cb->setGraphicsPipeline(display_pipe.get());
+                cb->setGraphicsPipeline(op ? op : display_pipe.get());
                 cb->setViewport({0, 0, float(frame_size.width()), float(frame_size.height())});
-                cb->setShaderResources(display_srb.get());
+                cb->setShaderResources(op ? ocio_srb.get() : display_srb.get());
+                if (ocio_error != error_before || ocio_shown != shown_before) notify_soon = true;
                 cb->draw(3);
                 QRhiResourceUpdateBatch* mips = rhi->nextResourceUpdateBatch();
                 mips->generateMips(picture.get());
@@ -768,6 +945,10 @@ struct ViewerWindow::Impl {
         // for), so while a readback is out the viewer keeps drawing.
         if (grab_pending) rhi->finish();
         if (grab_pending) w->requestUpdate();
+        if (notify_soon) {   // revision 7: the OCIO view came on, went off or failed
+            notify_soon = false;
+            notify();
+        }
     }
 
     void finish_grab() {
@@ -817,6 +998,7 @@ struct ViewerWindow::Impl {
         grab_rb.completed = nullptr;
         grab_cb = nullptr;
         grab_pending = false;
+        release_ocio();
         blit_pipe.reset();
         release_hold();
         hold_ubo.reset();
@@ -876,6 +1058,8 @@ struct ViewerWindow::Impl {
         s.last_begin = last_begin;
         s.grab_waiting = bool(grab_cb);
         s.grab_pending = grab_pending;
+        s.colour = ocio_shown && view.ocio ? ocio_view_text(*view.ocio) : std::string("RUDRA view");
+        s.colour_error = view.ocio ? ocio_error : std::string();
         return s;
     }
 

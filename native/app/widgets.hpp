@@ -159,11 +159,18 @@ private:
 // The icon rail's buttons and the transport's, drawn as the page's SVGs are.
 class IconButton : public QToolButton {
 public:
-    enum class Glyph { Media, Scopes, Inspector, Help, Prev, Play, Pause, Next, Sidebar, Probe, Export };
+    // 16 Nov 2026 (1.2.5): the window's caption buttons (Menu, Minimise, Maximise, Restore, Close)
+    // are drawn here too, not taken from a font (title_bar.cpp), and Check opens Check this computer.
+    enum class Glyph { Media, Scopes, Inspector, Help, Prev, Play, Pause, Next, Sidebar, Probe, Export,
+                       Menu, Minimise, Maximise, Restore, Close, Check };
     IconButton(const QString& id, Glyph g, const QString& title, QWidget* parent = nullptr);
     void set_glyph(Glyph g);
+    Glyph glyph() const { return glyph_; }
     void set_on(bool on);
     bool on() const { return on_; }
+    // A small dot at the top right, in the theme's warning colour: something wants a look.
+    void set_attention(bool on);
+    bool attention() const { return attention_; }
 
 protected:
     void paintEvent(class QPaintEvent* e) override;
@@ -171,6 +178,7 @@ protected:
 private:
     Glyph glyph_;
     bool on_ = false;
+    bool attention_ = false;
 };
 
 }  // namespace rudra::app

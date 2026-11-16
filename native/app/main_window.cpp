@@ -2,6 +2,8 @@
 #include "batch_queue.hpp"
 #include "rudra/deliver/video_encode.hpp"
 #include "paths.hpp"
+#include "aces_master.hpp"   // find_aces_packages: a dropped learned ACES 2.0 package
+#include "system_check.hpp"   // 1.2.5: the retired Beta 2 models, Check this computer
 #include "aces_engine.hpp"
 #include "rudra/engine/headroom_export.hpp"
 #include "rudra/video/headroom_render.hpp"
@@ -336,6 +338,7 @@ void MainWindow::bind_handlers() {
     h["aces-master"] = [this] { open_aces_master(); };
     h["batch-queue"] = [this] { open_batch(); };
     h["monitor-scene"] = [this] { set_aces_monitor("scene"); };
+    h["colour-management"] = [this] { open_colour_dialog(); };
     h["monitor-sdr100"] = [this] { set_aces_monitor("sdr100"); };
     h["monitor-hdr1000"] = [this] { set_aces_monitor("hdr1000"); };
     h["still-grab"] = [this] {
@@ -392,6 +395,16 @@ void MainWindow::bind_handlers() {
         QDesktopServices::openUrl(QUrl(user_guide_url()));
     };
     h["check-updates"] = [this] { check_for_updates(true); };
+    // 16 Nov 2026 (1.2.5): the once-a-day check, on or off (docs/PRIVACY.md; the installer asks too).
+    h["system-check"] = [this] { open_system_check(false); };   // 1.2.5: Help and the toolbar's Check
+    h["auto-updates"] = [this] {
+        QSettings st;
+        const bool on = !st.value("updates/auto", true).toBool();
+        st.setValue("updates/auto", on);
+        log(on ? QStringLiteral("updates: RUDRA looks for a newer version once a day (Help > Check for updates automatically)")
+               : QStringLiteral("updates: RUDRA looks for a newer version only when you ask (Help > Check for updates\u2026)"));
+        sync_checks();
+    };
     h["open-log-folder"] = [this] {
         const QString f = app_log_path();
         if (f.isEmpty()) {
@@ -601,6 +614,7 @@ void MainWindow::sync_checks() {
     set("playback-side-640", play_state_->side.load() == 640);
     set("playback-realtime", realtime_);
     set("steady-shots", steady_);
+    set("auto-updates", QSettings().value("updates/auto", true).toBool());
     set("keep-super-whites", session_.grade.headroom_policy != HeadroomPolicy::Disabled);
     for (SourceCurve c : all_source_curves())
         set("source-" + std::string(source_curve_id(c)), grade.source == source_curve_id(c));
@@ -775,6 +789,8 @@ void MainWindow::session_changed(std::uint32_t what) {
             v.region_overlay = session_.show_region && session_.grade.region.enabled;
             v.overlay_region = session_.grade.region;
             v.overlay_gate = region_overlay_gate();
+            // Revision 7: the OCIO view, the working space, the original's way in, the checks.
+            apply_colour(v);
             viewer_->set_view(v);
         }
     }
@@ -850,6 +866,23 @@ void MainWindow::add_model_root(const std::filesystem::path& root) {
 
 void MainWindow::rescan_models() {
     catalog_ = scan_packages(model_roots());
+    // 16 Nov 2026 (1.2.5): the retired Beta 2 models are never opened by themselves. A tester's start
+    // opened sdr2hdr_image_v8, which 1.0.0 to 1.0.2 had put beside the app (an update installed over
+    // it left it there) and the catalog then picked. They leave the catalog, so no pick, no first-run
+    // load and no "last package" can be one; Check this computer lists them and moves them aside.
+    retired_ = drop_beta2(catalog_);
+    {
+        QSettings st;
+        const QString last = st.value("model/package").toString();
+        if (!last.isEmpty() && is_beta2_package(to_path(last))) st.remove("model/package");
+    }
+    if (!retired_.empty() && !retired_logged_) {
+        retired_logged_ = true;
+        log(QStringLiteral("not opening the retired Beta 2 model%1 found here (%2): non-commercial, replaced by the learned "
+                           "ACES 2.0 model. Help > Check this computer can move them aside.")
+                .arg(retired_.size() == 1 ? "" : "s")
+                .arg(from_path(retired_.front().filename())));
+    }
     have_aces_package_.reset();
 }
 
@@ -1008,6 +1041,8 @@ void MainWindow::set_model_pills() {
 
 void MainWindow::boot() {
     rescan_models();
+    release_unloadable_model(true);   // an older version's "Use the model" with no package left to run
+    refresh_check_attention();        // the toolbar's Check: a dot when something wants a look
     QSettings st;
     if (!st.value("firstRun/done", false).toBool()) {
         open_first_run();
@@ -1016,7 +1051,7 @@ void MainWindow::boot() {
     const std::filesystem::path last = st.value("model/package").toString().toStdString();
     const auto choice = BackendChoice::from_key(st.value("model/backend").toString().toStdString());
     std::error_code ec;
-    if (!last.empty() && std::filesystem::is_regular_file(last / "manifest.json", ec)) {
+    if (!last.empty() && std::filesystem::is_regular_file(last / "manifest.json", ec) && !is_beta2_package(last)) {
         // The last package wins, unless it was only ever the default and the
         // default has moved on. Settings from before this flag existed say
         // nothing either way: there a package outside every folder this
@@ -1059,10 +1094,7 @@ void MainWindow::open_source(const QString& preset, bool folder) {
         pending_source_ = {preset, folder};   // opened when the model is in
         return;
     }
-    if (needs_model()) {
-        log("Open a model package first, or turn off Reconstruct > Use the model.");
-        return;
-    }
+    if (waits_for_model()) return;
     QString path = preset;
     if (path.isEmpty())
         path = folder ? QFileDialog::getExistingDirectory(this, "Open a folder of SDR frames")
@@ -1572,6 +1604,7 @@ void MainWindow::show_status() {
                                                   QString::fromStdString(s.swapchain) +
                                                   (hdr ? QStringLiteral(" · peak %1 nits").arg(std::lround(s.target.peak_nits))
                                                        : QString()));
+        show_colour_status(s);
     }
 #endif
     src_info_full_ = frame_info_.isEmpty() ? QStringLiteral("—") : frame_info_;
@@ -2200,6 +2233,9 @@ void MainWindow::probe_pixel(std::optional<std::pair<double, double>> px, QPoint
             const double mx = std::max({b.at(0, p->y, p->x), b.at(1, p->y, p->x), b.at(2, p->y, p->x)}) * 10000.0;
             add("Over SDR white", mx > 0.0 ? QString::number(std::log2(mx / 203.0), 'f', 2) + QStringLiteral(" st")
                                            : QStringLiteral("black"), "");
+            // Revision 7: the working space's values, the OCIO view's codes, the checks.
+            const float px3[3] = {b.at(0, p->y, p->x), b.at(1, p->y, p->x), b.at(2, p->y, p->x)};
+            for (const auto& row : colour_probe_rows(px3)) add(row[0], row[1], row[2].isEmpty() ? "" : "warn");
         }
     }
     probe_box_->adjustSize();
@@ -2429,10 +2465,7 @@ std::string MainWindow::delivery_text() const {
 
 void MainWindow::add_files(const std::vector<std::filesystem::path>& files) {
     if (files.empty()) return;
-    if (needs_model()) {
-        log("Open a model package first, or turn off Reconstruct > Use the model.");
-        return;
-    }
+    if (waits_for_model()) return;
     auto all = frames_;
     const std::size_t start = all.size();
     all.insert(all.end(), files.begin(), files.end());
@@ -2460,28 +2493,62 @@ QString open_file_filter() {
 }
 
 void MainWindow::open_paths(const QStringList& paths) {
+    // 16 Nov 2026 (1.2.5): what a drop cannot open is said (log and status bar), not passed on as
+    // a frame that fails later; and what a one-shot drop leaves out is said too.
+    auto say = [this](const QString& s) {
+        log(s);
+        statusBar()->showMessage(s, 10000);
+    };
+    auto rest_not_opened = [&](const QString& what) {
+        const int rest = int(paths.size()) - 1;
+        if (rest > 0)
+            say(QStringLiteral("%1 is a shot of its own: the %2 other item%3 dropped with it %4 not opened")
+                    .arg(what).arg(rest).arg(rest == 1 ? "" : "s").arg(rest == 1 ? "was" : "were"));
+    };
+    auto listed = [](const std::vector<std::string>& list, const std::string& suf) {
+        return std::find(list.begin(), list.end(), suf) != list.end();
+    };
     std::vector<std::filesystem::path> files;
+    QStringList skipped;
     for (const auto& p : paths) {
         const QFileInfo fi(p);
         if (fi.isDir()) {
-            if (QFileInfo(QDir(p).filePath("manifest.json")).isFile()) use_model(p.toStdString(), backend_choice_);
-            else open_source(p, true);
+            const auto dir = to_path(p);
+            const auto aces = find_aces_packages({dir});
+            if (!aces.empty() && aces.front().root == dir) {
+                // The learned ACES 2.0 model's package (File > Model packages' Use, by a drop).
+                QString why;
+                if (!use_aces_package(dir, &why)) say(why);
+            } else if (QFileInfo(QDir(p).filePath("manifest.json")).isFile()) {
+                use_model(dir, backend_choice_);
+            } else {
+                open_source(p, true);
+            }
+            rest_not_opened(QStringLiteral("A folder"));
             return;   // one folder is one shot, or one model
         }
-        if (fi.isFile() && fi.suffix().compare("rudra", Qt::CaseInsensitive) == 0) {
+        if (!fi.isFile()) continue;
+        if (fi.suffix().compare("rudra", Qt::CaseInsensitive) == 0) {
             // A project is a session of its own.
             if (confirm_replace(false) && !open_project(to_path(p)) && isVisible())
                 QMessageBox::warning(this, "RUDRA", problem_);
+            rest_not_opened(QStringLiteral("A project"));
             return;
         }
-        if (fi.isFile()) {
-            const std::string suf = fi.suffix().toLower().prepend('.').toStdString();
-            if (std::find(video_suffixes().begin(), video_suffixes().end(), suf) != video_suffixes().end()) {
-                open_source(p);   // a movie is a shot of its own
-                return;
-            }
-            files.emplace_back(p.toStdString());
+        const std::string suf = fi.suffix().toLower().prepend('.').toStdString();
+        if (listed(video_suffixes(), suf)) {
+            open_source(p);   // a movie is a shot of its own
+            rest_not_opened(QStringLiteral("A movie"));
+            return;
         }
+        if (listed(frame_suffixes(), suf)) files.push_back(to_path(p));
+        else skipped << fi.fileName();
+    }
+    if (!skipped.isEmpty()) {
+        QStringList movies;
+        for (const auto& s : video_suffixes()) movies << QString::fromStdString(s.substr(1)).toUpper();
+        say(QStringLiteral("RUDRA does not open %1 (stills: PNG, JPEG, TIFF, BMP, WebP; movies: %2)")
+                .arg(skipped.join(QStringLiteral(", ")), movies.join(QStringLiteral(", "))));
     }
     add_files(files);
 }
@@ -2500,6 +2567,9 @@ void MainWindow::set_drop_hot(bool hot) {
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* e) {
     if (!e->mimeData()->hasUrls()) return;
+    // Files and folders on this computer only: a link dragged from a browser is not offered a drop.
+    const auto urls = e->mimeData()->urls();
+    if (std::none_of(urls.begin(), urls.end(), [](const QUrl& u) { return u.isLocalFile(); })) return;
     e->acceptProposedAction();
     set_drop_hot(true);
 }
@@ -3049,8 +3119,23 @@ void MainWindow::show_mode() {
 }
 
 void MainWindow::set_use_model(bool on, bool remember) {
+    // 16 Nov 2026: on with nothing that could load (no package loaded, loading, remembered or found),
+    // it stays off and says so. Before, the frames waited for a package that never came.
+    if (on && !backend_ && !loading_model_) {
+        rescan_models();
+        if (!model_loadable()) {
+            const QString s = QStringLiteral("Use the model stays off: no reconstruction model package is installed "
+                                             "(File > Model packages\u2026 adds one). The analytic reconstruction and "
+                                             "the learned ACES 2.0 model run without one.");
+            log(s);
+            if (statusBar()) statusBar()->showMessage(s, 10000);
+            if (remember) QSettings().setValue("model/use", false);
+            on = false;
+        }
+    }
     if (on == use_model_) {
         show_mode();
+        sync_checks();   // a click that was refused unticks the menu again
         return;
     }
     use_model_ = on;
@@ -3062,7 +3147,8 @@ void MainWindow::set_use_model(bool on, bool remember) {
         rescan_models();
         const std::filesystem::path last = QSettings().value("model/package").toString().toStdString();
         std::error_code ec;
-        if (!last.empty() && std::filesystem::is_regular_file(last / "manifest.json", ec)) use_model(last, backend_choice_);
+        if (!last.empty() && std::filesystem::is_regular_file(last / "manifest.json", ec) && !is_beta2_package(last))
+            use_model(last, backend_choice_);
         else if (const auto i = catalog_.pick()) use_model(catalog_.entries[*i].package, backend_choice_);
         else log("no model package found; File > Model packages… adds one");
     }
@@ -3092,6 +3178,37 @@ void MainWindow::set_use_model(bool on, bool remember) {
     sync_checks();
     sync_ui();
     refresh_enabled();
+}
+
+bool MainWindow::model_loadable() const {
+    if (backend_ || loading_model_) return true;
+    const std::filesystem::path last = QSettings().value("model/package").toString().toStdString();
+    std::error_code ec;
+    if (!last.empty() && std::filesystem::is_regular_file(last / "manifest.json", ec) && !is_beta2_package(last)) return true;
+    return catalog_.pick().has_value();
+}
+
+bool MainWindow::release_unloadable_model(bool remember) {
+    if (!use_model_ || model_loadable()) return false;
+    set_use_model(false, remember);
+    use_model_released_ = true;
+    const QString s = QStringLiteral("Reconstruct > Use the model was on with no reconstruction model package "
+                                     "installed: turned off, so shots open. The analytic reconstruction and the "
+                                     "learned ACES 2.0 model run without one.");
+    log(s);
+    if (statusBar()) statusBar()->showMessage(s, 10000);
+    return true;
+}
+
+bool MainWindow::waits_for_model() {
+    release_unloadable_model(true);
+    if (!needs_model()) return false;
+    const QString s = loading_model_
+                          ? QStringLiteral("The model package is still loading: open the shot again when it is in.")
+                          : QStringLiteral("Open a model package first, or turn off Reconstruct > Use the model.");
+    log(s);
+    if (statusBar()) statusBar()->showMessage(s, 10000);
+    return true;
 }
 
 }  // namespace rudra::app

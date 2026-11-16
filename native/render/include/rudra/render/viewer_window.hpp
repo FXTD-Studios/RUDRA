@@ -47,6 +47,11 @@ struct ViewerStatus {
     int last_begin = 0;              // the last QRhi::FrameOpResult
     bool grab_waiting = false;       // a grab asked for and not yet read back
     bool grab_pending = false;       // its readback is in flight
+    // Revision 7 (17 Nov 2026): what the picture goes through, e.g. "OCIO · sRGB - Display ·
+    // ACES 2.0 - SDR 100 nits (Rec.709) · ACEScg" or "RUDRA view", and why an OCIO view
+    // that was asked for is not shown ("" when it is, or none was asked for).
+    std::string colour;
+    std::string colour_error;
 };
 
 // The static hold while playing (11 Oct 2026; ShadowSmoother::hold_pixels,
