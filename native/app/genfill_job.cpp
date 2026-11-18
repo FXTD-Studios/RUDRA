@@ -293,6 +293,8 @@ std::filesystem::path genfill_florence_dir(const GenFillSetup& s) {
     const fs::path set = pq(QSettings().value("genfill/florence").toString());
     if (has(set)) return set;
     if (!s.base.empty() && has(s.base.parent_path() / "Florence-2-base")) return s.base.parent_path() / "Florence-2-base";
+    // Downloaded in Check this computer / File > Model packages (kind "florence", 1.2.6).
+    if (const fs::path dl = pq(default_download_root()) / "Florence-2-base"; has(dl)) return dl;
     return {};
 }
 

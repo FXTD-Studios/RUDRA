@@ -99,7 +99,8 @@ QStringList genfill_suggest_arguments(const GenFillSetup& s, const GenFillOption
                                       bool describe = false);
 // 1.2.6 (readiness report, checklist item 7): Florence-2 from a folder, offline. The folder set
 // as genfill/florence, else Florence-2-base beside the Wan folder (rudra.genfill.setup --florence
-// or --florence-from puts it there); "" when neither holds a model (prompts.py then fetches
+// or --florence-from puts it there), else Florence-2-base in the model download folder (Check this
+// computer / File > Model packages, kind "florence"); "" when none holds a model (prompts.py then fetches
 // florence-community/Florence-2-base itself). With a folder, Describe runs with HF_HUB_OFFLINE=1.
 std::filesystem::path genfill_florence_dir(const GenFillSetup& s);
 struct PromptSuggestion {

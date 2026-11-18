@@ -103,6 +103,7 @@ bool listed_here(const RemoteModel& m) {
     if (m.channel == QStringLiteral("legacy")) return false;
     if (m.kind == QStringLiteral("aces_v2")) return true;
     if (m.kind == QStringLiteral("genfill")) return !is_v4(m) || genfill_v4_enabled();
+    if (m.kind == QStringLiteral("florence")) return true;   // 1.2.6: Suggest a prompt's Florence-2 (MIT)
     return false;   // reconstruction packages: optional, in File > Model packages
 }
 
@@ -535,20 +536,32 @@ void SystemCheckDialog::build_parts() {
                                                                                 "packages › Add folder….").arg(md_->index_status());
         parts_box_->addWidget(text(status, QStringLiteral("check-note"), this, QStringLiteral("checkPartsStatus")));
     }
+    // 1.2.6: Florence-2 counts as there when the AI fill already finds one (beside the Wan folder, say).
+    std::filesystem::path florence_found;
+    {
+        QString w;
+        const auto gs = genfill_setup(&w);
+        GenFillSetup probe = gs ? *gs : GenFillSetup{};
+        if (!gs) probe.base = to_path(QSettings().value("genfill/base").toString());
+        florence_found = genfill_florence_dir(probe);
+    }
     for (const RemoteModel& m : md_->models()) {
         if (!listed_here(m)) continue;
         const InstallState st = md_->state(m.id);
         const bool aces = m.kind == QStringLiteral("aces_v2");
-        const bool installed = st == InstallState::Installed || (aces && w_->have_aces_package());
+        const bool florence = m.kind == QStringLiteral("florence");
+        const bool installed = st == InstallState::Installed || (aces && w_->have_aces_package()) ||
+                               (florence && !florence_found.empty());
         const bool active = md_->active() == m.id;
-        const bool ai = m.kind == QStringLiteral("genfill");
+        const bool ai = m.kind == QStringLiteral("genfill") || florence;
         const bool blocked_here = ai && !ai_problem.isEmpty();
         if (aces && !installed) missing_recommended = true;
         auto [c, h] = card(m.id);
         auto* tick = new QCheckBox(c);
         tick->setObjectName(QStringLiteral("checkTick_") + m.id);
         tick->setEnabled(!installed && !active && !blocked_here);
-        tick->setChecked(installed || active ? false : was.count(m.id) ? was[m.id] : aces && !blocked_here);
+        // Ticked the first time: the learned model, and Florence-2 (0.5 GB) where AI fill can run.
+        tick->setChecked(installed || active ? false : was.count(m.id) ? was[m.id] : (aces || florence) && !blocked_here);
         if (blocked_here) tick->setToolTip(ai_problem);
         connect(tick, &QCheckBox::toggled, this, [this] { update_progress(); });
         h->addWidget(tick, 0, Qt::AlignTop);
@@ -556,7 +569,8 @@ void SystemCheckDialog::build_parts() {
         QString detail = (aces ? QStringLiteral("Recommended. ") : QStringLiteral("Optional. ")) + m.summary;
         detail += QStringLiteral(" · ") + human_size(m.size());
         if (!m.licence.isEmpty()) detail += QStringLiteral(" · Licence: ") + m.licence;
-        if (ai) detail += QStringLiteral(" Needs the base model and Python below.");
+        if (ai && !florence) detail += QStringLiteral(" Needs the base model and Python below.");
+        if (florence) detail += QStringLiteral(" Suggest a prompt describes the shot with it; it runs in AI fill's Python below.");
         if (blocked_here) detail += QStringLiteral("\n") + ai_problem;
         const QString err = md_->error(m.id);
         const QString state = installed ? QStringLiteral("Installed and checked")

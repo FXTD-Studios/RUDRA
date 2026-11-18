@@ -18,6 +18,16 @@ Repeat --model ... for each model (its options follow it). --merge keeps the
 other models already in --out. --prefix is the folder in the repo the model
 folder sits in (default: models). Upload the folder to
 <repo>/<prefix>/<folder name> before publishing models.json.
+
+A model published by someone else stays where it is: --upstream REPO@REVISION (a commit) points
+its files at that Hugging Face repo and revision instead of --repo (1.2.6, Florence-2):
+
+    --model G:/datasets/models/Florence-2-base --id florence2_base --title "Florence-2 base" \\
+        --version 2026.11 --channel release --kind florence \\
+        --upstream florence-community/Florence-2-base@00921df66db728a9ceb750f5eca43e5c203a2051 \\
+        --summary "describes the shot for Suggest a prompt" --licence MIT \\
+        --licence-url https://huggingface.co/florence-community/Florence-2-base
+The app downloads a file only when its SHA-256 is compiled in (native/app/model_downloads.cpp).
 """
 
 from __future__ import annotations
@@ -31,7 +41,7 @@ from urllib.parse import quote
 
 SKIP = {".rudra-download.json", ".DS_Store", "Thumbs.db"}
 CHANNELS = ("release", "preview", "legacy")
-KINDS = ("aces_v2", "package", "genfill")
+KINDS = ("aces_v2", "package", "genfill", "florence")   # florence: Suggest a prompt's Florence-2 (1.2.6)
 
 
 def sha256_of(path: Path) -> str:
@@ -45,12 +55,19 @@ def sha256_of(path: Path) -> str:
 def model_entry(folder: Path, opts: dict, repo: str, revision: str, prefix: str) -> dict:
     if not folder.is_dir():
         raise SystemExit(f"not a folder: {folder}")
+    upstream = opts.get("upstream")
+    if upstream:
+        if "@" not in upstream:
+            raise SystemExit("--upstream is REPO@REVISION, a commit")
+        repo, revision = upstream.split("@", 1)
+        prefix = ""
     files = []
     for p in sorted(folder.rglob("*")):
-        if not p.is_file() or p.name in SKIP or p.name.endswith(".part") or "__pycache__" in p.parts:
+        # .cache: huggingface_hub's own bookkeeping in a local_dir download (1.2.6, Florence-2).
+        if not p.is_file() or p.name in SKIP or p.name.endswith(".part") or "__pycache__" in p.parts or ".cache" in p.relative_to(folder).parts:
             continue
         rel = p.relative_to(folder).as_posix()
-        repo_path = "/".join(x for x in (prefix.strip("/"), folder.name, rel) if x)
+        repo_path = rel if upstream else "/".join(x for x in (prefix.strip("/"), folder.name, rel) if x)
         files.append({
             "path": rel,
             "url": f"https://huggingface.co/{repo}/resolve/{quote(revision, safe='')}/{quote(repo_path)}",
@@ -116,13 +133,13 @@ def main(argv: list[str] | None = None) -> int:
         top.error("give at least one --model <folder> [options]")
     per = argparse.ArgumentParser(prog="--model")
     per.add_argument("folder", type=Path)
-    for k in ("id", "title", "version", "channel", "kind", "summary", "licence", "licence-url", "min-app"):
+    for k in ("id", "title", "version", "channel", "kind", "summary", "licence", "licence-url", "min-app", "upstream"):
         per.add_argument("--" + k)
     entries = []
     for g in groups:
         o = per.parse_args(g)
         opts = {k.replace("-", "_"): getattr(o, k.replace("-", "_")) for k in
-                ("id", "title", "version", "channel", "kind", "summary", "licence", "licence-url", "min-app")}
+                ("id", "title", "version", "channel", "kind", "summary", "licence", "licence-url", "min-app", "upstream")}
         entries.append(model_entry(o.folder, opts, args.repo, args.revision, args.prefix))
     models = []
     if args.merge and args.out.is_file():

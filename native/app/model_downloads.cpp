@@ -141,6 +141,22 @@ constexpr const char* kKnownModelFiles[] = {
     "406b1dc7b7d3ada5406b396a6aa8c7e5ec9eac8d0be0d04e8038d68b5bf1b390",   // rudra_genfill.safetensors (v4.2 training)
     "8f2324358a10feb7599446443af7622a096f360f99d16a12830f5ebc6a68e90d",   // registration_v4.json (docs/models/genfill_v4)
     "d2f507bbcfdcc0203bec82050a3f5ef89188b12e8310b8b5f5a12d7816b5db8c",   // report_v4.json (docs/models/genfill_v4)
+    // Florence-2 base (MIT; Suggest a prompt), kind "florence", folder Florence-2-base: florence-community/
+    // Florence-2-base at revision 00921df66db728a9ceb750f5eca43e5c203a2051, as in rudra/genfill/model_manifest.json
+    // (1.2.6). Downloaded from its own Hugging Face repo at that revision; listed in Check this computer.
+    "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",   // .gitattributes
+    "9bc4297ba09ae961d3b172358f4bf723d6757fe11507b62f2369cc968e063e15",   // README.md
+    "1d75deda84dfa81fb6c09301f3fed00f9695059568bbb1403a6bf299cd84fc37",   // added_tokens.json
+    "2a4dfe9885d183da121f239ada734bd700ee6908b650a7a25ab32eb104fe1d7a",   // config.json
+    "0251459c49cc358ac033b5d4b8569e61ac22bde5d76be404b97a44cfb33fb12e",   // generation_config.json
+    "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5",   // merges.txt
+    "62f3e696da74f8869a68ddb529a9b3e14eb25b21c592cb3dea6179bf944df6a0",   // model.safetensors
+    "1396ec5a0a7adfe1c04fb777b09e8ba753be6dbb5868212ab3c3ef39d91fe031",   // preprocessor_config.json
+    "cd0e3bf41a39b1276503fbd273bc03b9afc70d7a15ea681a92a1b4b77f858ee6",   // processor_config.json
+    "72ff172dc769bc1551b1b4211628ce3271643bc60379e4da45d85a9be9332c39",   // special_tokens_map.json
+    "3ad7001f773409abe6bba33eac92662611a73d72f459bda2f00d2a221dd31ce4",   // tokenizer.json
+    "cb5f80bd9afa767bb1bb798ee5f0a79eae45239b8e72506166b4218175a16723",   // tokenizer_config.json
+    "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e",   // vocab.json
 };
 
 }  // namespace

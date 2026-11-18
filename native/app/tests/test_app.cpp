@@ -8488,3 +8488,51 @@ TEST(GenFill, TheSetupDialogInstallsFromAFolderOrZip) {
     EXPECT_EQ(from->menu()->actions().size(), 4);
     EXPECT_NE(d.findChild<QLineEdit*>("genfillSetup_florence"), nullptr);
 }
+
+// 1.2.6: Florence-2 (Suggest a prompt) is downloaded with the models the first time: Check this computer
+// lists it ticked where AI fill can run, and once it is in, Suggest a prompt uses that folder offline.
+TEST(AppCheck, FlorenceIsOfferedWithTheModelsAndUsedOnceDownloaded) {
+    QSettings().clear();
+    QTemporaryDir tmp;
+    QSettings().setValue("models/indexUrl", QUrl::fromLocalFile(tmp.path() + "/none.json").toString());
+    // Its files are trusted from the published list: every SHA-256 is compiled in.
+    EXPECT_TRUE(app::is_known_model_file("62f3e696da74f8869a68ddb529a9b3e14eb25b21c592cb3dea6179bf944df6a0"));   // model.safetensors
+    EXPECT_TRUE(app::is_known_model_file("2a4dfe9885d183da121f239ada734bd700ee6908b650a7a25ab32eb104fe1d7a"));   // config.json
+    app::MainWindow w(false);
+    auto* md = w.model_downloads();
+    md->set_root(tmp.path() + "/models");
+    QSettings().setValue("models/downloadRoot", tmp.path() + "/models");
+    auto models = *app::parse_model_index(served_index(tmp.path() + "/src", "{}", QByteArray(100000, 'f')));
+    models[0].id = "florence2_base";
+    models[0].title = "Florence-2 base";
+    models[0].kind = "florence";
+    models[0].folder = "Florence-2-base";
+    md->set_models(models);
+    w.run("system-check");
+    auto* d = find<app::SystemCheckDialog>(w, "systemCheck");
+    ASSERT_NE(d, nullptr);
+    app::MachineFacts f;
+    f.windows = true;
+    f.os = "Windows 11";
+    f.windows_build = 26100;
+    f.cpu_arch = "x86_64";
+    f.gpus = std::vector<app::GpuFact>{{"NVIDIA GeForce RTX 4090", 24.0}};
+    f.ram_gb = 64;
+    f.free_gb = 500;
+    d->set_facts(f);
+    auto* tick = d->findChild<QCheckBox*>("checkTick_florence2_base");
+    ASSERT_NE(tick, nullptr);
+    EXPECT_TRUE(tick->isChecked());   // ticked the first time, with the learned model
+    d->install_selected();
+    ASSERT_TRUE(wait_for([&] { return md->state("florence2_base") == app::InstallState::Installed && md->active().isEmpty(); }));
+    QApplication::processEvents();
+    const QString folder = tmp.path() + "/models/Florence-2-base";
+    EXPECT_EQ(QDir::cleanPath(QSettings().value("genfill/florence").toString()), QDir::cleanPath(folder));
+    // The folder holds the served test files, not a config.json: the download-root search is checked on its own.
+    QSettings().remove("genfill/florence");
+    QFile cfg(folder + "/config.json");
+    ASSERT_TRUE(cfg.open(QIODevice::WriteOnly));
+    cfg.close();
+    EXPECT_EQ(QDir::cleanPath(app::from_path(app::genfill_florence_dir({}))), QDir::cleanPath(folder));
+    QSettings().clear();
+}
