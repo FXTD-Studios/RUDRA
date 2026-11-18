@@ -39,7 +39,7 @@ int fail_v2(const Error& e) {
 
 int cmd_aces_v2(const std::vector<std::string>& args) {
     if (args.size() < 2) {
-        std::fprintf(stderr, "usage: rudra-native aces-v2 <package> <image|folder|video> --out <dir> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml|coreml] [--ocio-threads N] [--no-smoothing] [--luminance-guard|--no-luminance-guard] [--tau-high N] [--tau-low N] [--clean-shadows] [--no-lock] [--exr float|half|none] [--exr-gamut acescg|ap0] [--frame N]... [--fps F] [--name NAME [--start N]] [--padding N] [--into-existing [--no-create-dirs]] [--range FIRST:LAST] [--timecode HH:MM:SS:FF] [--reel NAME] [--source-display bt1886|srgb|gamma22] [--strength S] [--saturation S] [--peak-nits N] [--exposure EV] [--contrast C] [--log logc4|acescct|pq1000|pq2000|pq4000|hlg1000|sdr709] [--log-format tiff16,dpx10,prores4444xq|prores4444|prores422hq|mov16|hevc10]\n");
+        std::fprintf(stderr, "usage: rudra-native aces-v2 <package> <image|folder|video> --out <dir> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml|coreml] [--ocio-threads N] [--no-smoothing] [--luminance-guard|--no-luminance-guard] [--tau-high N] [--tau-low N] [--clean-shadows] [--no-lock] [--exr float|half|none] [--exr-gamut acescg|ap0] [--exr-zip] [--frame N]... [--fps F] [--name NAME [--start N]] [--padding N] [--into-existing [--no-create-dirs]] [--range FIRST:LAST] [--timecode HH:MM:SS:FF] [--reel NAME] [--source-display bt1886|srgb|gamma22] [--strength S] [--saturation S] [--peak-nits N] [--exposure EV] [--contrast C] [--log logc4|acescct|pq1000|pq2000|pq4000|hlg1000|sdr709] [--log-format tiff16,dpx10,prores4444xq|prores4444|prores422hq|mov16|hevc10]\n");
         return 64;
     }
     const fs::path pkg = args[0], input = args[1];
@@ -72,6 +72,7 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
         else if (args[i] == "--log-format" && i + 1 < args.size()) log_formats = args[++i];
         else if (args[i] == "--exr" && i + 1 < args.size()) deliver["exr"] = args[++i];
         else if (args[i] == "--exr-gamut" && i + 1 < args.size()) deliver["exr_gamut"] = args[++i];
+        else if (args[i] == "--exr-zip") deliver["exr_zip"] = true;   // 1.2.6: lossless ZIP (ACEScg only)
         else if (args[i] == "--frame" && i + 1 < args.size()) deliver["frames"].push_back(std::atoi(args[++i].c_str()));
         else if (args[i] == "--fps" && i + 1 < args.size()) deliver["fps"] = std::atof(args[++i].c_str());
         else if (args[i] == "--name" && i + 1 < args.size()) deliver["name"] = args[++i];

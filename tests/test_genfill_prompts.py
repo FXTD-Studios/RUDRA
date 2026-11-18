@@ -105,3 +105,67 @@ def test_cli_json(tmp_path, capsys):
     assert out["ok"] and out["suggestions"][0]["id"] == "sky_blue" and len(out["presets"]) == len(P.PRESETS)
     assert out["suggestions"][0]["cached"] is False
     assert P.main(["suggest", str(tmp_path / "missing.png"), "--json"]) == 2
+
+
+# ---- 1.2.6 (18 Nov 2026): the prompt from what the shot shows (Florence-2 captions) ----
+def test_shot_prompt_says_what_the_bright_area_is_and_nothing_in_front_of_it():
+    text, pid = P.shot_prompt("Two soldiers standing in the open cargo door of a military aircraft, looking out at a "
+                              "bright, hazy sky over the ocean.", "A bright white hazy sky seen through an open door.")
+    assert pid == "sky_overcast"
+    assert text == "bright hazy sky, soft even white light, seen through an open cargo door, over the ocean"
+    assert "soldier" not in text and "aircraft" not in text
+    assert P.shot_prompt("A beach at sunset.", "An orange sky with clouds above the sea.")[1] == "sky_sunset"
+    assert P.shot_prompt("A living room.", "A lamp with a white shade glowing.")[1] == "light_source"
+    assert P.shot_prompt("A campfire at night in a forest.", "Flames of a fire.")[1] == "flame"
+    t, pid = P.shot_prompt("A man by a window in a dark room.", "A bright window with trees outside.")
+    assert pid == "window_daylight" and t.endswith("trees outside")
+    t, pid = P.shot_prompt("A clear blue sky over mountains.", "Blue sky with white clouds.")
+    assert pid == "sky_blue" and "soft high clouds" in t and "mountains" in t
+    assert P.shot_prompt("A street with cars.", "", fallback="light_source")[1] == "light_source"   # nothing named: the rules' pick
+
+
+def test_bright_crop_is_round_the_largest_bright_area():
+    im = base()
+    im[40:80, 100:200] = 252
+    im[5:8, 5:8] = 255
+    c = P.bright_crop(im)
+    assert c is not None and c.shape[:2] == (80, 200)            # 40 x 100 grown by half each side
+    assert P.bright_crop(base()) is None
+
+
+class _FakeDescriber:
+    def __init__(self):
+        self.seen = []
+
+    def caption(self, rgb, task="<DETAILED_CAPTION>"):
+        self.seen.append(rgb.shape)
+        return "A hazy sky over the sea." if len(self.seen) > 1 else "People standing in a doorway."
+
+
+def test_describe_suggestion_is_first_and_says_why():
+    im = base()
+    im[: H // 2, 100:220] = 253
+    d = _FakeDescriber()
+    s = P.describe_suggestion(im, describer=d)
+    assert s["id"] == "shot" and s["label"] == "From this shot" and s["region"] == "highlight"
+    assert s["text"] == "bright hazy sky, soft even white light, seen through an open doorway, over the sea"
+    assert "Florence-2" in s["reason"] and len(d.seen) == 2
+
+
+def test_cli_describe_falls_back_without_the_model(tmp_path, capsys, monkeypatch):
+    import cv2
+    im = base((150, 180, 240))
+    im[: H // 3] = 255
+    f = tmp_path / "sky.png"
+    cv2.imwrite(str(f), cv2.cvtColor(im, cv2.COLOR_RGB2BGR))
+
+    def no_model(*a, **k):
+        raise OSError("no network")
+    monkeypatch.setattr(P, "Describer", no_model)
+    assert P.main(["suggest", str(f), "--json", "--describe", "auto"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] and out["suggestions"][0]["id"] == "sky_blue" and "no network" in out["describe_error"]
+    monkeypatch.setattr(P, "Describer", lambda *a, **k: _FakeDescriber())
+    assert P.main(["suggest", str(f), "--json", "--describe", "auto"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["suggestions"][0]["id"] == "shot" and out["suggestions"][1]["id"] == "sky_blue"

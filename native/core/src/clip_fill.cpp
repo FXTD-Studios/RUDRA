@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -197,9 +198,25 @@ void fill_missing(std::vector<std::vector<float>>& planes, const std::vector<flo
 
 namespace {
 
+void gaussian_blur(std::vector<float>& a, int h, int w, double sigma);
+
+// A normalised Gaussian (smooth_px): each plane's values where weight > 0,
+// averaged over their weighted neighbours only; pixels of weight 0 untouched.
+void weighted_smooth(std::vector<float>& v, const std::vector<float>& weight, int h, int w, double sigma) {
+    const std::size_t n = v.size();
+    std::vector<float> num(n), den(weight);
+    for (std::size_t i = 0; i < n; ++i) num[i] = v[i] * weight[i];
+    gaussian_blur(num, h, w, sigma);
+    gaussian_blur(den, h, w, sigma);
+    for (std::size_t i = 0; i < n; ++i)
+        if (weight[i] > 0.0f && den[i] > 1e-6f) v[i] = num[i] / den[i];
+}
+
 // How far from anything clipped the fill looks (px): the glow ring is at most
 // 32 px, so a margin past it is all the clean picture the fill ever reads.
 constexpr int kMargin = 40;
+// smooth_px: how far below its own baseline a lossy source's noisy peak may go.
+constexpr double kSmoothFloorEv = 1.0;
 
 // Where a crop sits in the frame it came from.
 struct FrameRef {
@@ -281,6 +298,9 @@ ClipFill reconstruct_crop(const SdrImage& sdr, float corpus_ev, const ClipFillOp
             wt[i] = 1.0f;
         });
         fill_missing(q, wt, h, w);
+        // log2 luma the kept channels say, each by how far below white it is
+        std::vector<double> est_of(n, 0.0);   // double: off is bit-identical to the inline estimate
+        std::vector<float> kept_of(n, 0.0f);
         for_each_index(n, [&](std::size_t i) {
             if (cls[i] != kPartial) return;
             double est = 0.0, kept = 0.0;
@@ -289,12 +309,39 @@ ClipFill reconstruct_crop(const SdrImage& sdr, float corpus_ev, const ClipFillOp
                 est += k * (std::log2(std::max(b[c][i], kTiny)) - q[std::size_t(c)][i]);
                 kept += k;
             }
-            est /= kept;   // log2 luma the kept channels say, each by how far below white it is
+            est_of[i] = est / kept;
+            kept_of[i] = float(kept);
+        });
+        // A lossy source: the estimate over its partly clipped neighbours, by how
+        // much each still says (its compression noise averages out, edges stay).
+        if (opt.smooth_px > 0.0) {
+            std::vector<float> e(est_of.begin(), est_of.end());
+            weighted_smooth(e, kept_of, h, w, opt.smooth_px);
+            for (std::size_t i = 0; i < n; ++i) est_of[i] = e[i];
+        }
+        for_each_index(n, [&](std::size_t i) {
+            if (cls[i] != kPartial) return;
+            const double est = est_of[i];
             for (int c = 0; c < 3; ++c) {
                 if (wc[c][i] == 0.0f) continue;
                 const double lb = std::log2(std::max(b[c][i], kTiny));
                 const double lift = std::clamp(est + q[std::size_t(c)][i] - lb, 0.0, opt.max_partial_ev) * wc[c][i];
                 t[c][i] = float(double(b[c][i]) * std::exp2(lift));
+            }
+            if (!opt.hue_order) return;
+            // Two channels at the same ceiling say nothing about their ratio: the
+            // neighbours' does. A fire's R and G both at 255 are R over G as
+            // the flame around them, not yellow beside orange.
+            int ref = -1;
+            for (int c = 0; c < 3; ++c)
+                if (wc[c][i] > 0.0f && (ref < 0 || q[std::size_t(c)][i] < q[std::size_t(ref)][i])) ref = c;
+            const double lref = std::log2(std::max(double(t[ref][i]), double(kTiny)));
+            for (int c = 0; c < 3; ++c) {
+                if (c == ref || wc[c][i] == 0.0f) continue;
+                const double lb = std::log2(std::max(b[c][i], kTiny));
+                const double want = lref + q[std::size_t(c)][i] - q[std::size_t(ref)][i];
+                const double lift = std::clamp(want - lb, 0.0, opt.max_partial_ev) * std::min(wc[c][i], wc[ref][i]);
+                t[c][i] = std::max(t[c][i], float(double(b[c][i]) * std::exp2(lift)));
             }
         });
     }
@@ -479,6 +526,31 @@ ClipFill reconstruct_crop(const SdrImage& sdr, float corpus_ev, const ClipFillOp
             if (work[i] && t[c][i] > b[c][i]) g[i] = std::log2(std::max(t[c][i], kTiny)) - std::log2(std::max(b[c][i], kTiny));
         });
     }
+    // A lossy source: near white the inverse is steep (codes 250 and 254 are
+    // stops apart), so a JPEG's few codes of noise there are stops of noise in
+    // the baseline itself, a lift or not. Each channel's target (log2) over its
+    // touched neighbours, taken in by how near white the channel is: the core
+    // smooth, the edge of the clipped area its own. Here the gain may go below
+    // 0 (a noise peak over its neighbours), at most smooth_floor_ev.
+    if (opt.smooth_px > 0.0) {
+        std::vector<float> lt(n), wt(n);
+        for (int c = 0; c < 3; ++c) {
+            float* g = out.gain_log2.plane(c);
+            for (std::size_t i = 0; i < n; ++i) {
+                const bool touched = work[i] && cls[i] != kClean;
+                wt[i] = touched ? (cls[i] == kFull ? 1.0f : wc[c][i]) : 0.0f;
+                lt[i] = touched ? std::log2(std::max(b[c][i], kTiny)) + g[i] : 0.0f;
+            }
+            std::vector<float> ls = lt;
+            weighted_smooth(ls, wt, h, w, opt.smooth_px);
+            for (std::size_t i = 0; i < n; ++i) {
+                if (wt[i] <= 0.0f) continue;
+                const float lb = std::log2(std::max(b[c][i], kTiny));
+                const float target = lt[i] + wt[i] * (ls[i] - lt[i]);
+                g[i] = std::max(target - lb, -float(kSmoothFloorEv));
+            }
+        }
+    }
     return out;
 }
 
@@ -546,6 +618,74 @@ PlanarBuffer near_clip_detail(const SdrImage& sdr, const ClipFillOptions& opt) {
     return gain;
 }
 
+namespace {
+
+// A lossy source's codes as the fill reads them (smooth_px > 0): the chroma
+// (Rec.709 Cb, Cr) over smooth_px, where JPEG's 4:2:0 and its quantiser put
+// most of their noise and where the fill reads hue from. Luma, and with it
+// the structure, is kept per pixel. Off: the frame itself.
+SdrImage denoised(const SdrImage& sdr, const ClipFillOptions& opt) {
+    if (!(opt.smooth_px > 0.0)) return sdr;
+    const int h = sdr.height(), w = sdr.width();
+    const std::size_t n = std::size_t(h) * std::size_t(w);
+    const PlanarBuffer& s = sdr.buffer();
+    std::vector<float> y(n), cb(n), cr(n);
+    for_each_index(n, [&](std::size_t i) {
+        const float r = s.plane(0)[i], g = s.plane(1)[i], b = s.plane(2)[i];
+        y[i] = kLuma[0] * r + kLuma[1] * g + kLuma[2] * b;
+        cb[i] = b - y[i];
+        cr[i] = r - y[i];
+    });
+    gaussian_blur(cb, h, w, opt.smooth_px);
+    gaussian_blur(cr, h, w, opt.smooth_px);
+    PlanarBuffer out(3, h, w);
+    for_each_index(n, [&](std::size_t i) {
+        const float r = y[i] + cr[i], b = y[i] + cb[i];
+        const float g = (y[i] - kLuma[0] * r - kLuma[2] * b) / kLuma[1];
+        out.plane(0)[i] = std::clamp(r, 0.0f, 1.0f);
+        out.plane(1)[i] = std::clamp(g, 0.0f, 1.0f);
+        out.plane(2)[i] = std::clamp(b, 0.0f, 1.0f);
+    });
+    return SdrImage(std::move(out));
+}
+
+}  // namespace
+
+ClipFillOptions lossy_source_clip_options(ClipFillOptions o) {
+    o.smooth_px = 2.0;          // about a quarter of a JPEG block either way
+    o.max_partial_ev = 1.5;     // was 4: fire and tungsten run to white with level
+    o.soft_code = 0.94;         // 240: compression noise of a few codes stays inside the feather
+    o.hue_order = true;         // clipped channels keep the neighbours' ratio
+    return o;
+}
+
+bool is_lossy_still_path(const std::string& path) {
+    const auto dot = path.find_last_of('.');
+    const auto sep = path.find_last_of("/\\");
+    if (dot == std::string::npos || (sep != std::string::npos && dot < sep)) return false;
+    std::string ext = path.substr(dot + 1);
+    for (char& c : ext) c = char(std::tolower(static_cast<unsigned char>(c)));
+    for (const char* e : {"jpg", "jpeg", "jpe", "jfif", "webp", "avif", "heic", "heif"})
+        if (ext == e) return true;
+    return false;
+}
+
+bool is_lossy_video(const std::string& codec_name, const std::string& pix_fmt) {
+    std::string c = codec_name;
+    for (char& ch : c) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+    bool lossy = false;
+    for (const char* k : {"h264", "hevc", "h265", "vp8", "vp9", "av1", "mpeg2video", "mpeg1video", "mpeg4", "msmpeg4v3",
+                          "mjpeg", "wmv1", "wmv2", "wmv3", "vc1", "theora"})
+        if (c == k) lossy = true;
+    if (!lossy) return false;
+    // 8 bits unless the pixel format says 9 to 16 (yuv420p10le, p010le, yuv422p12, gbrp16le, rgb48…);
+    // nv12 / nv21 / nv16 / nv24 are 8-bit (their digits are the layout).
+    for (const char* deep : {"p9", "p10", "p12", "p14", "p16", "p010", "p016", "p210", "p216", "p410", "p416", "rgb48", "rgba64",
+                             "bgr48", "bgra64", "x2rgb10", "x2bgr10", "y210", "y212", "v210", "nv20", "xv30", "xv36"})
+        if (pix_fmt.find(deep) != std::string::npos) return false;
+    return true;
+}
+
 ClipFill reconstruct_clipped(const SdrImage& sdr, float corpus_ev, const ClipFillOptions& opt) {
     const int h = sdr.height(), w = sdr.width();
     if (!opt.enabled || h <= 0 || w <= 0) return {};
@@ -571,10 +711,10 @@ ClipFill reconstruct_clipped(const SdrImage& sdr, float corpus_ev, const ClipFil
     y1 = std::min(h - 1, y1 + kMargin);
     const FrameRef frame{std::size_t(h) * std::size_t(w), x0, y0, w, h};
     const bool whole = x0 == 0 && y0 == 0 && x1 == w - 1 && y1 == h - 1;
-    if (whole) return reconstruct_crop(sdr, corpus_ev, opt, frame);
+    if (whole) return reconstruct_crop(opt.smooth_px > 0.0 ? denoised(sdr, opt) : sdr, corpus_ev, opt, frame);
 
     const int ch = y1 - y0 + 1, cw = x1 - x0 + 1;
-    ClipFill part = reconstruct_crop(SdrImage(s.crop(y0, x0, ch, cw)), corpus_ev, opt, frame);
+    ClipFill part = reconstruct_crop(denoised(SdrImage(s.crop(y0, x0, ch, cw)), opt), corpus_ev, opt, frame);
     ClipFill out;
     out.partial_pct = part.partial_pct;
     out.full_pct = part.full_pct;

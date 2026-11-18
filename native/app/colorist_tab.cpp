@@ -117,6 +117,11 @@ void MainWindow::sync_aces_trims() {
     if (parade_ && !routed) parade_->clear();   // the parade is the learned frame's
     for (const char* id : {"routeNoteRec", "routeNoteGrade"})
         if (auto* n = findChild<QLabel*>(id)) n->setVisible(routed);
+    // 1.2.6: Region EV (the old Grade tab) grades the analytic route only: shown there only.
+    if (auto* f = findChild<QPushButton*>("recRegionEv")) {
+        f->setVisible(!routed);
+        if (auto* box = findChild<QWidget*>("recRegionEvBox")) box->setVisible(!routed && f->isChecked());
+    }
     if (auto* n = dynamic_cast<NoteLabel*>(findChild<QLabel*>("acesCurveNote"))) {
         const bool steer = routed && aces_curve_mismatch();
         // 14 Nov 2026: two lines here, the whole note in the tooltip (it was ten lines above the trims),
@@ -193,7 +198,9 @@ void MainWindow::set_aces_source_display(const QString& s) {
 }
 
 void MainWindow::set_aces_monitor(const QString& m) {
-    if (m != "scene" && m != "sdr100" && m != "hdr1000") return;
+    // 1.2.6: Scene and HDR 1000 only. "sdr100" (an old project, a script) is HDR 1000 now.
+    if (m == "sdr100") return set_aces_monitor(QStringLiteral("hdr1000"));
+    if (m != "scene" && m != "hdr1000") return;
     const bool changed = m != aces_monitor_;
     aces_monitor_ = m;
     QSettings().setValue("aces/monitor", m);

@@ -87,5 +87,5 @@ $env:PYTHONPATH = if ($env:PYTHONPATH) { "$Repo;$env:PYTHONPATH" } else { $Repo 
 $env:PYTHONUNBUFFERED = '1'
 $env:PYTHONDONTWRITEBYTECODE = '1'
 Set-Location -LiteralPath $Repo
-& $py -m rudra.genfill.setup --base $Base --json --skip-packages
+& $py -m rudra.genfill.setup --base $Base --json --skip-packages --florence   # 1.2.6: Florence-2 for Suggest a prompt
 exit $LASTEXITCODE

@@ -3,6 +3,8 @@
 #include "rudra/deliver/video_encode.hpp"
 #include "paths.hpp"
 #include "aces_master.hpp"   // find_aces_packages: a dropped learned ACES 2.0 package
+#include "media_library.hpp"   // 1.2.6: the Media panel
+#include "qc_report.hpp"      // 1.2.6: the QC report
 #include "system_check.hpp"   // 1.2.5: the retired Beta 2 models, Check this computer
 #include "aces_engine.hpp"
 #include "rudra/engine/headroom_export.hpp"
@@ -19,10 +21,14 @@
 #include <QApplication>
 #include <QDialog>
 #include <QFileDialog>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QProcess>
 #include <QInputDialog>
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QScreen>
 #include <QGridLayout>
 #include <QKeySequence>
 #include <QLabel>
@@ -175,7 +181,9 @@ MainWindow::MainWindow(bool with_viewer, bool headroom_capable)
         render_padding_ = std::clamp(st.value("deliver/renderPadding", 4).toInt(), 1, 10);
         render_separator_ = st.value("deliver/renderSeparator", ".").toString();
         if (render_separator_ != "." && render_separator_ != "_" && !render_separator_.isEmpty()) render_separator_ = ".";
-        if (aces_monitor_ != "sdr100" && aces_monitor_ != "hdr1000") aces_monitor_ = "scene";
+        // 1.2.6: SDR 100 is gone from the monitor (Scene and HDR 1000); a saved one opens on HDR 1000.
+        if (aces_monitor_ == "sdr100") aces_monitor_ = "hdr1000";
+        if (aces_monitor_ != "hdr1000") aces_monitor_ = "scene";
     }
     session_.on_change([this](std::uint32_t what) { session_changed(what); });
     build_ui(with_viewer);
@@ -254,7 +262,12 @@ MainWindow::MainWindow(bool with_viewer, bool headroom_capable)
     probe_box_->hide();
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
-        viewer_->on_drop([this](const QStringList& paths) { open_paths(paths); });
+        viewer_->on_drop([this](const QStringList& paths) {
+            // 1.2.6: a clip dragged from the Media panel opens as a shot of its own (a still is not
+            // added to the shot on screen, as a file dropped from the computer is)
+            if (!media_drag_.isEmpty()) open_media_list(media_drag_);
+            else open_paths(paths);
+        });
         // Calibrate (3.2): the armed anchor takes the next click on the picture.
         viewer_->on_pick([this](double x, double y) {
             if (clip_pick_armed_) clip_peak_picked(x, y);
@@ -339,7 +352,6 @@ void MainWindow::bind_handlers() {
     h["batch-queue"] = [this] { open_batch(); };
     h["monitor-scene"] = [this] { set_aces_monitor("scene"); };
     h["colour-management"] = [this] { open_colour_dialog(); };
-    h["monitor-sdr100"] = [this] { set_aces_monitor("sdr100"); };
     h["monitor-hdr1000"] = [this] { set_aces_monitor("hdr1000"); };
     h["still-grab"] = [this] {
         if (grab_reference_still() < 0) log("Reference still: only the learned ACES 2.0 frame on screen can be kept");
@@ -622,7 +634,6 @@ void MainWindow::sync_checks() {
     set("container-linear", session_.container == "linear");
     set("wipe", session_.wipe.has_value());
     set("monitor-scene", aces_monitor_ == "scene");
-    set("monitor-sdr100", aces_monitor_ == "sdr100");
     set("monitor-hdr1000", aces_monitor_ == "hdr1000");
     set("still-compare", ref_compare_);
     set("view-image", session_.view_layer == 0);
@@ -701,6 +712,7 @@ void MainWindow::session_changed(std::uint32_t what) {
     if ((what & Session::Grade) && !use_model_ && !frames_.empty() && !headroom_routed()) {
         const ClipFillOptions now = session_clip_options();
         const bool same = now.enabled == engine_clip_.enabled && now.detail_gain == engine_clip_.detail_gain &&
+                          now.smooth_px == engine_clip_.smooth_px && now.hue_order == engine_clip_.hue_order &&
                           now.overrides.size() == engine_clip_.overrides.size() &&
                           std::equal(now.overrides.begin(), now.overrides.end(), engine_clip_.overrides.begin(),
                                      [](const ClipOverride& a, const ClipOverride& b) {
@@ -1118,6 +1130,7 @@ void MainWindow::open_source(const QString& preset, bool folder) {
         frames = {to_path(path)};
     }
     remember_source(path);
+    if (!restoring_) restore_clip_settings(path);   // 1.2.6: a clip with its own settings brings them back
     shot_kind_ = video ? "movie" : QFileInfo(path).isDir() ? "folder" : "files";
     shot_sources_ = {to_path(QFileInfo(path).absoluteFilePath())};
     shot_video_ = std::move(video);
@@ -1179,6 +1192,9 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
     auto* backend = use_model_ ? backend_.get() : nullptr;
     const ModelConstants model = frame_constants();
     engine_clip_ = session_clip_options();
+    if (engine_clip_.enabled && engine_clip_.smooth_px > 0.0 && !use_model_)
+        log("compressed source (JPEG): the highlight fill smooths its block noise near white and keeps the hue of the "
+            "flame or lamp around it");
     auto files = frames_;
     source_sizes_ = std::make_shared<SourceSizes>();
     source_sizes_->size.assign(files.size(), {0, 0});
@@ -1763,7 +1779,8 @@ void MainWindow::sync_ui() {
     tabs_->set_on(shown);
     const int page = shown == "grade" ? 1 : shown == "deliver" ? 2 : shown == "check" ? 3 : 0;
     for (int i = 0; i < int(pages_.size()); ++i) pages_[std::size_t(i)]->setVisible(i == page);
-    for (auto* n : notes_) n->setVisible(workspace_ != "simple");
+    // 1.2.6: the long notes are their cards' tooltips; the one-line ones ("keep") stay in Full
+    for (auto* n : notes_) n->setVisible(workspace_ != "simple" && n->property("keep").toBool());
     // Frames (drawFrames)
     const int n = int(frames_.size());
     {
@@ -1794,6 +1811,7 @@ void MainWindow::sync_ui() {
     const bool ready = n > 0 && backend_ != nullptr;
     btn_master_->setEnabled((ready && pending_reason("master").isEmpty()) || mastering());
     btn_reprocess_->setEnabled(ready);
+    btn_reprocess_->setVisible(ready && workspace_ != "simple");   // 1.2.6: offered once there is a frame to reprocess
     if (viewer_stack_->count() > 1) viewer_stack_->setCurrentIndex(n > 0 ? 1 : 0);
     sync_deliver();
     sync_aces_trims();
@@ -1831,6 +1849,11 @@ void MainWindow::set_workspace(const QString& mode) {
 }
 
 void MainWindow::show_tab(const QString& tab) {
+    // 1.2.6: Grade is gone; its Region EV is a fold in Reconstruct, opened when "grade" is asked for.
+    if (tab == "grade") {
+        if (auto* f = findChild<QPushButton*>("recRegionEv"); f && !f->isChecked()) f->setChecked(true);
+        return show_tab(QStringLiteral("rec"));
+    }
     if (tab != tab_) simple_scopes_.reset();
     tab_ = tab;
     sync_ui();
@@ -1886,6 +1909,7 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
     cur->own_shadow_weight = own_shadow_weight.value_or(cur->scalars.shadow_weight);
     cur->hold_shot = play_hold_.shot();
     current_frame_ = std::move(cur);
+    sync_ai_frame_info();   // 1.2.6: the AI fill card's line (and "Where it fills") on this frame
     note_frame_in_strip(current_);
     run_stats();   // adopt(): computeStats at once for a new frame
 }
@@ -2059,6 +2083,14 @@ void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m, int index,
                                        f.coverage.clipped_pct);
     fill_rows(findChild<QWidget*>("measA"), t.a);
     fill_rows(findChild<QWidget*>("measB"), t.b);
+    if (auto* sum = findChild<QLabel*>("frameSummary")) {   // 1.2.6: the folded card's one line
+        QStringList parts;
+        for (const auto* rows : {&t.a, &t.b})
+            for (const auto& r : *rows)
+                if (r.k == "MaxCLL" || r.k == "Above diffuse white" || r.k == "Clipped in source")
+                    parts << QString::fromStdString(r.k + " " + r.v + (r.u.empty() ? "" : " " + r.u));
+        sum->setText(parts.isEmpty() ? QStringLiteral("\u2014") : parts.join(QStringLiteral(" \u00b7 ")));
+    }
     sync_check_summary();
     findChild<QLabel*>("statusMask")->setText(QString::fromStdString(t.status_mask));
     findChild<QLabel*>("statusTime")->setText(QString::fromStdString(t.status_time));
@@ -2086,6 +2118,24 @@ void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m, int index,
         }
         findChild<QLabel*>("colHighlights")->setText(QString::number(hi));
         findChild<QLabel*>("colShadows")->setText(QString::number(sh));
+        // 1.2.6: the Media panel's smart bins, and the clip's size and length
+        if (library_)
+            if (MediaClip* c = library_->find(current_media_path())) {
+                const bool was_clipped = c->clipped, was_crushed = c->crushed;
+                const QString was_info = c->info;
+                c->clipped = c->clipped || f.coverage.clipped_pct > 0.01;
+                c->crushed = c->crushed || f.coverage.shadow_pct > 1.0;
+                QString res;
+                if (current_frame_ && current_frame_->header.source_resolution)
+                    res = QString::fromStdString(*current_frame_->header.source_resolution).replace('x', QChar(0xd7));
+                const bool many = shot_kind_ != "files" && frames_.size() > 1;
+                c->info = many ? QStringLiteral("%1 f%2").arg(frames_.size()).arg(res.isEmpty() ? QString() : QStringLiteral(" \u00b7 ") + res)
+                               : res;
+                if (c->clipped != was_clipped || c->crushed != was_crushed || c->info != was_info) {
+                    save_library();
+                    if (media_panel_) media_panel_->refresh();
+                }
+            }
     }
     update_pipe();
     update_compare();
@@ -2160,6 +2210,9 @@ void MainWindow::probe_pixel(std::optional<std::pair<double, double>> px, QPoint
     std::optional<ProbeInput> p;
     if (px && measure_) p = measure_->probe_at(px->first, px->second);
     const ProbePanelText t = probe_panel(p);
+    // 1.2.6: the Probe card is there while Probe is on or a pixel is being read (Alt over the picture)
+    if (auto* card = findChild<QWidget*>("probePanelWrap"))
+        card->setVisible(workspace_ != "simple" && (probe_on_ || p.has_value()));
     auto set = [this](const char* id, const std::string& text, const char* state) {
         auto* l = findChild<QLabel*>(id);
         l->setText(QString::fromStdString(text));
@@ -2260,6 +2313,7 @@ MasterRequest MainWindow::master_request() const {
     q.clip_fill = session_.grade.clip_fill;
     q.clip_peaks = session_.grade.clip_peaks;
     q.highlight_detail = session_.grade.highlight_detail;
+    q.lossy_source = source_is_lossy();   // the same fill the viewer shows (1.2.6)
     q.preserve_outside = session_.grade.preserve;
     q.recovery_mode = session_.grade.mode;
     q.strength = session_.grade.strength;
@@ -2271,6 +2325,9 @@ MasterRequest MainWindow::master_request() const {
     q.carry_chroma = session_.carry_chroma;
     q.container = session_.container;
     q.exr_half = false;  // Grading masters retain float32 precision and range.
+    // 1.2.6 (checklist item 8): lossless ZIP for ACEScg and linear (deliver/exrZip, on by default);
+    // the ACES 2065-1 container is never compressed.
+    q.exr_zip = QSettings().value("deliver/exrZip", true).toBool();
     q.source_curve = session_.grade.source;
     q.calibration = session_.calibration_points();
     q.reference = session_.grade.reference;
@@ -2339,6 +2396,7 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     plan.frame_start = to_movie ? 0 : findChild<QSpinBox*>("renderStart")->value();
     plan.sequence = sequence;
     auto targets = master_targets(plan);
+    if (targets) last_master_targets_ = *targets;   // 1.2.6: the QC report reads their sidecars
     if (!targets) {
         say(QStringLiteral("Stopped after 0 / %1: %2").arg(n).arg(QString::fromStdString(targets.error().message)));
         log("Render stopped: " + QString::fromStdString(targets.error().message));
@@ -2407,6 +2465,12 @@ void MainWindow::master_finished(const MasterOutcome& o, const QString& folder) 
     } else {
         status->setText(QStringLiteral("Rendered %1 frame(s) to %2").arg(o.completed).arg(folder));
     }
+    if (o.completed > 0) {   // 1.2.6: the QC report of what was written (a stopped render's frames too)
+        std::vector<std::filesystem::path> done(last_master_targets_.begin(),
+                                                last_master_targets_.begin() + std::min(o.completed, last_master_targets_.size()));
+        if (const QString qc = write_render_qc(folder, done, QStringLiteral("Analytic reconstruction")); !qc.isEmpty())
+            status->setText(status->text() + QStringLiteral(" \u00b7 QC: ") + QFileInfo(qc).fileName());
+    }
     status->show();
     std::optional<FramesMovie> movie;
     if (frames_movie_) {
@@ -2415,6 +2479,7 @@ void MainWindow::master_finished(const MasterOutcome& o, const QString& folder) 
     }
     delivered_ += int(o.completed);
     findChild<QLabel*>("colDelivered")->setText(QString::number(delivered_));
+    if (o.completed > 0) note_media_delivered();
     btn_master_->setText("Master EXR");   // busy(false)
     btn_master_->setToolTip({});
     refresh_enabled();
@@ -2566,6 +2631,10 @@ void MainWindow::set_drop_hot(bool hot) {
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* e) {
+    if (e->mimeData()->hasFormat(ClipList::kMime)) {   // 1.2.6: a clip from the Media panel
+        e->acceptProposedAction();
+        return;
+    }
     if (!e->mimeData()->hasUrls()) return;
     // Files and folders on this computer only: a link dragged from a browser is not offered a drop.
     const auto urls = e->mimeData()->urls();
@@ -2578,6 +2647,12 @@ void MainWindow::dragLeaveEvent(QDragLeaveEvent*) { set_drop_hot(false); }
 
 void MainWindow::dropEvent(QDropEvent* e) {
     set_drop_hot(false);
+    if (e->mimeData()->hasFormat(ClipList::kMime)) {   // 1.2.6: a clip from the Media panel
+        if (drop_media(QString::fromUtf8(e->mimeData()->data(ClipList::kMime)).split('\n', Qt::SkipEmptyParts),
+                       e->position().toPoint()))
+            e->acceptProposedAction();
+        return;
+    }
     QStringList paths;
     for (const auto& u : e->mimeData()->urls())
         if (u.isLocalFile()) paths << u.toLocalFile();
@@ -2605,6 +2680,8 @@ void MainWindow::forget_source(const QString& path) {
 }
 
 void MainWindow::remember_source(const QString& path) {
+    if (!restoring_) store_clip_settings(current_media_path());   // 1.2.6: the clip being left keeps its settings
+    note_media(path);   // 1.2.6: and in the Media panel
     QSettings st;
     QStringList r = st.value("recent/sources").toStringList();
     const QString p = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
@@ -2639,6 +2716,8 @@ void MainWindow::fill_recent() {
 }
 
 void MainWindow::save_settings() const {
+    store_clip_settings(current_media_path());   // 1.2.6: the open clip's settings, for next time
+    save_library();
     QSettings st;
     st.setValue("window/geometry", saveGeometry());
     st.setValue("window/workspace", workspace_);
@@ -2662,7 +2741,11 @@ void MainWindow::save_queues() const {
 }
 
 void MainWindow::open_compare_view() {
+    // 1.2.6 (user feedback): every start is the same comparison, whatever the last run or a project
+    // left: the SDR as it is on the left, RUDRA on the ACES 2.0 HDR 1000 output on the right.
+    set_aces_monitor(QStringLiteral("hdr1000"));
     session_.peak_input(std::log2(1000.0 / 203.0));
+    session_.show = "model";
     session_.set_wipe_sources("sdr", "model");   // turns the wipe on, at the middle
     sync_checks();
     sync_ui();
@@ -2675,7 +2758,9 @@ void MainWindow::restore_settings() {
     if (st.contains("window/tab")) show_tab(st.value("window/tab").toString());
     const bool l = st.value("window/railLeft", session_.rail_left).toBool(),
                r = st.value("window/railRight", session_.rail_right).toBool(),
-               sc = st.value("window/scopes", session_.scopes_open).toBool();
+               // 1.2.6: never chosen yet, the scopes start closed on a screen under 1700 px wide
+               // (1920 x 1080 at 125 % and up), so the picture has the room; the Scopes button opens them.
+               sc = st.value("window/scopes", session_.scopes_open && wide_screen()).toBool();
     if (l != session_.rail_left) run("rail-left");
     if (r != session_.rail_right) run("rail-right");
     if (sc != session_.scopes_open) run("scopes");
@@ -2782,6 +2867,8 @@ void MainWindow::note_frame_in_strip(int index) {
     const QImage t = sdr_thumb(current_frame_->sdr, 88);
     scrub_->set_thumb(index, t);
     if (index == 0 || first_thumb_.isNull()) first_thumb_ = t;
+    // 1.2.6: the Media panel's picture: the first frame of a folder or movie, each still its own
+    if (media_panel_ && (index == 0 || shot_kind_ == "files")) media_panel_->set_thumb(current_media_path(), sdr_thumb(current_frame_->sdr, 176));
     if (index == 0 || scrub_->count() == 1) refresh_library();   // the shot row's picture
 }
 
@@ -2882,6 +2969,7 @@ void MainWindow::refresh_library() {
         ++rows;
     }
     shots->setVisible(rows > 0);
+    if (media_panel_) media_panel_->set_open_path(current_media_path());   // 1.2.6: the gold frame
 }
 
 QImage MainWindow::thumb_of_first() const {
@@ -3046,7 +3134,40 @@ ClipFillOptions MainWindow::session_clip_options() const {
     o.enabled = session_.grade.clip_fill;
     o.overrides = session_.grade.clip_peaks;
     o.detail_gain = session_.grade.highlight_detail;
-    return o;
+    return source_is_lossy() ? lossy_source_clip_options(std::move(o)) : o;
+}
+
+bool MainWindow::wide_screen() const {
+    const QScreen* s = screen() ? screen() : QGuiApplication::primaryScreen();
+    return !s || s->availableGeometry().width() >= 1700;
+}
+
+bool MainWindow::source_is_lossy() const {
+    if (shot_video_) return movie_is_lossy(from_path(shot_video_->path));   // 1.2.6: footage too
+    return !frames_.empty() && is_lossy_still_path(from_path(frames_.front()).toStdString());
+}
+
+bool MainWindow::movie_is_lossy(const QString& path) const {
+    // ffprobe's codec and pixel format of the first video stream, once per file (a second or less).
+    const QString key = MediaLibrary::clean(path);
+    if (const auto it = lossy_movies_.find(key); it != lossy_movies_.end()) return it->second;
+    QProcess p;
+    p.start(QStringLiteral("ffprobe"), {QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-select_streams"),
+                                        QStringLiteral("v:0"), QStringLiteral("-show_entries"),
+                                        QStringLiteral("stream=codec_name,pix_fmt"), QStringLiteral("-of"), QStringLiteral("json"),
+                                        path});
+    bool lossy = false;
+    if (p.waitForFinished(8000) && p.exitStatus() == QProcess::NormalExit && p.exitCode() == 0) {
+        const QJsonArray streams = QJsonDocument::fromJson(p.readAllStandardOutput()).object().value("streams").toArray();
+        if (!streams.isEmpty()) {
+            const QJsonObject s = streams.first().toObject();
+            lossy = is_lossy_video(s.value("codec_name").toString().toStdString(), s.value("pix_fmt").toString().toStdString());
+        }
+    } else {
+        p.kill();
+    }
+    lossy_movies_[key] = lossy;
+    return lossy;
 }
 
 void MainWindow::arm_clip_peak(bool on) {
@@ -3209,6 +3330,472 @@ bool MainWindow::waits_for_model() {
     log(s);
     if (statusBar()) statusBar()->showMessage(s, 10000);
     return true;
+}
+
+}  // namespace rudra::app
+
+// ---- the Media panel (1.2.6, media_library.hpp) ------------------------------------------------
+
+namespace rudra::app {
+
+void MainWindow::build_media_panel(QVBoxLayout* v, int at) {
+    if (!library_) library_ = std::make_unique<MediaLibrary>();
+    {   // what this computer kept; the first time, the shots opened before (Open recent)
+        const QByteArray j = QSettings().value(QStringLiteral("media/library")).toByteArray();
+        if (!j.isEmpty()) {
+            library_->from_json(QJsonDocument::fromJson(j).object());
+        } else {
+            const QStringList r = recent_sources();
+            for (auto it = r.crbegin(); it != r.crend(); ++it)
+                if (QFileInfo::exists(*it)) library_->add(*it);
+        }
+    }
+    media_panel_ = new MediaPanel(library_.get());
+    media_panel_->open = [this](const QStringList& p) { open_media_list(p); };
+    media_panel_->batch = [this](const QStringList& p) {
+        QString why;
+        if (batch_add_media(p, &why) == 0 && !why.isEmpty()) {
+            log(why);
+            statusBar()->showMessage(why, 8000);
+        }
+    };
+    auto import = [this](const QStringList& paths) {
+        int n = 0;
+        const QString bin = media_panel_->bin();
+        for (const QString& p : paths) {
+            const QFileInfo fi(p);
+            const std::string suf = fi.suffix().toLower().prepend('.').toStdString();
+            const bool media = fi.isDir() || std::find(frame_suffixes().begin(), frame_suffixes().end(), suf) != frame_suffixes().end() ||
+                               std::find(video_suffixes().begin(), video_suffixes().end(), suf) != video_suffixes().end();
+            if (!media || !library_->add(p)) continue;
+            if (library_->bins().contains(bin)) library_->file(p, bin);   // into the bin on screen
+            ++n;
+        }
+        if (n) {
+            save_library();
+            mark_dirty();
+            media_panel_->refresh();
+        }
+        log(QStringLiteral("Media: %1 imported").arg(n));
+        scan_media(paths);   // 1.2.6: the smart bins fill as each is looked at
+    };
+    media_panel_->imported = import;
+    media_panel_->import_files = [this, import] {
+        const QStringList files = QFileDialog::getOpenFileNames(this, QStringLiteral("Import into Media"), {}, open_file_filter());
+        if (!files.isEmpty()) import(files);
+    };
+    media_panel_->import_folder = [this, import] {
+        const QString dir = QFileDialog::getExistingDirectory(this, QStringLiteral("Import a folder of frames"));
+        if (!dir.isEmpty()) import({dir});
+    };
+    media_panel_->settings_menu = [this](QMenu* m, const QStringList& paths) { fill_settings_menu(m, paths); };
+    media_panel_->bin_settings_menu = [this](QMenu* m, const QString& bin) {
+        QAction* a = m->addAction(QStringLiteral("Paste settings to every clip in this bin"), this, [this, bin] {
+            QStringList all;
+            for (const MediaClip* c : library_->in(bin)) all << c->path;
+            if (settings_clipboard_) paste_clip_settings(all, *settings_clipboard_);
+        });
+        a->setEnabled(settings_clipboard_.has_value() && library_->count(bin) > 0);
+    };
+    media_panel_->changed = [this] {
+        save_library();
+        mark_dirty();   // the bins are the project's
+    };
+    // While a clip is dragged, the picture is marked as the place to drop it.
+    media_panel_->list()->dragging = [this](const QStringList& paths) {
+        media_drag_ = paths;
+        if (auto* view = findChild<QWidget*>(QStringLiteral("viewer"))) {
+            view->setProperty("drop", !paths.isEmpty());
+            view->style()->unpolish(view);
+            view->style()->polish(view);
+        }
+        if (paths.isEmpty()) statusBar()->clearMessage();
+        else statusBar()->showMessage(QStringLiteral("Drop on the picture to open %1").arg(QFileInfo(paths.front()).fileName()));
+    };
+    v->insertWidget(at, media_panel_, 10);
+    media_panel_->refresh();
+    {   // 1.2.6: clips from before the scan existed get their smart bins too, once
+        QStringList all;
+        for (const MediaClip& c : library_->clips()) all << c.path;
+        QTimer::singleShot(0, this, [this, all] { scan_media(all); });
+    }
+}
+
+QString MainWindow::current_media_path() const {
+    if (shot_kind_ == "files" && !frames_.empty() && current_ >= 0 && current_ < int(frames_.size()))
+        return from_path(frames_[std::size_t(current_)]);
+    if (shot_sources_.size() == 1) return from_path(shot_sources_.front());
+    return {};
+}
+
+void MainWindow::save_library() const {
+    if (library_)
+        QSettings().setValue(QStringLiteral("media/library"), QJsonDocument(library_->to_json()).toJson(QJsonDocument::Compact));
+}
+
+void MainWindow::note_media(const QString& path) {
+    if (!library_ || !library_->add(path)) return;
+    save_library();
+    if (media_panel_) media_panel_->refresh();
+    scan_media({path});   // 1.2.6: its smart bins, if it was not scanned yet
+}
+
+void MainWindow::scan_media(const QStringList& paths) {
+    if (!library_) return;
+    for (const QString& p : paths) {
+        const MediaClip* c = library_->find(p);
+        if (!c || c->scanned() || scan_queue_.contains(c->path) || !QFileInfo::exists(c->path)) continue;
+        scan_queue_ << c->path;
+    }
+    if (!scan_running_) run_next_scan();
+}
+
+void MainWindow::run_next_scan() {
+    if (scan_queue_.isEmpty()) {
+        scan_running_ = false;
+        return;
+    }
+    scan_running_ = true;
+    const QString path = scan_queue_.takeFirst();
+    const QPointer<MainWindow> self(this);
+    // Off the UI thread (a movie is three ffmpeg seeks); the answer comes back on it.
+    std::thread([path, self] {
+        MediaScan s = scan_media_file(path);
+        QMetaObject::invokeMethod(qApp, [self, s = std::move(s)] {
+            if (!self) return;
+            self->apply_media_scan(s);
+            self->run_next_scan();
+        }, Qt::QueuedConnection);
+    }).detach();
+}
+
+void MainWindow::apply_media_scan(const MediaScan& s) {
+    MediaClip* c = library_ ? library_->find(s.path) : nullptr;
+    if (!c) return;
+    if (!s.ok) {
+        log(QStringLiteral("Media: %1 could not be scanned (%2)").arg(QFileInfo(s.path).fileName(), s.error));
+        c->clipped_pct = c->crushed_pct = 0.0;   // not again this session's library
+    } else {
+        c->clipped_pct = s.clipped_pct;
+        c->crushed_pct = s.crushed_pct;
+        c->clipped = c->clipped || s.clipped_pct >= kScanClippedPct;
+        c->crushed = c->crushed || s.crushed_pct >= kScanCrushedPct;
+        if (c->info.isEmpty()) c->info = s.info;
+        if (media_panel_ && media_panel_->thumb(c->path).isNull() && !s.thumb.isNull()) media_panel_->set_thumb(c->path, s.thumb);
+    }
+    save_library();
+    if (media_panel_) media_panel_->refresh();
+}
+
+void MainWindow::note_media_delivered() {
+    if (!library_) return;
+    if (MediaClip* c = library_->find(current_media_path()); c && !c->delivered) {
+        c->delivered = true;
+        save_library();
+        if (media_panel_) media_panel_->refresh();
+    }
+}
+
+bool MainWindow::drop_media(const QStringList& clips, QPoint at) {
+    // A clip from the Media panel opens where the picture is; let go anywhere else, nothing happens.
+    QWidget* view = findChild<QWidget*>(QStringLiteral("viewer"));
+    if (clips.isEmpty() || !view || !view->isVisible() || !QRect(view->mapTo(this, QPoint(0, 0)), view->size()).contains(at))
+        return false;
+    open_media_list(clips);
+    return true;
+}
+
+void MainWindow::open_media_list(const QStringList& paths) {
+    QStringList there;
+    for (const QString& p : paths)
+        if (QFileInfo::exists(p)) there << p;
+    if (there.isEmpty()) {
+        if (!paths.isEmpty()) open_media(paths.front());   // says it is not there
+        return;
+    }
+    const bool stills = std::all_of(there.begin(), there.end(), [](const QString& p) { return MediaLibrary::kind_of(p) == "still"; });
+    if (there.size() > 1 && stills) {   // one shot of them, in the panel's order, replacing the one on screen
+        if (waits_for_model()) return;
+        close_frames();
+        std::vector<std::filesystem::path> files;
+        for (const QString& p : there) files.push_back(to_path(p));
+        add_files(files);
+        return;
+    }
+    open_media(there.front());
+    if (there.size() > 1 && media_panel_) {
+        media_panel_->select(there);
+        const QString s = QStringLiteral("Opened %1. A folder or a movie is a shot of its own: the other %2 stay selected in Media "
+                                         "(right-click \u203a Add to batch queue renders them all)")
+                              .arg(QFileInfo(there.front()).fileName())
+                              .arg(there.size() - 1);
+        log(s);
+        statusBar()->showMessage(s, 12000);
+    }
+}
+
+int MainWindow::batch_add_media(const QStringList& paths, QString* why) {
+    auto refuse = [why](const QString& w) {
+        if (why) *why = w;
+        return 0;
+    };
+    const QString folder = render_dir();
+    if (folder.isEmpty()) return refuse(QStringLiteral("Choose a render folder first (Deliver tab)."));
+    std::vector<BatchShot> stills, ranges;
+    QStringList missing;
+    for (const QString& p : paths) {
+        const QFileInfo fi(p);
+        if (!fi.exists()) {
+            missing << fi.fileName();
+            continue;
+        }
+        BatchShot shot;
+        shot.title = fi.fileName();
+        const QString kind = MediaLibrary::kind_of(p);
+        if (kind == "movie") {
+            shot.kind = "movie";
+            shot.sources = {to_path(p)};
+            ranges.push_back(shot);
+        } else if (kind == "folder") {
+            auto seq = open_sequence(p.toStdString());
+            if (!seq || seq->frames.empty()) {
+                missing << fi.fileName();
+                continue;
+            }
+            shot.kind = "sequence";
+            shot.sources = seq->frames;
+            ranges.push_back(shot);
+        } else {
+            shot.kind = "still";
+            shot.sources = {to_path(p)};
+            stills.push_back(shot);
+        }
+    }
+    auto& q = batch_queue();
+    const BatchTrims trims{aces_trims_.strength, aces_trims_.saturation, aces_trims_.peak_nits, aces_trims_.exposure_ev, aces_trims_.contrast};
+    int added = 0;
+    auto add = [&](const std::vector<BatchShot>& shots, DeliverChoice c) {
+        if (shots.empty()) return;
+        for (const QString& id : q.add(shots, c, folder, render_start(), trims))
+            if (BatchJob* j = q.find(id)) j->source_display = aces_source_display_;
+        added += int(shots.size());
+    };
+    add(stills, deliver_);
+    DeliverChoice whole = deliver_;   // a folder or a movie renders whole (as an EDL's shots), never one still
+    if (whole.output == "still") whole.output = "sequence";
+    add(ranges, whole);
+    q.touch();
+    QString s = QStringLiteral("Batch: added %1 clip%2 from Media (%3 in the queue)")
+                    .arg(added).arg(added == 1 ? "" : "s").arg(q.jobs().size());
+    if (!missing.isEmpty()) s += QStringLiteral("; not found: ") + missing.join(QStringLiteral(", "));
+    log(s);
+    statusBar()->showMessage(s, 8000);
+    if (added == 0 && why) *why = s;
+    return added;
+}
+
+QString MainWindow::write_render_qc(const QString& folder, const std::vector<std::filesystem::path>& masters, const QString& route,
+                                    const QJsonObject& learned) {
+    if (!QSettings().value(QStringLiteral("deliver/qcReport"), true).toBool() || folder.isEmpty()) return {};
+    QcReport r;
+    QString name = findChild<QLineEdit*>(QStringLiteral("renderName")) ? findChild<QLineEdit*>(QStringLiteral("renderName"))->text().trimmed()
+                                                                       : QString();
+    if (name.isEmpty() && !masters.empty()) name = QFileInfo(from_path(masters.front())).completeBaseName().section('.', 0, 0);
+    r.title = name.isEmpty() ? QStringLiteral("render") : name;
+    r.when = QDateTime::currentDateTime().toString(Qt::ISODate);
+    r.app_version = QApplication::applicationVersion();
+    r.source = current_media_path().isEmpty() && !shot_sources_.empty() ? from_path(shot_sources_.front()) : current_media_path();
+    r.source_kind = shot_video_ ? QStringLiteral("movie") : frames_.size() > 1 ? QStringLiteral("sequence") : QStringLiteral("still");
+    r.lossy_source = source_is_lossy();
+    r.output_folder = folder;
+    const DeliverChoice c = deliver_effective();
+    r.route = route;
+    if (route.startsWith(QStringLiteral("Learned")) && aces_curve_mismatch()) {   // 1.2.6: checklist item 4
+        const auto label = source_curve_label(session_.source_curve());
+        r.curve_mismatch = QString::fromUtf8(label.data(), int(label.size()));
+    }
+    std::vector<std::filesystem::path> sidecars;
+    for (auto m : masters) {
+        r.files << from_path(m.filename());
+        sidecars.push_back(m.replace_extension(".json"));
+    }
+    r.frames = qc_frames_from_sidecars(sidecars, &r.container, &r.transfer);
+    {   // 1.2.6 (checklist item 5): the share outside P3-D65, from the EXR masters, up to 48 of them along the shot
+        std::vector<std::filesystem::path> exrs;
+        for (const auto& m : masters)
+            if (QFileInfo(from_path(m)).suffix().compare(QStringLiteral("exr"), Qt::CaseInsensitive) == 0) exrs.push_back(m);
+        const std::size_t n = exrs.size(), take = std::min<std::size_t>(n, 48);
+        for (std::size_t k = 0; k < take; ++k) {
+            const auto& m = exrs[take > 1 ? k * (n - 1) / (take - 1) : 0];
+            const double pct = qc_out_of_p3_pct(m);
+            const QString stem = QFileInfo(from_path(m)).completeBaseName();
+            for (auto& f : r.frames)
+                if (f.file == stem) f.out_of_p3_pct = pct;
+        }
+    }
+    for (const auto& sc : sidecars)
+        if (std::filesystem::exists(sc)) r.files << from_path(sc.filename());
+    if (!learned.isEmpty()) {
+        if (learned.contains("remaining_display_errors")) r.remaining_display_errors = learned.value("remaining_display_errors").toInt();
+        if (learned.contains("appearance_pass")) r.appearance_pass = learned.value("appearance_pass").toBool();
+        if (learned.contains("mean_reconstructed_fraction")) r.mean_reconstructed_fraction = learned.value("mean_reconstructed_fraction").toDouble();
+        if (r.frames.empty() && learned.value("maxcll").toDouble() > 0) {   // a PQ movie: its HDR10 numbers
+            QcFrame f;
+            f.file = QFileInfo(learned.value("hdr10").toString()).fileName();
+            f.maxcll = int(std::ceil(learned.value("maxcll").toDouble()));
+            f.maxfall = int(std::ceil(learned.value("maxfall").toDouble()));
+            r.frames.push_back(f);
+        }
+        if (r.transfer.isEmpty()) r.transfer = c.encoding == "pq" ? QStringLiteral("PQ (Rec.2100)") : c.encoding.toUpper();
+    }
+    // Every setting of the moment: the master's request as its sidecar records it, and the Deliver choice.
+    r.settings = QJsonDocument::fromJson(QByteArray::fromStdString(master_request_json(master_request()))).object();
+    r.settings["deliver_output"] = c.output;
+    r.settings["deliver_format"] = c.output == "movie" ? c.codec : c.image;
+    r.settings["deliver_colour"] = c.gamut;
+    if (!c.encoding.isEmpty() && (c.output == "movie" || c.image == "dpx10")) r.settings["deliver_encoding"] = c.encoding;   // only where it applies
+    if (c.encoding == "pq") r.settings["pq_peak_nits"] = c.pq_peak;
+    const QString path = write_qc_report(r, c.pq_peak > 0 ? c.pq_peak : 1000);
+    if (!path.isEmpty()) {
+        const QcVerdict v = qc_verdict(r, c.pq_peak > 0 ? c.pq_peak : 1000);
+        log(QStringLiteral("QC report: %1 (%2)").arg(QDir::toNativeSeparators(path), v.pass ? QStringLiteral("Pass") : QStringLiteral("Review")));
+    }
+    return path;
+}
+
+QJsonObject MainWindow::clip_settings_now() const {
+    // The project's own JSON for the session's part (grade, view peak, Deliver), without the shot or model.
+    Project p = project_from_session(session_);
+    QJsonObject o = QJsonDocument::fromJson(QByteArray::fromStdString(project_json(p, std::filesystem::path("x.rudra")))).object();
+    for (const char* k : {"shot", "model", "media", "app_version"}) o.remove(QString::fromLatin1(k));
+    return o;
+}
+
+void MainWindow::store_clip_settings(const QString& path) const {
+    if (!library_ || path.isEmpty()) return;
+    MediaClip* c = library_->find(path);
+    if (!c) return;
+    const QJsonObject now = clip_settings_now();
+    if (c->settings() == now) return;
+    c->set_settings(now);   // v1 the first time
+    save_library();
+    if (media_panel_) media_panel_->refresh();
+}
+
+bool MainWindow::apply_clip_settings(const QJsonObject& settings) {
+    if (settings.isEmpty()) return false;
+    QJsonObject doc = settings;
+    if (!doc.contains("rudra_project")) doc["rudra_project"] = 1;
+    auto p = parse_project(QJsonDocument(doc).toJson().toStdString(), std::filesystem::path("x.rudra"));
+    if (!p) {
+        log(QStringLiteral("Settings not applied: ") + QString::fromStdString(p.error().message));
+        return false;
+    }
+    auto loaded = session_.load_state(p->grade, p->peak_ev, p->anchor, p->carry_chroma, p->anchor_knee, p->container);
+    if (!loaded) {
+        log(QStringLiteral("Settings not applied: ") + QString::fromStdString(loaded.error().message));
+        return false;
+    }
+    return true;
+}
+
+void MainWindow::restore_clip_settings(const QString& path) {
+    if (!library_) return;
+    const MediaClip* c = library_->find(path);
+    if (c && c->has_settings() && apply_clip_settings(c->settings()))
+        log(QStringLiteral("%1: its own settings (%2)").arg(c->name(), c->version_name()));
+}
+
+void MainWindow::paste_clip_settings(const QStringList& paths, const QJsonObject& settings) {
+    if (!library_ || settings.isEmpty()) return;
+    const QString open = MediaLibrary::clean(current_media_path());
+    for (const QString& p : paths)
+        if (MediaClip* c = library_->find(p)) {
+            c->set_settings(settings);
+            if (c->path == open) apply_clip_settings(settings);   // the one on screen changes now
+        }
+    save_library();
+    mark_dirty();
+    if (media_panel_) media_panel_->refresh();
+}
+
+int MainWindow::new_clip_version(const QString& path) {
+    MediaClip* c = library_ ? library_->find(path) : nullptr;
+    if (!c) return -1;
+    const bool open = c->path == MediaLibrary::clean(current_media_path());
+    if (open) store_clip_settings(path);   // the version being left keeps what is on screen
+    const int v = c->add_version(open ? clip_settings_now() : c->settings());
+    save_library();
+    mark_dirty();
+    if (media_panel_) media_panel_->refresh();
+    return v;
+}
+
+bool MainWindow::use_clip_version(const QString& path, int version) {
+    MediaClip* c = library_ ? library_->find(path) : nullptr;
+    if (!c || version < 0 || version >= c->versions.size()) return false;
+    const bool open = c->path == MediaLibrary::clean(current_media_path());
+    if (open) store_clip_settings(path);
+    c->version = version;
+    if (open) apply_clip_settings(c->settings());
+    save_library();
+    mark_dirty();
+    if (media_panel_) media_panel_->refresh();
+    return true;
+}
+
+void MainWindow::fill_settings_menu(QMenu* m, const QStringList& paths) {
+    if (!library_ || paths.isEmpty()) return;
+    const QString first = paths.front();
+    MediaClip* c = library_->find(first);
+    if (!c) return;
+    const bool open = c->path == MediaLibrary::clean(current_media_path());
+    if (paths.size() == 1) {
+        // The versions: the one in use checked; a click switches (the open clip changes at once).
+        for (int i = 0; i < c->versions.size(); ++i) {
+            QAction* a = m->addAction(c->versions.at(i).toObject().value("name").toString(), this,
+                                      [this, first, i] { use_clip_version(first, i); });
+            a->setCheckable(true);
+            a->setChecked(i == c->version);
+        }
+        if (!c->versions.isEmpty()) m->addSeparator();
+        QAction* nv = m->addAction(QStringLiteral("Save as a new version"), this, [this, first] { new_clip_version(first); });
+        nv->setEnabled(open || c->has_settings());
+        nv->setToolTip(QStringLiteral("Keeps the settings on screen as v%1; the earlier versions stay one click away")
+                           .arg(c->versions.size() + 1));
+        m->addAction(QStringLiteral("Copy settings"), this, [this, first, open] {
+            if (open) store_clip_settings(first);
+            if (const MediaClip* cc = library_->find(first); cc && cc->has_settings()) settings_clipboard_ = cc->settings();
+            else settings_clipboard_ = clip_settings_now();
+        });
+    }
+    QAction* paste = m->addAction(paths.size() > 1 ? QStringLiteral("Paste settings to %1 clips").arg(paths.size())
+                                                   : QStringLiteral("Paste settings"),
+                                  this, [this, paths] {
+                                      if (settings_clipboard_) paste_clip_settings(paths, *settings_clipboard_);
+                                  });
+    paste->setEnabled(settings_clipboard_.has_value());
+    m->addAction(paths.size() > 1 ? QStringLiteral("Forget their settings") : QStringLiteral("Forget its settings"), this,
+                 [this, paths] {
+                     for (const QString& p : paths)
+                         if (MediaClip* cc = library_->find(p)) {
+                             cc->versions = QJsonArray();
+                             cc->version = -1;
+                         }
+                     save_library();
+                     mark_dirty();
+                     if (media_panel_) media_panel_->refresh();
+                 });
+}
+
+void MainWindow::open_media(const QString& path) {
+    const QFileInfo fi(path);
+    if (!fi.exists()) {
+        log(QStringLiteral("Media: %1 is not there any more (moved or deleted?)").arg(QDir::toNativeSeparators(path)));
+        return;
+    }
+    if (fi.isDir()) open_source(path, true);
+    else open_source(path);   // a still or a movie, as a shot of its own
 }
 
 }  // namespace rudra::app

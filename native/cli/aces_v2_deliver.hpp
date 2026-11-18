@@ -41,6 +41,7 @@ namespace rudra {
 struct AcesDeliverOptions {
     std::string exr = "float";
     std::string exr_gamut = "acescg";
+    bool exr_zip = false;   // 1.2.6 (item 8): lossless ZIP for the ACEScg master; never the AP0 container
     AcesLogOptions copies;
     std::vector<int> frames;
     int range_first = -1, range_last = -1;

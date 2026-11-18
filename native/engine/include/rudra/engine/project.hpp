@@ -49,6 +49,9 @@ struct Project {
     std::string app_version;                      // what wrote it, for the record
     std::string masks_file;                       // the masks file the project names, "" for none (read by load_project)
     std::vector<std::string> notes;               // what load_project could not bring back (missing masks), for the log
+    // 1.2.6: the Media panel's library (the app's MediaLibrary as JSON: its bins and clips), "" for
+    // none; written only when set, so a project before reads the same.
+    std::string media_json;
 };
 
 // The session's part of a project (grade, peak, Deliver settings).

@@ -5,6 +5,8 @@
 // a master, a render, a measurement or a saved project.
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QFrame>
+#include <QScreen>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -20,6 +22,7 @@
 
 #include "flow_layout.hpp"
 #include "main_window.hpp"
+#include "widgets.hpp"
 
 namespace rudra::app {
 namespace {
@@ -56,7 +59,171 @@ QString signed_ev(double ev) {
 QString pct(double v) { return QString::number(v, 'f', v < 10.0 ? 1 : 0) + QStringLiteral(" %"); }
 QString stops(double v) { return (v >= 0.0 ? QStringLiteral("+") : QStringLiteral("\u2212")) + QString::number(std::abs(v), 'f', 1); }
 
+// 1.2.6 (user feedback: a cleaner viewer, no function lost): a button that opens a panel
+// under it; the panel closes on a click outside it (Qt::Popup). The controls moved into it
+// keep their names, shortcuts and behaviour.
+struct Popover {
+    QPushButton* button = nullptr;
+    QFrame* panel = nullptr;
+    QVBoxLayout* v = nullptr;
+};
+
+Popover popover(const QString& text, const QString& id, const QString& tip, QWidget* parent) {
+    Popover p;
+    p.button = tool_button(text, id, tip, parent);
+    p.panel = new QFrame(parent, Qt::Popup);
+    p.panel->setObjectName(id + QStringLiteral("Panel"));
+    p.panel->setProperty("role", "popover");
+    p.panel->setAttribute(Qt::WA_StyledBackground, true);
+    p.v = new QVBoxLayout(p.panel);
+    p.v->setContentsMargins(12, 10, 12, 12);
+    p.v->setSpacing(4);
+    QObject::connect(p.button, &QPushButton::clicked, p.panel, [b = p.button, panel = p.panel] {
+        panel->adjustSize();
+        QPoint at = b->mapToGlobal(QPoint(0, b->height() + 4));
+        if (const QScreen* s = b->screen()) {   // on the screen, whole
+            const QRect r = s->availableGeometry();
+            at.setX(std::clamp(at.x(), r.left(), std::max(r.left(), r.right() - panel->width())));
+            at.setY(std::clamp(at.y(), r.top(), std::max(r.top(), r.bottom() - panel->height())));
+        }
+        panel->move(at);
+        panel->show();
+    });
+    return p;
+}
+
+// One titled row of a panel; each widget keeps whether it was shown (sync code hides some).
+void section(const Popover& p, const QString& title, std::initializer_list<QWidget*> parts) {
+    if (!title.isEmpty()) {
+        auto* cap = new QLabel(title, p.panel);
+        cap->setProperty("role", "pop-head");
+        p.v->addWidget(cap);
+    }
+    auto* r = new QWidget(p.panel);
+    auto* h = new QHBoxLayout(r);
+    h->setContentsMargins(0, 0, 0, 6);
+    h->setSpacing(6);
+    for (QWidget* w : parts) {
+        if (!w) continue;
+        const bool hidden = w->isHidden();
+        if (QWidget* old = w->parentWidget(); old && old->layout()) old->layout()->removeWidget(w);
+        w->setParent(r);
+        h->addWidget(w);
+        w->setVisible(!hidden);
+    }
+    h->addStretch(1);
+    p.v->addWidget(r);
+}
+
 }  // namespace
+
+void MainWindow::build_viewer_popovers(FlowLayout* row) {
+    // The window is still being put together: the centre column is not its child yet, so the
+    // controls are looked up from the top of the toolbar's own tree.
+    QWidget* root = vtool_;
+    while (root->parentWidget()) root = root->parentWidget();
+    auto find = [root](const char* id) { return root->findChild<QWidget*>(QString::fromLatin1(id)); };
+    // Overlays: every layer and check drawn over the picture, in one panel, under one button
+    // that counts the ones on ("Overlays · 2"). Was ten buttons in two rows.
+    {
+        Popover p = popover(QStringLiteral("Overlays \u25be"), QStringLiteral("vtOverlays"),
+                            QStringLiteral("What is drawn over the picture: what changed, the invented pixels, false "
+                                           "colour, the source's clamp, the screen's clip, the range, the AI fill, and "
+                                           "the gamut and invalid-value checks. View only: never rendered"),
+                            vtool_);
+        vt_overlays_ = p.button;
+        auto* hud = find("hud");
+        auto* hud_flow = hud ? dynamic_cast<FlowLayout*>(hud->layout()) : nullptr;
+        if (hud_flow) {   // the first separator (between Invented and the layers) goes with them
+            for (auto* c : hud->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+                if (c->property("role").toString() == "hud-sep") {
+                    hud_flow->removeWidget(c);
+                    c->deleteLater();
+                    break;
+                }
+        }
+        section(p, QStringLiteral("Compare"), {changes_btn_, invented_btn_, find("vtAiFill")});
+        section(p, QStringLiteral("Picture"), {view_layer_});
+        section(p, QStringLiteral("Range"), {vt_clamp_, vt_clip_, vt_range_});
+        if (auto* checks = find("vtChecksGroup")) {
+            if (auto* cap = checks->findChild<QLabel*>(QStringLiteral("vtChecksGroupLabel"))) cap->hide();   // the head says it
+            section(p, QStringLiteral("Colour checks"), {checks});
+        }
+        if (hud_flow) {
+            vt_overlays_->setParent(hud);
+            hud_flow->insert_widget(hud_flow->indexOf(view_mode_) + 1, vt_overlays_);
+        }
+        for (auto* b : p.panel->findChildren<QPushButton*>())
+            connect(b, &QPushButton::toggled, this, [this] { sync_viewer_popover_buttons(); });
+    }
+    // Colour: the view, the working space and how the SDR is shown, behind one button that names
+    // the view in use.
+    {
+        Popover p = popover(QString(), QStringLiteral("vtColourBtn"),
+                            QStringLiteral("How the picture is shown on this screen: the view (RUDRA's or an "
+                                           "OpenColorIO one), the working space, and how the SDR is brought in. "
+                                           "View only: never rendered"),
+                            vtool_);
+        vt_colour_btn_ = p.button;
+        for (const char* id : {"vtViewGroup", "vtWorkingGroup", "vtOriginalGroup"})
+            section(p, QString(), {find(id)});
+        row->insert_widget(row->indexOf(vt_flip_) + 1, vt_colour_btn_);
+        connect(vt_ocio_, &QComboBox::currentIndexChanged, this, [this] { sync_viewer_popover_buttons(); });
+    }
+    // Exposure: the slider and its value stay; gamma, the brackets and Reset go one click away.
+    {
+        Popover p = popover(QStringLiteral("\u03b3 \u00b7 brackets \u25be"), QStringLiteral("vtMore"),
+                            QStringLiteral("View gamma, the exposure brackets (Alt+B) and Reset (Alt+0)"), vtool_);
+        vt_more_ = p.button;
+        section(p, QStringLiteral("Gamma"), {vt_gamma_});
+        std::vector<QWidget*> br(vt_brackets_.begin(), vt_brackets_.end());
+        {
+            auto* cap = new QLabel(QStringLiteral("Brackets"), p.panel);
+            cap->setProperty("role", "pop-head");
+            p.v->addWidget(cap);
+            auto* r = new QWidget(p.panel);
+            auto* h = new QHBoxLayout(r);
+            h->setContentsMargins(0, 0, 0, 6);
+            h->setSpacing(6);
+            for (QWidget* w : br) {
+                row->removeWidget(w);
+                w->setParent(r);
+                h->addWidget(w);
+                w->show();
+            }
+            h->addStretch(1);
+            p.v->addWidget(r);
+        }
+        section(p, QString(), {vt_reset_});
+        row->insert_widget(row->indexOf(vt_ev_) + 1, vt_more_);
+    }
+    sync_viewer_popover_buttons();
+}
+
+void MainWindow::sync_viewer_popover_buttons() {
+    if (vt_overlays_) {
+        int on = 0;
+        for (const char* id : {"changesBtn", "inventedBtn", "vtClamp", "vtClip", "vtRange", "vtAiFill", "vtGamut", "vtInvalid"})
+            if (auto* b = findChild<QPushButton*>(QString::fromLatin1(id)); b && b->isChecked()) ++on;
+        if (view_layer_ && (view_layer_->on() == "1" || view_layer_->on() == "2")) ++on;
+        vt_overlays_->setText(on ? QStringLiteral("Overlays \u00b7 %1 \u25be").arg(on) : QStringLiteral("Overlays \u25be"));
+        if (vt_overlays_->property("on").toBool() != (on > 0)) {
+            vt_overlays_->setProperty("on", on > 0);
+            vt_overlays_->style()->unpolish(vt_overlays_);
+            vt_overlays_->style()->polish(vt_overlays_);
+        }
+    }
+    if (vt_colour_btn_ && vt_ocio_) {
+        QString name = vt_ocio_->currentText();
+        if (name.size() > 30) name = name.left(29) + QStringLiteral("\u2026");
+        vt_colour_btn_->setText(QStringLiteral("Colour: %1 \u25be").arg(name.isEmpty() ? QStringLiteral("RUDRA view") : name));
+    }
+    if (vt_more_) {
+        const bool gamma = vt_gamma_ && std::abs(vt_gamma_->value() - 1.0) > 1e-9;
+        vt_more_->setText(gamma ? QStringLiteral("\u03b3 %1 \u00b7 brackets \u25be").arg(vt_gamma_->value(), 0, 'f', 2)
+                                : QStringLiteral("\u03b3 \u00b7 brackets \u25be"));
+    }
+}
 
 void MainWindow::build_viewer_toolbar(QVBoxLayout* v, QWidget* parent) {
     vtool_ = new QWidget(parent);
@@ -127,10 +294,21 @@ void MainWindow::build_viewer_toolbar(QVBoxLayout* v, QWidget* parent) {
     };
     connect(vt_a_, &QComboBox::activated, this, apply_ab);
     connect(vt_b_, &QComboBox::activated, this, apply_ab);
-    row->addWidget(new QLabel("A", vtool_));
-    row->addWidget(vt_a_);
-    row->addWidget(new QLabel("B", vtool_));
-    row->addWidget(vt_b_);
+    // 1.2.6: each side's letter and its box are one item, so a wrap never parts them
+    for (auto [letter, box, id] : {std::tuple{"A", vt_a_, "vtAGroup"}, std::tuple{"B", vt_b_, "vtBGroup"}}) {
+        auto* g = new QWidget(vtool_);
+        g->setObjectName(QString::fromLatin1(id));
+        auto* h = new QHBoxLayout(g);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(5);
+        auto* l = new QLabel(QString::fromLatin1(letter), g);
+        l->setProperty("role", "vt-cap");
+        l->setToolTip(box->toolTip());
+        h->addWidget(l);
+        box->setParent(g);
+        h->addWidget(box);
+        row->addWidget(g);
+    }
     vt_flip_ = tool_button(QStringLiteral("A \u21c4 B"), "vtFlip", "Swap the wipe's sides; without a wipe, flip A and B (Alt+X)",
                            vtool_);
     connect(vt_flip_, &QPushButton::clicked, this, [this] { session_.flip_ab(); });
@@ -184,6 +362,8 @@ void MainWindow::build_viewer_toolbar(QVBoxLayout* v, QWidget* parent) {
     // ── keys (Alt+…: the page's catalog uses none of them) ──
     // QActions on the window, as the catalog's keys are (not in the catalog:
     // AppActions checks the page's keys, and these are native only).
+    build_viewer_popovers(row);   // 1.2.6
+
     auto key = [this](QKeyCombination k, std::function<void()> f) {
         auto* a = new QAction(this);
         a->setShortcut(QKeySequence(k));
@@ -238,6 +418,7 @@ void MainWindow::sync_viewer_toolbar() {
             if (auto* it = m->item(0)) it->setEnabled(have_sdr);
     }
     vt_clamp_->setEnabled(have_sdr);
+    vt_clamp_->setVisible(have_sdr);   // 1.2.6: offered when the frame's SDR is there to read
     vt_range_->setEnabled(true);
     // Always visible when the view is gained, so no screenshot passes for the grade.
     if (session_.viewer_neutral()) {
@@ -247,6 +428,7 @@ void MainWindow::sync_viewer_toolbar() {
         vt_badge_->show();
     }
     sync_colour_controls();
+    sync_viewer_popover_buttons();   // 1.2.6: the names and counts on the panel buttons
     range_line_->setText(range_readout_text());
 }
 

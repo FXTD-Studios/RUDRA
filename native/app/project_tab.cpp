@@ -1,5 +1,7 @@
 // Projects, autosave, updates and help (split from main_window.cpp, 28 Oct 2026 review: one file per part of the window).
 #include "main_window.hpp"
+#include "media_library.hpp"
+#include <QJsonDocument>
 #include "batch_queue.hpp"
 #include "rudra/deliver/video_encode.hpp"
 #include "paths.hpp"
@@ -120,6 +122,8 @@ Project MainWindow::current_project() const {
         p.sources = shot_sources_;
         p.frame = frames_.empty() ? 0 : current_;
     }
+    if (library_)   // 1.2.6: the Media panel's bins travel with the project
+        p.media_json = QJsonDocument(library_->to_json()).toJson(QJsonDocument::Compact).toStdString();
     if (project_model_) {   // loading, or queued: still the project's model
         p.package = project_model_->package;
         p.backend = project_model_->backend;
@@ -273,6 +277,11 @@ bool MainWindow::open_project(const std::filesystem::path& path, bool adopt) {
     }
     pending_shot_.reset();
     close_frames();
+    if (library_ && !p->media_json.empty()) {   // 1.2.6: the project's own bins
+        library_->from_json(QJsonDocument::fromJson(QByteArray::fromStdString(p->media_json)).object());
+        save_library();
+        if (media_panel_) media_panel_->show_bin(MediaLibrary::kAll);
+    }
     if (!p->source_kind.empty()) open_shot(p->source_kind, p->sources, p->frame);
     restoring_ = false;
     project_path_ = adopt ? path : std::filesystem::path();

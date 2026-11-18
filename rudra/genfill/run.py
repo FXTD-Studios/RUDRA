@@ -183,7 +183,10 @@ def write_frame(path: Path, fr: dict, out_ap1: np.ndarray, alpha: np.ndarray, at
         ch[GENERATED_PARTS[0]] = np.where(hi, gen, 0).astype(gen.dtype)
         ch[GENERATED_PARTS[1]] = np.where(hi, 0, gen).astype(gen.dtype)
     header = {k: v for k, v in fr['header'].items() if k not in ('channels', 'dataWindow', 'displayWindow')}
-    header['compression'] = OpenEXR.NO_COMPRESSION        # the app's reader takes uncompressed scanlines
+    # The app reads uncompressed and, since 1.2.6 (readiness report item 8), ZIP: a ZIP master
+    # (the ACEScg / linear default) stays ZIP, anything else is written uncompressed.
+    zipped = fr['header'].get('compression') == OpenEXR.ZIP_COMPRESSION
+    header['compression'] = OpenEXR.ZIP_COMPRESSION if zipped else OpenEXR.NO_COMPRESSION
     header['type'] = OpenEXR.scanlineimage
     for k, v in attrs.items():
         header[k] = str(v)
@@ -467,7 +470,8 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
         if rerender.condition not in Rerender.CONDITIONS:
             raise ValueError(f'condition must be one of {", ".join(Rerender.CONDITIONS)}')
         source_codes = SourceCodes(Path(rerender.source), len(frames), (H, W), rerender.start)
-        ms = MaskSettings(**{**asdict(ms), 'blend_high': ms.tau_high, 'blend_low': ms.tau_low, 'max_gain_stops': 0.0})
+        ms = MaskSettings(**{**asdict(ms), 'blend_high': ms.tau_high, 'blend_low': ms.tau_low, 'max_gain_stops': 0.0,
+                                     'min_core': 0.0})   # v4 blends its whole mask, specks too
         brightness = None
         if rerender.hue not in RERENDER_HUES:
             raise ValueError(f'hue must be one of {", ".join(RERENDER_HUES)}')

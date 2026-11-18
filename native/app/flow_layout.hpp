@@ -17,6 +17,8 @@ public:
 
     // A fixed gap of `width` pixels at this point of the row (QHBoxLayout::addSpacing).
     void add_gap(int width);
+    // 1.2.6: a widget at `index` of the row (0 = first), as QBoxLayout::insertWidget.
+    void insert_widget(int index, QWidget* w);
 
     void addItem(QLayoutItem* item) override;
     int count() const override { return int(items_.size()); }

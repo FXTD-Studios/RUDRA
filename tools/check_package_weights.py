@@ -9,12 +9,13 @@ an Apache-2.0 package; 1.0.0 to 1.0.2 shipped sdr2hdr_image_v8 by mistake.
     python tools/check_package_weights.py dist/beta/RUDRA-1.0.3-windows-x64.zip
     python tools/check_package_weights.py /Volumes/RUDRA\\ 1.0.3/RUDRA.app
 
-Takes a folder, a .zip or a .app; exits 1 and lists every offending file.
+Takes a folder, a .zip, a .tar.gz (the Linux package, 1.2.6) or a .app; exits 1 and lists every offending file.
 """
 from __future__ import annotations
 
 import argparse
 import sys
+import tarfile
 import zipfile
 from pathlib import PurePosixPath, Path
 
@@ -49,9 +50,12 @@ def list_names(target: Path) -> list[str]:
     if target.is_file() and target.suffix.lower() == ".zip":
         with zipfile.ZipFile(target) as z:
             return z.namelist()
+    if target.is_file() and target.name.lower().endswith((".tar.gz", ".tgz")):
+        with tarfile.open(target) as t:
+            return t.getnames()
     if target.is_dir():
         return [str(p.relative_to(target)) for p in target.rglob("*")]
-    raise SystemExit(f"not a folder, .app or .zip: {target}")
+    raise SystemExit(f"not a folder, .app, .zip or .tar.gz: {target}")
 
 
 def main(argv: list[str] | None = None) -> int:

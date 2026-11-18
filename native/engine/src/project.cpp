@@ -152,6 +152,20 @@ std::string project_json(const Project& p, const fs::path& project_file) {
         {"deliver",
          {{"anchor", p.anchor}, {"anchor_knee", p.anchor_knee}, {"carry_chroma", p.carry_chroma}, {"container", p.container}}},
     };
+    if (!p.media_json.empty()) {   // 1.2.6: the Media panel's bins
+        json media = json::parse(p.media_json, nullptr, false);
+        if (media.is_object()) {
+            // Each clip as the shot's sources are: absolute, plus relative to the project's folder when it
+            // is under it, so a project moved with its media (another drive, another machine) finds them.
+            if (media.contains("clips") && media["clips"].is_array())
+                for (auto& c : media["clips"])
+                    if (c.is_object() && c.contains("path") && c["path"].is_string()) {
+                        const json pj = path_json(from_utf8(c["path"].get<std::string>()), base);
+                        if (pj.contains("relative")) c["relative"] = pj["relative"];
+                    }
+            j["media"] = media;
+        }
+    }
     if (p.grade.region.enabled)   // spec rev 2: only when on, so older projects read the same
         j["grade"]["reconstruction_region"] = json::parse(reconstruction_region_json(p.grade.region));
     if (p.grade.headroom_policy != HeadroomPolicy::Disabled) {
@@ -195,6 +209,16 @@ Result<Project> parse_project(const std::string& text, const fs::path& project_f
             p.settle_grain = j.at("deliver").at("settle_grain").get<bool>();
         }
         p.app_version = j.value("app_version", std::string());
+        if (j.contains("media") && j["media"].is_object()) {   // 1.2.6: the Media panel's bins
+            json media = j["media"];
+            if (media.contains("clips") && media["clips"].is_array())
+                for (auto& c : media["clips"])
+                    if (c.is_object() && c.contains("path")) {
+                        c["path"] = utf8(path_from(c, base));   // the relative one when it is there, else as written
+                        c.erase("relative");
+                    }
+            p.media_json = media.dump();
+        }
         const json& shot = j.value("shot", json::object());
         p.source_kind = shot.value("kind", std::string());
         for (const auto& s : shot.value("sources", json::array())) p.sources.push_back(path_from(s, base));
