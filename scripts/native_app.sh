@@ -32,6 +32,10 @@ mkdir -p "$DEPS"
 
 say() { printf '\n== %s\n' "$*"; }
 fail() { printf 'FAILED: %s\n' "$*" >&2; exit 1; }
+# --retry-all-errors needs curl 7.71; RHEL / Alma 8 have 7.61, which stops on the unknown option
+# with exit 2 (1.2.6: the Linux release job in almalinux:8).
+CURL_RETRY=(--retry 5)
+case "$(curl --help all 2>/dev/null)" in *--retry-all-errors*) CURL_RETRY+=(--retry-all-errors) ;; esac
 
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) OS=mac; QT_HOST=mac; QT_ARCH=clang_64; QT_DIR=macos; ORT_ARCHIVE=onnxruntime-osx-arm64-$ORT_VERSION ;;
@@ -60,7 +64,7 @@ if [ -z "${SKIP_BUILD:-}" ]; then
   # -------------------------------------------------------------------------
   if [ ! -f "$ORT_ROOT/include/onnxruntime_cxx_api.h" ]; then
     say "ONNX Runtime $ORT_VERSION"
-    curl -fL --retry 5 --retry-all-errors -o "$DEPS/$ORT_ARCHIVE.tgz" \
+    curl -fL "${CURL_RETRY[@]}" -o "$DEPS/$ORT_ARCHIVE.tgz" \
       "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/$ORT_ARCHIVE.tgz"
     tar -xzf "$DEPS/$ORT_ARCHIVE.tgz" -C "$DEPS"
     rm -f "$DEPS/$ORT_ARCHIVE.tgz"

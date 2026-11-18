@@ -8396,7 +8396,8 @@ TEST(Media, OpeningAClipBringsBackItsSettings) {
 
 // 1.2.6: the fire JPEG's fix for footage: an 8-bit H.264 movie is a lossy source; ProRes is not.
 TEST(Media, An8BitH264MovieIsALossySource) {
-    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    // Outside RUDRA_HAVE_STILL_DECODE, where have_ffmpeg() is not (CI's Qt shell builds without OpenCV).
+    if (!rudra::find_executable("ffmpeg") || !rudra::find_executable("ffprobe")) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
     const auto dir = fresh_dir("lossy-movie");
     std::filesystem::create_directories(dir);
     const QString h264 = QString::fromStdString((dir / "a.mp4").string()), prores = QString::fromStdString((dir / "b.mov").string());

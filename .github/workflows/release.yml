@@ -251,7 +251,7 @@ jobs:
             findutils which file diffutils perl curl \
             mesa-libGL-devel mesa-libEGL-devel libxkbcommon-devel libxkbcommon-x11 fontconfig-devel freetype-devel \
             dbus-libs libX11-xcb xcb-util-wm xcb-util-image xcb-util-keysyms xcb-util-renderutil xcb-util-cursor \
-            wayland-devel dejavu-sans-fonts
+            wayland-devel vulkan-headers gawk dejavu-sans-fonts
           python3.12 -m pip install cmake ninja patchelf
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
       - name: Build, test and package
