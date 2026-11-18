@@ -200,6 +200,7 @@ int main(int argc, char** argv) {
     if (project_arg) {
         w.open_project(std::filesystem::path(rest[0].toStdU16String()));
         if (!w.loading_model() && w.model_package().empty()) w.boot();   // its model is missing: the usual one
+        w.open_compare_view();   // 1.2.6: a project opens on the same SDR | RUDRA (HDR 1000) wipe
     } else if (rest.size() > 0) {
         w.open_package(rest[0]);
     } else {

@@ -11,6 +11,7 @@
 #include <QBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QProgressBar>
 #include <QLineEdit>
 #include <QMenu>
 #include <QProcess>
@@ -89,6 +90,7 @@ void MainWindow::run_prompt_suggestions(bool popup, bool quiet) {
     auto env = QProcessEnvironment::systemEnvironment();
     const QString old = env.value("PYTHONPATH");
     env.insert("PYTHONPATH", QString::fromStdString(setup->repo.string()) + (old.isEmpty() ? QString() : QDir::listSeparator() + old));
+    if (!genfill_florence_dir(*setup).empty()) env.insert("HF_HUB_OFFLINE", "1");   // 1.2.6: Florence-2 from its folder
     proc->setProcessEnvironment(env);
     proc->setWorkingDirectory(QString::fromStdString(setup->repo.string()));
     prompt_suggest_running_ = true;
@@ -108,6 +110,8 @@ void MainWindow::run_prompt_suggestions(bool popup, bool quiet) {
             if (!quiet) statusBar()->showMessage("Suggest a prompt: " + why2, 8000);
             return;
         }
+        if (!r->describe_error.isEmpty())   // 1.2.6: why there is no "From this shot"
+            log(QStringLiteral("Suggest a prompt: the shot could not be described (Florence-2): ") + r->describe_error);
         prompt_suggestions_ = *r;
         prompt_suggest_frame_ = frame;
         refresh_prompt_chips();
@@ -132,7 +136,7 @@ void MainWindow::run_prompt_suggestions(bool popup, bool quiet) {
         auto* b = findChild<QPushButton*>("deliverAiSuggest");
         menu->popup(b && b->isVisible() ? b->mapToGlobal(QPoint(0, b->height())) : QCursor::pos());
     });
-    proc->start(QString::fromStdString(setup->python.string()), genfill_suggest_arguments(*setup, deliver_effective().ai, {file}));
+    proc->start(QString::fromStdString(setup->python.string()), genfill_suggest_arguments(*setup, deliver_effective().ai, {file}, /*describe=*/!quiet));
 }
 
 void MainWindow::refresh_prompt_chips() {
@@ -147,10 +151,9 @@ void MainWindow::refresh_prompt_chips() {
             if (column) w->setMinimumHeight(std::max(24, w->sizeHint().height()));
         };
         if (!prompt_suggestions_ && column && deliver_.ai.rerender) continue;   // v4 has no Suggest: nothing to announce
+        if (!prompt_suggestions_ && column) continue;   // 1.2.6: the card's Suggest button says it already
         if (!prompt_suggestions_) {
-            h->addWidget(new QLabel(column ? QStringLiteral("Suggest a prompt\u2026 lists them here")
-                                           : QStringLiteral("Suggestions appear here for the frame on screen"),
-                                    row));
+            h->addWidget(new QLabel(QStringLiteral("Suggestions appear here for the frame on screen"), row));
             h->addStretch(1);
             continue;
         }
@@ -244,6 +247,15 @@ void MainWindow::build_ai_prompt_bar(QVBoxLayout* v, QWidget* parent) {
         if (!genfill_preview_busy_) preview_genfill();
     });
     h->addWidget(le, 2);
+    {   // 1.2.6: the AI fill's progress, here where the preview is started (MainWindow::set_ai_progress)
+        auto* bar = new QProgressBar(ai_prompt_bar_);
+        bar->setObjectName("viewerAiProgress");
+        bar->setRange(0, 1000);
+        bar->setTextVisible(true);
+        bar->setFixedSize(150, 16);
+        bar->hide();
+        h->addWidget(bar);
+    }
     auto* chips = new QWidget(ai_prompt_bar_);
     chips->setObjectName("aiSuggestChips");
     auto* ch = new QHBoxLayout(chips);
@@ -312,11 +324,11 @@ void MainWindow::sync_ai_prompt_bar() {
                           : QString());
     }
     for (auto* row : findChildren<QWidget*>(QStringLiteral("aiSuggestChips"))) row->setEnabled(true);
-    for (auto* b : findChildren<QPushButton*>(QStringLiteral("aiSuggestRun"))) b->setVisible(!v4);
+    // 1.2.6: Suggest in v4.3 too: the prompt from the shot (Florence-2) says what the bright region is
+    for (auto* b : findChildren<QPushButton*>(QStringLiteral("aiSuggestRun"))) b->setVisible(true);
     if (auto* mode = findChild<QPushButton*>("viewerAiRerender")) {
-        mode->setVisible(genfill_v4_enabled());   // 13 Nov 2026: v4 is parked
         mode->setChecked(deliver_.ai.rerender);
-        mode->setText(deliver_.ai.rerender ? QStringLiteral("Fill: v4 re-render") : QStringLiteral("Fill: v3"));
+        mode->setText(deliver_.ai.rerender ? QStringLiteral("Fill: v4.3 region") : QStringLiteral("Fill: v3"));
         mode->setEnabled(!genfill_preview_busy_);
     }
     if (auto* again = findChild<QPushButton*>("viewerAiPreviewAgain")) {

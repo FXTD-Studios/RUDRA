@@ -17,9 +17,12 @@
 #include <QDoubleSpinBox>
 #include <initializer_list>
 #include <tuple>
+#include <QGridLayout>
+#include <QTextDocumentFragment>
 #include <QHBoxLayout>
 #include <QEvent>
 #include <QLabel>
+#include <QProgressBar>
 #include <QScrollBar>
 #include <QLineEdit>
 #include <QMenuBar>
@@ -38,6 +41,7 @@
 #include "scope_widgets.hpp"
 #include "source_panel.hpp"
 #include "widgets.hpp"
+#include "flow_layout.hpp"
 
 #ifdef RUDRA_APP_VIEWER
 #include "rudra/render/viewer_window.hpp"
@@ -76,6 +80,30 @@ QWidget* ctl(QWidget* parent = nullptr) {
 }
 
 // A .prow / .field / .ro: a key on the left, a value on the right.
+// The head of a read-only card (18 Nov 2026, 1.2.6, user feedback: which panels can be
+// edited and which only report?). Every card that only reports gets this head: an "i",
+// its title, and a "Read-only" tag on the right; the card itself is drawn as info
+// (kind="info": no fill, a thin outline), never as a control. A card of controls keeps
+// the filled look, and every control in it has a box, a switch or a button.
+QWidget* info_head(const QString& title, const QString& tip, QWidget* card) {
+    card->setProperty("kind", "info");
+    card->setToolTip(tip);
+    auto* w = new QWidget(card);
+    w->setProperty("role", "info-head");
+    auto* h = new QHBoxLayout(w);
+    h->setContentsMargins(0, 0, 0, 2);
+    h->setSpacing(6);
+    auto* i = label(QStringLiteral("i"), {}, "info-icon", w);
+    i->setAlignment(Qt::AlignCenter);
+    i->setFixedSize(14, 14);
+    h->addWidget(i, 0, Qt::AlignVCenter);
+    auto* t = label(title, {}, "card-head", w);
+    t->setWordWrap(true);
+    h->addWidget(t, 1);
+    h->addWidget(label(QStringLiteral("Read-only"), {}, "ro-tag", w), 0, Qt::AlignVCenter);
+    return w;
+}
+
 QWidget* row(const QString& key, QLabel* value, const QString& role = "prow") {
     auto* w = new QWidget;
     w->setProperty("role", role);
@@ -93,6 +121,82 @@ QWidget* row(const QString& key, QLabel* value, const QString& role = "prow") {
 
 
 namespace {
+// The strip over the picture (18 Nov 2026, 1.2.6, user feedback: text cut off at 1080p).
+// Wide: the HDR badge on the left, the view controls in the middle, MaxCLL on the right, one
+// row. Narrower than the three ask for (1920 x 1080 at 125 % or 150 % with the scopes open):
+// the badges keep the first row and the view controls take a row of their own, centred,
+// wrapping again if they must. Nothing is squeezed under its own text.
+// 1.2.6 (user feedback: a cleaner UI, no function lost): a card's head that folds its body on
+// a click, with a ▸ / ▾ at its end, remembered under `key`. The head is not a button, so a
+// read-only card stays one (it holds nothing to edit).
+class FoldOnClick final : public QObject {
+public:
+    FoldOnClick(QWidget* head, QLabel* glyph, std::vector<QWidget*> body, std::vector<QWidget*> folded, QString key,
+                bool open_by_default)
+        : QObject(head), glyph_(glyph), body_(std::move(body)), folded_(std::move(folded)), key_(std::move(key)) {
+        head->setCursor(Qt::PointingHandCursor);
+        head->installEventFilter(this);
+        set(QSettings().value(key_, open_by_default).toBool());
+    }
+    bool eventFilter(QObject*, QEvent* e) override {
+        if (e->type() == QEvent::MouseButtonRelease) {
+            set(!open_);
+            QSettings().setValue(key_, open_);
+            return true;
+        }
+        return false;
+    }
+
+private:
+    void set(bool open) {
+        open_ = open;
+        glyph_->setText(open ? QStringLiteral("\u25BE") : QStringLiteral("\u25B8"));
+        for (QWidget* w : body_) w->setProperty("folded", !open), w->setVisible(open);
+        for (QWidget* w : folded_) w->setVisible(!open);
+    }
+    QLabel* glyph_;
+    std::vector<QWidget*> body_, folded_;
+    QString key_;
+    bool open_ = true;
+};
+
+class StripFit final : public QObject {
+public:
+    StripFit(QWidget* strip, QGridLayout* grid, QWidget* left, QWidget* middle, QWidget* right)
+        : QObject(strip), strip_(strip), grid_(grid), left_(left), middle_(middle), right_(right) {
+        place(false);
+    }
+    bool eventFilter(QObject* o, QEvent* e) override {
+        if (o == strip_ && (e->type() == QEvent::Resize || e->type() == QEvent::LayoutRequest)) fit();
+        return false;
+    }
+
+private:
+    void fit() {
+        const QMargins m = grid_->contentsMargins();
+        const int need = left_->sizeHint().width() + middle_->sizeHint().width() + right_->sizeHint().width() +
+                         2 * grid_->horizontalSpacing() + m.left() + m.right();
+        const bool narrow = strip_->width() < need;
+        if (narrow != narrow_) place(narrow);
+    }
+    void place(bool narrow) {
+        narrow_ = narrow;
+        for (QWidget* w : {left_, middle_, right_}) grid_->removeWidget(w);
+        grid_->addWidget(left_, 0, 0);
+        grid_->addWidget(right_, 0, 2);
+        if (narrow) grid_->addWidget(middle_, 1, 0, 1, 3, Qt::AlignHCenter);
+        else grid_->addWidget(middle_, 0, 1);
+        // The strip's height changes with it: the column it is in lays out now, not on a later pass.
+        grid_->activate();
+        strip_->updateGeometry();
+        if (QWidget* p = strip_->parentWidget(); p && p->layout()) p->layout()->activate();
+    }
+    QWidget* strip_;
+    QGridLayout* grid_;
+    QWidget *left_, *middle_, *right_;
+    bool narrow_ = false;
+};
+
 // A right-hand column never slides sideways (4 Nov 2026). The columns are fixed-width
 // scroll areas with the horizontal bar hidden; anything wider than the column (a long
 // path, the container line) left a hidden horizontal range that a trackpad swipe or
@@ -246,6 +350,8 @@ QWidget* MainWindow::build_toolbar() {
     connect(probe_btn_, &QPushButton::clicked, this, [this](bool on) {
         probe_on_ = on;
         if (!on) probe_pixel(std::nullopt);
+        // 1.2.6: the Probe card is there while Probe is on (it was a card of dashes the rest of the time)
+        if (auto* p = findChild<QWidget*>("probePanelWrap")) p->setVisible(on && workspace_ != "simple");
     });
     probe_btn_->setFixedHeight(28);
     h->addWidget(probe_btn_, 0, Qt::AlignVCenter);
@@ -349,10 +455,27 @@ QWidget* MainWindow::build_left_rail() {
         colv->addWidget(r);
     }
     v->addWidget(collections);
-    v->addStretch(1);
+    // 1.2.6 (user feedback: "the left panel for shots should be a bin and media section, and we can
+    // drag and drop from there to the viewer"): the Media panel (media_library.hpp) takes the
+    // place of the open field, Shots and Collections. Those stay, hidden, for what still reads
+    // them (the counts, the drop zone's state); the panel's Import, bins and smart bins do their work.
+    {
+        auto* legacy = new QWidget(rail);
+        legacy->setObjectName("legacyShots");
+        legacy->hide();
+        auto* lv = column(legacy, 0, 0);
+        for (QWidget* w : std::initializer_list<QWidget*>{seq, shots_head, dz, shots, frames_empty_, collections}) {
+            v->removeWidget(w);
+            w->setParent(legacy);
+            lv->addWidget(w);
+        }
+        v->addWidget(legacy);
+        build_media_panel(v, v->indexOf(legacy));
+    }
 
     // The probe, as a card.
     auto* probe = styled("probePanelWrap", "probepanel");
+    probe->hide();   // 1.2.6: shown while Probe is on
     auto* pv = column(probe, 0, 0);
     pv->setContentsMargins(12, 10, 12, 10);
     auto* phead = new QWidget(probe);
@@ -407,12 +530,20 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     // (a strip on the surround: widgets cannot float over the viewer's own
     // swapchain window on every platform)
     auto* tools = styled("viewerTools", "vtools");
-    tools->setFixedHeight(52);
-    auto* th = new QHBoxLayout(tools);
-    th->setContentsMargins(16, 8, 16, 8);
-    th->setSpacing(10);
+    // 18 Nov 2026 (1.2.6, user feedback: text cut off on a 1080p screen): 52 px when the row
+    // fits; when the column is narrow (1920 x 1080 at 125 %, the scopes open) the view
+    // controls wrap onto a second line and the strip grows, instead of each button being
+    // squeezed under its own text ("Defip ang ent ...").
+    tools->setMinimumHeight(52);
+    auto* th = new QGridLayout(tools);   // 1.2.6: StripFit puts the three in one row or two
+    th->setContentsMargins(16, 7, 16, 7);   // 7 + 38 + 7: the board's 52 on one row
+    th->setHorizontalSpacing(10);
+    th->setVerticalSpacing(6);
+    th->setColumnStretch(0, 1);
+    th->setColumnStretch(2, 1);
     auto* hdr = styled("hdrBadge", "badge");
     hdr->setFixedHeight(26);
+    hdr->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);   // 1.2.6: never cut ("display not m")
     auto* hh = new QHBoxLayout(hdr);
     hh->setContentsMargins(12, 0, 12, 0);
     hh->setSpacing(7);
@@ -428,13 +559,12 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     lh->setContentsMargins(0, 0, 0, 0);
     lh->addWidget(hdr);
     lh->addStretch(1);
-    th->addWidget(left, 1);
+    left->setParent(tools);
 
     auto* hud = styled("hud");
-    hud->setFixedHeight(38);
-    auto* hudh = new QHBoxLayout(hud);
+    hud->setMinimumHeight(38);
+    auto* hudh = new FlowLayout(hud, 8, 4);   // 1.2.6: wraps, never squeezes a button under its text
     hudh->setContentsMargins(5, 4, 5, 4);
-    hudh->setSpacing(8);
     // Simple's viewer bar (29 Oct 2026): the hint and one View menu in place of the compare controls.
     hold_hint_ = label("Hold B for the original SDR", "holdHint", "vstatic", hud);
     hold_hint_->setToolTip("Hold B to see the SDR you opened; let go for the HDR");
@@ -476,7 +606,10 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     view_layer_->clicked = [this](const QString& k) { session_.set_view_layer(k.toInt()); };
     hudh->addWidget(view_layer_);
     hudh->addWidget(styled({}, "hud-sep"));
-    zoom_seg_ = new Seg("zoomSeg", {{"fit", "Fit"}, {"actual", "100%"}}, hud);
+    // 1.2.6: "1:1", not a second "100%" beside the zoom readout that says the zoom
+    zoom_seg_ = new Seg("zoomSeg", {{"fit", "Fit"}, {"actual", "1:1"}}, hud);
+    zoom_seg_->button("fit")->setToolTip("The whole frame in the viewer (double-click the picture)");
+    zoom_seg_->button("actual")->setToolTip("One image pixel to one screen pixel (100 %)");
     zoom_seg_->clicked = [this](const QString& k) { run(k == "actual" ? "zoom-actual" : "zoom-fit"); };
     hudh->addWidget(zoom_seg_);
     zoom_val_ = label("100%", "zoomVal", "vstatic", hud);
@@ -511,18 +644,19 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
         sync_checks();
     });
     hudh->addWidget(guide_btn_);
-    th->addWidget(hud);
+    hud->setParent(tools);
     auto* right = new QWidget(tools);
     auto* rh = new QHBoxLayout(right);
     rh->setContentsMargins(0, 0, 0, 0);
     rh->addStretch(1);
-    th->addWidget(right, 1);
     auto* cll = styled("cllBadgeWrap", "badge");
     cll->setFixedHeight(26);
+    cll->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
     auto* ch = new QHBoxLayout(cll);
     ch->setContentsMargins(12, 0, 12, 0);
     ch->addWidget(label("MaxCLL \u2014", "cllBadge", {}, cll));
     rh->addWidget(cll);
+    tools->installEventFilter(new StripFit(tools, th, left, hud, right));
     v->addWidget(tools);
 
     // ── the compare line: what RUDRA changed, and how much of it this view shows ──
@@ -704,9 +838,9 @@ QWidget* MainWindow::build_right_rail() {
         tcv->addWidget(head);
         // What the monitor is shown: the master's scene light, or an ACES 2.0 output in display light.
         tcv->addWidget(label("Monitor", {}, "note", tc));
-        auto* mon = new Seg("acesMonitor", {{"scene", "Scene"}, {"sdr100", "SDR 100"}, {"hdr1000", "HDR 1000"}}, tc);
+        auto* mon = new Seg("acesMonitor", {{"scene", "Scene"}, {"hdr1000", "HDR 1000"}}, tc);
         mon->setToolTip("What the viewer shows: the master's scene light (RUDRA's view, to the view peak), or the ACES 2.0 "
-                        "output a deliverable gets, SDR 100 nits Rec.709 or HDR 1000 nits P3 D65 on Rec.2100 PQ, in "
+                        "output a deliverable gets, HDR 1000 nits P3 D65 on Rec.2100 PQ, in "
                         "display light (an HDR swapchain shows the nits as they are)");
         mon->clicked = [this](const QString& k) { set_aces_monitor(k); };
         tcv->addWidget(mon);
@@ -1032,6 +1166,12 @@ QWidget* MainWindow::build_right_rail() {
     region_slider("Band softness", "regionBandSoft", &ReconstructionRegion::band_softness, 50, 100.0, 2,
                   "How gradually the band fades in and out at its edges");
     rcv->addWidget(region_box_);
+    // 1.2.6 (user feedback: a cleaner UI, no function lost): Mode, Exposure, Display peak and the
+    // region in sight (and Residual strength, Simple's Strength); Highlight detail and Preserve
+    // outside masks one click away.
+    add_fold(rcv, rcard, QStringLiteral("recMore"), QStringLiteral("More"),
+             {highlight_detail_->parentWidget(), preserve_}, QStringLiteral("ui/recMoreOpen"),
+             true);
     rcard->setObjectName("recReconCard");
     anv->addWidget(rcard);
     {   // Shown on the learned route: these grade the analytic reconstruction only.
@@ -1055,11 +1195,14 @@ QWidget* MainWindow::build_right_rail() {
     pages->addWidget(rec);
     pages_.push_back(rec);
 
-    // Grade
+    // Grade. 1.2.6 (18 Nov 2026, user feedback: "what is the Grade tab, is it useful?"): its one
+    // tool, Region EV, grades the analytic route only, so the tab is gone and Region EV is a fold at
+    // the end of Reconstruct's analytic controls, shown on the analytic route (colorist_tab.cpp).
+    // The page stays, empty, so the pages keep their places; show_tab("grade") opens the fold.
     auto* grade = new QWidget;
-    auto* gv = column(grade, 0, 12);
-    gv->addWidget(label("Region exposure", {}, "title", grade));
-    auto [gcard, gcv] = card(grade, 4, 0);
+    auto* gv = anv;
+    QWidget* const gparent = analytic;
+    auto [gcard, gcv] = card(gparent, 4, 0);
     gcv->addWidget(panel_label("Region EV", "3", "regionCount", gcard));
     region_count_ = gcard->findChild<QLabel*>("regionCount");
     regions_ = new RegionEditor(session_, gcard);
@@ -1071,17 +1214,19 @@ QWidget* MainWindow::build_right_rail() {
     gv->addWidget(gcard);
     {
         auto* rn = label("Learned ACES 2.0 is rendering: region exposure is the analytic master's and does not reach "
-                         "the learned frames or renders.", "routeNoteGrade", "small", grade);
+                         "the learned frames or renders.", "routeNoteGrade", "small", gparent);
         rn->setWordWrap(true);
         rn->hide();
         gv->addWidget(rn);
     }
     auto* n2 = label("A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to "
                      "scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file.",
-                     {}, "note-p", grade);
+                     {}, "note-p", gparent);
     n2->setWordWrap(true);
     notes_.push_back(n2);
     gv->addWidget(n2);
+    add_fold(anv, analytic, QStringLiteral("recRegionEv"), QStringLiteral("Region exposure"),
+             {gcard, gparent->findChild<QLabel*>("routeNoteGrade"), n2}, QStringLiteral("ui/recRegionEvOpen"), true);
     pages->addWidget(grade);
     pages_.push_back(grade);
 
@@ -1109,12 +1254,36 @@ QWidget* MainWindow::build_right_rail() {
     auto* full_cards = new QWidget(del);
     full_cards->setObjectName("deliverFullCards");
     auto* fcv_outer = column(full_cards, 0, 12);
+    // 18 Nov 2026 (1.2.6, user feedback: Full's Deliver was one crowded card): five cards,
+    // in the order a delivery is decided. Format (what to write), The file (read-only: what
+    // that makes), Extras (mattes, brackets), AI fill, the analytic master's options; Render last.
+    auto [fcard, fcv] = card(del, 12, 0);
+    fcard->setObjectName("deliverSignalCard");
+    fcv->addWidget(info_head(QStringLiteral("The file"),
+                             QStringLiteral("What the choices above make. Nothing here is set by hand: change "
+                                            "Source, Output, Colour or Encoding and these follow."),
+                             fcard));
+    container_field_ = label("OpenEXR \u2014 ACES 2065-1", "containerField", "value");
+    primaries_field_ = label("AP0 (ST 2065-4)", "primariesField", "value");
+    for (auto* r : {row("Container", container_field_, "field"),
+                    row("Transfer", label("linear (scene-referred)", "transferField", "value"), "field"),
+                    row("Primaries", primaries_field_, "field"),
+                    row("White", label("diffuse 1.0 = 203 nits", "whiteField", "value"), "field")}) {
+        r->layout()->setContentsMargins(0, 7, 0, 7);
+        fcv->addWidget(r);
+    }
+    for (auto* v : {container_field_, primaries_field_}) v->setWordWrap(true);
+    if (auto* tf = fcard->findChild<QLabel*>("transferField")) tf->setWordWrap(true);
+    if (auto* wf = fcard->findChild<QLabel*>("whiteField")) {
+        wf->setWordWrap(true);
+        wf->parentWidget()->setObjectName("whiteRow");
+    }
     // What renders the files and what they are (27 Oct 2026, deliver_choice.hpp):
     // each control under its name, as the Render card's fields are.
     {
         auto [kc, kcv] = card(del, 12, 4);
         kc->setObjectName("deliverCard");
-        kcv->addWidget(label("What to write", {}, "card-head", kc));
+        kcv->addWidget(label("Format", {}, "card-head", kc));
         auto field = [&](const QString& key, QWidget* control, const char* id, const char* tip) {
             auto* w = new QWidget(kc);
             w->setObjectName(id);
@@ -1135,6 +1304,13 @@ QWidget* MainWindow::build_right_rail() {
             auto* n = new NoteLabel(aces_curve_note(), "deliverCurveNote", "small", kc);
             n->hide();
             kcv->addWidget(n);
+            // 1.2.6 (readiness report, checklist item 4): the fix one click away
+            auto* use = new QPushButton("Use the analytic route", kc);
+            use->setObjectName("deliverUseAnalytic");
+            use->setToolTip("Render this shot with the analytic reconstruction, the route for an SDR not made through ACES 2.0");
+            use->hide();
+            connect(use, &QPushButton::clicked, this, [this] { set_deliver("source", "analytic"); });
+            kcv->addWidget(use);
         }
         auto* out = new Seg("deliverOutput", {{"still", "Still"}, {"sequence", "Sequence"}, {"movie", "MOV"}});
         out->clicked = [this](const QString& k) { set_deliver("output", k); };
@@ -1199,6 +1375,20 @@ QWidget* MainWindow::build_right_rail() {
                          "half (ST 2065-4) with the mask in mask/");
         keep->clicked = [this] { set_deliver("keep_exr", deliver_.keep_exr ? "0" : "1"); };
         kcv->addWidget(keep);
+        {   // what it writes, in one line, under the choices that decide it
+            auto* note = label("", "deliverNote", "small", kc);
+            note->setWordWrap(true);
+            kcv->addWidget(note);
+        }
+        fcv_outer->addWidget(kc);
+        fcv_outer->addWidget(fcard);
+        {
+            auto next = card(del, 12, 4);
+            kc = next.first;
+            kcv = next.second;
+        }
+        kc->setObjectName("deliverExtrasCard");
+        kcv->addWidget(label("Extras", {}, "card-head", kc));
         // RUDRA 1.1 priority 3: the reconstruction's mattes for compositing.
         auto* mattes = new CheckRow("deliverMattes", "Write mattes (EXR)", "deliverMattesHint",
                                     "highlight, shadow, changed", kc);
@@ -1216,6 +1406,13 @@ QWidget* MainWindow::build_right_rail() {
                              "far they are from what the viewer showed (preview_vs_export, in 8-bit codes)");
         brackets->clicked = [this] { set_deliver("brackets", deliver_.brackets ? "0" : "1"); };
         kcv->addWidget(brackets);
+        fcv_outer->addWidget(kc);
+        {   // the AI fill in a card of its own: its switch is the card's head
+            auto next = card(del, 12, 4);
+            kc = next.first;
+            kcv = next.second;
+        }
+        kc->setObjectName("deliverAiCard");
         // The AI fill (layer 3, genfill_job.hpp): an AI-filled copy of a learned EXR render.
         auto* ai = new CheckRow("deliverAiFill", "AI fill (experimental)", "deliverAiFillHint",
                                 "clipped highlights, crushed shadows", kc);
@@ -1232,8 +1429,8 @@ QWidget* MainWindow::build_right_rail() {
             auto* bv = column(box, 0, 2);
             bv->setContentsMargins(14, 0, 0, 4);
             {   // 12 Nov 2026: AI fill v4, region re-render (experimental). First in the list: it replaces v3's controls below
-                auto* rr = new CheckRow("deliverAiRerender", "Region re-render (v4)",
-                                        "deliverAiRerenderHint", "experimental: redraws bright regions", box);
+                // 1.2.6 (18 Nov 2026, user request): a switch between the two, always shown.
+                auto* rr = new Seg("deliverAiVersion", {{"v3", "AI fill v3"}, {"v4", "v4.3 region"}}, box);
                 rr->setToolTip("AI fill v3 draws only inside pixels that are fully clipped, often a fraction of a per "
                                "cent of the frame. On, AI fill v4 draws the whole bright region again from the source "
                                "(a window, a door, a sky parked just under white): its detail from the model, its "
@@ -1241,8 +1438,8 @@ QWidget* MainWindow::build_right_rail() {
                                "region are NOT kept, unlike v3. It uses its own model (the v4 LoRA, not published "
                                "yet) and its own fixed settings: the thresholds, brightness, detail, focus and "
                                "flicker controls here do not apply to it. Tested on the analytic BT.1886 route; "
-                               "on the learned route it is untested. Off = AI fill v3");
-                rr->clicked = [this] { set_deliver("ai_rerender", deliver_.ai.rerender ? "0" : "1"); };
+                               "on the learned route it is untested. v3 = clipped pixels only, as released");
+                rr->clicked = [this](const QString& k) { set_deliver("ai_rerender", k == "v4" ? "1" : "0"); };
                 bv->addWidget(rr);
             }
             {   // 6 Nov 2026: the suggested prompts first, one click each (Suggest fills them in)
@@ -1280,9 +1477,11 @@ QWidget* MainWindow::build_right_rail() {
             {   // RUDRA 1.1: suggest a prompt from the frame's clipped areas, or pick a preset
                 auto* sg = new QPushButton("Suggest a prompt\u2026", box);
                 sg->setObjectName("deliverAiSuggest");
-                sg->setToolTip("Looks at this frame's fully clipped areas (size, place, shape, the colour around "
-                               "them) and suggests a prompt, with the presets beside it. No model runs; a preset "
-                               "marked ready needs no text model when the fill starts");
+                sg->setToolTip("Suggests a prompt for this shot: a small captioning model (Florence-2, about 0.5 GB, "
+                               "downloaded once) describes the frame and its bright area, and \"From this shot\" says "
+                               "what is there (a hazy sky through a door, a lamp, a window). The presets follow, picked "
+                               "from the clipped areas' size, place, shape and colour. A preset marked ready needs no "
+                               "text model when the fill starts");
                 connect(sg, &QPushButton::clicked, this, [this] { suggest_genfill_prompt(); });
                 bv->addWidget(sg);
             }
@@ -1314,8 +1513,8 @@ QWidget* MainWindow::build_right_rail() {
                 bv = av;
             }
             spin("deliverAiTauHigh", "ai_tau_high", 128, 256, {},
-                 "Highlight threshold (8-bit code)|Codes at or above it are filled; 256 fills no highlights. "
-                 "The ACES window's \"AI fill regions\" view shows them");
+                 "Highlight threshold (8-bit code)|The model sees codes at or above it; it fills only the fully "
+                 "clipped areas among them (code 255). 256 fills no highlights. \"Where it fills\" shows both");
             spin("deliverAiTauLow", "ai_tau_low", -1, 64, "off",
                  "Shadow threshold (8-bit code)|Codes at or below it are filled; off fills no shadows");
             spin("deliverAiSeed", "ai_seed", 0, 999999, {}, "Seed|Another seed gives another plausible fill");
@@ -1409,6 +1608,26 @@ QWidget* MainWindow::build_right_rail() {
                 rh->addStretch(1);
                 bv->addWidget(row);
             }
+            {   // 1.2.6 (18 Nov 2026, user feedback on 09V.mp4): on this frame, how much the fill changes and
+                // how much its model only sees, and the viewer's picture of both (MainWindow::sync_ai_frame_info).
+                auto* info = label("", "deliverAiFrameInfo", "small", box);
+                info->setWordWrap(true);
+                info->hide();
+                bv->addWidget(info);
+                auto* row = new QWidget(box);
+                auto* rh = new QHBoxLayout(row);
+                rh->setContentsMargins(0, 2, 0, 0);
+                auto* where = new QPushButton("Where it fills", row);
+                where->setObjectName("deliverAiShowRegion");
+                where->setCheckable(true);
+                where->setToolTip("Shows on the viewer where the AI fill acts on this frame: solid orange it fills "
+                                  "(fully clipped areas), tinted its model only sees and leaves as they are. "
+                                  "Click again for the picture");
+                connect(where, &QPushButton::toggled, this, [this](bool on) { set_ai_region_view(on); });
+                rh->addWidget(where);
+                rh->addStretch(1);
+                bv->addWidget(row);
+            }
             {   // Before the whole shot (4 Nov 2026): the frames around the playhead, filled and shown in the viewer.
                 auto* row = new QWidget(box);
                 auto* rh = new QHBoxLayout(row);
@@ -1441,28 +1660,50 @@ QWidget* MainWindow::build_right_rail() {
                 auto* ps = label("", "deliverAiPreviewStatus", "small", box);
                 ps->setWordWrap(true);
                 bv->addWidget(ps);
+                // 1.2.6 (user request): how far the AI fill is, preview or render (MainWindow::set_ai_progress)
+                auto* bar = new QProgressBar(box);
+                bar->setObjectName("deliverAiProgress");
+                bar->setRange(0, 1000);
+                bar->setTextVisible(true);
+                bar->setFixedHeight(16);
+                bar->hide();
+                bv->addWidget(bar);
+            }
+            {   // 1.2.6 (user feedback: the card read as a wall): first whether the fill is set up
+                // (and Setup…), then the prompt, then Preview; the tuning folds away last.
+                auto* status = box->findChild<QWidget*>("deliverAiSetup");
+                auto* setup_row = box->findChild<QWidget*>("deliverAiSetupButton");
+                setup_row = setup_row ? setup_row->parentWidget() : nullptr;
+                int at = 0;
+                for (QWidget* w : {status, setup_row})
+                    if (w) {
+                        bv->removeWidget(w);
+                        bv->insertWidget(at++, w);
+                    }
+                for (const char* id : {"deliverAiAdvanced", "deliverAiAdvancedBox"})
+                    if (auto* w = box->findChild<QWidget*>(id)) {
+                        bv->removeWidget(w);
+                        bv->addWidget(w);
+                    }
+                // 1.2.6: one prompt in sight; the shadow prompt is the first of the Advanced settings
+                if (auto* adv = box->findChild<QWidget*>("deliverAiAdvancedBox")) {
+                    auto* av = static_cast<QVBoxLayout*>(adv->layout());
+                    int k = 0;
+                    for (const char* id : {"deliverAiPromptShadowLabel", "deliverAiPromptShadow"})
+                        if (auto* w = box->findChild<QWidget*>(id)) {
+                            bv->removeWidget(w);
+                            w->setParent(adv);
+                            av->insertWidget(k++, w);
+                        }
+                }
             }
             kcv->addWidget(box);
         }
-        auto* note = label("", "deliverNote", "small", kc);
-        note->setWordWrap(true);
-        kcv->addWidget(note);
         fcv_outer->addWidget(kc);
     }
-    auto [fcard, fcv] = card(del, 12, 0);
-    container_field_ = label("OpenEXR \u2014 ACES 2065-1", "containerField", "value");
-    primaries_field_ = label("AP0 (ST 2065-4)", "primariesField", "value");
-    for (auto* r : {row("Container", container_field_, "field"),
-                    row("Transfer", label("linear (scene-referred)", "transferField", "value"), "field"),
-                    row("Primaries", primaries_field_, "field"),
-                    row("White", label("diffuse 1.0 = 203 nits", "whiteField", "value"), "field")}) {
-        r->layout()->setContentsMargins(0, 9, 0, 9);
-        fcv->addWidget(r);
-    }
-    if (auto* wf = fcard->findChild<QLabel*>("whiteField")) wf->parentWidget()->setObjectName("whiteRow");
-    fcv_outer->addWidget(fcard);
     auto [ocard, ocv] = card(del, 12, 10);
     ocard->setObjectName("deliverAnalyticOptions");   // the analytic master's own; hidden for the learned source
+    ocv->addWidget(label("Analytic master", {}, "card-head", ocard));
     anchor_ = new CheckRow("anchor", "Anchor to source exposure", "anchorHint", "conform", ocard);
     anchor_->clicked = [this] {
         session_.toggle_anchor();
@@ -1527,12 +1768,12 @@ QWidget* MainWindow::build_right_rail() {
     // default; for stills and sequences, a start timecode typed here.
     auto* tcode = new QLineEdit(rendc);
     tcode->setObjectName("renderTimecode");
-    tcode->setPlaceholderText("from the movie, else none (e.g. 01:00:00:00)");
+    tcode->setPlaceholderText("auto");   // 1.2.6: the rule is in the tooltip
     tcode->setToolTip("The first frame's timecode (HH:MM:SS:FF, ;FF for drop frame). Empty: a movie keeps its own; "
                       "stills and sequences get none. Written into the EXR header and the MOV");
     auto* reel = new QLineEdit(rendc);
     reel->setObjectName("renderReel");
-    reel->setPlaceholderText("from the movie, else its file name");
+    reel->setPlaceholderText("auto");
     reel->setToolTip("The reel name written into the EXR header (reelName) and the MOV, for the conform");
     // The file, as Nuke's Write takes it (29 Oct 2026): one path with the frame
     // number as ####, a Browse… beside it, and Create directories. The folder and
@@ -1571,6 +1812,14 @@ QWidget* MainWindow::build_right_rail() {
         }
         if (field == file_row) {
             form->addWidget(mkdirs);
+            // 1.2.6: the QC report beside every render (qc_report.hpp), on unless turned off
+            auto* qc = new QCheckBox("Write a QC report (HTML)", rendc);
+            qc->setObjectName("renderQcReport");
+            qc->setChecked(QSettings().value("deliver/qcReport", true).toBool());
+            qc->setToolTip("Beside the files: <name>.qc.html, one page with MaxCLL / MaxFALL per frame, the invented and "
+                           "reconstructed shares, the checks (Pass or Review, and why), the source and every setting");
+            connect(qc, &QCheckBox::toggled, this, [](bool on) { QSettings().setValue("deliver/qcReport", on); });
+            form->addWidget(qc);
             form->addSpacing(2);
         }
     }
@@ -1591,6 +1840,41 @@ QWidget* MainWindow::build_right_rail() {
     small->setWordWrap(true);
     small->setObjectName("renderHint");
     form->addWidget(small);
+    small->hide();   // 1.2.6: said on the Render card's tooltip instead
+    rendc->setToolTip(small->text());
+    {   // 1.2.6 (user feedback: too much text in Deliver): Start frame, timecode and reel are
+        // rarely changed; they fold away behind one button, remembered, as AI fill's Advanced does.
+        auto* fold = new QPushButton(rendc);
+        fold->setObjectName("renderMore");
+        fold->setCheckable(true);
+        fold->setFixedHeight(26);
+        fold->setToolTip("The first frame's number, its timecode and the reel name");
+        auto* more = new QWidget(rendc);
+        more->setObjectName("renderMoreBox");
+        auto* mv = column(more, 0, 2);
+        for (const char* id : {"renderStartLabel", "renderStart", "renderTimecodeLabel", "renderTimecode",
+                               "renderReelLabel", "renderReel"})
+            if (auto* x = rendc->findChild<QWidget*>(id)) {
+                form->removeWidget(x);
+                mv->addWidget(x);
+            }
+        const int at = form->indexOf(rendc->findChild<QWidget*>("renderQcReport")) + 1;   // under File, Create directories, QC
+        form->insertWidget(at, fold);
+        form->insertWidget(at + 1, more);
+        const bool open = QSettings().value("deliver/renderMoreOpen", false).toBool();
+        auto title = [fold](bool on) {
+            fold->setText(on ? QStringLiteral("Frame number, timecode, reel \u25BE")
+                             : QStringLiteral("Frame number, timecode, reel \u25B8"));
+        };
+        fold->setChecked(open);
+        title(open);
+        more->setVisible(open);
+        connect(fold, &QPushButton::toggled, this, [more, title](bool on) {
+            more->setVisible(on);
+            title(on);
+            QSettings().setValue("deliver/renderMoreOpen", on);
+        });
+    }
     auto* status = label("", "renderStatus", "render-status", rendc);
     status->setWordWrap(true);
     status->hide();
@@ -1623,8 +1907,31 @@ QWidget* MainWindow::build_right_rail() {
                      {}, "note-p", del);
     n3->setTextFormat(Qt::RichText);
     n3->setWordWrap(true);
+    n3->setToolTip(n3->text());   // 1.2.6: one line; the whole note on hover
+    n3->setText(QStringLiteral("HDR10 and HLG movies: Export on the toolbar."));
     notes_.push_back(n3);
     dv->addWidget(n3);
+    n3->setProperty("keep", true);   // one short line: it stays
+    // 1.2.6 (user feedback: a cleaner UI): the explanations under the cards (the curve's, the
+    // reconstruction's, the regions') become the tooltip of the card they explain.
+    for (QWidget* nw : notes_) {
+        auto* n = qobject_cast<QLabel*>(nw);
+        if (!n || n->property("keep").toBool() || !n->parentWidget() || !n->parentWidget()->layout()) continue;
+        QLayout* l = n->parentWidget()->layout();
+        const int at = l->indexOf(n);
+        QWidget* before = at > 0 && l->itemAt(at - 1) ? l->itemAt(at - 1)->widget() : nullptr;
+        if (!before) continue;
+        const QString plain = QTextDocumentFragment::fromHtml(n->text()).toPlainText();
+        before->setToolTip(before->toolTip().isEmpty() ? plain : before->toolTip() + QStringLiteral("\n\n") + plain);
+    }
+    // 1.2.6 (user feedback: too much text in Deliver): a switch's line under its name goes to
+    // its tooltip; the name says what it does, the tooltip how.
+    for (auto* w : del->findChildren<QWidget*>()) {
+        auto* row = dynamic_cast<CheckRow*>(w);
+        if (!row || !row->hint() || row->hint()->text().isEmpty()) continue;
+        if (row->toolTip().isEmpty()) row->setToolTip(row->hint()->text());
+        row->hint()->hide();
+    }
     dv->addStretch(1);   // the Output card's rows come and go: spare height goes below, not between the cards
     pages->addWidget(del);
     pages_.push_back(del);
@@ -1644,6 +1951,8 @@ QWidget* MainWindow::build_right_rail() {
         hh->addWidget(label("This frame", {}, "card-head"));
         hh->addStretch(1);
         hh->addWidget(label("measured", "checkSource", "note"));
+        hh->addWidget(label(QStringLiteral("Read-only"), {}, "ro-tag", head), 0, Qt::AlignVCenter);   // 1.2.6
+        sc->setProperty("kind", "info");
         scv->addWidget(head);
         for (const auto& [k, id, tip] : std::vector<std::tuple<QString, QString, QString>>{
                  {"Peak", "checkPeak", "The brightest pixel of the HDR, in nits"},
@@ -1685,22 +1994,32 @@ QWidget* MainWindow::build_right_rail() {
     // ── this frame ──
     auto* stats = styled("frameStats", "card");
     auto* fv = column(stats, 12, 6);
-    auto* shead = new QWidget(stats);
-    auto* shh = new QHBoxLayout(shead);
-    shh->setContentsMargins(0, 0, 0, 0);
-    shh->addWidget(label("This frame", {}, "card-head"));
-    shh->addStretch(1);
-    shh->addWidget(label("measured", {}, "note"));
-    fv->addWidget(shead);
+    // 1.2.6: measured, not set: drawn as a read-only card
+    auto* stats_head = info_head(QStringLiteral("This frame \u00b7 measured"),
+                                 QStringLiteral("Measured from the frame on screen; nothing here is set by hand. "
+                                                "Click the title for every number"),
+                                 stats);
+    fv->addWidget(stats_head);
+    // 1.2.6: folded, one line (the numbers most read); open, every row. Remembered.
+    auto* summary = label(QStringLiteral("\u2014"), "frameSummary", "note", stats);
+    summary->setWordWrap(true);
+    fv->addWidget(summary);
+    std::vector<QWidget*> stats_body;
     for (const char* id : {"measA", "measB"}) {
         auto* ms = styled(id, "ms");
         column(ms);
         fv->addWidget(ms);
+        stats_body.push_back(ms);
     }
     clip_bar_ = new ClipBar(stats);
     clip_bar_->hide();   // until a frame is measured
     fv->addWidget(clip_bar_);
     v->addWidget(stats);
+    {
+        auto* glyph = label({}, "frameStatsFold", "note", stats_head);
+        static_cast<QHBoxLayout*>(stats_head->layout())->insertWidget(2, glyph);   // after the title
+        new FoldOnClick(stats_head, glyph, stats_body, {summary}, QStringLiteral("ui/frameStatsOpen"), false);
+    }
 
     // ── scopes, each a card ──
     scopes_ = styled("scopes", "scopes");
@@ -1755,7 +2074,16 @@ QWidget* MainWindow::build_right_rail() {
     // ── log ──
     auto [lcard, lcv] = card(col, 12, 6);
     lcard->setObjectName("logCard");
-    lcv->addWidget(label("Log", {}, "card-head", lcard));
+    auto* log_head = new QWidget(lcard);
+    {
+        auto* lh = new QHBoxLayout(log_head);
+        lh->setContentsMargins(0, 0, 0, 0);
+        lh->setSpacing(6);
+        lh->addWidget(label("Log", {}, "card-head", log_head));
+        lh->addStretch(1);
+        log_head->setToolTip(QStringLiteral("What RUDRA did and any problem it met; click to show or hide"));
+    }
+    lcv->addWidget(log_head);
     log_ = new QPlainTextEdit(lcard);
     log_->setObjectName("log");
     log_->setReadOnly(true);
@@ -1763,6 +2091,11 @@ QWidget* MainWindow::build_right_rail() {
     log_->setFixedHeight(88);
     lcv->addWidget(log_);
     v->addWidget(lcard);
+    {   // 1.2.6: the log is for when something goes wrong: folded until opened (remembered)
+        auto* glyph = label({}, "logFold", "note", log_head);
+        static_cast<QHBoxLayout*>(log_head->layout())->insertWidget(1, glyph);
+        new FoldOnClick(log_head, glyph, {log_}, {}, QStringLiteral("ui/logOpen"), false);
+    }
     v->addStretch(1);
     scroll->setWidget(col);
     pin_column(scroll, col);

@@ -9,6 +9,11 @@ clipped) or, with shadows on, <= blend_low (0, fully crushed), with no outward f
 250-254 and 1-4 the exact inverse is already within ~0.1 stop and v1's fill made them worse
 (research notes TASK_GENFILL_LAYER3_2026_10_27).
 
+18 Nov 2026 (1.2.6, user feedback on a 10-bit HEVC shot): a bright door of near-white haze
+(codes 250-254) with thousands of single fully clipped pixels scattered through it got its fill in
+those specks only. The blend core now drops clipped areas smaller than `min_core` of the frame
+(5e-5: about 100 pixels at 1080p), so a fill lands only on areas the model can draw.
+
 The user moves tau_high / tau_low in the app (the live mask overlay shows the result). Each
 mask is dilated a little (the model needs the context ring), then steadied in time with a
 per-pixel exponential moving average (alpha 0.7) and thresholded at one half, so a region
@@ -24,6 +29,7 @@ TAU_HIGH_DEFAULT = 250
 TAU_LOW_DEFAULT = -1          # v1.1: shadows off by default (v1: 4)
 BLEND_HIGH_DEFAULT = 255
 BLEND_LOW_DEFAULT = 0
+MIN_CORE_DEFAULT = 5e-5       # 1.2.6: a share of the frame (about 100 px at 1080p); 0 keeps every clipped pixel
 
 
 @dataclass
@@ -36,6 +42,7 @@ class MaskSettings:
     blend_high: int = BLEND_HIGH_DEFAULT  # the fill is blended only at max code >= this (256 = never)
     blend_low: int = BLEND_LOW_DEFAULT    # ... and, with shadows on, at max code <= this
     max_gain_stops: float = 3.0           # v2: the fill's luminance at most this many stops over the master (0 = no cap)
+    min_core: float = MIN_CORE_DEFAULT    # 1.2.6: blend-core areas smaller than this share of the frame are left alone
 
     def check(self):
         if not (-1 <= self.tau_low < self.tau_high <= 256):
@@ -44,6 +51,8 @@ class MaskSettings:
             raise ValueError(f'need 0 <= blend_high <= 256 and -1 <= blend_low <= 255 (got {self.blend_high}, {self.blend_low})')
         if not (0.0 <= self.max_gain_stops <= 20.0):
             raise ValueError('max_gain_stops must be in [0, 20]')
+        if not (0.0 <= self.min_core < 0.01):
+            raise ValueError('min_core must be in [0, 0.01)')
         if not (0.0 <= self.ema < 1.0):
             raise ValueError('ema must be in [0, 1)')
         return self
@@ -91,7 +100,23 @@ def blend_core(codes: np.ndarray, s: MaskSettings) -> np.ndarray:
     core = mx >= s.blend_high if s.blend_high <= 255 else np.zeros(mx.shape, bool)
     if s.tau_low >= 0 and s.blend_low >= 0:
         core = core | (mx <= s.blend_low)
-    return core
+    return drop_specks(core, min_core_pixels(core.shape, s.min_core))
+
+
+def min_core_pixels(shape, share: float) -> int:
+    """The smallest blend-core area kept, in pixels, for a frame of `shape` (0 or 1: keep all)."""
+    return int(share * shape[0] * shape[1]) if share > 0 else 0
+
+
+def drop_specks(core: np.ndarray, min_pixels: int) -> np.ndarray:
+    """bool (H, W) -> the same without its 8-connected areas smaller than min_pixels."""
+    if min_pixels <= 1 or not core.any():
+        return core
+    import cv2
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(core.astype(np.uint8), connectivity=8)
+    keep = stats[:, cv2.CC_STAT_AREA] >= min_pixels
+    keep[0] = False
+    return keep[labels]
 
 
 def feather(mask: np.ndarray, radius: int) -> np.ndarray:

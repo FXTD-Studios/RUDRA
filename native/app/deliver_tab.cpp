@@ -33,6 +33,7 @@
 #include "paths.hpp"
 #include "aces_master.hpp"
 #include "genfill_job.hpp"
+#include "genfill_preview.hpp"
 #include "genfill_swap.hpp"
 #include "genfill_review.hpp"
 #include "main_window.hpp"
@@ -104,7 +105,9 @@ void MainWindow::load_deliver_settings() {
     c.ai.shape_gain = std::clamp(st.value("deliver/aiShapeGain", c.ai.shape_gain).toDouble(), 0.0, 2.0);
     c.ai.fallback = st.value("deliver/aiFallback", true).toBool();   // RUDRA 1.1: on unless turned off
     c.ai.focus_region = st.value("deliver/aiFocus", false).toBool();  // 7 Nov 2026: off (v3) unless turned on
-    c.ai.rerender = genfill_v4_enabled() && st.value("deliver/aiRerender", false).toBool();   // v4: parked, development only
+    // 1.2.6 (18 Nov 2026, user request): v3 or v4.3 region is the user's choice, a switch in the AI
+    // fill card; v4 runs where its LoRA is found (the setup line says when it is not).
+    c.ai.rerender = st.value("deliver/aiRerender", false).toBool();
     c.ai.prompt_highlight = st.value("deliver/aiPromptHighlight").toString();
     c.ai.prompt_shadow = st.value("deliver/aiPromptShadow").toString();
     if (c.source != "aces" && c.source != "analytic") c.source = "aces";
@@ -189,7 +192,7 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
         deliver_.ai.focus_region = value == "1" || value == "true";
         st.setValue("deliver/aiFocus", deliver_.ai.focus_region);
     } else if (key == "ai_rerender") {   // 12 Nov 2026: AI fill v4, region re-render (experimental)
-        deliver_.ai.rerender = genfill_v4_enabled() && (value == "1" || value == "true");   // parked 13 Nov 2026
+        deliver_.ai.rerender = value == "1" || value == "true" || value == "v4";   // 1.2.6: the switch
         st.setValue("deliver/aiRerender", deliver_.ai.rerender);
         refresh_prompt_chips();   // v4 shows the presets only
     } else if (key == "ai_fallback") {   // RUDRA 1.1 priority 5
@@ -243,13 +246,16 @@ void MainWindow::sync_deliver() {
         if (steer && n->text() != brief) n->setText(brief);
         if (steer) n->setToolTip(aces_curve_note());
         n->setVisible(steer);
+        if (auto* use = findChild<QPushButton*>("deliverUseAnalytic")) use->setVisible(steer && aces);   // 1.2.6: item 4
     }
     auto* out = dynamic_cast<Seg*>(findChild<QWidget*>("deliverOutput"));
     out->set_on(c.output);
     out->button("movie")->setEnabled(movie_shot || folder);
+    out->button("movie")->setVisible(movie_shot || folder);   // 1.2.6: a choice this shot cannot take is not offered
     out->button("movie")->setToolTip(movie_shot || folder ? QStringLiteral("One QuickTime movie of every frame")
                                                           : QStringLiteral("For a movie or a folder of frames; a single still goes out as a still"));
     out->button("sequence")->setEnabled(!frames_.empty());
+    out->button("sequence")->setVisible(!frames_.empty());
     const bool movie = c.output == "movie";
     // Still and sequence: the file type (the analytic master is EXR 32-bit only).
     show("deliverImageRow", !movie && aces);
@@ -283,6 +289,8 @@ void MainWindow::sync_deliver() {
         const bool logs = aces || (movie_shot && c.bits == 10);   // the analytic 16-bit and folder movies are PQ
         enc->button("logc4")->setEnabled(logs);
         enc->button("acescct")->setEnabled(logs);
+        enc->button("logc4")->setVisible(logs);   // 1.2.6: hidden, not greyed
+        enc->button("acescct")->setVisible(logs);
         for (const char* k : {"hlg", "sdr"})   // the learned engine's ACES 2.0 outputs
             if (auto* b = enc->button(k)) b->setVisible(aces);
         enc->button("pq")->setToolTip(aces ? QStringLiteral("The ACES 2.0 output transform, HDR %1 nits (P3 D65) on Rec.2100 PQ: "
@@ -307,6 +315,9 @@ void MainWindow::sync_deliver() {
     // The AI fill (layer 3): the learned EXR still or sequence only.
     const bool ai_possible = ai_fill_possible(c, aces);
     show("deliverAiFill", ai_possible);
+    // 1.2.6: the cards of their own come and go with what they hold, so no empty card is left
+    show("deliverAiCard", ai_possible);
+    show("deliverExtrasCard", !aces);   // mattes and brackets: the analytic master's
     show("deliverAiFillOptions", ai_possible && c.ai_fill);
     if (auto* ai = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFill"))) ai->set_on(c.ai_fill);
     auto set_spin = [this](const char* id, int v) {
@@ -331,10 +342,7 @@ void MainWindow::sync_deliver() {
         }
     if (auto* fb = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFallback"))) fb->set_on(c.ai.fallback);
     if (auto* fo = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFocus"))) fo->set_on(c.ai.focus_region);
-    if (auto* rr = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiRerender"))) {
-        rr->set_on(c.ai.rerender);
-        rr->setVisible(genfill_v4_enabled());   // 13 Nov 2026: v4 is parked
-    }
+    if (auto* v = dynamic_cast<Seg*>(findChild<QWidget*>("deliverAiVersion"))) v->set_on(c.ai.rerender ? "v4" : "v3");
     if (auto* rn = findChild<QLabel*>("deliverAiRegion"))   // the grade's region reaches the fill
         rn->setVisible(c.ai_fill && !c.ai.region_json.isEmpty());
     auto set_line = [this](const char* id, const QString& v) {
@@ -349,7 +357,7 @@ void MainWindow::sync_deliver() {
     // so the card does not show thresholds and strengths that are not in use.
     for (const char* id : {"deliverAiTauHigh", "deliverAiTauLow", "deliverAiBrightness", "deliverAiPromptStrength",
                            "deliverAiShapeGain", "deliverAiFocus", "deliverAiFallback",
-                           "deliverAiPromptShadow", "deliverAiSuggest"})   // the highlight prompt stays: v4 takes it
+                           "deliverAiPromptShadow"})   // the highlight prompt and Suggest stay: v4 takes it (1.2.6)
         if (auto* wdg = findChild<QWidget*>(id)) {
             wdg->setEnabled(!c.ai.rerender);
             // 12 Nov 2026: and they are not shown (a number box goes with its heading)
@@ -369,7 +377,7 @@ void MainWindow::sync_deliver() {
             // One short line (12 Nov 2026); where the parts are is in the tooltip and in Setup…
             st->setText(v4.empty() ? QStringLiteral("AI fill v4: its LoRA was not found (experimental, not published). "
                                                     "Turn Re-render off for AI fill v3.")
-                                   : QStringLiteral("Ready · AI fill v4 (experimental)"));
+                                   : QStringLiteral("Ready · AI fill v4.3 region (experimental)"));
             st->setToolTip(QStringLiteral("Wan2.1-VACE-1.3B: %1\nLoRA: %2").arg(from_path(s->base), from_path(v4)));
         } else if (s) {
             st->setText(s->lora_is_v3 ? QStringLiteral("Ready · AI fill v3")
@@ -377,18 +385,23 @@ void MainWindow::sync_deliver() {
             st->setToolTip(QStringLiteral("Wan2.1-VACE-1.3B: %1\nLoRA: %2").arg(from_path(s->base), from_path(s->lora)));
         } else {
             // 1.2.5: what is missing in plain words, and where it is set up; the paths in the tooltip.
-            st->setText(genfill_missing_text(why));
-            st->setToolTip(why);
+            // 1.2.6: one short line in the card; the whole sentence and the paths on hover.
+            st->setText(QStringLiteral("Not set up yet: Setup\u2026 installs it."));
+            st->setToolTip(genfill_missing_text(why) + QStringLiteral("\n\n") + why);
         }
     }
     // The preview's buttons: the views once there is one; a setting changed since, it says so.
     for (const char* id : {"deliverAiShowFill", "deliverAiShowMaster", "deliverAiShowMask"})
-        if (auto* b = findChild<QPushButton*>(id)) b->setEnabled(genfill_preview_.has_value() && !genfill_preview_busy_);
+        if (auto* b = findChild<QPushButton*>(id)) {
+            b->setEnabled(genfill_preview_.has_value() && !genfill_preview_busy_);
+            b->parentWidget()->setVisible(genfill_preview_.has_value());   // 1.2.6: the views once there is a preview
+        }
     if (auto* ps = findChild<QLabel*>("deliverAiPreviewStatus");
         ps && genfill_preview_ && !genfill_preview_busy_ && !(genfill_preview_->options == c.ai)) {
         const QString stale = QStringLiteral(" · settings changed since: Preview AI fill again");
         if (!ps->text().endsWith(stale)) ps->setText(ps->text() + stale);
     }
+    if (ai_possible) sync_ai_frame_info();   // 1.2.6: on this frame, what the fill will change
     show("deliverAnalyticOptions", !aces);
     // The Signal card says what the file is.
     const DeliverSignal sig = deliver_signal(c, aces);
@@ -399,9 +412,13 @@ void MainWindow::sync_deliver() {
     {
         const bool scene = sig.transfer.contains("scene-referred");
         if (auto* wr = findChild<QWidget*>("whiteRow")) wr->setVisible(scene);
-        if (auto* wf = findChild<QLabel*>("whiteField"))
-            wf->setText(sig.transfer.startsWith("linear") ? QStringLiteral("1.0 = diffuse white (RUDRA's 203 nits)")
-                                                          : QStringLiteral("diffuse white at the curve's 1.0 scene value"));
+        if (auto* wf = findChild<QLabel*>("whiteField")) {
+            // 1.2.6: short values; the long form on hover
+            wf->setText(sig.transfer.startsWith("linear") ? QStringLiteral("1.0 = 203 nits")
+                                                          : QStringLiteral("the curve's 1.0"));
+            wf->setToolTip(sig.transfer.startsWith("linear") ? QStringLiteral("1.0 is diffuse white, RUDRA's 203 nits")
+                                                             : QStringLiteral("Diffuse white at the curve's 1.0 scene value"));
+        }
     }
     primaries_field_->setText(sig.primaries);
     if (const QString pipe = deliver_pipe_label(c, aces); !pipe.isEmpty())
@@ -439,7 +456,7 @@ void MainWindow::sync_deliver() {
         n->setToolTip(brief == note ? QString() : note);
         n->setVisible(!note.isEmpty());
     }
-    if (auto* hint = findChild<QLabel*>("renderHint")) hint->setVisible(!aces);
+    if (auto* hint = findChild<QLabel*>("renderHint")) hint->setVisible(false);   // 1.2.6: the Render card's tooltip
     sync_render_file();   // the File path's extension follows the type
     // The button: what Render does, or a click stops what runs.
     if (aces_delivering()) {
@@ -670,10 +687,26 @@ void MainWindow::aces_deliver_finished(const QJsonObject& o, const QString& out)
                     (o.value("dolby_vision").toString().isEmpty()
                          ? QString()
                          : QStringLiteral(" · Dolby Vision XML (%1)").arg(QFileInfo(o.value("dolby_vision").toString()).fileName()));
+        if (n > 0) {   // 1.2.6: the QC report, from the masters' sidecars and the run's provenance
+            QJsonObject learned = o;
+            if (auto s = read_aces_provenance(to_path((prov.isEmpty() ? out : prov)))) {
+                learned["remaining_display_errors"] = qint64(s->remaining_display_errors);
+                learned["appearance_pass"] = s->appearance_pass;
+                learned["mean_reconstructed_fraction"] = s->mean_reconstructed_fraction;
+            }
+            std::vector<std::filesystem::path> masters;
+            std::error_code ec;
+            for (const auto& e : std::filesystem::directory_iterator(to_path(out), ec))
+                if (e.path().extension() == ".exr" || e.path().extension() == ".dpx") masters.push_back(e.path());
+            std::sort(masters.begin(), masters.end());
+            if (const QString qc = write_render_qc(out, masters, QStringLiteral("Learned ACES 2.0"), learned); !qc.isEmpty())
+                text += QStringLiteral(" \u00b7 QC: ") + QFileInfo(qc).fileName();
+        }
         status->setText(text);
         log(text);
         delivered_ += n;
         if (auto* d = findChild<QLabel*>("colDelivered")) d->setText(QString::number(delivered_));
+        if (n > 0) note_media_delivered();   // 1.2.6: the Media panel's Delivered
         if (!cancelled && n > 0 && deliver_effective().ai_fill) {
             QString why;
             // A movie with the AI fill: once the fill is in, its frames make the movie.
@@ -836,23 +869,33 @@ bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOpti
             if (!self) return;
             auto* st = self->findChild<QLabel*>("renderStatus");
             const QString ev = o.value("event").toString();
+            // 1.2.6: and the AI fill's progress bars (the windows' steps, then the frames written)
+            const double was = std::max(0.0, self->ai_progress_share());
             if (ev == "embedding") {   // a prompt not in the cache: umT5 loads once to embed it (6 Nov 2026)
                 st->setText(QStringLiteral("AI fill: embedding %1 new prompt(s), once (a minute or more)…")
                                 .arg(o.value("prompts").toArray().size()));
+                self->set_ai_progress(-1.0, QStringLiteral("embedding the prompt (once)"));
             } else if (ev == "ready") {
                 st->setText(QStringLiteral("AI fill: model loaded on %1…").arg(o.value("device").toString()));
+                self->set_ai_progress(0.0, QStringLiteral("model loaded"));
             } else if (ev == "progress") {
                 st->setText(QStringLiteral("AI fill: window %1 / %2 · step %3 / %4")
                                 .arg(o.value("window").toInt()).arg(o.value("windows").toInt())
                                 .arg(o.value("step").toInt()).arg(o.value("steps").toInt()));
+                self->set_ai_progress(std::max(was, genfill_progress_share(0.0, 0.98, o.value("window").toInt(1), o.value("windows").toInt(1),
+                                                                           o.value("step").toInt(), o.value("steps").toInt(1))),
+                                      QStringLiteral("window %1 / %2").arg(o.value("window").toInt()).arg(o.value("windows").toInt()));
             } else if (ev == "frame") {
                 st->setText(QStringLiteral("AI fill: frame %1 / %2 written").arg(o.value("index").toInt()).arg(o.value("of").toInt()));
+                self->set_ai_progress(std::max(was, 0.98 * o.value("index").toInt() / std::max(1, o.value("of").toInt())),
+                                      QStringLiteral("frame %1 / %2").arg(o.value("index").toInt()).arg(o.value("of").toInt()));
                 self->log("AI fill saved " + o.value("file").toString());
             }
             st->show();
         },
         [self, out, master_dir, finished](bool done, const QJsonObject& last) {
             if (!self) return;
+            self->ai_progress_done();
             auto* st = self->findChild<QLabel*>("renderStatus");
             QString text;
             if (done) {
@@ -870,6 +913,11 @@ bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOpti
                         where = QStringLiteral("fixed in place in %1; the originals are in %2")
                                     .arg(QDir::toNativeSeparators(master_dir), QDir::toNativeSeparators(sw.backup));
                 }
+                // 1.2.6 (checklist item 6): the disclosure record beside genfill.json.
+                const QString route = self->deliver_choice().source == QLatin1String("aces") ? QStringLiteral("Learned ACES 2.0")
+                                                                                           : QStringLiteral("Analytic");
+                const QString disclosure = write_genfill_disclosure(out, route);
+                if (!disclosure.isEmpty()) where += QStringLiteral(" · disclosure: %1").arg(QDir::toNativeSeparators(disclosure));
                 text = QStringLiteral("AI fill: %1 frame(s) %2 · %3 % of pixels generated")
                            .arg(last.value("frames").toInt())
                            .arg(where)
@@ -895,6 +943,7 @@ bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOpti
     log("AI fill: " + QDir::toNativeSeparators(master_dir) + " -> " + QDir::toNativeSeparators(out));
     status->setText(QStringLiteral("AI fill: loading the model…"));
     status->show();
+    set_ai_progress(-1.0, QStringLiteral("loading the fill model"));
     btn_master_->setToolTip("Click to stop the AI fill (the frames written stay)");
     refresh_enabled();
     sync_ui();

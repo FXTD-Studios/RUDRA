@@ -230,6 +230,7 @@ SourcePanel::SourcePanel(QWidget* parent) : QWidget(parent) {
     readout_row(rv, "Diffuse white (code 235)", white_, rows);
     readout_row(rv, "Clip (code 255)", clip_, rows);
     readout_row(rv, "vs ACES at grey \u00b7 white", delta_, rows);
+    rows->setObjectName("sourceReadouts");
     v->addWidget(rows);
 
     // Calibrate (3.2): three anchors, each a pick button, the code it read,
@@ -382,6 +383,10 @@ SourcePanel::SourcePanel(QWidget* parent) : QWidget(parent) {
     rbh->addWidget(ref_clear_);
     rv2->addWidget(rbtns);
     v->addWidget(ref);
+    // 1.2.6 (user feedback: a cleaner UI, no function lost): the picker and its curve stay in
+    // sight; the readouts, Calibrate and Reference are one click away (remembered).
+    add_fold(v, this, QStringLiteral("sourceMore"), QStringLiteral("Readouts, calibrate, reference"),
+             {rows, cal, ref}, QStringLiteral("ui/sourceMoreOpen"));
     sync(SourceCurve::Unknown, {}, -1.0f);
 }
 

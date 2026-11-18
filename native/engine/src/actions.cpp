@@ -133,9 +133,10 @@ const std::vector<ActionSpec> kActions = {
     // 28 Oct 2026: the batch queue (app/batch_queue.hpp).
     {"batch-queue", "Batch queue…", "", "", O::Native, E::Always, "Ctrl+Shift+B"},
     {"batch-add", "Add shot to batch", "", "", O::Native, E::AnyFrames, "Ctrl+B"},
-    // 28 Oct 2026: monitoring and reference stills on the learned ACES 2.0 route.
+    // 28 Oct 2026: monitoring and reference stills on the learned ACES 2.0 route. 18 Nov 2026 (1.2.6):
+    // Scene and HDR 1000 only; SDR 100 showed the source again (the model reproduces it) and the
+    // wipe's SDR (original) side already is that picture.
     {"monitor-scene", "Scene light (RUDRA view)", "", "monitor:scene", O::Native, E::Always, ""},
-    {"monitor-sdr100", "ACES 2.0 SDR 100 nits (Rec.709)", "", "monitor:sdr100", O::Native, E::Always, ""},
     {"monitor-hdr1000", "ACES 2.0 HDR 1000 nits (P3 D65, PQ)", "", "monitor:hdr1000", O::Native, E::Always, ""},
     {"still-grab", "Grab reference still", "", "", O::Native, E::AnyFrames, "Ctrl+Alt+G"},
     {"still-compare", "Compare with reference still", "", "stillCompare", O::Native, E::Always, "Ctrl+Alt+W"},
@@ -159,7 +160,7 @@ const std::vector<MenuSpec> kMenus = {
     {"View",
      {"view-image", "view-false-colour", "view-difference", "-", "wipe", "-", ">Guides", "guides-action",
       "guides-title", "guides-centre", "-", "aspect-none", "aspect-2.39", "aspect-1.85", "aspect-16:9", "aspect-4:3",
-      "aspect-1:1", "<", "-", ">Monitor (learned ACES 2.0)", "monitor-scene", "monitor-sdr100", "monitor-hdr1000", "<",
+      "aspect-1:1", "<", "-", ">Monitor (learned ACES 2.0)", "monitor-scene", "monitor-hdr1000", "<",
       "-", "still-grab", "still-compare", "-", "colour-management"}},
     {"Window", {"rail-left", "rail-right", "scopes", "-", "zoom-fit", "zoom-actual"}},
     {"Help",

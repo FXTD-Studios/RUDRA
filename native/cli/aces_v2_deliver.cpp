@@ -50,6 +50,7 @@ Result<AcesDeliverOptions> aces_deliver_from_json(const nlohmann::json& req) {
     try {
         o.exr = req.value("exr", std::string("float"));
         o.exr_gamut = req.value("exr_gamut", std::string("acescg"));
+        o.exr_zip = req.value("exr_zip", false);
         if (req.contains("frames"))
             for (const auto& f : req.at("frames")) o.frames.push_back(f.get<int>());
         o.fps = req.value("fps", 0.0);
@@ -227,7 +228,7 @@ std::string aces_exr_label(const AcesDeliverOptions& o) {
         return "ACES 2065-1 (AP0), SMPTE ST 2065-4 container: half float RGB, uncompressed, acesImageContainerFlag 1; "
                "scene-linear, signed, unclamped; the reconstruction mask in mask/<frame>.exr";
     return std::string("ACEScg scene-linear, signed, unclamped, ") + (o.exr == "half" ? "half float (16-bit)" : "float32") +
-           "; the reconstruction mask as the rudra.reconstructed channel";
+           (o.exr_zip && exr_zip_available() ? ", ZIP (lossless)" : "") + "; the reconstruction mask as the rudra.reconstructed channel";
 }
 
 Result<void> write_aces_master_exr(const fs::path& path, const PlanarBuffer& acescg, const PlanarBuffer& mask,
@@ -238,7 +239,8 @@ Result<void> write_aces_master_exr(const fs::path& path, const PlanarBuffer& ace
     // ST 2065-4: the AP0 file is RGB only, so its mask is a file of its own (mask/<frame>.exr, R=G=B).
     const bool ap0 = o.exr_gamut == "ap0";
     auto w = ap0 ? write_aces_exr(part, acescg, Primaries::Ap1, 1.0, provenance, true, nullptr, typed, alpha)
-                 : write_acescg_exr(part, acescg, Primaries::Ap1, 1.0, provenance, half, &mask, typed, alpha);
+                 : write_acescg_exr(part, acescg, Primaries::Ap1, 1.0, provenance, half, &mask, typed, alpha,
+                                    o.exr_zip ? ExrCompression::Zip : ExrCompression::None);
     std::error_code ec;
     if (!w) {
         fs::remove(part, ec);

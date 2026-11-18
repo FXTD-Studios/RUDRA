@@ -8,6 +8,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QToolButton>
+#include <QVBoxLayout>
 #include <QWidget>
 
 #include <cstdint>
@@ -180,5 +181,12 @@ private:
     bool on_ = false;
     bool attention_ = false;
 };
+
+// 1.2.6 (user feedback: a cleaner UI, no function lost): the settings most shots never touch,
+// behind one "Title \u25b8" button in their card. The widgets keep their names and state; they
+// move into a box that the button shows and hides. Whether it is open is remembered under
+// `settings_key`. Placed where the first of `moved` was in `into`.
+QPushButton* add_fold(QVBoxLayout* into, QWidget* parent, const QString& id, const QString& title,
+                      const std::vector<QWidget*>& moved, const QString& settings_key, bool at_end = false);
 
 }  // namespace rudra::app

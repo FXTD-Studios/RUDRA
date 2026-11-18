@@ -1310,6 +1310,7 @@ void MainWindow::aces_after_frame(const QJsonObject& o, int index, const QString
     }
 #endif
     apply_fill_view();   // the viewer's AI fill, when on and this frame has one
+    sync_ai_frame_info();   // 1.2.6: the AI fill card's line on this frame
     refresh_view_region();   // the region's histogram and tint, of this frame's SDR (8 Nov 2026)
     sync_reference_ui();
     show_mode();   // the status bar says the learned model, not the analytic reconstruction

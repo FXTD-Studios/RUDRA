@@ -62,6 +62,10 @@ def write_aces_exr(
         # An auxiliary layer is a general AP0 EXR, not a strict ACES container.
         ints = {}
         attrs['rudra:container'] = 'AP0 linear with reconstruction mask'
+    elif not half:
+        # 1.2.6 (readiness report, checklist item 3): the container is half float only.
+        ints = {}
+        attrs['rudra:container'] = 'AP0 linear, float32: not the SMPTE ST 2065-4 container (half float)'
     return write_exr(path, aces, half=half, chromaticities=AP0_CHROMATICITIES, attributes=attrs,
                      reconstruction_mask=reconstruction_mask, int_attributes=ints)
 

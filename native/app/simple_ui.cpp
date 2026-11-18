@@ -35,7 +35,8 @@
 namespace rudra::app {
 
 QString MainWindow::shown_tab() const {
-    if (workspace_ == "simple") return tab_ == "grade" ? QStringLiteral("rec") : tab_;
+    if (tab_ == "grade") return QStringLiteral("rec");   // 1.2.6: no Grade tab (Region EV is in Reconstruct)
+    if (workspace_ == "simple") return tab_;
     return tab_ == "check" ? QStringLiteral("rec") : tab_;
 }
 
@@ -156,11 +157,11 @@ void MainWindow::sync_simple() {
     tabs_->button("check")->setText(QStringLiteral("2  Check"));
     tabs_->button("deliver")->setText(simple ? QStringLiteral("3  Deliver") : QStringLiteral("Deliver"));
     tabs_->button("check")->setVisible(simple);
-    tabs_->button("grade")->setVisible(!simple);
+    tabs_->button("grade")->setVisible(false);   // 1.2.6: Region EV moved into Reconstruct
     if (probe_btn_) probe_btn_->setVisible(!simple);
     // The sidebar: the shots only.
     vis("collections", !simple);
-    vis("probePanelWrap", !simple);
+    vis("probePanelWrap", !simple && probe_on_);   // 1.2.6: only while Probe is on
     vis("modelCard", !simple);
     // The viewer bar: the hint, View, Fit, Scopes.
     hold_hint_->setVisible(simple);
@@ -174,7 +175,8 @@ void MainWindow::sync_simple() {
                                                       : QStringLiteral("HDR");
         view_menu_btn_->setText(QStringLiteral("View: %1  ▾").arg(shown));
     }
-    for (QWidget* w : std::initializer_list<QWidget*>{view_mode_, changes_btn_, invented_btn_, view_layer_, zoom_val_, guide_btn_})
+    for (QWidget* w : std::initializer_list<QWidget*>{view_mode_, changes_btn_, invented_btn_, view_layer_, zoom_val_, guide_btn_,
+                                                      static_cast<QWidget*>(vt_overlays_)})
         if (w) w->setVisible(!simple);
     if (auto* hud = findChild<QWidget*>("hud"))
         for (auto* c : hud->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
@@ -243,8 +245,9 @@ void MainWindow::sync_simple() {
     }
     vis("deliverFullCards", !simple || preset == "custom");
     for (const char* id : {"renderStart", "renderStartLabel", "renderTimecode", "renderTimecodeLabel", "renderReel",
-                           "renderReelLabel", "btnReprocess"})
+                           "renderReelLabel"})
         vis(id, !simple);
+    vis("btnReprocess", !simple && btn_reprocess_ && btn_reprocess_->isEnabled());   // 1.2.6: once there is a frame
     // The inspector: the tab's page only.
     vis("frameStats", !simple);
     vis("logCard", !simple);

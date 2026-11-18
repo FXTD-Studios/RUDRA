@@ -10,6 +10,9 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QStyle>
+#include <QPushButton>
+#include <QSettings>
+#include <QVBoxLayout>
 #include <QStyleOption>
 #include <QToolTip>
 #include <QHelpEvent>
@@ -582,6 +585,44 @@ void IconButton::paintEvent(QPaintEvent* e) {
         p.setBrush(theme_colour("gold"));
         p.drawEllipse(QPointF(width() - 7.5, 6.5), 3.2, 3.2);
     }
+}
+
+QPushButton* add_fold(QVBoxLayout* into, QWidget* parent, const QString& id, const QString& title,
+                      const std::vector<QWidget*>& moved, const QString& settings_key, bool at_end) {
+    auto* fold = new QPushButton(parent);
+    fold->setObjectName(id);
+    fold->setCheckable(true);
+    fold->setProperty("role", "fold");
+    auto* box = new QWidget(parent);
+    box->setObjectName(id + QStringLiteral("Box"));
+    auto* bv = new QVBoxLayout(box);
+    bv->setContentsMargins(0, 0, 0, 0);
+    bv->setSpacing(into->spacing() >= 0 ? into->spacing() : 8);
+    int at = -1;
+    for (QWidget* w : moved) {
+        if (!w) continue;
+        if (at < 0) at = into->indexOf(w);
+        const bool hidden = w->isHidden();
+        if (QWidget* old = w->parentWidget(); old && old->layout()) old->layout()->removeWidget(w);
+        w->setParent(box);
+        bv->addWidget(w);
+        w->setVisible(!hidden);
+    }
+    if (at < 0 || at_end) at = into->count();
+    into->insertWidget(at, fold);
+    into->insertWidget(at + 1, box);
+    const bool open = QSettings().value(settings_key, false).toBool();
+    auto set = [fold, box, title](bool on) {
+        box->setVisible(on);
+        fold->setText(title + (on ? QStringLiteral(" \u25BE") : QStringLiteral(" \u25B8")));
+    };
+    fold->setChecked(open);
+    set(open);
+    QObject::connect(fold, &QPushButton::toggled, box, [set, settings_key](bool on) {
+        set(on);
+        QSettings().setValue(settings_key, on);
+    });
+    return fold;
 }
 
 }  // namespace rudra::app

@@ -115,6 +115,9 @@ QWidget#hud QPushButton#inventedBtn:checked { background: var(--raise-2); color:
 QWidget#compareBar { background: var(--bg); }
 QLabel#compareLine { background: transparent; color: var(--ink-3); font-size: 11px; }
 QLabel#compareLine[state="warn"] { color: var(--gold); }
+QLabel#deliverAiFrameInfo[state="warn"] { color: var(--gold); }
+QProgressBar#deliverAiProgress, QProgressBar#viewerAiProgress { background: var(--raise); border: 0; border-radius: 2px; color: var(--ink); font-size: 11px; text-align: center; }
+QProgressBar#deliverAiProgress::chunk, QProgressBar#viewerAiProgress::chunk { background: var(--accent-dim); border-radius: 2px; }
 QPushButton#compareFit { background: var(--card); border: 1px solid var(--raise); border-radius: 9px; color: var(--ink); padding: 1px 10px; font-size: 11px; }
 QPushButton#compareFit:hover { background: var(--raise-2); }
 /* view revision 6: the viewer toolbar under the compare line */
@@ -129,6 +132,35 @@ QLabel#rangeLine { color: var(--ink-3); font-size: 11px; }
 QLabel#vtColour { color: var(--ink-2); font-size: 11px; }
 QLabel#vtColour[state="warn"] { color: var(--gold); }
 QWidget#viewerToolbar QComboBox#vtOcio, QWidget#viewerToolbar QComboBox#vtOriginal { min-width: 120px; }
+/* 1.2.6: the name in front of each viewer box (View, Working space, SDR shown as, Mark) */
+QWidget#viewerToolbar QLabel[role="vt-cap"] { color: var(--ink-4); font-size: 11px; }
+/* 1.2.6: the panels the viewer's Overlays, Colour and gamma/brackets buttons open */
+QFrame[role="popover"] { background: var(--card); border: 1px solid var(--line-2); border-radius: 8px; }
+QFrame[role="popover"] QLabel { background: transparent; }
+QFrame[role="popover"] QLabel[role="pop-head"] { color: var(--ink-4); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; }
+QPushButton#vtOverlays[on="true"] { border-color: var(--gold); color: var(--gold); }
+/* 1.2.6: the Media panel (media_library.cpp) */
+QLabel[role="media-title"] { font-size: 15px; font-weight: 600; color: var(--ink); background: transparent; }
+QPushButton[role="media-tool"], QPushButton[role="media-add"] { background: var(--card); border: 1px solid var(--line-2); border-radius: 6px; color: var(--ink-2); padding: 0; }
+QPushButton[role="media-tool"]:checked { border-color: var(--accent); color: var(--accent); }
+QPushButton[role="media-add"] { background: transparent; border: 0; color: var(--ink-3); font-size: 14px; }
+QLineEdit#mediaSearch { background: var(--bg); }
+QLabel[role="media-section"] { color: var(--ink-4); font-size: 10px; font-weight: 600; letter-spacing: 0.6px; background: transparent; }
+QLabel[role="media-bin-title"] { font-weight: 600; color: var(--ink); background: transparent; }
+QLabel[role="media-folder"] { color: var(--ink-3); background: transparent; }
+QWidget[role="media-bin"] { border-radius: 6px; background: transparent; }
+QWidget[role="media-bin"] QLabel { background: transparent; color: var(--ink-2); }
+QWidget[role="media-bin"]:hover { background: var(--raise); }
+QWidget[role="media-bin"][sel="true"] { background: var(--accent-dim); }
+QWidget[role="media-bin"][sel="true"] QLabel { color: var(--ink); }
+QWidget[role="media-bin"][drop="true"] { background: var(--accent-dim); border: 1px dashed var(--accent); }
+QListWidget#mediaClips { background: transparent; border: 0; color: var(--ink); font-size: 11px; }
+QListWidget#mediaClips::item { border-radius: 6px; padding: 2px; color: var(--ink-2); }
+QListWidget#mediaClips::item:hover { background: var(--raise); }
+QListWidget#mediaClips::item:selected { background: var(--accent-dim); color: var(--ink); }
+QLabel#mediaHint { color: var(--ink-4); font-size: 10px; }
+/* while a clip is dragged from Media: the picture is where it goes */
+QWidget#viewer[drop="true"] { border: 2px dashed var(--accent); }
 /* 4 Nov 2026: a shot row's remove button */
 QToolButton[role="shot-remove"] { background: transparent; border: none; color: var(--ink-3); font-size: 14px; padding: 0 4px; }
 QToolButton[role="shot-remove"]:hover { color: var(--ink); }
@@ -168,6 +200,15 @@ QWidget#ipanels { background: transparent; }
 QLabel[role="title"] { font-size: 17px; font-weight: 600; color: var(--ink); }
 QWidget[role="card"] { background: var(--card); border-radius: var(--radius-card); }
 QLabel[role="card-head"] { font-weight: 600; color: var(--ink); }
+/* 1.2.6: a card that only reports (kind="info", layout.cpp info_head) is drawn as information, not
+   as a control: no fill, a thin outline, an "i" and a Read-only tag in its head; its values in the
+   UI face, never in a box. Every editable control keeps a box, a switch or a button. */
+QWidget[role="card"][kind="info"] { background: transparent; border: 1px solid var(--line-2); }
+QWidget[role="card"][kind="info"] QWidget[role="field"] { border-bottom: 1px solid var(--raise); }
+QWidget[role="card"][kind="info"] QLabel[role="key"] { color: var(--ink-4); }
+QWidget[role="card"][kind="info"] QLabel[role="value"] { color: var(--ink-2); font-family: "var(--ui-family)"; }
+QLabel[role="info-icon"] { color: var(--ink-4); border: 1px solid var(--ink-4); border-radius: 7px; padding: 0px; margin: 0px; min-width: 14px; max-width: 14px; min-height: 14px; max-height: 14px; font-size: 9px; font-weight: 700; }
+QLabel[role="ro-tag"] { color: var(--ink-4); font-size: 10px; letter-spacing: 0.5px; border: 1px solid var(--line-2); border-radius: 3px; padding: 0px 5px; }
 QLabel[role="note"] { color: var(--ink-3); font-size: 11px; }
 QLabel[role="note-p"] { color: var(--ink-3); font-size: 11px; }
 QLabel[role="key"] { color: var(--ink); }
@@ -263,6 +304,9 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextEdit {
 }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus { border-color: var(--accent); }
 QComboBox::drop-down { border: 0; width: 18px; }
+/* 18 Nov 2026 (1.2.6): a list to pick from shows its arrow, so it never reads as a text field or a readout */
+QComboBox { padding-right: 22px; }
+QComboBox::down-arrow { image: url(:/chrome/combo-arrow.png); width: 10px; height: 6px; }
 QComboBox QAbstractItemView { background: var(--card); border: 1px solid var(--raise-2); selection-background-color: var(--accent); }
 QLabel[role="small"], QLabel[role="render-status"] { color: var(--ink-3); font-size: 11px; }
 QPlainTextEdit#log { font-family: "var(--mono-family)"; font-size: 11px; color: var(--ink-3); background: var(--panel); border: 0; border-radius: var(--radius); }

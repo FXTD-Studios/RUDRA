@@ -19,6 +19,12 @@ void FlowLayout::add_gap(int width) { addItem(new QSpacerItem(width, 0, QSizePol
 
 void FlowLayout::addItem(QLayoutItem* item) { items_.append(item); }
 
+void FlowLayout::insert_widget(int index, QWidget* w) {
+    addChildWidget(w);
+    items_.insert(std::clamp(index, 0, int(items_.size())), new QWidgetItem(w));
+    invalidate();
+}
+
 QLayoutItem* FlowLayout::itemAt(int index) const {
     return index >= 0 && index < items_.size() ? items_.at(index) : nullptr;
 }
@@ -29,7 +35,10 @@ QLayoutItem* FlowLayout::takeAt(int index) {
 
 QSize FlowLayout::minimumSize() const {
     QSize size;
-    for (const QLayoutItem* item : items_) size = size.expandedTo(item->minimumSize());
+    // 18 Nov 2026 (1.2.6): the widest item as it asks to be drawn, not as far as it could be
+    // squeezed: a segmented control squeezed under its text read "Defip ang ent" at 1080p 125 %.
+    for (const QLayoutItem* item : items_)
+        if (!item->isEmpty()) size = size.expandedTo(item->sizeHint().expandedTo(item->minimumSize()));
     const QMargins m = contentsMargins();
     return size + QSize(m.left() + m.right(), m.top() + m.bottom());
 }

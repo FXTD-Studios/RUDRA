@@ -362,6 +362,134 @@ TEST(ClipFillDetail, TheNoiseFloorLeavesOneCodeOfDitherAlone) {
 
 // ---- the settings (12 Oct 2026): request JSON, session, project ------------
 
+// 18 Nov 2026 (1.2.6): a lossy source (a fire JPEG, user report). A frame
+// drawn in codes: a clean orange border, a flame core with R at 255, G
+// around 250 with a JPEG-like +-4 codes of block noise, B lower.
+namespace {
+
+// A fixed, repeatable noise of +-amp codes in 4x4 blocks and per pixel.
+float jpeg_noise(int y, int x, int amp) {
+    const unsigned block = unsigned((y / 4) * 131 + (x / 4) * 71) * 2654435761u;
+    const unsigned pix = unsigned(y * 977 + x * 389) * 2246822519u;
+    const int v = int((block >> 13) % unsigned(amp + 1)) + int((pix >> 17) % 3u) - 1 - amp / 2;
+    return float(v);
+}
+
+SdrImage flame(int h, int w, int noise, int g_code, int b_code) {
+    PlanarBuffer s(3, h, w);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const bool border = x < 10 || x >= w - 10 || y < 10 || y >= h - 10;
+            float r = 255.0f, g = float(g_code), b = float(b_code);
+            if (border) { r = 225.0f; g = 140.0f; b = 50.0f; }
+            else if (noise > 0) {
+                g = std::clamp(g + jpeg_noise(y, x, noise), 0.0f, 255.0f);
+                b = std::clamp(b + 2.0f * jpeg_noise(y + 7, x + 3, noise), 0.0f, 255.0f);
+            }
+            s.at(0, y, x) = r / 255.0f;
+            s.at(1, y, x) = g / 255.0f;
+            s.at(2, y, x) = b / 255.0f;
+        }
+    return SdrImage(std::move(s));
+}
+
+// Mean |step| of log2 luma between horizontal neighbours inside the core.
+double roughness(const PlanarBuffer& b, int margin) {
+    double sum = 0.0;
+    int n = 0;
+    const int h = b.height(), w = b.width();
+    for (int y = margin; y < h - margin; ++y)
+        for (int x = margin; x + 1 < w - margin; ++x) {
+            const std::size_t i = std::size_t(y) * std::size_t(w) + std::size_t(x);
+            sum += std::abs(std::log2(luma(b, i + 1)) - std::log2(luma(b, i)));
+            ++n;
+        }
+    return sum / std::max(n, 1);
+}
+
+}  // namespace
+
+TEST(ClipFillLossy, TheDefaultsAreOffAndTheLossyOptionsKeepTheArtistsOwn) {
+    const ClipFillOptions d;
+    EXPECT_EQ(d.smooth_px, 0.0);
+    EXPECT_FALSE(d.hue_order);
+    ClipFillOptions mine;
+    mine.enabled = false;
+    mine.detail_gain = 1.6;
+    mine.overrides.push_back({0.5, 0.5, 2000.0});
+    const ClipFillOptions l = lossy_source_clip_options(mine);
+    EXPECT_GT(l.smooth_px, 0.0);
+    EXPECT_TRUE(l.hue_order);
+    EXPECT_LT(l.max_partial_ev, d.max_partial_ev);
+    EXPECT_LT(l.soft_code, d.soft_code);
+    EXPECT_FALSE(l.enabled);
+    EXPECT_EQ(l.detail_gain, 1.6);
+    ASSERT_EQ(l.overrides.size(), 1u);
+    EXPECT_EQ(l.overrides[0].nits, 2000.0);
+}
+
+TEST(ClipFillLossy, OffIsBitIdentical) {
+    // smooth_px 0 and hue_order off are the fill before 1.2.6, bit for bit.
+    const SdrImage sdr = flame(48, 64, 4, 250, 120);
+    ClipFillOptions o;
+    o.smooth_px = 0.0;
+    o.hue_order = false;
+    const ClipFill a = reconstruct_clipped(sdr, kEv), b = reconstruct_clipped(sdr, kEv, o);
+    ASSERT_EQ(a.gain_log2.span().size(), b.gain_log2.span().size());
+    for (std::size_t i = 0; i < a.gain_log2.span().size(); ++i) ASSERT_EQ(a.gain_log2.span()[i], b.gain_log2.span()[i]) << i;
+}
+
+TEST(ClipFillLossy, CompressionNoiseNearWhiteIsSmoothedNotAmplified) {
+    const SdrImage sdr = flame(64, 96, 6, 249, 150);
+    const PlanarBuffer before = filled(sdr, reconstruct_clipped(sdr, kEv));
+    const PlanarBuffer after = filled(sdr, reconstruct_clipped(sdr, kEv, lossy_source_clip_options({})));
+    const double rough_before = roughness(before, 16), rough_after = roughness(after, 16);
+    EXPECT_LT(rough_after, 0.5 * rough_before) << rough_before << " -> " << rough_after;
+    for (float v : after.span()) ASSERT_TRUE(std::isfinite(v) && v >= 0.0f);
+}
+
+TEST(ClipFillLossy, ChannelsClippedTogetherKeepTheNeighboursHue) {
+    // R and G both at 255 inside an orange flame: not a flat yellow.
+    const SdrImage sdr = flame(48, 64, 0, 255, 110);
+    const PlanarBuffer plain = filled(sdr, reconstruct_clipped(sdr, kEv));
+    const PlanarBuffer lossy = filled(sdr, reconstruct_clipped(sdr, kEv, lossy_source_clip_options({})));
+    const std::size_t c = std::size_t(24) * 64u + 32u;
+    const double rg_plain = std::log2(plain.plane(0)[c] / plain.plane(1)[c]);
+    const double rg_lossy = std::log2(lossy.plane(0)[c] / lossy.plane(1)[c]);
+    EXPECT_NEAR(rg_plain, 0.0, 0.05);   // one ceiling: the yellow users saw
+    EXPECT_GT(rg_lossy, 0.5);            // R over G, as the flame around it
+    EXPECT_LE(rg_lossy, lossy_source_clip_options({}).max_partial_ev + 1e-3);
+    EXPECT_GE(lossy.plane(1)[c], plain.plane(1)[c] * 0.999f);   // G never below its ceiling
+}
+
+TEST(ClipFillLossy, ACleanPixelIsNeverMoved) {
+    const SdrImage sdr = flame(48, 64, 4, 250, 120);
+    const ClipFill f = reconstruct_clipped(sdr, kEv, lossy_source_clip_options({}));
+    ASSERT_FALSE(f.gain_log2.empty());
+    const auto& s = sdr.buffer();
+    for (std::size_t i = 0; i < std::size_t(48 * 64); ++i) {
+        if (std::max({s.plane(0)[i], s.plane(1)[i], s.plane(2)[i]}) >= 0.94f) continue;
+        for (int c = 0; c < 3; ++c) ASSERT_EQ(f.gain_log2.plane(c)[i], 0.0f) << i;
+    }
+}
+
+TEST(ClipFillLossy, LossyFilesAreKnownByTheirExtension) {
+    for (const char* p : {"a.jpg", "C:\\Shots\\FIRE.JPEG", "x/y.jfif", "s.webp", "h.HEIC", "a.avif", "b.jpe"})
+        EXPECT_TRUE(is_lossy_still_path(p)) << p;
+    for (const char* p : {"a.png", "b.tif", "c.exr", "d.dpx", "e.mov", "jpg", "dir.jpg/frame.png", "f.jpg.png"})
+        EXPECT_FALSE(is_lossy_still_path(p)) << p;
+}
+
+TEST(ClipFillLossy, LossyMoviesAreKnownByCodecAndBitDepth) {
+    for (auto [codec, fmt] : {std::pair{"h264", "yuv420p"}, {"hevc", "yuvj420p"}, {"vp9", "yuv420p"}, {"av1", "yuv420p"},
+                              {"mpeg2video", "yuv422p"}, {"mjpeg", "yuvj422p"}, {"H264", "nv12"}, {"hevc", "nv21"}})
+        EXPECT_TRUE(is_lossy_video(codec, fmt)) << codec << " " << fmt;
+    for (auto [codec, fmt] : {std::pair{"hevc", "yuv420p10le"}, {"h264", "yuv422p10le"}, {"av1", "p010le"}, {"prores", "yuv422p10le"},
+                              {"prores", "yuv444p12le"}, {"dnxhd", "yuv422p"}, {"ffv1", "gbrp16le"}, {"rawvideo", "rgb24"},
+                              {"cfhd", "yuv422p10le"}, {"hevc", "p010le"}, {"h264", "yuv420p9le"}, {"av1", "gbrp12le"}})
+        EXPECT_FALSE(is_lossy_video(codec, fmt)) << codec << " " << fmt;
+}
+
 #include "rudra/deliver/master.hpp"
 #include "rudra/engine/project.hpp"
 #include "rudra/engine/session.hpp"
@@ -462,4 +590,20 @@ TEST(ClipFillSettings, AProjectKeepsThem) {
     ASSERT_TRUE(old);
     EXPECT_TRUE(old->grade.clip_fill);
     EXPECT_TRUE(old->grade.clip_peaks.empty());
+}
+
+TEST(ClipFillSettings, ALossySourceTravelsWithTheRequest) {
+    MasterRequest q;
+    EXPECT_EQ(master_request_json(q).find("lossy_source"), std::string::npos);   // masters before 1.2.6 read the same
+    EXPECT_EQ(clip_fill_options(q).smooth_px, 0.0);
+    q.lossy_source = true;
+    q.highlight_detail = 1.5;
+    auto back = master_request_from_json(master_request_json(q));
+    ASSERT_TRUE(back);
+    EXPECT_TRUE(back->lossy_source);
+    const ClipFillOptions o = clip_fill_options(*back);
+    EXPECT_GT(o.smooth_px, 0.0);
+    EXPECT_TRUE(o.hue_order);
+    EXPECT_EQ(o.detail_gain, 1.5);
+    EXPECT_FALSE(master_request_from_json("{}")->lossy_source);
 }

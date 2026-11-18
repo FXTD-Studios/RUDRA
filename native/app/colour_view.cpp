@@ -180,7 +180,28 @@ void MainWindow::build_colour_controls(FlowLayout* row) {
         const QStringList dv = vt_ocio_->itemData(i).toString().split(QLatin1Char('\t'));
         set_colour_view(dv.value(0), dv.value(1));
     });
-    row->addWidget(vt_ocio_);
+    // 18 Nov 2026 (1.2.6, user feedback: "which box is what?"): every box has its name in front
+    // of it, and the name and the box are one item, so a narrow row never parts them.
+    // The checks are one group of their own, named as what they mark.
+    auto group = [this, row](const char* id, const QString& caption, std::initializer_list<QWidget*> parts) {
+        auto* g = new QWidget(vtool_);
+        g->setObjectName(QString::fromLatin1(id));
+        auto* h = new QHBoxLayout(g);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(5);
+        auto* cap = new QLabel(caption, g);
+        cap->setObjectName(QString::fromLatin1(id) + QStringLiteral("Label"));
+        cap->setProperty("role", "vt-cap");
+        h->addWidget(cap);
+        for (QWidget* p : parts) {
+            p->setParent(g);
+            h->addWidget(p);
+        }
+        row->addWidget(g);
+        return cap;
+    };
+    group("vtViewGroup", QStringLiteral("View"), {vt_ocio_})
+        ->setToolTip(QStringLiteral("How the picture is shown on this screen. Changes the viewer only, never a render"));
     vt_working_ = new QComboBox(vtool_);
     vt_working_->setObjectName("vtWorking");
     vt_working_->setFocusPolicy(Qt::NoFocus);
@@ -194,15 +215,13 @@ void MainWindow::build_colour_controls(FlowLayout* row) {
         make_colour_transforms();
         refresh_colour();
     });
-    row->addWidget(vt_working_);
-    auto* orig = new QLabel("Original", vtool_);
-    orig->setObjectName("vtOriginalLabel");
-    row->addWidget(orig);
+    group("vtWorkingGroup", QStringLiteral("Working space"), {vt_working_})
+        ->setToolTip(QStringLiteral("The space the view is fed and the probe reads. Changes the viewer only, never a render"));
     vt_original_ = new QComboBox(vtool_);
     vt_original_->setObjectName("vtOriginal");
     vt_original_->setFocusPolicy(Qt::NoFocus);
     vt_original_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    vt_original_->setMinimumContentsLength(16);
+    vt_original_->setMinimumContentsLength(24);   // 1.2.6: "Inverse ACES 2.0 SDR view" was cut
     vt_original_->setToolTip("How the original SDR enters the working space when it is shown through an OCIO view (the "
                              "SDR source and the wipe's SDR side). The inverse of the SDR view makes it look as it was "
                              "graded through that view; a texture space reads its codes as linear light.");
@@ -212,10 +231,12 @@ void MainWindow::build_colour_controls(FlowLayout* row) {
         make_colour_transforms();
         refresh_colour();
     });
-    row->addWidget(vt_original_);
+    group("vtOriginalGroup", QStringLiteral("SDR shown as"), {vt_original_})
+        ->setToolTip(QStringLiteral("Only for an OCIO view: how the original SDR (the A side of the wipe) is brought "
+                                    "into the working space. Hidden while the view is RUDRA's own"));
 
     row->add_gap(8);
-    vt_gamut_ = new QPushButton("Gamut", vtool_);
+    vt_gamut_ = new QPushButton("Out of gamut", vtool_);
     vt_gamut_->setObjectName("vtGamut");
     vt_gamut_->setCheckable(true);
     vt_gamut_->setFocusPolicy(Qt::NoFocus);
@@ -225,20 +246,18 @@ void MainWindow::build_colour_controls(FlowLayout* row) {
         gamut_check_ = !gamut_check_;
         refresh_colour();
     });
-    row->addWidget(vt_gamut_);
     vt_gamut_of_ = new QComboBox(vtool_);
     vt_gamut_of_->setObjectName("vtGamutOf");
     vt_gamut_of_->setFocusPolicy(Qt::NoFocus);
     for (int i = 0; i < 4; ++i) vt_gamut_of_->addItem(kGamutNames[i], i);
-    vt_gamut_of_->setToolTip("The gamut the Gamut check reads");
+    vt_gamut_of_->setToolTip("The gamut \"Out of gamut\" marks against; picking one turns the check on");
     connect(vt_gamut_of_, &QComboBox::activated, this, [this](int i) {
         gamut_of_ = vt_gamut_of_->itemData(i).toInt();
         QSettings().setValue("viewer/gamutOf", gamut_of_);
         gamut_check_ = true;
         refresh_colour();
     });
-    row->addWidget(vt_gamut_of_);
-    vt_invalid_ = new QPushButton("Invalid", vtool_);
+    vt_invalid_ = new QPushButton("Invalid values", vtool_);
     vt_invalid_->setObjectName("vtInvalid");
     vt_invalid_->setCheckable(true);
     vt_invalid_->setFocusPolicy(Qt::NoFocus);
@@ -249,7 +268,8 @@ void MainWindow::build_colour_controls(FlowLayout* row) {
         invalid_check_ = !invalid_check_;
         refresh_colour();
     });
-    row->addWidget(vt_invalid_);
+    group("vtChecksGroup", QStringLiteral("Mark"), {vt_gamut_, vt_gamut_of_, vt_invalid_})
+        ->setToolTip(QStringLiteral("Overlays on the viewer that mark problem pixels; they are never rendered"));
     vt_colour_ = new QLabel(vtool_);
     vt_colour_->setObjectName("vtColour");
     vt_colour_->setTextFormat(Qt::PlainText);
@@ -282,7 +302,11 @@ void MainWindow::sync_colour_controls() {
     {
         const QSignalBlocker b(vt_ocio_);
         if (refill) vt_ocio_->clear();
-        if (refill) vt_ocio_->addItem(QStringLiteral("RUDRA view (nits, no tone mapping)"), QString());
+        if (refill) {   // 1.2.6: short enough for the box (it was cut at "no tone mappi"); the rest on hover
+            vt_ocio_->addItem(QStringLiteral("RUDRA view (nits)"), QString());
+            vt_ocio_->setItemData(vt_ocio_->count() - 1, QStringLiteral("RUDRA view: absolute nits, no tone mapping"),
+                                  Qt::ToolTipRole);
+        }
         if (refill && ocio_cfg_) {
             for (const auto& p : ocio_cfg_->presets())
                 vt_ocio_->addItem(QString::fromStdString(p.label),
@@ -312,9 +336,8 @@ void MainWindow::sync_colour_controls() {
         }
         vt_original_->setCurrentIndex(std::max(0, vt_original_->findData(ocio_input_)));
         // The input transform is for an OCIO view; RUDRA's view reads the original its own way.
-        vt_original_->setEnabled(ocio_view_tf_ != nullptr);
-        vt_original_->setVisible(ocio_cfg_ != nullptr);
-        if (auto* l = vtool_->findChild<QLabel*>("vtOriginalLabel")) l->setVisible(ocio_cfg_ != nullptr);
+        // 1.2.6: shown only while it does something (an OCIO view); a box that does nothing confused users.
+        if (auto* g = vtool_->findChild<QWidget*>("vtOriginalGroup")) g->setVisible(ocio_cfg_ != nullptr && ocio_view_tf_ != nullptr);
     }
     {
         const QSignalBlocker b(vt_gamut_of_);

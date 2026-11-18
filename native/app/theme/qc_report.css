@@ -1,0 +1,27 @@
+/* The QC report's page (qc_report.cpp): its own light look, for a file that is printed and
+   sent with a delivery. Embedded as :/chrome/qc_report.css; the app's colours stay in ui/theme.css. */
+body{font:14px/1.45 -apple-system,'Segoe UI',Roboto,sans-serif;color:#1d1d1f;max-width:900px;margin:32px auto;padding:0 24px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:#666;margin-bottom:18px}
+.verdict{border-radius:10px;padding:14px 16px;margin:16px 0}
+.pass{background:#e9f6ec;border:1px solid #9fd3aa}
+.review{background:#fff4e5;border:1px solid #f0c27b}
+.verdict b{font-size:16px}
+table{border-collapse:collapse;width:100%;margin:8px 0 18px}
+td,th{border-bottom:1px solid #eee;padding:6px 8px;text-align:left}
+th{font-weight:600;color:#555;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+.kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
+.kpi div{border:1px solid #e5e5e5;border-radius:10px;padding:10px 12px}
+.kpi span{display:block;color:#777;font-size:12px}
+.kpi b{font-size:20px}
+h2{font-size:15px;margin:22px 0 6px}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+@media print{body{margin:0}
+}
+.grid{stroke:#ddd}
+.gl{fill:#888}
+.cll{stroke:#d9822b}
+.cllt{fill:#d9822b}
+.fall{stroke:#3b7dd8}
+.fallt{fill:#3b7dd8}
+.foot{color:#888;font-size:12px;margin-top:28px}
