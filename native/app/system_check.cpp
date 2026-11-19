@@ -569,8 +569,8 @@ void SystemCheckDialog::build_parts() {
         QString detail = (aces ? QStringLiteral("Recommended. ") : QStringLiteral("Optional. ")) + m.summary;
         detail += QStringLiteral(" · ") + human_size(m.size());
         if (!m.licence.isEmpty()) detail += QStringLiteral(" · Licence: ") + m.licence;
-        if (ai && !florence) detail += QStringLiteral(" Needs the base model and Python below.");
-        if (florence) detail += QStringLiteral(" Suggest a prompt describes the shot with it; it runs in AI fill's Python below.");
+        if (ai && !florence) detail += QStringLiteral(". Needs the base model and Python below.");
+        if (florence) detail += QStringLiteral(". Suggest a prompt describes the shot with it; it runs in AI fill's Python below.");
         if (blocked_here) detail += QStringLiteral("\n") + ai_problem;
         const QString err = md_->error(m.id);
         const QString state = installed ? QStringLiteral("Installed and checked")

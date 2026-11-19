@@ -36,7 +36,7 @@ fail() { printf 'FAILED: %s\n' "$*" >&2; exit 1; }
 [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ] || fail "package_linux.sh runs on x86-64 Linux"
 PY=${PYTHON:-python3}
 QT_VERSION=${QT_VERSION:-6.8.3}
-ORT_VERSION=${ORT_VERSION:-1.22.0}
+ORT_VERSION=${ORT_VERSION:-1.24.4}
 DEPS=$PWD/tmp/native_deps
 BUILD=${BUILD_DIR:-build/native_app}
 QT_ROOT=${QT_ROOT:-$DEPS/Qt/$QT_VERSION/gcc_64}
