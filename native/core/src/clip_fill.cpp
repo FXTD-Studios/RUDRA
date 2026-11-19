@@ -229,17 +229,23 @@ float clip_weight(float code, float soft, float hard) noexcept {
     return code > soft ? smooth01((code - soft) / (hard - soft)) : 0.0f;
 }
 
-ClipFill reconstruct_crop(const SdrImage& sdr, float corpus_ev, const ClipFillOptions& opt, const FrameRef& frame) {
+// `source`: the frame's own codes, when `sdr` is a denoised copy (a lossy source). What is clipped,
+// and how much, is read from them (code review, 19 Nov 2026): denoising moves an isolated clipped
+// pixel's chroma off white, and it then read as partly clipped, its fully clipped region gone. The
+// denoised codes are only what the fill estimates from.
+ClipFill reconstruct_crop(const SdrImage& sdr, float corpus_ev, const ClipFillOptions& opt, const FrameRef& frame,
+                          const PlanarBuffer* source = nullptr) {
     ClipFill out;
     const int h = sdr.height(), w = sdr.width();
     const std::size_t n = std::size_t(h) * std::size_t(w);
     const PlanarBuffer& s = sdr.buffer();
+    const PlanarBuffer& classify = source && source->height() == h && source->width() == w ? *source : s;
     const float soft = float(opt.soft_code), hard = float(std::max(opt.clip_code, opt.soft_code + 1e-4));
 
     std::vector<float> wc[3];
     for (int c = 0; c < 3; ++c) {
         wc[c].resize(n);
-        const float* p = s.plane(c);
+        const float* p = classify.plane(c);
         for (std::size_t i = 0; i < n; ++i) wc[c][i] = clip_weight(p[i], soft, hard);
     }
 
@@ -711,10 +717,12 @@ ClipFill reconstruct_clipped(const SdrImage& sdr, float corpus_ev, const ClipFil
     y1 = std::min(h - 1, y1 + kMargin);
     const FrameRef frame{std::size_t(h) * std::size_t(w), x0, y0, w, h};
     const bool whole = x0 == 0 && y0 == 0 && x1 == w - 1 && y1 == h - 1;
-    if (whole) return reconstruct_crop(opt.smooth_px > 0.0 ? denoised(sdr, opt) : sdr, corpus_ev, opt, frame);
+    // Clipping is classified from the frame's own codes; the denoised copy is only estimated from.
+    if (whole) return reconstruct_crop(opt.smooth_px > 0.0 ? denoised(sdr, opt) : sdr, corpus_ev, opt, frame, &s);
 
     const int ch = y1 - y0 + 1, cw = x1 - x0 + 1;
-    ClipFill part = reconstruct_crop(denoised(SdrImage(s.crop(y0, x0, ch, cw)), opt), corpus_ev, opt, frame);
+    const SdrImage crop(s.crop(y0, x0, ch, cw));
+    ClipFill part = reconstruct_crop(denoised(crop, opt), corpus_ev, opt, frame, &crop.buffer());
     ClipFill out;
     out.partial_pct = part.partial_pct;
     out.full_pct = part.full_pct;

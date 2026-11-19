@@ -607,3 +607,40 @@ TEST(ClipFillSettings, ALossySourceTravelsWithTheRequest) {
     EXPECT_EQ(o.detail_gain, 1.5);
     EXPECT_FALSE(master_request_from_json("{}")->lossy_source);
 }
+
+// Code review, 19 Nov 2026: a lossy source is denoised before the fill estimates, but what is clipped is
+// read from its own codes. One pure-white pixel among orange ones stays a fully clipped region, so a peak
+// override has something to act on; denoised, its chroma went off white and it read as partly clipped.
+TEST(ClipFill, ALossySourceKeepsItsFullyClippedPixels) {
+    const int h = 48, w = 48;
+    PlanarBuffer s(3, h, w);
+    for (std::size_t i = 0; i < s.plane_size(); ++i) {
+        s.plane(0)[i] = 1.0f;          // orange: red clipped, green and blue not
+        s.plane(1)[i] = 0.55f;
+        s.plane(2)[i] = 0.12f;
+    }
+    const std::size_t c = std::size_t(24) * std::size_t(w) + 24;
+    for (int k = 0; k < 3; ++k) s.plane(k)[c] = 1.0f;   // the one fully clipped pixel
+    const SdrImage sdr(std::move(s));
+    const ClipFillOptions lossy = lossy_source_clip_options({});
+    ASSERT_GT(lossy.smooth_px, 0.0);
+    const ClipFill f = reconstruct_clipped(sdr, kEv, lossy);
+    EXPECT_NEAR(f.full_pct, 100.0 / (h * w), 1e-9);
+    ASSERT_EQ(f.regions.size(), 1u);
+    EXPECT_EQ(f.regions[0].x, 24);
+    EXPECT_EQ(f.regions[0].y, 24);
+    // The same pixel in a frame that is otherwise clean: the crop path keeps it too.
+    PlanarBuffer t(3, 200, 200, 0.2f);
+    for (int y = 90; y < 110; ++y)
+        for (int x = 90; x < 110; ++x) {
+            const std::size_t i = std::size_t(y) * 200 + std::size_t(x);
+            t.plane(0)[i] = 1.0f;
+            t.plane(1)[i] = 0.55f;
+            t.plane(2)[i] = 0.12f;
+        }
+    for (int k = 0; k < 3; ++k) t.plane(k)[std::size_t(100) * 200 + 100] = 1.0f;
+    const ClipFill g = reconstruct_clipped(SdrImage(std::move(t)), kEv, lossy);
+    ASSERT_EQ(g.regions.size(), 1u);
+    EXPECT_EQ(g.regions[0].x, 100);
+    EXPECT_EQ(g.regions[0].y, 100);
+}

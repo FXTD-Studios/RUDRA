@@ -931,6 +931,17 @@ private:
     // 1.2.6: the QC report (qc_report.hpp) of the render that just finished; its path, or "" (off, or nothing to say).
     std::vector<std::filesystem::path> last_master_targets_;
 public:
+    // Code review, 19 Nov 2026: what the QC report says about a render (its title, source, Deliver
+    // choice, request) is taken when the render starts, not when it ends: a grade changed or another
+    // clip opened while it runs no longer ends up in its report. One render runs at a time.
+    struct QcContext {
+        QString title, source, source_kind, curve_mismatch;
+        bool lossy = false;
+        DeliverChoice deliver;
+        QJsonObject request;
+    };
+    QcContext qc_context_now(const QString& route, const QJsonObject& request) const;
+    std::optional<QcContext> render_qc_context_;
     QString write_render_qc(const QString& folder, const std::vector<std::filesystem::path>& masters, const QString& route,
                             const QJsonObject& learned = {});
 private:

@@ -2246,8 +2246,9 @@ TEST(AppOpen, RecentShotsNewestFirstAndClearable) {
     ASSERT_EQ(items.size(), 2u);
     EXPECT_EQ(recent->actions().last(), w.action("recent-clear"));
     EXPECT_TRUE(items[1]->text().startsWith("png8_rgb.png"));
-    items[1]->trigger();   // a still: added to the frames
-    EXPECT_EQ(last_log(w), "added 1 frame");
+    const std::size_t before = w.frames().size();
+    items[1]->trigger();   // a still: added to the frames (and, since 19 Nov, brings its own settings back)
+    EXPECT_EQ(w.frames().size(), before + 1);
     w.run("recent-clear");
     EXPECT_TRUE(w.recent_sources().isEmpty());
     EXPECT_FALSE(w.action("recent-clear")->isEnabled());
@@ -8576,5 +8577,96 @@ TEST(GenFill, FlorenceIsDownloadableWithoutThePublishedList) {
     auto* md = w.model_downloads();
     md->ensure_builtin();
     EXPECT_NE(md->model(app::kFlorenceModelId), nullptr);
+    QSettings().clear();
+}
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+// Code review, 19 Nov 2026: stills opened together are a clip each. Closing stores the clip on screen
+// (it was lost: the shot was cleared first), and stepping between them brings each one's grade back.
+TEST(Media, StillsOpenedTogetherKeepTheirOwnSettings) {
+    QSettings().clear();
+    Window win("full");
+    auto& w = win.w;
+    const QString a = png("png8_rgb.png"), b = png("bmp24.bmp");
+    auto ev_of = [&](const QString& p) {
+        return w.library().find(p)->settings().value("grade").toObject().value("exposure_ev").toDouble();
+    };
+    w.open_media(a);
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    w.session().exposure_press();
+    w.session().exposure_input(1.5);
+    w.run("close");   // stored as it closes
+    EXPECT_DOUBLE_EQ(ev_of(a), 1.5);
+    w.open_media(b);
+    ASSERT_TRUE(wait_for([&] { return QFileInfo(app::from_path(w.frames()[0])) == QFileInfo(b); }));
+    w.session().exposure_press();
+    w.session().exposure_input(-0.5);
+    // Both, as one shot: the first comes up with its own grade.
+    w.open_media_list({a, b});
+    ASSERT_TRUE(wait_for([&] { return w.frames().size() == 2 && w.presented_index() == 0; }));
+    EXPECT_DOUBLE_EQ(ev_of(b), -0.5);   // b was stored as the stills replaced it
+    EXPECT_DOUBLE_EQ(w.session().grade.exposure_ev, 1.5);
+    w.run("next");
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 1; }));
+    EXPECT_DOUBLE_EQ(w.session().grade.exposure_ev, -0.5);
+    w.session().exposure_press();
+    w.session().exposure_input(0.25);
+    w.run("prev");
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    EXPECT_DOUBLE_EQ(w.session().grade.exposure_ev, 1.5);
+    EXPECT_DOUBLE_EQ(ev_of(b), 0.25);   // what b had on screen when it was left
+    QSettings().remove("media/library");
+}
+
+// Code review, 19 Nov 2026: a version keeps its painted masks (it kept only a project's mask file name).
+TEST(Media, AVersionKeepsItsPaintedMasks) {
+    QSettings().clear();
+    Window win("full");
+    auto& w = win.w;
+    const QString a = png("png8_rgb.png");
+    w.open_media(a);
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    auto set = std::make_shared<MaskSet>();
+    set->width = 16;
+    set->height = 8;
+    auto plane = empty_plane(16, 8);
+    for (int i = 0; i < 40; ++i) (*plane)[std::size_t(i)] = 255;
+    set->planes[1] = plane;
+    w.session().grade.masks = set;
+    const int v2 = w.new_clip_version(a);   // v1 keeps the masks, v2 starts from them too
+    ASSERT_EQ(v2, 1);
+    w.session().grade.masks.reset();       // v2 without them
+    ASSERT_TRUE(w.use_clip_version(a, 0));
+    ASSERT_TRUE(w.session().grade.masks);
+    EXPECT_TRUE(*w.session().grade.masks == *set);
+    const QString file = w.library().find(a)->settings().value("grade").toObject().value("masks").toString();   // v1, in use
+    EXPECT_TRUE(QFileInfo(file).isAbsolute() && QFileInfo::exists(file)) << file.toStdString();
+    ASSERT_TRUE(w.use_clip_version(a, 1));
+    EXPECT_FALSE(w.session().grade.masks && !w.session().grade.masks->empty());
+    QSettings().remove("media/library");
+}
+#endif
+
+// Code review, 19 Nov 2026: the QC report says what the render started with, whatever is on screen when it ends.
+TEST(QcReport, TheReportIsTheRendersOwnContext) {
+    QSettings().clear();
+    QTemporaryDir tmp;
+    app::MainWindow w(false);
+    app::MainWindow::QcContext x;
+    x.title = "shot_A";
+    x.source = "/plates/A.png";
+    x.source_kind = "still";
+    x.deliver = w.deliver_effective();
+    x.request = QJsonObject{{"exposure_ev", 1.25}};
+    w.render_qc_context_ = x;
+    const QString path = w.write_render_qc(tmp.path(), {}, "Analytic reconstruction");
+    ASSERT_FALSE(path.isEmpty());
+    EXPECT_FALSE(w.render_qc_context_.has_value());   // used once
+    QFile f(QFileInfo(path).dir().filePath(QFileInfo(path).completeBaseName().section(".qc", 0, 0) + ".qc.json"));
+    ASSERT_TRUE(f.open(QIODevice::ReadOnly)) << f.fileName().toStdString();
+    const QJsonObject j = QJsonDocument::fromJson(f.readAll()).object();
+    EXPECT_EQ(j.value("source").toString(), "/plates/A.png");
+    EXPECT_EQ(j.value("title").toString(), "shot_A");
+    EXPECT_DOUBLE_EQ(j.value("settings").toObject().value("exposure_ev").toDouble(), 1.25);
     QSettings().clear();
 }

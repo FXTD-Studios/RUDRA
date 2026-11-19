@@ -639,6 +639,9 @@ void MainWindow::aces_deliver() {
     aces_deliver_id_ = -1;   // running; the engine's id once it is sent
     // The AI fill after it reads only this render's frames from the shared folder.
     render_name_for_fill_ = req.value("into_existing").toBool() ? req.value("name").toString() : QString();
+    // The QC report's context, as this render starts (code review, 19 Nov 2026).
+    render_qc_context_ = qc_context_now(QStringLiteral("Learned ACES 2.0"),
+                                        QJsonDocument::fromJson(QByteArray::fromStdString(master_request_json(master_request()))).object());
     const int id = aces_engine_->request(
         req,
         [self, out](const QJsonObject& o) {

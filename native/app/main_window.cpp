@@ -26,6 +26,7 @@
 #include <QProcess>
 #include <QInputDialog>
 #include <QDir>
+#include <QCryptographicHash>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QScreen>
@@ -1146,6 +1147,9 @@ void MainWindow::open_source(const QString& preset, bool folder) {
 }
 
 void MainWindow::close_frames() {
+    // The clip being closed keeps what is on screen, while it is still known which one it is (code
+    // review, 19 Nov 2026: remember_source ran after this, found no clip open, and the grade was lost).
+    if (!restoring_) store_clip_settings(current_media_path());
     halt_playback();
     stop_headroom();
     engine_.reset();
@@ -1275,6 +1279,15 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
 }
 
 void MainWindow::step_to(int i) {
+    // Stills opened together are a clip each (code review, 19 Nov 2026): the one being left keeps its
+    // settings and the one coming up brings its own back (one with none keeps the grade on screen).
+    if (shot_kind_ == "files" && frames_.size() > 1 && !restoring_) {
+        const int n = int(frames_.size()), to = ((i % n) + n) % n;
+        if (to != current_) {
+            store_clip_settings(current_media_path());
+            restore_clip_settings(from_path(frames_[std::size_t(to)]));
+        }
+    }
     if (headroom_routed()) {
         headroom_request(i, headroom_playing_);
         return;
@@ -2432,6 +2445,9 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     btn_master_->setText("Rendering\u2026");
     btn_master_->setToolTip("Click to stop after the frame being written");
     QPointer<MainWindow> self(this);
+    // The QC report's context: this render's own request and what is on screen as it starts.
+    render_qc_context_ = qc_context_now(QStringLiteral("Analytic reconstruction"),
+                                        QJsonDocument::fromJson(QByteArray::fromStdString(master_request_json(q))).object());
     master_job_ = std::make_unique<MasterJob>(model, q, *targets, std::move(prepare));
     master_job_->start(
         [self, n](std::size_t i) {
@@ -3516,10 +3532,11 @@ void MainWindow::open_media_list(const QStringList& paths) {
     const bool stills = std::all_of(there.begin(), there.end(), [](const QString& p) { return MediaLibrary::kind_of(p) == "still"; });
     if (there.size() > 1 && stills) {   // one shot of them, in the panel's order, replacing the one on screen
         if (waits_for_model()) return;
-        close_frames();
+        close_frames();   // stores the clip on screen first
         std::vector<std::filesystem::path> files;
         for (const QString& p : there) files.push_back(to_path(p));
         add_files(files);
+        restore_clip_settings(there.front());   // the first still opens with its own settings
         return;
     }
     open_media(there.front());
@@ -3594,26 +3611,42 @@ int MainWindow::batch_add_media(const QStringList& paths, QString* why) {
     return added;
 }
 
+MainWindow::QcContext MainWindow::qc_context_now(const QString& route, const QJsonObject& request) const {
+    QcContext x;
+    if (auto* n = findChild<QLineEdit*>(QStringLiteral("renderName"))) x.title = n->text().trimmed();
+    x.source = current_media_path().isEmpty() && !shot_sources_.empty() ? from_path(shot_sources_.front()) : current_media_path();
+    x.source_kind = shot_video_ ? QStringLiteral("movie") : frames_.size() > 1 ? QStringLiteral("sequence") : QStringLiteral("still");
+    x.lossy = source_is_lossy();
+    x.deliver = deliver_effective();
+    if (route.startsWith(QStringLiteral("Learned")) && aces_curve_mismatch()) {   // 1.2.6: checklist item 4
+        const auto label = source_curve_label(session_.source_curve());
+        x.curve_mismatch = QString::fromUtf8(label.data(), int(label.size()));
+    }
+    x.request = request;
+    return x;
+}
+
 QString MainWindow::write_render_qc(const QString& folder, const std::vector<std::filesystem::path>& masters, const QString& route,
                                     const QJsonObject& learned) {
+    // The render's own context, taken when it started; "now" only for a caller that took none.
+    const QcContext x = render_qc_context_ ? *render_qc_context_
+                                           : qc_context_now(route, QJsonDocument::fromJson(QByteArray::fromStdString(
+                                                                       master_request_json(master_request()))).object());
+    render_qc_context_.reset();
     if (!QSettings().value(QStringLiteral("deliver/qcReport"), true).toBool() || folder.isEmpty()) return {};
     QcReport r;
-    QString name = findChild<QLineEdit*>(QStringLiteral("renderName")) ? findChild<QLineEdit*>(QStringLiteral("renderName"))->text().trimmed()
-                                                                       : QString();
+    QString name = x.title;
     if (name.isEmpty() && !masters.empty()) name = QFileInfo(from_path(masters.front())).completeBaseName().section('.', 0, 0);
     r.title = name.isEmpty() ? QStringLiteral("render") : name;
     r.when = QDateTime::currentDateTime().toString(Qt::ISODate);
     r.app_version = QApplication::applicationVersion();
-    r.source = current_media_path().isEmpty() && !shot_sources_.empty() ? from_path(shot_sources_.front()) : current_media_path();
-    r.source_kind = shot_video_ ? QStringLiteral("movie") : frames_.size() > 1 ? QStringLiteral("sequence") : QStringLiteral("still");
-    r.lossy_source = source_is_lossy();
+    r.source = x.source;
+    r.source_kind = x.source_kind;
+    r.lossy_source = x.lossy;
     r.output_folder = folder;
-    const DeliverChoice c = deliver_effective();
+    const DeliverChoice c = x.deliver;
     r.route = route;
-    if (route.startsWith(QStringLiteral("Learned")) && aces_curve_mismatch()) {   // 1.2.6: checklist item 4
-        const auto label = source_curve_label(session_.source_curve());
-        r.curve_mismatch = QString::fromUtf8(label.data(), int(label.size()));
-    }
+    r.curve_mismatch = x.curve_mismatch;
     std::vector<std::filesystem::path> sidecars;
     for (auto m : masters) {
         r.files << from_path(m.filename());
@@ -3649,7 +3682,7 @@ QString MainWindow::write_render_qc(const QString& folder, const std::vector<std
         if (r.transfer.isEmpty()) r.transfer = c.encoding == "pq" ? QStringLiteral("PQ (Rec.2100)") : c.encoding.toUpper();
     }
     // Every setting of the moment: the master's request as its sidecar records it, and the Deliver choice.
-    r.settings = QJsonDocument::fromJson(QByteArray::fromStdString(master_request_json(master_request()))).object();
+    r.settings = x.request;
     r.settings["deliver_output"] = c.output;
     r.settings["deliver_format"] = c.output == "movie" ? c.codec : c.image;
     r.settings["deliver_colour"] = c.gamut;
@@ -3663,11 +3696,39 @@ QString MainWindow::write_render_qc(const QString& folder, const std::vector<std
     return path;
 }
 
+namespace {
+// A version's painted masks (code review, 19 Nov 2026): the project JSON names only the masks PNG
+// beside a .rudra, so a version kept the name and lost the paint. They are kept in the app's data
+// folder by their content (identical masks share one file; a file is never rewritten) and the
+// version names that file. Empty when there are none or they cannot be written.
+QString store_version_masks(const MaskSet& masks) {
+    if (masks.empty()) return {};
+    QCryptographicHash h(QCryptographicHash::Sha256);
+    const std::vector<std::uint8_t> rgba = masks.rgba8();
+    h.addData(QByteArrayView(reinterpret_cast<const char*>(rgba.data()), qsizetype(rgba.size())));
+    const int dims[2] = {masks.width, masks.height};
+    h.addData(QByteArrayView(reinterpret_cast<const char*>(dims), qsizetype(sizeof dims)));
+    const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)).filePath("clip_masks");
+    const QString file = QDir(dir).filePath(QString::fromLatin1(h.result().toHex().left(32)) + QStringLiteral(".masks.png"));
+    if (QFileInfo::exists(file)) return file;
+    QDir().mkpath(dir);
+    if (!write_mask_set(to_path(file), masks)) return {};
+    return file;
+}
+}  // namespace
+
 QJsonObject MainWindow::clip_settings_now() const {
     // The project's own JSON for the session's part (grade, view peak, Deliver), without the shot or model.
     Project p = project_from_session(session_);
     QJsonObject o = QJsonDocument::fromJson(QByteArray::fromStdString(project_json(p, std::filesystem::path("x.rudra")))).object();
     for (const char* k : {"shot", "model", "media", "app_version"}) o.remove(QString::fromLatin1(k));
+    // The masks themselves, not the name of a project's masks file.
+    QJsonObject grade = o.value("grade").toObject();
+    if (grade.contains("masks")) {
+        const QString file = session_.grade.masks ? store_version_masks(*session_.grade.masks) : QString();
+        grade["masks"] = file.isEmpty() ? QJsonValue() : QJsonValue(file);
+        o["grade"] = grade;
+    }
     return o;
 }
 
@@ -3690,6 +3751,15 @@ bool MainWindow::apply_clip_settings(const QJsonObject& settings) {
     if (!p) {
         log(QStringLiteral("Settings not applied: ") + QString::fromStdString(p.error().message));
         return false;
+    }
+    // The version's own masks (clip_settings_now keeps them in the app's data folder).
+    if (!p->masks_file.empty() && !p->grade.masks) {
+        const std::filesystem::path mf = to_path(QString::fromStdString(p->masks_file));
+        if (mf.is_absolute()) {
+            if (auto m = read_mask_set(mf); m && !m->empty()) p->grade.masks = std::make_shared<const MaskSet>(std::move(*m));
+            else log(QStringLiteral("Settings: the painted masks %1 could not be read; the version opens without them")
+                         .arg(QDir::toNativeSeparators(from_path(mf))));
+        }
     }
     auto loaded = session_.load_state(p->grade, p->peak_ev, p->anchor, p->carry_chroma, p->anchor_knee, p->container);
     if (!loaded) {
