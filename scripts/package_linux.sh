@@ -193,7 +193,8 @@ if [ -n "${LINUX_FFMPEG_DIR:-}" ]; then
   for t in ffmpeg ffprobe; do
     # The ELF's own dependency list, not ldd (it returns 1 for a static binary, which pipefail took as a
     # failure); captured first, so grep -q stopping early cannot fail the pipe either.
-    deps=$(readelf -d "$OUT/ffmpeg/$t" 2>/dev/null || true)
+    # readelf must read it (a shell wrapper around a host ffmpeg is no ELF at all, review 19 Nov).
+    deps=$(readelf -d "$OUT/ffmpeg/$t" 2>/dev/null) || fail "the bundled $t is not an ELF executable"
     if grep -q '(NEEDED)' <<<"$deps"; then fail "the bundled $t is not static"; fi
   done
   "$OUT/ffmpeg/ffmpeg" -hide_banner -h encoder=prores_ks >/dev/null || fail "the bundled ffmpeg does not run"

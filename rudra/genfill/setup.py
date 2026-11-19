@@ -309,8 +309,9 @@ def main(argv=None) -> int:
     try:
         manifest = load_manifest(Path(a.manifest))
     except ValueError as e:
-        if not a.make_manifest:
-            emit('done', ok=False, error=str(e), base=str(base))
+        # Unreadable: an error, unless the run writes a new one or asked for unchecked models.
+        if not a.make_manifest and not a.allow_unverified:
+            emit('done', ok=False, error=str(e) + ' (--allow-unverified to go on without it)', base=str(base))
             return 1
         manifest = {}
 

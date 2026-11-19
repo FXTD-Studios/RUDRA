@@ -151,6 +151,9 @@ def test_nothing_is_downloaded_unchecked(tmp_path, monkeypatch, capsys):
     bad.write_text("{not json")
     assert setup.main(["--base", str(tmp_path / "wan"), "--manifest", str(bad), "--json"]) == 1
     assert "cannot be read" in capsys.readouterr().out
+    # --allow-unverified goes on without it (here to the check, which reports what is missing).
+    setup.main(["--base", str(tmp_path / "wan"), "--manifest", str(bad), "--allow-unverified", "--check-only", "--json"])
+    assert "cannot be read" not in capsys.readouterr().out
 
 
 def test_a_florence_download_that_stopped_is_resumed(tmp_path, monkeypatch):

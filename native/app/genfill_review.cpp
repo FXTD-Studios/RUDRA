@@ -288,11 +288,16 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
             // Listening and disabled before the download starts: a failure (or a model already in
             // place) is reported inside download() itself.
             if (btn) btn->setEnabled(false);
-            md->listen(this, [this, md, st, btn, id, folder] {
+            // This click's download only: once it is in (or has failed) the listener does nothing more,
+            // so a folder saved later is never written over by later notifications (review, 19 Nov).
+            auto settled = std::make_shared<bool>(false);
+            md->listen(this, [this, md, st, btn, id, folder, settled] {
+                if (*settled) return;
                 if (md->active() == id) {
                     if (st) st->setText(QStringLiteral("Downloading Florence-2… %1 of %2")
                                             .arg(human_size(md->done_bytes()), human_size(md->total_bytes())));
                 } else if (md->state(id) == InstallState::Installed) {
+                    *settled = true;
                     if (st) st->setText(QStringLiteral("Florence-2 is downloaded and checked: Suggest a prompt uses it."));
                     if (btn) btn->setVisible(false);
                     // The download's folder itself: the setting may be saved only after this call.
@@ -301,12 +306,14 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
                     QSettings().setValue("genfill/florence", folder);
                     refresh_found();
                 } else if (!md->error(id).isEmpty()) {
+                    *settled = true;   // a new click listens again
                     if (st) st->setText(QStringLiteral("Florence-2 was not downloaded: ") + md->error(id));
                     if (btn) btn->setEnabled(true);
                 }
             });
             QString why;
             if (!md->download(id, &why)) {
+                *settled = true;
                 if (st) st->setText(QStringLiteral("Florence-2: ") + why);
                 if (btn) btn->setEnabled(true);
             }
