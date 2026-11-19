@@ -1619,6 +1619,28 @@ TEST(AppModels, TheCatalogPicksTheRegistrysDefaultAndThePillsSayIt) {
 }
 
 #ifdef RUDRA_HAVE_STILL_DECODE
+TEST(AppDeliver, AFirstRunWithoutAModelCanMaster) {
+    // 18 Nov 2026: with no model installed, Master EXR stayed greyed out with no reason given.
+    QSettings().clear();
+    app::MainWindow w(true);   // as the app opens: the viewer's frame path too
+    w.show();
+    ASSERT_TRUE(QTest::qWaitForWindowExposed(&w));
+    w.open_source(QString::fromStdString((std::filesystem::path(RUDRA_GOLDEN_DIR) / "decode").string()));
+    ASSERT_GE(w.frame_count(), 1u);
+    auto* master = w.findChild<QPushButton*>("btnMaster");
+    ASSERT_NE(master, nullptr);
+    ASSERT_TRUE(wait_for([&] { return master->isEnabled(); }));
+    const auto root = fresh_dir("first_run");
+    w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(root.string()));
+    w.findChild<QLineEdit*>("renderName")->setText("first");
+    master->click();
+    ASSERT_TRUE(wait_for([&] { return !w.mastering(); }, 30000));
+    bool wrote = false;
+    for (const auto& e : std::filesystem::directory_iterator(root))
+        wrote = wrote || e.path().extension() == ".exr";
+    EXPECT_TRUE(wrote) << status_of(w).toStdString();
+}
+
 TEST(AppModels, SwitchingModelsMidSessionKeepsTheSession) {
     QSettings().clear();
     app::MainWindow w(false);
@@ -8550,6 +8572,32 @@ TEST(AppCheck, FlorenceIsOfferedWithTheModelsAndUsedOnceDownloaded) {
 
 // 1.2.6: Florence-2 downloads from the internet before the published list names it: the app knows it
 // (pinned revision, every file's SHA-256 compiled in), and AI fill setup has a button for it.
+TEST(AppCheck, FlorenceIsOfferedWhenTheModelListCannotBeRead) {
+    // First run offline from fxtdstudios.com: Florence-2 comes from Hugging Face, so it is still offered.
+    QSettings().clear();
+    QTemporaryDir tmp;
+    QNetworkAccessManager net;
+    QObject owner;
+    app::ModelDownloads md(&net, &owner);
+    md.fetch_index(QUrl::fromLocalFile(tmp.path() + "/missing.json").toString());
+    ASSERT_TRUE(wait_for([&] { return !md.fetching(); }));
+    EXPECT_FALSE(md.index_status().isEmpty());
+    ASSERT_EQ(md.models().size(), 1u);
+    EXPECT_EQ(md.models().front().kind, "florence");
+    md.fetch_index(QUrl::fromLocalFile(tmp.path() + "/missing.json").toString());   // a retry adds no second copy
+    ASSERT_TRUE(wait_for([&] { return !md.fetching(); }));
+    EXPECT_EQ(md.models().size(), 1u);
+    // Check this computer lists it, and still says why the rest of the list is missing.
+    QSettings().setValue("models/indexUrl", QUrl::fromLocalFile(tmp.path() + "/missing.json").toString());
+    app::MainWindow w(false);
+    w.model_downloads()->set_models(md.models());
+    w.run("system-check");
+    auto* d = find<app::SystemCheckDialog>(w, "systemCheck");
+    ASSERT_NE(d, nullptr);
+    EXPECT_NE(d->findChild<QCheckBox*>("checkTick_florence2_base"), nullptr);
+    EXPECT_NE(d->findChild<QLabel*>("checkPartsStatus"), nullptr);
+}
+
 TEST(GenFill, FlorenceIsDownloadableWithoutThePublishedList) {
     QSettings().clear();
     const auto built = app::builtin_models();

@@ -328,6 +328,7 @@ void ModelDownloads::fetch_index(const QString& url) {
         index_reply_ = nullptr;
         if (r->error() != QNetworkReply::NoError) {
             index_status_ = QStringLiteral("Could not read the model list (%1): %2").arg(QUrl(url).host().isEmpty() ? url : QUrl(url).host(), r->errorString());
+            add_missing_builtins(models_);   // 1.2.6: Florence-2 comes from Hugging Face, so it is offered without the list
         } else {
             QString why;
             if (auto m = parse_model_index(r->readAll(), &why)) {
@@ -347,6 +348,7 @@ void ModelDownloads::fetch_index(const QString& url) {
                                                   : QString();
             } else {
                 index_status_ = why;
+                add_missing_builtins(models_);
             }
         }
         changed();

@@ -1821,7 +1821,8 @@ void MainWindow::sync_ui() {
     tc_->setText(timecode(n ? current_ : 0, 24.0));
     scrub_->set_position(n > 1 ? double(current_) / double(n - 1) : 0.0);
     for (auto* b : {btn_prev_, btn_play_, btn_next_}) b->setEnabled(n > 1);
-    const bool ready = n > 0 && backend_ != nullptr;
+    // 1.2.6: the analytic reconstruction needs no model; a first run without one rendered nothing (18 Nov 2026).
+    const bool ready = n > 0 && !needs_model();
     btn_master_->setEnabled((ready && pending_reason("master").isEmpty()) || mastering());
     btn_reprocess_->setEnabled(ready);
     btn_reprocess_->setVisible(ready && workspace_ != "simple");   // 1.2.6: offered once there is a frame to reprocess
