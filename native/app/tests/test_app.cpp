@@ -134,6 +134,8 @@ TEST(AppSourceInspection, StillProfileAndFallbackAreExplicitAndPlainText) {
 #include <nlohmann/json.hpp>
 
 #include "main_window.hpp"
+#include "media_library.hpp"
+#include "qc_report.hpp"
 #include "model_dialogs.hpp"
 #include "system_check.hpp"
 #include "rudra/core/view.hpp"
@@ -149,6 +151,7 @@ TEST(AppSourceInspection, StillProfileAndFallbackAreExplicitAndPlainText) {
 #include "rudra/engine/project.hpp"
 #include <QStatusBar>
 #include "rudra/deliver/master.hpp"
+#include "rudra/deliver/exr.hpp"
 #include "region_editor.hpp"
 #include "scope_widgets.hpp"
 #include "widgets.hpp"
@@ -479,6 +482,35 @@ const std::map<std::string, std::string> kProPlaced = {
     {"tabGrade", "the toolbar's segmented tabs"},
     {"tabDeliver", "the toolbar's segmented tabs"},
     {"measB", "the This frame card's rows arrive with the first measurement"},
+    {"anchorHint", "1.2.6: a Deliver switch's line is its tooltip (user feedback: too much text)"},
+    // 1.2.6 (user feedback: a cleaner UI, no function lost): one click away, not gone.
+    {"log", "1.2.6: the Log card folds; open with a click on its head (ui/logOpen)"},
+    {"preserve", "1.2.6: in the Reconstruction card's More \u25b8"},
+    {"preserveHint", "1.2.6: in the Reconstruction card's More \u25b8, and its line is its tooltip"},
+    {"probePanel", "1.2.6: the Probe card shows while Probe is on or a pixel is read"},
+    {"probeXY", "1.2.6: the Probe card shows while Probe is on or a pixel is read"},
+    {"probeNits", "1.2.6: the Probe card shows while Probe is on or a pixel is read"},
+    {"probeDelta", "1.2.6: the Probe card shows while Probe is on or a pixel is read"},
+    {"probeSrc", "1.2.6: the Probe card shows while Probe is on or a pixel is read"},
+    {"probeBase", "1.2.6: the Probe card shows while Probe is on or a pixel is read"},
+    {"probeModel", "1.2.6: the Probe card shows while Probe is on or a pixel is read"},
+    {"probeMask", "1.2.6: the Probe card shows while Probe is on or a pixel is read"},
+    {"viewLayer", "1.2.6: in the viewer's Overlays \u25be panel"},
+    {"changesBtn", "1.2.6: in the viewer's Overlays \u25be panel"},
+    {"inventedBtn", "1.2.6: in the viewer's Overlays \u25be panel"},
+    {"shots", "1.2.6: the Media panel's clips (mediaClips) in their place"},
+    {"shotCount", "1.2.6: the Media panel's count (mediaBinCount)"},
+    {"dropzone", "1.2.6: the Media panel takes a drop; its + imports"},
+    {"collections", "1.2.6: the Media panel's smart bins"},
+    {"colHighlights", "1.2.6: the Media panel's smart bins"},
+    {"colShadows", "1.2.6: the Media panel's smart bins"},
+    {"colDelivered", "1.2.6: the Media panel's smart bins"},
+    {"seq", "1.2.6: the Media panel's + (Import)"},
+    {"seqPath", "1.2.6: the Media panel's + (Import)"},
+    {"seqOpen", "1.2.6: the Media panel's + (Import)"},
+    {"framesEmpty", "1.2.6: the Media panel's empty bin"},
+    {"browseBtn", "1.2.6: the Media panel's + (Import)"},
+    {"chromaHint", "1.2.6: a Deliver switch's line is its tooltip (user feedback: too much text)"},
 };
 // The page's panel labels as the boards name their sections and cards.
 const std::map<std::string, std::string> kProLabels = {{"Media", "Shots"}, {"Frame", "This frame"}};
@@ -488,6 +520,8 @@ TEST(AppLayout, ShownAndHiddenAsThePageIsInEveryState) {
         // The page's Simple (scopes and notes hidden) became Look, Check, Deliver
         // (29 Oct 2026): AppSimple tests it.
         if (state == "simple") continue;
+        // 1.2.6: no Grade tab; its Region EV is a fold in Reconstruct (AppLayout.RegionEvIsInReconstruct).
+        if (state == "tab_grade") continue;
         Window win(state);
         for (const auto& [id, e] : snap["ids"].items()) {
             if (kNotWidgets.count(id) || kProPlaced.count(id)) continue;
@@ -520,10 +554,34 @@ TEST(AppLayout, ShownAndHiddenAsThePageIsInEveryState) {
             if (l->property("role").toString() == "note-p") ngot.emplace_back(norm(l->text()).toStdString(), win.shown(l));
         ASSERT_EQ(ngot.size(), nwant.size()) << state;
         for (std::size_t i = 0; i < ngot.size(); ++i) {
-            EXPECT_EQ(ngot[i].second, nwant[i].second) << state << ": note " << i;
+            // 1.2.6: the long notes under the Reconstruct and Grade cards are those cards' tooltips
+            if (i < 2) { EXPECT_FALSE(ngot[i].second) << state << ": note " << i; }
+            else { EXPECT_EQ(ngot[i].second, nwant[i].second) << state << ": note " << i; }
             if (i < 2) { EXPECT_EQ(ngot[i].first, nwant[i].first) << state << ": note " << i; }   // the Deliver note is the board's
         }
     }
+}
+
+// 1.2.6 (18 Nov 2026, user feedback): the Grade tab is gone. Region EV grades the analytic route
+// only, so it is a fold at the end of Reconstruct, shown on that route; "grade" opens it.
+TEST(AppLayout, RegionEvIsInReconstruct) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    w.resize(1600, 1000);
+    w.show();
+    EXPECT_TRUE(w.findChild<QPushButton*>("tabGrade")->isHidden());
+    auto* fold = w.findChild<QPushButton*>("recRegionEv");
+    ASSERT_NE(fold, nullptr);
+    auto* box = w.findChild<QWidget*>("recRegionEvBox");
+    ASSERT_NE(box, nullptr);
+    EXPECT_TRUE(box->isAncestorOf(w.findChild<QLabel*>("regionCount")));
+    EXPECT_TRUE(w.findChild<QWidget*>("recAnalytic")->isAncestorOf(fold));
+    EXPECT_FALSE(fold->isChecked());
+    w.show_tab("grade");
+    EXPECT_EQ(w.shown_tab(), "rec");
+    EXPECT_TRUE(fold->isChecked());
+    EXPECT_TRUE(box->isVisible());
+    EXPECT_TRUE(fold->isVisible());   // the analytic route (no learned model here)
 }
 
 // The words the Pro boards changed on purpose (the Studio page's are in the
@@ -540,7 +598,7 @@ const std::map<std::string, std::string> kProWords = {
     {"pipeMaster text", "ACES 2065-1 EXR, float32"},
 };
 // The Signal card's rows the 28 Oct 2026 review reworded: RUDRA's white convention said as such.
-const std::map<std::string, std::string> kProFields = {{"White", "1.0 = diffuse white (RUDRA's 203 nits)"}};
+const std::map<std::string, std::string> kProFields = {{"White", "1.0 = 203 nits"}};   // 1.2.6: short (the rest on hover)
 
 std::string pro_or(const std::string& key, const std::string& page) {
     const auto it = kProWords.find(key);
@@ -554,10 +612,16 @@ TEST(AppLayout, TheWordsAreThePages) {
         QWidget* x = win.get(id);
         if (!x || kNotWidgets.count(id) || kLiveText.count(id)) continue;
         if (!e["buttons"].is_null()) {
+            if (id == "zoomSeg") {   // 1.2.6: "1:1", not a second "100%" beside the zoom readout
+                EXPECT_EQ(find<app::Seg>(win.w, "zoomSeg")->button("actual")->text(), "1:1");
+                continue;
+            }
             std::vector<std::string> got;
             for (auto* b : x->findChildren<QPushButton*>(QString(), Qt::FindDirectChildrenOnly))
                 if (!b->isHidden()) got.push_back(norm(b->text()).toStdString());   // Simple's Check tab is hidden in Full
-            EXPECT_EQ(got, e["buttons"].get<std::vector<std::string>>()) << id;
+            auto want = e["buttons"].get<std::vector<std::string>>();
+            if (id == "itabs") std::erase(want, std::string("Grade"));   // 1.2.6: Region EV is in Reconstruct
+            EXPECT_EQ(got, want) << id;
             continue;
         }
         if (e["text"].is_null()) continue;
@@ -658,7 +722,12 @@ TEST(AppLayout, TheFrameIsTheProBoards) {
             EXPECT_EQ(centre[2], W - dock) << state;
         }
         EXPECT_EQ(side[1], tb[1] + 52) << state;
-        EXPECT_EQ(tools[3], 52) << state;
+        // 1.2.6: 52 on one row; when the badges and the view controls do not fit side by side
+        // (the scopes open at 1600 px), the controls take a second row instead of being cut.
+        const auto hud0 = box("hud"), hdr0 = box("hdrBadge");
+        const bool one_row = hud0[1] < hdr0[1] + hdr0[3];
+        if (one_row) { EXPECT_EQ(tools[3], 52) << state; }
+        else { EXPECT_GT(tools[3], 52) << state; }
         const auto line = box("compareBar");
         EXPECT_EQ(line[1], tools[1] + tools[3]) << state;
         EXPECT_EQ(line[3], 24) << state;
@@ -671,9 +740,19 @@ TEST(AppLayout, TheFrameIsTheProBoards) {
         // The compare bar sits in the middle of the surround when the badges
         // leave it room, and between them always.
         const auto hud = box("hud"), hdr = box("hdrBadge"), cll = box("cllBadgeWrap");
-        if (!rails) { EXPECT_LE(std::abs((hud[0] + hud[2] / 2) - (tools[0] + tools[2] / 2)), 2) << state; }
-        EXPECT_GE(hud[0], hdr[0] + hdr[2]) << state;
-        EXPECT_LE(hud[0] + hud[2], cll[0]) << state;
+        if (!rails || !one_row) { EXPECT_LE(std::abs((hud[0] + hud[2] / 2) - (tools[0] + tools[2] / 2)), 2) << state; }
+        if (one_row) {
+            EXPECT_GE(hud[0], hdr[0] + hdr[2]) << state;
+            EXPECT_LE(hud[0] + hud[2], cll[0]) << state;
+        } else {
+            EXPECT_GE(hud[1], hdr[1] + hdr[3]) << state;   // under the badges, inside the strip
+            EXPECT_LE(hud[1] + hud[3], tools[1] + tools[3]) << state;
+            EXPECT_GE(hud[0], tools[0]) << state;
+            EXPECT_LE(hud[0] + hud[2], tools[0] + tools[2]) << state;
+        }
+        // Nothing in the strip is drawn narrower than it asks to be (its text would be cut).
+        for (auto* b : win.get("hud")->findChildren<QPushButton*>())
+            if (b->isVisibleTo(&win.w)) { EXPECT_GE(b->width(), b->sizeHint().width()) << state << " " << b->text().toStdString(); }
     }
 }
 
@@ -1137,7 +1216,17 @@ TEST(AppDeliver, MasterRendersThePlanAndSaysSo) {
     w.findChild<QSpinBox*>("renderStart")->setValue(1);
     w.master(prepare, 3);
     ASSERT_TRUE(wait_for([&] { return !w.mastering() && status_of(w).startsWith("Rendered"); }));
-    EXPECT_EQ(status_of(w).toStdString(), "Rendered 3 frame(s) to " + root.string());
+    // 1.2.6: and its QC report beside the masters, named on the status line
+    EXPECT_EQ(status_of(w).toStdString(), "Rendered 3 frame(s) to " + root.string() + " \u00b7 QC: shot_010.qc.html");
+    {
+        QFile qc(QString::fromStdString((root / "shot_010.qc.html").string()));
+        ASSERT_TRUE(qc.open(QIODevice::ReadOnly));
+        const QString html = QString::fromUtf8(qc.readAll());
+        EXPECT_TRUE(html.contains("QC report \u00b7 shot_010"));
+        EXPECT_TRUE(html.contains("<b>Pass</b>") || html.contains("<b>Review</b>"));
+        EXPECT_TRUE(html.contains("shot_010.000003"));   // every frame's row, from its sidecar
+        EXPECT_TRUE(html.contains("Analytic reconstruction"));
+    }
     EXPECT_EQ(w.findChild<QPushButton*>("btnMaster")->text(), "Master EXR");
     const QString log = w.findChild<QPlainTextEdit*>("log")->toPlainText();
     const auto first = root / "shot_010.000001.exr", last = root / "shot_010.000003.exr";
@@ -1179,7 +1268,7 @@ TEST(AppDeliver, MasterEXRStopsARenderAfterTheFrameInHand) {
     ASSERT_TRUE(wait_for([&] { return started >= 1; }));
     w.findChild<QPushButton*>("btnMaster")->click();   // the button stops it
     ASSERT_TRUE(wait_for([&] { return !w.mastering() && status_of(w).startsWith("Stopped"); }));
-    EXPECT_TRUE(status_of(w).endsWith(": cancelled")) << status_of(w).toStdString();
+    EXPECT_TRUE(status_of(w).contains(": cancelled")) << status_of(w).toStdString();   // then the QC of the frames written
     EXPECT_LT(started.load(), 20);
     EXPECT_EQ(w.findChild<QPushButton*>("btnMaster")->text(), "Master EXR");
     std::filesystem::remove_all(root);
@@ -1928,6 +2017,14 @@ TEST(AppView, AStartOpensOnTheSdrRudraWipeAtAThousandNits) {
     EXPECT_EQ(w.session().wipe_right, "model");
     EXPECT_NEAR(w.session().display_nits(), 1000.0, 1e-9);
     EXPECT_EQ(w.findChild<QLabel*>("peakVal")->text(), "1,000");
+    // 1.2.6: whatever the last run chose, the start is on the HDR 1000 monitor, A the SDR, B RUDRA.
+    w.set_aces_monitor("scene");
+    w.session().set_wipe_sources("model", "baseline");
+    w.open_compare_view();
+    EXPECT_EQ(w.aces_monitor(), "hdr1000");
+    EXPECT_EQ(QSettings().value("aces/monitor").toString(), "hdr1000");
+    EXPECT_EQ(w.session().wipe_left, "sdr");
+    EXPECT_EQ(w.session().wipe_right, "model");
 }
 
 
@@ -2149,8 +2246,9 @@ TEST(AppOpen, RecentShotsNewestFirstAndClearable) {
     ASSERT_EQ(items.size(), 2u);
     EXPECT_EQ(recent->actions().last(), w.action("recent-clear"));
     EXPECT_TRUE(items[1]->text().startsWith("png8_rgb.png"));
-    items[1]->trigger();   // a still: added to the frames
-    EXPECT_EQ(last_log(w), "added 1 frame");
+    const std::size_t before = w.frames().size();
+    items[1]->trigger();   // a still: added to the frames (and, since 19 Nov, brings its own settings back)
+    EXPECT_EQ(w.frames().size(), before + 1);
     w.run("recent-clear");
     EXPECT_TRUE(w.recent_sources().isEmpty());
     EXPECT_FALSE(w.action("recent-clear")->isEnabled());
@@ -4928,12 +5026,22 @@ for line in sys.stdin:
         EXPECT_TRUE(note->text().contains("BT.1886") && note->text().contains("Analytic"));
         w.set_deliver("source", "aces");
         EXPECT_FALSE(dnote->isHidden());
+        auto* use = w.findChild<QPushButton*>("deliverUseAnalytic");   // 1.2.6: checklist item 4
+        ASSERT_NE(use, nullptr);
+        EXPECT_FALSE(use->isHidden());
         w.run("source-aces");
         EXPECT_FALSE(w.aces_curve_mismatch());
         EXPECT_TRUE(note->isHidden());
         EXPECT_TRUE(dnote->isHidden());
+        EXPECT_TRUE(use->isHidden());
         w.run("source-bt1886");
         EXPECT_FALSE(note->isHidden());
+        w.set_deliver("source", "aces");   // Deliver re-reads the curve
+        EXPECT_FALSE(use->isHidden());
+        use->click();
+        EXPECT_EQ(w.deliver_choice().source, "analytic");
+        EXPECT_TRUE(use->isHidden());
+        w.set_deliver("source", "aces");
     }
     auto lines = [&](const char* op) {
         std::vector<json> out;
@@ -5197,8 +5305,11 @@ for line in sys.stdin:
     EXPECT_EQ(find<app::Seg>(w, "acesMonitor")->on(), "hdr1000");
     ASSERT_TRUE(wait_for([&] { return w.measurement() && w.measurement()->measured.metrics.maxcll > 500; }));
     EXPECT_FALSE(w.findChild<QSlider*>("peak")->isEnabled());   // locked to the monitor's 1000 nits
+    // 1.2.6: Scene and HDR 1000 only; an old "sdr100" is HDR 1000.
+    EXPECT_EQ(find<app::Seg>(w, "acesMonitor")->button("sdr100"), nullptr);
+    EXPECT_EQ(w.action("monitor-sdr100"), nullptr);
     w.set_aces_monitor("sdr100");
-    EXPECT_NEAR(w.session().display_nits(), 100.0, 10.0);
+    EXPECT_EQ(w.aces_monitor(), "hdr1000");
     w.set_aces_monitor("scene");
     ASSERT_TRUE(wait_for([&] { return !previews().back().contains("display"); }));
     // A reference still: grabbed, then compared in the baseline's place on the next frame.
@@ -5977,7 +6088,7 @@ TEST(AppSimple, LookCheckDeliverAndAdvancedGoesToFull) {
     w.show_tab("check");
     EXPECT_EQ(w.shown_tab(), "rec");
     EXPECT_EQ(w.findChild<QPushButton*>("tabRec")->text(), "Reconstruct");
-    for (const char* id : {"compareBar", "pipe", "recAnalytic", "frameStats", "collections", "emptyFull"})
+    for (const char* id : {"compareBar", "pipe", "recAnalytic", "frameStats", "mediaPanel", "emptyFull"})   // 1.2.6: Media
         EXPECT_TRUE(win.shown(win.get(id))) << id;
     for (const char* id : {"holdHint", "viewMenuBtn", "tabCheck", "deliverPresets", "emptySimple"})
         EXPECT_FALSE(win.shown(win.get(id))) << id;
@@ -6579,6 +6690,16 @@ TEST(GenFill, PromptSuggestionsAreReadBack) {
     EXPECT_EQ(a.mid(0, 4), (QStringList{"-m", "rudra.genfill.prompts", "suggest", "/tmp/f.png"}));
     EXPECT_EQ(QDir::fromNativeSeparators(a[a.indexOf("--cache") + 1]), "/runs/v3/prompt_cache");
     EXPECT_EQ(a[a.indexOf("--tau-high") + 1], "245");
+    EXPECT_FALSE(a.contains("--describe"));   // 1.2.6: the quiet run at a preview's start does not describe
+    const QStringList d = app::genfill_suggest_arguments(s, o, {"/tmp/f.png"}, true);
+    EXPECT_EQ(d[d.indexOf("--describe") + 1], "auto");
+    {
+        const auto shot = app::parse_prompt_suggestions(
+            R"({"ok": true, "clipped_fraction": 0.01, "describe_error": "OSError: no network", "suggestions": [{"id": "shot", "label": "From this shot", "text": "bright hazy sky, soft even white light, seen through an open cargo door", "region": "highlight", "reason": "Florence-2: ...", "cached": false}], "presets": []})");
+        ASSERT_TRUE(shot.has_value());
+        EXPECT_EQ(shot->suggested.front().label, "From this shot");
+        EXPECT_EQ(shot->describe_error, "OSError: no network");
+    }
     const QByteArray out =
         "a warning line\n"
         R"({"clipped_fraction": 0.0531, "suggestions": [{"id": "sun_disc", "label": "Sun", "text": "warm sun disc with a soft halo and a smooth glow", "region": "highlight", "score": 0.031, "reason": "a small round clipped area (3.11%), warm around it", "cached": false}], "ok": true, "presets": [{"id": "sky_blue", "label": "Clear blue sky", "text": "clear blue sky, smooth gradient toward the horizon, soft high clouds", "region": "highlight", "cached": true}, {"id": "shadow_detail", "label": "Shadow detail", "text": "dark shadow detail, soft texture, low light", "region": "shadow", "cached": false}]})";
@@ -6644,28 +6765,25 @@ TEST(GenFill, RegionRerenderIsOptInAndRunsAsTested) {
     EXPECT_EQ(after("--source-start"), "36");
     EXPECT_EQ(after("--condition"), "aces");
     QSettings().clear();
-    {   // 13 Nov 2026: v4 is parked. Without RUDRA_GENFILL_V4 it is neither shown nor run, whatever was saved.
+    {   // 1.2.6 (18 Nov 2026, user request): v3 or v4.3 region is a switch in the card, always there.
         qunsetenv("RUDRA_GENFILL_V4");
-        QSettings().setValue("deliver/aiRerender", true);
         app::MainWindow w(false);
-        EXPECT_FALSE(w.deliver_choice().ai.rerender);
-        w.set_deliver("ai_rerender", "1");
-        EXPECT_FALSE(w.deliver_choice().ai.rerender);
-        auto* row = w.findChild<QWidget*>("deliverAiRerender");
-        ASSERT_NE(row, nullptr);
-        EXPECT_TRUE(row->isHidden());
-        QSettings().clear();
-    }
-    qputenv("RUDRA_GENFILL_V4", "1");
-    {
-        app::MainWindow w(false);
-        EXPECT_FALSE(w.deliver_choice().ai.rerender);
-        w.set_deliver("ai_rerender", "1");
+        EXPECT_FALSE(w.deliver_choice().ai.rerender);   // v3 until chosen
+        auto* sw = dynamic_cast<app::Seg*>(w.findChild<QWidget*>("deliverAiVersion"));
+        ASSERT_NE(sw, nullptr);
+        EXPECT_EQ(sw->on(), "v3");
+        sw->button("v4")->click();
         EXPECT_TRUE(w.deliver_choice().ai.rerender);
         EXPECT_TRUE(QSettings().value("deliver/aiRerender").toBool());
-        ASSERT_NE(w.findChild<QWidget*>("deliverAiRerender"), nullptr);
+        EXPECT_EQ(sw->on(), "v4");
+        sw->button("v3")->click();
+        EXPECT_FALSE(w.deliver_choice().ai.rerender);
+        QSettings().setValue("deliver/aiRerender", true);
     }
-    qunsetenv("RUDRA_GENFILL_V4");
+    {
+        app::MainWindow w(false);   // the choice is kept between runs
+        EXPECT_TRUE(w.deliver_choice().ai.rerender);
+    }
     QSettings().clear();
 }
 
@@ -7103,6 +7221,117 @@ TEST(AppFillView, ThePreviewSaysWhyItShowsNothing) {
     EXPECT_TRUE(app::genfill_preview_hint(0.02, false, 1000).isEmpty());
 }
 
+// ---- 1.2.6 (18 Nov 2026, user feedback on 09V.mp4): where the AI fill acts on this frame ----
+TEST(AppFillView, TheFrameLineSaysWhyANearWhiteAreaIsNotFilled) {
+    AiFillRegion none;
+    EXPECT_TRUE(app::ai_fill_frame_text(none, 250).contains("no clipped highlights"));
+    AiFillRegion door;
+    door.seen_pct = 8.1;
+    door.specks_pct = 0.4;
+    EXPECT_TRUE(app::ai_fill_frame_text(door, 250).contains("nothing to fill"));
+    EXPECT_TRUE(app::ai_fill_frame_text(door, 250).contains("250\u2013254"));
+    EXPECT_TRUE(app::ai_fill_frame_tip(door, 250).contains("specks"));
+    EXPECT_TRUE(app::ai_fill_frame_tip(door, 250).contains("never changes what the source shows"));
+    AiFillRegion sky;
+    sky.seen_pct = 9.0;
+    sky.filled_pct = 0.26;
+    EXPECT_EQ(app::ai_fill_frame_text(sky, 250), QStringLiteral("This frame: fills 0.26 % \u00b7 the model sees 9.0 %"));
+    EXPECT_FALSE(app::ai_fill_frame_tip(sky, 250).contains("specks"));
+}
+
+// ---- 1.2.6 (user request): a progress bar while the AI fill runs ----
+TEST(AppFillView, TheAiFillHasAProgressBar) {
+    EXPECT_DOUBLE_EQ(app::genfill_progress_share(0.0, 1.0, 1, 1, 15, 30), 0.5);
+    EXPECT_DOUBLE_EQ(app::genfill_progress_share(0.0, 1.0, 2, 4, 0, 30), 0.25);
+    EXPECT_DOUBLE_EQ(app::genfill_progress_share(0.1, 0.9, 4, 4, 30, 30), 0.9);
+    EXPECT_DOUBLE_EQ(app::genfill_progress_share(0.0, 1.0, 9, 4, 99, 30), 1.0);   // clamped
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto* card = w.findChild<QProgressBar*>("deliverAiProgress");
+    auto* bar = w.findChild<QProgressBar*>("viewerAiProgress");
+    ASSERT_NE(card, nullptr);
+    ASSERT_NE(bar, nullptr);
+    EXPECT_TRUE(card->isHidden());
+    w.set_ai_progress(-1.0, "loading the fill model (once)");
+    EXPECT_FALSE(card->isHidden());
+    EXPECT_EQ(card->maximum(), 0);   // busy
+    w.set_ai_progress(0.42, "step 12 / 30");
+    EXPECT_EQ(card->maximum(), 1000);
+    EXPECT_EQ(card->value(), 420);
+    EXPECT_EQ(bar->value(), 420);
+    EXPECT_TRUE(card->text().contains("42")) << card->text().toStdString();
+    EXPECT_TRUE(card->text().contains("step 12 / 30"));
+    w.ai_progress_done();
+    EXPECT_TRUE(card->isHidden());
+    EXPECT_TRUE(bar->isHidden());
+}
+
+#ifdef RUDRA_HAVE_STILL_DECODE   // it opens PNG frames: CI's Qt shell build has no still decode (it waited forever)
+TEST(AppFillView, TheAiFillCardShowsWhereItFillsOnTheFrameOnScreen) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    w.set_deliver("source", "analytic");
+    w.session().set_container("aces");
+    w.set_deliver("image", "exr32");
+    w.set_deliver("ai_fill", "1");
+    const auto shot = fresh_dir("ai-fill-region");
+    std::filesystem::create_directories(shot);
+    QImage door(64, 48, QImage::Format_RGB32);
+    door.fill(QColor(40, 50, 60));
+    for (int y = 8; y < 40; ++y)
+        for (int x = 16; x < 48; ++x) door.setPixel(x, y, qRgb(252, 252, 252));   // near white: seen, not filled
+    ASSERT_TRUE(door.save(QString::fromStdString((shot / "a.png").string())));
+    QImage blown = door;
+    for (int y = 12; y < 30; ++y)
+        for (int x = 20; x < 40; ++x) blown.setPixel(x, y, qRgb(255, 255, 255));
+    ASSERT_TRUE(blown.save(QString::fromStdString((shot / "b.png").string())));
+    w.open_source(QString::fromStdString(shot.string()), true);
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    auto* info = w.findChild<QLabel*>("deliverAiFrameInfo");
+    ASSERT_NE(info, nullptr);
+    ASSERT_TRUE(wait_for([&] { return info->text().contains("nothing to fill"); })) << info->text().toStdString();
+    EXPECT_FALSE(info->isHidden());
+    EXPECT_EQ(info->property("state").toString(), "warn");
+    const auto r = w.ai_fill_region_now();
+    ASSERT_TRUE(r.has_value());
+    EXPECT_TRUE(r->empty());
+    EXPECT_NEAR(r->seen_pct, 100.0 * 32 * 32 / (64 * 48), 0.01);
+    w.run("next");
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 1; }));
+    ASSERT_TRUE(wait_for([&] { return info->text().contains("fills"); })) << info->text().toStdString();
+    EXPECT_TRUE(info->text().contains("the model sees 33.3 %")) << info->text().toStdString();
+    EXPECT_NEAR(w.ai_fill_region_now()->filled_pct, 100.0 * 18 * 20 / (64 * 48), 0.01);
+    EXPECT_EQ(info->property("state").toString(), "");
+    // The threshold moves what the model sees, and the line follows.
+    w.findChild<QSpinBox*>("deliverAiTauHigh")->setValue(253);
+    EXPECT_NEAR(w.ai_fill_region_now()->seen_pct, 100.0 * 18 * 20 / (64 * 48), 0.01);
+    // v4.3 region redraws its whole region (codes 240 and up), the near-white door included.
+    w.set_deliver("ai_rerender", "1");
+    EXPECT_TRUE(info->text().contains("v4.3 redraws 33.3 %")) << info->text().toStdString();
+    EXPECT_NEAR(w.ai_fill_region_now()->filled_pct, 100.0 * 32 * 32 / (64 * 48), 0.01);
+    w.set_deliver("ai_rerender", "0");
+    EXPECT_TRUE(info->text().contains("fills")) << info->text().toStdString();
+    // "Where it fills" on and off; the AI fill's own view turns it off.
+    auto* where = w.findChild<QPushButton*>("deliverAiShowRegion");
+    ASSERT_NE(where, nullptr);
+    EXPECT_FALSE(where->isHidden());
+    where->click();
+    EXPECT_TRUE(w.ai_region_view());
+    w.set_fill_view(true);
+    EXPECT_FALSE(w.ai_region_view());
+    EXPECT_FALSE(where->isChecked());
+    w.set_fill_view(false);
+    where->click();
+    EXPECT_TRUE(w.ai_region_view());
+    where->click();
+    EXPECT_FALSE(w.ai_region_view());
+    // The tooltip of the threshold says what it really does (it said the codes above it are filled).
+    EXPECT_TRUE(w.findChild<QSpinBox*>("deliverAiTauHigh")->toolTip().contains("code 255"));
+    w.set_deliver("ai_fill", "0");
+    EXPECT_TRUE(info->isHidden());
+}
+#endif
+
 // ---- AI fill from a package (7 Nov 2026): the bootstrap beside the packaged python/, or in the
 // repository's scripts/; the fill's own Python under the app's data folder ----
 TEST(GenFill, TheBootstrapIsFoundInAPackageOrTheRepository) {
@@ -7355,5 +7584,1089 @@ TEST(AppModels, AWholePartIsCheckedNotDownloadedAgain) {
     QFile got(tmp.path() + "/models/demo_pkg/weights.bin");
     ASSERT_TRUE(got.open(QIODevice::ReadOnly));
     EXPECT_EQ(got.readAll(), weights);
+    QSettings().clear();
+}
+
+// ── 1.2.6 (18 Nov 2026): user feedback on 1.2.5 ─────────────────────────────
+
+namespace {
+
+// The text a widget draws, when it would not fit in the width it was given.
+std::vector<std::string> cut_texts(QWidget* root, const QWidget* window) {
+    std::vector<std::string> cut;
+    for (auto* b : root->findChildren<QAbstractButton*>()) {
+        if (!b->isVisibleTo(window) || b->text().isEmpty() || b->width() <= 0) continue;
+        if (dynamic_cast<app::CheckRow*>(b->parentWidget())) continue;
+        const int need = b->fontMetrics().horizontalAdvance(b->text().split('\n').first());
+        if (need > b->width()) cut.push_back(b->objectName().toStdString() + " \"" + b->text().toStdString() + "\"");
+    }
+    for (auto* l : root->findChildren<QLabel*>()) {
+        if (!l->isVisibleTo(window) || l->wordWrap() || l->text().isEmpty() || l->width() <= 0) continue;
+        if (l->textFormat() == Qt::RichText || l->text().contains('<') || l->text().contains('\n')) continue;
+        const int need = l->fontMetrics().horizontalAdvance(l->text());
+        if (need > l->width() + 1) cut.push_back(l->objectName().toStdString() + " \"" + l->text().toStdString() + "\"");
+    }
+    return cut;
+}
+
+}  // namespace
+
+// Item 1: Full's Deliver column is cards in the order a delivery is decided, not one wall.
+TEST(AppDeliver, FullModeIsCardsInTheOrderADeliveryIsDecided) {
+    Window win("tab_deliver");
+    auto card_of = [&](const char* id) {
+        QWidget* x = win.get(id);
+        EXPECT_NE(x, nullptr) << id;
+        while (x && x->property("role").toString() != "card") x = x->parentWidget();
+        return x;
+    };
+    // Each control lives in its own card.
+    EXPECT_EQ(card_of("deliverSource"), win.get("deliverCard"));
+    EXPECT_EQ(card_of("deliverGamut"), win.get("deliverCard"));
+    EXPECT_EQ(card_of("deliverNote"), win.get("deliverCard"));
+    EXPECT_EQ(card_of("containerField"), win.get("deliverSignalCard"));
+    EXPECT_EQ(card_of("deliverMattes"), win.get("deliverExtrasCard"));
+    EXPECT_EQ(card_of("deliverBrackets"), win.get("deliverExtrasCard"));
+    EXPECT_EQ(card_of("deliverAiFill"), win.get("deliverAiCard"));
+    EXPECT_EQ(card_of("deliverAiPreview"), win.get("deliverAiCard"));
+    EXPECT_EQ(card_of("anchor"), win.get("deliverAnalyticOptions"));
+    // Top to bottom: Format, The file, Extras, the analytic master, Render.
+    std::vector<int> ys;
+    for (const char* id : {"deliverCard", "deliverSignalCard", "deliverExtrasCard", "deliverAnalyticOptions"}) {
+        ASSERT_TRUE(win.shown(win.get(id))) << id;
+        ys.push_back(win.box(win.get(id))[1]);
+    }
+    ys.push_back(win.box(card_of("btnMaster"))[1]);
+    EXPECT_TRUE(std::is_sorted(ys.begin(), ys.end()));
+    // The AI fill card comes and goes with its switch: never an empty card.
+    EXPECT_EQ(win.shown(win.get("deliverAiCard")), win.shown(win.get("deliverAiFill")));
+    // The AI fill card: whether it is set up first, then the prompt, then Preview; the tuning last.
+    auto* box = win.get("deliverAiFillOptions");
+    auto* bv = qobject_cast<QVBoxLayout*>(box->layout());
+    ASSERT_NE(bv, nullptr);
+    auto at = [&](const char* id) {
+        QWidget* x = win.get(id);
+        while (x && x->parentWidget() != box) x = x->parentWidget();
+        return bv->indexOf(x);
+    };
+    EXPECT_LT(at("deliverAiSetup"), at("deliverAiPromptHighlight"));
+    EXPECT_LT(at("deliverAiSetupButton"), at("deliverAiPromptHighlight"));
+    EXPECT_LT(at("deliverAiPromptHighlight"), at("deliverAiPreview"));
+    EXPECT_LT(at("deliverAiPreview"), at("deliverAiAdvanced"));
+    EXPECT_EQ(at("deliverAiAdvancedBox"), bv->count() - 1);
+}
+
+// Item 2: what only reports is drawn as information and holds nothing to edit.
+TEST(AppLayout, ReadOnlyCardsAreMarkedAndHoldNoControls) {
+    Window win("tab_deliver");
+    std::set<std::string> info;
+    for (auto* c : win.w.findChildren<QWidget*>()) {
+        if (c->property("kind").toString() != "info") continue;
+        info.insert(c->objectName().toStdString());
+        bool tagged = false;
+        for (auto* l : c->findChildren<QLabel*>())
+            tagged = tagged || (l->property("role").toString() == "ro-tag" && l->text() == "Read-only");
+        EXPECT_TRUE(tagged) << c->objectName().toStdString();
+        EXPECT_FALSE(c->toolTip().isEmpty() && c->objectName() == "deliverSignalCard");
+        for (auto* x : c->findChildren<QWidget*>()) {
+            const bool editable = qobject_cast<QAbstractButton*>(x) || qobject_cast<QLineEdit*>(x) ||
+                                  qobject_cast<QComboBox*>(x) || qobject_cast<QAbstractSpinBox*>(x) ||
+                                  qobject_cast<QAbstractSlider*>(x) || dynamic_cast<app::CheckRow*>(x);
+            EXPECT_FALSE(editable) << c->objectName().toStdString() << " holds " << x->metaObject()->className();
+        }
+    }
+    for (const char* id : {"deliverSignalCard", "frameStats", "checkSummary"}) EXPECT_TRUE(info.count(id)) << id;
+    // ... and a card of controls is never drawn as one.
+    for (const char* id : {"deliverCard", "deliverExtrasCard", "deliverAiCard", "deliverAnalyticOptions"})
+        EXPECT_NE(win.get(id)->property("kind").toString(), "info") << id;
+}
+
+// Item 3: on a 1920 x 1080 screen at 100, 125 and 150 % (logical 1920, 1536, 1280 wide)
+// nothing over the picture or in the Deliver column is drawn narrower than its text.
+TEST(AppLayout, NoTextIsCutOnA1080pScreen) {
+    for (const auto& [wd, ht] : {std::pair{1920, 1050}, std::pair{1536, 830}, std::pair{1280, 690}}) {
+        Window win("tab_deliver");
+        win.w.resize(wd, ht);
+        for (int i = 0; i < 3; ++i) QApplication::processEvents();
+        const std::string at = std::to_string(wd) + "x" + std::to_string(ht);
+        for (const char* root : {"viewerTools", "deliverFullCards"}) {
+            const auto cut = cut_texts(win.get(root), &win.w);
+            EXPECT_TRUE(cut.empty()) << at << " " << root << ": " << ::testing::PrintToString(cut);
+        }
+        EXPECT_EQ(find<QComboBox>(win.w, "vtOcio")->itemText(0), "RUDRA view (nits)");
+    }
+}
+
+// Item 4: a JPEG's highlight fill smooths its compression noise; any other still does not.
+TEST(AppDeliver, ALossySourceGetsTheLossyClipFill) {
+    const auto dir = std::filesystem::temp_directory_path() / "rudra_lossy_source";
+    std::filesystem::create_directories(dir);
+    app::MainWindow w(false);
+    EXPECT_FALSE(w.source_is_lossy());   // nothing open
+    EXPECT_EQ(w.session_clip_options().smooth_px, 0.0);
+    EXPECT_FALSE(w.master_request().lossy_source);
+#ifdef RUDRA_HAVE_STILL_DECODE
+    w.open_source(QString::fromStdString((decode_dir() / "jpeg_q92_420.jpg").string()));
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    EXPECT_TRUE(w.source_is_lossy());
+    EXPECT_GT(w.session_clip_options().smooth_px, 0.0);
+    EXPECT_TRUE(w.session_clip_options().hue_order);
+    EXPECT_TRUE(w.master_request().lossy_source);   // the master writes what the viewer showed
+    w.open_source(QString::fromStdString((decode_dir() / "png8_rgb.png").string()));
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0 && !w.source_is_lossy(); }));
+    EXPECT_EQ(w.session_clip_options().smooth_px, 0.0);
+    EXPECT_FALSE(w.master_request().lossy_source);
+#endif
+    std::filesystem::remove_all(dir);
+}
+
+// 1.2.6 (user feedback on the colour row: "which box is what?"): every box over the picture has
+// its name beside it, in one item; the checks are named as what they mark; a box that does
+// nothing is not shown; and every drop-down draws its arrow, so it never reads as a text field.
+TEST(AppLayout, TheColourRowSaysWhatEachBoxIs) {
+    Window win("full");
+    auto group_of = [&](const char* id) {
+        QWidget* x = win.get(id);
+        EXPECT_NE(x, nullptr) << id;
+        return x ? x->parentWidget()->objectName().toStdString() : std::string();
+    };
+    EXPECT_EQ(group_of("vtOcio"), "vtViewGroup");
+    EXPECT_EQ(group_of("vtWorking"), "vtWorkingGroup");
+    EXPECT_EQ(group_of("vtOriginal"), "vtOriginalGroup");
+    EXPECT_EQ(group_of("vtGamut"), "vtChecksGroup");
+    EXPECT_EQ(group_of("vtGamutOf"), "vtChecksGroup");
+    EXPECT_EQ(group_of("vtInvalid"), "vtChecksGroup");
+    EXPECT_EQ(text_of(win.w, "vtViewGroupLabel"), "View");
+    EXPECT_EQ(text_of(win.w, "vtWorkingGroupLabel"), "Working space");
+    EXPECT_EQ(text_of(win.w, "vtOriginalGroupLabel"), "SDR shown as");
+    EXPECT_EQ(text_of(win.w, "vtChecksGroupLabel"), "Mark");
+    EXPECT_EQ(win.w.findChild<QPushButton*>("vtGamut")->text(), "Out of gamut");
+    EXPECT_EQ(win.w.findChild<QPushButton*>("vtInvalid")->text(), "Invalid values");
+    for (const char* id : {"vtViewGroupLabel", "vtWorkingGroupLabel", "vtOriginalGroupLabel", "vtChecksGroupLabel"})
+        EXPECT_FALSE(win.w.findChild<QLabel*>(id)->toolTip().isEmpty()) << id;
+    // RUDRA's own view: how the SDR enters an OCIO view does nothing, so it is not offered.
+    EXPECT_EQ(find<QComboBox>(win.w, "vtOcio")->currentIndex(), 0);
+    EXPECT_FALSE(win.shown(win.get("vtOriginalGroup")));
+    // The arrow the sheet draws on a drop-down is in the build.
+    EXPECT_TRUE(QFile::exists(":/chrome/combo-arrow.png"));
+    EXPECT_TRUE(QFile::exists(":/chrome/combo-arrow@2x.png"));
+    EXPECT_TRUE(qApp->styleSheet().contains("QComboBox::down-arrow"));
+}
+
+// 1.2.6 (user feedback: "a lot of text in the delivery section"): the Deliver column says what
+// each control is and leaves how it works to the tooltip.
+TEST(AppDeliver, TheColumnIsShortAndTheRestIsOnHover) {
+    Window win("tab_deliver");
+    // No switch carries a line of explanation under its name; it is the switch's tooltip.
+    int switches = 0;
+    for (auto* x : win.get("deliverFullCards")->findChildren<QWidget*>()) {
+        auto* row = dynamic_cast<app::CheckRow*>(x);
+        if (!row) continue;
+        ++switches;
+        EXPECT_FALSE(row->hint()->isVisibleTo(&win.w)) << row->objectName().toStdString();
+        EXPECT_FALSE(row->toolTip().isEmpty()) << row->objectName().toStdString();
+    }
+    EXPECT_GE(switches, 5);
+    // Frame number, timecode and reel fold away, closed until opened.
+    EXPECT_FALSE(win.shown(win.get("renderTimecode")));
+    win.w.findChild<QPushButton*>("renderMore")->click();
+    QApplication::processEvents();
+    EXPECT_TRUE(win.shown(win.get("renderTimecode")));
+    EXPECT_TRUE(win.shown(win.get("renderReel")));
+    EXPECT_TRUE(win.shown(win.get("renderStart")));
+    win.w.findChild<QPushButton*>("renderMore")->click();
+    QSettings().remove("deliver/renderMoreOpen");
+    EXPECT_FALSE(win.shown(win.get("renderHint")));
+    // One AI fill prompt in sight; the shadow prompt is in Advanced.
+    QWidget* adv = win.get("deliverAiAdvancedBox");
+    EXPECT_TRUE(adv->isAncestorOf(win.get("deliverAiPromptShadow")));
+    EXPECT_TRUE(adv->isAncestorOf(win.get("deliverAiPromptShadowLabel")));
+    EXPECT_FALSE(adv->isAncestorOf(win.get("deliverAiPromptHighlight")));
+    // Every line of text left in sight is short: at most 90 characters, the rest on hover.
+    for (auto* l : win.get("deliverFullCards")->findChildren<QLabel*>()) {
+        if (!l->isVisibleTo(&win.w)) continue;
+        EXPECT_LE(l->text().size(), 90) << l->objectName().toStdString() << ": " << l->text().toStdString();
+    }
+}
+
+// ── 1.2.6: a cleaner UI for end users, no function lost ──────────────────────
+
+namespace {
+bool inside(QWidget* x, const char* ancestor_id) {
+    for (QWidget* p = x ? x->parentWidget() : nullptr; p; p = p->parentWidget())
+        if (p->objectName() == QLatin1String(ancestor_id)) return true;
+    return false;
+}
+}  // namespace
+
+// Items 1-4: three buttons over the picture open the overlays, the colour management and the
+// exposure extras; every control is still there, still named, and still does what it did.
+TEST(AppLayout, TheViewerBarIsThreeButtonsAndNothingIsLost) {
+    Window win("full");
+    for (const char* id : {"vtOverlays", "vtColourBtn", "vtMore"}) EXPECT_TRUE(win.shown(win.get(id))) << id;
+    for (const char* id : {"changesBtn", "inventedBtn", "viewLayer", "vtClamp", "vtClip", "vtRange", "vtAiFill", "vtChecksGroup"}) {
+        EXPECT_TRUE(inside(win.get(id), "vtOverlaysPanel")) << id;
+        EXPECT_FALSE(win.shown(win.get(id))) << id;   // until the panel is opened
+    }
+    for (const char* id : {"vtViewGroup", "vtWorkingGroup", "vtOriginalGroup"}) EXPECT_TRUE(inside(win.get(id), "vtColourBtnPanel")) << id;
+    for (const char* id : {"vtGamma", "vtReset", "vtBracket-2", "vtBracket0"}) EXPECT_TRUE(inside(win.get(id), "vtMorePanel")) << id;
+    // Opening a panel shows its controls; a check on counts on the button.
+    win.w.findChild<QPushButton*>("vtOverlays")->click();
+    QApplication::processEvents();
+    EXPECT_TRUE(win.get("vtOverlaysPanel")->isVisible());
+    EXPECT_TRUE(win.get("vtClip")->isVisible());
+    EXPECT_EQ(win.w.findChild<QPushButton*>("vtOverlays")->text(), "Overlays ▾");
+    win.w.findChild<QPushButton*>("vtClip")->click();
+    EXPECT_TRUE(win.w.session().clip_zebra);
+    EXPECT_EQ(win.w.findChild<QPushButton*>("vtOverlays")->text(), "Overlays · 1 ▾");
+    win.w.findChild<QPushButton*>("changesBtn")->click();
+    EXPECT_TRUE(win.w.session().show_changes);
+    EXPECT_EQ(win.w.findChild<QPushButton*>("vtOverlays")->text(), "Overlays · 2 ▾");
+    win.get("vtOverlaysPanel")->hide();
+    // The colour button names the view in use; the gamma button shows a gamma that is not 1.
+    EXPECT_TRUE(win.w.findChild<QPushButton*>("vtColourBtn")->text().startsWith("Colour: RUDRA view"));
+    win.w.session().set_view_gamma(1.2);
+    QApplication::processEvents();
+    EXPECT_TRUE(win.w.findChild<QPushButton*>("vtMore")->text().contains("1.20"))
+        << win.w.findChild<QPushButton*>("vtMore")->text().toStdString();
+    win.w.findChild<QPushButton*>("vtReset")->click();
+    EXPECT_EQ(win.w.session().view_gamma, 1.0);
+    // Simple keeps its one View menu: no Overlays button there.
+    win.w.findChild<QPushButton*>("wsSimple")->click();
+    EXPECT_FALSE(win.shown(win.get("vtOverlays")));
+    win.w.findChild<QPushButton*>("wsFull")->click();
+}
+
+// Items 5-8: the side panels show what is in use.
+TEST(AppLayout, TheSidePanelsShowWhatIsInUse) {
+    for (const char* k : {"ui/logOpen", "ui/frameStatsOpen"}) QSettings().remove(k);
+    Window win("full");
+    // The Probe card: there while Probe is on.
+    EXPECT_FALSE(win.shown(win.get("probePanelWrap")));
+    win.w.findChild<QPushButton*>("probeBtn")->click();
+    EXPECT_TRUE(win.shown(win.get("probePanelWrap")));
+    win.w.findChild<QPushButton*>("probeBtn")->click();
+    EXPECT_FALSE(win.shown(win.get("probePanelWrap")));
+    // The Log and This frame fold on a click on their heads; closed until opened, remembered.
+    EXPECT_FALSE(win.shown(win.get("log")));
+    QWidget* log_head = win.get("logFold")->parentWidget();
+    QTest::mouseClick(log_head, Qt::LeftButton);
+    EXPECT_TRUE(win.shown(win.get("log")));
+    EXPECT_TRUE(QSettings().value("ui/logOpen").toBool());
+    QTest::mouseClick(log_head, Qt::LeftButton);
+    EXPECT_FALSE(win.shown(win.get("log")));
+    EXPECT_TRUE(win.shown(win.get("frameSummary")));
+    EXPECT_FALSE(win.shown(win.get("measA")));
+    QTest::mouseClick(win.get("frameStatsFold")->parentWidget(), Qt::LeftButton);
+    EXPECT_TRUE(win.get("measA")->isVisibleTo(&win.w));   // empty (no frame yet), but there
+    EXPECT_FALSE(win.shown(win.get("frameSummary")));
+    for (const char* k : {"ui/logOpen", "ui/frameStatsOpen"}) QSettings().remove(k);
+    // The scopes: never chosen, they start open only on a wide screen.
+    QSettings().remove("window/scopes");
+    app::MainWindow w(false);
+    w.resize(1200, 800);
+    w.show();
+    (void)QTest::qWaitForWindowExposed(&w);
+    w.restore_settings();
+    EXPECT_EQ(w.session().scopes_open, w.wide_screen());
+}
+
+// Item 9: a choice this shot cannot take is not offered (its reason was a greyed button).
+TEST(AppDeliver, UnusableChoicesAreNotOffered) {
+    Window win("tab_deliver");   // no shot open
+    auto* out = find<app::Seg>(win.w, "deliverOutput");
+    EXPECT_FALSE(win.shown(out->button("movie")));
+    EXPECT_FALSE(win.shown(out->button("sequence")));
+    EXPECT_FALSE(out->button("movie")->isEnabled());   // and still refused if reached another way
+    EXPECT_FALSE(win.shown(win.get("btnReprocess")));
+    EXPECT_FALSE(win.shown(win.get("deliverAiShowFill")));   // the preview's views, once there is a preview
+    EXPECT_TRUE(win.shown(win.get("btnMaster")));            // the main action stays, greyed, to say what is next
+}
+
+// Item 10: the settings most shots never touch fold behind "More ▸" in their cards.
+TEST(AppLayout, RarelyUsedSettingsFoldAway) {
+    for (const char* k : {"ui/recMoreOpen", "ui/sourceMoreOpen"}) QSettings().remove(k);
+    Window win("full");
+    EXPECT_TRUE(inside(win.get("highlightDetail"), "recMoreBox"));
+    EXPECT_TRUE(inside(win.get("preserve"), "recMoreBox"));
+    EXPECT_FALSE(inside(win.get("strength"), "recMoreBox"));   // Simple's Strength stays in sight
+    EXPECT_FALSE(inside(win.get("exposure"), "recMoreBox"));
+    for (const char* id : {"sourceReadouts", "calibrate", "reference"}) EXPECT_TRUE(inside(win.get(id), "sourceMoreBox")) << id;
+    EXPECT_FALSE(win.shown(win.get("preserve")));
+    EXPECT_FALSE(win.shown(win.get("calibrate")));
+    win.w.findChild<QPushButton*>("recMore")->click();
+    win.w.findChild<QPushButton*>("sourceMore")->click();
+    EXPECT_TRUE(win.shown(win.get("preserve")));
+    EXPECT_TRUE(win.shown(win.get("calibrate")));
+    EXPECT_TRUE(QSettings().value("ui/recMoreOpen").toBool());
+    for (const char* k : {"ui/recMoreOpen", "ui/sourceMoreOpen"}) QSettings().remove(k);
+    // The long notes under the cards are the cards' tooltips now.
+    EXPECT_TRUE(win.get("recSourceCard")->toolTip().contains("analytic inverse of this curve"));
+}
+
+// ── 1.2.6: the Media panel (user feedback: "a bin and media section, drag and drop to the viewer") ──
+
+// ---- 1.2.6 (user feedback: "smart bins, what are they for? they do nothing"): a scan on import ----
+TEST(Media, AFramesCodesCountClippedAndCrushedButNotBlackBars) {
+    QImage f(100, 100, QImage::Format_RGB32);
+    f.fill(QColor(120, 120, 120));
+    for (int y = 0; y < 12; ++y)
+        for (int x = 0; x < 100; ++x) f.setPixel(x, y, qRgb(0, 0, 0)), f.setPixel(x, 99 - y, qRgb(0, 0, 0));   // bars
+    for (int y = 40; y < 50; ++y)
+        for (int x = 40; x < 50; ++x) f.setPixel(x, y, qRgb(255, 250, 240));   // 1 % clipped
+    for (int y = 60; y < 64; ++y)
+        for (int x = 0; x < 50; ++x) f.setPixel(x, y, qRgb(1, 0, 0));          // 200 crushed of 7,600
+    const auto c = app::frame_codes(f);
+    EXPECT_NEAR(c.clipped_pct, 1.0, 1e-9);
+    EXPECT_NEAR(c.crushed_pct, 100.0 * 200 / 7600, 1e-9);
+}
+
+TEST(Media, ImportedClipsFillTheSmartBinsByThemselves) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    w.library().clear();
+    const auto dir = fresh_dir("media-scan");
+    std::filesystem::create_directories(dir);
+    QImage sky(160, 90, QImage::Format_RGB32);
+    sky.fill(QColor(90, 110, 130));
+    for (int y = 0; y < 30; ++y)
+        for (int x = 0; x < 160; ++x) sky.setPixel(x, y, qRgb(255, 255, 255));   // a blown sky
+    QImage dark(160, 90, QImage::Format_RGB32);
+    dark.fill(QColor(30, 30, 30));
+    for (int y = 10; y < 80; ++y)
+        for (int x = 10; x < 80; ++x) dark.setPixel(x, y, qRgb(0, 0, 0));        // a crushed corner, not a bar
+    QImage plain(160, 90, QImage::Format_RGB32);
+    plain.fill(QColor(100, 100, 100));
+    const QString a = QString::fromStdString((dir / "sky.png").string()), b = QString::fromStdString((dir / "dark.png").string()),
+                  c = QString::fromStdString((dir / "plain.png").string());
+    ASSERT_TRUE(sky.save(a) && dark.save(b) && plain.save(c));
+    w.media_panel()->imported({a, b, c});
+    ASSERT_TRUE(wait_for([&] { return w.media_scans_pending() == 0; }));
+    const auto* s = w.library().find(a);
+    ASSERT_NE(s, nullptr);
+    EXPECT_TRUE(s->scanned());
+    EXPECT_NEAR(s->clipped_pct, 100.0 / 3.0, 0.01);
+    EXPECT_TRUE(s->clipped);
+    EXPECT_FALSE(s->crushed);
+    EXPECT_EQ(s->info, "160×90");
+    EXPECT_TRUE(w.library().find(b)->crushed);
+    EXPECT_FALSE(w.library().find(b)->clipped);
+    EXPECT_FALSE(w.library().find(c)->clipped || w.library().find(c)->crushed);
+    EXPECT_EQ(w.library().count(app::MediaLibrary::kClipped), 1);
+    EXPECT_EQ(w.library().count(app::MediaLibrary::kCrushed), 1);
+    // Kept with the library: not scanned again.
+    app::MediaLibrary again;
+    again.from_json(w.library().to_json());
+    EXPECT_NEAR(again.find(a)->clipped_pct, 100.0 / 3.0, 0.01);
+    EXPECT_FALSE(app::MediaClip{}.scanned());
+}
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+TEST(Media, AMovieIsScannedAtThreePlacesAndGetsAThumbnail) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "no ffmpeg";
+    const auto s = app::scan_media_file(QString::fromStdString(movie("h264_709_audio.mp4").string()));
+    EXPECT_TRUE(s.ok) << s.error.toStdString();
+    EXPECT_EQ(s.frames, 3);
+    EXPECT_FALSE(s.thumb.isNull());
+    EXPECT_FALSE(s.info.isEmpty());
+    EXPECT_FALSE(app::scan_media_file("/nowhere/x.mp4").ok);
+}
+#endif
+
+TEST(Media, TheLibraryKeepsClipsBinsAndSmartBins) {
+    const auto dir = fresh_dir("media-lib");
+    std::filesystem::create_directories(dir / "seq");
+    for (const char* f : {"a.jpg", "b.png", "c.mov", "shot.rudra"}) std::ofstream(dir / f) << "x";
+    const QString d = QString::fromStdString(dir.string());
+    app::MediaLibrary lib;
+    ASSERT_NE(lib.add(d + "/a.jpg"), nullptr);
+    EXPECT_EQ(lib.add(d + "/./a.jpg"), lib.find(d + "/a.jpg"));   // one clip per file
+    EXPECT_EQ(lib.add(d + "/shot.rudra"), nullptr);                // a project is not media
+    lib.add(d + "/b.png");
+    lib.add(d + "/c.mov");
+    lib.add(d + "/seq");
+    EXPECT_EQ(lib.clips().size(), 4u);
+    EXPECT_EQ(lib.clips().front().name(), "seq");   // the newest first
+    EXPECT_EQ(lib.find(d + "/c.mov")->kind, "movie");
+    EXPECT_EQ(lib.find(d + "/seq")->kind, "folder");
+    EXPECT_EQ(lib.find(d + "/seq")->badge(), "SEQ");
+    EXPECT_EQ(lib.find(d + "/a.jpg")->badge(), "JPG");
+    // Bins: unique names, filing, renaming, deleting (the clips stay).
+    const QString fire = lib.create_bin("Fire"), fire2 = lib.create_bin("fire");
+    EXPECT_EQ(fire, "Fire");
+    EXPECT_EQ(fire2, "fire 2");
+    EXPECT_EQ(lib.create_bin(app::MediaLibrary::kAll), "all 2");
+    EXPECT_TRUE(lib.file(d + "/a.jpg", fire));
+    EXPECT_FALSE(lib.file(d + "/a.jpg", fire));        // no duplicate
+    EXPECT_FALSE(lib.file(d + "/a.jpg", "No such bin"));
+    lib.file(d + "/c.mov", fire);
+    EXPECT_EQ(lib.count(fire), 2);
+    EXPECT_EQ(lib.in(fire, "MOV").size(), 1u);         // search, any case
+    EXPECT_TRUE(lib.rename_bin(fire, "Fire tests"));
+    EXPECT_EQ(lib.count("Fire tests"), 2);
+    EXPECT_TRUE(lib.unfile(d + "/c.mov", "Fire tests"));
+    EXPECT_EQ(lib.count("Fire tests"), 1);
+    // Smart bins fill themselves from what was measured and rendered.
+    lib.find(d + "/b.png")->clipped = true;
+    lib.find(d + "/seq")->crushed = true;
+    lib.find(d + "/a.jpg")->delivered = true;
+    EXPECT_EQ(lib.count(app::MediaLibrary::kClipped), 1);
+    EXPECT_EQ(lib.count(app::MediaLibrary::kCrushed), 1);
+    EXPECT_EQ(lib.count(app::MediaLibrary::kDelivered), 1);
+    EXPECT_EQ(lib.count(app::MediaLibrary::kAll), 4);
+    // As JSON (the project's and the settings'), back the same.
+    app::MediaLibrary back;
+    back.from_json(lib.to_json());
+    EXPECT_EQ(back.to_json(), lib.to_json());
+    EXPECT_TRUE(back.find(d + "/a.jpg")->bins.contains("Fire tests"));
+    EXPECT_TRUE(back.delete_bin("Fire tests"));
+    EXPECT_TRUE(back.find(d + "/a.jpg")->bins.isEmpty());
+    EXPECT_EQ(back.clips().size(), 4u);   // deleting a bin keeps its clips
+    EXPECT_TRUE(back.remove(d + "/b.png"));
+    EXPECT_EQ(back.clips().size(), 3u);
+    EXPECT_TRUE(std::filesystem::exists(dir / "b.png"));   // nothing on disk is touched
+}
+
+TEST(Media, AProjectCarriesItsBins) {
+    Project p;
+    p.media_json = R"({"bins":["Day 2"],"clips":[{"path":"/x/a.jpg","kind":"still","bins":["Day 2"]}]})";
+    const auto file = std::filesystem::temp_directory_path() / "media.rudra";
+    auto back = parse_project(project_json(p, file), file);
+    ASSERT_TRUE(back) << back.error().message;
+    EXPECT_EQ(nlohmann::json::parse(back->media_json), nlohmann::json::parse(p.media_json));
+    // A project before 1.2.6 has none, and writes none.
+    Project old;
+    EXPECT_EQ(project_json(old, file).find("\"media\""), std::string::npos);
+    EXPECT_TRUE(parse_project(project_json(old, file), file)->media_json.empty());
+}
+
+TEST(Media, ThePanelIsTheLeftRailAndAClipDragsAsItsFile) {
+    QSettings().remove("media/library");
+    Window win("full");
+    EXPECT_TRUE(win.shown(win.get("mediaPanel")));
+    for (const char* id : {"shots", "collections", "dropzone", "seqPath"}) EXPECT_FALSE(win.shown(win.get(id))) << id;
+    auto* panel = win.w.media_panel();
+    auto& lib = win.w.library();
+    lib.clear();
+    const auto dir = fresh_dir("media-panel");
+    std::filesystem::create_directories(dir);
+    std::ofstream(dir / "a.jpg") << "x";
+    const QString a = QString::fromStdString((dir / "a.jpg").string());
+    lib.add(a);
+    const QString bin = lib.create_bin("Plates");
+    panel->refresh();
+    ASSERT_EQ(panel->list()->count(), 1);
+    // The drag carries the file (the viewer, the window and other apps take it) and the clip.
+    std::unique_ptr<QMimeData> m(static_cast<app::ClipList*>(panel->list())->model()->mimeData(
+        {panel->list()->model()->index(0, 0)}));
+    ASSERT_TRUE(m);
+    ASSERT_EQ(m->urls().size(), 1);
+    EXPECT_EQ(QFileInfo(m->urls().front().toLocalFile()), QFileInfo(a));
+    EXPECT_TRUE(m->hasFormat(app::ClipList::kMime));
+    // Dropped on a bin, it is filed there.
+    QWidget* row = win.w.findChild<QWidget*>(QStringLiteral("bin:") + bin);
+    ASSERT_NE(row, nullptr);
+    QDragEnterEvent enter(QPoint(5, 5), Qt::CopyAction, m.get(), Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(row, &enter);
+    EXPECT_TRUE(enter.isAccepted());
+    QDropEvent drop(QPointF(5, 5), Qt::CopyAction, m.get(), Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(row, &drop);
+    EXPECT_TRUE(lib.find(a)->bins.contains(bin));
+    QApplication::processEvents();
+    panel->show_bin(bin);
+    EXPECT_EQ(panel->list()->count(), 1);
+    panel->show_bin(app::MediaLibrary::kClipped);
+    EXPECT_EQ(panel->list()->count(), 0);
+    // Thumbnails or a list; the bin's name and count over them.
+    panel->set_list_mode(true);
+    EXPECT_EQ(panel->list()->viewMode(), QListView::ListMode);
+    panel->set_list_mode(false);
+    EXPECT_EQ(panel->list()->viewMode(), QListView::IconMode);
+    panel->show_bin(app::MediaLibrary::kAll);
+    EXPECT_EQ(text_of(win.w, "mediaBinTitle"), "All media");
+    EXPECT_EQ(text_of(win.w, "mediaBinCount"), "1 clip");
+    QSettings().remove("media/library");
+}
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+TEST(Media, AClipDroppedOnThePictureOpensAsAShotOfItsOwn) {
+    QSettings().remove("media/library");
+    Window win("full");
+    auto& w = win.w;
+    const QString a = png("png8_rgb.png"), b = png("bmp24.bmp");
+    w.open_source(a);
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    EXPECT_NE(w.library().find(a), nullptr);   // opened, so in Media
+    // Drop b's clip on the picture: it replaces the shot (not one more frame of it).
+    w.library().add(b);
+    w.media_panel()->refresh();
+    QWidget* view = win.get("viewer");
+    const QPoint at = view->mapTo(&w, view->rect().center());
+    EXPECT_FALSE(w.drop_media({b}, QPoint(5, 5)));   // let go anywhere else: nothing opens
+    EXPECT_EQ(QFileInfo(app::from_path(w.frames()[0])), QFileInfo(a));
+    EXPECT_TRUE(w.drop_media({b}, at));
+    ASSERT_TRUE(wait_for([&] { return w.frames().size() == 1 && QFileInfo(app::from_path(w.frames()[0])) == QFileInfo(b); }));
+    EXPECT_EQ(QFileInfo(w.media_panel()->list()->item(0)->data(Qt::UserRole).toString()), QFileInfo(b));   // the newest first
+    QSettings().remove("media/library");
+}
+#endif
+
+// 1.2.6: the Media panel's three follow-ups: batch from the panel, several clips at once, and a
+// project's bins that survive the project folder being moved.
+
+TEST(Media, ClipsGoToTheBatchQueueWithoutBeingOpened) {
+    const auto dir = fresh_dir("media-batch");
+    std::filesystem::create_directories(dir / "seq");
+    std::filesystem::create_directories(dir / "out");
+    std::ofstream(dir / "a.png") << "x";
+    std::ofstream(dir / "c.mov") << "x";
+    for (const char* f : {"f_0001.png", "f_0002.png", "f_0003.png"}) std::ofstream(dir / "seq" / f) << "x";
+    app::MainWindow w(false);
+    const auto q0 = w.batch_queue().jobs().size();
+    QString why;
+    w.findChild<QLineEdit*>("renderDir")->setText("");
+    EXPECT_EQ(w.batch_add_media({QString::fromStdString((dir / "a.png").string())}, &why), 0);
+    EXPECT_TRUE(why.contains("render folder")) << why.toStdString();
+    w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString((dir / "out").string()));
+    const QStringList clips = {QString::fromStdString((dir / "a.png").string()), QString::fromStdString((dir / "c.mov").string()),
+                               QString::fromStdString((dir / "seq").string()), QString::fromStdString((dir / "gone.png").string())};
+    EXPECT_EQ(w.batch_add_media(clips, &why), 3);   // the missing one is said, not queued
+    const auto& jobs = w.batch_queue().jobs();
+    ASSERT_EQ(jobs.size(), q0 + 3);
+    std::map<std::string, const app::BatchJob*> by;
+    for (std::size_t i = q0; i < jobs.size(); ++i) by[jobs[i].shot.title.toStdString()] = &jobs[i];
+    ASSERT_TRUE(by.count("a.png") && by.count("c.mov") && by.count("seq"));
+    EXPECT_EQ(by["a.png"]->shot.kind, "still");
+    EXPECT_EQ(by["c.mov"]->shot.kind, "movie");
+    EXPECT_EQ(by["seq"]->shot.kind, "sequence");
+    EXPECT_EQ(by["seq"]->shot.sources.size(), 3u);
+    EXPECT_NE(by["seq"]->choice.output, "still");   // a folder renders whole
+    EXPECT_TRUE(w.frames().empty());                 // nothing was opened
+    std::vector<QString> ids;
+    for (std::size_t i = q0; i < jobs.size(); ++i) ids.push_back(jobs[i].id);
+    w.batch_queue().remove(ids);
+}
+
+TEST(Media, AProjectMovedWithItsMediaFindsIt) {
+    const auto a = fresh_dir("media-move-a"), b = fresh_dir("media-move-b");
+    for (const auto& d : {a, b}) {
+        std::filesystem::create_directories(d / "plates");
+        std::ofstream(d / "plates" / "sh010.jpg") << "x";
+    }
+    Project p;
+    const QString clip = QString::fromStdString((a / "plates" / "sh010.jpg").generic_string());
+    p.media_json = QJsonDocument(QJsonObject{{"bins", QJsonArray{"Day 1"}},
+                                             {"clips", QJsonArray{QJsonObject{{"path", clip}, {"kind", "still"}, {"bins", QJsonArray{"Day 1"}}}}}})
+                       .toJson(QJsonDocument::Compact).toStdString();
+    const std::string text = project_json(p, a / "shot.rudra");
+    EXPECT_NE(text.find("\"relative\": \"plates/sh010.jpg\""), std::string::npos) << text;
+    // The same project read from another folder (the project and its plates moved together).
+    auto moved = parse_project(text, b / "shot.rudra");
+    ASSERT_TRUE(moved) << moved.error().message;
+    const QJsonObject m = QJsonDocument::fromJson(QByteArray::fromStdString(moved->media_json)).object();
+    const QString path = m["clips"].toArray().first().toObject()["path"].toString();
+    EXPECT_EQ(QFileInfo(path), QFileInfo(QString::fromStdString((b / "plates" / "sh010.jpg").string())));
+    EXPECT_FALSE(m["clips"].toArray().first().toObject().contains("relative"));
+    // Not moved: the path as written.
+    auto same = parse_project(text, a / "shot.rudra");
+    ASSERT_TRUE(same);
+    EXPECT_EQ(QFileInfo(QJsonDocument::fromJson(QByteArray::fromStdString(same->media_json)).object()["clips"].toArray().first()
+                            .toObject()["path"].toString()),
+              QFileInfo(clip));
+}
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+TEST(Media, SeveralStillsOpenAsOneShotAndAMovieOrFolderOnItsOwn) {
+    QSettings().remove("media/library");
+    Window win("full");
+    auto& w = win.w;
+    const QString a = png("png8_rgb.png"), b = png("bmp24.bmp");
+    w.open_media_list({a, b});
+    ASSERT_TRUE(wait_for([&] { return w.frames().size() == 2 && w.presented_index() >= 0; }));
+    EXPECT_EQ(QFileInfo(app::from_path(w.frames()[0])), QFileInfo(a));
+    EXPECT_EQ(QFileInfo(app::from_path(w.frames()[1])), QFileInfo(b));
+    // A folder with a still: the folder opens; the still stays selected in Media.
+    const auto dir = fresh_dir("media-multi");
+    std::filesystem::create_directories(dir / "seq");
+    for (const char* f : {"f_0001.png", "f_0002.png"}) std::filesystem::copy_file(decode_dir() / "png8_rgb.png", dir / "seq" / f);
+    const QString seq = QString::fromStdString((dir / "seq").string());
+    w.library().add(a);
+    w.library().add(seq);
+    w.media_panel()->refresh();
+    w.open_media_list({seq, a});
+    ASSERT_TRUE(wait_for([&] { return w.frames().size() == 2 && w.frames()[0].parent_path() == dir / "seq"; }));
+    QApplication::processEvents();
+    EXPECT_TRUE(w.media_panel()->selected().contains(app::MediaLibrary::clean(a)));
+    QSettings().remove("media/library");
+}
+#endif
+
+// 1.2.6: the QC report beside every render.
+// 1.2.6 (readiness report, checklist item 5): the share of a master outside P3-D65, and its verdict.
+TEST(QcReport, PixelsOutsideP3AreMeasuredFromTheMasters) {
+    const auto dir = fresh_dir("qc-p3");
+    std::filesystem::create_directories(dir);
+    PlanarBuffer wide(3, 8, 8, 0.18f);
+    for (int y = 0; y < 4; ++y)   // the top half: ACEScg's green primary, far outside P3-D65
+        for (int x = 0; x < 8; ++x) wide.at(0, y, x) = 0.0f, wide.at(1, y, x) = 1.0f, wide.at(2, y, x) = 0.0f;
+    ASSERT_TRUE(rudra::write_acescg_exr(dir / "wide.exr", wide, rudra::Primaries::Ap1, 1.0, {}, true));
+    ASSERT_TRUE(rudra::write_aces_exr(dir / "grey.exr", PlanarBuffer(3, 8, 8, 0.18f), rudra::Primaries::Ap1, 1.0, {}, true));
+    EXPECT_NEAR(app::qc_out_of_p3_pct(dir / "wide.exr", 1), 50.0, 1e-9);
+    EXPECT_NEAR(app::qc_out_of_p3_pct(dir / "grey.exr", 1), 0.0, 1e-9);
+    EXPECT_EQ(app::qc_out_of_p3_pct(dir / "missing.exr"), -1);
+    app::QcReport r;
+    app::QcFrame f;
+    f.maxcll = 400;
+    f.maxfall = 60;
+    f.out_of_p3_pct = 0.4;
+    r.frames = {f};
+    auto v = app::qc_verdict(r);
+    EXPECT_TRUE(v.pass);   // a few pixels: a note
+    EXPECT_TRUE(v.notes.join(' ').contains("P3-D65"));
+    r.frames.front().out_of_p3_pct = 3.0;
+    v = app::qc_verdict(r);
+    EXPECT_FALSE(v.pass);
+    EXPECT_TRUE(v.reasons.join(' ').contains("outside P3-D65"));
+    EXPECT_TRUE(app::qc_html(r, v).contains("Outside P3-D65 %"));
+    EXPECT_EQ(app::qc_json(r, v).value("frames").toArray().at(0).toObject().value("out_of_p3_pct").toDouble(), 3.0);
+}
+
+// 1.2.6 (readiness report, checklist item 4): the learned route on a non-ACES source curve.
+TEST(QcReport, TheLearnedRouteOnANonAcesCurveWantsALook) {
+    app::QcReport r;
+    r.title = "SH020";
+    r.transfer = "PQ (Rec.2100)";
+    app::QcFrame f;
+    f.maxcll = 600;
+    f.maxfall = 90;
+    r.frames.push_back(f);
+    EXPECT_TRUE(app::qc_verdict(r).pass);
+    r.curve_mismatch = "BT.1886";
+    const auto v = app::qc_verdict(r);
+    EXPECT_FALSE(v.pass);
+    ASSERT_EQ(v.reasons.size(), 1);
+    EXPECT_TRUE(v.reasons.front().contains("BT.1886"));
+    EXPECT_TRUE(v.reasons.front().contains("analytic route"));
+}
+
+TEST(QcReport, TheChecksSayWhatWantsALook) {
+    app::QcReport r;
+    r.title = "SH010";
+    r.transfer = "PQ (Rec.2100)";
+    for (int i = 0; i < 6; ++i) {
+        app::QcFrame f;
+        f.file = QStringLiteral("SH010.%1").arg(i);
+        f.maxcll = 800;
+        f.maxfall = 120;
+        f.invented_pct = 0.5;
+        r.frames.push_back(f);
+    }
+    EXPECT_TRUE(app::qc_verdict(r).pass);
+    r.frames[2].maxfall = 400;                // a one-frame jump in average light
+    r.frames[4].maxcll = 1600;                // over the 1000-nit PQ peak
+    r.frames[5].invented_pct = 12.0;          // more than 5 % invented
+    r.frames[1].bracket_code_delta = 5;       // export differs from the viewer
+    const app::QcVerdict v = app::qc_verdict(r, 1000);
+    EXPECT_FALSE(v.pass);
+    const QString all = v.reasons.join('\n');
+    EXPECT_TRUE(all.contains("flicker")) << all.toStdString();
+    EXPECT_TRUE(all.contains("1000-nit peak")) << all.toStdString();
+    EXPECT_TRUE(all.contains("invented")) << all.toStdString();
+    EXPECT_TRUE(all.contains("2 codes")) << all.toStdString();
+    EXPECT_TRUE(app::qc_verdict(r, 2000).reasons.join('\n').contains("2000") == false);   // 1600 fits a 2000-nit master
+    // The page: the verdict, the numbers and a chart.
+    const QString html = app::qc_html(r, v);
+    EXPECT_TRUE(html.startsWith("<!DOCTYPE html>"));
+    EXPECT_TRUE(html.contains("<b>Review</b>"));
+    EXPECT_TRUE(html.contains("<svg"));
+    EXPECT_TRUE(html.contains("1,600"));
+    // Its look comes from the embedded theme/qc_report.css (no colour in the app's sources).
+    EXPECT_TRUE(html.contains(".cll{stroke:"));
+    EXPECT_TRUE(html.contains("class=\"cll\""));
+    // Written beside the files, never over one.
+    const auto dir = fresh_dir("qc-report");
+    std::filesystem::create_directories(dir);
+    r.output_folder = QString::fromStdString(dir.string());
+    const QString a = app::write_qc_report(r), b = app::write_qc_report(r);
+    EXPECT_TRUE(a.endsWith("SH010.qc.html"));
+    EXPECT_TRUE(b.endsWith("SH010.qc_2.html"));
+    // 1.2.6 (checklist item 5): each with its JSON twin, the same verdict and every frame.
+    for (const char* name : {"SH010.qc.json", "SH010.qc_2.json"}) {
+        QFile jf(QString::fromStdString((dir / name).string()));
+        ASSERT_TRUE(jf.open(QIODevice::ReadOnly)) << name;
+        const QJsonObject j = QJsonDocument::fromJson(jf.readAll()).object();
+        EXPECT_EQ(j.value("schema").toString(), "rudra_qc_v1");
+        EXPECT_EQ(j.value("verdict").toString(), "review");
+        EXPECT_EQ(j.value("frames").toArray().size(), int(r.frames.size()));
+        EXPECT_FALSE(j.value("reasons").toArray().isEmpty());
+    }
+    // A compressed source is said, not counted against the render.
+    app::QcReport ok;
+    app::QcFrame f;
+    f.maxcll = 300;
+    f.maxfall = 50;
+    ok.frames = {f};
+    ok.lossy_source = true;
+    const app::QcVerdict lv = app::qc_verdict(ok);
+    EXPECT_TRUE(lv.pass);
+    EXPECT_TRUE(lv.notes.join(' ').contains("compressed"));
+}
+
+TEST(QcReport, FramesComeFromTheMastersSidecars) {
+    const auto dir = fresh_dir("qc-sidecars");
+    std::filesystem::create_directories(dir);
+    std::ofstream(dir / "a.000001.json") << R"j({"maxcll_nits": 1234, "maxfall_nits": 210, "peak_nits": 1234.5, "resolution": [1920, 1080],
+        "container": "ACES 2065-1 (AP0)", "transfer": "linear", "invented_pixels": {"invented_pct": 1.25},
+        "pixel_classes": {"reconstructed_pct": 7.5, "generated_pct": 0.0},
+        "brackets": {"preview_vs_export": {"max_code_delta": 1}}})j";
+    std::ofstream(dir / "notes.json") << R"({"something": "else"})";   // not a master's: skipped
+    QString container, transfer;
+    const auto frames = app::qc_frames_from_sidecars({dir / "a.000001.json", dir / "notes.json", dir / "missing.json"}, &container, &transfer);
+    ASSERT_EQ(frames.size(), 1u);
+    EXPECT_EQ(frames[0].maxcll, 1234);
+    EXPECT_EQ(frames[0].maxfall, 210);
+    EXPECT_EQ(frames[0].resolution, QString::fromUtf8("1920×1080"));
+    EXPECT_DOUBLE_EQ(frames[0].invented_pct, 1.25);
+    EXPECT_DOUBLE_EQ(frames[0].reconstructed_pct, 7.5);
+    EXPECT_EQ(frames[0].bracket_code_delta, 1);
+    EXPECT_EQ(container, "ACES 2065-1 (AP0)");
+    EXPECT_EQ(transfer, "linear");
+}
+
+// 1.2.6: each clip keeps its own settings, in versions; copy and paste between clips.
+TEST(Media, EachClipKeepsItsOwnSettingsInVersions) {
+    QSettings().remove("media/library");
+    app::MainWindow w(false);
+    auto& lib = w.library();
+    lib.clear();
+    const auto dir = fresh_dir("media-settings");
+    std::filesystem::create_directories(dir);
+    for (const char* f : {"a.png", "b.png", "c.png"}) std::ofstream(dir / f) << "x";
+    const QString a = QString::fromStdString((dir / "a.png").string()), b = QString::fromStdString((dir / "b.png").string()),
+                  c = QString::fromStdString((dir / "c.png").string());
+    for (const QString& p : {a, b, c}) lib.add(p);
+    // A's settings: exposure +1. Stored as v1; then +2 as v2; v1 comes back with a click.
+    w.session().exposure_press();
+    w.session().exposure_input(1.0);
+    const QJsonObject one = w.clip_settings_now();
+    lib.find(a)->set_settings(one);
+    EXPECT_EQ(lib.find(a)->version_name(), "v1");
+    w.session().exposure_press();
+    w.session().exposure_input(2.0);
+    lib.find(a)->add_version(w.clip_settings_now());
+    EXPECT_EQ(lib.find(a)->version_name(), "v2");
+    EXPECT_TRUE(w.apply_clip_settings(lib.find(a)->versions.at(0).toObject().value("settings").toObject()));
+    EXPECT_DOUBLE_EQ(w.session().grade.exposure_ev, 1.0);
+    w.session().undo();   // one undo step
+    EXPECT_DOUBLE_EQ(w.session().grade.exposure_ev, 2.0);
+    // Paste to several clips: each gets them in its version in use (v1 when it had none).
+    w.paste_clip_settings({b, c}, one);
+    EXPECT_EQ(lib.find(b)->settings(), one);
+    EXPECT_EQ(lib.find(c)->version_name(), "v1");
+    // The versions travel with the library (the project and the settings).
+    app::MediaLibrary back;
+    back.from_json(lib.to_json());
+    EXPECT_EQ(back.find(a)->versions.size(), 2);
+    EXPECT_EQ(back.find(a)->version, 1);
+    EXPECT_EQ(back.find(b)->settings(), one);
+    QSettings().remove("media/library");
+}
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+TEST(Media, OpeningAClipBringsBackItsSettings) {
+    QSettings().remove("media/library");
+    Window win("full");
+    auto& w = win.w;
+    const QString a = png("png8_rgb.png"), b = png("bmp24.bmp");
+    w.open_media(a);
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    w.session().exposure_press();
+    w.session().exposure_input(1.5);
+    w.open_media(b);   // a leaves with its +1.5; b has none of its own, so it keeps the session's
+    ASSERT_TRUE(wait_for([&] { return QFileInfo(app::from_path(w.frames()[0])) == QFileInfo(b); }));
+    EXPECT_EQ(w.library().find(a)->version_name(), "v1");
+    w.session().exposure_press();
+    w.session().exposure_input(-0.5);
+    w.open_media(a);   // back to a: its own +1.5
+    ASSERT_TRUE(wait_for([&] { return QFileInfo(app::from_path(w.frames()[0])) == QFileInfo(a); }));
+    EXPECT_DOUBLE_EQ(w.session().grade.exposure_ev, 1.5);
+    w.open_media(b);
+    ASSERT_TRUE(wait_for([&] { return QFileInfo(app::from_path(w.frames()[0])) == QFileInfo(b); }));
+    EXPECT_DOUBLE_EQ(w.session().grade.exposure_ev, -0.5);   // and b its own
+    QSettings().remove("media/library");
+}
+#endif
+
+// 1.2.6: the fire JPEG's fix for footage: an 8-bit H.264 movie is a lossy source; ProRes is not.
+TEST(Media, An8BitH264MovieIsALossySource) {
+    // Outside RUDRA_HAVE_STILL_DECODE, where have_ffmpeg() is not (CI's Qt shell builds without OpenCV).
+    if (!rudra::find_executable("ffmpeg") || !rudra::find_executable("ffprobe")) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    const auto dir = fresh_dir("lossy-movie");
+    std::filesystem::create_directories(dir);
+    const QString h264 = QString::fromStdString((dir / "a.mp4").string()), prores = QString::fromStdString((dir / "b.mov").string());
+    for (const auto& [out, codec] : {std::pair{h264, QStringList{"-c:v", "libx264", "-pix_fmt", "yuv420p"}},
+                                     std::pair{prores, QStringList{"-c:v", "prores_ks", "-pix_fmt", "yuv422p10le"}}}) {
+        QProcess p;
+        p.start("ffmpeg", QStringList{"-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=64x36:rate=24", "-t", "0.2"} + codec + QStringList{out});
+        ASSERT_TRUE(p.waitForFinished(30000));
+        if (p.exitCode() != 0) GTEST_SKIP() << "this ffmpeg cannot write " << codec.join(' ').toStdString();
+    }
+    app::MainWindow w(false);
+    EXPECT_TRUE(w.movie_is_lossy(h264));
+    EXPECT_FALSE(w.movie_is_lossy(prores));
+}
+
+// 1.2.6 (readiness report item 6): the AI fill's disclosure record.
+TEST(GenFill, TheDisclosureRecordSaysWhatWasGeneratedAndHow) {
+    const QJsonObject g = QJsonDocument::fromJson(R"({
+        "master": "D:/shot/exr", "contract": "fill_clipped_only",
+        "model": {"base": "Wan2.1-VACE-1.3B", "lora": "rudra_v3.safetensors", "lora_sha256": "ab12"},
+        "settings": {"prompt_highlight": "overcast sky", "prompt_shadow": "", "seed": 7, "steps": 20},
+        "stats": {"frames": 2, "generated_fraction": 0.0125, "flagged_frames": 1, "fallback_frames": 0},
+        "frames": [{"name": "f.0001.exr", "generated_fraction": 0.01, "flagged": false, "fell_back": false},
+                   {"name": "f.0002.exr", "generated_fraction": 0.015, "flagged": true, "fell_back": false}],
+        "release_authorized": false})").object();
+    const QJsonObject d = rudra::app::genfill_disclosure(g, "Learned ACES 2.0", "1.2.6");
+    EXPECT_EQ(d.value("schema").toString(), QStringLiteral("rudra_ai_disclosure_v1"));
+    EXPECT_TRUE(d.value("generated_content").toBool());
+    EXPECT_TRUE(d.value("fill").toString().contains("v3"));
+    EXPECT_EQ(d.value("lora_sha256").toString(), QStringLiteral("ab12"));
+    EXPECT_EQ(d.value("seed").toInt(), 7);
+    EXPECT_NEAR(d.value("generated_pct").toDouble(), 1.25, 1e-9);
+    ASSERT_EQ(d.value("frames").toArray().size(), 2);
+    EXPECT_NEAR(d.value("frames").toArray()[1].toObject().value("generated_pct").toDouble(), 1.5, 1e-9);
+    EXPECT_TRUE(d.value("frames").toArray()[1].toObject().value("flagged_flicker").toBool());
+    EXPECT_TRUE(rudra::app::genfill_disclosure_line(d).contains("1.25 %"));
+
+    QJsonObject g4 = g;
+    g4["rerender"] = QJsonObject{{"strength", 0.5}};
+    EXPECT_TRUE(rudra::app::genfill_disclosure(g4, "Analytic", "1.2.6").value("fill").toString().contains("v4.3"));
+
+    QTemporaryDir tmp;
+    EXPECT_TRUE(rudra::app::write_genfill_disclosure(tmp.path(), "Analytic").isEmpty());   // no fill, no record
+    QFile f(QDir(tmp.path()).filePath("genfill.json"));
+    ASSERT_TRUE(f.open(QIODevice::WriteOnly));
+    f.write(QJsonDocument(g).toJson());
+    f.close();
+    const QString path = rudra::app::write_genfill_disclosure(tmp.path(), "Analytic");
+    ASSERT_FALSE(path.isEmpty());
+    QFile r(path);
+    ASSERT_TRUE(r.open(QIODevice::ReadOnly));
+    const QJsonObject back = QJsonDocument::fromJson(r.readAll()).object();
+    EXPECT_EQ(back.value("route").toString(), QStringLiteral("Analytic"));
+    EXPECT_EQ(back.value("frames_total").toInt(), 2);
+}
+
+// 1.2.6 (readiness report item 7): Florence-2 from a folder, offline.
+TEST(GenFill, FlorenceFromAFolderBesideTheModelIsPassedToDescribe) {
+    QTemporaryDir tmp;
+    const std::filesystem::path root = tmp.path().toStdString();
+    std::filesystem::create_directories(root / "Wan2.1-VACE-1.3B-diffusers");
+    app::GenFillSetup s{"/py", "/repo", root / "Wan2.1-VACE-1.3B-diffusers", "/runs/v3/rudra_genfill.safetensors"};
+    QSettings().remove("genfill/florence");
+    EXPECT_TRUE(app::genfill_florence_dir(s).empty());   // none: prompts.py fetches it itself
+    EXPECT_FALSE(app::genfill_suggest_arguments(s, {}, {"/tmp/f.png"}, true).contains("--describe-model"));
+
+    std::filesystem::create_directories(root / "Florence-2-base");
+    QFile c(QString::fromStdString((root / "Florence-2-base" / "config.json").string()));
+    ASSERT_TRUE(c.open(QIODevice::WriteOnly));
+    c.close();
+    EXPECT_EQ(app::genfill_florence_dir(s), root / "Florence-2-base");
+    const QStringList a = app::genfill_suggest_arguments(s, {}, {"/tmp/f.png"}, true);
+    ASSERT_TRUE(a.contains("--describe-model"));
+    EXPECT_EQ(QDir::fromNativeSeparators(a[a.indexOf("--describe-model") + 1]),
+              QDir::fromNativeSeparators(QString::fromStdString((root / "Florence-2-base").string())));
+    EXPECT_FALSE(app::genfill_suggest_arguments(s, {}, {"/tmp/f.png"}, false).contains("--describe-model"));
+
+    QSettings().setValue("genfill/florence", tmp.path() + "/nowhere");   // a setting with no model is passed over
+    EXPECT_EQ(app::genfill_florence_dir(s), root / "Florence-2-base");
+    QSettings().remove("genfill/florence");
+}
+
+TEST(GenFill, TheSetupDialogInstallsFromAFolderOrZip) {
+    app::GenFillSetupDialog d(nullptr);
+    auto* from = d.findChild<QPushButton*>("genfillSetupFrom");
+    ASSERT_NE(from, nullptr);
+    ASSERT_NE(from->menu(), nullptr);
+    EXPECT_EQ(from->menu()->actions().size(), 4);
+    EXPECT_NE(d.findChild<QLineEdit*>("genfillSetup_florence"), nullptr);
+}
+
+// 1.2.6: Florence-2 (Suggest a prompt) is downloaded with the models the first time: Check this computer
+// lists it ticked where AI fill can run, and once it is in, Suggest a prompt uses that folder offline.
+TEST(AppCheck, FlorenceIsOfferedWithTheModelsAndUsedOnceDownloaded) {
+    QSettings().clear();
+    QTemporaryDir tmp;
+    QSettings().setValue("models/indexUrl", QUrl::fromLocalFile(tmp.path() + "/none.json").toString());
+    // Its files are trusted from the published list: every SHA-256 is compiled in.
+    EXPECT_TRUE(app::is_known_model_file("62f3e696da74f8869a68ddb529a9b3e14eb25b21c592cb3dea6179bf944df6a0"));   // model.safetensors
+    EXPECT_TRUE(app::is_known_model_file("2a4dfe9885d183da121f239ada734bd700ee6908b650a7a25ab32eb104fe1d7a"));   // config.json
+    app::MainWindow w(false);
+    auto* md = w.model_downloads();
+    md->set_root(tmp.path() + "/models");
+    QSettings().setValue("models/downloadRoot", tmp.path() + "/models");
+    auto models = *app::parse_model_index(served_index(tmp.path() + "/src", "{}", QByteArray(100000, 'f')));
+    models[0].id = "florence2_base";
+    models[0].title = "Florence-2 base";
+    models[0].kind = "florence";
+    models[0].folder = "Florence-2-base";
+    md->set_models(models);
+    w.run("system-check");
+    auto* d = find<app::SystemCheckDialog>(w, "systemCheck");
+    ASSERT_NE(d, nullptr);
+    app::MachineFacts f;
+    f.windows = true;
+    f.os = "Windows 11";
+    f.windows_build = 26100;
+    f.cpu_arch = "x86_64";
+    f.gpus = std::vector<app::GpuFact>{{"NVIDIA GeForce RTX 4090", 24.0}};
+    f.ram_gb = 64;
+    f.free_gb = 500;
+    d->set_facts(f);
+    auto* tick = d->findChild<QCheckBox*>("checkTick_florence2_base");
+    ASSERT_NE(tick, nullptr);
+    EXPECT_TRUE(tick->isChecked());   // ticked the first time, with the learned model
+    d->install_selected();
+    ASSERT_TRUE(wait_for([&] { return md->state("florence2_base") == app::InstallState::Installed && md->active().isEmpty(); }));
+    QApplication::processEvents();
+    const QString folder = tmp.path() + "/models/Florence-2-base";
+    EXPECT_EQ(QDir::cleanPath(QSettings().value("genfill/florence").toString()), QDir::cleanPath(folder));
+    // The folder holds the served test files, not a config.json: the download-root search is checked on its own.
+    QSettings().remove("genfill/florence");
+    QFile cfg(folder + "/config.json");
+    ASSERT_TRUE(cfg.open(QIODevice::WriteOnly));
+    cfg.close();
+    EXPECT_EQ(QDir::cleanPath(app::from_path(app::genfill_florence_dir({}))), QDir::cleanPath(folder));
+    QSettings().clear();
+}
+
+// 1.2.6: Florence-2 downloads from the internet before the published list names it: the app knows it
+// (pinned revision, every file's SHA-256 compiled in), and AI fill setup has a button for it.
+TEST(GenFill, FlorenceIsDownloadableWithoutThePublishedList) {
+    QSettings().clear();
+    const auto built = app::builtin_models();
+    ASSERT_EQ(built.size(), 1u);
+    const app::RemoteModel& f = built.front();
+    EXPECT_EQ(f.kind, "florence");
+    EXPECT_EQ(f.folder, "Florence-2-base");
+    EXPECT_EQ(f.files.size(), 13u);
+    for (const auto& file : f.files) {
+        EXPECT_TRUE(app::is_known_model_file(file.sha256)) << file.path.toStdString();
+        EXPECT_TRUE(file.url.startsWith("https://huggingface.co/florence-community/Florence-2-base/resolve/00921df66db7"));
+    }
+    EXPECT_EQ(app::known_models(built).size(), 1u);   // what the published-list filter keeps
+    // A list without it gets it; a list that has one keeps its own.
+    std::vector<app::RemoteModel> list;
+    app::add_missing_builtins(list);
+    ASSERT_EQ(list.size(), 1u);
+    app::add_missing_builtins(list);
+    EXPECT_EQ(list.size(), 1u);
+    app::RemoteModel own = f;
+    own.id = "florence_published";
+    std::vector<app::RemoteModel> published{own};
+    app::add_missing_builtins(published);
+    EXPECT_EQ(published.size(), 1u);
+    // AI fill setup offers the download while no Florence-2 is found.
+    QTemporaryDir tmp;
+    QSettings().setValue("models/downloadRoot", tmp.path());
+    app::MainWindow w(false);
+    app::GenFillSetupDialog d(&w);
+    auto* get = d.findChild<QPushButton*>("genfillGetFlorence");
+    ASSERT_NE(get, nullptr);
+    EXPECT_FALSE(get->isHidden());
+    auto* md = w.model_downloads();
+    md->ensure_builtin();
+    EXPECT_NE(md->model(app::kFlorenceModelId), nullptr);
+    QSettings().clear();
+}
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+// Code review, 19 Nov 2026: stills opened together are a clip each. Closing stores the clip on screen
+// (it was lost: the shot was cleared first), and stepping between them brings each one's grade back.
+TEST(Media, StillsOpenedTogetherKeepTheirOwnSettings) {
+    QSettings().clear();
+    Window win("full");
+    auto& w = win.w;
+    const QString a = png("png8_rgb.png"), b = png("bmp24.bmp");
+    auto ev_of = [&](const QString& p) {
+        return w.library().find(p)->settings().value("grade").toObject().value("exposure_ev").toDouble();
+    };
+    w.open_media(a);
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    w.session().exposure_press();
+    w.session().exposure_input(1.5);
+    w.run("close");   // stored as it closes
+    EXPECT_DOUBLE_EQ(ev_of(a), 1.5);
+    w.open_media(b);
+    ASSERT_TRUE(wait_for([&] { return QFileInfo(app::from_path(w.frames()[0])) == QFileInfo(b); }));
+    w.session().exposure_press();
+    w.session().exposure_input(-0.5);
+    // Both, as one shot: the first comes up with its own grade.
+    w.open_media_list({a, b});
+    ASSERT_TRUE(wait_for([&] { return w.frames().size() == 2 && w.presented_index() == 0; }));
+    EXPECT_DOUBLE_EQ(ev_of(b), -0.5);   // b was stored as the stills replaced it
+    EXPECT_DOUBLE_EQ(w.session().grade.exposure_ev, 1.5);
+    w.run("next");
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 1; }));
+    EXPECT_DOUBLE_EQ(w.session().grade.exposure_ev, -0.5);
+    w.session().exposure_press();
+    w.session().exposure_input(0.25);
+    w.run("prev");
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    EXPECT_DOUBLE_EQ(w.session().grade.exposure_ev, 1.5);
+    EXPECT_DOUBLE_EQ(ev_of(b), 0.25);   // what b had on screen when it was left
+    QSettings().remove("media/library");
+}
+
+// Code review, 19 Nov 2026: a version keeps its painted masks (it kept only a project's mask file name).
+TEST(Media, AVersionKeepsItsPaintedMasks) {
+    QSettings().clear();
+    Window win("full");
+    auto& w = win.w;
+    const QString a = png("png8_rgb.png");
+    w.open_media(a);
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    auto set = std::make_shared<MaskSet>();
+    set->width = 16;
+    set->height = 8;
+    auto plane = empty_plane(16, 8);
+    for (int i = 0; i < 40; ++i) (*plane)[std::size_t(i)] = 255;
+    set->planes[1] = plane;
+    w.session().grade.masks = set;
+    const int v2 = w.new_clip_version(a);   // v1 keeps the masks, v2 starts from them too
+    ASSERT_EQ(v2, 1);
+    w.session().grade.masks.reset();       // v2 without them
+    ASSERT_TRUE(w.use_clip_version(a, 0));
+    ASSERT_TRUE(w.session().grade.masks);
+    EXPECT_TRUE(*w.session().grade.masks == *set);
+    const QString file = w.library().find(a)->settings().value("grade").toObject().value("masks").toString();   // v1, in use
+    EXPECT_TRUE(QFileInfo(file).isAbsolute() && QFileInfo::exists(file)) << file.toStdString();
+    ASSERT_TRUE(w.use_clip_version(a, 1));
+    EXPECT_FALSE(w.session().grade.masks && !w.session().grade.masks->empty());
+    QSettings().remove("media/library");
+}
+#endif
+
+// Code review, 19 Nov 2026: the QC report says what the render started with, whatever is on screen when it ends.
+TEST(QcReport, TheReportIsTheRendersOwnContext) {
+    QSettings().clear();
+    QTemporaryDir tmp;
+    app::MainWindow w(false);
+    app::MainWindow::QcContext x;
+    x.title = "shot_A";
+    x.source = "/plates/A.png";
+    x.source_kind = "still";
+    x.deliver = w.deliver_effective();
+    x.request = QJsonObject{{"exposure_ev", 1.25}};
+    w.render_qc_context_ = x;
+    const QString path = w.write_render_qc(tmp.path(), {}, "Analytic reconstruction");
+    ASSERT_FALSE(path.isEmpty());
+    EXPECT_FALSE(w.render_qc_context_.has_value());   // used once
+    QFile f(QFileInfo(path).dir().filePath(QFileInfo(path).completeBaseName().section(".qc", 0, 0) + ".qc.json"));
+    ASSERT_TRUE(f.open(QIODevice::ReadOnly)) << f.fileName().toStdString();
+    const QJsonObject j = QJsonDocument::fromJson(f.readAll()).object();
+    EXPECT_EQ(j.value("source").toString(), "/plates/A.png");
+    EXPECT_EQ(j.value("title").toString(), "shot_A");
+    EXPECT_DOUBLE_EQ(j.value("settings").toObject().value("exposure_ev").toDouble(), 1.25);
     QSettings().clear();
 }

@@ -111,8 +111,18 @@ FrameMeasure measure_headroom(const NetworkLinearImage& model, const NetworkLine
 namespace rudra {
 FrameMeasure measure_headroom(const NetworkLinearImage& model, const NetworkLinearImage& baseline, const SdrImage* sdr) {
     FrameMeasure out = measure_headroom(model, baseline);
-    if (sdr && sdr->width() == model.width() && sdr->height() == model.height())
+    if (sdr && sdr->width() == model.width() && sdr->height() == model.height()) {
         out.range = range_stats(sdr_light_rgba(sdr), model, &baseline);
+        // 1.2.6 (readiness report, checklist item 2): the SDR's codes and "Clipped in source" too.
+        // They were left empty here, so the learned route always read 0.00 % clipped (09V: 4.04 %).
+        const std::size_t n = std::size_t(out.width) * std::size_t(out.height);
+        out.sdr8.resize(n * 3);
+        for (std::size_t i = 0; i < n; ++i)
+            for (int c = 0; c < 3; ++c)
+                out.sdr8[i * 3 + std::size_t(c)] =
+                    std::uint8_t(std::lround(std::clamp(sdr->buffer().plane(c)[i], 0.0f, 1.0f) * 255.0f));
+        out.coverage = mask_coverage(out.highlight, out.shadow, out.sdr8);
+    }
     return out;
 }
 }  // namespace rudra

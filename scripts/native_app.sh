@@ -23,7 +23,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 PY=${PYTHON:-python3}
 QT_VERSION=${QT_VERSION:-6.8.3}
-ORT_VERSION=${ORT_VERSION:-1.22.0}
+ORT_VERSION=${ORT_VERSION:-1.24.4}   # 1.2.6: as Windows and CI; pinned in tools/fetch_onnxruntime.sh
 CV_VERSION=${CV_VERSION:-4.10.0}
 DEPS=tmp/native_deps
 BUILD=build/native_app
@@ -32,6 +32,10 @@ mkdir -p "$DEPS"
 
 say() { printf '\n== %s\n' "$*"; }
 fail() { printf 'FAILED: %s\n' "$*" >&2; exit 1; }
+# --retry-all-errors needs curl 7.71; RHEL / Alma 8 have 7.61, which stops on the unknown option
+# with exit 2 (1.2.6: the Linux release job in almalinux:8).
+CURL_RETRY=(--retry 5)
+case "$(curl --help all 2>/dev/null)" in *--retry-all-errors*) CURL_RETRY+=(--retry-all-errors) ;; esac
 
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) OS=mac; QT_HOST=mac; QT_ARCH=clang_64; QT_DIR=macos; ORT_ARCHIVE=onnxruntime-osx-arm64-$ORT_VERSION ;;
@@ -60,10 +64,9 @@ if [ -z "${SKIP_BUILD:-}" ]; then
   # -------------------------------------------------------------------------
   if [ ! -f "$ORT_ROOT/include/onnxruntime_cxx_api.h" ]; then
     say "ONNX Runtime $ORT_VERSION"
-    curl -fL --retry 5 --retry-all-errors -o "$DEPS/$ORT_ARCHIVE.tgz" \
-      "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/$ORT_ARCHIVE.tgz"
-    tar -xzf "$DEPS/$ORT_ARCHIVE.tgz" -C "$DEPS"
-    rm -f "$DEPS/$ORT_ARCHIVE.tgz"
+    # 1.2.6: from NuGet, checked by its SHA-256; github.com/microsoft/onnxruntime is gone (17-18 Nov 2026).
+    case "$OS" in mac) ORT_PLATFORM=osx-arm64 ;; *) ORT_PLATFORM=linux-x64 ;; esac
+    bash tools/fetch_onnxruntime.sh "$ORT_VERSION" "$ORT_PLATFORM" "$ORT_ROOT" || fail "ONNX Runtime"
   fi
 
   # -------------------------------------------------------------------------

@@ -15,6 +15,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPalette>
 #include <QPixmap>
 #include <QMessageBox>
@@ -232,6 +233,8 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         {"repo", "RUDRA repository (rudra/genfill)", true, st.value("genfill/repo").toString()},
         {"base", "Wan2.1-VACE-1.3B-diffusers folder", true, st.value("genfill/base").toString()},
         {"lora", "RUDRA LoRA (rudra_genfill.safetensors)", false, st.value("genfill/lora").toString()},
+        // 1.2.6 (checklist item 7): Suggest a prompt's Florence-2, from a folder (optional).
+        {"florence", "Florence-2 folder (Suggest a prompt, optional)", true, st.value("genfill/florence").toString()},
     };
     int r = 0;
     for (const Row& row : rows) {
@@ -254,6 +257,68 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         ++r;
     }
     v->addLayout(grid);
+    // 1.2.6: Florence-2 from the internet, here where its folder is: the app's own model download
+    // (Hugging Face at the pinned revision, every file checked), into the models folder; the
+    // AI fill uses it from then on (genfill/florence). Shown while no Florence-2 is found.
+    if (auto* mw = dynamic_cast<MainWindow*>(parent)) {
+        auto* get_florence = new QPushButton(QStringLiteral("Download Florence-2 (MIT, 0.5 GB)"), this);
+        get_florence->setObjectName("genfillGetFlorence");
+        get_florence->setToolTip(QStringLiteral("Suggest a prompt describes the shot with Florence-2. Downloads it from "
+                                                "Hugging Face (florence-community/Florence-2-base, pinned) and checks "
+                                                "every file's SHA-256"));
+        QString w;
+        const auto s = genfill_setup(&w);
+        GenFillSetup probe = s ? *s : GenFillSetup{};
+        if (!s) probe.base = to_path(QSettings().value("genfill/base").toString());
+        get_florence->setVisible(genfill_florence_dir(probe).empty());
+        v->addWidget(get_florence, 0, Qt::AlignLeft);
+        QPointer<QPushButton> btn(get_florence);
+        connect(get_florence, &QPushButton::clicked, this, [this, mw, btn] {
+            ModelDownloads* md = mw->model_downloads();
+            md->ensure_builtin();
+            // The list's Florence-2 by kind: a published entry may have another id (code review, 19 Nov).
+            QString id = QString::fromLatin1(kFlorenceModelId), folder;
+            for (const RemoteModel& m : md->models())
+                if (m.kind == QLatin1String("florence")) {
+                    id = m.id;
+                    folder = QDir(md->root()).filePath(m.folder);
+                    break;
+                }
+            QPointer<QLabel> st(findChild<QLabel*>("genfillSetupStatus"));
+            // Listening and disabled before the download starts: a failure (or a model already in
+            // place) is reported inside download() itself.
+            if (btn) btn->setEnabled(false);
+            // This click's download only: once it is in (or has failed) the listener does nothing more,
+            // so a folder saved later is never written over by later notifications (review, 19 Nov).
+            auto settled = std::make_shared<bool>(false);
+            md->listen(this, [this, md, st, btn, id, folder, settled] {
+                if (*settled) return;
+                if (md->active() == id) {
+                    if (st) st->setText(QStringLiteral("Downloading Florence-2… %1 of %2")
+                                            .arg(human_size(md->done_bytes()), human_size(md->total_bytes())));
+                } else if (md->state(id) == InstallState::Installed) {
+                    *settled = true;
+                    if (st) st->setText(QStringLiteral("Florence-2 is downloaded and checked: Suggest a prompt uses it."));
+                    if (btn) btn->setVisible(false);
+                    // The download's folder itself: the setting may be saved only after this call.
+                    if (auto* le = findChild<QLineEdit*>(QStringLiteral("genfillSetup_florence")); le && le->text().trimmed().isEmpty())
+                        le->setText(QDir::toNativeSeparators(folder));
+                    QSettings().setValue("genfill/florence", folder);
+                    refresh_found();
+                } else if (!md->error(id).isEmpty()) {
+                    *settled = true;   // a new click listens again
+                    if (st) st->setText(QStringLiteral("Florence-2 was not downloaded: ") + md->error(id));
+                    if (btn) btn->setEnabled(true);
+                }
+            });
+            QString why;
+            if (!md->download(id, &why)) {
+                *settled = true;
+                if (st) st->setText(QStringLiteral("Florence-2: ") + why);
+                if (btn) btn->setEnabled(true);
+            }
+        });
+    }
     auto* status = new QLabel(found ? genfill_ready_text(*found) : why, this);
     status->setObjectName("genfillSetupStatus");
     status->setWordWrap(true);
@@ -294,6 +359,9 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
     auto* automatic = box->addButton("Set up automatically…", QDialogButtonBox::ActionRole);
     automatic->setObjectName("genfillSetupAuto");
     connect(automatic, &QPushButton::clicked, this, [this, status, log_view, busy, automatic] {
+        // 1.2.6 (checklist item 7): set by "Install from a folder or zip…": --from / --florence-from.
+        const QStringList offline = automatic->property("offlineArgs").toStringList();
+        automatic->setProperty("offlineArgs", QVariant());
         GenFillInstall plan = genfill_install_plan();
         if (const QString b = findChild<QLineEdit*>("genfillSetup_base")->text().trimmed(); !b.isEmpty()) plan.base = to_path(b);
         if (const QString p = findChild<QLineEdit*>("genfillSetup_python")->text().trimmed(); !p.isEmpty()) plan.python = to_path(p);
@@ -310,19 +378,32 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
                                 .arg(from_path(plan.python)));
             return;
         }
+        if (!offline.isEmpty() && bootstrap) {
+            status->setText("AI fill setup: set up the Python first (Set up automatically…, or set the Python above); "
+                            "then install the models from the folder or zip.");
+            return;
+        }
         const bool have_model = QFileInfo::exists(from_path(plan.base / "transformer" / "config.json"));
-        const QString what = bootstrap
+        const QString what = !offline.isEmpty()
+            ? QStringLiteral("This installs %1 from\n%2\n\nwith no download. Every file is checked against the model "
+                             "manifest (its SHA-256) before it is moved into place; a model already there is kept beside it.")
+                  .arg(offline.first() == QLatin1String("--from") ? QStringLiteral("Wan2.1-VACE-1.3B") : QStringLiteral("Florence-2"),
+                       QDir::toNativeSeparators(offline.value(1)))
+            : bootstrap
             ? QStringLiteral("This computer has no Python for the AI fill. This installs one for RUDRA only, in\n%1\n\n"
                              "Python 3.12, PyTorch and the fill's packages (about 5 GB), then %2\n\n"
                              "Nothing else on this computer changes. It needs a 16 GB GPU (NVIDIA, or Apple silicon). "
                              "A step that stops resumes when you run this again.")
                   .arg(from_path(genfill_bootstrap_root()),
-                       have_model ? QStringLiteral("checks the base model already at\n%1").arg(from_path(plan.base))
-                                  : QStringLiteral("downloads Wan2.1-VACE-1.3B (Apache 2.0, about 25 GB) into\n%1").arg(from_path(plan.base)))
+                       (have_model ? QStringLiteral("checks the base model already at\n%1").arg(from_path(plan.base))
+                                   : QStringLiteral("downloads Wan2.1-VACE-1.3B (Apache 2.0, about 18 GB) into\n%1").arg(from_path(plan.base))) +
+                           QStringLiteral("\n\nand Florence-2 (MIT, about 0.5 GB) for Suggest a prompt."))
             : have_model
-            ? QStringLiteral("The base model is already at\n%1\n\nThis installs the missing Python packages into\n%2")
+            ? QStringLiteral("The base model is already at\n%1\n\nThis installs the missing Python packages into\n%2\n\n"
+                             "and Florence-2 (MIT, about 0.5 GB) for Suggest a prompt, if it is not there yet.")
                   .arg(from_path(plan.base), from_path(plan.python))
-            : QStringLiteral("This downloads Wan2.1-VACE-1.3B (Apache 2.0, about 25 GB) into\n%1\n\n"
+            : QStringLiteral("This downloads Wan2.1-VACE-1.3B (Apache 2.0, about 18 GB) and Florence-2 (MIT, about 0.5 GB, "
+                             "for Suggest a prompt) into\n%1\n\n"
                              "and installs the Python packages the fill needs into\n%2\n\n"
                              "It needs a 16 GB GPU. A download that stops resumes when you run this again.")
                   .arg(from_path(plan.base), from_path(plan.python));
@@ -342,7 +423,9 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
 #endif
         } else {
             proc->setProgram(from_path(plan.python));
-            proc->setArguments({"-m", "rudra.genfill.setup", "--base", from_path(plan.base), "--json"});
+            // 1.2.6: Florence-2 (MIT, about 0.5 GB, Suggest a prompt) comes with the setup, pinned and checked.
+            proc->setArguments(QStringList{"-m", "rudra.genfill.setup", "--base", from_path(plan.base), "--json"} +
+                               (offline.isEmpty() ? QStringList{"--florence"} : offline));
         }
         auto env = QProcessEnvironment::systemEnvironment();
         env.insert("PYTHONUNBUFFERED", "1");
@@ -374,6 +457,8 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
                                                   .arg(o.value("free_gb").toDouble(), 0, 'f', 0)
                                                   .arg(o.value("model").toBool() ? "found" : "to download"));
                 else if (ev == "done" && !o.value("ok").toBool()) status->setText("AI fill setup: " + o.value("error").toString());
+                else if (ev == "done" && !o.value("florence_warning").toString().isEmpty())
+                    log_view->appendPlainText(o.value("florence_warning").toString());
                 else if (!line.isEmpty()) log_view->appendPlainText(o.isEmpty() ? QString::fromUtf8(line) : o.value("text").toString());
             }
         });
@@ -406,6 +491,27 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         });
         proc->start();
     });
+    // 1.2.6 (readiness report, checklist item 7): a facility with no internet installs the models
+    // from a folder or zip it was given; rudra.genfill.setup checks every file against
+    // rudra/genfill/model_manifest.json (the pinned revision's SHA-256) before it is used.
+    auto* from = box->addButton("Install from a folder or zip…", QDialogButtonBox::ActionRole);
+    from->setObjectName("genfillSetupFrom");
+    from->setToolTip("No internet: install Wan2.1-VACE or Florence-2 from a folder or zip, checked by SHA-256");
+    auto* from_menu = new QMenu(from);
+    for (const auto& [label, flag, zip] : std::vector<std::tuple<QString, QString, bool>>{
+             {"Wan2.1-VACE-1.3B from a zip…", "--from", true},
+             {"Wan2.1-VACE-1.3B from a folder…", "--from", false},
+             {"Florence-2 from a zip…", "--florence-from", true},
+             {"Florence-2 from a folder…", "--florence-from", false}}) {
+        connect(from_menu->addAction(label), &QAction::triggered, this, [this, automatic, flag, zip] {
+            const QString p = zip ? QFileDialog::getOpenFileName(this, {}, {}, QStringLiteral("Zip (*.zip)"))
+                                  : QFileDialog::getExistingDirectory(this);
+            if (p.isEmpty()) return;
+            automatic->setProperty("offlineArgs", QStringList{flag, p});
+            automatic->click();
+        });
+    }
+    from->setMenu(from_menu);
     // 7 Nov 2026: the LoRA is File > Model packages > AI fill v3; this opens it (the dialog closes first,
     // it is modal) when it is the only part missing.
     auto* get_lora = box->addButton("Download AI fill v3…", QDialogButtonBox::ActionRole);
@@ -420,7 +526,7 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
     auto* check = box->addButton("Save and check", QDialogButtonBox::ApplyRole);
     connect(check, &QPushButton::clicked, this, [this, status] {
         QSettings s;
-        for (const char* k : {"python", "repo", "base", "lora"}) {
+        for (const char* k : {"python", "repo", "base", "lora", "florence"}) {
             const QString t = findChild<QLineEdit*>(QStringLiteral("genfillSetup_") + k)->text().trimmed();
             if (t.isEmpty()) s.remove(QStringLiteral("genfill/") + k);
             else s.setValue(QStringLiteral("genfill/") + k, t);
@@ -441,10 +547,12 @@ void GenFillSetupDialog::refresh_found() {
     QString why;
     const auto found = genfill_setup(&why);
     const GenFillInstall plan = genfill_install_plan();
-    for (const char* key : {"python", "repo", "base", "lora"}) {
+    for (const char* key : {"python", "repo", "base", "lora", "florence"}) {
         const std::string k = key;
         QString auto_path;
-        if (found)
+        if (k == "florence") {
+            if (found) auto_path = from_path(genfill_florence_dir(GenFillSetup{found->python, found->repo, found->base, {}}));
+        } else if (found)
             auto_path = from_path(k == "python" ? found->python : k == "repo" ? found->repo : k == "base" ? found->base : found->lora);
         else if (k == "python" && !plan.python.empty() && QFileInfo::exists(from_path(plan.python)))
             auto_path = from_path(plan.python);

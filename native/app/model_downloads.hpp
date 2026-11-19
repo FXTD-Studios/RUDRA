@@ -64,6 +64,13 @@ QString default_model_index_url();   // QSettings models/indexUrl, else https://
 QString published_model_index_url();             // the compiled-in address, whatever the setting says
 bool is_known_model_file(const QString& sha256);
 std::vector<RemoteModel> known_models(std::vector<RemoteModel> all, int* left_out = nullptr);
+// 1.2.6: models this RUDRA can download whether or not the published list names them yet, each from
+// its own Hugging Face repo at a pinned revision, every file's SHA-256 compiled in above: Florence-2
+// base (kind "florence", Suggest a prompt). Added to a list read from the published address when
+// it has no model of that kind; ensure_builtin() adds them without a list (AI fill setup's button).
+std::vector<RemoteModel> builtin_models();
+void add_missing_builtins(std::vector<RemoteModel>& models);
+inline constexpr const char* kFlorenceModelId = "florence2_base";
 QString default_download_root();     // QSettings models/downloadRoot, else <AppLocalData>/models
 
 // "12.4 MB", "2.1 GB".
@@ -86,6 +93,7 @@ public:
     QString index_status() const { return index_status_; }   // "" while fetching or when fine
     bool fetching() const { return index_reply_ != nullptr; }
     void set_models(std::vector<RemoteModel> m);              // tests
+    void ensure_builtin();                                    // the built-in models, list or not (1.2.6)
 
     QString root() const { return root_; }
     void set_root(const QString& root);                       // remembered (models/downloadRoot)

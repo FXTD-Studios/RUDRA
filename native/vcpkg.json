@@ -4,7 +4,8 @@
   "version-semver": "0.1.0",
   "description": "RUDRA native app: layered C++20 core, QRhi viewer, LibTorch and ONNX Runtime inference",
   "dependencies": [
-    "nlohmann-json"
+    "nlohmann-json",
+    "zlib"
   ],
   "features": {
     "tests": {

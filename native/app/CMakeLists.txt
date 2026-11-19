@@ -7,7 +7,7 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets Network)
 qt_standard_project_setup()
 
 # The window and the look as a library: RUDRA and the app's Qt tests link it.
-add_library(rudra_app_ui STATIC getting_started.cpp getting_started.hpp main_window.cpp main_window.hpp layout.cpp title_bar.cpp viewer_toolbar.cpp flow_layout.cpp flow_layout.hpp widgets.cpp widgets.hpp source_panel.cpp source_panel.hpp scope_widgets.cpp scope_widgets.hpp region_editor.cpp region_editor.hpp model_dialogs.cpp model_dialogs.hpp export_sheet.cpp export_sheet.hpp video_queues.cpp video_queues.hpp queue_window.cpp queue_window.hpp workflow_check.cpp workflow_check.hpp headroom_check.cpp headroom_check.hpp theme.cpp theme.hpp startup.cpp startup.hpp updates.cpp updates.hpp playback.cpp playback.hpp aces_master.cpp aces_master.hpp aces_engine.cpp aces_engine.hpp deliver_choice.cpp deliver_choice.hpp deliver_tab.cpp genfill_job.cpp genfill_swap.cpp genfill_job.hpp genfill_review.cpp genfill_review.hpp genfill_preview.cpp genfill_preview.hpp ai_prompt_bar.cpp batch_queue.cpp batch_queue.hpp batch_window.cpp batch_window.hpp batch_tab.cpp colorist_tab.cpp export_tab.cpp project_tab.cpp headroom_tab.cpp edl.cpp edl.hpp json_lines.hpp paths.hpp splash.cpp splash.hpp simple_ui.cpp coach_marks.cpp coach_marks.hpp model_downloads.cpp model_downloads.hpp about_models.cpp system_check.cpp system_check.hpp colour_view.cpp)
+add_library(rudra_app_ui STATIC getting_started.cpp getting_started.hpp main_window.cpp main_window.hpp layout.cpp title_bar.cpp viewer_toolbar.cpp flow_layout.cpp flow_layout.hpp widgets.cpp widgets.hpp source_panel.cpp source_panel.hpp scope_widgets.cpp scope_widgets.hpp region_editor.cpp region_editor.hpp model_dialogs.cpp model_dialogs.hpp export_sheet.cpp export_sheet.hpp video_queues.cpp video_queues.hpp queue_window.cpp queue_window.hpp workflow_check.cpp workflow_check.hpp headroom_check.cpp headroom_check.hpp theme.cpp theme.hpp startup.cpp startup.hpp updates.cpp updates.hpp playback.cpp playback.hpp aces_master.cpp aces_master.hpp aces_engine.cpp aces_engine.hpp deliver_choice.cpp deliver_choice.hpp deliver_tab.cpp genfill_job.cpp genfill_swap.cpp genfill_job.hpp genfill_review.cpp genfill_review.hpp genfill_preview.cpp genfill_preview.hpp ai_prompt_bar.cpp batch_queue.cpp batch_queue.hpp batch_window.cpp batch_window.hpp batch_tab.cpp colorist_tab.cpp export_tab.cpp project_tab.cpp headroom_tab.cpp edl.cpp edl.hpp json_lines.hpp paths.hpp splash.cpp splash.hpp simple_ui.cpp coach_marks.cpp coach_marks.hpp model_downloads.cpp model_downloads.hpp about_models.cpp system_check.cpp system_check.hpp colour_view.cpp media_library.cpp media_library.hpp media_scan.cpp media_scan.hpp qc_report.cpp qc_report.hpp)
 target_include_directories(rudra_app_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(rudra_app_ui PUBLIC Qt6::Widgets Qt6::Network rudra::rudra_engine rudra::rudra_infer rudra::rudra_video
                       PRIVATE nlohmann_json::nlohmann_json)
@@ -20,6 +20,9 @@ if(WIN32)
   target_link_libraries(rudra_app_ui PUBLIC dwmapi)   # title_bar.cpp: the dark window frame
 endif()
 rudra_warnings(rudra_app_ui)
+if(MSVC)   # 1.2.6: main_window.cpp is near MSVC's default section limit too (C1128)
+  target_compile_options(rudra_app_ui PRIVATE /bigobj)
+endif()
 
 # The look (Phase 3 step 1): Plex (OFL) and the sheet generated from
 # ui/theme.css by the rudra_theme target (cmake/RudraTheme.cmake).
@@ -29,6 +32,10 @@ set_source_files_properties("${RUDRA_THEME_DIR}/studio.qss" "${RUDRA_THEME_DIR}/
 set_source_files_properties("${RUDRA_THEME_DIR}/studio.qss" PROPERTIES QT_RESOURCE_ALIAS studio.qss)
 set_source_files_properties("${RUDRA_THEME_DIR}/tokens.txt" PROPERTIES QT_RESOURCE_ALIAS tokens.txt)
 qt_add_resources(rudra_app_ui theme PREFIX /theme FILES "${RUDRA_THEME_DIR}/studio.qss" "${RUDRA_THEME_DIR}/tokens.txt")
+# 18 Nov 2026 (1.2.6): the drop-down arrow the sheet draws on every QComboBox (studio.qss.in).
+qt_add_resources(rudra_app_ui chrome PREFIX /chrome BASE "${CMAKE_CURRENT_SOURCE_DIR}/theme"
+                 FILES "${CMAKE_CURRENT_SOURCE_DIR}/theme/combo-arrow.png" "${CMAKE_CURRENT_SOURCE_DIR}/theme/combo-arrow@2x.png"
+                       "${CMAKE_CURRENT_SOURCE_DIR}/theme/qc_report.css")
 file(GLOB rudra_fonts CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/fonts/*.ttf")
 qt_add_resources(rudra_app_ui fonts PREFIX / FILES ${rudra_fonts} BASE "${CMAKE_CURRENT_SOURCE_DIR}")
 # The mark: the app icon of the 13 Nov 2026 brand (ui/assets/brand/png), the same as the exe and the Dock.
@@ -78,6 +85,10 @@ if(RUDRA_BUILD_TESTS)
                              $<TARGET_PROPERTY:GTest::gtest,INTERFACE_INCLUDE_DIRECTORIES>)
   target_compile_definitions(rudra_app_tests PRIVATE RUDRA_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/tests/golden")
   rudra_warnings(rudra_app_tests)
+  # 1.2.6: test_app.cpp has grown past MSVC's default section limit (C1128); /bigobj lifts it.
+  if(MSVC)
+    target_compile_options(rudra_app_tests PRIVATE /bigobj)
+  endif()
   rudra_stage_onnxruntime(rudra_app_tests)
   include(GoogleTest)
   gtest_discover_tests(rudra_app_tests TEST_PREFIX "app." PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"

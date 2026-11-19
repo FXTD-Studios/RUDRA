@@ -14,7 +14,18 @@ instant), and SUGGESTS one by looking at the shot's fully clipped areas, with no
 A suggestion is a starting point the artist can edit; every one says why it was picked. Nothing
 here changes the fill: it only fills the prompt boxes.
 
+1.2.6 (18 Nov 2026, user feedback: "the prompt suggestion should be related to the shot"): with
+`--describe auto` (the app's Suggest button) a small captioning model, Florence-2 base
+(florence-community/Florence-2-base, about 0.5 GB, transformers' own Florence2ForConditionalGeneration),
+describes the frame and a crop round its brightest area. `shot_prompt` turns the two captions into
+a short prompt about the bright area only (what it is, how it looks, what it is seen through, what
+lies beyond): "bright hazy sky, soft even white light, seen through an open doorway, over the sea".
+People and objects in the captions are left out, so the fill is never asked to draw them. It is the
+first suggestion ("From this shot"); without the model (not installed, no network the first time)
+the presets are suggested as before and the reason says why.
+
     python -m rudra.genfill.prompts suggest <image|EXR> [more frames] [--tau-high 250] [--tau-low -1] [--cache DIR] [--json]
+                                            [--describe off|auto] [--describe-model florence-community/Florence-2-base]
     python -m rudra.genfill.prompts list [--cache DIR] [--json]
     python -m rudra.genfill.prompts precache --base <Wan2.1-VACE-1.3B-diffusers> --cache <LoRA folder>/prompt_cache
 
@@ -189,6 +200,141 @@ def suggest(frames: list[np.ndarray], tau_high: int = 250, tau_low: int = -1) ->
             "suggestions": [{**asdict(BY_ID[pid]), "score": v["score"] / n, "reason": v["why"]} for pid, v in ranked]}
 
 
+# ------------------------------------------------------------------ the shot, in words (1.2.6)
+DESCRIBE_MODEL = "florence-community/Florence-2-base"
+
+# What a caption may say about the bright area, in the order they are tried: (words, subject, preset).
+_SUBJECTS: tuple[tuple[tuple[str, ...], str, str], ...] = (
+    (("fire", "flame", "flames", "candle", "bonfire", "fireplace", "burning"), "flame core, bright yellow center with an orange glow", "flame"),
+    (("sunset", "sunrise", "dusk", "golden hour", "orange sky", "pink sky"), "glowing sunset sky, warm orange to pink gradient", "sky_sunset"),
+    (("blue sky", "clear sky", "clear blue", "sunny", "sunshine"), "clear blue sky, smooth gradient toward the horizon", "sky_blue"),
+    (("sun", "sunlight"), "warm sun disc with a soft halo and a smooth glow", "sun_disc"),
+    (("lamp", "light bulb", "bulb", "chandelier", "lantern", "neon", "headlight", "spotlight", "street light", "streetlight"),
+     "practical lamp, bright core with a soft falloff", "light_source"),
+    (("snow", "snowy", "ice"), "bright snow, soft white texture", "sky_overcast"),
+    (("sky", "clouds", "cloud", "cloudy", "overcast", "horizon", "haze", "hazy", "fog", "foggy", "mist", "misty"),
+     "bright sky", "sky_overcast"),
+    (("window",), "window daylight, soft bright exterior", "window_daylight"),
+)
+_LOOKS = (("hazy", "hazy"), ("haze", "hazy"), ("fog", "foggy"), ("foggy", "foggy"), ("mist", "misty"), ("misty", "misty"),
+          ("overcast", "overcast"), ("cloudy", "cloudy"))
+_THROUGH = (("doorway", "an open doorway"), ("cargo door", "an open cargo door"), ("door", "an open doorway"),
+            ("hatch", "an open hatch"), ("window", "a window"), ("tunnel", "the end of a tunnel"),
+            ("garage", "an open garage door"), ("archway", "an archway"), ("arch", "an archway"), ("ramp", "an open ramp"))
+_BEYOND = (("ocean", "the ocean"), ("sea", "the sea"), ("beach", "a beach"), ("lake", "a lake"), ("river", "a river"),
+           ("water", "water"), ("mountain", "mountains"), ("hills", "hills"), ("desert", "a desert"), ("city", "a city"),
+           ("buildings", "buildings"), ("trees", "trees"), ("forest", "a forest"), ("field", "fields"), ("runway", "a runway"))
+
+
+def _has(text: str, word: str) -> bool:
+    """`word` (or its plural) as a word of `text`."""
+    import re
+    return re.search(r"(?<![a-z])" + re.escape(word.strip()) + r"(?:s|es)?(?![a-z])", text) is not None
+
+
+def shot_prompt(scene: str, area: str, fallback: str = "sky_overcast") -> tuple[str, str]:
+    """(prompt, preset id it is closest to) from a caption of the frame and one of a crop round its
+    brightest area. Only what the bright area is, how it looks, what it is seen through and what lies
+    beyond it: never the people or things in front of it."""
+    a, sc = (area or "").lower(), (scene or "").lower()
+    both = a + " " + sc
+    subject, pid = None, fallback
+    for words, subj, preset in _SUBJECTS:          # the crop first: it is the bright area itself
+        if any(_has(a, w) for w in words):
+            subject, pid = subj, preset
+            break
+    if subject is None:
+        for words, subj, preset in _SUBJECTS:
+            if any(_has(sc, w) for w in words):
+                subject, pid = subj, preset
+                break
+    if subject is None:
+        subject = BY_ID[fallback].text.split(",")[0]
+    clouds = _has(both, "clouds") or _has(both, "cloud")
+    if pid == "sky_overcast" and subject == "bright sky":
+        looks = []
+        for w, look in _LOOKS:
+            if _has(both, w) and look not in looks:
+                looks.append(look)
+        subject = "bright " + " ".join(looks[:2] + ["sky"]) + ", soft even white light" + (", subtle cloud texture" if clouds else "")
+    elif pid == "sky_blue" and clouds:
+        subject += ", soft high clouds"
+    parts = [subject]
+    if pid not in ("window_daylight", "light_source", "flame"):
+        for w, phrase in _THROUGH:
+            if _has(both, w):
+                parts.append("seen through " + phrase)
+                break
+    for w, phrase in _BEYOND:
+        if _has(both, w) and pid not in ("light_source", "flame", "sun_disc"):
+            if pid == "window_daylight":
+                parts.append(phrase + " outside")
+            else:
+                parts.append(("over " if phrase in ("the sea", "the ocean", "water", "a lake", "a river") else "above ") + phrase)
+            break
+    return ", ".join(parts), pid
+
+
+class Describer:
+    """Florence-2 captions of a frame (RGB uint8). Loads once; raises if transformers or the model
+    cannot be had (the caller falls back to the presets)."""
+
+    def __init__(self, model_id: str = DESCRIBE_MODEL, device: str = "auto"):
+        import torch
+        from transformers import AutoProcessor, Florence2ForConditionalGeneration
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = device
+        self.dtype = torch.float16 if device == "cuda" else torch.float32
+        # 1.2.6 (checklist item 7): a folder (setup.py --florence / --florence-from) loads from
+        # that folder only, never the network; the app also runs this with HF_HUB_OFFLINE=1.
+        local = {"local_files_only": True} if Path(model_id).is_dir() else {}
+        self.model = Florence2ForConditionalGeneration.from_pretrained(model_id, dtype=self.dtype, **local).to(device).eval()
+        self.processor = AutoProcessor.from_pretrained(model_id, **local)
+
+    def caption(self, rgb: np.ndarray, task: str = "<DETAILED_CAPTION>") -> str:
+        import torch
+        from PIL import Image
+        img = Image.fromarray(rgb)
+        inputs = self.processor(text=task, images=img, return_tensors="pt").to(self.device, self.dtype)
+        with torch.inference_mode():
+            ids = self.model.generate(**inputs, max_new_tokens=96, num_beams=3)
+        text = self.processor.batch_decode(ids, skip_special_tokens=False)[0]
+        out = self.processor.post_process_generation(text, task=task, image_size=img.size)
+        return str(out.get(task, "") if isinstance(out, dict) else out).strip()
+
+
+def bright_crop(codes: np.ndarray, tau: int = 240, grow: float = 0.5) -> np.ndarray | None:
+    """The frame round its largest bright area (max code >= tau), grown by `grow` of its size each side."""
+    import cv2
+    mask = (codes.max(-1) >= tau).astype(np.uint8)
+    n, _, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    if n <= 1:
+        return None
+    i = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    x, y, w, h = (int(v) for v in stats[i, :4])
+    H, W = codes.shape[:2]
+    x0, y0 = max(0, int(x - grow * w)), max(0, int(y - grow * h))
+    x1, y1 = min(W, int(x + w + grow * w)), min(H, int(y + h + grow * h))
+    if (x1 - x0) * (y1 - y0) < 32 * 32:
+        return None
+    return codes[y0:y1, x0:x1]
+
+
+def describe_suggestion(codes: np.ndarray, model_id: str = DESCRIBE_MODEL, describer=None,
+                        fallback: str = "sky_overcast") -> dict:
+    """The "From this shot" suggestion for one frame, or raises (no model). `fallback`: the preset
+    the rules picked, used when the captions name no bright subject."""
+    d = describer or Describer(model_id)
+    scene = d.caption(codes)
+    crop = bright_crop(codes)
+    area = d.caption(crop) if crop is not None else ""
+    text, pid = shot_prompt(scene, area, fallback)
+    return {"id": "shot", "label": "From this shot", "text": text, "region": "highlight", "score": 1e6,
+            "reason": f"Florence-2: the frame \"{scene}\"" + (f"; its bright area \"{area}\"" if area else ""),
+            "like": pid}
+
+
 # ------------------------------------------------------------------ cli
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -199,6 +345,9 @@ def main(argv=None) -> int:
     s.add_argument("--tau-low", type=int, default=-1)
     s.add_argument("--cache", default="")
     s.add_argument("--json", action="store_true")
+    s.add_argument("--describe", default="off", choices=("off", "auto"),
+                   help="auto: Florence-2 describes the shot and a prompt is made from it (1.2.6)")
+    s.add_argument("--describe-model", default=DESCRIBE_MODEL)
     li = sub.add_parser("list")
     li.add_argument("--cache", default="")
     li.add_argument("--json", action="store_true")
@@ -225,6 +374,13 @@ def main(argv=None) -> int:
     except Exception as e:                                              # noqa: BLE001
         print(json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"}) if a.json else f"error: {e}")
         return 2
+    if a.describe == "auto":
+        try:
+            top_id = res["suggestions"][0]["id"] if res["suggestions"] else "sky_overcast"
+            res["suggestions"].insert(0, describe_suggestion(codes_of(a.frames[len(a.frames) // 2]), a.describe_model,
+                                                             fallback=top_id if top_id in BY_ID else "sky_overcast"))
+        except Exception as e:                                          # noqa: BLE001
+            res["describe_error"] = f"{type(e).__name__}: {e}"[:300]
     for sgg in res["suggestions"]:
         sgg["cached"] = cached(sgg["text"], a.cache)
     res.update(ok=True, presets=presets)

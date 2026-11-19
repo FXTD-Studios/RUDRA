@@ -215,6 +215,107 @@ TEST(Exr, AcesFloatMastersRetainRangeAndPrecision) {
     }
 }
 
+// 1.2.6 (readiness report, checklist item 3): SMPTE ST 2065-4 is half float only. A float32 AP0
+// master is labelled, not flagged as the container; a half one keeps the flag.
+TEST(Exr, OnlyAHalfAp0FileIsFlaggedAsTheAcesContainer) {
+    const PlanarBuffer img(3, 2, 2, 0.5f);
+    auto has = [](const fs::path& p, const std::string& name) {
+        auto r = read_exr(p);
+        if (!r) return false;
+        for (const auto& [k, v] : r->attributes)
+            if (k == name) return true;
+        return false;
+    };
+    auto value = [](const fs::path& p, const std::string& name) {
+        auto r = read_exr(p);
+        for (const auto& [k, v] : r->attributes)
+            if (k == name) return std::string(v.begin(), v.end());
+        return std::string();
+    };
+    const auto f = scratch("ap0_float_flag.exr"), h = scratch("ap0_half_flag.exr"), cg = scratch("ap1_half_flag.exr");
+    ASSERT_TRUE(write_aces_exr(f, img, Primaries::Ap0, 1.0, {}, false));
+    ASSERT_TRUE(write_aces_exr(h, img, Primaries::Ap0, 1.0, {}, true));
+    ASSERT_TRUE(write_acescg_exr(cg, img, Primaries::Ap1, 1.0, {}, true));
+    EXPECT_FALSE(has(f, "acesImageContainerFlag"));
+    EXPECT_NE(value(f, "rudra:container").find("not the SMPTE ST 2065-4 container"), std::string::npos);
+    EXPECT_TRUE(has(h, "acesImageContainerFlag"));
+    EXPECT_FALSE(has(h, "rudra:container"));
+    EXPECT_FALSE(has(cg, "acesImageContainerFlag"));
+}
+
+// 1.2.6 (readiness report, checklist item 8): lossless ZIP for ACEScg and linear; never AP0.
+TEST(Exr, ZipMastersAreLosslessAndTheAcesContainerStaysUncompressed) {
+    if (!exr_zip_available()) GTEST_SKIP() << "this build has no zlib";
+    // 37 rows: two whole blocks of 16 and a short one; a ramp that zips, a mask, an alpha.
+    PlanarBuffer img(3, 37, 53), mask(1, 37, 53), alpha(1, 37, 53);
+    for (int y = 0; y < 37; ++y)
+        for (int x = 0; x < 53; ++x) {
+            for (int c = 0; c < 3; ++c) img.at(c, y, x) = 0.01f * float(x + y * (c + 1)) - 0.05f;   // signed, as masters are
+            mask.at(0, y, x) = (x > 30) ? 1.0f : 0.0f;
+            alpha.at(0, y, x) = 1.0f;
+        }
+    auto compression_of = [](const fs::path& p) {
+        auto r = read_exr(p);
+        for (const auto& [k, v] : r->attributes)
+            if (k == "compression") return int(v.at(0));
+        return -1;
+    };
+    for (bool half : {false, true}) {
+        const auto plain = scratch(half ? "cg_plain_h.exr" : "cg_plain_f.exr"), zip = scratch(half ? "cg_zip_h.exr" : "cg_zip_f.exr");
+        ASSERT_TRUE(write_acescg_exr(plain, img, Primaries::Ap1, 1.0, {}, half, &mask, {}, &alpha));
+        ASSERT_TRUE(write_acescg_exr(zip, img, Primaries::Ap1, 1.0, {}, half, &mask, {}, &alpha, ExrCompression::Zip));
+        EXPECT_EQ(compression_of(plain), 0);
+        EXPECT_EQ(compression_of(zip), 3);
+        EXPECT_LT(fs::file_size(zip), fs::file_size(plain));
+        const auto a = read_exr(plain), b = read_exr(zip);
+        ASSERT_TRUE(a && b);
+        ASSERT_EQ(a->pixels.span().size(), b->pixels.span().size());
+        EXPECT_EQ(std::memcmp(a->pixels.span().data(), b->pixels.span().data(), a->pixels.span().size_bytes()), 0);
+        ASSERT_TRUE(a->reconstruction_mask && b->reconstruction_mask);
+        EXPECT_EQ(std::memcmp(a->reconstruction_mask->span().data(), b->reconstruction_mask->span().data(),
+                              a->reconstruction_mask->span().size_bytes()), 0);
+        EXPECT_EQ(a->half_bits, b->half_bits);
+    }
+    // The linear containers too.
+    const auto lin = scratch("lin2020_zip.exr");
+    ASSERT_TRUE(write_exr(lin, img, false, kRec2020Chromaticities, {}, nullptr, {}, ExrCompression::Zip));
+    EXPECT_EQ(compression_of(lin), 3);
+    EXPECT_EQ(read_exr(lin)->pixels.at(2, 36, 52), img.at(2, 36, 52));
+    // write_aces_exr has no compression to choose, the AP0 container is uncompressed.
+    const auto ap0 = scratch("ap0_never_zip.exr");
+    ASSERT_TRUE(write_aces_exr(ap0, img, Primaries::Ap1, 1.0, {}, true));
+    EXPECT_EQ(compression_of(ap0), 0);
+    // A corrupted block is refused, not read as pixels.
+    auto bytes = exr_bytes(img, false, std::nullopt, {}, nullptr, {}, ExrCompression::Zip);
+    ASSERT_TRUE(bytes);
+    (*bytes)[bytes->size() - 20] ^= 0x5a;
+    const auto broken = scratch("zip_broken.exr");
+    std::ofstream(broken, std::ios::binary).write(reinterpret_cast<const char*>(bytes->data()), std::streamsize(bytes->size()));
+    EXPECT_FALSE(read_exr(broken));
+    // A block that says it is 1 byte cannot hold 16 rows: refused before anything is allocated (review, 19 Nov).
+    auto tiny = exr_bytes(img, false, std::nullopt, {}, nullptr, {}, ExrCompression::Zip);
+    ASSERT_TRUE(tiny);
+    std::uint64_t first = 0;   // the offset table's first entry: the first block's row, then its size
+    std::size_t at = 8;
+    while ((*tiny)[at] != 0) {   // past the header: name\0 type\0 size payload
+        while ((*tiny)[at]) ++at;
+        ++at;
+        while ((*tiny)[at]) ++at;
+        ++at;
+        std::int32_t len;
+        std::memcpy(&len, tiny->data() + at, 4);
+        at += 4 + std::size_t(len);
+    }
+    std::memcpy(&first, tiny->data() + at + 1, 8);
+    const std::int32_t one = 1;
+    std::memcpy(tiny->data() + first + 4, &one, 4);
+    const auto claims = scratch("zip_claims_too_much.exr");
+    std::ofstream(claims, std::ios::binary).write(reinterpret_cast<const char*>(tiny->data()), std::streamsize(tiny->size()));
+    const auto r = read_exr(claims);
+    ASSERT_FALSE(r);
+    EXPECT_NE(r.error().detail.find("claims more than it can hold"), std::string::npos) << r.error().detail;
+}
+
 TEST(Exr, FloatToHalfMatchesNumpy) {
     const auto& e = idx().at("exr");
     const auto in = f32(e.at("half_in")), bits = f32(e.at("half_bits"));

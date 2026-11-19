@@ -93,7 +93,16 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
 // RUDRA 1.1 (5 Nov 2026): prompt presets and a suggestion from the shot's clipped areas
 // (rudra/genfill/prompts.py, no model). The command line after the Python, for one or more
 // SDR frames, and its JSON read back.
-QStringList genfill_suggest_arguments(const GenFillSetup& s, const GenFillOptions& o, const QStringList& frames);
+// 1.2.6: `describe`: Florence-2 describes the shot and the first suggestion is made from it
+// ("From this shot"; rudra.genfill.prompts --describe auto). Off for the quiet run at a preview's start.
+QStringList genfill_suggest_arguments(const GenFillSetup& s, const GenFillOptions& o, const QStringList& frames,
+                                      bool describe = false);
+// 1.2.6 (readiness report, checklist item 7): Florence-2 from a folder, offline. The folder set
+// as genfill/florence, else Florence-2-base beside the Wan folder (rudra.genfill.setup --florence
+// or --florence-from puts it there), else Florence-2-base in the model download folder (Check this
+// computer / File > Model packages, kind "florence"); "" when none holds a model (prompts.py then fetches
+// florence-community/Florence-2-base itself). With a folder, Describe runs with HF_HUB_OFFLINE=1.
+std::filesystem::path genfill_florence_dir(const GenFillSetup& s);
 struct PromptSuggestion {
     QString id, label, text, region;   // region "highlight" or "shadow": the box it fills
     QString reason;                    // why it was suggested; empty for a plain preset
@@ -102,11 +111,23 @@ struct PromptSuggestion {
 struct PromptSuggestions {
     std::vector<PromptSuggestion> suggested, presets;
     double clipped_fraction = 0.0;
+    QString describe_error;   // 1.2.6: why there is no "From this shot" (no model, no network the first time)
 };
 std::optional<PromptSuggestions> parse_prompt_suggestions(const QByteArray& json, QString* why = nullptr);
 
 // A new folder beside the master: <master>_aifill, else _aifill_2, _3 ... (nothing replaced).
 QString genfill_out_dir(const QString& master);
+
+// 1.2.6 (readiness report, checklist item 6): the AI fill's disclosure record, for a studio that
+// must be told where generative AI was used. Built from the genfill.json a finished fill writes
+// (rudra/genfill/run.py) and what the app knows: which fill (v3 clipped pixels only / v4.3 region
+// re-render), the model and LoRA with its SHA-256, prompts, seed, steps, the route, the share
+// generated per frame and over the render, the frames flagged or dropped. schema rudra_ai_disclosure_v1.
+QJsonObject genfill_disclosure(const QJsonObject& genfill, const QString& route, const QString& app_version);
+// Writes <fill out>/disclosure.json from <fill out>/genfill.json; its path, or "" (no genfill.json).
+QString write_genfill_disclosure(const QString& fill_out, const QString& route);
+// One line for the QC report and the status: "AI fill v3 (...): 0.26 % generated over 48 frames".
+QString genfill_disclosure_line(const QJsonObject& disclosure);
 
 // Every place the base model and the LoRA are looked for, in order (4 Nov 2026):
 // beside the app, the repository, RUDRA_GENFILL_DIR, the model download folder,

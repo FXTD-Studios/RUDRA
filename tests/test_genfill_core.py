@@ -59,6 +59,26 @@ def test_masks_thresholds_dilation_and_time():
     assert MaskSettings().tau_low == -1 and MaskSettings().feather == 0
 
 
+def test_blend_core_drops_specks_and_keeps_areas():
+    # 1.2.6 (user feedback, 09V.mp4): a near-white door (250-254) peppered with single clipped pixels
+    # got its fill in the specks only; areas under min_core of the frame are left to the master.
+    from rudra.genfill.masks import blend_core, drop_specks, min_core_pixels
+    c = np.full((200, 200, 3), 252, np.uint8)
+    c[::7, ::5] = 255                                   # 1,160 single clipped pixels
+    c[18:42, 98:132] = 252                              # a ring of near-white round ...
+    c[20:40, 100:130] = 255                             # ... one area of 600 px
+    s = MaskSettings(min_core=0.01 - 1e-9)              # 399 px at 200 x 200
+    core = blend_core(c, s)
+    assert core[20:40, 100:130].all() and core.sum() == 600
+    assert blend_core(c, MaskSettings(min_core=0.0)).sum() == (c.max(-1) == 255).sum()   # off: every clipped pixel
+    assert min_core_pixels((1080, 1920), MaskSettings().min_core) == 103
+    assert min_core_pixels((4, 4), MaskSettings().min_core) == 0                         # tiny frames keep all
+    two = np.zeros((10, 10), bool); two[0, 0] = two[1, 1] = True                         # 8-connected: one area
+    assert drop_specks(two, 2).sum() == 2
+    with pytest.raises(ValueError):
+        MaskSettings(min_core=0.5).check()
+
+
 class _View:
     """A stand-in view: Reinhard-like display curve, clipped, per channel (monotone)."""
     def forward(self, x):

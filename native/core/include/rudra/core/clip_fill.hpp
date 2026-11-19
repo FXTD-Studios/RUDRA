@@ -32,6 +32,7 @@
 // composite, the GPU shader, the master and the movie export all take it
 // without a line of their own: the fields are an input of all four.
 
+#include <string>
 #include <vector>
 
 #include "rudra/core/composite.hpp"
@@ -78,7 +79,41 @@ struct ClipFillOptions {
     double detail_sigma_px = 6.0;       // the high-pass's Gaussian, in pixels of the frame
     double detail_floor_stops = 0.015;  // |high-pass| below this is noise (about one code at 250), left alone
     double detail_max_stops = 1.0;      // the gain's reach, at most, either way
+    // 18 Nov 2026 (1.2.6, user report: a fire JPEG): a lossy 8-bit source.
+    // JPEG's 8x8 blocks and 4:2:0 chroma put a few codes of noise on every
+    // channel near white; stage 1 reads the surviving channels at full
+    // per-pixel resolution, so that noise became a speckle of lifts up to
+    // max_partial_ev (white blotches, blue and grey dots, a flat yellow-green
+    // where R and G hit the cap together). smooth_px > 0 takes the stage-1
+    // estimate and the final gain as a normalised Gaussian over the touched
+    // pixels only (nothing spreads into clean pixels, nothing goes below the
+    // ceiling). 0 is off: bit-identical. lossy_source_clip_options sets it.
+    double smooth_px = 0.0;
+    // Stage 1: where two channels clipped together (R and G at 255 in a
+    // flame), the brighter one keeps the ratio the neighbours' chroma gives
+    // over the other, up to max_partial_ev. Off: they stay at one ceiling, a
+    // flat yellow beside the orange around it. Off by default (bit-identical);
+    // lossy_source_clip_options turns it on.
+    bool hue_order = false;
 };
+
+// The options for a lossy 8-bit source (JPEG, WebP, an H.264/HEVC 8-bit
+// movie): the gain smoothed over about a JPEG block, stage 1's lift held to
+// 1.5 stops (a hue that runs to white with level, fire, a tungsten bulb, makes
+// the surviving channels overstate it), and a wider feather so compression
+// noise around code 247 does not switch pixels in and out. Everything else
+// as `base` (the artist's peaks, detail gain, enabled).
+ClipFillOptions lossy_source_clip_options(ClipFillOptions base);
+
+// True for a file a lossy codec wrote (by extension): .jpg .jpeg .jpe .jfif
+// .webp .avif .heic .heif, any case.
+bool is_lossy_still_path(const std::string& path);
+
+// True for a movie a lossy delivery codec wrote at 8 bits (ffprobe's codec_name and pix_fmt):
+// H.264, HEVC, VP8/9, AV1, MPEG-2/4, MJPEG, WMV, Theora in an 8-bit pixel format. A 10-bit
+// or wider one, and the mastering codecs (ProRes, DNxHD/HR, CineForm, FFV1, raw), are not:
+// their noise near white is under a code. 1.2.6: the fire JPEG's fix, for footage.
+bool is_lossy_video(const std::string& codec_name, const std::string& pix_fmt);
 
 // Stage 4 alone: log2 gain, one plane, signed, zero outside the ramp; empty at
 // detail_gain 1. Exposed for the tests and the acceptance harness.

@@ -69,5 +69,5 @@ if [ -f "$CONS" ]; then set -- -c "$CONS"; else set --; echo "no genfill_constra
 export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 cd "$REPO"
 set +e
-"$PY" -m rudra.genfill.setup --base "$BASE" --json --skip-packages
+"$PY" -m rudra.genfill.setup --base "$BASE" --json --skip-packages --florence   # 1.2.6: Florence-2 for Suggest a prompt
 exit $?

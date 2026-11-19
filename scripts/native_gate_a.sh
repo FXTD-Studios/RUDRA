@@ -24,7 +24,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PY=${PYTHON:-python3}
-ORT_VERSION=${ORT_VERSION:-1.22.0}
+ORT_VERSION=${ORT_VERSION:-1.24.4}   # 1.2.6: as Windows and CI; pinned in tools/fetch_onnxruntime.sh
 CHECKPOINT=${CHECKPOINT:-checkpoints/sdr2hdr_shadow_v1.pt}
 BENCH_DIR=${BENCH_DIR:-}
 BENCH_LIMIT=${BENCH_LIMIT:-0}
@@ -38,6 +38,10 @@ mkdir -p "$DEPS" reports
 
 say() { printf '\n== %s\n' "$*"; }
 fail() { printf 'FAILED: %s\n' "$*" >&2; exit 1; }
+# --retry-all-errors needs curl 7.71; RHEL / Alma 8 have 7.61, which stops on the unknown option
+# with exit 2 (1.2.6: the Linux release job in almalinux:8).
+CURL_RETRY=(--retry 5)
+case "$(curl --help all 2>/dev/null)" in *--retry-all-errors*) CURL_RETRY+=(--retry-all-errors) ;; esac
 
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) OS=mac; ORT_ARCHIVE=onnxruntime-osx-arm64-$ORT_VERSION ;;
@@ -90,11 +94,9 @@ fi
 say "ONNX Runtime $ORT_VERSION ($ORT_ARCHIVE)"
 ORT_ROOT=$DEPS/$ORT_ARCHIVE
 if [ ! -f "$ORT_ROOT/include/onnxruntime_cxx_api.h" ]; then
-  url=https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/$ORT_ARCHIVE.tgz
-  echo "download $url"
-  curl -fL --retry 5 --retry-all-errors -o "$DEPS/$ORT_ARCHIVE.tgz" "$url"
-  tar -xzf "$DEPS/$ORT_ARCHIVE.tgz" -C "$DEPS"
-  rm -f "$DEPS/$ORT_ARCHIVE.tgz"
+  # 1.2.6: from NuGet, checked by its SHA-256; github.com/microsoft/onnxruntime is gone (17-18 Nov 2026).
+  case "$ORT_ARCHIVE" in *osx-arm64*) p=osx-arm64 ;; *aarch64*) p=linux-arm64 ;; *) p=linux-x64 ;; esac
+  bash tools/fetch_onnxruntime.sh "$ORT_VERSION" "$p" "$ORT_ROOT" || fail "ONNX Runtime"
 fi
 ORT_ROOT=$(cd "$ORT_ROOT" && pwd)
 [ "$OS" = mac ] && { [ -f "$ORT_ROOT/include/coreml_provider_factory.h" ] || echo "no coreml_provider_factory.h: the Core ML row will report it"; }

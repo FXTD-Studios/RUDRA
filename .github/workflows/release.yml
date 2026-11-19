@@ -1,7 +1,8 @@
 name: release
 
-# The desktop beta: RUDRA.app in a DMG (macOS, Apple silicon), and for
-# Windows x64 an installer (setup.exe, Inno Setup) and a portable ZIP, each
+# The desktop beta: RUDRA.app in a DMG (macOS, Apple silicon), for
+# Windows x64 an installer (setup.exe, Inno Setup) and a portable ZIP, and for
+# Linux x86-64 a tar.gz built on glibc 2.28 (scripts/package_linux.sh, 1.2.6), each
 # with its SHA-256, attached to a GitHub pre-release when
 # a v* tag is pushed (git tag v0.9.0-beta.6 && git push origin v0.9.0-beta.6).
 # The Windows package carries ffmpeg (PACKAGE_WINDOWS.ps1, pinned by hash).
@@ -233,13 +234,48 @@ jobs:
             dist/beta/*-setup.exe
             dist/beta/*-setup.exe.sha256
 
+  linux:
+    # 1.2.6 (readiness report, checklist item 10): built on the VFX Reference Platform CY2026 floor,
+    # glibc 2.28 (AlmaLinux 8, RHEL 8's rebuild), so the tar.gz runs on Rocky / Alma / RHEL 8 and 9 and
+    # every newer distribution. gcc-toolset-13 compiles C++20 and links the libstdc++ parts newer than
+    # RHEL 8's in statically; scripts/package_linux.sh refuses anything needing more than glibc 2.28.
+    name: Linux x86-64 (glibc 2.28)
+    runs-on: ubuntu-24.04
+    container: almalinux:8
+    steps:
+      - name: Build tools and Qt's X11 / GL / Wayland libraries
+        run: |
+          dnf -y install dnf-plugins-core epel-release
+          dnf config-manager --set-enabled powertools
+          dnf -y install gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils python3.12 python3.12-pip git tar gzip xz \
+            findutils which file diffutils perl curl \
+            mesa-libGL-devel mesa-libEGL-devel libxkbcommon-devel libxkbcommon-x11 fontconfig-devel freetype-devel \
+            dbus-libs libX11-xcb xcb-util-wm xcb-util-image xcb-util-keysyms xcb-util-renderutil xcb-util-cursor \
+            wayland-devel vulkan-headers gawk dejavu-sans-fonts
+          python3.12 -m pip install cmake ninja patchelf
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
+      - name: Build, test and package
+        run: |
+          source /opt/rh/gcc-toolset-13/enable
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          PUBLIC_RELEASE=1 PYTHON=python3.12 ORT_VERSION=1.24.4 CV_VERSION=4.14.0 \
+            tools/ci_run.sh "Package" bash scripts/package_linux.sh
+      - name: No model weights in the tar.gz
+        run: python3.12 tools/check_package_weights.py dist/beta/*.tar.gz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: rudra-linux
+          path: |
+            dist/beta/*.tar.gz
+            dist/beta/*.tar.gz.sha256
+
   publish:
     # A tag with a suffix (v1.0.0-rc.1, v0.9.0-beta.10) is a pre-release; v1.0.0 is the release.
     name: Release
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write   # the one job that publishes the release
-    needs: [macos, windows]
+    needs: [macos, windows, linux]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
@@ -247,9 +283,9 @@ jobs:
         # rudra-macos and rudra-windows only: the signing-input-* artifacts are the unsigned files.
         with: { path: artifacts, pattern: "rudra-*", merge-multiple: true }
       - name: No model weights in what is published
-        # The ZIP is checked here; the installer holds the same folder. The DMG
-        # was checked on the macOS runner.
-        run: python3 tools/check_package_weights.py artifacts/*.zip
+        # The ZIP and the tar.gz are checked here; the installer holds the same folder as
+        # the ZIP. The DMG was checked on the macOS runner.
+        run: python3 tools/check_package_weights.py artifacts/*.zip artifacts/*.tar.gz
       - name: Release notes for this tag
         id: notes
         run: |

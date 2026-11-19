@@ -329,3 +329,24 @@ TEST(PlaybackHold, StepsTheStaticHoldWithTheShot) {
     h.weight(1, flat_sdr(0.5f), 1.0);
     EXPECT_FALSE(h.pixel_step().on);
 }
+
+// ---- 1.2.6 (readiness report, checklist item 2): the learned route's "Clipped in source" ----
+#include "rudra/engine/measure.hpp"
+
+TEST(MeasureHeadroom, TheLearnedRouteCountsTheSourcesClippedPixels) {
+    rudra::NetworkLinearImage model(10, 20, 0.5f), base(10, 20, 0.5f);
+    rudra::SdrImage sdr(10, 20, 0.4f);
+    for (int y = 0; y < 2; ++y)   // 40 of 200 pixels at code 255, 20 more at 254 in one channel
+        for (int x = 0; x < 20; ++x)
+            for (int c = 0; c < 3; ++c) sdr.buffer().at(c, y, x) = 1.0f;
+    for (int x = 0; x < 20; ++x) sdr.buffer().at(1, 2, x) = 254.0f / 255.0f;
+    const auto none = rudra::measure_headroom(model, base);
+    EXPECT_EQ(none.coverage.clipped_pct, 0.0);   // no SDR, nothing to count
+    const auto m = rudra::measure_headroom(model, base, &sdr);
+    EXPECT_NEAR(m.coverage.clipped_pct, 30.0, 1e-9);
+    ASSERT_EQ(m.sdr8.size(), 600u);
+    EXPECT_EQ(m.sdr8[0], 255);
+    EXPECT_EQ(m.coverage.highlight_pct, 0.0);   // the masks are the analytic route's
+    rudra::SdrImage other(5, 5, 1.0f);   // another size: left alone
+    EXPECT_EQ(rudra::measure_headroom(model, base, &other).coverage.clipped_pct, 0.0);
+}

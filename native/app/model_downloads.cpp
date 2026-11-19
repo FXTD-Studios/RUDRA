@@ -18,6 +18,8 @@
 #include <QSettings>
 #include <QStandardPaths>
 
+#include <algorithm>
+
 namespace rudra::app {
 namespace {
 
@@ -141,6 +143,22 @@ constexpr const char* kKnownModelFiles[] = {
     "406b1dc7b7d3ada5406b396a6aa8c7e5ec9eac8d0be0d04e8038d68b5bf1b390",   // rudra_genfill.safetensors (v4.2 training)
     "8f2324358a10feb7599446443af7622a096f360f99d16a12830f5ebc6a68e90d",   // registration_v4.json (docs/models/genfill_v4)
     "d2f507bbcfdcc0203bec82050a3f5ef89188b12e8310b8b5f5a12d7816b5db8c",   // report_v4.json (docs/models/genfill_v4)
+    // Florence-2 base (MIT; Suggest a prompt), kind "florence", folder Florence-2-base: florence-community/
+    // Florence-2-base at revision 00921df66db728a9ceb750f5eca43e5c203a2051, as in rudra/genfill/model_manifest.json
+    // (1.2.6). Downloaded from its own Hugging Face repo at that revision; listed in Check this computer.
+    "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",   // .gitattributes
+    "9bc4297ba09ae961d3b172358f4bf723d6757fe11507b62f2369cc968e063e15",   // README.md
+    "1d75deda84dfa81fb6c09301f3fed00f9695059568bbb1403a6bf299cd84fc37",   // added_tokens.json
+    "2a4dfe9885d183da121f239ada734bd700ee6908b650a7a25ab32eb104fe1d7a",   // config.json
+    "0251459c49cc358ac033b5d4b8569e61ac22bde5d76be404b97a44cfb33fb12e",   // generation_config.json
+    "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5",   // merges.txt
+    "62f3e696da74f8869a68ddb529a9b3e14eb25b21c592cb3dea6179bf944df6a0",   // model.safetensors
+    "1396ec5a0a7adfe1c04fb777b09e8ba753be6dbb5868212ab3c3ef39d91fe031",   // preprocessor_config.json
+    "cd0e3bf41a39b1276503fbd273bc03b9afc70d7a15ea681a92a1b4b77f858ee6",   // processor_config.json
+    "72ff172dc769bc1551b1b4211628ce3271643bc60379e4da45d85a9be9332c39",   // special_tokens_map.json
+    "3ad7001f773409abe6bba33eac92662611a73d72f459bda2f00d2a221dd31ce4",   // tokenizer.json
+    "cb5f80bd9afa767bb1bb798ee5f0a79eae45239b8e72506166b4218175a16723",   // tokenizer_config.json
+    "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e",   // vocab.json
 };
 
 }  // namespace
@@ -219,6 +237,55 @@ void ModelDownloads::set_models(std::vector<RemoteModel> m) {
     changed();
 }
 
+std::vector<RemoteModel> builtin_models() {
+    // Florence-2 base: florence-community/Florence-2-base at the revision rudra/genfill/model_manifest.json
+    // pins; sizes and SHA-256 from there (the same hashes are in kKnownModelFiles).
+    RemoteModel m;
+    m.id = QString::fromLatin1(kFlorenceModelId);
+    m.title = QStringLiteral("Florence-2 base");
+    m.version = QStringLiteral("2026.11");
+    m.channel = QStringLiteral("release");
+    m.kind = QStringLiteral("florence");
+    m.summary = QStringLiteral("Describes the shot for Suggest a prompt (captions only, runs on your computer)");
+    m.licence = QStringLiteral("MIT");
+    m.licence_url = QStringLiteral("https://huggingface.co/florence-community/Florence-2-base");
+    m.folder = QStringLiteral("Florence-2-base");
+    m.min_app = QStringLiteral("1.2.6");
+    const QString base = QStringLiteral("https://huggingface.co/florence-community/Florence-2-base/resolve/"
+                                        "00921df66db728a9ceb750f5eca43e5c203a2051/");
+    struct F { const char* path; qint64 size; const char* sha; };
+    static const F files[] = {
+        {".gitattributes", 1519, "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361"},
+        {"README.md", 13423, "9bc4297ba09ae961d3b172358f4bf723d6757fe11507b62f2369cc968e063e15"},
+        {"added_tokens.json", 22430, "1d75deda84dfa81fb6c09301f3fed00f9695059568bbb1403a6bf299cd84fc37"},
+        {"config.json", 2387, "2a4dfe9885d183da121f239ada734bd700ee6908b650a7a25ab32eb104fe1d7a"},
+        {"generation_config.json", 292, "0251459c49cc358ac033b5d4b8569e61ac22bde5d76be404b97a44cfb33fb12e"},
+        {"merges.txt", 456318, "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5"},
+        {"model.safetensors", 463178864, "62f3e696da74f8869a68ddb529a9b3e14eb25b21c592cb3dea6179bf944df6a0"},
+        {"preprocessor_config.json", 603, "1396ec5a0a7adfe1c04fb777b09e8ba753be6dbb5868212ab3c3ef39d91fe031"},
+        {"processor_config.json", 2264, "cd0e3bf41a39b1276503fbd273bc03b9afc70d7a15ea681a92a1b4b77f858ee6"},
+        {"special_tokens_map.json", 146627, "72ff172dc769bc1551b1b4211628ce3271643bc60379e4da45d85a9be9332c39"},
+        {"tokenizer.json", 3748144, "3ad7001f773409abe6bba33eac92662611a73d72f459bda2f00d2a221dd31ce4"},
+        {"tokenizer_config.json", 197922, "cb5f80bd9afa767bb1bb798ee5f0a79eae45239b8e72506166b4218175a16723"},
+        {"vocab.json", 798293, "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e"},
+    };
+    for (const F& f : files)
+        m.files.push_back({QString::fromLatin1(f.path), base + QString::fromLatin1(f.path), f.size, QString::fromLatin1(f.sha)});
+    return {m};
+}
+
+void add_missing_builtins(std::vector<RemoteModel>& models) {
+    for (RemoteModel& b : builtin_models())
+        if (std::none_of(models.begin(), models.end(), [&](const RemoteModel& m) { return m.kind == b.kind || m.id == b.id; }))
+            models.push_back(std::move(b));
+}
+
+void ModelDownloads::ensure_builtin() {
+    const auto before = models_.size();
+    add_missing_builtins(models_);
+    if (models_.size() != before) changed();
+}
+
 void ModelDownloads::set_root(const QString& root) {
     if (!active_.isEmpty() || root.isEmpty()) return;
     root_ = root;
@@ -266,8 +333,12 @@ void ModelDownloads::fetch_index(const QString& url) {
             if (auto m = parse_model_index(r->readAll(), &why)) {
                 int left_out = 0;
                 // From the published address, only the models this RUDRA knows by their checksums.
-                if (QUrl(url) == QUrl(published_model_index_url())) models_ = known_models(std::move(*m), &left_out);
-                else models_ = std::move(*m);
+                if (QUrl(url) == QUrl(published_model_index_url())) {
+                    models_ = known_models(std::move(*m), &left_out);
+                    add_missing_builtins(models_);   // 1.2.6: Florence-2 before the published list names it
+                } else {
+                    models_ = std::move(*m);
+                }
                 index_status_ = left_out > 0 ? QStringLiteral("%1 in the list %2 a newer RUDRA: update RUDRA to download %3.")
                                                    .arg(left_out == 1 ? QStringLiteral("One model") : QStringLiteral("%1 models").arg(left_out),
                                                         left_out == 1 ? QStringLiteral("needs") : QStringLiteral("need"),

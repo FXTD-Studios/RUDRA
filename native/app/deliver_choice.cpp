@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QRegularExpression>
+#include <QSettings>
 
 #include <algorithm>
 #include <cmath>
@@ -74,7 +75,10 @@ QJsonObject aces_deliver_fields(const DeliverChoice& c) {
                 {"log_formats", fmt}};
     }
     if (c.image == "dpx10") return {{"exr", "none"}, {"log", log}, {"log_formats", "dpx10"}};
-    return {{"exr", c.image == "exr16" ? "half" : "float"}, {"exr_gamut", c.gamut}};
+    // 1.2.6 (readiness report, checklist item 8): the ACEScg master lossless ZIP (deliver/exrZip,
+    // on by default); the ACES 2065-1 container is never compressed.
+    return {{"exr", c.image == "exr16" ? "half" : "float"}, {"exr_gamut", c.gamut},
+            {"exr_zip", c.gamut != "ap0" && QSettings().value("deliver/exrZip", true).toBool()}};
 }
 
 QJsonObject aces_trims_fields(double strength, double saturation, double peak_nits, double exposure_ev, double contrast) {

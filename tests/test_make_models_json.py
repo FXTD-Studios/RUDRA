@@ -48,3 +48,20 @@ def test_merge_keeps_the_other_models(tmp_path):
     mm.main(["--repo", "r/x", "--out", str(out), "--merge", "--model", str(_model(tmp_path))])
     ids = [m["id"] for m in json.loads(out.read_text())["models"]]
     assert ids == ["old", "aces_v2_demo"]
+
+
+def test_a_model_left_at_its_own_repo_points_at_that_revision(tmp_path):
+    """1.2.6: Florence-2 is downloaded from florence-community at a pinned commit, not re-uploaded."""
+    folder = tmp_path / "Florence-2-base"
+    folder.mkdir()
+    (folder / "config.json").write_text("{}", encoding="utf-8")
+    (folder / ".cache" / "huggingface").mkdir(parents=True)
+    (folder / ".cache" / "huggingface" / "x.metadata").write_text(rev_line := "abc\n", encoding="utf-8")   # not published
+    out = tmp_path / "models.json"
+    rev = "00921df66db728a9ceb750f5eca43e5c203a2051"
+    assert mm.main(["--repo", "fxtdstudios/RUDRA", "--out", str(out), "--model", str(folder), "--id", "florence2_base",
+                    "--kind", "florence", "--licence", "MIT", "--upstream", f"florence-community/Florence-2-base@{rev}"]) == 0
+    (m,) = json.loads(out.read_text(encoding="utf-8"))["models"]
+    assert m["kind"] == "florence" and m["folder"] == "Florence-2-base"
+    assert m["files"][0]["url"] == f"https://huggingface.co/florence-community/Florence-2-base/resolve/{rev}/config.json"
+    assert [f["path"] for f in m["files"]] == ["config.json"]

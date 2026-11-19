@@ -36,6 +36,14 @@ extern const Chromaticities kAp1Chromaticities;
 extern const Chromaticities kRec2020Chromaticities;
 extern const Chromaticities kRec709Chromaticities;   // RUDRA 1.1: the linear Rec.709 container
 
+// 1.2.6 (readiness report, checklist item 8): lossless ZIP (OpenEXR's zlib in blocks of 16
+// scanlines, compression 3), for the ACEScg and linear masters: what Nuke, Resolve and every
+// OpenEXR reader take, a third to a half of the size. The ACES 2065-1 file stays the uncompressed
+// SMPTE ST 2065-4 container (write_aces_exr has no choice). A build without zlib writes None.
+enum class ExrCompression { None, Zip };
+// Whether this build can write and read ZIP (zlib found at configure time).
+bool exr_zip_available() noexcept;
+
 // float32 -> IEEE half, round to nearest even (numpy's astype(np.float16)).
 std::uint16_t float_to_half(float f) noexcept;
 
@@ -46,11 +54,13 @@ Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half =
                                             const std::optional<Chromaticities>& chromaticities = std::nullopt,
                                             const ExrAttributes& attributes = {},
                                             const PlanarBuffer* reconstruction_mask = nullptr,
-                                            const ExrTypedAttributes& typed = {});
+                                            const ExrTypedAttributes& typed = {},
+                                            ExrCompression compression = ExrCompression::None);
 Result<void> write_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, bool half = true,
                        const std::optional<Chromaticities>& chromaticities = std::nullopt,
                        const ExrAttributes& attributes = {},
-                       const PlanarBuffer* reconstruction_mask = nullptr, const ExrTypedAttributes& typed = {});
+                       const PlanarBuffer* reconstruction_mask = nullptr, const ExrTypedAttributes& typed = {},
+                       ExrCompression compression = ExrCompression::None);
 
 // write_aces_exr / write_acescg_exr: scene linear in `source`, diffuse white
 // 1.0; `provenance` goes in as one sorted-keys JSON string attribute.
@@ -67,7 +77,7 @@ Result<void> write_acescg_exr(const std::filesystem::path& path, const PlanarBuf
                               Primaries source = Primaries::Rec2020, double exposure_scale = 1.0,
                               const ExrAttributes& provenance = {}, bool half = true,
                               const PlanarBuffer* reconstruction_mask = nullptr, const ExrTypedAttributes& typed = {},
-                              const PlanarBuffer* alpha = nullptr);
+                              const PlanarBuffer* alpha = nullptr, ExrCompression compression = ExrCompression::None);
 
 // A mattes EXR (RUDRA 1.1, 5 Nov 2026): one-plane float32 channels by name (e.g.
 // "rudra.highlight"), each finite in [0, 1] and of one size, uncompressed scanlines,
@@ -76,7 +86,7 @@ using NamedPlanes = std::vector<std::pair<std::string, PlanarBuffer>>;
 Result<void> write_mattes_exr(const std::filesystem::path& path, const NamedPlanes& planes,
                               const ExrAttributes& attributes = {});
 
-// read_exr for uncompressed scanline files (exr.py's reader): the planes in
+// read_exr for scanline files, uncompressed or ZIP / ZIPS (1.2.6), (exr.py's reader): the planes in
 // R, G, B(, A) order, and the header's attributes in file order as raw bytes.
 struct ExrImage {
     PlanarBuffer pixels;

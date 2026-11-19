@@ -71,6 +71,9 @@ struct MasterRequest {
     std::string source_space = "rec709";
     std::string container = "aces";         // aces (ACES 2065-1), acescg, linear (Rec.2020) or rec709 (linear; RUDRA 1.1)
     bool exr_half = true;                  // false: 32-bit float grading master
+    // 1.2.6 (readiness report, checklist item 8): lossless ZIP for the ACEScg and linear
+    // containers. The ACES 2065-1 file stays the uncompressed ST 2065-4 container.
+    bool exr_zip = false;
     // Roadmap 3.1: the curve that made the SDR (core/source_curve.hpp ids).
     // "unknown" is the ACES inverse, and is left out of the JSON and the
     // sidecar so every master before 3.1 reads the same.
@@ -95,6 +98,10 @@ struct MasterRequest {
     // 9 Nov 2026: the clip fill's near-clip detail gain (ClipFillOptions::detail_gain),
     // 1 = off; in the JSON and the sidecar only when not 1.
     double highlight_detail = 1.0;
+    // 18 Nov 2026 (1.2.6): the source was written by a lossy codec (a JPEG):
+    // the clip fill smooths its compression noise near white and keeps the
+    // flame's hue (lossy_source_clip_options). In the JSON only when true.
+    bool lossy_source = false;
     // 13 Oct 2026: the master exposure in stops, with the grade (after the
     // anchor, before the Region EV bands). In the JSON and the sidecar only
     // when not 0, so every master before reads the same.

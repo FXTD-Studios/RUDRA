@@ -16,6 +16,10 @@
 #include "rudra/platform/io_error.hpp"
 #include "rudra/platform/pyjson.hpp"
 
+#if RUDRA_HAVE_ZLIB
+#include <zlib.h>
+#endif
+
 namespace rudra {
 
 const Chromaticities kAp0Chromaticities{0.7347, 0.2653, 0.0, 1.0, 0.0001, -0.077, 0.32168, 0.33767};
@@ -76,17 +80,62 @@ std::uint16_t float_to_half(float f) noexcept {
     return std::uint16_t(sign | h);
 }
 
+bool exr_zip_available() noexcept { return RUDRA_HAVE_ZLIB != 0; }
+
 namespace {
-// The bytes of an uncompressed scanline EXR whose channel i is `names[i]`, read from `planes[i]`
-// (w x h floats each), written in name order as the format asks.
+// The bytes of a scanline EXR whose channel i is `names[i]`, read from `planes[i]`
+// (w x h floats each), written in name order as the format asks; uncompressed, or ZIP.
 std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, const std::vector<const float*>& planes,
                                        int w, int h, bool half, const std::optional<Chromaticities>& chroma,
-                                       const ExrAttributes& attributes, const ExrTypedAttributes& typed);
+                                       const ExrAttributes& attributes, const ExrTypedAttributes& typed,
+                                       ExrCompression compression = ExrCompression::None);
+
+constexpr int kZipLines = 16;   // OpenEXR's ZIP_COMPRESSION: 16 scanlines a block
+
+// OpenEXR's ZIP (ImfZip.cpp): the bytes split into even and odd halves, then each a delta of the
+// one before (+128), then zlib. A block that does not shrink is stored as it is (the reader knows
+// it by its size). Empty when this build has no zlib.
+std::vector<std::uint8_t> zip_block(const std::vector<std::uint8_t>& raw) {
+#if RUDRA_HAVE_ZLIB
+    const std::size_t n = raw.size();
+    std::vector<std::uint8_t> t(n);
+    std::size_t a = 0, b = (n + 1) / 2;
+    for (std::size_t i = 0; i < n; ++i) t[(i & 1u) ? b++ : a++] = raw[i];
+    for (std::size_t i = n; i-- > 1;) t[i] = std::uint8_t(int(t[i]) - int(t[i - 1]) + 128 + 256);
+    uLongf size = compressBound(uLong(n));
+    std::vector<std::uint8_t> z(size);
+    if (compress2(z.data(), &size, t.data(), uLong(n), 6) != Z_OK || size >= n) return raw;
+    z.resize(size);
+    return z;
+#else
+    (void)raw;
+    return {};
+#endif
+}
+
+// The inverse: `expect` bytes back, or nullopt (bad data, or no zlib in this build).
+std::optional<std::vector<std::uint8_t>> unzip_block(const std::uint8_t* data, std::size_t size, std::size_t expect) {
+    if (size == expect) return std::vector<std::uint8_t>(data, data + size);   // stored as it is
+#if RUDRA_HAVE_ZLIB
+    std::vector<std::uint8_t> t(expect);
+    uLongf got = uLongf(expect);
+    if (expect == 0 || uncompress(t.data(), &got, data, uLong(size)) != Z_OK || got != expect) return std::nullopt;
+    for (std::size_t i = 1; i < expect; ++i) t[i] = std::uint8_t(int(t[i - 1]) + int(t[i]) - 128);
+    std::vector<std::uint8_t> out(expect);
+    std::size_t a = 0, b = (expect + 1) / 2;
+    for (std::size_t i = 0; i < expect; ++i) out[i] = t[(i & 1u) ? b++ : a++];
+    return out;
+#else
+    (void)data;
+    return std::nullopt;
+#endif
+}
 }  // namespace
 
 Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
                                             const std::optional<Chromaticities>& chroma, const ExrAttributes& attributes,
-                                            const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed) {
+                                            const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed,
+                                            ExrCompression compression) {
     const int n_ch = rgb.channels();
     if (n_ch != 3 && n_ch != 4) return make_error(ErrorCode::InvalidArgument, "expected a 3 or 4 channel image");
     const int w = rgb.width(), h = rgb.height();
@@ -101,7 +150,7 @@ Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
     std::vector<const float*> planes;
     for (int c = 0; c < n_ch; ++c) planes.push_back(rgb.plane(c));
     if (reconstruction_mask) planes.push_back(reconstruction_mask->plane(0));
-    return planes_bytes(names, planes, w, h, half, chroma, attributes, typed);
+    return planes_bytes(names, planes, w, h, half, chroma, attributes, typed, compression);
 }
 
 Result<void> write_mattes_exr(const std::filesystem::path& path, const NamedPlanes& planes,
@@ -134,7 +183,9 @@ Result<void> write_mattes_exr(const std::filesystem::path& path, const NamedPlan
 namespace {
 std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, const std::vector<const float*>& planes,
                                        int w, int h, bool half, const std::optional<Chromaticities>& chroma,
-                                       const ExrAttributes& attributes, const ExrTypedAttributes& typed) {
+                                       const ExrAttributes& attributes, const ExrTypedAttributes& typed,
+                                       ExrCompression compression) {
+    const bool zip = compression == ExrCompression::Zip && exr_zip_available();
     std::vector<int> order(names.size());
     for (std::size_t i = 0; i < names.size(); ++i) order[i] = static_cast<int>(i);
     std::sort(order.begin(), order.end(), [&](int a, int b) { return names[a] < names[b]; });
@@ -152,7 +203,7 @@ std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, co
         ch.push_back(0);
         attr(head, "channels", "chlist", ch);
     }
-    attr(head, "compression", "compression", {0});
+    attr(head, "compression", "compression", {std::uint8_t(zip ? 3 : 0)});
     std::vector<std::uint8_t> box;
     for (int v : {0, 0, w - 1, h - 1}) put_i32(box, v);
     attr(head, "dataWindow", "box2i", box);
@@ -180,11 +231,13 @@ std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, co
     const std::int64_t data_start = 8 + std::int64_t(head.size()) + 8 * std::int64_t(h);
 
     std::vector<std::uint8_t> out;
-    out.reserve(std::size_t(data_start + chunk * h));
-    put_i32(out, kMagic);
-    put_i32(out, 2);
-    out.insert(out.end(), head.begin(), head.end());
-    for (int y = 0; y < h; ++y) put_u64(out, std::uint64_t(data_start + std::int64_t(y) * chunk));
+    if (!zip) {
+        out.reserve(std::size_t(data_start + chunk * h));
+        put_i32(out, kMagic);
+        put_i32(out, 2);
+        out.insert(out.end(), head.begin(), head.end());
+        for (int y = 0; y < h; ++y) put_u64(out, std::uint64_t(data_start + std::int64_t(y) * chunk));
+    }
 
     auto clean = [half](float v) {
         if (std::isnan(v)) v = 0.0f;
@@ -193,6 +246,43 @@ std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, co
         if (half) v = std::clamp(v, -65504.0f, 65504.0f);
         return v;
     };
+    if (zip) {   // blocks of 16 scanlines, each zipped; the offset table one entry a block
+        const int blocks = (h + kZipLines - 1) / kZipLines;
+        std::vector<std::vector<std::uint8_t>> zipped(static_cast<std::size_t>(blocks));
+        std::vector<std::uint8_t> raw;
+        for (int bi = 0; bi < blocks; ++bi) {
+            raw.clear();
+            for (int y = bi * kZipLines; y < std::min(h, (bi + 1) * kZipLines); ++y)
+                for (int c : order) {
+                    const float* row = planes[std::size_t(c)] + std::size_t(y) * std::size_t(w);
+                    for (int x = 0; x < w; ++x) {
+                        const float v = clean(row[x]);
+                        if (half) {
+                            const std::uint16_t hv = float_to_half(v);
+                            raw.push_back(std::uint8_t(hv));
+                            raw.push_back(std::uint8_t(hv >> 8));
+                        } else {
+                            put_f32(raw, v);
+                        }
+                    }
+                }
+            zipped[std::size_t(bi)] = zip_block(raw);
+        }
+        put_i32(out, kMagic);
+        put_i32(out, 2);
+        out.insert(out.end(), head.begin(), head.end());
+        std::uint64_t at = 8 + head.size() + 8 * std::uint64_t(blocks);
+        for (const auto& d : zipped) {
+            put_u64(out, at);
+            at += 8 + d.size();
+        }
+        for (int bi = 0; bi < blocks; ++bi) {
+            put_i32(out, bi * kZipLines);
+            put_i32(out, static_cast<std::int32_t>(zipped[std::size_t(bi)].size()));
+            out.insert(out.end(), zipped[std::size_t(bi)].begin(), zipped[std::size_t(bi)].end());
+        }
+        return out;
+    }
     for (int y = 0; y < h; ++y) {
         put_i32(out, y);
         put_i32(out, static_cast<std::int32_t>(row_size));
@@ -216,8 +306,9 @@ std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, co
 
 Result<void> write_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, bool half,
                        const std::optional<Chromaticities>& chroma, const ExrAttributes& attributes,
-                       const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed) {
-    auto bytes = exr_bytes(rgb, half, chroma, attributes, reconstruction_mask, typed);
+                       const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed,
+                       ExrCompression compression) {
+    auto bytes = exr_bytes(rgb, half, chroma, attributes, reconstruction_mask, typed, compression);
     if (!bytes) return bytes.error();
     std::error_code ec;
     if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), ec);
@@ -262,7 +353,7 @@ namespace {
 Result<void> write_aces_like(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
                              Primaries dst, double exposure, const ExrAttributes& provenance, bool ap0, bool half,
                              const PlanarBuffer* reconstruction_mask, const ExrTypedAttributes& typed,
-                             const PlanarBuffer* alpha) {
+                             const PlanarBuffer* alpha, ExrCompression compression = ExrCompression::None) {
     if (alpha && (alpha->channels() != 1 || alpha->height() != rgb.height() || alpha->width() != rgb.width()))
         return make_error(ErrorCode::InvalidArgument, "The alpha must be one plane the size of the picture.");
     PlanarBuffer scaled = rgb;
@@ -281,9 +372,14 @@ Result<void> write_aces_like(const std::filesystem::path& path, const PlanarBuff
     ExrAttributes attrs;
     ExrTypedAttributes all_typed = typed;
     // SMPTE ST 2065-4 says acesImageContainerFlag is an int (= 1), only on a file
-    // that is the container: AP0, RGB(A), uncompressed scanlines (28 Oct 2026 review).
-    if (ap0 && !reconstruction_mask) all_typed.push_back({"acesImageContainerFlag", "int", {1, 0, 0, 0}});
-    else attrs.emplace_back("rudra:container", ap0 ? "AP0 linear with reconstruction mask" : "ACEScg (AP1)");
+    // that is the container: AP0, RGB(A), half float, uncompressed scanlines (28 Oct 2026 review).
+    // 1.2.6 (readiness report, checklist item 3): a float32 AP0 file (the analytic route's grading
+    // master) carried the flag too, but the container is half float only: it is labelled instead.
+    if (ap0 && !reconstruction_mask && half) all_typed.push_back({"acesImageContainerFlag", "int", {1, 0, 0, 0}});
+    else
+        attrs.emplace_back("rudra:container", !ap0                 ? "ACEScg (AP1)"
+                                              : reconstruction_mask ? "AP0 linear with reconstruction mask"
+                                                                    : "AP0 linear, float32: not the SMPTE ST 2065-4 container (half float)");
     attrs.emplace_back("rudra:sourceSpace", primaries_name(source));
     attrs.emplace_back("rudra:exposureConvention", "0.18 = 18% grey (scene), diffuse white = 1.0");
     attrs.emplace_back("rudra:exposureScale", pyjson::repr(exposure));
@@ -293,7 +389,9 @@ Result<void> write_aces_like(const std::filesystem::path& path, const PlanarBuff
         for (const auto& [kk, v] : provenance) d.emplace_back(kk, v);
         attrs.emplace_back("rudra:provenance", pyjson::dumps(d, -1, true));
     }
-    return write_exr(path, out, half, ap0 ? kAp0Chromaticities : kAp1Chromaticities, attrs, reconstruction_mask, all_typed);
+    // ST 2065-4: the AP0 container is uncompressed; only ACEScg may be zipped (1.2.6, item 8).
+    return write_exr(path, out, half, ap0 ? kAp0Chromaticities : kAp1Chromaticities, attrs, reconstruction_mask, all_typed,
+                     ap0 ? ExrCompression::None : compression);
 }
 
 }  // namespace
@@ -306,8 +404,9 @@ Result<void> write_aces_exr(const std::filesystem::path& path, const PlanarBuffe
 
 Result<void> write_acescg_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
                               double exposure, const ExrAttributes& provenance, bool half, const PlanarBuffer* reconstruction_mask,
-                              const ExrTypedAttributes& typed, const PlanarBuffer* alpha) {
-    return write_aces_like(path, rgb, source, Primaries::Ap1, exposure, provenance, false, half, reconstruction_mask, typed, alpha);
+                              const ExrTypedAttributes& typed, const PlanarBuffer* alpha, ExrCompression compression) {
+    return write_aces_like(path, rgb, source, Primaries::Ap1, exposure, provenance, false, half, reconstruction_mask, typed, alpha,
+                           compression);
 }
 
 ExrTypedAttributes exr_timecode_attributes(const std::string& timecode, double fps, const std::string& reel) {
@@ -425,7 +524,9 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
         pos += size;
     }
     ++pos;
-    if (compression != 0) return bad("compressed");
+    // 1.2.6 (item 8): ZIPS (2, one scanline a block) and ZIP (3, sixteen) besides uncompressed.
+    if (compression != 0 && compression != 2 && compression != 3) return bad("compressed with a method RUDRA does not read");
+    if (compression != 0 && !exr_zip_available()) return bad("ZIP-compressed, and this build has no zlib");
     // In 64 bits: x1 - x0 + 1 overflows an int for a hostile window.
     const std::int64_t w64 = std::int64_t(x1) - std::int64_t(x0) + 1, h64 = std::int64_t(y1) - std::int64_t(y0) + 1;
     if (w64 <= 0 || h64 <= 0 || channels.empty()) return bad("empty data window");
@@ -434,13 +535,68 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
     const int w = static_cast<int>(w64), h = static_cast<int>(h64);
     // The file must hold the offset table and h scanlines of every channel before anything is allocated.
     std::size_t line_bytes = 8;   // each scanline: its row, its size, then the channels
-    for (int t : img.pixel_types) {
-        line_bytes += std::size_t(w) * (t == 1 ? 2 : 4);
-        if (line_bytes > n) return bad("truncated data");
+    const std::vector<std::uint8_t>* px = &raw;   // the scanlines as uncompressed ones
+    std::vector<std::uint8_t> flat;
+    if (compression == 0) {
+        for (int t : img.pixel_types) {
+            line_bytes += std::size_t(w) * (t == 1 ? 2 : 4);
+            if (line_bytes > n) return bad("truncated data");
+        }
+        if (!has(pos, 8 * std::size_t(h))) return bad("truncated data");
+        pos += 8 * std::size_t(h);
+        if ((n - pos) / line_bytes < std::size_t(h)) return bad("truncated data");
+    } else {
+        // Each block unzipped into flat as the uncompressed layout (row, size, channels), so the
+        // reading below is the same. Nothing past what zlib can expand the file to is allocated.
+        std::uint64_t pixel_bytes = 0;
+        for (int t : img.pixel_types) pixel_bytes += std::uint64_t(w) * (t == 1 ? 2u : 4u);
+        line_bytes += std::size_t(pixel_bytes);
+        if (std::uint64_t(h) * pixel_bytes > 1100ull * n + (1ull << 20)) return bad("data larger than the file can hold");
+        // A fixed budget too (code review, 19 Nov 2026): the file's size alone can be padded by an
+        // unrelated attribute. 2 GiB of pixels is an 8K frame with dozens of float channels.
+        constexpr std::uint64_t kMaxDecoded = 2ull << 30;
+        if (std::uint64_t(h) * (pixel_bytes + 8) > kMaxDecoded) return bad("more pixel data than RUDRA reads from one file");
+        const int lines = compression == 3 ? 16 : 1;
+        const std::int64_t blocks = (h64 + lines - 1) / lines;
+        if (!has(pos, 8 * std::size_t(blocks))) return bad("truncated data");
+        pos += 8 * std::size_t(blocks);
+        flat.reserve(std::size_t(h) * line_bytes);
+        std::vector<bool> seen(std::size_t(blocks), false);
+        for (std::int64_t b = 0; b < blocks; ++b) {
+            if (!has(pos, 8)) return bad("truncated data");
+            const std::int64_t first = std::int64_t(i32(pos)) - std::int64_t(y0);
+            const std::int32_t size = i32(pos + 4);
+            pos += 8;
+            if (first < 0 || first >= h64 || first % lines != 0) return bad("block outside the data window");
+            if (seen[std::size_t(first / lines)]) return bad("a block twice");
+            seen[std::size_t(first / lines)] = true;
+            if (size < 0 || !has(pos, std::size_t(size))) return bad("truncated data");
+            // Each block on its own: zlib expands at most about 1032 times, so a block claiming more than
+            // that is refused before its buffer is allocated (a stored block is its own size).
+            if (const std::uint64_t want = std::uint64_t(std::min<std::int64_t>(lines, h64 - first)) * pixel_bytes;
+                want != std::uint64_t(size) && want > 1100ull * std::uint64_t(size) + 1024)
+                return bad("a ZIP block claims more than it can hold");
+            const int count = int(std::min<std::int64_t>(lines, h64 - first));
+            auto block = unzip_block(raw.data() + pos, std::size_t(size), std::size_t(count) * std::size_t(pixel_bytes));
+            if (!block) return bad("a ZIP block does not decompress");
+            pos += std::size_t(size);
+            for (int l = 0; l < count; ++l) {
+                put_i32(flat, std::int32_t(first + l + y0));
+                put_i32(flat, std::int32_t(pixel_bytes));
+                const auto* s = block->data() + std::size_t(l) * std::size_t(pixel_bytes);
+                flat.insert(flat.end(), s, s + pixel_bytes);
+            }
+        }
+        px = &flat;
+        pos = 0;
     }
-    if (!has(pos, 8 * std::size_t(h))) return bad("truncated data");
-    pos += 8 * std::size_t(h);
-    if ((n - pos) / line_bytes < std::size_t(h)) return bad("truncated data");
+    const std::size_t pn = px->size();
+    auto phas = [&](std::size_t at, std::size_t len) { return at <= pn && len <= pn - at; };
+    auto pi32 = [&](std::size_t at) {
+        std::int32_t v;
+        std::memcpy(&v, px->data() + at, 4);
+        return v;
+    };
     static const char* order[] = {"R", "G", "B", "A"};
     const int nout = int(std::count(channels.begin(), channels.end(), std::string("A"))) ? 4 : 3;
     img.pixels = PlanarBuffer(nout, h, w);
@@ -449,8 +605,8 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
     const bool all_half = std::all_of(img.pixel_types.begin(), img.pixel_types.end(), [](int t) { return t == 1; });
     if (all_half) img.half_bits.assign(std::size_t(nout) * std::size_t(w) * std::size_t(h), 0);
     for (int r = 0; r < h; ++r) {
-        if (!has(pos, 8)) return bad("truncated data");
-        const std::int64_t row = std::int64_t(i32(pos)) - std::int64_t(y0);
+        if (!phas(pos, 8)) return bad("truncated data");
+        const std::int64_t row = std::int64_t(pi32(pos)) - std::int64_t(y0);
         if (row < 0 || row >= h64) return bad("scanline outside the data window");
         const int y = static_cast<int>(row);
         pos += 8;
@@ -460,7 +616,7 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
                 if (channels[c] == order[k]) plane = k;
             const bool half = img.pixel_types[c] == 1;
             const std::size_t bytes = std::size_t(w) * (half ? 2 : 4);
-            if (!has(pos, bytes)) return bad("truncated data");
+            if (!phas(pos, bytes)) return bad("truncated data");
             const bool is_mask = channels[c] == "rudra.reconstructed";
             PlanarBuffer* other = nullptr;
             if (plane < 0 && !is_mask) {   // any other channel, kept by name (5 Nov 2026)
@@ -476,11 +632,11 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
                     float v;
                     if (half) {
                         std::uint16_t hv;
-                        std::memcpy(&hv, raw.data() + pos + std::size_t(x) * 2, 2);
+                        std::memcpy(&hv, px->data() + pos + std::size_t(x) * 2, 2);
                         v = half_to_float(hv);
                         if (all_half && plane >= 0) img.half_bits[(std::size_t(plane) * std::size_t(h) + std::size_t(y)) * std::size_t(w) + std::size_t(x)] = hv;
                     } else {
-                        std::memcpy(&v, raw.data() + pos + std::size_t(x) * 4, 4);
+                        std::memcpy(&v, px->data() + pos + std::size_t(x) * 4, 4);
                     }
                     if (is_mask) img.reconstruction_mask->at(0, y, x) = v;
                     else if (other) other->at(0, y, x) = v;

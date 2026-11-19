@@ -65,6 +65,11 @@ ModelDownloads* MainWindow::model_downloads() {
                     log(QStringLiteral("AI fill: using the downloaded LoRA ") + QDir(folder).filePath(loras.front()));
                 }
             }
+            // 1.2.6: Florence-2 (Suggest a prompt) from its download folder, offline, from now on.
+            if (m.kind == "florence") {
+                QSettings().setValue("genfill/florence", folder);
+                log(QStringLiteral("Suggest a prompt: using Florence-2 from ") + folder);
+            }
             // The learned model loads at once when nothing is loaded yet.
             if (m.kind == "aces_v2" && (!aces_engine_ || aces_engine_->state() != AcesEngine::State::Ready))
                 use_aces_package(std::filesystem::path(folder.toStdU16String()));

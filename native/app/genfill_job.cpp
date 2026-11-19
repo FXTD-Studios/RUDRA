@@ -276,12 +276,26 @@ std::optional<GenFillSetup> genfill_setup_for(const GenFillOptions& o, QString* 
     return s;
 }
 
-QStringList genfill_suggest_arguments(const GenFillSetup& s, const GenFillOptions& o, const QStringList& frames) {
+QStringList genfill_suggest_arguments(const GenFillSetup& s, const GenFillOptions& o, const QStringList& frames, bool describe) {
     QStringList a{"-m", "rudra.genfill.prompts", "suggest"};
     a << frames;
     a << "--json" << "--cache" << qp(s.lora.parent_path() / "prompt_cache") << "--tau-high" << QString::number(o.tau_high)
       << "--tau-low" << QString::number(o.tau_low);
+    if (describe) {
+        a << "--describe" << "auto";
+        if (const auto fl = genfill_florence_dir(s); !fl.empty()) a << "--describe-model" << qp(fl);
+    }
     return a;
+}
+
+std::filesystem::path genfill_florence_dir(const GenFillSetup& s) {
+    const auto has = [](const fs::path& d) { return !d.empty() && fs::is_regular_file(d / "config.json"); };
+    const fs::path set = pq(QSettings().value("genfill/florence").toString());
+    if (has(set)) return set;
+    if (!s.base.empty() && has(s.base.parent_path() / "Florence-2-base")) return s.base.parent_path() / "Florence-2-base";
+    // Downloaded in Check this computer / File > Model packages (kind "florence", 1.2.6).
+    if (const fs::path dl = pq(default_download_root()) / "Florence-2-base"; has(dl)) return dl;
+    return {};
 }
 
 std::optional<PromptSuggestions> parse_prompt_suggestions(const QByteArray& json, QString* why) {
@@ -311,7 +325,65 @@ std::optional<PromptSuggestions> parse_prompt_suggestions(const QByteArray& json
     r.suggested = read(o.value("suggestions").toArray());
     r.presets = read(o.value("presets").toArray());
     r.clipped_fraction = o.value("clipped_fraction").toDouble();
+    r.describe_error = o.value("describe_error").toString();
     return r;
+}
+
+QJsonObject genfill_disclosure(const QJsonObject& g, const QString& route, const QString& app_version) {
+    const QJsonObject model = g.value("model").toObject(), settings = g.value("settings").toObject(), stats = g.value("stats").toObject();
+    const bool v4 = g.value("rerender").isObject();
+    QJsonArray frames;
+    for (const auto& v : g.value("frames").toArray()) {
+        const QJsonObject f = v.toObject();
+        frames.append(QJsonObject{{"name", f.value("name")},
+                                  {"generated_pct", 100.0 * f.value("generated_fraction").toDouble()},
+                                  {"flagged_flicker", f.value("flagged").toBool()},
+                                  {"fell_back", f.value("fell_back")}});
+    }
+    return QJsonObject{
+        {"schema", "rudra_ai_disclosure_v1"},
+        {"generated_content", true},
+        {"tool", QStringLiteral("RUDRA %1").arg(app_version)},
+        {"when", QDateTime::currentDateTime().toString(Qt::ISODate)},
+        {"fill", v4 ? "AI fill v4.3 region re-render (experimental)" : "AI fill v3, fully clipped pixels only"},
+        {"contract", g.value("contract")},
+        {"route", route},
+        {"base_model", model.value("base")},
+        {"lora", model.value("lora")},
+        {"lora_sha256", model.value("lora_sha256")},
+        {"prompt_highlight", settings.value("prompt_highlight")},
+        {"prompt_shadow", settings.value("prompt_shadow")},
+        {"seed", settings.value("seed")},
+        {"steps", settings.value("steps")},
+        {"master", g.value("master")},
+        {"frames_total", stats.value("frames")},
+        {"generated_pct", 100.0 * stats.value("generated_fraction").toDouble()},
+        {"flagged_frames", stats.value("flagged_frames")},
+        {"fallback_frames", stats.value("fallback_frames")},
+        {"release_authorized", g.value("release_authorized")},
+        {"marking", "every generated pixel is non-zero in each EXR's rudra.generated channel; the settings are in its rudra:genfill attribute"},
+        {"frames", frames}};
+}
+
+QString genfill_disclosure_line(const QJsonObject& d) {
+    return QStringLiteral("%1: %2 % of pixels generated over %3 frame(s)%4")
+        .arg(d.value("fill").toString())
+        .arg(d.value("generated_pct").toDouble(), 0, 'f', 2)
+        .arg(d.value("frames_total").toInt())
+        .arg(d.value("prompt_highlight").toString().isEmpty() ? QString()
+                                                               : QStringLiteral(", prompt \"%1\"").arg(d.value("prompt_highlight").toString()));
+}
+
+QString write_genfill_disclosure(const QString& fill_out, const QString& route) {
+    QFile in(QDir(fill_out).filePath(QStringLiteral("genfill.json")));
+    if (!in.open(QIODevice::ReadOnly)) return {};
+    const QJsonObject g = QJsonDocument::fromJson(in.readAll()).object();
+    if (g.isEmpty()) return {};
+    const QString path = QDir(fill_out).filePath(QStringLiteral("disclosure.json"));
+    QFile out(path);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) return {};
+    out.write(QJsonDocument(genfill_disclosure(g, route, QCoreApplication::applicationVersion())).toJson(QJsonDocument::Indented));
+    return path;
 }
 
 QString genfill_out_dir(const QString& master) {

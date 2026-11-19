@@ -15,18 +15,42 @@ With --json every step is one JSON object per line on stdout:
     {"event": "done", "ok": true, "base": ..., "device": ...} or {"event": "done", "ok": false, "error": ...}
 Exit code 0 when the fill is ready to run, 1 when a step failed, 2 when the
 machine cannot run it (GPU memory or disk).
+
+1.2.6 (readiness report, checklist item 7): an offline install and pinned, hashed models.
+model_manifest.json (beside this file, shipped with the app) holds, for Wan2.1-VACE and for
+Florence-2, the Hugging Face revision and every file's size and SHA-256:
+
+    --make-manifest              write it from a known-good --base (and its Florence-2 folder):
+                                 the revision is the one huggingface_hub recorded when it downloaded
+    --from <folder|zip>          install Wan2.1-VACE from a folder or zip, no network; refused
+                                 unless every file matches the manifest
+    --florence                   also set up Florence-2 (Suggest a prompt) in <base>/../Florence-2-base,
+    --florence-from <folder|zip> downloaded at the pinned revision or installed from a folder or zip
+                                 (the app's Set up automatically passes --florence: a download that
+                                 fails is a warning, the fill does not need it; a mismatch is an error)
+    --florence-only              Florence-2 alone: no GPU check, no packages, no Wan step
+    --verify                     check every file's SHA-256 against the manifest (a download or an
+                                 install is always checked)
+A download asks for the manifest's revision, never "latest". Without a manifest entry nothing can
+be checked: --from then needs --allow-unverified.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import json
+import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 REPO_ID = 'Wan-AI/Wan2.1-VACE-1.3B-diffusers'
+FLORENCE_ID = 'florence-community/Florence-2-base'   # Suggest a prompt (prompts.py); about 0.5 GB
+FLORENCE_DIR = 'Florence-2-base'                     # beside the Wan folder
+MANIFEST = Path(__file__).with_name('model_manifest.json')
 MODEL_GB = 25.0          # the snapshot on disk, rounded up
 MIN_MEMORY_GB = 15.5     # a 16 GB GPU (or a Mac with 16 GB) reports a little under 16
 # pyproject.toml [project.optional-dependencies] genfill, plus OpenColorIO for the AP0 masters.
@@ -112,11 +136,153 @@ def install_packages() -> bool:
     return proc.wait() == 0
 
 
-def download_model(base: Path) -> None:
+def load_manifest(path: Path = MANIFEST) -> dict:
+    """The manifest, {} when there is none. One that is there but unreadable is an error
+    (code review, 19 Nov 2026): it used to read as {}, and a download then went unchecked."""
+    p = Path(path)
+    if not p.is_file():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as e:
+        raise ValueError(f'{p} cannot be read ({e})') from e
+
+
+def pinned(entry: dict) -> bool:
+    """Whether a manifest entry pins a revision and lists the files to check a download against."""
+    return bool(entry.get('revision')) and bool(entry.get('files'))
+
+
+def model_files(root: Path):
+    """(relative posix path, path) of every file of a model folder, huggingface_hub's .cache left out."""
+    for p in sorted(root.rglob('*')):
+        rel = p.relative_to(root)
+        if p.is_file() and '.cache' not in rel.parts:
+            yield rel.as_posix(), p
+
+
+def sha256_file(p: Path, chunk: int = 1 << 22) -> str:
+    h = hashlib.sha256()
+    with open(p, 'rb') as f:
+        while b := f.read(chunk):
+            h.update(b)
+    return h.hexdigest()
+
+
+def snapshot_revision(root: Path) -> str | None:
+    """The commit a local_dir download came from: huggingface_hub writes it as the first line of
+    .cache/huggingface/download/<file>.metadata. None when there is none or they disagree."""
+    d = root / '.cache' / 'huggingface' / 'download'
+    revs = set()
+    for m in (d.rglob('*.metadata') if d.is_dir() else []):
+        try:
+            first = m.read_text(encoding='utf-8').splitlines()[0].strip()
+        except (OSError, IndexError, UnicodeDecodeError):
+            continue
+        if re.fullmatch(r'[0-9a-f]{40}', first):
+            revs.add(first)
+    return revs.pop() if len(revs) == 1 else None
+
+
+def manifest_entry(root: Path, repo_id: str, revision: str | None = None) -> dict:
+    return {'repo_id': repo_id, 'revision': revision or snapshot_revision(root),
+            'files': {rel: {'size': p.stat().st_size, 'sha256': sha256_file(p)} for rel, p in model_files(root)}}
+
+
+def verify(root: Path, entry: dict, hashes: bool = True) -> list[str]:
+    """What in root does not match the manifest entry: missing files, other sizes, other SHA-256
+    (hashes=False: sizes only). Empty when it matches, or when the entry lists no files."""
+    problems = []
+    for rel, want in sorted((entry.get('files') or {}).items()):
+        p = root / rel
+        if not p.is_file():
+            problems.append(f'missing {rel}')
+        elif p.stat().st_size != want.get('size'):
+            problems.append(f'{rel}: {p.stat().st_size} bytes, the manifest says {want.get("size")}')
+        elif hashes:
+            emit('log', text=f'SHA-256 {rel}')
+            if sha256_file(p) != want.get('sha256'):
+                problems.append(f'{rel}: SHA-256 does not match the manifest')
+    return problems
+
+
+def install_from(src: Path, dest: Path, entry: dict) -> list[str]:
+    """Install a model from a folder or a zip (one top folder inside is fine) into dest, offline.
+    It is unpacked beside dest first and only moved into place when every file matches the entry;
+    a dest already there is kept as <dest>.before_install. The problems, or [] when installed."""
+    staging = dest.with_name(dest.name + '.installing')
+    if staging.exists():
+        shutil.rmtree(staging)
+    if src.is_file() and zipfile.is_zipfile(src):
+        with zipfile.ZipFile(src) as z:
+            for n in z.namelist():
+                parts = Path(n).parts
+                if n.startswith(('/', '\\')) or '..' in parts or (parts and ':' in parts[0]):
+                    return [f'{src}: unsafe path in the zip: {n}']
+            emit('log', text=f'Unpacking {src}')
+            z.extractall(staging)
+        kids = list(staging.iterdir())
+        root = kids[0] if len(kids) == 1 and kids[0].is_dir() else staging
+    elif src.is_dir():
+        emit('log', text=f'Copying {src}')
+        shutil.copytree(src, staging)
+        root = staging
+    else:
+        return [f'{src} is neither a folder nor a zip']
+    problems = verify(root, entry)
+    if problems:
+        shutil.rmtree(staging, ignore_errors=True)
+        return problems
+    if dest.exists():
+        old = dest.with_name(dest.name + '.before_install')
+        if old.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+            return [f'{dest} is there and so is {old}: remove one of them first']
+        dest.rename(old)
+        emit('log', text=f'The model that was there is now {old}')
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    root.rename(dest)
+    if root != staging:
+        shutil.rmtree(staging, ignore_errors=True)
+    return []
+
+
+def setup_florence(florence: Path, entry: dict, src: str | None,
+                   allow_unverified: bool = False) -> tuple[list[str], str | None]:
+    """Florence-2 into its folder: from src (a folder or zip), or downloaded at the manifest's
+    revision when the folder does not hold every file yet (a download that stopped is resumed);
+    then checked against the manifest entry. A download needs a pinned entry, unless allow_unverified.
+    (problems, warning): problems end the setup (a model that does not match); a download that
+    fails is only a warning, as Suggest a prompt falls back to its presets without it."""
+    if src:
+        emit('step', step='florence', text=f'Installing Florence-2 from {src} into {florence}')
+        return install_from(Path(src).expanduser(), florence, entry), None
+    fresh = False
+    there = (florence / 'config.json').is_file()
+    complete = there and (not entry.get('files') or not verify(florence, entry, hashes=False))
+    if not complete:
+        if not pinned(entry) and not allow_unverified:
+            return [], ('Florence-2 is not pinned in the model manifest, so it was not downloaded (--allow-unverified '
+                        'takes the latest unchecked); Suggest a prompt uses its presets until it is')
+        rev = entry.get('revision')
+        emit('step', step='florence', text=f'Downloading {FLORENCE_ID}{"@" + rev[:12] if rev else ""} '
+             f'(MIT, about 0.5 GB) into {florence}')
+        try:
+            download_model(florence, FLORENCE_ID, rev)
+        except Exception as e:   # noqa: BLE001 (network, disk, auth)
+            return [], f'Florence-2 was not downloaded ({e}); Suggest a prompt uses its presets until it is'
+        fresh = True
+    problems = verify(florence, entry, hashes=fresh)
+    if problems and fresh:   # never left where the app would load it
+        shutil.rmtree(florence, ignore_errors=True)
+    return problems, None
+
+
+def download_model(base: Path, repo_id: str = REPO_ID, revision: str | None = None) -> None:
     from huggingface_hub import snapshot_download
     base.mkdir(parents=True, exist_ok=True)
-    # local_dir: real files in --base (what the app looks for), resumable.
-    snapshot_download(REPO_ID, local_dir=str(base))
+    # local_dir: real files in --base (what the app looks for), resumable; the pinned revision.
+    snapshot_download(repo_id, local_dir=str(base), revision=revision)
 
 
 def main(argv=None) -> int:
@@ -127,9 +293,59 @@ def main(argv=None) -> int:
     ap.add_argument('--check-only', action='store_true', help='report what is there and what is missing; change nothing')
     ap.add_argument('--skip-packages', action='store_true')
     ap.add_argument('--allow-small-gpu', action='store_true', help='set up even under 16 GB (the fill may not run)')
+    ap.add_argument('--from', dest='from_', metavar='FOLDER_OR_ZIP', help='install Wan2.1-VACE from here, offline')
+    ap.add_argument('--florence', action='store_true', help='also set up Florence-2 for Suggest a prompt')
+    ap.add_argument('--florence-from', metavar='FOLDER_OR_ZIP', help='install Florence-2 from here, offline')
+    ap.add_argument('--florence-only', action='store_true', help='set up Florence-2 alone (no GPU check, packages or Wan)')
+    ap.add_argument('--verify', action='store_true', help="check every file's SHA-256 against the manifest")
+    ap.add_argument('--allow-unverified', action='store_true', help='install or download a model the manifest does not pin (unchecked)')
+    ap.add_argument('--manifest', default=str(MANIFEST), help='the manifest to read or write')
+    ap.add_argument('--make-manifest', action='store_true',
+                    help='write the manifest from the models in --base and its Florence-2 folder, then stop')
     a = ap.parse_args(argv)
     _JSON = a.json
     base = Path(a.base).expanduser().resolve()
+    florence = base.parent / FLORENCE_DIR
+    try:
+        manifest = load_manifest(Path(a.manifest))
+    except ValueError as e:
+        # Unreadable: an error, unless the run writes a new one or asked for unchecked models.
+        if not a.make_manifest and not a.allow_unverified:
+            emit('done', ok=False, error=str(e) + ' (--allow-unverified to go on without it)', base=str(base))
+            return 1
+        manifest = {}
+
+    if a.make_manifest:
+        if not have_model(base):
+            emit('done', ok=False, error=f'no Wan2.1-VACE model in {base}', base=str(base))
+            return 1
+        emit('step', step='manifest', text=f'Hashing {base}')
+        out = {'schema': 'rudra_model_manifest_v1', 'wan': manifest_entry(base, REPO_ID)}
+        if (florence / 'config.json').is_file():
+            emit('step', step='manifest', text=f'Hashing {florence}')
+            out['florence'] = manifest_entry(florence, FLORENCE_ID)
+        Path(a.manifest).write_text(json.dumps(out, indent=2) + '\n', encoding='utf-8')
+        missing_rev = [k for k in ('wan', 'florence') if k in out and not out[k]['revision']]
+        emit('done', ok=True, manifest=a.manifest, files=sum(len(out[k]['files']) for k in ('wan', 'florence') if k in out),
+             no_revision=missing_rev)
+        return 0
+
+    for key, src in (('wan', a.from_), ('florence', a.florence_from)):
+        if src and not (manifest.get(key) or {}).get('files') and not a.allow_unverified:
+            emit('done', ok=False, error=f'{a.manifest} has no hashes for {key}: nothing to check the install against '
+                 '(run --make-manifest on a known-good model, or pass --allow-unverified)', base=str(base))
+            return 1
+
+    if a.florence_only:
+        problems, warning = setup_florence(florence, manifest.get('florence') or {}, a.florence_from, a.allow_unverified)
+        if problems:
+            emit('done', ok=False, error='Florence-2 does not match the manifest: ' + '; '.join(problems[:5]), base=str(base))
+            return 1
+        if warning:
+            emit('done', ok=False, error=warning, base=str(base))
+            return 1
+        emit('done', ok=True, base=str(base), florence=str(florence))
+        return 0
 
     m = machine(base)
     model_there = have_model(base)
@@ -138,6 +354,7 @@ def main(argv=None) -> int:
     enough_disk = m['free_gb'] >= need_disk
     missing = missing_packages()
     emit('check', **m, model=model_there, base=str(base), missing_packages=missing,
+         florence=(florence / 'config.json').is_file(), pinned=bool((manifest.get('wan') or {}).get('revision')),
          need_disk_gb=need_disk, enough_memory=enough_mem, enough_disk=enough_disk,
          enough=enough_mem and enough_disk)
     if a.check_only:
@@ -164,13 +381,45 @@ def main(argv=None) -> int:
             emit('done', ok=False, error='still missing after the install: ' + ', '.join(still), base=str(base))
             return 1
 
-    if not model_there:
-        emit('step', step='model', text=f'Downloading {REPO_ID} (about {MODEL_GB:.0f} GB) into {base}')
+    wan = manifest.get('wan') or {}
+    fresh = False
+    if a.from_:
+        emit('step', step='model', text=f'Installing {REPO_ID} from {a.from_} into {base}')
+        problems = install_from(Path(a.from_).expanduser(), base, wan)
+        if problems:
+            emit('done', ok=False, error='the model was not installed: ' + '; '.join(problems[:5]), base=str(base))
+            return 1
+    elif not model_there:
+        if not pinned(wan) and not a.allow_unverified:
+            emit('done', ok=False, error=f'{a.manifest} does not pin {REPO_ID} (a revision and its files\' SHA-256): '
+                 'not downloaded unchecked (run --make-manifest on a known-good model, or pass --allow-unverified)',
+                 base=str(base))
+            return 1
+        rev = wan.get('revision')
+        emit('step', step='model', text=f'Downloading {REPO_ID}{"@" + rev[:12] if rev else ""} '
+             f'(about {MODEL_GB:.0f} GB) into {base}')
         try:
-            download_model(base)
+            download_model(base, REPO_ID, rev)
         except Exception as e:   # noqa: BLE001 (network, disk, auth: all end the same way)
             emit('done', ok=False, error=f'model download: {e}', base=str(base))
             return 1
+        fresh = True
+    if wan.get('files') and not a.from_:
+        emit('step', step='verify', text='Checking the model against the manifest' + (' (SHA-256)' if fresh or a.verify else ''))
+        problems = verify(base, wan, hashes=fresh or a.verify)
+        if problems:
+            emit('done', ok=False, error='the model does not match the manifest: ' + '; '.join(problems[:5]), base=str(base))
+            return 1
+
+    florence_warning = None
+    if a.florence or a.florence_from:
+        problems, florence_warning = setup_florence(florence, manifest.get('florence') or {}, a.florence_from,
+                                                    a.allow_unverified)
+        if problems:
+            emit('done', ok=False, error='Florence-2 does not match the manifest: ' + '; '.join(problems[:5]), base=str(base))
+            return 1
+        if florence_warning:
+            emit('log', text=florence_warning)
 
     emit('step', step='verify', text='Checking the model')
     try:
@@ -179,7 +428,8 @@ def main(argv=None) -> int:
         emit('done', ok=False, error=f'the model in {base} is incomplete: {e}', base=str(base))
         return 1
     emit('log', text=f"transformer {cfg.get('_class_name')}, {cfg.get('num_layers')} layers, vace {cfg.get('vace_layers')}")
-    emit('done', ok=True, base=str(base), device=m['device'])
+    emit('done', ok=True, base=str(base), device=m['device'],
+         florence=str(florence) if (florence / 'config.json').is_file() else None, florence_warning=florence_warning)
     return 0
 
 

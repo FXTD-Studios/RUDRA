@@ -15,6 +15,7 @@
 #include <functional>
 
 #include "genfill_job.hpp"
+#include "rudra/core/fill_region.hpp"
 #include "json_lines.hpp"
 
 class QObject;
@@ -24,6 +25,16 @@ namespace rudra::app {
 
 // The preview's last sentence: why it may look like nothing (no clipped pixels, a low display peak).
 QString genfill_preview_hint(double changed, bool region_on, double display_nits);
+
+// 1.2.6 (18 Nov 2026, user feedback on 09V.mp4: a near-white door "not filled", the fill in specks):
+// the AI fill card's line on the frame on screen, from core/fill_region.hpp. Says how much v3 will
+// change and how much its model only sees, or why it will change nothing.
+QString ai_fill_frame_text(const AiFillRegion& r, int tau_high, bool v4 = false);
+// 1.2.6: the share of an AI fill run done, `lo`..`hi`, at step `step` of `steps` in window `window`
+// of `windows` (the fill's "progress" events).
+double genfill_progress_share(double lo, double hi, int window, int windows, int step, int steps);
+// ... and the whole explanation, for its tooltip.
+QString ai_fill_frame_tip(const AiFillRegion& r, int tau_high, bool v4 = false);
 
 class GenFillServer {
 public:

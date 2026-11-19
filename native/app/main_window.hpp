@@ -29,6 +29,7 @@
 #include <thread>
 
 #include "rudra/core/composite.hpp"
+#include "rudra/core/fill_region.hpp"
 #include "rudra/core/model_manifest.hpp"
 #include "rudra/core/scopes.hpp"
 #include "rudra/engine/headroom_preview.hpp"
@@ -42,6 +43,7 @@
 #include "rudra/media/sequence.hpp"
 #include "rudra/media/still_metadata.hpp"
 #include "batch_queue.hpp"
+#include "media_scan.hpp"
 #include "rudra/core/aces_v2_trims.hpp"
 #include "deliver_choice.hpp"
 #include "model_downloads.hpp"
@@ -52,7 +54,7 @@
 
 class QAction;
 class QLabel;
-namespace rudra::app { class GenFillJob; class GenFillServer; }
+namespace rudra::app { class GenFillJob; class GenFillServer; class MediaLibrary; class MediaPanel; }
 class QLineEdit;
 class QMenu;
 class QNetworkAccessManager;
@@ -243,6 +245,21 @@ public:
     void preview_genfill();
     void start_analytic_preview_master(const QString& mdir, int a, int b, std::function<void(const QJsonObject&)> done);
     void show_genfill_preview(const QString& which);
+    // 1.2.6 (18 Nov 2026, user feedback on 09V.mp4): where AI fill v3 acts on the frame on screen
+    // (core/fill_region.hpp, the rule of masks.py) with Deliver's thresholds; nullopt without a
+    // frame. `sdr` gets the SDR it was measured on.
+    std::optional<AiFillRegion> ai_fill_region_now(std::shared_ptr<const SdrImage>* sdr = nullptr);
+    // The AI fill card's line on this frame ("fills 0.3 % · its model sees 8 %", or why it fills
+    // nothing), and the viewer's "Where it fills" picture while that is on.
+    void sync_ai_frame_info();
+    void set_ai_region_view(bool on);
+    // 1.2.6 (user request): the AI fill's progress bars (the AI fill card and the bar over the viewer):
+    // `share` 0..1 of the whole run, or below 0 for "busy, no count yet" (a model loading); `what`
+    // names the phase. ai_progress_done() hides them.
+    void set_ai_progress(double share, const QString& what);
+    void ai_progress_done();
+    double ai_progress_share() const { return ai_progress_; }
+    bool ai_region_view() const { return ai_region_view_; }
     // RUDRA 1.1: the AI fill's "Suggest" button: rudra.genfill.prompts on the current frame,
     // then a menu of suggestions and presets that fills the highlight / shadow prompt.
     void suggest_genfill_prompt();
@@ -396,6 +413,13 @@ public:
     void arm_clip_peak(bool on);
     void clip_peak_picked(double x, double y);
     ClipFillOptions session_clip_options() const;
+    // 18 Nov 2026 (1.2.6): the shot's frames are a lossy codec's (JPEG, WebP, ...):
+    // the clip fill then smooths the compression noise near white (core/clip_fill.hpp).
+    bool source_is_lossy() const;
+    bool movie_is_lossy(const QString& path) const;   // 1.2.6: an 8-bit H.264/HEVC/… movie (ffprobe, cached)
+    mutable std::map<QString, bool> lossy_movies_;
+    // 1.2.6: the window's screen is at least 1700 px wide (logical): the scopes start open there.
+    bool wide_screen() const;
     // Reference (3.4): asks for the graded HDR of the current frame (or takes
     // `path`), fits it and hands the fit to the session; the message of a
     // refused file goes to the Source card's line. False when refused.
@@ -661,6 +685,45 @@ private:
     void session_changed(std::uint32_t what);
     void build_ui(bool with_viewer);
     QWidget* build_left_rail();
+    // 1.2.6: the Media panel (media_library.hpp): bins of every shot, dragged onto the viewer to open.
+    std::unique_ptr<MediaLibrary> library_;
+    MediaPanel* media_panel_ = nullptr;
+    QStringList media_drag_;   // the clips being dragged out of the panel, while they are
+    void build_media_panel(QVBoxLayout* rail, int at);
+    QString current_media_path() const;   // the clip the shot on screen came from; "" for none
+    void save_library() const;
+    void note_media(const QString& path);   // a shot was opened: in the library, the newest first
+    void note_media_delivered();            // a render of the shot on screen finished: Delivered
+    // 1.2.6: each clip keeps its own settings, in versions (MediaClip::versions).
+    void store_clip_settings(const QString& path) const;     // into the clip's version in use
+    void restore_clip_settings(const QString& path);         // the clip's version in use, when it has one
+    void fill_settings_menu(QMenu* menu, const QStringList& paths);
+    std::optional<QJsonObject> settings_clipboard_;
+public:
+    void open_media(const QString& path);   // as a shot of its own, replacing the one on screen
+    bool drop_media(const QStringList& clips, QPoint at);   // dropped at `at` (window coordinates): opens over the picture
+    bool apply_clip_settings(const QJsonObject& settings);   // 1.2.6: a clip's settings to the session (one undo step)
+    QJsonObject clip_settings_now() const;                  // the grade, view peak and Deliver settings of the moment
+    void paste_clip_settings(const QStringList& paths, const QJsonObject& settings);   // into each clip's version in use
+    int new_clip_version(const QString& path);               // the open clip's settings as a new version; its index
+    bool use_clip_version(const QString& path, int version);
+    // Several clips: stills open together as one shot (step through them); with a folder or a
+    // movie among them, the first opens and the rest stay selected in Media (Add to batch queue).
+    void open_media_list(const QStringList& paths);
+    // Each clip to the batch queue with the Deliver tab's settings, without opening it. The count added.
+    int batch_add_media(const QStringList& paths, QString* why = nullptr);
+    MediaLibrary& library() { return *library_; }
+    MediaPanel* media_panel() const { return media_panel_; }
+    // 1.2.6 (user feedback: the smart bins did nothing): each clip not scanned yet is looked at in the
+    // background (media_scan.hpp), one at a time; its clipped / crushed shares set the smart bins and
+    // a movie gets its thumbnail. scanning(): clips still to do.
+    void scan_media(const QStringList& paths);
+    int media_scans_pending() const { return int(scan_queue_.size()) + (scan_running_ ? 1 : 0); }
+private:
+    QStringList scan_queue_;
+    bool scan_running_ = false;
+    void run_next_scan();
+    void apply_media_scan(const MediaScan& s);
     QWidget* build_centre(bool with_viewer);
     QWidget* build_right_rail();
     QWidget* build_pipe();
@@ -701,6 +764,10 @@ private:
     void update_compare();
     // The viewer toolbar (view revision 6, viewer_toolbar.cpp).
     void build_viewer_toolbar(QVBoxLayout* v, QWidget* parent);
+    // 1.2.6 (user feedback: a cleaner viewer, no function lost): the overlays, the colour
+    // management and the exposure extras each behind one button that opens a panel.
+    void build_viewer_popovers(class FlowLayout* row);
+    void sync_viewer_popover_buttons();
     void sync_viewer_toolbar();
     bool viewer_has_sdr() const;
     QString range_readout_text() const;
@@ -829,6 +896,7 @@ private:
     QPushButton *vt_stop_ = nullptr, *vt_reset_ = nullptr, *vt_flip_ = nullptr, *vt_clamp_ = nullptr,
                 *vt_clip_ = nullptr, *vt_range_ = nullptr;
     std::vector<QPushButton*> vt_brackets_;
+    QPushButton *vt_overlays_ = nullptr, *vt_colour_btn_ = nullptr, *vt_more_ = nullptr;   // 1.2.6
     QSlider* vt_ev_slider_ = nullptr;
     QDoubleSpinBox *vt_ev_ = nullptr, *vt_gamma_ = nullptr;
     QComboBox *vt_a_ = nullptr, *vt_b_ = nullptr;
@@ -860,6 +928,23 @@ private:
     std::unique_ptr<MasterJob> master_job_;
     std::shared_ptr<std::mutex> backend_mutex_ = std::make_shared<std::mutex>();   // the engine and the master share it
     void master_finished(const MasterOutcome& o, const QString& folder);
+    // 1.2.6: the QC report (qc_report.hpp) of the render that just finished; its path, or "" (off, or nothing to say).
+    std::vector<std::filesystem::path> last_master_targets_;
+public:
+    // Code review, 19 Nov 2026: what the QC report says about a render (its title, source, Deliver
+    // choice, request) is taken when the render starts, not when it ends: a grade changed or another
+    // clip opened while it runs no longer ends up in its report. One render runs at a time.
+    struct QcContext {
+        QString title, source, source_kind, curve_mismatch;
+        bool lossy = false;
+        DeliverChoice deliver;
+        QJsonObject request;
+    };
+    QcContext qc_context_now(const QString& route, const QJsonObject& request) const;
+    std::optional<QcContext> render_qc_context_;
+    QString write_render_qc(const QString& folder, const std::vector<std::filesystem::path>& masters, const QString& route,
+                            const QJsonObject& learned = {});
+private:
     struct FramesMovie {
         QString format;                      // hdr10, hlg, prores422hq, prores4444
         std::filesystem::path frames_dir, output;
@@ -1010,6 +1095,16 @@ private:
     QString genfill_preview_show_ = "fill";
     // 6 Nov 2026: Master / Invented stay on the previewed frame when the route re-renders it.
     bool genfill_preview_pinned_ = false;
+    bool ai_region_view_ = false;
+    double ai_progress_ = -2.0;     // 1.2.6: set_ai_progress's share; -2 = hidden   // 1.2.6: the viewer shows where the AI fill acts (set_ai_region_view)
+    struct AiFrameInfoKey {
+        const void* frame = nullptr;
+        int tau_high = 0, tau_low = 0, index = -1;
+        bool operator==(const AiFrameInfoKey&) const = default;
+    } ai_frame_info_key_;
+    std::optional<AiFillRegion> ai_frame_info_;
+    QTimer* genfill_preview_ticker_ = nullptr;                // 1.2.6: the preview's seconds, so it never looks stuck
+    std::chrono::steady_clock::time_point genfill_preview_t0_{};
     std::optional<PromptSuggestions> prompt_suggestions_;   // the last suggestion run's
     int prompt_suggest_frame_ = -1;                          // ... and the frame it looked at
     bool prompt_suggest_running_ = false;

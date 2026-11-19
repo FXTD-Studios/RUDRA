@@ -106,6 +106,7 @@ std::string clip_fill_text(const MasterRequest& q) {
         std::snprintf(b, sizeof b, "; near-clip detail x%.2f", q.highlight_detail);
         t += b;
     }
+    if (q.lossy_source) t += "; lossy source (compression noise smoothed near white, hue kept)";
     return t;
 }
 
@@ -143,6 +144,7 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
         r.source_space = j.value("source_space", std::string("rec709"));
         r.container = j.value("container", std::string("aces"));
         r.exr_half = j.value("exr_half", true);
+        r.exr_zip = j.value("exr_zip", false);
         r.source_curve = j.value("source_curve", std::string("unknown"));
         if (j.contains("calibration"))
             for (const auto& c : j.at("calibration"))
@@ -171,6 +173,7 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
         r.brackets = j.value("brackets", false);
         r.clip_fill = j.value("clip_fill", true);
         r.highlight_detail = j.value("highlight_detail", 1.0);
+        r.lossy_source = j.value("lossy_source", false);
         if (!std::isfinite(r.highlight_detail) || r.highlight_detail < 0.0 || r.highlight_detail > 4.0)
             return make_error(ErrorCode::InvalidArgument, "highlight_detail must be within 0 and 4", std::to_string(r.highlight_detail));
         r.exposure_ev = j.value("exposure_ev", 0.0);
@@ -215,6 +218,7 @@ std::string master_request_json(const MasterRequest& q) {
     j["regions"] = regions;
     if (q.source_curve != "unknown") j["source_curve"] = q.source_curve;
     if (!q.exr_half) j["exr_half"] = false;
+    if (q.exr_zip) j["exr_zip"] = true;
     if (q.exposure_ev != 0.0) j["exposure_ev"] = q.exposure_ev;
     if (q.region.enabled) j["reconstruction_region"] = region_to_json(q.region);
     if (q.mattes) j["mattes"] = true;
@@ -230,6 +234,7 @@ std::string master_request_json(const MasterRequest& q) {
     if (!q.masks_file.empty()) j["masks_file"] = q.masks_file;
     if (!q.clip_fill) j["clip_fill"] = false;
     if (q.highlight_detail != 1.0) j["highlight_detail"] = q.highlight_detail;
+    if (q.lossy_source) j["lossy_source"] = true;
     if (!q.clip_peaks.empty()) {
         auto peaks = nlohmann::json::array();
         for (const auto& c : q.clip_peaks) peaks.push_back({{"x", c.x}, {"y", c.y}, {"nits", c.nits}});
@@ -243,7 +248,7 @@ ClipFillOptions clip_fill_options(const MasterRequest& q) {
     o.enabled = q.clip_fill;
     o.overrides = q.clip_peaks;
     o.detail_gain = q.highlight_detail;
-    return o;
+    return q.lossy_source ? lossy_source_clip_options(std::move(o)) : o;
 }
 
 Fields analytic_fields_for(const SdrImage& sdr, const MasterRequest& q, ClipFill* detail) {
@@ -417,10 +422,11 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         }
         return rgba;
     };
+    const ExrCompression zip = q.exr_zip ? ExrCompression::Zip : ExrCompression::None;   // never the AP0 container
     auto w = aces     ? write_aces_exr(out, linear, *src, 1.0, provenance, q.exr_half, nullptr, {}, alpha)
-             : acescg ? write_acescg_exr(out, linear, *src, 1.0, provenance, q.exr_half, nullptr, {}, alpha)
+             : acescg ? write_acescg_exr(out, linear, *src, 1.0, provenance, q.exr_half, nullptr, {}, alpha, zip)
                       : write_exr(out, rec2020_rgba(), q.exr_half, rec709 ? kRec709Chromaticities : kRec2020Chromaticities,
-                                  provenance);
+                                  provenance, nullptr, {}, zip);
     if (!w) return w.error();
 
     // RUDRA 1.1 priority 4: the brackets from the EXR as written, and the preview-to-export check.

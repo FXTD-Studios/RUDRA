@@ -21,8 +21,9 @@
 //       largest code per pixel (one float plane)
 //   {"id":2,"op":"view","ev":-2,"mode":"model|plain|source|mask|split|fill","max_side":1600,"out":"<file.ppm>"}
 //       the kept frame through the ACES 2.0 SDR view at that exposure, 8-bit PPM; "fill" shows the
-//       AI fill's regions (rudra/genfill/masks.py): source codes max(R,G,B) >= "tau_high" (250) in
-//       orange, <= "tau_low" (4) in cyan, over the dimmed model view
+//       AI fill's regions (rudra/genfill/masks.py, core/fill_region.hpp): solid orange where v3
+//       fills (code 255 in areas of 5e-5 of the frame or more), orange half way where its model only
+//       sees (codes >= "tau_high", 250); cyan the same for "tau_low"; over the dimmed model view
 //   {"id":9,"op":"monitor","exr":"<acescg float exr>","display":"hdr1000","out":"<file.f32>"}
 //       the EXR through that monitoring transform, written as preview's model_out (9 Nov 2026:
 //       the AI fill preview shown the way the live frame is)
@@ -69,6 +70,7 @@
 
 #include "rudra/core/aces_v2.hpp"
 #include "rudra/core/aces_v2_manifest.hpp"
+#include "rudra/core/fill_region.hpp"
 #include "rudra/deliver/exr.hpp"
 #include "rudra/deliver/master.hpp"
 #include "rudra/infer/aces_v2_runtime.hpp"
@@ -140,15 +142,11 @@ std::vector<std::uint8_t> render_view(const Kept& k, const aces_v2::AcesView& vi
                 for (int c = 0; c < 3; ++c) disp.plane(c)[i] = disp.plane(c)[i] * 0.35f * (1 - m) + magenta[c] * m;
             }
         } else if (mode == "fill") {
-            const float* c[3] = {k.codes.plane(0), k.codes.plane(1), k.codes.plane(2)};
-            const float hi_t = (float(tau_high) - 0.5f) / 255.0f, lo_t = (float(tau_low) + 0.5f) / 255.0f;
-            for (std::size_t i = 0; i < disp.plane_size(); ++i) {
-                const float mx = std::max({c[0][i], c[1][i], c[2][i]});
-                const bool hi = tau_high <= 255 && mx >= hi_t, lo = !hi && tau_low >= 0 && mx <= lo_t;
-                const float orange[3] = {1.0f, 0.55f, 0.0f}, cyan[3] = {0.0f, 0.85f, 1.0f};
-                for (int ch = 0; ch < 3; ++ch)
-                    disp.plane(ch)[i] = hi ? orange[ch] : lo ? cyan[ch] : disp.plane(ch)[i] * 0.5f;
-            }
+            // 18 Nov 2026 (1.2.6): what v3 fills in solid colour, what its model only sees tinted
+            // half way (core/fill_region.hpp, the rule of masks.py). Everything at tau_high was solid,
+            // so a near-white door looked filled while the fill changed only specks in it.
+            const PlanarBuffer top = aces_code_plane(k.codes);
+            ai_fill_region_tint_display(disp, ai_fill_region(top.plane(0), w, h, tau_high, tau_low));
         } else if (mode == "split") {
             const PlanarBuffer plain = shown(k.baseline);
             for (int y = 0; y < h; ++y)

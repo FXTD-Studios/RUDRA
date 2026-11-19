@@ -11,9 +11,12 @@
 #include <QPointer>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QSettings>
+#include <QRegularExpression>
 #include <QStatusBar>
+#include <QStyle>
 #include <QTemporaryDir>
 #include <QTimer>
 
@@ -242,9 +245,9 @@ void MainWindow::monitor_preview_planes(const QString& exr, int w, int h,
 // white, which a display peak near 203 nits shows as plain white either way.
 QString genfill_preview_hint(double changed, bool region_on, double display_nits) {
     if (changed <= 0.0)
-        return QStringLiteral(". Nothing was invented on this frame: the AI fill acts only where the master's SDR "
-                              "view is fully clipped (code 255) or crushed (0)%1, and this frame has none there. "
-                              "Preview a frame with blown highlights.")
+        return QStringLiteral(". Nothing was invented on this frame: the AI fill acts only on areas of the master's "
+                              "SDR view that are fully clipped (code 255) or crushed (0)%1, and this frame has none "
+                              "big enough. \"Where it fills\" shows them.")
             .arg(region_on ? QStringLiteral(" inside the reconstruction region") : QString());
     if (display_nits < 600.0)
         return QStringLiteral(". The invented detail is above SDR white: at a %1-nit display peak it shows as white. "
@@ -253,11 +256,141 @@ QString genfill_preview_hint(double changed, bool region_on, double display_nits
     return {};
 }
 
+double genfill_progress_share(double lo, double hi, int window, int windows, int step, int steps) {
+    windows = std::max(1, windows);
+    steps = std::max(1, steps);
+    const double done = (std::clamp(window, 1, windows) - 1 + std::clamp(double(step) / steps, 0.0, 1.0)) / windows;
+    return lo + (hi - lo) * done;
+}
+
+QString ai_fill_frame_text(const AiFillRegion& r, int tau_high, bool v4) {
+    if (v4)   // 1.2.6: v4.3 redraws its whole region, the codes inside it not kept
+        return r.empty() ? QStringLiteral("This frame: nothing for v4.3 to redraw (nothing at code %1 or above).").arg(tau_high)
+                         : QStringLiteral("This frame: v4.3 redraws %1 % (codes %2 and up)")
+                               .arg(r.filled_pct, 0, 'f', r.filled_pct < 1.0 ? 2 : 1)
+                               .arg(tau_high);
+    if (r.empty() && r.seen_pct < 0.05) return QStringLiteral("This frame: nothing to fill (no clipped highlights).");
+    if (r.empty())
+        return QStringLiteral("This frame: nothing to fill. Its bright area is near white (codes %1–254), "
+                              "not clipped, so it keeps its picture.")
+            .arg(std::min(tau_high, 254));
+    return QStringLiteral("This frame: fills %1 % · the model sees %2 %")
+        .arg(r.filled_pct, 0, 'f', r.filled_pct < 1.0 ? 2 : 1)
+        .arg(r.seen_pct, 0, 'f', 1);
+}
+
+QString ai_fill_frame_tip(const AiFillRegion& r, int tau_high, bool v4) {
+    if (v4)
+        return QStringLiteral("AI fill v4.3 region (experimental) draws every pixel at code %1 or above again from the "
+                              "source: its detail from the model, its colour and level led by the source. Unlike v3 the "
+                              "SDR codes there are not kept. \"Where it fills\" shows the region in solid orange.")
+            .arg(tau_high);
+    QString t = QStringLiteral(
+                    "AI fill v3 changes only fully clipped areas (code 255) of about 100 pixels or more at 1080p: "
+                    "solid orange under \"Where it fills\". Its model also sees everything at code %1 or above "
+                    "(tinted), as context, and leaves it as it is: the source still holds a picture there.")
+                    .arg(std::min(tau_high, 256));
+    if (r.specks_pct > 0.0)
+        t += QStringLiteral("\n\n%1 % of the frame is clipped in scattered specks too small to fill; "
+                            "they keep the master.")
+                 .arg(r.specks_pct, 0, 'f', 2);
+    if (r.empty() && r.seen_pct >= 0.05)
+        t += QStringLiteral("\n\nTo replace a near-white area (a hazy sky in a door), AI fill v3 is the wrong tool: "
+                            "it never changes what the source shows. Grade it, or replace it in compositing.");
+    return t;
+}
+
 namespace {
 
 }  // namespace
 
 bool MainWindow::genfill_previewing() const { return genfill_preview_busy_; }
+
+std::optional<AiFillRegion> MainWindow::ai_fill_region_now(std::shared_ptr<const SdrImage>* sdr_out) {
+    std::shared_ptr<const SdrImage> sdr;
+    // The learned route's frame on screen, else the analytic route's.
+    if (aces_shown_ == current_ && aces_sdr_img_ && aces_model_img_ && aces_sdr_img_->width() == aces_model_img_->width())
+        sdr = aces_sdr_img_;
+    else if (current_frame_ && current_frame_->index == current_)
+        sdr = std::shared_ptr<const SdrImage>(current_frame_, &current_frame_->sdr);
+    if (!sdr || sdr->width() <= 0) return std::nullopt;
+    if (sdr_out) *sdr_out = sdr;
+    const DeliverChoice c = deliver_effective();
+    // v4.3 region re-render: its whole region (codes >= 240) is redrawn, no shadows, no specks rule.
+    const bool v4 = c.ai.rerender;
+    const int hi = v4 ? kAiFillV4TauHigh : c.ai.tau_high, lo = v4 ? -1 : c.ai.tau_low;
+    const AiFrameInfoKey key{sdr.get(), hi + (v4 ? 1000 : 0), lo, current_};
+    if (!ai_frame_info_ || !(key == ai_frame_info_key_)) {
+        ai_frame_info_ = v4 ? ai_fill_region(*sdr, hi, lo, 0.0, hi) : ai_fill_region(*sdr, hi, lo);
+        ai_frame_info_key_ = key;
+    }
+    return ai_frame_info_;
+}
+
+void MainWindow::sync_ai_frame_info() {
+    auto* lab = findChild<QLabel*>("deliverAiFrameInfo");
+    auto* btn = findChild<QPushButton*>("deliverAiShowRegion");
+    const DeliverChoice c = deliver_effective();
+    const bool on = c.ai_fill;   // 1.2.6: v3 and v4.3 region, each with its own rule
+    const bool v4 = c.ai.rerender;
+    const int tau = v4 ? kAiFillV4TauHigh : c.ai.tau_high;
+    if (btn) {
+        btn->setVisible(on);
+        if (!on && ai_region_view_) set_ai_region_view(false);
+    }
+    if (!lab) return;
+    if (!on) {
+        lab->hide();
+        return;
+    }
+    if (playing()) return;   // measured when it stops
+    const auto r = ai_fill_region_now();
+    lab->setText(r ? ai_fill_frame_text(*r, tau, v4) : QStringLiteral("This frame: not shown yet."));
+    lab->setToolTip(r ? ai_fill_frame_tip(*r, tau, v4) : QString());
+    lab->setProperty("state", r && r->empty() ? "warn" : "");
+    lab->style()->unpolish(lab);
+    lab->style()->polish(lab);
+    lab->show();
+    if (ai_region_view_) apply_fill_view(/*quiet=*/true);
+}
+
+void MainWindow::set_ai_progress(double share, const QString& what) {
+    ai_progress_ = share < 0 ? -1.0 : std::clamp(share, 0.0, 1.0);
+    for (const char* id : {"deliverAiProgress", "viewerAiProgress"}) {
+        auto* bar = findChild<QProgressBar*>(id);
+        if (!bar) continue;
+        if (ai_progress_ < 0) {
+            bar->setRange(0, 0);   // busy: a model loading, a prompt embedding
+        } else {
+            bar->setRange(0, 1000);
+            bar->setValue(int(std::lround(ai_progress_ * 1000.0)));
+        }
+        bar->setFormat(ai_progress_ < 0 ? what : QStringLiteral("%p % \u00b7 ") + what);
+        bar->setToolTip(what);
+        bar->show();
+    }
+}
+
+void MainWindow::ai_progress_done() {
+    ai_progress_ = -2.0;
+    for (const char* id : {"deliverAiProgress", "viewerAiProgress"})
+        if (auto* bar = findChild<QProgressBar*>(id)) bar->hide();
+}
+
+void MainWindow::set_ai_region_view(bool on) {
+    if (auto* b = findChild<QPushButton*>("deliverAiShowRegion"); b && b->isChecked() != on) b->setChecked(on);
+    if (ai_region_view_ == on) return;
+    ai_region_view_ = on;
+    if (on) {
+        genfill_preview_pinned_ = false;
+        if (apply_fill_view())
+            statusBar()->showMessage(QStringLiteral("Viewer: where the AI fill acts on this frame: solid orange it fills, "
+                                                    "tinted its model only sees"),
+                                     6000);
+    } else if (!frames_.empty()) {
+        step_to(current_);   // back to the picture
+    }
+}
 
 void MainWindow::preview_genfill() {
     auto* st = findChild<QLabel*>("deliverAiPreviewStatus");
@@ -352,7 +485,26 @@ void MainWindow::preview_genfill() {
                   .arg(c.ai.rerender ? QStringLiteral(" (v4 then draws texture with no subject: type what is in the bright region)") : QString())
             : QStringLiteral("AI fill preview: highlight prompt \"%1\"").arg(c.ai.prompt_highlight.trimmed()));
     say(QStringLiteral("AI fill preview: rendering the master of frames %1–%2…").arg(a + 1).arg(b + 1));
+    set_ai_progress(0.0, QStringLiteral("master"));
     const auto t0 = std::chrono::steady_clock::now();
+    // 1.2.6 (user feedback: "preview stuck"): the seconds so far on the status line, every second,
+    // so a model loading for a minute does not look hung. It stops itself when the preview ends.
+    genfill_preview_t0_ = t0;
+    if (!genfill_preview_ticker_) {
+        genfill_preview_ticker_ = new QTimer(this);
+        genfill_preview_ticker_->setInterval(1000);
+        connect(genfill_preview_ticker_, &QTimer::timeout, this, [this] {
+            if (!genfill_preview_busy_) return genfill_preview_ticker_->stop();
+            auto* l = findChild<QLabel*>("deliverAiPreviewStatus");
+            if (!l) return;
+            static const QRegularExpression tail(QStringLiteral(" \u00b7 \\d+ s$"));
+            QString t = l->text();
+            t.remove(tail);
+            const auto s = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - genfill_preview_t0_).count();
+            l->setText(t + QStringLiteral(" \u00b7 %1 s").arg(s));
+        });
+    }
+    genfill_preview_ticker_->start();
     const QPointer<MainWindow> self(this);
     genfill_preview_master_id_ = -1;
     // v4, region re-render: the source the master was made from, and the route's inverse.
@@ -365,6 +517,7 @@ void MainWindow::preview_genfill() {
             auto* st2 = self->findChild<QLabel*>("deliverAiPreviewStatus");
             auto end = [self, st2](const QString& t) {
                 self->genfill_preview_busy_ = false;
+                self->ai_progress_done();
                 if (auto* btn = self->findChild<QPushButton*>("deliverAiPreview")) btn->setText(QStringLiteral("Preview AI fill"));
                 if (st2) st2->setText(t);
                 self->log(t);
@@ -420,6 +573,8 @@ void MainWindow::preview_genfill() {
             if (st2)
                 st2->setText(cold ? QStringLiteral("AI fill preview: loading the fill model (once; a minute or two)…")
                                   : QStringLiteral("AI fill preview: filling %1 frame(s)…").arg(frames));
+            if (cold) self->set_ai_progress(-1.0, QStringLiteral("loading the fill model (once)"));
+            else self->set_ai_progress(0.1, QStringLiteral("filling"));
             const auto t1 = std::chrono::steady_clock::now();
             QString why2;
             const bool started = self->genfill_server_->request(
@@ -427,17 +582,24 @@ void MainWindow::preview_genfill() {
                 [self, st2, frames](const QJsonObject& e) {
                     if (!self || !st2) return;
                     const QString ev = e.value("event").toString();
-                    if (ev == "ready")
+                    if (ev == "ready") {
                         st2->setText(QStringLiteral("AI fill preview: model loaded on %1 in %2 s; filling %3 frame(s)…")
                                          .arg(e.value("device").toString())
                                          .arg(e.value("load_seconds").toDouble(), 0, 'f', 0)
                                          .arg(frames));
-                    else if (ev == "embedding")   // a typed prompt not in the cache: umT5 loads once (6 Nov 2026)
+                        self->set_ai_progress(0.1, QStringLiteral("filling"));
+                    } else if (ev == "embedding") {   // a typed prompt not in the cache: umT5 loads once (6 Nov 2026)
                         st2->setText(QStringLiteral("AI fill preview: embedding %1 new prompt(s), once (a minute or more); "
                                                     "the presets are instant")
                                          .arg(e.value("prompts").toArray().size()));
-                    else if (ev == "progress")
-                        st2->setText(QStringLiteral("AI fill preview: step %1 / %2").arg(e.value("step").toInt()).arg(e.value("steps").toInt()));
+                        self->set_ai_progress(-1.0, QStringLiteral("embedding the prompt (once)"));
+                    } else if (ev == "progress") {
+                        const int step = e.value("step").toInt(), steps = std::max(1, e.value("steps").toInt());
+                        st2->setText(QStringLiteral("AI fill preview: step %1 / %2").arg(step).arg(steps));
+                        self->set_ai_progress(genfill_progress_share(0.1, 0.95, e.value("window").toInt(1),
+                                                                     e.value("windows").toInt(1), step, steps),
+                                              QStringLiteral("step %1 / %2").arg(step).arg(steps));
+                    }
                 },
                 [self, end, options, fdir, mdir, a, b, at, frames, n, master_s, t1, cold](bool ok, const QJsonObject& last) {
                     if (!self) return;
@@ -453,6 +615,7 @@ void MainWindow::preview_genfill() {
                     auto f = m ? read_acescg_rgb(QDir(fdir).filePath(preview_name(at)), &w) : std::nullopt;
                     if (!m || !f || m->width() != f->width() || m->height() != f->height())
                         return end(QStringLiteral("AI fill preview: the frames could not be read back. ") + w);
+                    self->set_ai_progress(0.97, QStringLiteral("showing it"));
                     auto p = std::make_shared<GenFillPreviewFrame>();
                     p->index = at;
                     p->options = options;
@@ -529,6 +692,8 @@ void MainWindow::preview_genfill() {
             const QJsonObject p = o.value("progress").toObject();
             if (auto* st2 = self->findChild<QLabel*>("deliverAiPreviewStatus"))
                 st2->setText(QStringLiteral("AI fill preview: master %1 / %2").arg(p.value("index").toInt()).arg(frames));
+            self->set_ai_progress(0.1 * p.value("index").toInt() / std::max(1, frames),
+                                  QStringLiteral("master %1 / %2").arg(p.value("index").toInt()).arg(frames));
         });
         if (genfill_preview_master_id_ != 0) genfill_preview_master_id_ = id;   // still running (a refusal answers at once)
     } else {
@@ -582,6 +747,7 @@ void MainWindow::start_analytic_preview_master(const QString& mdir, int a, int b
 }
 
 void MainWindow::show_genfill_preview(const QString& which) {
+    if (ai_region_view_) set_ai_region_view(false);   // 1.2.6: the preview's pictures replace the region
     auto* st = findChild<QLabel*>("deliverAiPreviewStatus");
     if (!genfill_preview_) {
         if (st) st->setText(QStringLiteral("No AI fill preview yet: Preview AI fill fills the frame at the playhead."));
@@ -680,6 +846,17 @@ bool MainWindow::apply_fill_view(bool quiet) {
     };
 #endif
     if (frames_.empty()) return false;
+    // 1.2.6 (18 Nov 2026): "Where it fills": the AI fill's region on the frame on screen, any route.
+    if (ai_region_view_ && !playing()) {
+        std::shared_ptr<const SdrImage> sdr;
+        if (const auto r = ai_fill_region_now(&sdr)) {
+#ifdef RUDRA_APP_VIEWER
+            const NetworkLinearImage pic(ai_fill_region_picture(*sdr, *r));
+            show(pic, pic);
+#endif
+            return true;
+        }
+    }
     // 6 Nov 2026: the preview's Master / Invented picture, pinned to the previewed frame. It was
     // shown once and the next frame the route rendered (any slider, the learned frame landing)
     // replaced it, so the preview looked as if it had done nothing.
@@ -711,6 +888,7 @@ bool MainWindow::apply_fill_view(bool quiet) {
 }
 
 void MainWindow::set_fill_view(bool on) {
+    if (on && ai_region_view_) set_ai_region_view(false);   // 1.2.6
     if (fill_view_on_ == on) {
         if (on) apply_fill_view();
         return;
