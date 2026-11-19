@@ -20,6 +20,7 @@
 #include <QSysInfo>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <system_error>
@@ -530,8 +531,11 @@ void SystemCheckDialog::build_parts() {
         h->addWidget(st, 0, Qt::AlignVCenter);
     };
 
-    // 1. The downloads.
-    if (md_->models().empty()) {
+    // 1. The downloads. Without the list only the built-in Florence-2 is there, so the reason still shows.
+    const bool only_builtins = std::all_of(md_->models().begin(), md_->models().end(), [](const RemoteModel& m) {
+        return m.kind == QStringLiteral("florence");
+    });
+    if (only_builtins) {
         const QString status = md_->fetching() ? QStringLiteral("Reading the list of models…")
                                : md_->index_status().isEmpty() ? QStringLiteral("The list of models has not been read yet.")
                                                                : QStringLiteral("The list of models could not be read (%1). Models copied "
@@ -573,7 +577,7 @@ void SystemCheckDialog::build_parts() {
         detail += QStringLiteral(" · ") + human_size(m.size());
         if (!m.licence.isEmpty()) detail += QStringLiteral(" · Licence: ") + m.licence;
         if (ai && !florence) detail += QStringLiteral(". Needs the base model and Python below.");
-        if (florence) detail += QStringLiteral(". Suggest a prompt describes the shot with it; it runs in AI fill's Python below.");
+        if (florence) detail += QStringLiteral(". It runs in AI fill's Python below.");   // what it does is in its own note
         if (blocked_here) detail += QStringLiteral("\n") + ai_problem;
         const QString err = md_->error(m.id);
         const QString state = installed ? QStringLiteral("Installed and checked")
