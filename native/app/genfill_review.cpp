@@ -257,6 +257,50 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         ++r;
     }
     v->addLayout(grid);
+    // 1.2.6: Florence-2 from the internet, here where its folder is: the app's own model download
+    // (Hugging Face at the pinned revision, every file checked), into the models folder; the
+    // AI fill uses it from then on (genfill/florence). Shown while no Florence-2 is found.
+    if (auto* mw = dynamic_cast<MainWindow*>(parent)) {
+        auto* get_florence = new QPushButton(QStringLiteral("Download Florence-2 (MIT, 0.5 GB)"), this);
+        get_florence->setObjectName("genfillGetFlorence");
+        get_florence->setToolTip(QStringLiteral("Suggest a prompt describes the shot with Florence-2. Downloads it from "
+                                                "Hugging Face (florence-community/Florence-2-base, pinned) and checks "
+                                                "every file's SHA-256"));
+        QString w;
+        const auto s = genfill_setup(&w);
+        GenFillSetup probe = s ? *s : GenFillSetup{};
+        if (!s) probe.base = to_path(QSettings().value("genfill/base").toString());
+        get_florence->setVisible(genfill_florence_dir(probe).empty());
+        v->addWidget(get_florence, 0, Qt::AlignLeft);
+        QPointer<QPushButton> btn(get_florence);
+        connect(get_florence, &QPushButton::clicked, this, [this, mw, btn] {
+            ModelDownloads* md = mw->model_downloads();
+            md->ensure_builtin();
+            auto* status = findChild<QLabel*>("genfillSetupStatus");
+            QString why;
+            if (!md->download(QString::fromLatin1(kFlorenceModelId), &why)) {
+                if (status) status->setText(QStringLiteral("Florence-2: ") + why);
+                return;
+            }
+            if (btn) btn->setEnabled(false);
+            QPointer<QLabel> st(status);
+            md->listen(this, [this, md, st, btn] {
+                const QString id = QString::fromLatin1(kFlorenceModelId);
+                if (md->active() == id) {
+                    if (st) st->setText(QStringLiteral("Downloading Florence-2… %1 of %2")
+                                            .arg(human_size(md->done_bytes()), human_size(md->total_bytes())));
+                } else if (md->state(id) == InstallState::Installed) {
+                    if (st) st->setText(QStringLiteral("Florence-2 is downloaded and checked: Suggest a prompt uses it."));
+                    if (btn) btn->setVisible(false);
+                    if (auto* le = findChild<QLineEdit*>(QStringLiteral("genfillSetup_florence"))) le->setText(QSettings().value("genfill/florence").toString());
+                    refresh_found();
+                } else if (!md->error(id).isEmpty()) {
+                    if (st) st->setText(QStringLiteral("Florence-2 was not downloaded: ") + md->error(id));
+                    if (btn) btn->setEnabled(true);
+                }
+            });
+        });
+    }
     auto* status = new QLabel(found ? genfill_ready_text(*found) : why, this);
     status->setObjectName("genfillSetupStatus");
     status->setWordWrap(true);

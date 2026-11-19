@@ -8536,3 +8536,43 @@ TEST(AppCheck, FlorenceIsOfferedWithTheModelsAndUsedOnceDownloaded) {
     EXPECT_EQ(QDir::cleanPath(app::from_path(app::genfill_florence_dir({}))), QDir::cleanPath(folder));
     QSettings().clear();
 }
+
+// 1.2.6: Florence-2 downloads from the internet before the published list names it: the app knows it
+// (pinned revision, every file's SHA-256 compiled in), and AI fill setup has a button for it.
+TEST(GenFill, FlorenceIsDownloadableWithoutThePublishedList) {
+    QSettings().clear();
+    const auto built = app::builtin_models();
+    ASSERT_EQ(built.size(), 1u);
+    const app::RemoteModel& f = built.front();
+    EXPECT_EQ(f.kind, "florence");
+    EXPECT_EQ(f.folder, "Florence-2-base");
+    EXPECT_EQ(f.files.size(), 13u);
+    for (const auto& file : f.files) {
+        EXPECT_TRUE(app::is_known_model_file(file.sha256)) << file.path.toStdString();
+        EXPECT_TRUE(file.url.startsWith("https://huggingface.co/florence-community/Florence-2-base/resolve/00921df66db7"));
+    }
+    EXPECT_EQ(app::known_models(built).size(), 1u);   // what the published-list filter keeps
+    // A list without it gets it; a list that has one keeps its own.
+    std::vector<app::RemoteModel> list;
+    app::add_missing_builtins(list);
+    ASSERT_EQ(list.size(), 1u);
+    app::add_missing_builtins(list);
+    EXPECT_EQ(list.size(), 1u);
+    app::RemoteModel own = f;
+    own.id = "florence_published";
+    std::vector<app::RemoteModel> published{own};
+    app::add_missing_builtins(published);
+    EXPECT_EQ(published.size(), 1u);
+    // AI fill setup offers the download while no Florence-2 is found.
+    QTemporaryDir tmp;
+    QSettings().setValue("models/downloadRoot", tmp.path());
+    app::MainWindow w(false);
+    app::GenFillSetupDialog d(&w);
+    auto* get = d.findChild<QPushButton*>("genfillGetFlorence");
+    ASSERT_NE(get, nullptr);
+    EXPECT_FALSE(get->isHidden());
+    auto* md = w.model_downloads();
+    md->ensure_builtin();
+    EXPECT_NE(md->model(app::kFlorenceModelId), nullptr);
+    QSettings().clear();
+}
