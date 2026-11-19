@@ -17,7 +17,7 @@ certifi==2026.10.23
 charset-normalizer==3.5.2
 click==8.5.1
 colorama==0.4.6 ; sys_platform == 'win32'
-diffusers==0.39.0
+diffusers==0.41.0
 filelock==4.2.1
 fsspec==2026.6.0
 ftfy==6.3.1
@@ -54,7 +54,7 @@ safetensors==0.8.0
 sentencepiece==0.2.2
 shellingham==1.5.4
 sympy==1.14.0
-tokenizers==0.22.2
+tokenizers==0.23.3
 tqdm==4.70.1
 transformers==5.13.1
 typer==0.29.1

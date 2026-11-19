@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0   # v7.1.0
         with: { python-version: "3.12" }
       - name: Tools
         run: |
@@ -48,7 +48,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e . "opencolorio==${OCIO_VERSION}" openexr opencv-python-headless huggingface_hub
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25   # v5
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
         with: { path: "tmp/native_deps/ocio-${{ env.OCIO_VERSION }}", key: "ocio-${{ env.OCIO_VERSION }}-ubuntu-24.04" }
       - name: OpenColorIO
         run: tools/ci_run.sh "OCIO" scripts/build_ocio.sh
@@ -69,7 +69,7 @@ jobs:
           echo "LD_LIBRARY_PATH=$ORT_ROOT/lib:$OCIO_PREFIX/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
       - name: The shipped model
         run: PYTHON=python tools/ci_run.sh "Shipped model" scripts/ci_shipped_model.sh build/cli/rudra-native libtorch:cpu onnxruntime:cpu
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f   # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         if: always()
         with: { name: shipped-model-linux, path: "reports/shipped_model/*.json", if-no-files-found: ignore }
 
@@ -78,7 +78,7 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0   # v7.1.0
         with: { python-version: "3.12" }
       - name: Tools
         run: |
@@ -87,7 +87,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch numpy
           pip install -e . "opencolorio==${OCIO_VERSION}" openexr opencv-python-headless huggingface_hub
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25   # v5
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
         with: { path: "tmp/native_deps/ocio-${{ env.OCIO_VERSION }}", key: "ocio-${{ env.OCIO_VERSION }}-macos-15" }
       - name: OpenColorIO
         run: tools/ci_run.sh "OCIO" scripts/build_ocio.sh
@@ -106,6 +106,6 @@ jobs:
           echo "DYLD_LIBRARY_PATH=$ORT_ROOT/lib:$OCIO_PREFIX/lib" >> "$GITHUB_ENV"
       - name: The shipped model
         run: PYTHON=python tools/ci_run.sh "Shipped model" scripts/ci_shipped_model.sh build/cli/rudra-native onnxruntime:cpu onnxruntime:coreml
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f   # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         if: always()
         with: { name: shipped-model-macos, path: "reports/shipped_model/*.json", if-no-files-found: ignore }
