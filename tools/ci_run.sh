@@ -28,7 +28,9 @@ if [ "$code" -ne 0 ]; then
     echo "::error title=${title}: failing assertions::$(printf '%s\n' "$asserts" | esc)"
   fi
   # Workflow commands take one line: %, CR and LF are escaped.
-  body=$(tail -n "${CI_TAIL_LINES:-60}" "$log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk 'BEGIN { ORS = "%0A" } { print }')
+  # The end of the log: GitHub keeps only the first few KB of an annotation, so 60 long lines of a
+  # build lost the error that ended them (the v1.2.6 Linux job, 19 Nov 2026). The last ~3 KB of them.
+  body=$(tail -n "${CI_TAIL_LINES:-60}" "$log" | tail -c "${CI_TAIL_BYTES:-3000}" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk 'BEGIN { ORS = "%0A" } { print }')
   echo "::error title=${title} failed (exit ${code})::${body}"
   # GoogleTest: one annotation per failing test (up to 8), its own output from
   # [ RUN ] to [ FAILED ], since the tail above only shows the summary.

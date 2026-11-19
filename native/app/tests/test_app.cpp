@@ -8519,6 +8519,14 @@ TEST(AppCheck, FlorenceIsOfferedWithTheModelsAndUsedOnceDownloaded) {
     f.os = "Windows 11";
     f.windows_build = 26100;
     f.cpu_arch = "x86_64";
+    // First a computer with no GPU, as a CI runner reads itself: Florence-2 is off and cannot be ticked.
+    f.gpus = std::vector<app::GpuFact>{};
+    f.ram_gb = 64;
+    f.free_gb = 500;
+    d->set_facts(f);
+    ASSERT_NE(d->findChild<QCheckBox*>("checkTick_florence2_base"), nullptr);
+    EXPECT_FALSE(d->findChild<QCheckBox*>("checkTick_florence2_base")->isEnabled());
+    // That was no choice of the user's: on a computer that can run it, it is ticked (19 Nov 2026).
     f.gpus = std::vector<app::GpuFact>{{"NVIDIA GeForce RTX 4090", 24.0}};
     f.ram_gb = 64;
     f.free_gb = 500;

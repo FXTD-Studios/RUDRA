@@ -118,7 +118,8 @@ if [ -z "${SKIP_BUILD:-}" ]; then
     -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CV_ROOT/lib/cmake/opencv4" \
     -DRUDRA_WITH_OCIO=ON "-DOpenColorIO_DIR=$OCIO_ROOT/lib/cmake/OpenColorIO" \
     "-DCMAKE_PREFIX_PATH=$QT_ROOT" "-DQt6_DIR=$QT_ROOT/lib/cmake/Qt6" \
-    "-DCMAKE_BUILD_RPATH=$ORT_ROOT/lib;$OCIO_ROOT/lib" >/dev/null || fail "cmake configure"
+    "-DCMAKE_BUILD_RPATH=$ORT_ROOT/lib;$OCIO_ROOT/lib" > "$DEPS/rudra_configure.log" 2>&1 ||
+    { tail -n 40 "$DEPS/rudra_configure.log" >&2; fail "cmake configure (the whole output: $DEPS/rudra_configure.log)"; }
   targets=(RUDRA rudra-native)
   [ "$TESTS" = ON ] && targets+=(rudra_app_tests)
   cmake --build "$BUILD" --target "${targets[@]}" --parallel "$JOBS" || fail "build"
