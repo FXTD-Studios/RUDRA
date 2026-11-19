@@ -292,6 +292,28 @@ TEST(Exr, ZipMastersAreLosslessAndTheAcesContainerStaysUncompressed) {
     const auto broken = scratch("zip_broken.exr");
     std::ofstream(broken, std::ios::binary).write(reinterpret_cast<const char*>(bytes->data()), std::streamsize(bytes->size()));
     EXPECT_FALSE(read_exr(broken));
+    // A block that says it is 1 byte cannot hold 16 rows: refused before anything is allocated (review, 19 Nov).
+    auto tiny = exr_bytes(img, false, std::nullopt, {}, nullptr, {}, ExrCompression::Zip);
+    ASSERT_TRUE(tiny);
+    std::uint64_t first = 0;   // the offset table's first entry: the first block's row, then its size
+    std::size_t at = 8;
+    while ((*tiny)[at] != 0) {   // past the header: name\0 type\0 size payload
+        while ((*tiny)[at]) ++at;
+        ++at;
+        while ((*tiny)[at]) ++at;
+        ++at;
+        std::int32_t len;
+        std::memcpy(&len, tiny->data() + at, 4);
+        at += 4 + std::size_t(len);
+    }
+    std::memcpy(&first, tiny->data() + at + 1, 8);
+    const std::int32_t one = 1;
+    std::memcpy(tiny->data() + first + 4, &one, 4);
+    const auto claims = scratch("zip_claims_too_much.exr");
+    std::ofstream(claims, std::ios::binary).write(reinterpret_cast<const char*>(tiny->data()), std::streamsize(tiny->size()));
+    const auto r = read_exr(claims);
+    ASSERT_FALSE(r);
+    EXPECT_NE(r.error().detail.find("claims more than it can hold"), std::string::npos) << r.error().detail;
 }
 
 TEST(Exr, FloatToHalfMatchesNumpy) {

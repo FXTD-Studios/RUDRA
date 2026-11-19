@@ -191,7 +191,10 @@ if [ -n "${LINUX_FFMPEG_DIR:-}" ]; then
   cp "$LINUX_FFMPEG_DIR/ffmpeg" "$LINUX_FFMPEG_DIR/ffprobe" "$OUT/ffmpeg/"
   find "$LINUX_FFMPEG_DIR" -maxdepth 1 -type f \( -iname 'licen*' -o -iname 'readme*' -o -iname 'source*' \) -exec cp {} "$OUT/ffmpeg-licence/" \;
   for t in ffmpeg ffprobe; do
-    ldd "$OUT/ffmpeg/$t" 2>&1 | grep -q 'not a dynamic executable' || fail "the bundled $t is not static"
+    # The ELF's own dependency list, not ldd (it returns 1 for a static binary, which pipefail took as a
+    # failure); captured first, so grep -q stopping early cannot fail the pipe either.
+    deps=$(readelf -d "$OUT/ffmpeg/$t" 2>/dev/null || true)
+    if grep -q '(NEEDED)' <<<"$deps"; then fail "the bundled $t is not static"; fi
   done
   "$OUT/ffmpeg/ffmpeg" -hide_banner -h encoder=prores_ks >/dev/null || fail "the bundled ffmpeg does not run"
   FFMPEG_BUNDLED=1

@@ -276,29 +276,40 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         connect(get_florence, &QPushButton::clicked, this, [this, mw, btn] {
             ModelDownloads* md = mw->model_downloads();
             md->ensure_builtin();
-            auto* status = findChild<QLabel*>("genfillSetupStatus");
-            QString why;
-            if (!md->download(QString::fromLatin1(kFlorenceModelId), &why)) {
-                if (status) status->setText(QStringLiteral("Florence-2: ") + why);
-                return;
-            }
+            // The list's Florence-2 by kind: a published entry may have another id (code review, 19 Nov).
+            QString id = QString::fromLatin1(kFlorenceModelId), folder;
+            for (const RemoteModel& m : md->models())
+                if (m.kind == QLatin1String("florence")) {
+                    id = m.id;
+                    folder = QDir(md->root()).filePath(m.folder);
+                    break;
+                }
+            QPointer<QLabel> st(findChild<QLabel*>("genfillSetupStatus"));
+            // Listening and disabled before the download starts: a failure (or a model already in
+            // place) is reported inside download() itself.
             if (btn) btn->setEnabled(false);
-            QPointer<QLabel> st(status);
-            md->listen(this, [this, md, st, btn] {
-                const QString id = QString::fromLatin1(kFlorenceModelId);
+            md->listen(this, [this, md, st, btn, id, folder] {
                 if (md->active() == id) {
                     if (st) st->setText(QStringLiteral("Downloading Florence-2… %1 of %2")
                                             .arg(human_size(md->done_bytes()), human_size(md->total_bytes())));
                 } else if (md->state(id) == InstallState::Installed) {
                     if (st) st->setText(QStringLiteral("Florence-2 is downloaded and checked: Suggest a prompt uses it."));
                     if (btn) btn->setVisible(false);
-                    if (auto* le = findChild<QLineEdit*>(QStringLiteral("genfillSetup_florence"))) le->setText(QSettings().value("genfill/florence").toString());
+                    // The download's folder itself: the setting may be saved only after this call.
+                    if (auto* le = findChild<QLineEdit*>(QStringLiteral("genfillSetup_florence")); le && le->text().trimmed().isEmpty())
+                        le->setText(QDir::toNativeSeparators(folder));
+                    QSettings().setValue("genfill/florence", folder);
                     refresh_found();
                 } else if (!md->error(id).isEmpty()) {
                     if (st) st->setText(QStringLiteral("Florence-2 was not downloaded: ") + md->error(id));
                     if (btn) btn->setEnabled(true);
                 }
             });
+            QString why;
+            if (!md->download(id, &why)) {
+                if (st) st->setText(QStringLiteral("Florence-2: ") + why);
+                if (btn) btn->setEnabled(true);
+            }
         });
     }
     auto* status = new QLabel(found ? genfill_ready_text(*found) : why, this);

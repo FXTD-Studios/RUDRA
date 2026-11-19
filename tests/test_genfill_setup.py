@@ -120,7 +120,7 @@ def test_florence_only_downloads_at_the_pinned_revision_and_checks_it(tmp_path, 
 def test_a_florence_download_that_does_not_match_is_removed(tmp_path, monkeypatch):
     good = tmp_path / "good"
     _florence(good)
-    entry = setup.manifest_entry(good, setup.FLORENCE_ID)
+    entry = setup.manifest_entry(good, setup.FLORENCE_ID, "d" * 40)   # pinned: downloads only from a pinned entry
 
     def tampered(dest, repo_id=setup.REPO_ID, revision=None):
         _florence(dest)
@@ -137,5 +137,39 @@ def test_a_florence_download_that_fails_is_only_a_warning(tmp_path, monkeypatch)
         raise OSError("no network")
 
     monkeypatch.setattr(setup, "download_model", offline)
-    problems, warning = setup.setup_florence(tmp_path / "Florence-2-base", {}, None)
+    problems, warning = setup.setup_florence(tmp_path / "Florence-2-base", {}, None, allow_unverified=True)
     assert problems == [] and "presets" in warning
+
+
+def test_nothing_is_downloaded_unchecked(tmp_path, monkeypatch, capsys):
+    """Code review, 19 Nov 2026: a missing or unreadable manifest used to let a download go unchecked."""
+    called = []
+    monkeypatch.setattr(setup, "download_model", lambda *a, **k: called.append(a))
+    problems, warning = setup.setup_florence(tmp_path / "Florence-2-base", {}, None)
+    assert problems == [] and "not pinned" in warning and not called
+    bad = tmp_path / "broken.json"
+    bad.write_text("{not json")
+    assert setup.main(["--base", str(tmp_path / "wan"), "--manifest", str(bad), "--json"]) == 1
+    assert "cannot be read" in capsys.readouterr().out
+
+
+def test_a_florence_download_that_stopped_is_resumed(tmp_path, monkeypatch):
+    good = tmp_path / "good"
+    _florence(good)
+    entry = setup.manifest_entry(good, setup.FLORENCE_ID, "c" * 40)
+    dest = tmp_path / "Florence-2-base"
+    dest.mkdir()
+    (dest / "config.json").write_text('{"model_type": "florence2"}')   # what a stopped download leaves
+    resumed = []
+
+    def resume(d, repo_id=setup.REPO_ID, revision=None):
+        resumed.append(revision)
+        _florence(d)
+
+    monkeypatch.setattr(setup, "download_model", resume)
+    assert setup.setup_florence(dest, entry, None) == ([], None)
+    assert resumed == ["c" * 40]
+    # Whole: no download at all.
+    resumed.clear()
+    assert setup.setup_florence(dest, entry, None) == ([], None)
+    assert resumed == []

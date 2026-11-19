@@ -552,6 +552,10 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
         for (int t : img.pixel_types) pixel_bytes += std::uint64_t(w) * (t == 1 ? 2u : 4u);
         line_bytes += std::size_t(pixel_bytes);
         if (std::uint64_t(h) * pixel_bytes > 1100ull * n + (1ull << 20)) return bad("data larger than the file can hold");
+        // A fixed budget too (code review, 19 Nov 2026): the file's size alone can be padded by an
+        // unrelated attribute. 2 GiB of pixels is an 8K frame with dozens of float channels.
+        constexpr std::uint64_t kMaxDecoded = 2ull << 30;
+        if (std::uint64_t(h) * (pixel_bytes + 8) > kMaxDecoded) return bad("more pixel data than RUDRA reads from one file");
         const int lines = compression == 3 ? 16 : 1;
         const std::int64_t blocks = (h64 + lines - 1) / lines;
         if (!has(pos, 8 * std::size_t(blocks))) return bad("truncated data");
@@ -567,6 +571,11 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
             if (seen[std::size_t(first / lines)]) return bad("a block twice");
             seen[std::size_t(first / lines)] = true;
             if (size < 0 || !has(pos, std::size_t(size))) return bad("truncated data");
+            // Each block on its own: zlib expands at most about 1032 times, so a block claiming more than
+            // that is refused before its buffer is allocated (a stored block is its own size).
+            if (const std::uint64_t want = std::uint64_t(std::min<std::int64_t>(lines, h64 - first)) * pixel_bytes;
+                want != std::uint64_t(size) && want > 1100ull * std::uint64_t(size) + 1024)
+                return bad("a ZIP block claims more than it can hold");
             const int count = int(std::min<std::int64_t>(lines, h64 - first));
             auto block = unzip_block(raw.data() + pos, std::size_t(size), std::size_t(count) * std::size_t(pixel_bytes));
             if (!block) return bad("a ZIP block does not decompress");

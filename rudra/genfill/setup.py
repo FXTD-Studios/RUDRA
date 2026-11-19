@@ -137,10 +137,20 @@ def install_packages() -> bool:
 
 
 def load_manifest(path: Path = MANIFEST) -> dict:
-    try:
-        return json.loads(Path(path).read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+    """The manifest, {} when there is none. One that is there but unreadable is an error
+    (code review, 19 Nov 2026): it used to read as {}, and a download then went unchecked."""
+    p = Path(path)
+    if not p.is_file():
         return {}
+    try:
+        return json.loads(p.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as e:
+        raise ValueError(f'{p} cannot be read ({e})') from e
+
+
+def pinned(entry: dict) -> bool:
+    """Whether a manifest entry pins a revision and lists the files to check a download against."""
+    return bool(entry.get('revision')) and bool(entry.get('files'))
 
 
 def model_files(root: Path):
@@ -237,16 +247,23 @@ def install_from(src: Path, dest: Path, entry: dict) -> list[str]:
     return []
 
 
-def setup_florence(florence: Path, entry: dict, src: str | None) -> tuple[list[str], str | None]:
+def setup_florence(florence: Path, entry: dict, src: str | None,
+                   allow_unverified: bool = False) -> tuple[list[str], str | None]:
     """Florence-2 into its folder: from src (a folder or zip), or downloaded at the manifest's
-    revision when the folder has no model yet; then checked against the manifest entry.
+    revision when the folder does not hold every file yet (a download that stopped is resumed);
+    then checked against the manifest entry. A download needs a pinned entry, unless allow_unverified.
     (problems, warning): problems end the setup (a model that does not match); a download that
     fails is only a warning, as Suggest a prompt falls back to its presets without it."""
     if src:
         emit('step', step='florence', text=f'Installing Florence-2 from {src} into {florence}')
         return install_from(Path(src).expanduser(), florence, entry), None
     fresh = False
-    if not (florence / 'config.json').is_file():
+    there = (florence / 'config.json').is_file()
+    complete = there and (not entry.get('files') or not verify(florence, entry, hashes=False))
+    if not complete:
+        if not pinned(entry) and not allow_unverified:
+            return [], ('Florence-2 is not pinned in the model manifest, so it was not downloaded (--allow-unverified '
+                        'takes the latest unchecked); Suggest a prompt uses its presets until it is')
         rev = entry.get('revision')
         emit('step', step='florence', text=f'Downloading {FLORENCE_ID}{"@" + rev[:12] if rev else ""} '
              f'(MIT, about 0.5 GB) into {florence}')
@@ -281,7 +298,7 @@ def main(argv=None) -> int:
     ap.add_argument('--florence-from', metavar='FOLDER_OR_ZIP', help='install Florence-2 from here, offline')
     ap.add_argument('--florence-only', action='store_true', help='set up Florence-2 alone (no GPU check, packages or Wan)')
     ap.add_argument('--verify', action='store_true', help="check every file's SHA-256 against the manifest")
-    ap.add_argument('--allow-unverified', action='store_true', help='install from a folder or zip with no manifest entry')
+    ap.add_argument('--allow-unverified', action='store_true', help='install or download a model the manifest does not pin (unchecked)')
     ap.add_argument('--manifest', default=str(MANIFEST), help='the manifest to read or write')
     ap.add_argument('--make-manifest', action='store_true',
                     help='write the manifest from the models in --base and its Florence-2 folder, then stop')
@@ -289,7 +306,13 @@ def main(argv=None) -> int:
     _JSON = a.json
     base = Path(a.base).expanduser().resolve()
     florence = base.parent / FLORENCE_DIR
-    manifest = load_manifest(Path(a.manifest))
+    try:
+        manifest = load_manifest(Path(a.manifest))
+    except ValueError as e:
+        if not a.make_manifest:
+            emit('done', ok=False, error=str(e), base=str(base))
+            return 1
+        manifest = {}
 
     if a.make_manifest:
         if not have_model(base):
@@ -313,7 +336,7 @@ def main(argv=None) -> int:
             return 1
 
     if a.florence_only:
-        problems, warning = setup_florence(florence, manifest.get('florence') or {}, a.florence_from)
+        problems, warning = setup_florence(florence, manifest.get('florence') or {}, a.florence_from, a.allow_unverified)
         if problems:
             emit('done', ok=False, error='Florence-2 does not match the manifest: ' + '; '.join(problems[:5]), base=str(base))
             return 1
@@ -366,6 +389,11 @@ def main(argv=None) -> int:
             emit('done', ok=False, error='the model was not installed: ' + '; '.join(problems[:5]), base=str(base))
             return 1
     elif not model_there:
+        if not pinned(wan) and not a.allow_unverified:
+            emit('done', ok=False, error=f'{a.manifest} does not pin {REPO_ID} (a revision and its files\' SHA-256): '
+                 'not downloaded unchecked (run --make-manifest on a known-good model, or pass --allow-unverified)',
+                 base=str(base))
+            return 1
         rev = wan.get('revision')
         emit('step', step='model', text=f'Downloading {REPO_ID}{"@" + rev[:12] if rev else ""} '
              f'(about {MODEL_GB:.0f} GB) into {base}')
@@ -384,7 +412,8 @@ def main(argv=None) -> int:
 
     florence_warning = None
     if a.florence or a.florence_from:
-        problems, florence_warning = setup_florence(florence, manifest.get('florence') or {}, a.florence_from)
+        problems, florence_warning = setup_florence(florence, manifest.get('florence') or {}, a.florence_from,
+                                                    a.allow_unverified)
         if problems:
             emit('done', ok=False, error='Florence-2 does not match the manifest: ' + '; '.join(problems[:5]), base=str(base))
             return 1
