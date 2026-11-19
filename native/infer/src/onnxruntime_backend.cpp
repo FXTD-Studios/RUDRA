@@ -295,6 +295,11 @@ Result<G1Fn> load_g1_onnxruntime(const std::filesystem::path& onnx, const std::s
             // macOS: Core ML on the GPU / Neural Engine, the CPU for anything it does not take.
             if (!offered("CoreMLExecutionProvider")) return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no Core ML provider.");
             Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(so, 0));
+#elif defined(__APPLE__)
+            // 1.2.6: ONNX Runtime from NuGet has no coreml_provider_factory.h; the provider by name
+            // is the same Core ML provider with the same defaults (as in the backend above).
+            if (!offered("CoreMLExecutionProvider")) return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no Core ML provider.");
+            so.AppendExecutionProvider("CoreML", std::unordered_map<std::string, std::string>{});
 #else
             return make_error(ErrorCode::Unsupported, "This build was compiled without the Core ML header.");
 #endif

@@ -7265,6 +7265,7 @@ TEST(AppFillView, TheAiFillHasAProgressBar) {
     EXPECT_TRUE(bar->isHidden());
 }
 
+#ifdef RUDRA_HAVE_STILL_DECODE   // it opens PNG frames: CI's Qt shell build has no still decode (it waited forever)
 TEST(AppFillView, TheAiFillCardShowsWhereItFillsOnTheFrameOnScreen) {
     QSettings().clear();
     app::MainWindow w(false);
@@ -7328,6 +7329,7 @@ TEST(AppFillView, TheAiFillCardShowsWhereItFillsOnTheFrameOnScreen) {
     w.set_deliver("ai_fill", "0");
     EXPECT_TRUE(info->isHidden());
 }
+#endif
 
 // ---- AI fill from a package (7 Nov 2026): the bootstrap beside the packaged python/, or in the
 // repository's scripts/; the fill's own Python under the app's data folder ----
