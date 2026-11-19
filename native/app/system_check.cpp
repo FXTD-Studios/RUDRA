@@ -497,7 +497,10 @@ void SystemCheckDialog::build_parts() {
     parts_shape_ = shape;
 
     std::map<QString, bool> was;   // the user's ticks survive a rebuild
-    for (const auto& [id, box] : ticks_) was[id] = box->isChecked();
+    // Only boxes the user could tick: one that was off because this computer could not run it is no
+    // choice, and must not stay off once it can (release CI on Windows, 19 Nov 2026).
+    for (const auto& [id, box] : ticks_)
+        if (box->isEnabled()) was[id] = box->isChecked();
     ticks_.clear();
     clear_layout(parts_box_);
     const QString ai_problem = aifill_machine_problem(facts_);
