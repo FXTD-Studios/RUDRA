@@ -47,13 +47,18 @@ invent.
 ## Download
 
 **[Download the latest release](https://github.com/FXTD-Studios/RUDRA/releases/latest)**:
-Windows 10 / 11 (x64, installer or portable ZIP) and macOS (Apple silicon, DMG),
-with their checksums and the release notes.
+Windows 10 / 11 (x64, installer or portable ZIP), macOS (Apple silicon, DMG) and Linux
+(x86-64, tar.gz), each with its SHA-256 checksum and the release notes.
 
-The Windows builds are not signed yet, so SmartScreen may ask once: choose
-**More info › Run anyway**. Code signing through SignPath Foundation is being set up
-([code signing policy](#code-signing-policy)) and starts with the next release once it is approved. The macOS builds are not signed yet: open it once from
-**System Settings › Privacy & Security › Open Anyway**.
+**The builds are not code-signed yet** ([why, and how to check a download](#code-signing-policy)):
+
+- **Windows:** SmartScreen may say "Windows protected your PC" once: choose
+  **More info › Run anyway**.
+- **macOS:** right-click RUDRA.app › **Open** › **Open**, or **System Settings › Privacy &
+  Security › Open Anyway**.
+
+Download RUDRA only from this repository's
+[Releases page](https://github.com/FXTD-Studios/RUDRA/releases).
 
 On the first start, **Welcome to RUDRA** checks your display (HDR or SDR, and its
 real peak), names your GPU, and finds any model you have installed. No licence
@@ -150,10 +155,39 @@ Continuous integration (`native` and `shipped model` run when their files change
 
 ## Code signing policy
 
-Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
-[SignPath Foundation](https://signpath.org/). What is signed, who approves each release, and
-what RUDRA sends over the network: [docs/CODE_SIGNING_POLICY.md](docs/CODE_SIGNING_POLICY.md)
-and [docs/PRIVACY.md](docs/PRIVACY.md).
+**Status: unsigned.** Every release so far, up to and including the latest, is published
+without a code-signing certificate. RUDRA has applied to [SignPath Foundation](https://signpath.org/)
+for free code signing for open-source projects; the application has **not been approved yet**.
+The release workflow is ready for it: once it is approved, the Windows programs and installer of
+each new release are signed, and this section and the release notes will say from which version.
+Releases published before that stay unsigned.
+
+**Until then, check what you download.** Each file on the
+[Releases page](https://github.com/FXTD-Studios/RUDRA/releases) has a `.sha256` file beside it.
+Compare the two:
+
+```powershell
+# Windows (PowerShell)
+(Get-FileHash .\RUDRA-<version>-windows-x64-setup.exe -Algorithm SHA256).Hash
+```
+
+```sh
+# macOS / Linux
+shasum -a 256 RUDRA-<version>-macos-arm64.dmg
+sha256sum RUDRA-<version>-linux-x86_64.tar.gz
+```
+
+The value must match the first word of the `.sha256` file. Every release is built from its
+tagged commit on GitHub-hosted runners by
+[`.github/workflows/release.yml`](.github/workflows/release.yml), never on a team member's
+computer, and each package is checked to carry no model weights.
+
+**When signing starts:** free code signing provided by [SignPath.io](https://about.signpath.io/),
+certificate by SignPath Foundation. What will be signed, who approves each release, and what RUDRA
+sends over the network: [docs/CODE_SIGNING_POLICY.md](docs/CODE_SIGNING_POLICY.md) and
+[docs/PRIVACY.md](docs/PRIVACY.md). The macOS app is signed separately
+([docs/MACOS_SIGNING.md](docs/MACOS_SIGNING.md)); until a Developer ID certificate is set up it is
+signed ad hoc only.
 
 ## Licence
 
