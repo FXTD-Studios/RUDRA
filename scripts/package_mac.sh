@@ -38,7 +38,7 @@ cd "$(dirname "$0")/.."
 [ "$(uname -s)-$(uname -m)" = "Darwin-arm64" ] || { echo "package_mac.sh runs on Apple silicon" >&2; exit 2; }
 PY=${PYTHON:-python3}
 QT_VERSION=${QT_VERSION:-6.8.3}
-ORT_VERSION=${ORT_VERSION:-1.22.0}
+ORT_VERSION=${ORT_VERSION:-1.24.4}   # 1.2.6: as native_app.sh builds with (1.22.0 here failed the v1.2.6 release run)
 BUILD=build/native_app
 QT_ROOT=$PWD/tmp/native_deps/Qt/$QT_VERSION/macos
 ORT_ROOT=$PWD/tmp/native_deps/onnxruntime-osx-arm64-$ORT_VERSION
