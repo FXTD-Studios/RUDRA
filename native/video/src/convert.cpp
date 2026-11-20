@@ -442,6 +442,16 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         if (!embed)
             reason = a.format != "hdr10" ? "HDR10+ is carried in HEVC only"
                                          : "This ffmpeg's x265 was built without HDR10+; inject the file with hdr10plus_tool";
+        // 1.2.7 (multi-role review of 1.2.6): an HDR10 movie without its HDR10+ is a warning, not only a
+        // line under hdr_metadata, so the person delivering it sees it (rudra/video.py the same).
+        if (!embed && a.format == "hdr10") {
+            pyjson::List warnings;
+            if (const pyjson::Value* w = pyjson::get(report, "warnings"))
+                if (const auto* l = std::get_if<std::shared_ptr<pyjson::List>>(&w->v); l && *l) warnings = **l;
+            warnings.push_back("HDR10+ was not embedded (this ffmpeg's x265 has no HDR10+): the dynamic metadata is "
+                               "beside the movie as " + dynamic_paths[0].second.filename().string() + "; inject it with hdr10plus_tool");
+            pyjson::set(report, "warnings", warnings);
+        }
         pyjson::set(report, "hdr_metadata",
                     pyjson::Dict{{"shots", int(shots.size())},
                                  {"hdr10plus", pyjson::Dict{{"file", dynamic_paths[0].second.filename().string()},

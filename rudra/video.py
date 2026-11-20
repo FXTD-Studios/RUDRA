@@ -667,6 +667,11 @@ def convert_video(args, progress=None):
                 embed=args.format=='hdr10' and hdr10plus_capable()
                 reason=None if embed else ('HDR10+ is carried in HEVC only' if args.format!='hdr10' else
                     "This ffmpeg's x265 was built without HDR10+; inject the file with hdr10plus_tool")
+                # 1.2.7: an HDR10 movie without its HDR10+ is a warning too (native/video/src/convert.cpp the same).
+                if not embed and args.format=='hdr10':
+                    report['warnings']=list(report['warnings'])+[
+                        "HDR10+ was not embedded (this ffmpeg's x265 has no HDR10+): the dynamic metadata is beside the "
+                        f"movie as {dynamic_paths['hdr10plus'].name}; inject it with hdr10plus_tool"]
                 report['hdr_metadata']=dict(shots=len(shots),
                     hdr10plus=dict(file=dynamic_paths['hdr10plus'].name,embedded=embed,reason=reason),
                     dovi_generate=dynamic_paths['dovi_generate'].name,analysis=dynamic_paths['analysis'].name,

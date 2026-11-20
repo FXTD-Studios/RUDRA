@@ -69,6 +69,32 @@ def neutral_weight(codes: np.ndarray) -> np.ndarray:
     return (x * x * (3.0 - 2.0 * x)).astype(np.float32)
 
 
+RERENDER_DETAIL_WINDOW = 25        # px at 1080 lines: the box over which a region pixel's neighbours are counted
+RERENDER_DETAIL_COVER = (0.45, 0.75)   # the share of that box in the region: below the first the master stays, whole from the second
+RERENDER_DETAIL_MIN_AREA = 5e-4    # a region area under this share of the frame keeps the master (a lamp, a glint)
+
+
+def detail_keep_weight(codes: np.ndarray, tau_high: int) -> np.ndarray:
+    """(H, W) in [0, 1]: 1.2.7 (multi-role review of 1.2.6), --rerender-keep-detail. The region re-render
+    redraws every pixel at code tau_high or above. Real objects that sit there keep their picture with this
+    on: a thin or broken-up part of the region (a floor grating's bright bars, a railing) by how little of
+    the box around it is region, and an area under RERENDER_DETAIL_MIN_AREA of the frame (a practical lamp)
+    entirely. core/src/fill_region.cpp ai_fill_v4_weight draws the same rule over the viewer."""
+    import cv2
+    h, w = codes.shape[:2]
+    region = (codes.max(-1) >= tau_high).astype(np.uint8)
+    k = max(3, int(round(RERENDER_DETAIL_WINDOW * h / 1080.0)) | 1)
+    cover = cv2.blur(region.astype(np.float32), (k, k), borderType=cv2.BORDER_REPLICATE)
+    lo, hi = RERENDER_DETAIL_COVER
+    x = np.clip((cover - lo) / (hi - lo), 0.0, 1.0)
+    weight = x * x * (3.0 - 2.0 * x) * region
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(region, connectivity=8)
+    small = stats[:, cv2.CC_STAT_AREA] < RERENDER_DETAIL_MIN_AREA * h * w
+    small[0] = True                                   # the background label
+    weight[small[labels]] = 0.0
+    return weight.astype(np.float32)
+
+
 def white_scale(master: np.ndarray, codes: np.ndarray) -> float | None:
     """The master's SDR white on one frame: the median, over mid-tone pixels (every channel between
     codes 50 and 180), of the master's luminance over the source's display light (code ^ 2.4), as

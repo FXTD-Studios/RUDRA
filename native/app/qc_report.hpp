@@ -24,6 +24,7 @@ struct QcFrame {
     int bracket_code_delta = -1;   // preview vs export, worst 8-bit code; -1 not checked
     QString resolution;
     double out_of_p3_pct = -1;     // 1.2.6: pixels outside P3-D65 (qc_out_of_p3_pct); -1 not measured
+    double p9998_nits = -1;        // 1.2.7: the sidecar's light_p99_98_nits; -1 not written (before 1.2.7)
 };
 
 struct QcReport {
@@ -74,6 +75,12 @@ QJsonObject qc_json(const QcReport& r, const QcVerdict& v);
 // pixel each way; the primaries from its chromaticities: AP0, AP1, Rec.2020 or Rec.709); -1 when
 // it cannot be read. A pixel is outside when a P3 component is below -0.1 % of its largest one.
 double qc_out_of_p3_pct(const std::filesystem::path& exr, int step = 4);
+
+// 1.2.7 (multi-role review of 1.2.6): a frame whose MaxCLL is over this many times the light its
+// brightest 0.02 % leave out (and over kQcSpeckMinNits) has its MaxCLL set by a few pixels: a Review
+// reason. A TV tone-maps the whole programme against MaxCLL (07V: 4,386 nits from 24 pixels, 182 at p99.99).
+inline constexpr double kQcSpeckRatio = 4.0;
+inline constexpr int kQcSpeckMinNits = 1000;
 
 // A P3-D65 share over this is a Review reason (an HDR10 or Dolby Vision master is graded in P3-D65).
 inline constexpr double kQcOutOfP3ReviewPct = 1.0;

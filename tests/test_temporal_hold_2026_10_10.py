@@ -107,7 +107,8 @@ def test_the_report_measures_flicker_and_the_hold_reduces_it(tmp_path, monkeypat
     # The source holds still and the gain alternates 1 and 1.5: log2(1.5) EV a frame.
     assert off['temporal']['flicker_ev_mean'] == pytest.approx(math.log2(1.5), rel=.05)
     assert held['temporal']['flicker_ev_mean'] < off['temporal']['flicker_ev_mean']*.3
-    assert held['warnings'] == []
+    # 1.2.7: an HDR10+ that this ffmpeg could not embed is a warning of its own; nothing else may warn
+    assert [w for w in held['warnings'] if not w.startswith('HDR10+ was not embedded')] == []
 
 
 def test_static_hold_holds_the_gain_where_the_source_is_still():

@@ -644,3 +644,90 @@ TEST(ClipFill, ALossySourceKeepsItsFullyClippedPixels) {
     EXPECT_EQ(g.regions[0].x, 100);
     EXPECT_EQ(g.regions[0].y, 100);
 }
+
+// ---- 1.2.7 (multi-role review of 1.2.6) ----
+
+namespace {
+// A near-white door in a dark, teal-lit room (09V): the door's green and blue sit near the clip, its
+// red a little lower, as the source's sky; the room around it is many stops darker and teal.
+SdrImage door_in_a_dark_room(int h, int w) {
+    PlanarBuffer s(3, h, w);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const bool door = x >= w / 4 && x < 3 * w / 4 && y >= h / 6 && y < 5 * h / 6;
+            const float v[3] = {door ? 244.0f : 12.0f, door ? 253.0f : 40.0f, door ? 254.0f : 52.0f};
+            for (int c = 0; c < 3; ++c) s.at(c, y, x) = v[c] / 255.0f;
+        }
+    return SdrImage(std::move(s));
+}
+
+double mean_ratio(const PlanarBuffer& b, int num, int den, int x0, int x1, int y0, int y1) {
+    double n = 0, d = 0;
+    for (int y = y0; y < y1; ++y)
+        for (int x = x0; x < x1; ++x) n += b.at(num, y, x), d += b.at(den, y, x);
+    return n / d;
+}
+}  // namespace
+
+TEST(ClipFill, ADarkRoomDoesNotTintTheDoorItLooksOutOf) {
+    const int h = 60, w = 80;
+    const SdrImage sdr = door_in_a_dark_room(h, w);
+    const PlanarBuffer base = analytic_baseline(sdr, kEv).buffer();
+    const PlanarBuffer now = filled(sdr, reconstruct_clipped(sdr, kEv));
+    const PlanarBuffer old = filled(sdr, reconstruct_clipped(sdr, kEv, clip_fill_options_1_2_6()));
+    // The door's own blue over red, as the SDR says it (the baseline), against both fills.
+    const int x0 = w / 4 + 4, x1 = 3 * w / 4 - 4, y0 = h / 6 + 4, y1 = 5 * h / 6 - 4;
+    const double src = mean_ratio(base, 2, 0, x0, x1, y0, y1);
+    const double fixed = mean_ratio(now, 2, 0, x0, x1, y0, y1);
+    const double was = mean_ratio(old, 2, 0, x0, x1, y0, y1);
+    std::cout << "[ door ] B/R baseline " << src << ", 1.2.6 " << was << ", 1.2.7 " << fixed << "\n";
+    EXPECT_GT(was, src * 1.15);           // 1.2.6 borrowed the room's teal
+    EXPECT_LT(fixed, src * 1.05);         // 1.2.7 keeps the door's own colour
+    EXPECT_GE(fixed, src * 0.999);        // and never lifts a channel below its ceiling
+}
+
+TEST(ClipFill, TheOldBehaviourIsOneCallAway) {
+    const ClipFillOptions o = clip_fill_options_1_2_6();
+    EXPECT_EQ(o.partial_outlier_stops, 0.0);
+    EXPECT_FALSE(o.chroma_to_stops > o.chroma_from_stops);
+    const ClipFillOptions now;
+    EXPECT_GT(now.partial_outlier_stops, 0.0);
+    EXPECT_GT(now.chroma_to_stops, now.chroma_from_stops);
+    // The lossy options keep the 1.2.7 rules (they change only what they name).
+    const ClipFillOptions lossy = lossy_source_clip_options({});
+    EXPECT_EQ(lossy.partial_outlier_stops, now.partial_outlier_stops);
+}
+
+// A few partly clipped pixels whose borrowed chroma sends them stops over the band they sit in
+// (07V: a spark under an engine) are held to the band; a band that lifts together keeps its lift.
+TEST(ClipFill, ASpeckCannotOutshineItsBand) {
+    const int h = 48, w = 64;
+    PlanarBuffer s(3, h, w);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            float v[3] = {240.0f, 130.0f, 60.0f};                           // an orange sky
+            if (y >= 20 && y < 26) v[0] = 255.0f, v[1] = 240.0f, v[2] = 150.0f;   // a band with red clipped
+            if (y >= 26) v[0] = 40.0f, v[1] = 30.0f, v[2] = 24.0f;            // the ground
+            if (y >= 26 && x >= 28 && x < 36) v[0] = 230.0f, v[1] = 3.0f, v[2] = 2.0f;   // a lit red rim below the band
+            for (int c = 0; c < 3; ++c) s.at(c, y, x) = v[c] / 255.0f;
+        }
+    const SdrImage sdr(std::move(s));
+    ClipFillOptions off = clip_fill_options_1_2_6(), hold = off;
+    hold.partial_outlier_stops = 1.0;
+    const ClipFill a = reconstruct_clipped(sdr, kEv, off), b = reconstruct_clipped(sdr, kEv, hold);
+    float peak_off = 0, peak_hold = 0, band_off = 0;
+    int n = 0;
+    for (int y = 20; y < 26; ++y)
+        for (int x = 0; x < w; ++x) {
+            peak_off = std::max(peak_off, a.gain_log2.at(0, y, x));
+            peak_hold = std::max(peak_hold, b.gain_log2.at(0, y, x));
+            if (x < 20 || x >= 44) band_off += a.gain_log2.at(0, y, x), ++n;
+        }
+    band_off /= float(n);
+    std::cout << "[ speck ] red lift: band " << band_off << ", peak 1.2.6 " << peak_off << ", held " << peak_hold << "\n";
+    ASSERT_GT(peak_off, band_off + 1.5f);       // the setup makes a speck
+    EXPECT_LT(peak_hold, 0.5f * peak_off);      // held toward the band (1 stop over its local mean)
+    EXPECT_LE(peak_hold, band_off + 2.0f);
+    // Far from the rim the band is as it was.
+    for (int y = 20; y < 26; ++y) EXPECT_NEAR(b.gain_log2.at(0, y, 4), a.gain_log2.at(0, y, 4), 1e-4);
+}

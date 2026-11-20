@@ -264,11 +264,20 @@ double genfill_progress_share(double lo, double hi, int window, int windows, int
 }
 
 QString ai_fill_frame_text(const AiFillRegion& r, int tau_high, bool v4) {
-    if (v4)   // 1.2.6: v4.3 redraws its whole region, the codes inside it not kept
-        return r.empty() ? QStringLiteral("This frame: nothing for v4.3 to redraw (nothing at code %1 or above).").arg(tau_high)
-                         : QStringLiteral("This frame: v4.3 redraws %1 % (codes %2 and up)")
-                               .arg(r.filled_pct, 0, 'f', r.filled_pct < 1.0 ? 2 : 1)
-                               .arg(tau_high);
+    if (v4) {   // 1.2.6: v4.3 redraws its region, the codes inside it not kept
+        // 1.2.7: what it really redraws; codes >= 240 it leaves to the master (saturated, or kept detail) said too
+        const double kept = std::max(0.0, r.seen_pct - r.filled_pct);
+        if (r.empty())
+            return r.seen_pct < 0.05 ? QStringLiteral("This frame: nothing for v4.3 to redraw (nothing at code %1 or above).").arg(tau_high)
+                                     : QStringLiteral("This frame: nothing for v4.3 to redraw. Its bright area (%1 %) is saturated "
+                                                      "colour, which stays the master.")
+                                           .arg(r.seen_pct, 0, 'f', 1);
+        QString t = QStringLiteral("This frame: v4.3 redraws %1 % (codes %2 and up)")
+                        .arg(r.filled_pct, 0, 'f', r.filled_pct < 1.0 ? 2 : 1)
+                        .arg(tau_high);
+        if (kept >= 0.05) t += QStringLiteral(" \u00b7 %1 % stays the master").arg(kept, 0, 'f', 1);
+        return t;
+    }
     if (r.empty() && r.seen_pct < 0.05) return QStringLiteral("This frame: nothing to fill (no clipped highlights).");
     if (r.empty())
         return QStringLiteral("This frame: nothing to fill. Its bright area is near white (codes %1–254), "
@@ -281,9 +290,11 @@ QString ai_fill_frame_text(const AiFillRegion& r, int tau_high, bool v4) {
 
 QString ai_fill_frame_tip(const AiFillRegion& r, int tau_high, bool v4) {
     if (v4)
-        return QStringLiteral("AI fill v4.3 region (experimental) draws every pixel at code %1 or above again from the "
-                              "source: its detail from the model, its colour and level led by the source. Unlike v3 the "
-                              "SDR codes there are not kept. \"Where it fills\" shows the region in solid orange.")
+        return QStringLiteral("AI fill v4.3 region (experimental) draws the near-white pixels at code %1 or above again "
+                              "from the source: its detail from the model, its colour and level led by the source. Unlike v3 "
+                              "the SDR codes there are not kept. A saturated highlight (a sunset, a flame) stays the master, "
+                              "and so, with Keep detail, do thin and small bright parts. \"Where it fills\" shows what is "
+                              "redrawn in solid orange, what stays the master tinted.")
             .arg(tau_high);
     QString t = QStringLiteral(
                     "AI fill v3 changes only fully clipped areas (code 255) of about 100 pixels or more at 1080p: "
@@ -316,12 +327,13 @@ std::optional<AiFillRegion> MainWindow::ai_fill_region_now(std::shared_ptr<const
     if (!sdr || sdr->width() <= 0) return std::nullopt;
     if (sdr_out) *sdr_out = sdr;
     const DeliverChoice c = deliver_effective();
-    // v4.3 region re-render: its whole region (codes >= 240) is redrawn, no shadows, no specks rule.
+    // v4.3 region re-render: codes >= 240, as the fill weighs them (1.2.7: the near-white guard, and
+    // with Keep detail the thin-and-small rule; 1.2.6 showed the codes alone), no shadows.
     const bool v4 = c.ai.rerender;
     const int hi = v4 ? kAiFillV4TauHigh : c.ai.tau_high, lo = v4 ? -1 : c.ai.tau_low;
-    const AiFrameInfoKey key{sdr.get(), hi + (v4 ? 1000 : 0), lo, current_};
+    const AiFrameInfoKey key{sdr.get(), hi + (v4 ? 1000 + (c.ai.rerender_keep_detail ? 1000 : 0) : 0), lo, current_};
     if (!ai_frame_info_ || !(key == ai_frame_info_key_)) {
-        ai_frame_info_ = v4 ? ai_fill_region(*sdr, hi, lo, 0.0, hi) : ai_fill_region(*sdr, hi, lo);
+        ai_frame_info_ = v4 ? ai_fill_region_v4(*sdr, c.ai.rerender_keep_detail) : ai_fill_region(*sdr, hi, lo);
         ai_frame_info_key_ = key;
     }
     return ai_frame_info_;
@@ -473,6 +485,7 @@ void MainWindow::preview_genfill() {
 
     genfill_preview_busy_ = true;
     genfill_preview_.reset();
+    if (auto* hint = findChild<QLabel*>("viewerAiHint")) hint->hide();   // 1.2.7: the last preview's note
     if (auto* btn = findChild<QPushButton*>("deliverAiPreview")) btn->setText(QStringLiteral("Stop preview"));
     const int frames = b - a + 1;
     // Which fill this is, in the log and the status (12 Nov 2026: v3 or v4 could not be told apart).
@@ -564,6 +577,7 @@ void MainWindow::preview_genfill() {
                 fill.insert("rerender_dip", 0.3);   // as genfill_arguments
                 fill.insert("rerender_independent", true);
                 fill.insert("rerender_calm", 0.9);
+                if (options.rerender_keep_detail) fill.insert("rerender_keep_detail", true);   // 1.2.7
                 fill.insert("brightness_offset", 0.0);
                 fill.insert("shape_gain", 1.0);
                 fill.insert("fallback", "none");
@@ -670,6 +684,7 @@ void MainWindow::preview_genfill() {
                                                               self->session_.display_nits()));
                         }
                         self->show_genfill_preview(QStringLiteral("fill"));
+                        self->frame_genfill_preview();   // 1.2.7
                     };
                     self->monitor_preview_planes(mexr, pw, ph, [self, end, p, fexr, pw, ph, finish](std::optional<PlanarBuffer> mm, QString why) {
                         if (!self) return;
@@ -744,6 +759,33 @@ void MainWindow::start_analytic_preview_master(const QString& mdir, int a, int b
                 done(r);
             });
         });
+}
+
+void MainWindow::frame_genfill_preview() {
+    if (!genfill_preview_ || !QSettings().value("genfill/previewFrames", true).toBool()) return;
+    QStringList did;
+    if (session_.wipe) {   // the SDR side of the wipe shows the source, not the fill
+        session_.toggle_wipe();
+        did << QStringLiteral("wipe off (W)");
+    }
+    // Only from 0 EV: a view exposure the user set stays theirs. The f/stop button (Alt+E) goes back to 0.
+    if (session_.view_ev == 0.0 && genfill_preview_->changed > 0.0) {
+        session_.set_view_ev(-2.0);
+        did << QStringLiteral("view at \u22122 EV (Alt+E for 0)");
+    }
+    const QString why = genfill_preview_->changed > 0.0
+                            ? QStringLiteral("AI fill preview: what it drew is above SDR white, so at 0 EV it looks white")
+                            : QStringLiteral("AI fill preview: nothing was invented on this frame");
+    const QString text = did.isEmpty() ? why + QStringLiteral(". Invented shows where it acted.")
+                                       : why + QStringLiteral(": ") + did.join(QStringLiteral(", ")) + QStringLiteral(". Invented shows where it acted.");
+    if (auto* hint = findChild<QLabel*>("viewerAiHint")) {
+        hint->setText(text);
+        hint->setToolTip(text);
+        hint->show();
+    }
+    statusBar()->showMessage(text, 15000);
+    log(text);
+    sync_ui();
 }
 
 void MainWindow::show_genfill_preview(const QString& which) {

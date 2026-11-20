@@ -6809,6 +6809,39 @@ TEST(GenFill, RegionRerenderIsOptInAndRunsAsTested) {
     QSettings().clear();
 }
 
+// 1.2.7 (multi-role review of 1.2.6): v4.3 can leave thin and small bright parts to the master,
+// opt-in (v4.3 as its checks ran when off), and the frame line follows it.
+TEST(GenFill, KeepDetailIsOptInAndReachesTheFill) {
+    app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/v4.safetensors"};
+    app::GenFillOptions o;
+    o.rerender = true;
+    o.source = "D:/video/09V.mp4";
+    EXPECT_FALSE(app::genfill_arguments(s, o, "m", "o").contains("--rerender-keep-detail"));
+    o.rerender_keep_detail = true;
+    EXPECT_TRUE(app::genfill_arguments(s, o, "m", "o").contains("--rerender-keep-detail"));
+    o.rerender = false;   // v3 has no such switch
+    EXPECT_FALSE(app::genfill_arguments(s, o, "m", "o").contains("--rerender-keep-detail"));
+    QSettings().clear();
+    app::MainWindow w(false);
+    EXPECT_FALSE(w.deliver_choice().ai.rerender_keep_detail);
+    auto* kd = w.findChild<QWidget*>("deliverAiKeepDetail");
+    ASSERT_NE(kd, nullptr);
+    w.set_deliver("ai_keep_detail", "1");
+    EXPECT_TRUE(w.deliver_choice().ai.rerender_keep_detail);
+    EXPECT_TRUE(QSettings().value("deliver/aiKeepDetail").toBool());
+    QSettings().clear();
+}
+
+// 1.2.7: the v4.3 model's missing line names where to get it (it is a published download), and the
+// switch, not the "Re-render" of 1.2.4.
+TEST(GenFill, TheMissingV4LineSaysWhereToGetIt) {
+    const QString why = app::genfill_v4_missing_text();
+    EXPECT_TRUE(why.contains("Model packages")) << why.toStdString();
+    EXPECT_TRUE(why.contains("AI fill v3")) << why.toStdString();
+    EXPECT_FALSE(why.contains("not published")) << why.toStdString();
+    EXPECT_FALSE(why.contains("Re-render off")) << why.toStdString();
+}
+
 // 7 Nov 2026: "More detail in the filled area", off by default (v3 as gated). 8 Nov 2026: --focus areas
 // (a box per group of clipped areas; one area is the same box as --focus region).
 TEST(GenFill, FocusOnTheFilledAreaIsOptIn) {
@@ -8251,6 +8284,40 @@ TEST(QcReport, PixelsOutsideP3AreMeasuredFromTheMasters) {
     EXPECT_TRUE(v.reasons.join(' ').contains("outside P3-D65"));
     EXPECT_TRUE(app::qc_html(r, v).contains("Outside P3-D65 %"));
     EXPECT_EQ(app::qc_json(r, v).value("frames").toArray().at(0).toObject().value("out_of_p3_pct").toDouble(), 3.0);
+}
+
+// 1.2.7 (multi-role review of 1.2.6): a MaxCLL set by a few pixels wants a look (07V: 4,386 nits
+// from a 24-pixel spark, 182 at the 99.99th percentile).
+TEST(QcReport, AMaxCllSetByAFewPixelsWantsALook) {
+    app::QcReport r;
+    app::QcFrame f;
+    f.file = "SH010.0049";
+    f.maxcll = 4386;
+    f.maxfall = 55;
+    r.frames = {f};
+    EXPECT_TRUE(app::qc_verdict(r).pass);            // a sidecar from before 1.2.7: nothing to compare with
+    r.frames.front().p9998_nits = 182.0;
+    auto v = app::qc_verdict(r);
+    EXPECT_FALSE(v.pass);
+    EXPECT_TRUE(v.reasons.join(' ').contains("set by a few pixels")) << v.reasons.join(' ').toStdString();
+    EXPECT_TRUE(v.reasons.join(' ').contains("SH010.0049"));
+    EXPECT_EQ(app::qc_json(r, v).value("frames").toArray().at(0).toObject().value("light_p99_98_nits").toDouble(), 182.0);
+    r.frames.front().p9998_nits = 1200.0;            // a real bright area: MaxCLL 3.7x its top percentile
+    EXPECT_TRUE(app::qc_verdict(r).pass);
+    r.frames.front().maxcll = 900;                   // under 1,000 nits: never a speck review
+    r.frames.front().p9998_nits = 100.0;
+    EXPECT_TRUE(app::qc_verdict(r).pass);
+    // The sidecar's value is read back.
+    const auto dir = fresh_dir("qc-speck");
+    std::filesystem::create_directories(dir);
+    {
+        QFile j(QString::fromStdString((dir / "a.json").string()));
+        ASSERT_TRUE(j.open(QIODevice::WriteOnly));
+        j.write(R"({"maxcll_nits": 4386, "maxfall_nits": 55, "peak_nits": 4385.2, "light_p99_98_nits": 181.6})");
+    }
+    const auto frames = app::qc_frames_from_sidecars({dir / "a.json"});
+    ASSERT_EQ(frames.size(), 1u);
+    EXPECT_DOUBLE_EQ(frames.front().p9998_nits, 181.6);
 }
 
 // 1.2.6 (readiness report, checklist item 4): the learned route on a non-ACES source curve.

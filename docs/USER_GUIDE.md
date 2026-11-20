@@ -284,6 +284,14 @@ None of these changes the master.
   prompt it draws texture with no subject. **Advanced** holds the seed and the
   steps. **Preview AI fill** fills 17 frames round the playhead and shows the
   frame on screen; **Fill**, **Master** and **Invented** switch the view.
+  (1.2.7) What the fill draws is above SDR white, so a finished preview opens
+  with the wipe off and the view exposure at −2 EV (only when it was at 0); a
+  line over the viewer says so, **Alt+E** goes back to 0 EV and **W** brings
+  the wipe back. **Where it fills** shows what v4.3 really redraws: the
+  near-white region in solid orange, and tinted what stays the master (a
+  saturated highlight such as a sunset or a flame is never redrawn). **Keep
+  small and thin bright parts** (1.2.7, off by default) leaves a floor
+  grating, a railing, a practical lamp or a glint to the master.
   Inside the region the SDR's codes are not kept, unlike v3; outside it every
   pixel is the master's. Tested on the analytic route (Source > Analytic). In
   a smooth glare (a hazy sun) it sets the brightness and draws no texture; on

@@ -176,8 +176,8 @@ int main(int argc, char** argv) {
     }
     w.use_merged_title_bar();   // Windows: one dark bar instead of the caption, the menu row and the toolbar
     w.restore_settings();   // the window, rails, tab, container and Render fields of the last run
-    // 12 Nov 2026: where the v4 LoRA is (it is not published: a developer's machine), AI fill starts as
-    // v4, region re-render, until it is switched off; everywhere else it is v3 as released. Only while
+    // 12 Nov 2026: where the v4 LoRA is (1.2.7: a published download since 1.2.4, File > Model packages),
+    // AI fill starts as v4, region re-render, until it is switched off; everywhere else it is v3. Only while
     // the choice has never been made: Deliver > AI fill, or "Fill:" over the viewer, sets it.
     if (!QSettings().contains("deliver/aiRerender") && !rudra::app::genfill_v4_lora().empty()) {
         w.set_deliver("ai_rerender", "1");
