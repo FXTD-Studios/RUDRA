@@ -294,13 +294,23 @@ ClipFill reconstruct_crop(const SdrImage& sdr, float corpus_ev, const ClipFillOp
     // carried into everything else; the partly clipped pixels' missing
     // channels from the ones they kept.
     if (n_partial > 0 && opt.partial) {
+        const bool fade = opt.chroma_to_stops > opt.chroma_from_stops;
+        const float ceil_ly = std::log2(std::max(baseline_value(float(opt.clip_code), corpus_ev), kTiny));   // the ceiling the SDR clips at
+        auto chroma_keep = [&](float ly) {
+            if (!fade) return 1.0f;
+            const float gap = ceil_ly - ly;
+            return std::clamp(1.0f - float((gap - opt.chroma_from_stops) / (opt.chroma_to_stops - opt.chroma_from_stops)), 0.0f, 1.0f);
+        };
         std::vector<std::vector<float>> q(3, std::vector<float>(n, 0.0f));
         std::vector<float> wt(n, 0.0f);
         for_each_index(n, [&](std::size_t i) {
             if (cls[i] != kClean || !work[i]) return;
             const float v[3] = {b[0][i], b[1][i], b[2][i]};
             const float ly = std::log2(std::max(luma_of(v), kTiny));
-            for (int c = 0; c < 3; ++c) q[std::size_t(c)][i] = std::log2(std::max(v[c], kTiny)) - ly;
+            // 1.2.7: a clean pixel far darker than the clip says little about the
+            // highlight's colour (see ClipFillOptions::chroma_from_stops).
+            const float keep = chroma_keep(ly);
+            for (int c = 0; c < 3; ++c) q[std::size_t(c)][i] = keep * (std::log2(std::max(v[c], kTiny)) - ly);
             wt[i] = 1.0f;
         });
         fill_missing(q, wt, h, w);
@@ -325,13 +335,34 @@ ClipFill reconstruct_crop(const SdrImage& sdr, float corpus_ev, const ClipFillOp
             weighted_smooth(e, kept_of, h, w, opt.smooth_px);
             for (std::size_t i = 0; i < n; ++i) est_of[i] = e[i];
         }
+        // 1.2.7: each channel's lift, held to partial_outlier_stops over its partly
+        // clipped neighbours' mean (see ClipFillOptions::partial_outlier_stops).
+        const bool hold = opt.partial_outlier_stops > 0.0 && opt.partial_outlier_sigma_px > 0.0;
+        std::vector<float> cap[3];
+        if (hold) {
+            std::vector<float> lift_c(n), wl(n);
+            for (int c = 0; c < 3; ++c) {
+                for (std::size_t i = 0; i < n; ++i) {
+                    const bool on = cls[i] == kPartial && wc[c][i] > 0.0f;
+                    wl[i] = on ? 1.0f : 0.0f;
+                    lift_c[i] = on ? float(std::clamp(est_of[i] + q[std::size_t(c)][i] - std::log2(std::max(b[c][i], kTiny)), 0.0,
+                                                      opt.max_partial_ev) *
+                                           wc[c][i])
+                                   : 0.0f;
+                }
+                cap[c] = lift_c;
+                weighted_smooth(cap[c], wl, h, w, opt.partial_outlier_sigma_px);
+                for (std::size_t i = 0; i < n; ++i) cap[c][i] += float(opt.partial_outlier_stops);
+            }
+        }
         for_each_index(n, [&](std::size_t i) {
             if (cls[i] != kPartial) return;
             const double est = est_of[i];
             for (int c = 0; c < 3; ++c) {
                 if (wc[c][i] == 0.0f) continue;
                 const double lb = std::log2(std::max(b[c][i], kTiny));
-                const double lift = std::clamp(est + q[std::size_t(c)][i] - lb, 0.0, opt.max_partial_ev) * wc[c][i];
+                double lift = std::clamp(est + q[std::size_t(c)][i] - lb, 0.0, opt.max_partial_ev) * wc[c][i];
+                if (hold) lift = std::min(lift, double(cap[c][i]));
                 t[c][i] = float(double(b[c][i]) * std::exp2(lift));
             }
             if (!opt.hue_order) return;
@@ -656,6 +687,12 @@ SdrImage denoised(const SdrImage& sdr, const ClipFillOptions& opt) {
 }
 
 }  // namespace
+
+ClipFillOptions clip_fill_options_1_2_6(ClipFillOptions o) {
+    o.partial_outlier_stops = 0.0;
+    o.chroma_from_stops = o.chroma_to_stops = 0.0;
+    return o;
+}
 
 ClipFillOptions lossy_source_clip_options(ClipFillOptions o) {
     o.smooth_px = 2.0;          // about a quarter of a JPEG block either way

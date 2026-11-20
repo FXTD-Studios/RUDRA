@@ -1,9 +1,33 @@
 #include "master.hpp"
 
+#include "rudra/core/clip_fill.hpp"
 #include "rudra/infer/tiler.hpp"
 #include "rudra/media/still.hpp"
 
+#include <nlohmann/json.hpp>
+
 namespace rudra {
+
+std::string with_app_defaults(const std::string& params_json, const std::filesystem::path& source, bool lossy_movie,
+                              std::vector<std::string>* notes) {
+    nlohmann::json j;
+    try {
+        j = params_json.empty() ? nlohmann::json::object() : nlohmann::json::parse(params_json);
+    } catch (const std::exception&) {
+        return params_json;
+    }
+    if (!j.is_object() || j.contains("rudra_project")) return params_json;
+    if (!j.contains("source_curve")) {
+        j["source_curve"] = "bt1886";
+        if (notes) notes->push_back("Source curve: bt1886, the app's default (give \"source_curve\" in the parameters for another)");
+    }
+    if (!j.contains("lossy_source") && (lossy_movie || is_lossy_still_path(source.string()))) {
+        j["lossy_source"] = true;
+        if (notes) notes->push_back("Lossy source: the highlight fill smooths its compression noise, as the app does "
+                                    "(\"lossy_source\": false turns it off)");
+    }
+    return j.dump();
+}
 
 Result<MasterResult> render_analytic_master(const std::filesystem::path& image, const MasterRequest& q,
                                             const std::filesystem::path& out) {

@@ -96,6 +96,9 @@ def rgb(ch) -> np.ndarray:
 
 
 def master(cli, image, out, params):
+    # 1.2.7: rudra-native master now takes the app's Source curve (bt1886) when none is given; this
+    # validation was registered on the engine's own default, so it keeps it.
+    params = {"source_curve": "unknown", **params}
     run([cli, "master", "analytic", image, "--out", out, "--params", json.dumps(params)])
     return json.loads(Path(out).with_suffix(".json").read_text())
 

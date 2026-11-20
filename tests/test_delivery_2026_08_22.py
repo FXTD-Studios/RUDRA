@@ -90,7 +90,7 @@ def test_exr_reader_refuses_compressed(tmp_path):
     path = exr.write_exr(tmp_path / "c.exr", img)
     raw = bytearray(path.read_bytes())
     idx = raw.index(b"compression\x00compression\x00")
-    raw[idx + len(b"compression\x00compression\x00") + 4] = 3  # claim PIZ
+    raw[idx + len(b"compression\x00compression\x00") + 4] = 4  # claim PIZ (1.2.7: ZIP, 3, is read)
     path.write_bytes(bytes(raw))
     with pytest.raises(ValueError, match="compressed"):
         exr.read_exr(path)

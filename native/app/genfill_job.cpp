@@ -222,6 +222,7 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
                       // on still pixels held (the model's detail flickering inside moving highlights)
                       "--rerender-independent", "--rerender-calm", "0.9", "--json"};
         if (o.source_start > 0) a << "--source-start" << QString::number(o.source_start);
+        if (o.rerender_keep_detail) a << "--rerender-keep-detail";   // 1.2.7
         // The highlight prompt is sent when there is one (12 Nov 2026): the 09V reference
         // (fill_v4_finish5) was rendered with a prompt naming the scene; the held-out gate ran with none.
         // The shadow prompt is not: v4 does not fill shadows.
@@ -260,15 +261,19 @@ fs::path genfill_v4_lora() {
     return {};
 }
 
+QString genfill_v4_missing_text() {
+    // 1.2.7: v4.3 is a published download (docs/MODELS.md) and v3 / v4.3 is a switch in the card.
+    return QStringLiteral("AI fill v4.3 region: its model is not installed. Download it from File \u203a Model "
+                          "packages\u2026 (RUDRA AI fill v4.3, experimental), or switch the card to AI fill v3.");
+}
+
 std::optional<GenFillSetup> genfill_setup_for(const GenFillOptions& o, QString* why) {
     auto s = genfill_setup(why);
     if (!s || !o.rerender) return s;
     const fs::path v4 = genfill_v4_lora();
     if (v4.empty()) {
         if (why)
-            *why = QStringLiteral("AI fill region re-render: the v4 LoRA was not found. It is experimental and not published: "
-                                  "put rudra_genfill.safetensors of research_genfill_v4_2_20261114 beside the app as "
-                                  "models/genfill/rudra_genfill_v4.safetensors, or turn Re-render off for AI fill v3.");
+            *why = genfill_v4_missing_text();
         return std::nullopt;
     }
     s->lora = v4;

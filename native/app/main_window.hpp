@@ -245,6 +245,10 @@ public:
     void preview_genfill();
     void start_analytic_preview_master(const QString& mdir, int a, int b, std::function<void(const QJsonObject&)> done);
     void show_genfill_preview(const QString& which);
+    // 1.2.7 (multi-role review of 1.2.6, "I cannot see what it does"): a finished preview opens where
+    // it can be seen: the wipe off, the view exposure at -2 EV when it was at 0 (the fill sits above
+    // SDR white), and a line over the viewer that says so. genfill/previewFrames = false turns it off.
+    void frame_genfill_preview();
     // 1.2.6 (18 Nov 2026, user feedback on 09V.mp4): where AI fill v3 acts on the frame on screen
     // (core/fill_region.hpp, the rule of masks.py) with Deliver's thresholds; nullopt without a
     // frame. `sdr` gets the SDR it was measured on.

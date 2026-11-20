@@ -45,6 +45,18 @@ AiFillRegion ai_fill_region(const SdrImage& sdr, int tau_high = 250, int tau_low
 // AI fill v4.3 region re-render's region: codes >= 240, every pixel of it redrawn (genfill_preview's request).
 inline constexpr int kAiFillV4TauHigh = 240;
 
+// 1.2.7 (multi-role review of 1.2.6): what v4.3 really redraws, per pixel, 0..1, as
+// rudra/genfill/run.py weighs it with the app's settings: codes >= kAiFillV4TauHigh, times the
+// near-white guard (composite.neutral_weight: the smallest code over the largest, 0.78 -> 0.88,
+// smoothstep; a sunset or a flame keeps the master), times, with keep_detail, the
+// thin-and-small rule (composite.detail_keep_weight: the share of a 25-px box at 1080 lines in
+// the region, 0.45 -> 0.75, and no area under 0.05 % of the frame). The 1.2.6 overlay showed the
+// codes >= 240 alone: 11 % of 07V's sunset in solid orange where v4.3 redraws none of it.
+std::vector<float> ai_fill_v4_weight(const SdrImage& sdr, bool keep_detail = false);
+// The same as a region for the viewer and the card: filled where the weight is at least one
+// half, seen (tinted) where the codes are >= 240 but the guard or the detail rule keeps the master.
+AiFillRegion ai_fill_region_v4(const SdrImage& sdr, bool keep_detail = false);
+
 // The region as a picture for the viewer, linear light where 1.0 is SDR white: the SDR dimmed,
 // the filled areas solid orange (shadows cyan), the seen-only areas tinted half way.
 PlanarBuffer ai_fill_region_picture(const SdrImage& sdr, const AiFillRegion& region);

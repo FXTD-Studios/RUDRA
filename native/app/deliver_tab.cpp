@@ -108,6 +108,7 @@ void MainWindow::load_deliver_settings() {
     // 1.2.6 (18 Nov 2026, user request): v3 or v4.3 region is the user's choice, a switch in the AI
     // fill card; v4 runs where its LoRA is found (the setup line says when it is not).
     c.ai.rerender = st.value("deliver/aiRerender", false).toBool();
+    c.ai.rerender_keep_detail = st.value("deliver/aiKeepDetail", false).toBool();   // 1.2.7
     c.ai.prompt_highlight = st.value("deliver/aiPromptHighlight").toString();
     c.ai.prompt_shadow = st.value("deliver/aiPromptShadow").toString();
     if (c.source != "aces" && c.source != "analytic") c.source = "aces";
@@ -195,6 +196,9 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
         deliver_.ai.rerender = value == "1" || value == "true" || value == "v4";   // 1.2.6: the switch
         st.setValue("deliver/aiRerender", deliver_.ai.rerender);
         refresh_prompt_chips();   // v4 shows the presets only
+    } else if (key == "ai_keep_detail") {   // 1.2.7: v4.3 leaves thin and small bright parts to the master
+        deliver_.ai.rerender_keep_detail = value == "1" || value == "true";
+        st.setValue("deliver/aiKeepDetail", deliver_.ai.rerender_keep_detail);
     } else if (key == "ai_fallback") {   // RUDRA 1.1 priority 5
         deliver_.ai.fallback = value == "1" || value == "true";
         st.setValue("deliver/aiFallback", deliver_.ai.fallback);
@@ -343,6 +347,10 @@ void MainWindow::sync_deliver() {
     if (auto* fb = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFallback"))) fb->set_on(c.ai.fallback);
     if (auto* fo = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFocus"))) fo->set_on(c.ai.focus_region);
     if (auto* v = dynamic_cast<Seg*>(findChild<QWidget*>("deliverAiVersion"))) v->set_on(c.ai.rerender ? "v4" : "v3");
+    if (auto* kd = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiKeepDetail"))) {   // 1.2.7: v4.3 only
+        kd->set_on(c.ai.rerender_keep_detail);
+        kd->setVisible(c.ai.rerender);
+    }
     if (auto* rn = findChild<QLabel*>("deliverAiRegion"))   // the grade's region reaches the fill
         rn->setVisible(c.ai_fill && !c.ai.region_json.isEmpty());
     auto set_line = [this](const char* id, const QString& v) {
@@ -375,8 +383,8 @@ void MainWindow::sync_deliver() {
         if (s && c.ai.rerender) {   // 12 Nov 2026: v4 is on, so the line names v4's LoRA, not v3's
             const auto v4 = genfill_v4_lora();
             // One short line (12 Nov 2026); where the parts are is in the tooltip and in Setup…
-            st->setText(v4.empty() ? QStringLiteral("AI fill v4: its LoRA was not found (experimental, not published). "
-                                                    "Turn Re-render off for AI fill v3.")
+            // 1.2.7: v4.3 is a download now, and v3 / v4.3 a switch just below
+            st->setText(v4.empty() ? genfill_v4_missing_text()
                                    : QStringLiteral("Ready · AI fill v4.3 region (experimental)"));
             st->setToolTip(QStringLiteral("Wan2.1-VACE-1.3B: %1\nLoRA: %2").arg(from_path(s->base), from_path(v4)));
         } else if (s) {

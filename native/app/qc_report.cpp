@@ -100,6 +100,7 @@ std::vector<QcFrame> qc_frames_from_sidecars(const std::vector<std::filesystem::
         q.maxcll = j.value("maxcll_nits").toInt();
         q.maxfall = j.value("maxfall_nits").toInt();
         q.peak_nits = j.value("peak_nits").toDouble();
+        if (j.contains("light_p99_98_nits")) q.p9998_nits = j.value("light_p99_98_nits").toDouble();   // 1.2.7
         const QJsonArray res = j.value("resolution").toArray();
         if (res.size() == 2) q.resolution = QStringLiteral("%1×%2").arg(res[0].toInt()).arg(res[1].toInt());
         const QJsonObject inv = j.value("invented_pixels").toObject();
@@ -179,6 +180,24 @@ QcVerdict qc_verdict(const QcReport& r, int pq_peak_nits) {
                    .arg(worst_p3, 0, 'f', 2));
     else if (out_p3)
         v.notes << QStringLiteral("%1 measured frame(s) have a few pixels outside P3-D65 (worst %2 %).").arg(out_p3).arg(worst_p3, 0, 'f', 2);
+    // 1.2.7 (multi-role review of 1.2.6): MaxCLL set by a few pixels (a speck, a rim) rather than the picture.
+    int specks = 0;
+    double worst_ratio = 0;
+    QString worst_file;
+    for (const auto& f : r.frames) {
+        if (f.p9998_nits <= 0 || f.maxcll <= kQcSpeckMinNits) continue;
+        const double ratio = double(f.maxcll) / std::max(f.p9998_nits, 203.0);
+        if (ratio <= kQcSpeckRatio) continue;
+        ++specks;
+        if (ratio > worst_ratio) worst_ratio = ratio, worst_file = f.file;
+    }
+    if (specks)
+        review(QStringLiteral("%1 frame(s) have a MaxCLL set by a few pixels, over %2\u00d7 what the brightest 0.02 % leave "
+                              "(worst %3: %4\u00d7): look for a hot speck; a TV tone-maps the whole programme against MaxCLL")
+                   .arg(specks)
+                   .arg(kQcSpeckRatio, 0, 'f', 0)
+                   .arg(worst_file)
+                   .arg(worst_ratio, 0, 'f', 1));
     if (r.lossy_source)
         v.notes << QStringLiteral("The source was compressed (JPEG or an 8-bit movie codec): the highlight fill smoothed its "
                                   "compression noise near white.");
@@ -297,6 +316,7 @@ QJsonObject qc_json(const QcReport& r, const QcVerdict& v) {
                                   {"reconstructed_pct", opt(f.reconstructed_pct)},
                                   {"generated_pct", opt(f.generated_pct)},
                                   {"out_of_p3_pct", opt(f.out_of_p3_pct)},
+                                  {"light_p99_98_nits", opt(f.p9998_nits)},
                                   {"export_code_delta", f.bracket_code_delta < 0 ? QJsonValue(QJsonValue::Null) : QJsonValue(f.bracket_code_delta)}});
     int maxcll = 0, maxfall = 0;
     for (const auto& f : r.frames) {

@@ -61,7 +61,7 @@ from pathlib import Path
 import numpy as np
 
 from . import encoding
-from .composite import RERENDER_HUES, finish_rerender, neutral_weight, plain_blend, r_safe_blend, white_scale
+from .composite import RERENDER_HUES, detail_keep_weight, finish_rerender, neutral_weight, plain_blend, r_safe_blend, white_scale
 from .masks import MaskSettings, TemporalMask, blend_core, feather
 
 
@@ -80,6 +80,7 @@ class Rerender:
     independent: bool = False   # every window from the source alone, the overlaps crossfaded (not chained)
     rise: float = 0.0      # > 0: with a level, the full-code core climbs up to this many stops with its depth (finish_rerender)
     calm: float = 0.0      # > 0: the share of the previous frame kept where the source holds still and the fill would jump (finish_rerender)
+    keep_detail: bool = False   # 1.2.7: thin, broken-up and small parts of the region keep the master (composite.detail_keep_weight)
     CONDITIONS = ('bt1886', 'aces')
 
 
@@ -687,6 +688,8 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                     w_plain = (weight * ramp * ramp * (3 - 2 * ramp)).astype(np.float32)
                     if rerender.level > 0:                     # only where the source is near white in every channel
                         w_plain = (w_plain * neutral_weight(codes[i])).astype(np.float32)
+                    if rerender.keep_detail:                   # 1.2.7: a grating, a railing, a lamp keep their picture
+                        w_plain = (w_plain * detail_keep_weight(codes[i], ms.tau_high)).astype(np.float32)
                     if rerender.hue != 'model' or rerender.level > 0 or rerender.smooth > 0 or rerender.still > 0 or rerender.calm > 0:
                         fill_lin = finish_rerender(fill_lin, fr['ap1'], condition_of(codes[i], 'bt1886', view), codes[i], w_plain,
                                                    rerender.hue, rerender.colour, rerender.level, rerender.smooth,
@@ -926,7 +929,8 @@ def serve(model, view, a, emit, FillSettings) -> int:
                                                 float(r.get('rerender_still', a.rerender_still)),
                                                 bool(r.get('rerender_independent', a.rerender_independent)),
                                                 float(r.get('rerender_rise', a.rerender_rise)),
-                                                float(r.get('rerender_calm', a.rerender_calm)))
+                                                float(r.get('rerender_calm', a.rerender_calm)),
+                                                bool(r.get('rerender_keep_detail', a.rerender_keep_detail)))
                               if r.get('region_rerender', a.region_rerender) and r.get('source', a.source) else None)
             tagged(event='done', ok=True, out=str(out), **rep['stats'])
         except Exception as e:  # noqa: BLE001 - one failed request does not end the server
@@ -1011,6 +1015,9 @@ def main(argv=None):
     ap.add_argument('--rerender-independent', action='store_true',
                     help="with --region-rerender: every window from the source alone, the overlaps crossfaded, not chained "
                          "(the model's detail stays the same along the shot)")
+    ap.add_argument('--rerender-keep-detail', action='store_true',
+                    help="with --region-rerender (1.2.7): thin or broken-up parts of the region (a grating, a railing) and "
+                         "areas under 0.05 %% of the frame (a lamp) keep the master instead of being redrawn")
     a = ap.parse_args(argv)
     if not a.serve and (not a.master or not a.out):
         ap.error('--master and --out are required (or --serve)')
@@ -1052,7 +1059,7 @@ def main(argv=None):
                           fallback=a.fallback, focus=a.focus,
                           rerender=Rerender(a.source, a.condition, a.rerender_hue, a.rerender_colour, a.rerender_level, a.rerender_smooth,
                                             a.source_start, a.rerender_dip, a.rerender_still, a.rerender_independent,
-                                            a.rerender_rise, a.rerender_calm)
+                                            a.rerender_rise, a.rerender_calm, a.rerender_keep_detail)
                           if a.region_rerender else None)
         emit(event='done', ok=True, out=str(out), memory=memory_report(device) | {'mode': model.memory_mode},
              **rep['stats'])

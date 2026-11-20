@@ -84,6 +84,10 @@ struct GenFillOptions {
     QString source;                 // the movie, or the folder of stills, the master was made from
     int source_start = 0;           // the source frame of the master's first frame
     QString condition = QStringLiteral("bt1886");   // "bt1886" (the analytic route) or "aces" (the learned one)
+    // 1.2.7 (multi-role review of 1.2.6): v4.3 leaves thin, broken-up and small parts of its region
+    // (a floor grating, a railing, a practical lamp) to the master (--rerender-keep-detail,
+    // composite.detail_keep_weight). Off = v4.3 as its checks ran.
+    bool rerender_keep_detail = false;
     bool operator==(const GenFillOptions&) const = default;
 };
 
@@ -156,6 +160,8 @@ std::filesystem::path genfill_bootstrap_script(const std::filesystem::path& repo
 // The setup: the saved paths while they exist, else the first candidate that
 // does (and it is saved); nullopt and `why` when a part is missing.
 std::optional<GenFillSetup> genfill_setup(QString* why = nullptr);
+// 1.2.7: what the card and a refused fill say when v4.3's model is not installed.
+QString genfill_v4_missing_text();
 // The setup a fill with these options runs with: genfill_setup(), and for the region re-render
 // the v4 LoRA in place of v3's (QSettings genfill/loraV4, <root>/rudra_genfill_v4.safetensors,
 // then the training workstation's run folder; only a file that is v4 by its SHA-256).

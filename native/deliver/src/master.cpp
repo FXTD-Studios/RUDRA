@@ -608,6 +608,9 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         d.emplace_back("outside", "the baseline, bit for bit (gate exactly 0)");
         sidecar_dict.emplace_back("reconstruction_region", pyjson::Value(d));
     }
+    // 1.2.7 (multi-role review of 1.2.6): the light the frame's bright pixels reach without its last
+    // 0.02 % (the HDR10+ analysis's top percentile), so a QC can tell a MaxCLL set by a few pixels.
+    sidecar_dict.emplace_back("light_p99_98_nits", py_round1(stats.percentiles_nits.back()));
     if (q.analytic) sidecar_dict.emplace_back("reconstruction", "analytic (no model)");
     if (q.analytic) sidecar_dict.emplace_back("clip_fill", clip_fill_text(q));
     if (!cp.calibration.empty()) {

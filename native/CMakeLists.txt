@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.24)
 # RUDRA native: the layered C++ app described in docs/NATIVE_ARCHITECTURE.md.
 # The dependency rule (a layer links only to layers below it) is enforced by
 # PRIVATE linkage here and by tools/check_layers.py in CI.
-project(RudraNative VERSION 1.2.6 LANGUAGES CXX)   # 1.2.0: the ACES 2 lock (package contract major 3); 1.2.1-1.2.3: first-run feedback; 1.2.4: security review; 1.2.5: 1.2.4 feedback, signed Windows builds; 1.2.6: 1.2.5 feedback, readiness report (QC JSON, ZIP EXR, offline AI fill, Linux package)
+project(RudraNative VERSION 1.2.7 LANGUAGES CXX)   # 1.2.0: the ACES 2 lock (package contract major 3); 1.2.1-1.2.3: first-run feedback; 1.2.4: security review; 1.2.5: 1.2.4 feedback, signed Windows builds; 1.2.6: 1.2.5 feedback, readiness report (QC JSON, ZIP EXR, offline AI fill, Linux package); 1.2.7: multi-role review fixes (clip fill hue and specks, v4.3 region view, QC speck rule, headless defaults)
 # The release label after the version: "beta.5" for the fifth public beta,
 # empty for a final release. RUDRA_VERSION_LABEL is what the app shows.
 set(RUDRA_RELEASE "" CACHE STRING "Pre-release tag appended to the version (empty for a release)")

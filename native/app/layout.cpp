@@ -1435,12 +1435,20 @@ QWidget* MainWindow::build_right_rail() {
                                "cent of the frame. On, AI fill v4 draws the whole bright region again from the source "
                                "(a window, a door, a sky parked just under white): its detail from the model, its "
                                "colour and level led by the source, steadied over time. The SDR codes inside the "
-                               "region are NOT kept, unlike v3. It uses its own model (the v4 LoRA, not published "
-                               "yet) and its own fixed settings: the thresholds, brightness, detail, focus and "
+                               "region are NOT kept, unlike v3. It uses its own model (the v4.3 LoRA, a download "
+                               "in File > Model packages) and its own fixed settings: the thresholds, brightness, detail, focus and "
                                "flicker controls here do not apply to it. Tested on the analytic BT.1886 route; "
                                "on the learned route it is untested. v3 = clipped pixels only, as released");
                 rr->clicked = [this](const QString& k) { set_deliver("ai_rerender", k == "v4" ? "1" : "0"); };
                 bv->addWidget(rr);
+                // 1.2.7 (multi-role review of 1.2.6): v4.3 redrew a floor grating and a practical lamp in 09V
+                auto* kd = new CheckRow("deliverAiKeepDetail", "Keep small and thin bright parts", "deliverAiKeepDetailHint",
+                                        "v4.3: gratings, railings, lamps stay the master", box);
+                kd->setToolTip("v4.3 only. Bright parts that are thin or broken up (a floor grating, a railing) or "
+                               "smaller than 0.05 % of the frame (a practical lamp, a glint) keep the master instead of "
+                               "being redrawn. Off is v4.3 as its checks ran. \"Where it fills\" follows it.");
+                kd->clicked = [this] { set_deliver("ai_keep_detail", deliver_.ai.rerender_keep_detail ? "0" : "1"); };
+                bv->addWidget(kd);
             }
             {   // 6 Nov 2026: the suggested prompts first, one click each (Suggest fills them in)
                 auto* chips = new QWidget(box);
@@ -1620,9 +1628,9 @@ QWidget* MainWindow::build_right_rail() {
                 auto* where = new QPushButton("Where it fills", row);
                 where->setObjectName("deliverAiShowRegion");
                 where->setCheckable(true);
-                where->setToolTip("Shows on the viewer where the AI fill acts on this frame: solid orange it fills "
-                                  "(fully clipped areas), tinted its model only sees and leaves as they are. "
-                                  "Click again for the picture");
+                where->setToolTip("Shows on the viewer where the AI fill acts on this frame: solid orange it changes "
+                                  "(v3: fully clipped areas; v4.3: the near-white bright region), tinted it leaves "
+                                  "as it is. Click again for the picture");
                 connect(where, &QPushButton::toggled, this, [this](bool on) { set_ai_region_view(on); });
                 rh->addWidget(where);
                 rh->addStretch(1);

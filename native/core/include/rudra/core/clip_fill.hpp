@@ -95,7 +95,32 @@ struct ClipFillOptions {
     // flat yellow beside the orange around it. Off by default (bit-identical);
     // lossy_source_clip_options turns it on.
     bool hue_order = false;
+    // 1.2.7 (multi-role review of 1.2.6, 20 Nov 2026): stage 1 takes the clipped
+    // channel's chroma from the clean pixels around it. Beside a dark silhouette
+    // those can be a differently lit surface, and a few partly clipped pixels then
+    // jump stops above the band they belong to (07V: 24 pixels under an engine
+    // nacelle up to 21x white, MaxCLL 4,386 nits while the frame's 99.99th
+    // percentile is 182). Each channel's lift is held to at most
+    // partial_outlier_stops over the mean lift of the partly clipped pixels within
+    // partial_outlier_sigma_px (a normalised Gaussian over those pixels only), so a
+    // speck cannot outshine its own band; a lamp or tail light whose own pixels all
+    // lift together keeps its lift. 0 is off: bit-identical to 1.2.6.
+    double partial_outlier_stops = 1.0;
+    double partial_outlier_sigma_px = 8.0;
+    // 1.2.7: stage 1 carries the chroma of the clean pixels into the partly
+    // clipped ones. A clean pixel more than chroma_from_stops below the clip
+    // ceiling (in log2 luma) gives less of its chroma, none from chroma_to_stops:
+    // a door or window seen from a dark, differently lit room borrowed the room's
+    // colour (09V: the sky in the cargo door came out lavender, B/R 1.39 against
+    // 1.09 in the source). A sky's own gradient, a flame's glow, sit within a stop
+    // or two of the clip and keep theirs. to <= from is off: bit-identical to 1.2.6.
+    double chroma_from_stops = 3.0;
+    double chroma_to_stops = 6.0;
 };
+
+// The 1.2.6 clip fill exactly (no outlier hold, no near-white hue), for the
+// parity tests and anyone who must reproduce a 1.2.6 master.
+ClipFillOptions clip_fill_options_1_2_6(ClipFillOptions base = {});
 
 // The options for a lossy 8-bit source (JPEG, WebP, an H.264/HEVC 8-bit
 // movie): the gain smoothed over about a JPEG block, stage 1's lift held to

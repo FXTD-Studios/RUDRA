@@ -256,6 +256,15 @@ void MainWindow::build_ai_prompt_bar(QVBoxLayout* v, QWidget* parent) {
         bar->hide();
         h->addWidget(bar);
     }
+    {   // 1.2.7: over the viewer, what a finished preview changed in the view and why (frame_genfill_preview)
+        auto* hint = new QLabel(ai_prompt_bar_);
+        hint->setObjectName("viewerAiHint");
+        hint->setProperty("class", "note");
+        hint->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        hint->setMinimumWidth(0);
+        hint->hide();
+        h->addWidget(hint, 3);
+    }
     auto* chips = new QWidget(ai_prompt_bar_);
     chips->setObjectName("aiSuggestChips");
     auto* ch = new QHBoxLayout(chips);
@@ -269,7 +278,7 @@ void MainWindow::build_ai_prompt_bar(QVBoxLayout* v, QWidget* parent) {
     h->addWidget(chips, 3);
     // 12 Nov 2026: which fill a preview runs, here where the previews are started. v3 fills only the
     // fully clipped pixels; v4 (experimental) draws the whole bright region again. The same setting as
-    // Deliver > AI fill > Re-render bright regions.
+    // Deliver > AI fill > the v3 / v4.3 region switch.
     auto* mode = new QPushButton(QStringLiteral("Fill: v3"), ai_prompt_bar_);
     mode->setObjectName("viewerAiRerender");
     mode->setCheckable(true);

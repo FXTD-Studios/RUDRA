@@ -13,6 +13,9 @@
 #include "rudra/infer/backend.hpp"
 #include "rudra/media/video_probe.hpp"
 #include "rudra/video/convert.hpp"
+#include "rudra/core/clip_fill.hpp"
+#include "rudra/deliver/master.hpp"
+#include "master.hpp"
 
 namespace rudra {
 namespace fs = std::filesystem;
@@ -127,7 +130,18 @@ int cmd_video(const std::vector<std::string>& args) {
             return 0;
         }
     } else if (a.grade_file) {
-        auto g = read_grade_file(*a.grade_file);
+        // 1.2.7 (multi-role review of 1.2.6): the app's Source curve, and its lossy-source fill for an
+        // 8-bit H.264 / HEVC / VP9 / AV1 movie, when the settings file does not say (cli/master.hpp).
+        std::ifstream in(*a.grade_file, std::ios::binary);
+        if (!in) return fail(make_error(ErrorCode::NotFound, "The export's settings file is missing", a.grade_file->string()));
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        bool lossy = false;
+        if (text.find("\"lossy_source\"") == std::string::npos)
+            if (auto p = probe_video(a.input); p && !p->video_streams.empty())
+                lossy = is_lossy_video(p->video_streams.front().codec_name, p->video_streams.front().pix_fmt);
+        std::vector<std::string> notes;
+        auto g = master_request_from_json(with_app_defaults(text, a.input, lossy, &notes));
+        for (const auto& n : notes) std::printf("note: %s\n", n.c_str());
         if (!g) return fail(g.error());
         a.grade = *g;
         if (g->analytic) {   // no model runs, none is opened

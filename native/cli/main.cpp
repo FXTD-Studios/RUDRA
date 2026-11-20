@@ -55,6 +55,7 @@
 #include "rudra/deliver/correction_log.hpp"
 #include "rudra/deliver/dolby_vision.hpp"
 #include "rudra/deliver/exr.hpp"
+#include "rudra/deliver/video_encode.hpp"
 #include "rudra/infer/self_test.hpp"
 #include "rudra/infer/tiler.hpp"
 #include "rudra/platform/npy.hpp"
@@ -716,7 +717,9 @@ void usage() {
                  "       rudra-native dolby-vision <generate.json> [--rpu FILE] [--xml FILE --fps N/D --size WxH --name TEXT]\n"
                  "       rudra-native ffmpeg-check [--ffmpeg PATH] [--ffprobe PATH] [--force] [--no-self-test]\n"
                  "       rudra-native bench-scopes [--iters N]\n"
-                 "       rudra-native bench-clip-fill <bench> [--corpus-ev EV] [--tree NAME] [--glow K] [--force]\n");
+                 "       rudra-native bench-clip-fill <bench> [--corpus-ev EV] [--tree NAME] [--glow K] [--force]\n"
+                 "  any command: [--mastering-display p3d65|rec2020] (an HDR10 movie's mastering display; p3d65, as the app)\n"
+                 "  master: \"source_curve\" defaults to bt1886 and a JPEG gets \"lossy_source\", as in the app\n");
 }
 
 }  // namespace
@@ -726,6 +729,22 @@ int main(int argc, char** argv) {
     // RUDRA_FFMPEG_DIR=path keeps the user's.
     rudra::use_bundled_tools(rudra::executable_dir());
     std::vector<std::string> args(argv + 1, argv + argc);
+    // 1.2.7 (multi-role review of 1.2.6): an HDR10 movie's mastering display is P3-D65, as the app writes
+    // it (Deliver > mastering display); --mastering-display rec2020 anywhere on the line for the old one.
+    // The engine's own default stays BT.2020, the Python reference's, for the parity tests.
+    {
+        std::string md = "p3d65";
+        for (std::size_t i = 0; i < args.size(); ++i)
+            if (args[i] == "--mastering-display" && i + 1 < args.size()) {
+                md = args[i + 1];
+                args.erase(args.begin() + std::ptrdiff_t(i), args.begin() + std::ptrdiff_t(i) + 2);
+                break;
+            }
+        if (!set_mastering_display_primaries(md)) {
+            std::fprintf(stderr, "rudra-native: --mastering-display must be p3d65 or rec2020, not %s\n", md.c_str());
+            return 64;
+        }
+    }
     if (args.empty()) { usage(); return 64; }
     if (args[0] == "version") {
         std::printf("rudra-native 0.1.0 (model contract %d.x)\n", kSupportedContractMajor);
@@ -784,6 +803,9 @@ int main(int argc, char** argv) {
         if (args[0] == "master-check") return cmd_master_check(pkg, args[2], runtime, *d);
         if (args[0] == "master-compare") return cmd_master_compare(pkg, args[2], runtime, *d);
         if (out.empty()) { usage(); return 64; }
+        std::vector<std::string> notes;   // 1.2.7: the app's Source curve and lossy-source defaults
+        params = with_app_defaults(params, args[2], false, &notes);
+        for (const auto& n : notes) std::fprintf(stderr, "note: %s\n", n.c_str());
         return cmd_master(pkg, args[2], out, runtime, *d, params);
     }
 #endif

@@ -6,16 +6,18 @@ Writes uncompressed HALF/FLOAT RGB EXRs with correct headers — including the
 long-standing ``rudra.exr_io.save_exr_placeholder`` refusal: RUDRA can now
 emit EXR masters on any machine, no OpenEXR/OpenImageIO wheel required.
 
-Scope (deliberate): NO compression only, scanline RGB(A), with an optional
-``rudra.reconstructed`` mask plane. The
-reader exists to round-trip our own files and ingest simple reference EXRs;
-it refuses compressed input with a clear error instead of mis-reading it.
+Scope (deliberate): the writer writes NO compression only, scanline RGB(A), with
+an optional ``rudra.reconstructed`` mask plane. The reader exists to round-trip
+our own files and ingest simple reference EXRs: uncompressed, and (1.2.7) ZIP and
+ZIPS, which the native app writes for ACEScg and linear masters since 1.2.6. It
+refuses any other compression with a clear error instead of mis-reading it.
 """
 
 from __future__ import annotations
 
 import os
 import struct
+import zlib
 from pathlib import Path
 
 import numpy as np
@@ -147,6 +149,30 @@ def _read_null_str(buf: bytes, pos: int) -> tuple[str, int]:
     return buf[pos:end].decode("latin-1"), end + 1
 
 
+_NO_COMPRESSION, _ZIPS, _ZIP = 0, 2, 3
+_ZIP_LINES = {_NO_COMPRESSION: 1, _ZIPS: 1, _ZIP: 16}
+
+
+def _unzip_chunk(data: bytes, expected: int) -> bytes:
+    """OpenEXR's ZIP / ZIPS chunk: zlib, then its predictor and byte interleave undone. A chunk the
+    writer could not shrink is stored as it is (its size is the uncompressed size)."""
+    if len(data) == expected:
+        return data
+    d = np.frombuffer(zlib.decompress(data), dtype=np.uint8)
+    if d.size != expected:
+        raise ValueError(f"ZIP chunk decodes to {d.size} bytes, expected {expected}")
+    t = np.empty_like(d)
+    if d.size:
+        acc = np.cumsum(d[1:].astype(np.int64) - 128) + int(d[0])
+        t[0] = d[0]
+        t[1:] = np.mod(acc, 256).astype(np.uint8)
+    half = (d.size + 1) // 2
+    out = np.empty_like(t)
+    out[0::2] = t[:half]
+    out[1::2] = t[half:]
+    return out.tobytes()
+
+
 def read_exr(path: str | Path) -> tuple[np.ndarray, dict]:
     """Read an uncompressed scanline RGB(A) EXR written by this module
     (or any conforming writer). Returns (float32 (H,W,C) image, attributes).
@@ -193,11 +219,15 @@ def read_exr(path: str | Path) -> tuple[np.ndarray, dict]:
             attrs.setdefault("_raw", {})[name] = (type_name, payload)
     pos += 1  # header terminator
 
-    if attrs.get("compression", 0) != 0:
-        raise ValueError(f"{path}: compressed EXR unsupported by this minimal reader")
+    compression = attrs.get("compression", 0)
+    if compression not in _ZIP_LINES:
+        raise ValueError(f"{path}: compressed EXR (compression {compression}) unsupported by this minimal "
+                         "reader (uncompressed, ZIPS and ZIP only)")
     x0, y0, x1, y1 = attrs["dataWindow"]
     width, height = x1 - x0 + 1, y1 - y0 + 1
-    pos += 8 * height  # skip offset table
+    lines = _ZIP_LINES[compression]
+    chunks = (height + lines - 1) // lines
+    pos += 8 * chunks  # skip offset table
 
     unsupported = [c for c, t in channels if t not in (_PIXEL_HALF, _PIXEL_FLOAT)]
     if unsupported:
@@ -205,14 +235,22 @@ def read_exr(path: str | Path) -> tuple[np.ndarray, dict]:
     names = [c for c, _ in channels]
     dtypes = {c: (np.float16 if t == _PIXEL_HALF else np.float32) for c, t in channels}
     planes = {c: np.empty((height, width), dtype=np.float32) for c in names}
-    for _ in range(height):
+    row_bytes = sum(width * dtypes[c]().itemsize for c in names)
+    for _ in range(chunks):
         y, size = struct.unpack_from("<ii", raw, pos)
         pos += 8
-        for c in names:
-            dt = dtypes[c]
-            count = width * dt().itemsize
-            planes[c][y - y0] = np.frombuffer(raw, dtype=dt, count=width, offset=pos).astype(np.float32)
-            pos += count
+        n = min(lines, y1 + 1 - y)
+        if compression == _NO_COMPRESSION:
+            block, at = raw, pos
+        else:
+            block, at = _unzip_chunk(raw[pos:pos + size], n * row_bytes), 0
+        for row in range(n):
+            for c in names:
+                dt = dtypes[c]
+                count = width * dt().itemsize
+                planes[c][y - y0 + row] = np.frombuffer(block, dtype=dt, count=width, offset=at).astype(np.float32)
+                at += count
+        pos += size
     order = [c for c in ("R", "G", "B", "A") if c in planes] or names
     image = np.stack([planes[c] for c in order], axis=-1)
     attrs["channel_order"] = order
