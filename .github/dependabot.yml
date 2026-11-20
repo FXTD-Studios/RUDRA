@@ -1,12 +1,16 @@
-# Proposes updates for the pinned GitHub Actions and the Python packages (security review, 11 Nov 2026).
+# Dependabot (security review, 11 Nov 2026; version-update PRs off since 20 Nov 2026).
+# It still checks the pinned GitHub Actions and Python packages every week, but opens no pull
+# requests (open-pull-requests-limit: 0): updates are applied by the team in its own commits, so
+# every commit on main is authored by FXTD Studios. Vulnerability alerts stay on (Security tab).
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    open-pull-requests-limit: 0
     groups:
       actions: { patterns: ["*"] }
   - package-ecosystem: pip
     directory: /
     schedule: { interval: weekly }
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
