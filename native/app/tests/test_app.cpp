@@ -4695,6 +4695,7 @@ for line in sys.stdin:
     fake_genfill(root, kFillOk);
     app::MainWindow w(false);
     w.set_model_roots({root});
+    w.set_deliver("ai_generation", "0");   // 21 Nov 2026: Reconstruct's switch, off as on a first run
     // RUDRA 1.1: offered for the analytic master in ACES 2065-1, not in linear Rec.2020.
     w.set_deliver("source", "analytic");
     EXPECT_FALSE(w.findChild<QWidget*>("deliverAiFill")->isHidden());
@@ -4711,7 +4712,14 @@ for line in sys.stdin:
     ASSERT_TRUE(w.deliver_aces());
     EXPECT_FALSE(w.findChild<QWidget*>("deliverAiFill")->isHidden());
     EXPECT_TRUE(w.findChild<QWidget*>("deliverAiFillOptions")->isHidden());
+    // 21 Nov 2026: Deliver's checkbox counts once Reconstruct > AI generation is on; the settings are there.
+    EXPECT_FALSE(w.findChild<QWidget*>("deliverAiFill")->isEnabled());
     w.set_deliver("ai_fill", "1");
+    EXPECT_FALSE(w.deliver_effective().ai_fill);
+    EXPECT_TRUE(w.findChild<QWidget*>("deliverAiFillOptions")->isHidden());
+    w.set_deliver("ai_generation", "1");
+    EXPECT_TRUE(w.findChild<QWidget*>("deliverAiFill")->isEnabled());
+    EXPECT_TRUE(w.deliver_effective().ai_fill);
     EXPECT_FALSE(w.findChild<QWidget*>("deliverAiFillOptions")->isHidden());
     EXPECT_TRUE(w.findChild<QLabel*>("deliverAiSetup")->text().startsWith("Ready")) << w.findChild<QLabel*>("deliverAiSetup")->text().toStdString();
     w.findChild<QSpinBox*>("deliverAiTauHigh")->setValue(245);
@@ -6591,6 +6599,10 @@ TEST(AppAbout, TheVersionTheMachineAndTheLinks) {
     EXPECT_TRUE(site->text().startsWith("www.fxtdstudios.com"));
     for (const char* id : {"aboutGuide", "aboutNotes", "aboutLicences", "aboutIssue", "aboutUpdates", "aboutCopy", "aboutClose"})
         EXPECT_NE(w.sheet()->findChild<QPushButton*>(id), nullptr) << id;
+    auto* discord = w.sheet()->findChild<QPushButton*>("aboutDiscord");   // 1.2.8
+    ASSERT_NE(discord, nullptr);
+    EXPECT_EQ(discord->toolTip(), "https://discord.gg/C7aTNFhJeP");
+    EXPECT_TRUE(discord->text().startsWith("Join our Discord"));
     EXPECT_TRUE(w.sheet()->findChild<QLabel*>("aboutCopyright")->text().contains("Apache License 2.0"));
     w.sheet()->findChild<QPushButton*>("aboutCopy")->click();
     EXPECT_EQ(last_log(w), "About details copied");
@@ -6770,6 +6782,7 @@ TEST(GenFill, RegionRerenderIsOptInAndRunsAsTested) {
     EXPECT_EQ(after("--rerender-dip"), "0.3");   // 12 Nov 2026: no dark smudges beside a silhouette
     EXPECT_TRUE(a.contains("--rerender-independent"));   // 15 Nov 2026: as the v4.3 checks ran
     EXPECT_EQ(after("--rerender-calm"), "0.9");
+    EXPECT_FALSE(a.contains("--rerender-align"));   // 1.2.8: tried on 09V, moved the horizon more than it saved
     EXPECT_FALSE(a.contains("--rerender-still"));     // 12 Nov 2026: tried on water, cost 09V its structure: off
     EXPECT_FALSE(a.contains("--source-start"));
     EXPECT_FALSE(a.contains("--brightness-offset"));
@@ -7266,6 +7279,23 @@ TEST(AppFillView, TheViewerHasAnAiFillToggleThatIsSafeWithoutAFill) {
     EXPECT_TRUE(w.fill_view_on());
     b->setChecked(false);
     EXPECT_FALSE(w.fill_view_on());
+    // 21 Nov 2026 (testwindow.mp4: "we cannot see it in the viewport"): every start is an SDR | RUDRA
+    // wipe, and a fill on the left half was under the SDR. On, the button takes the wipe off and
+    // shows RUDRA; off, the wipe comes back where it was.
+    w.open_compare_view();
+    w.session().set_wipe(0.3);
+    ASSERT_TRUE(w.session().wipe.has_value());
+    b->setChecked(true);
+    EXPECT_FALSE(w.session().wipe.has_value());
+    EXPECT_EQ(w.session().show, "model");
+    b->setChecked(false);
+    ASSERT_TRUE(w.session().wipe.has_value());
+    EXPECT_DOUBLE_EQ(*w.session().wipe, 0.3);
+    // Baseline shown: the button shows RUDRA, where the fill is.
+    w.session().set_show("baseline");
+    b->setChecked(true);
+    EXPECT_EQ(w.session().show, "model");
+    b->setChecked(false);
 }
 
 // ---- why a finished preview may look like nothing (6 Nov 2026) ----
@@ -7303,9 +7333,8 @@ TEST(AppFillView, TheAiFillHasAProgressBar) {
     QSettings().clear();
     app::MainWindow w(false);
     auto* card = w.findChild<QProgressBar*>("deliverAiProgress");
-    auto* bar = w.findChild<QProgressBar*>("viewerAiProgress");
     ASSERT_NE(card, nullptr);
-    ASSERT_NE(bar, nullptr);
+    EXPECT_EQ(w.findChild<QProgressBar*>("viewerAiProgress"), nullptr);   // 21 Nov 2026: on the AI generation card only
     EXPECT_TRUE(card->isHidden());
     w.set_ai_progress(-1.0, "loading the fill model (once)");
     EXPECT_FALSE(card->isHidden());
@@ -7313,12 +7342,10 @@ TEST(AppFillView, TheAiFillHasAProgressBar) {
     w.set_ai_progress(0.42, "step 12 / 30");
     EXPECT_EQ(card->maximum(), 1000);
     EXPECT_EQ(card->value(), 420);
-    EXPECT_EQ(bar->value(), 420);
     EXPECT_TRUE(card->text().contains("42")) << card->text().toStdString();
     EXPECT_TRUE(card->text().contains("step 12 / 30"));
     w.ai_progress_done();
     EXPECT_TRUE(card->isHidden());
-    EXPECT_TRUE(bar->isHidden());
 }
 
 #ifdef RUDRA_HAVE_STILL_DECODE   // it opens PNG frames: CI's Qt shell build has no still decode (it waited forever)
@@ -7328,7 +7355,7 @@ TEST(AppFillView, TheAiFillCardShowsWhereItFillsOnTheFrameOnScreen) {
     w.set_deliver("source", "analytic");
     w.session().set_container("aces");
     w.set_deliver("image", "exr32");
-    w.set_deliver("ai_fill", "1");
+    w.set_deliver("ai_generation", "1");   // 21 Nov 2026: the frame line is Reconstruct's AI generation card's
     const auto shot = fresh_dir("ai-fill-region");
     std::filesystem::create_directories(shot);
     QImage door(64, 48, QImage::Format_RGB32);
@@ -7382,8 +7409,9 @@ TEST(AppFillView, TheAiFillCardShowsWhereItFillsOnTheFrameOnScreen) {
     EXPECT_FALSE(w.ai_region_view());
     // The tooltip of the threshold says what it really does (it said the codes above it are filled).
     EXPECT_TRUE(w.findChild<QSpinBox*>("deliverAiTauHigh")->toolTip().contains("code 255"));
-    w.set_deliver("ai_fill", "0");
+    w.set_deliver("ai_generation", "0");
     EXPECT_TRUE(info->isHidden());
+    EXPECT_TRUE(where->isHidden());
 }
 #endif
 
@@ -7427,13 +7455,63 @@ TEST(AppRegion, TheHistogramCaptionSaysHowMuchActs) {
     EXPECT_FALSE(v.caption().contains("built-in priors"));
 }
 
-// ---- the prompt bar over the viewer (6 Nov 2026) ----
-TEST(AppFillView, ThePromptBarShowsWhileTheFillIsShown) {
-    app::MainWindow w(false);
-    auto* bar = w.findChild<QWidget*>("viewerAiPromptBar");
-    ASSERT_NE(bar, nullptr);
-    EXPECT_TRUE(bar->isHidden());   // no shot, no fill
-    EXPECT_GE(w.findChildren<QWidget*>("aiSuggestChips").size(), 2);   // over the viewer and on the AI fill card
+// ---- 21 Nov 2026 (user feedback): the AI fill in three places, one job each. The viewer: one
+// button, the fill on or off. Reconstruct: AI generation, its switch, the area, Preview and every
+// setting. Deliver: one checkbox, whether the export includes the fill. ----
+TEST(AppFillView, TheAiFillIsSplitIntoViewerReconstructAndDeliver) {
+    QSettings().clear();
+    {
+        app::MainWindow w(false);
+        EXPECT_EQ(w.findChild<QWidget*>("viewerAiPromptBar"), nullptr);   // no prompt bar over the viewer
+        EXPECT_EQ(w.findChildren<QWidget*>("aiSuggestChips").size(), 1);   // the suggestions: on the card only
+        QWidget* rec = w.findChild<QWidget*>("reconAiCard");
+        QWidget* del = w.findChild<QWidget*>("deliverAiCard");
+        ASSERT_NE(rec, nullptr);
+        ASSERT_NE(del, nullptr);
+        for (const char* id : {"reconAiGeneration", "deliverAiFillOptions", "deliverAiVersion", "deliverAiKeepDetail",
+                               "deliverAiShowRegion", "deliverAiPromptHighlight", "deliverAiSuggest", "deliverAiPreview",
+                               "deliverAiShowMask", "deliverAiProgress", "deliverAiSetupButton", "deliverAiReview",
+                               "deliverAiAdvancedBox", "deliverAiTauHigh"}) {
+            QWidget* x = w.findChild<QWidget*>(id);
+            ASSERT_NE(x, nullptr) << id;
+            EXPECT_TRUE(rec->isAncestorOf(x)) << id;
+        }
+        // Deliver: the one checkbox and nothing else.
+        QWidget* fill = w.findChild<QWidget*>("deliverAiFill");
+        ASSERT_NE(fill, nullptr);
+        EXPECT_EQ(del->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly), QList<QWidget*>{fill});
+        EXPECT_EQ(dynamic_cast<app::CheckRow*>(fill)->label()->text(), QStringLiteral("AI Fill Generation (Experimental)"));
+        // Fill or master is the viewer's button: the card has no Fill / Master views of its own.
+        EXPECT_EQ(w.findChild<QWidget*>("deliverAiShowFill"), nullptr);
+        EXPECT_EQ(w.findChild<QWidget*>("deliverAiShowMaster"), nullptr);
+        // Off by default; Deliver's checkbox waits for it and counts only while it is on.
+        EXPECT_FALSE(w.ai_generation());
+        EXPECT_TRUE(w.findChild<QWidget*>("deliverAiFillOptions")->isHidden());
+        EXPECT_FALSE(fill->isEnabled());
+        // Greyed out, it says why (Deliver's other switch lines are tooltips).
+        EXPECT_FALSE(dynamic_cast<app::CheckRow*>(fill)->hint()->isHidden());
+        EXPECT_TRUE(dynamic_cast<app::CheckRow*>(fill)->hint()->text().contains("Reconstruct"));
+        w.set_deliver("ai_fill", "1");
+        EXPECT_FALSE(w.deliver_for_batch().ai_fill);
+        w.set_deliver("ai_generation", "1");
+        EXPECT_TRUE(QSettings().value("reconstruct/aiGeneration").toBool());
+        EXPECT_TRUE(fill->isEnabled());
+        EXPECT_TRUE(dynamic_cast<app::CheckRow*>(fill)->hint()->isHidden());
+        EXPECT_FALSE(w.findChild<QWidget*>("deliverAiFillOptions")->isHidden());
+        EXPECT_TRUE(dynamic_cast<app::CheckRow*>(w.findChild<QWidget*>("reconAiGeneration"))->on());
+        EXPECT_TRUE(w.deliver_for_batch().ai_fill);
+        w.set_deliver("ai_generation", "0");
+        EXPECT_FALSE(w.deliver_for_batch().ai_fill);
+        EXPECT_FALSE(fill->isEnabled());
+        w.set_deliver("ai_generation", "1");
+        EXPECT_TRUE(w.deliver_for_batch().ai_fill);   // Deliver's own choice was kept
+    }
+    // Before the move, an AI fill on in Deliver turns AI generation on, so it stays in use.
+    QSettings().clear();
+    QSettings().setValue("deliver/aiFill", true);
+    app::MainWindow old(false);
+    EXPECT_TRUE(old.ai_generation());
+    QSettings().clear();
 }
 
 // ---- the viewer's AI fill finds the fill after it moved into the master (5 Nov 2026) ----
@@ -7683,7 +7761,7 @@ TEST(AppDeliver, FullModeIsCardsInTheOrderADeliveryIsDecided) {
     EXPECT_EQ(card_of("deliverMattes"), win.get("deliverExtrasCard"));
     EXPECT_EQ(card_of("deliverBrackets"), win.get("deliverExtrasCard"));
     EXPECT_EQ(card_of("deliverAiFill"), win.get("deliverAiCard"));
-    EXPECT_EQ(card_of("deliverAiPreview"), win.get("deliverAiCard"));
+    EXPECT_EQ(card_of("deliverAiPreview"), win.get("reconAiCard"));   // 21 Nov 2026: Reconstruct's AI generation
     EXPECT_EQ(card_of("anchor"), win.get("deliverAnalyticOptions"));
     // Top to bottom: Format, The file, Extras, the analytic master, Render.
     std::vector<int> ys;
@@ -7695,7 +7773,7 @@ TEST(AppDeliver, FullModeIsCardsInTheOrderADeliveryIsDecided) {
     EXPECT_TRUE(std::is_sorted(ys.begin(), ys.end()));
     // The AI fill card comes and goes with its switch: never an empty card.
     EXPECT_EQ(win.shown(win.get("deliverAiCard")), win.shown(win.get("deliverAiFill")));
-    // The AI fill card: whether it is set up first, then the prompt, then Preview; the tuning last.
+    // The AI generation card (Reconstruct): whether it is set up first, then the prompt, then Preview; the tuning last.
     auto* box = win.get("deliverAiFillOptions");
     auto* bv = qobject_cast<QVBoxLayout*>(box->layout());
     ASSERT_NE(bv, nullptr);
@@ -7818,7 +7896,10 @@ TEST(AppDeliver, TheColumnIsShortAndTheRestIsOnHover) {
         auto* row = dynamic_cast<app::CheckRow*>(x);
         if (!row) continue;
         ++switches;
-        EXPECT_FALSE(row->hint()->isVisibleTo(&win.w)) << row->objectName().toStdString();
+        // 1.2.8: except a greyed-out switch, whose line says why it cannot be used (Deliver's AI fill
+        // waits for Reconstruct > AI generation).
+        if (row->isEnabled()) EXPECT_FALSE(row->hint()->isVisibleTo(&win.w)) << row->objectName().toStdString();
+        else EXPECT_TRUE(row->hint()->text().contains("Reconstruct")) << row->objectName().toStdString();
         EXPECT_FALSE(row->toolTip().isEmpty()) << row->objectName().toStdString();
     }
     EXPECT_GE(switches, 5);
@@ -7859,10 +7940,15 @@ bool inside(QWidget* x, const char* ancestor_id) {
 TEST(AppLayout, TheViewerBarIsThreeButtonsAndNothingIsLost) {
     Window win("full");
     for (const char* id : {"vtOverlays", "vtColourBtn", "vtMore"}) EXPECT_TRUE(win.shown(win.get(id))) << id;
-    for (const char* id : {"changesBtn", "inventedBtn", "viewLayer", "vtClamp", "vtClip", "vtRange", "vtAiFill", "vtChecksGroup"}) {
+    for (const char* id : {"changesBtn", "inventedBtn", "viewLayer", "vtClamp", "vtClip", "vtRange", "vtChecksGroup"}) {
         EXPECT_TRUE(inside(win.get(id), "vtOverlaysPanel")) << id;
         EXPECT_FALSE(win.shown(win.get(id))) << id;   // until the panel is opened
     }
+    // 21 Nov 2026 (user feedback): the AI fill is one button on the viewer's bar, not in Overlays;
+    // it shows once there is a fill to show or AI generation is on.
+    EXPECT_FALSE(inside(win.get("vtAiFill"), "vtOverlaysPanel"));
+    EXPECT_TRUE(inside(win.get("vtAiFill"), "hud"));
+    EXPECT_FALSE(win.shown(win.get("vtAiFill")));
     for (const char* id : {"vtViewGroup", "vtWorkingGroup", "vtOriginalGroup"}) EXPECT_TRUE(inside(win.get(id), "vtColourBtnPanel")) << id;
     for (const char* id : {"vtGamma", "vtReset", "vtBracket-2", "vtBracket0"}) EXPECT_TRUE(inside(win.get(id), "vtMorePanel")) << id;
     // Opening a panel shows its controls; a check on counts on the button.
@@ -7934,7 +8020,7 @@ TEST(AppDeliver, UnusableChoicesAreNotOffered) {
     EXPECT_FALSE(win.shown(out->button("sequence")));
     EXPECT_FALSE(out->button("movie")->isEnabled());   // and still refused if reached another way
     EXPECT_FALSE(win.shown(win.get("btnReprocess")));
-    EXPECT_FALSE(win.shown(win.get("deliverAiShowFill")));   // the preview's views, once there is a preview
+    EXPECT_FALSE(win.shown(win.get("deliverAiShowMask")));   // the preview's view, once there is a preview
     EXPECT_TRUE(win.shown(win.get("btnMaster")));            // the main action stays, greyed, to say what is next
 }
 

@@ -216,14 +216,16 @@ public:
     // ACEScct or PQ, and a 10- or 16-bit movie. Render runs the choice.
     const DeliverChoice& deliver_choice() const { return deliver_; }   // what was chosen
     DeliverChoice deliver_effective() const;     // what Render writes for this shot and source
+    DeliverChoice deliver_for_batch() const;     // deliver_ as the batch takes it: no AI fill while AI generation is off
+    bool ai_generation() const { return ai_generation_; }   // Reconstruct > AI generation (21 Nov 2026)
     bool deliver_aces() const;                   // the learned model renders the files
     // The learned model is chosen and set up (loading, failed or ready): the
     // Deliver tab then never falls back to the analytic look (28 Oct 2026 review).
     bool deliver_learned_wanted() const;
     // One choice by its key ("source", "output", "image", "gamut", "encoding",
-    // "bits", "codec", "keep_exr", "fps"; the AI fill: "ai_fill", "ai_tau_high",
-    // "ai_tau_low", "ai_seed", "ai_steps", "ai_prompt_highlight", "ai_prompt_shadow"),
-    // as the controls set it.
+    // "bits", "codec", "keep_exr", "fps"; the AI fill: "ai_generation" (Reconstruct's switch),
+    // "ai_fill" (Deliver's checkbox), "ai_tau_high", "ai_tau_low", "ai_seed", "ai_steps",
+    // "ai_prompt_highlight", "ai_prompt_shadow"), as the controls set it.
     void set_deliver(const QString& key, const QString& value);
     void deliver_render();                       // the Render button (action "master")
     bool aces_delivering() const { return aces_deliver_id_ != 0; }
@@ -247,7 +249,7 @@ public:
     void show_genfill_preview(const QString& which);
     // 1.2.7 (multi-role review of 1.2.6, "I cannot see what it does"): a finished preview opens where
     // it can be seen: the wipe off, the view exposure at -2 EV when it was at 0 (the fill sits above
-    // SDR white), and a line over the viewer that says so. genfill/previewFrames = false turns it off.
+    // SDR white), and a line on the AI generation card that says so. genfill/previewFrames = false turns it off.
     void frame_genfill_preview();
     // 1.2.6 (18 Nov 2026, user feedback on 09V.mp4): where AI fill v3 acts on the frame on screen
     // (core/fill_region.hpp, the rule of masks.py) with Deliver's thresholds; nullopt without a
@@ -257,7 +259,7 @@ public:
     // nothing), and the viewer's "Where it fills" picture while that is on.
     void sync_ai_frame_info();
     void set_ai_region_view(bool on);
-    // 1.2.6 (user request): the AI fill's progress bars (the AI fill card and the bar over the viewer):
+    // 1.2.6 (user request): the AI fill's progress bar (the AI generation card; 21 Nov 2026: no bar over the viewer):
     // `share` 0..1 of the whole run, or below 0 for "busy, no count yet" (a model loading); `what`
     // names the phase. ai_progress_done() hides them.
     void set_ai_progress(double share, const QString& what);
@@ -267,13 +269,13 @@ public:
     // RUDRA 1.1: the AI fill's "Suggest" button: rudra.genfill.prompts on the current frame,
     // then a menu of suggestions and presets that fills the highlight / shadow prompt.
     void suggest_genfill_prompt();
-    // 6 Nov 2026: the suggestions as buttons, at the top of the AI fill card and in a bar over
-    // the viewer while the AI fill is previewed or shown. `popup`: the menu too (the button).
-    // `quiet`: no message when the fill is not set up (the automatic run on a preview).
+    // 6 Nov 2026: the suggestions, at the top of the AI generation card (Reconstruct). `popup`: the
+    // menu too (the button). `quiet`: no message when the fill is not set up (the automatic run on a preview).
     void run_prompt_suggestions(bool popup, bool quiet = false);
-    void build_ai_prompt_bar(QVBoxLayout* v, QWidget* parent);
     void refresh_prompt_chips();
-    void sync_ai_prompt_bar();
+    // 21 Nov 2026: the viewer's one AI fill button and the AI generation card's Preview button,
+    // from the state (was sync_ai_prompt_bar, for the prompt bar over the viewer, now gone).
+    void sync_ai_generation();
     // Applies one suggestion to its prompt box (highlight or shadow).
     void use_prompt_suggestion(const PromptSuggestion& p);
     // RUDRA 1.1: the region tint on the viewer and the card's histogram, from the session.
@@ -1008,6 +1010,10 @@ private:
     std::unique_ptr<QTemporaryDir> aces_tmp_;
     void aces_request(int index);
     DeliverChoice deliver_;
+    // 21 Nov 2026 (user feedback): Reconstruct > AI generation is on. The AI fill's settings live in
+    // deliver_.ai (unchanged keys); deliver_.ai_fill is Deliver's one checkbox, which counts only while
+    // this is on (deliver_effective, deliver_for_batch).
+    bool ai_generation_ = false;
     aces_v2::AcesTrims aces_trims_;
     QString aces_monitor_ = "scene";
     QString aces_source_display_ = "bt1886";
@@ -1044,6 +1050,10 @@ private:
     // AI fill, then this "encode" request (aces-v2-serve) makes the movie from the filled
     // frames. Empty when the render in hand is not one.
     QJsonObject aifill_movie_req_;
+    // 1.2.8 (review of PR #100): whether the render running now ends with the AI fill, as it was when it
+    // started. Reconstruct > AI generation (or Deliver's checkbox) changed mid-render no longer drops the
+    // fill, or a movie's encode that waits for it, after the masters are written.
+    bool render_with_fill_ = false;
     // The reconstruction region as the learned engine takes it ({} when off), and the one
     // the last learned frame was asked with (a change asks for the frame again).
     QJsonObject aces_region_field() const;
@@ -1072,6 +1082,10 @@ private:
     // preview's frames, or every frame of the last finished fill) is shown filled, stepping and
     // playing. Fills are read once, at the playback size, so real time holds.
     bool fill_view_on_ = false;
+    // 21 Nov 2026: the wipe the AI fill button took off to show the fill (its position), put back when
+    // the button goes off. Every start opens SDR | RUDRA as a wipe at the middle, and a fill on the
+    // left half of the frame (testwindow.mp4's sky) was under the SDR side: "we cannot see it".
+    std::optional<double> fill_view_hid_wipe_;
     std::map<int, std::shared_ptr<const NetworkLinearImage>> fill_view_cache_;
     QStringList fill_view_files_;   // the last finished fill's frames, in order
     QString genfill_last_master_;   // the master folder the last fill was for (its frames are the fill once moved in place)
@@ -1112,10 +1126,9 @@ private:
     std::optional<PromptSuggestions> prompt_suggestions_;   // the last suggestion run's
     int prompt_suggest_frame_ = -1;                          // ... and the frame it looked at
     bool prompt_suggest_running_ = false;
-    QWidget* ai_prompt_bar_ = nullptr;                       // over the viewer
     int genfill_preview_master_id_ = 0;   // the engine's master request while the preview's master renders
     std::unique_ptr<MasterJob> genfill_preview_job_;   // ... or the analytic route's (7 Nov 2026)
-    bool genfill_ready_ = false;   // the AI fill was set up at the last Deliver refresh (the prompt bar shows then)
+    bool genfill_ready_ = false;   // the AI fill was set up at the last refresh of its card
     bool genfill_preview_busy_ = false;
     QString genfill_last_out_;
     void sync_deliver();            // the Deliver tab's controls and Signal card from deliver_

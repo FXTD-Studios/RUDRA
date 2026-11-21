@@ -57,7 +57,7 @@ ModelDownloads* MainWindow::model_downloads() {
             have_aces_package_.reset();
             log(QStringLiteral("model downloaded and checked: %1 %2 → %3").arg(m.title, m.version, folder));
             if (statusBar()) statusBar()->showMessage(m.title + QStringLiteral(" is downloaded and ready"), 6000);
-            // The AI fill's LoRA (with brightness.json beside it): what Deliver > AI fill uses from now on.
+            // The AI fill's LoRA (with brightness.json beside it): what the AI fill (Reconstruct > AI generation) uses from now on.
             if (m.kind == "genfill") {
                 const auto loras = QDir(folder).entryList({QStringLiteral("*.safetensors")}, QDir::Files, QDir::Name);
                 if (!loras.isEmpty()) {
@@ -185,6 +185,9 @@ void MainWindow::open_about() {
         {"aboutLicences", "Licences", "Apache 2.0 · models · third party ↗", QStringLiteral("https://github.com/FXTD-Studios/RUDRA/blob/main/NOTICE")},
         {"aboutIssue", "Report an issue", "GitHub ↗", QStringLiteral("https://github.com/FXTD-Studios/RUDRA/issues")},
         {"aboutUpdates", "Check for updates", "", QString()},
+        // 1.2.8: the community, a row of its own under the six
+        {"aboutDiscord", "Join our Discord", "Questions, previews and the RUDRA community · discord.gg/C7aTNFhJeP ↗",
+         QStringLiteral("https://discord.gg/C7aTNFhJeP")},
     };
     auto* grid = new QWidget(d);
     auto* lg = new QGridLayout(grid);
@@ -206,7 +209,10 @@ void MainWindow::open_about() {
         } else {
             connect(b, &QPushButton::clicked, this, [this] { run("check-updates"); });
         }
-        lg->addWidget(b, i / 3, i % 3);
+        if (QLatin1String(l.id) == QLatin1String("aboutDiscord"))
+            lg->addWidget(b, (i + 2) / 3, 0, 1, 3);   // the whole width, below the grid
+        else
+            lg->addWidget(b, i / 3, i % 3);
         ++i;
     }
     v->addWidget(grid);

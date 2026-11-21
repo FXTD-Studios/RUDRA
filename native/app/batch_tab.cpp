@@ -124,7 +124,7 @@ int MainWindow::batch_import_edl(const QString& edl, const QString& media_folder
     const auto media = edl_media_in(to_path(media_folder));
     const EdlMatch m = edl_match(events, media, handles);
     // A range renders as frames (or the MOV the Deliver tab chose), never a single still.
-    DeliverChoice c = deliver_;
+    DeliverChoice c = deliver_for_batch();   // 21 Nov 2026: no AI fill while AI generation is off
     if (c.output == "still") c.output = "sequence";
     std::vector<BatchShot> shots;
     for (const auto& s : m.shots) shots.push_back(s.shot);

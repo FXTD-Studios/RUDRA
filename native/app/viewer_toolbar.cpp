@@ -142,7 +142,7 @@ void MainWindow::build_viewer_popovers(FlowLayout* row) {
                     break;
                 }
         }
-        section(p, QStringLiteral("Compare"), {changes_btn_, invented_btn_, find("vtAiFill")});
+        section(p, QStringLiteral("Compare"), {changes_btn_, invented_btn_});
         section(p, QStringLiteral("Picture"), {view_layer_});
         section(p, QStringLiteral("Range"), {vt_clamp_, vt_clip_, vt_range_});
         if (auto* checks = find("vtChecksGroup")) {
@@ -152,6 +152,14 @@ void MainWindow::build_viewer_popovers(FlowLayout* row) {
         if (hud_flow) {
             vt_overlays_->setParent(hud);
             hud_flow->insert_widget(hud_flow->indexOf(view_mode_) + 1, vt_overlays_);
+            // 21 Nov 2026 (user feedback): the AI fill is ONE button on the viewer's bar, on and off in one
+            // click to compare, not an entry in Overlays. Its settings are Reconstruct's AI generation card.
+            if (auto* fill = find("vtAiFill")) {
+                if (QWidget* old = fill->parentWidget(); old && old->layout()) old->layout()->removeWidget(fill);
+                fill->setParent(hud);
+                hud_flow->insert_widget(hud_flow->indexOf(vt_overlays_) + 1, fill);
+                fill->hide();   // sync_ai_generation shows it once there is a fill, or AI generation is on
+            }
         }
         for (auto* b : p.panel->findChildren<QPushButton*>())
             connect(b, &QPushButton::toggled, this, [this] { sync_viewer_popover_buttons(); });
@@ -203,7 +211,7 @@ void MainWindow::build_viewer_popovers(FlowLayout* row) {
 void MainWindow::sync_viewer_popover_buttons() {
     if (vt_overlays_) {
         int on = 0;
-        for (const char* id : {"changesBtn", "inventedBtn", "vtClamp", "vtClip", "vtRange", "vtAiFill", "vtGamut", "vtInvalid"})
+        for (const char* id : {"changesBtn", "inventedBtn", "vtClamp", "vtClip", "vtRange", "vtGamut", "vtInvalid"})
             if (auto* b = findChild<QPushButton*>(QString::fromLatin1(id)); b && b->isChecked()) ++on;
         if (view_layer_ && (view_layer_->on() == "1" || view_layer_->on() == "2")) ++on;
         vt_overlays_->setText(on ? QStringLiteral("Overlays \u00b7 %1 \u25be").arg(on) : QStringLiteral("Overlays \u25be"));
@@ -339,8 +347,9 @@ void MainWindow::build_viewer_toolbar(QVBoxLayout* v, QWidget* parent) {
     // 4 Nov 2026: the AI fill in the viewer, frame by frame and playing (the preview's
     // frames, or the last finished fill); with Changes on, what it invented.
     auto* fill = tool_button("AI fill", "vtAiFill",
-                             "Show the AI fill on every frame that has one: the preview's frames (Deliver > Preview AI fill) "
-                             "or the last finished fill. Turn Changes on to see what it invented.",
+                             "Show the AI fill on every frame that has one: the preview's frames (Reconstruct \u203a AI "
+                             "generation \u203a Preview AI fill) or the last finished fill; click again for the master. "
+                             "Turn Changes on to see what it invented.",
                              vtool_, true);
     connect(fill, &QPushButton::toggled, this, [this](bool on) { set_fill_view(on); });
     row->addWidget(fill);

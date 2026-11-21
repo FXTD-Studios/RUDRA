@@ -76,8 +76,16 @@ DeliverChoice MainWindow::deliver_effective() const {
                            ? QString::fromStdString(reconstruction_region_json(session_.grade.region))
                            : QString();
     if (!aces) c.gamut = session_.container == "aces" ? QStringLiteral("ap0") : QString::fromStdString(session_.container);
+    // 21 Nov 2026: Deliver's AI fill checkbox counts only while Reconstruct > AI generation is on.
+    if (!ai_generation_) c.ai_fill = false;
     const bool movie = shot_is_video();
     return deliver_fit(c, aces, movie, !movie && frames_.size() > 1);
+}
+
+DeliverChoice MainWindow::deliver_for_batch() const {
+    DeliverChoice c = deliver_;
+    if (!ai_generation_) c.ai_fill = false;
+    return c;
 }
 
 void MainWindow::load_deliver_settings() {
@@ -111,6 +119,9 @@ void MainWindow::load_deliver_settings() {
     c.ai.rerender_keep_detail = st.value("deliver/aiKeepDetail", false).toBool();   // 1.2.7
     c.ai.prompt_highlight = st.value("deliver/aiPromptHighlight").toString();
     c.ai.prompt_shadow = st.value("deliver/aiPromptShadow").toString();
+    // 21 Nov 2026: Reconstruct > AI generation. Never set before: on where Deliver's AI fill was on, so
+    // an AI fill in use before the move stays in use.
+    ai_generation_ = st.value("reconstruct/aiGeneration", c.ai_fill).toBool();
     if (c.source != "aces" && c.source != "analytic") c.source = "aces";
     deliver_ = deliver_fit(c, true, true, true);   // only the values; the shot decides the rest
 }
@@ -167,7 +178,13 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
             deliver_.fps = f;
             st.setValue("deliver/fps", f);
         }
-    } else if (key == "ai_fill") {
+    } else if (key == "ai_generation") {   // 21 Nov 2026: Reconstruct > AI generation
+        ai_generation_ = value == "1" || value == "true";
+        st.setValue("reconstruct/aiGeneration", ai_generation_);
+        if (!ai_generation_ && ai_region_view_) set_ai_region_view(false);
+        log(ai_generation_ ? QStringLiteral("AI generation on (Reconstruct)") : QStringLiteral("AI generation off (Reconstruct)"));
+        sync_ai_generation();
+    } else if (key == "ai_fill") {   // Deliver's one checkbox: the export includes the fill
         deliver_.ai_fill = value == "1" || value == "true";
         st.setValue("deliver/aiFill", deliver_.ai_fill);
     } else if (key == "ai_tau_high" || key == "ai_tau_low" || key == "ai_seed" || key == "ai_steps") {
@@ -322,8 +339,19 @@ void MainWindow::sync_deliver() {
     // 1.2.6: the cards of their own come and go with what they hold, so no empty card is left
     show("deliverAiCard", ai_possible);
     show("deliverExtrasCard", !aces);   // mattes and brackets: the analytic master's
-    show("deliverAiFillOptions", ai_possible && c.ai_fill);
-    if (auto* ai = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFill"))) ai->set_on(c.ai_fill);
+    // 21 Nov 2026 (user feedback): the settings are Reconstruct's AI generation card, open while its
+    // switch is on; Deliver's checkbox is greyed out until then.
+    show("deliverAiFillOptions", ai_generation_);
+    if (auto* g = dynamic_cast<CheckRow*>(findChild<QWidget*>("reconAiGeneration"))) g->set_on(ai_generation_);
+    if (auto* ai = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFill"))) {
+        ai->set_on(c.ai_fill);
+        ai->setEnabled(ai_generation_);
+        ai->set_hint(ai_generation_ ? QStringLiteral("the export includes the fill")
+                                    : QStringLiteral("turn on AI generation in Reconstruct first"));
+        // 1.2.8 (seen running the app): Deliver's switch lines are tooltips (1.2.6), so a greyed switch
+        // gave no reason. The reason shows while it is greyed out.
+        ai->hint()->setVisible(!ai_generation_);
+    }
     auto set_spin = [this](const char* id, int v) {
         if (auto* sb = findChild<QSpinBox*>(id)) {
             const QSignalBlocker b(sb);
@@ -352,7 +380,7 @@ void MainWindow::sync_deliver() {
         kd->setVisible(c.ai.rerender);
     }
     if (auto* rn = findChild<QLabel*>("deliverAiRegion"))   // the grade's region reaches the fill
-        rn->setVisible(c.ai_fill && !c.ai.region_json.isEmpty());
+        rn->setVisible(ai_generation_ && !c.ai.region_json.isEmpty());
     auto set_line = [this](const char* id, const QString& v) {
         if (auto* le = findChild<QLineEdit*>(id); le && le->text() != v) {
             const QSignalBlocker b(le);
@@ -372,13 +400,13 @@ void MainWindow::sync_deliver() {
             (qobject_cast<QAbstractSpinBox*>(wdg) ? wdg->parentWidget() : wdg)->setVisible(!c.ai.rerender);
         }
     if (auto* l = findChild<QLabel*>("deliverAiPromptShadowLabel")) l->setVisible(!c.ai.rerender);
-    if (auto* st = findChild<QLabel*>("deliverAiSetup"); st && ai_possible && c.ai_fill) {
+    if (auto* st = findChild<QLabel*>("deliverAiSetup"); st && ai_generation_) {
         QString why;
         // Where each part was found (4 Nov 2026); missing: Setup… > Set up automatically.
         const auto s = genfill_setup(&why);
-        if (genfill_ready_ != bool(s)) {   // the prompt bar over the viewer follows (7 Nov 2026)
+        if (genfill_ready_ != bool(s)) {   // the viewer's AI fill button and Preview follow (7 Nov 2026)
             genfill_ready_ = bool(s);
-            sync_ai_prompt_bar();
+            sync_ai_generation();
         }
         if (s && c.ai.rerender) {   // 12 Nov 2026: v4 is on, so the line names v4's LoRA, not v3's
             const auto v4 = genfill_v4_lora();
@@ -399,17 +427,16 @@ void MainWindow::sync_deliver() {
         }
     }
     // The preview's buttons: the views once there is one; a setting changed since, it says so.
-    for (const char* id : {"deliverAiShowFill", "deliverAiShowMaster", "deliverAiShowMask"})
-        if (auto* b = findChild<QPushButton*>(id)) {
-            b->setEnabled(genfill_preview_.has_value() && !genfill_preview_busy_);
-            b->parentWidget()->setVisible(genfill_preview_.has_value());   // 1.2.6: the views once there is a preview
-        }
+    if (auto* b = findChild<QPushButton*>("deliverAiShowMask")) {   // fill or master: the viewer's AI fill button
+        b->setEnabled(genfill_preview_.has_value() && !genfill_preview_busy_);
+        b->parentWidget()->setVisible(genfill_preview_.has_value());   // 1.2.6: the view once there is a preview
+    }
     if (auto* ps = findChild<QLabel*>("deliverAiPreviewStatus");
         ps && genfill_preview_ && !genfill_preview_busy_ && !(genfill_preview_->options == c.ai)) {
         const QString stale = QStringLiteral(" · settings changed since: Preview AI fill again");
         if (!ps->text().endsWith(stale)) ps->setText(ps->text() + stale);
     }
-    if (ai_possible) sync_ai_frame_info();   // 1.2.6: on this frame, what the fill will change
+    sync_ai_frame_info();   // 1.2.6: on this frame, what the fill will change (Reconstruct's card, any format)
     show("deliverAnalyticOptions", !aces);
     // The Signal card says what the file is.
     const DeliverSignal sig = deliver_signal(c, aces);
@@ -624,6 +651,7 @@ void MainWindow::aces_deliver() {
     // A movie with the AI fill (6 Nov 2026): the masters as EXR first (the fill reads EXR), the
     // movie made from the filled frames after it, with the same name, format, rate and timecode.
     aifill_movie_req_ = {};
+    render_with_fill_ = deliver_effective().ai_fill;   // 1.2.8: the fill is decided at the start
     if (const DeliverChoice c = deliver_effective(); c.output == "movie" && c.ai_fill) {
         QJsonObject enc{{"op", "encode"}, {"out", req.value("out")}, {"name", req.value("name")}, {"log", req.value("log")},
                         {"log_formats", req.value("log_formats")}};
@@ -718,7 +746,7 @@ void MainWindow::aces_deliver_finished(const QJsonObject& o, const QString& out)
         delivered_ += n;
         if (auto* d = findChild<QLabel*>("colDelivered")) d->setText(QString::number(delivered_));
         if (n > 0) note_media_delivered();   // 1.2.6: the Media panel's Delivered
-        if (!cancelled && n > 0 && deliver_effective().ai_fill) {
+        if (!cancelled && n > 0 && render_with_fill_) {   // 1.2.8: as decided when the render started
             QString why;
             // A movie with the AI fill: once the fill is in, its frames make the movie.
             std::function<void(bool, QString)> then;

@@ -45,6 +45,12 @@ highlight is left to the master. All off by default: the model's own colour and 
 instead of sitting flat at the level (sky glare read as a mask-shaped plate). Off by default.
 --rerender-calm <0..1> (15 Nov 2026): where the source holds still and the fill would jump, this share of
 the previous frame's fill is kept (the model's detail flickering inside moving highlights). Off by default.
+--rerender-align (1.2.8, 21 Nov 2026): with --rerender-independent, each window is lined up with the one
+before it (a shift, measured on the frames they share) before the two are crossfaded. On 09V v4.3's last
+window drew its own horizon ~3.9 px higher and the crossfade slid one into the other while the camera
+stood still. Tried on the GPU (21 Nov 2026): the shift follows the clouds, not the sea, and over the shot
+it moved the horizon more than it saved (frames 0-74: 1.7 -> 3.4 px; 75-96: 3.9 -> 2.5 px). Off by
+default and off in the app; kept for the experiments that follow (a longer overlap, the sea band alone).
 """
 from __future__ import annotations
 
@@ -81,6 +87,7 @@ class Rerender:
     rise: float = 0.0      # > 0: with a level, the full-code core climbs up to this many stops with its depth (finish_rerender)
     calm: float = 0.0      # > 0: the share of the previous frame kept where the source holds still and the fill would jump (finish_rerender)
     keep_detail: bool = False   # 1.2.7: thin, broken-up and small parts of the region keep the master (composite.detail_keep_weight)
+    align: bool = False    # 1.2.8: with independent windows, each one lined up with the previous (window_alignment); tried, off in the app
     CONDITIONS = ('bt1886', 'aces')
 
 
@@ -334,6 +341,59 @@ def focus_boxes(union: np.ndarray, extra: int = 0, cover: float = FOCUS_COVER,
     if sum(_area(b) for b in boxes) >= FOCUS_MAX_SHARE * H * W:
         return None
     return sorted(boxes)
+
+
+ALIGN_MAX_SHIFT = 0.03    # 1.2.8, window_alignment: at most this share of the working width ...
+ALIGN_MIN_CC = 0.5        # the match (ECC correlation) under which the windows are left as they are
+ALIGN_MIN_PIXELS = 400    # region pixels at the working size, at least, to measure on
+
+
+def window_alignment(prev: list, new: list, regions: list) -> tuple[np.ndarray | None, dict]:
+    """1.2.8: the shift that lines a new (independent) window up with the previous one.
+
+    prev, new: the two windows' decoded frames for the SAME source frames (the overlap), (h, w, 3) at the
+    working size; regions: (h, w) bool, where the fill acts. Each frame pair is matched on its luminance
+    inside the region (cv2.findTransformECC, MOTION_TRANSLATION); the median of the pairs is the window's.
+    A shift only: on 09V's GPU check (21 Nov 2026) a fitted turn of 0.08-0.17 degrees, about the frame's
+    corner and led by the clouds, moved the door's horizon by a pixel where the windows had agreed.
+    -> (2 x 3 float32 for cv2.warpAffine(new, M, ..., flags=INTER_LINEAR | WARP_INVERSE_MAP), or None
+    when nothing is moved; a report for genfill.json)."""
+    import cv2
+    found, ccs = [], []
+    for p, n, r in zip(prev, new, regions):
+        m = cv2.erode(np.asarray(r, np.uint8), np.ones((5, 5), np.uint8))
+        if int(m.sum()) < ALIGN_MIN_PIXELS:
+            continue
+        a = cv2.GaussianBlur(np.asarray(p, np.float32).mean(-1), (0, 0), 1.0)
+        b = cv2.GaussianBlur(np.asarray(n, np.float32).mean(-1), (0, 0), 1.0)
+        warp = np.eye(2, 3, dtype=np.float32)
+        try:
+            cc, warp = cv2.findTransformECC(a, b, warp, cv2.MOTION_TRANSLATION,
+                                            (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 100, 1e-5), m, 5)
+        except cv2.error:
+            continue
+        found.append((float(warp[0, 2]), float(warp[1, 2])))
+        ccs.append(float(cc))
+    if not found:
+        return None, {'aligned': False, 'reason': 'nothing to measure on'}
+    tx, ty = (float(v) for v in np.median(np.array(found), 0))
+    cc = float(np.median(ccs))
+    w = prev[0].shape[1]
+    rep = {'dx_px': round(tx, 3), 'dy_px': round(ty, 3), 'cc': round(cc, 3), 'pairs': len(found)}
+    if cc < ALIGN_MIN_CC:
+        return None, {'aligned': False, 'reason': 'no match', **rep}
+    if max(abs(tx), abs(ty)) > ALIGN_MAX_SHIFT * w:
+        return None, {'aligned': False, 'reason': 'too far to be a slip', **rep}
+    return np.array([[1.0, 0.0, tx], [0.0, 1.0, ty]], np.float32), {'aligned': True, **rep}
+
+
+def align_frames(frames: np.ndarray, warp: np.ndarray) -> np.ndarray:
+    """(n, h, w, 3) -> the same, each frame moved by window_alignment's warp."""
+    import cv2
+    h, w = frames.shape[1:3]
+    return np.stack([cv2.warpAffine(np.ascontiguousarray(f, np.float32), warp, (w, h),
+                                    flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP, borderMode=cv2.BORDER_REFLECT)
+                     for f in frames]).astype(np.float32)
 
 
 def list_frames(master: Path, pattern: str = '*.exr') -> list[Path]:
@@ -640,6 +700,18 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
             stats['windows_generated'] += 1
         if stats.get('cancelled'):
             break
+        if indep and rerender.align and carry:           # 1.2.8: line the window up with the previous one
+            for li in list(decs):
+                lcrop, lh, lw = lanes[li]['crop'], lanes[li]['h'], lanes[li]['w']
+                shared = [i for i in range(start, new) if i in carry and li in carry[i]]
+                if not shared:
+                    continue
+                regions = [cv2.resize((masks[i][0] | masks[i][1])[lcrop].astype(np.float32), (lw, lh),
+                                      interpolation=cv2.INTER_AREA) > 0 for i in shared]
+                warp, how = window_alignment([carry[i][li] for i in shared], [decs[li][i - start] for i in shared], regions)
+                if warp is not None:
+                    decs[li] = align_frames(decs[li], warp)
+                stats.setdefault('window_align', []).append({'window': wi + 1, 'lane': li, **how})
         for k, i in enumerate(idxs):
             if i < new and not (indep and i in carry):
                 continue
@@ -930,7 +1002,8 @@ def serve(model, view, a, emit, FillSettings) -> int:
                                                 bool(r.get('rerender_independent', a.rerender_independent)),
                                                 float(r.get('rerender_rise', a.rerender_rise)),
                                                 float(r.get('rerender_calm', a.rerender_calm)),
-                                                bool(r.get('rerender_keep_detail', a.rerender_keep_detail)))
+                                                bool(r.get('rerender_keep_detail', a.rerender_keep_detail)),
+                                                bool(r.get('rerender_align', a.rerender_align)))
                               if r.get('region_rerender', a.region_rerender) and r.get('source', a.source) else None)
             tagged(event='done', ok=True, out=str(out), **rep['stats'])
         except Exception as e:  # noqa: BLE001 - one failed request does not end the server
@@ -1018,6 +1091,9 @@ def main(argv=None):
     ap.add_argument('--rerender-keep-detail', action='store_true',
                     help="with --region-rerender (1.2.7): thin or broken-up parts of the region (a grating, a railing) and "
                          "areas under 0.05 %% of the frame (a lamp) keep the master instead of being redrawn")
+    ap.add_argument('--rerender-align', action='store_true',
+                    help="with --rerender-independent (1.2.8): line each window up with the previous one (a shift measured "
+                         "on the frames they share) before the crossfade, so a horizon does not slide")
     a = ap.parse_args(argv)
     if not a.serve and (not a.master or not a.out):
         ap.error('--master and --out are required (or --serve)')
@@ -1059,7 +1135,7 @@ def main(argv=None):
                           fallback=a.fallback, focus=a.focus,
                           rerender=Rerender(a.source, a.condition, a.rerender_hue, a.rerender_colour, a.rerender_level, a.rerender_smooth,
                                             a.source_start, a.rerender_dip, a.rerender_still, a.rerender_independent,
-                                            a.rerender_rise, a.rerender_calm, a.rerender_keep_detail)
+                                            a.rerender_rise, a.rerender_calm, a.rerender_keep_detail, a.rerender_align)
                           if a.region_rerender else None)
         emit(event='done', ok=True, out=str(out), memory=memory_report(device) | {'mode': model.memory_mode},
              **rep['stats'])

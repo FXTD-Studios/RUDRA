@@ -221,6 +221,8 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
                       // 15 Nov 2026, as the v4.3 checks ran: windows from the source alone, and a jump
                       // on still pixels held (the model's detail flickering inside moving highlights)
                       "--rerender-independent", "--rerender-calm", "0.9", "--json"};
+        // Not --rerender-align (1.2.8): lining each window up with the one before it, tried on 09V on the
+        // GPU (21 Nov 2026), followed the clouds, not the sea, and moved the horizon more than it saved.
         if (o.source_start > 0) a << "--source-start" << QString::number(o.source_start);
         if (o.rerender_keep_detail) a << "--rerender-keep-detail";   // 1.2.7
         // The highlight prompt is sent when there is one (12 Nov 2026): the 09V reference
@@ -460,7 +462,7 @@ std::optional<GenFillSetup> genfill_setup(QString* why) {
     };
     std::error_code ec;
     if (s.repo.empty() || !fs::exists(s.repo / "rudra" / "genfill" / "run.py", ec))
-        return refuse(QStringLiteral("AI fill: the RUDRA repository (rudra/genfill) was not found; set it in Deliver > AI fill setup."));
+        return refuse(QStringLiteral("AI fill: the RUDRA repository (rudra/genfill) was not found; set it with Setup… in Reconstruct > AI generation."));
     if (s.python.has_parent_path() && !fs::exists(s.python, ec))
         return refuse(QStringLiteral("AI fill: no Python at %1 (run %2).").arg(qp(s.python), kSetupScript));
     if (!fs::exists(s.base / "transformer" / "config.json", ec))

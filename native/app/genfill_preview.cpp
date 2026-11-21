@@ -343,7 +343,7 @@ void MainWindow::sync_ai_frame_info() {
     auto* lab = findChild<QLabel*>("deliverAiFrameInfo");
     auto* btn = findChild<QPushButton*>("deliverAiShowRegion");
     const DeliverChoice c = deliver_effective();
-    const bool on = c.ai_fill;   // 1.2.6: v3 and v4.3 region, each with its own rule
+    const bool on = ai_generation_;   // 1.2.6: v3 and v4.3 region, each with its own rule (21 Nov 2026: Reconstruct's switch)
     const bool v4 = c.ai.rerender;
     const int tau = v4 ? kAiFillV4TauHigh : c.ai.tau_high;
     if (btn) {
@@ -368,7 +368,7 @@ void MainWindow::sync_ai_frame_info() {
 
 void MainWindow::set_ai_progress(double share, const QString& what) {
     ai_progress_ = share < 0 ? -1.0 : std::clamp(share, 0.0, 1.0);
-    for (const char* id : {"deliverAiProgress", "viewerAiProgress"}) {
+    for (const char* id : {"deliverAiProgress"}) {   // 21 Nov 2026: on the AI generation card only
         auto* bar = findChild<QProgressBar*>(id);
         if (!bar) continue;
         if (ai_progress_ < 0) {
@@ -385,7 +385,7 @@ void MainWindow::set_ai_progress(double share, const QString& what) {
 
 void MainWindow::ai_progress_done() {
     ai_progress_ = -2.0;
-    for (const char* id : {"deliverAiProgress", "viewerAiProgress"})
+    for (const char* id : {"deliverAiProgress"})
         if (auto* bar = findChild<QProgressBar*>(id)) bar->hide();
 }
 
@@ -435,7 +435,7 @@ void MainWindow::preview_genfill() {
         return say(rerender ? why : genfill_missing_text(why));
     }
     halt_playback();
-    // The suggested prompts for this frame, over the viewer while it fills (6 Nov 2026).
+    // The suggested prompts for this frame, on the AI generation card while it fills (6 Nov 2026).
     if (prompt_suggest_frame_ != current_ || !prompt_suggestions_) run_prompt_suggestions(false, /*quiet=*/true);
 
     const int n = int(frames_.size());
@@ -485,7 +485,7 @@ void MainWindow::preview_genfill() {
 
     genfill_preview_busy_ = true;
     genfill_preview_.reset();
-    if (auto* hint = findChild<QLabel*>("viewerAiHint")) hint->hide();   // 1.2.7: the last preview's note
+    if (auto* hint = findChild<QLabel*>("deliverAiViewHint")) hint->hide();   // 1.2.7: the last preview's note
     if (auto* btn = findChild<QPushButton*>("deliverAiPreview")) btn->setText(QStringLiteral("Stop preview"));
     const int frames = b - a + 1;
     // Which fill this is, in the log and the status (12 Nov 2026: v3 or v4 could not be told apart).
@@ -535,7 +535,7 @@ void MainWindow::preview_genfill() {
                 if (st2) st2->setText(t);
                 self->log(t);
                 self->refresh_enabled();
-                self->sync_ai_prompt_bar();
+                self->sync_ai_generation();
             };
             if (!o.value("ok").toBool() || o.value("cancelled").toBool())
                 return end(o.value("cancelled").toBool()
@@ -715,7 +715,7 @@ void MainWindow::preview_genfill() {
         start_analytic_preview_master(mdir, a, b, std::move(after_master));
     }
     refresh_enabled();
-    sync_ai_prompt_bar();
+    sync_ai_generation();
 }
 
 // The analytic route's preview master (7 Nov 2026): frames a..b as Master EXR renders them (the
@@ -778,7 +778,7 @@ void MainWindow::frame_genfill_preview() {
                             : QStringLiteral("AI fill preview: nothing was invented on this frame");
     const QString text = did.isEmpty() ? why + QStringLiteral(". Invented shows where it acted.")
                                        : why + QStringLiteral(": ") + did.join(QStringLiteral(", ")) + QStringLiteral(". Invented shows where it acted.");
-    if (auto* hint = findChild<QLabel*>("viewerAiHint")) {
+    if (auto* hint = findChild<QLabel*>("deliverAiViewHint")) {   // 21 Nov 2026: on the AI generation card
         hint->setText(text);
         hint->setToolTip(text);
         hint->show();
@@ -811,9 +811,7 @@ void MainWindow::show_genfill_preview(const QString& which) {
         genfill_preview_pinned_ = true;
         if (!away) apply_fill_view();
     }
-    for (const char* id : {"deliverAiShowFill", "deliverAiShowMaster", "deliverAiShowMask"})
-        if (auto* b = findChild<QPushButton*>(id)) b->setChecked(QString::fromLatin1(id).endsWith(
-                                                         which == "mask" ? "Mask" : which == "master" ? "Master" : "Fill"));
+    if (auto* b = findChild<QPushButton*>("deliverAiShowMask")) b->setChecked(which == "mask");
     statusBar()->showMessage(which == "master" ? QStringLiteral("Viewer: the master (no AI fill), frame %1").arg(p.index + 1)
                              : which == "mask" ? QStringLiteral("Viewer: the pixels the AI fill invented (white), frame %1").arg(p.index + 1)
                                                : QStringLiteral("Viewer: the AI fill preview, frame %1").arg(p.index + 1),
@@ -920,7 +918,8 @@ bool MainWindow::apply_fill_view(bool quiet) {
     const auto img = fill_view_frame(current_);
     if (!img) {
         if (!quiet)
-            statusBar()->showMessage(QStringLiteral("AI fill: no fill for frame %1 (Preview AI fill, or render with AI fill)").arg(current_ + 1), 3000);
+            statusBar()->showMessage(QStringLiteral("AI fill: no fill for frame %1 (Reconstruct \u203a AI generation \u203a Preview "
+                                                    "AI fill, or render with Deliver's AI Fill Generation)").arg(current_ + 1), 3000);
         return false;
     }
 #ifdef RUDRA_APP_VIEWER
@@ -936,13 +935,32 @@ void MainWindow::set_fill_view(bool on) {
         return;
     }
     fill_view_on_ = on;
-    sync_ai_prompt_bar();
+    sync_ai_generation();
+    if (auto* m = findChild<QPushButton*>("deliverAiShowMask")) m->setChecked(false);   // the button's picture replaces it
     if (on) {
+        // 21 Nov 2026 (user report, testwindow.mp4: "we cannot see it in the viewport"): the fill is drawn
+        // on RUDRA's side only. With the start's SDR | RUDRA wipe, a fill on the left of the frame was
+        // under the SDR, and with Baseline shown it was nowhere. The whole picture is the fill's now; the
+        // wipe comes back when the button goes off.
+        QStringList did;
+        if (session_.wipe) {
+            fill_view_hid_wipe_ = session_.wipe;
+            session_.toggle_wipe();
+            did << QStringLiteral("wipe off until AI fill is off");
+        }
+        if (session_.show != "model") {
+            session_.set_show("model");
+            did << QStringLiteral("RUDRA shown");
+        }
         genfill_preview_pinned_ = false;
         if (!apply_fill_view()) return;
-        statusBar()->showMessage(QStringLiteral("Viewer: the AI fill (Changes shows what it invented)"), 4000);
+        statusBar()->showMessage(QStringLiteral("Viewer: the AI fill (Changes shows what it invented)") +
+                                     (did.isEmpty() ? QString() : QStringLiteral("; ") + did.join(QStringLiteral(", "))),
+                                 6000);
     } else {
         genfill_preview_pinned_ = false;
+        if (fill_view_hid_wipe_ && !session_.wipe) session_.set_wipe(*fill_view_hid_wipe_);   // the comparison as it was
+        fill_view_hid_wipe_.reset();
         if (!frames_.empty()) step_to(current_);   // back to the frame without the fill, on whichever route
     }
 }

@@ -254,9 +254,27 @@ need to open the master in Nuke to check it:
 
 None of these changes the master.
 
+### AI fill: the viewer, Reconstruct and Deliver
+
+The AI fill is in three places, each with one job:
+
+- **Viewer**: one **AI fill** button on the viewer's bar shows the generated
+  fill or the master, in one click, to compare. It appears once there is a
+  fill to show (a preview or a finished render) or AI generation is on.
+- **Reconstruct › AI generation** (experimental, off by default): its switch
+  turns the AI fill on for the shot. Below it is everything else: what it
+  regenerates (**AI fill v3** or **v4.3 region**, **Keep small and thin bright
+  parts**, **Where it fills**, and the thresholds in **Advanced**), the prompt
+  and **Suggest a prompt…**, **Preview AI fill**, **Show what it invented**,
+  **Setup…**, **Review fill…** and the settings described below.
+- **Deliver › AI Fill Generation (Experimental)**: the only AI fill control in
+  Deliver. Ticked, the export includes the fill, made with Reconstruct's
+  settings. It is greyed out until AI generation is on in Reconstruct.
+
 ### Deliver
 
-- **AI fill** (experimental, off by default) draws detail inside fully
+- **AI fill** (experimental, off by default; set up in Reconstruct › AI
+  generation, put in the export with Deliver › AI Fill Generation) draws detail inside fully
   clipped areas. Optional **Highlight / Shadow prompts** steer what it draws
   in each region (only there). **Prompt strength** (1.1, 0 to 2) sets how
   strongly the prompts steer: 1 is how AI fill v3 was tested, 0 ignores them,
@@ -278,15 +296,16 @@ None of these changes the master.
 - **Region re-render (v4)** (1.2.4, experimental) is AI fill's second mode,
   with its own model. Where v3 draws only inside fully clipped pixels, v4
   draws a whole bright region again: a window, an open door, a sky parked just
-  under white. Turn it on in Deliver > AI fill > **Region re-render (v4)**, or
-  with **Fill: v3 / v4 re-render** over the viewer. Type what is in the bright
+  under white. Choose it with the **AI fill v3 / v4.3 region** switch in
+  Reconstruct › AI generation. Type what is in the bright
   area in **Prompt** ("overcast sky over the sea, soft grey clouds"); with no
   prompt it draws texture with no subject. **Advanced** holds the seed and the
   steps. **Preview AI fill** fills 17 frames round the playhead and shows the
-  frame on screen; **Fill**, **Master** and **Invented** switch the view.
+  frame on screen; the viewer's **AI fill** button switches between the fill
+  and the master, and **Show what it invented** shows the invented pixels.
   (1.2.7) What the fill draws is above SDR white, so a finished preview opens
   with the wipe off and the view exposure at −2 EV (only when it was at 0); a
-  line over the viewer says so, **Alt+E** goes back to 0 EV and **W** brings
+  line on the AI generation card says so, **Alt+E** goes back to 0 EV and **W** brings
   the wipe back. **Where it fills** shows what v4.3 really redraws: the
   near-white region in solid orange, and tinted what stays the master (a
   saturated highlight such as a sunset or a flame is never redrawn). **Keep

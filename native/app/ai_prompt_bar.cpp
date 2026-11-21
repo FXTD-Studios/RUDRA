@@ -1,8 +1,8 @@
 // The AI fill's prompt suggestions (6 Nov 2026): rudra.genfill.prompts on the frame on
-// screen, shown as buttons at the top of the AI fill card and in a bar over the viewer
-// while the AI fill is previewed or shown, so a prompt is one click away where the fill
-// is judged. The "Suggest a prompt…" button runs it too and also opens the menu (the
-// suggestions, then every preset).
+// screen, shown at the top of Reconstruct's AI generation card (21 Nov 2026: the bar over
+// the viewer is gone; the viewer keeps one AI fill button, sync_ai_generation). The
+// "Suggest a prompt…" button runs it too and also opens the menu (the suggestions, then
+// every preset).
 
 #include <QCoreApplication>
 #include <QCursor>
@@ -60,7 +60,7 @@ void MainWindow::use_prompt_suggestion(const PromptSuggestion& p) {
     statusBar()->showMessage(QStringLiteral("AI fill %1 prompt: %2 (Preview AI fill to see it)")
                                  .arg(shadow ? QStringLiteral("shadow") : QStringLiteral("highlight"), p.text),
                              6000);
-    sync_ai_prompt_bar();
+    sync_ai_generation();
 }
 
 void MainWindow::suggest_genfill_prompt() { run_prompt_suggestions(true); }
@@ -221,131 +221,30 @@ void MainWindow::refresh_prompt_chips() {
     }
 }
 
-void MainWindow::build_ai_prompt_bar(QVBoxLayout* v, QWidget* parent) {
-    ai_prompt_bar_ = new QWidget(parent);
-    ai_prompt_bar_->setObjectName("viewerAiPromptBar");
-    auto* h = new QHBoxLayout(ai_prompt_bar_);
-    h->setContentsMargins(12, 4, 12, 4);
-    h->setSpacing(6);
-    auto* head = new QLabel(QStringLiteral("AI fill prompt"), ai_prompt_bar_);
-    head->setProperty("class", "note");
-    h->addWidget(head);
-    auto* le = new QLineEdit(ai_prompt_bar_);
-    le->setObjectName("viewerAiPrompt");
-    le->setPlaceholderText(QStringLiteral("highlight prompt (optional): pick a suggestion or type one"));
-    le->setMinimumWidth(220);
-    connect(le, &QLineEdit::editingFinished, this, [this, le] {
-        if (le->text() == deliver_.ai.prompt_highlight) return;
-        if (auto* d = findChild<QLineEdit*>("deliverAiPromptHighlight")) d->setText(le->text());
-        set_deliver("ai_prompt_highlight", le->text());
-    });
-    connect(le, &QLineEdit::returnPressed, this, [this, le] {   // Return previews with the prompt (7 Nov 2026)
-        if (le->text() != deliver_.ai.prompt_highlight) {   // returnPressed comes before editingFinished
-            if (auto* d = findChild<QLineEdit*>("deliverAiPromptHighlight")) d->setText(le->text());
-            set_deliver("ai_prompt_highlight", le->text());
+void MainWindow::sync_ai_generation() {
+    // 21 Nov 2026 (user feedback): the AI fill in three places, each with one job. The viewer has ONE
+    // button, AI fill, that shows the generated fill or the master in one click; Reconstruct > AI
+    // generation holds the area, the prompt, Preview and every setting; Deliver has one checkbox.
+    // The prompt bar that sat over the viewer (6 Nov 2026) is gone: its prompt, suggestions, v3 / v4.3
+    // switch, progress and note are all on the card.
+    const bool have_fill = genfill_preview_.has_value() || !genfill_last_out_.isEmpty();
+    if (auto* b = findChild<QPushButton*>(QStringLiteral("vtAiFill"))) {
+        // Offered while AI generation is on, or while there is a fill to show (a preview, a finished render).
+        b->setVisible(!frames_.empty() && (ai_generation_ || have_fill || fill_view_on_));
+        if (b->isChecked() != fill_view_on_) {
+            const QSignalBlocker block(b);
+            b->setChecked(fill_view_on_);
         }
-        if (!genfill_preview_busy_) preview_genfill();
-    });
-    h->addWidget(le, 2);
-    {   // 1.2.6: the AI fill's progress, here where the preview is started (MainWindow::set_ai_progress)
-        auto* bar = new QProgressBar(ai_prompt_bar_);
-        bar->setObjectName("viewerAiProgress");
-        bar->setRange(0, 1000);
-        bar->setTextVisible(true);
-        bar->setFixedSize(150, 16);
-        bar->hide();
-        h->addWidget(bar);
+        b->setToolTip(fill_view_on_ ? QStringLiteral("Showing the AI fill. Click for the master without it")
+                                    : have_fill ? QStringLiteral("Showing the master. Click for the AI fill (the preview's "
+                                                                 "frames or the last finished fill); Changes shows what it invented")
+                                                : QStringLiteral("No AI fill to show yet: Reconstruct \u203a AI generation \u203a "
+                                                                 "Preview AI fill makes one"));
     }
-    {   // 1.2.7: over the viewer, what a finished preview changed in the view and why (frame_genfill_preview)
-        auto* hint = new QLabel(ai_prompt_bar_);
-        hint->setObjectName("viewerAiHint");
-        hint->setProperty("class", "note");
-        hint->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-        hint->setMinimumWidth(0);
-        hint->hide();
-        h->addWidget(hint, 3);
-    }
-    auto* chips = new QWidget(ai_prompt_bar_);
-    chips->setObjectName("aiSuggestChips");
-    auto* ch = new QHBoxLayout(chips);
-    ch->setContentsMargins(0, 0, 0, 0);
-    ch->setSpacing(4);
-    // The chips never widen the window (8 Nov 2026): a row of suggestions, or the long "Suggestions
-    // appear here..." note, set the viewer's minimum width and pushed the right rail (Grade, Deliver)
-    // off a 1080p-wide screen. They now get what is left, and are clipped at the edge.
-    chips->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    chips->setMinimumWidth(0);
-    h->addWidget(chips, 3);
-    // 12 Nov 2026: which fill a preview runs, here where the previews are started. v3 fills only the
-    // fully clipped pixels; v4 (experimental) draws the whole bright region again. The same setting as
-    // Deliver > AI fill > the v3 / v4.3 region switch.
-    auto* mode = new QPushButton(QStringLiteral("Fill: v3"), ai_prompt_bar_);
-    mode->setObjectName("viewerAiRerender");
-    mode->setCheckable(true);
-    mode->setToolTip(QStringLiteral("AI fill v3 draws only inside fully clipped pixels (often under 1 % of the frame). "
-                                    "v4, experimental, draws the whole bright region again from the source: a window, "
-                                    "a door, a sky parked just under white. Click to switch; the next preview uses it"));
-    connect(mode, &QPushButton::clicked, this, [this] {
-        set_deliver("ai_rerender", deliver_.ai.rerender ? "0" : "1");
-        sync_ai_prompt_bar();
-    });
-    h->addWidget(mode);
-    auto* run = new QPushButton(QStringLiteral("Suggest"), ai_prompt_bar_);
-    run->setObjectName("aiSuggestRun");
-    run->setToolTip(QStringLiteral("Suggest prompts from this frame's fully clipped areas"));
-    connect(run, &QPushButton::clicked, this, [this] { run_prompt_suggestions(false); });
-    h->addWidget(run);
-    auto* again = new QPushButton(QStringLiteral("Preview again"), ai_prompt_bar_);
-    again->setObjectName("viewerAiPreviewAgain");
-    again->setToolTip(QStringLiteral("Fill the frame at the playhead again with this prompt"));
-    connect(again, &QPushButton::clicked, this, [this] { preview_genfill(); });
-    h->addWidget(again);
-    ai_prompt_bar_->hide();
-    v->addWidget(ai_prompt_bar_);
-    // The AI fill card's chips are built after the viewer: both get their first state then.
-    QTimer::singleShot(0, this, [this] { refresh_prompt_chips(); });
-}
-
-void MainWindow::sync_ai_prompt_bar() {
-    if (!ai_prompt_bar_) return;
-    // Over the viewer while the AI fill is being previewed, or shown (the preview's or a render's),
-    // and (7 Nov 2026) whenever AI fill is on in Deliver and set up, so the first prompt and the first
-    // preview start here too.
-    const bool on = !frames_.empty() && (genfill_preview_busy_ || genfill_preview_.has_value() || fill_view_on_ ||
-                                         (deliver_.ai_fill && genfill_ready_));
-    ai_prompt_bar_->setVisible(on);
-    if (!on) return;
-    if (auto* le = findChild<QLineEdit*>("viewerAiPrompt"); le && !le->hasFocus() && le->text() != deliver_.ai.prompt_highlight) {
-        const QSignalBlocker b(le);
-        le->setText(deliver_.ai.prompt_highlight);
-    }
-    // v4 (region re-render) was tested with no prompt, and the suggestions are made from v3's
-    // clipped specks ("specular glints" drew speckles over a whole door, 12 Nov 2026): in v4 the
-    // prompt, the chips and Suggest rest, and the fill runs as it was tested.
-    const bool v4 = deliver_.ai.rerender;
-    if (auto* le = findChild<QLineEdit*>("viewerAiPrompt")) {
-        // 12 Nov 2026: v4 takes the highlight prompt (the 09V reference was rendered with one)
-        le->setEnabled(true);
-        le->setPlaceholderText(v4 ? QStringLiteral("EMPTY: type what is in the bright region (a sky, a window, a street)")
-                                  : QStringLiteral("highlight prompt (optional): pick a suggestion or type one"));
-        le->setToolTip(v4 ? QStringLiteral("AI fill v4 draws the whole bright region again: say what is there (a sky, a window, "
-                                           "a street). Empty, it draws texture with no subject")
-                          : QString());
-    }
-    for (auto* row : findChildren<QWidget*>(QStringLiteral("aiSuggestChips"))) row->setEnabled(true);
-    // 1.2.6: Suggest in v4.3 too: the prompt from the shot (Florence-2) says what the bright region is
-    for (auto* b : findChildren<QPushButton*>(QStringLiteral("aiSuggestRun"))) b->setVisible(true);
-    if (auto* mode = findChild<QPushButton*>("viewerAiRerender")) {
-        mode->setChecked(deliver_.ai.rerender);
-        mode->setText(deliver_.ai.rerender ? QStringLiteral("Fill: v4.3 region") : QStringLiteral("Fill: v3"));
-        mode->setEnabled(!genfill_preview_busy_);
-    }
-    if (auto* again = findChild<QPushButton*>("viewerAiPreviewAgain")) {
-        again->setText(genfill_preview_busy_ ? QStringLiteral("Stop preview")
-                       : genfill_preview_      ? QStringLiteral("Preview again")
-                                               : QStringLiteral("Preview AI fill"));
-        again->setEnabled(genfill_ready_ || genfill_preview_busy_);   // either route (7 Nov 2026)
-    }
+    if (auto* pv = findChild<QPushButton*>(QStringLiteral("deliverAiPreview")))
+        pv->setText(genfill_preview_busy_ ? QStringLiteral("Stop preview")
+                    : genfill_preview_    ? QStringLiteral("Preview again")
+                                          : QStringLiteral("Preview AI fill"));
 }
 
 }  // namespace rudra::app

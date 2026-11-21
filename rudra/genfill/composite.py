@@ -224,11 +224,24 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
                 depth = cv2.GaussianBlur(cv2.distanceTransform(core, cv2.DIST_L2, 5).astype(np.float32), (0, 0), 0.5 * L)
                 whole = whole + np.float32(rise) * (1.0 - np.exp(-depth / np.float32(L))) * s
         y_m = np.maximum(master @ LUMA_AP1, 1e-6).astype(np.float32)
-        log_y = ((1.0 - s) * np.log2(y_m) + s * whole).astype(np.float32)
+        log_m = np.log2(y_m).astype(np.float32)
+        whole = whole.astype(np.float32)
+        log_y = ((1.0 - s) * log_m + s * whole).astype(np.float32)
         chroma = ((1.0 - s[..., None]) * (master / y_m[..., None]) + s[..., None] * chroma).astype(np.float32)
     if (smooth > 0 or still > 0 or calm > 0) and state is not None:
+        # 1.2.8 (QC of v4.3 on 09V, 21 Nov 2026): what is carried from frame to frame is the fill's own
+        # log luminance (`whole` with a level), never the master's share of a region-edge pixel. The
+        # carried value had (1 - s) of the master in it, so a dark thin object moving along the edge (09V's
+        # antenna, 2-3 px against the sky) left its old positions behind at 0.8, 0.64, ... of its depth: a
+        # fan of faint antennas. The master's share is now this frame's, mixed in after the smoothing.
+        own = whole if level > 0 else log_y
+        # ... and only as much as the previous frame's pixel was the fill's own sky: where the region's edge
+        # mixed in the master (s < 1) or the pixel sat within RERENDER_FRINGE_PX of something dark (conf < 1),
+        # the model's value there also drew the antenna, so it is carried that much less (the GPU check of
+        # 21 Nov 2026 left a faint fan with the first fix alone).
+        trust = (s * conf).astype(np.float32) if level > 0 else on.astype(np.float32)
         prev = state.get('log_y')
-        if prev is not None and prev.shape == log_y.shape:
+        if prev is not None and prev.shape == own.shape:
             both = on & state['on']
             keep = np.full(log_y.shape, np.float32(smooth))
             pc = state.get('codes')
@@ -238,12 +251,17 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
                     keep[held] = np.float32(still)
                 if calm > 0:                            # only a jump is held; a steady picture keeps `smooth`
                     lo, hi = RERENDER_CALM_STOPS
-                    t = np.clip((np.abs(log_y - prev) - lo) / (hi - lo), 0.0, 1.0)
+                    t = np.clip((np.abs(own - prev) - lo) / (hi - lo), 0.0, 1.0)
                     t = t * t * (3.0 - 2.0 * t)
                     jump = np.float32(smooth) + (np.float32(calm) - np.float32(smooth)) * t
                     keep = np.where(held, np.maximum(keep, jump), keep).astype(np.float32)
-            log_y[both] = keep[both] * prev[both] + (1.0 - keep[both]) * log_y[both]
-        state['log_y'], state['on'], state['codes'] = log_y, on, codes.copy()
+            pt = state.get('trust')
+            if pt is not None and pt.shape == keep.shape:
+                keep = (keep * pt).astype(np.float32)
+            own = own.copy()
+            own[both] = keep[both] * prev[both] + (1.0 - keep[both]) * own[both]
+            log_y = ((1.0 - s) * log_m + s * own).astype(np.float32) if level > 0 else own
+        state['log_y'], state['on'], state['codes'], state['trust'] = own, on, codes.copy(), trust
     out = np.array(fill, np.float32, copy=True)
     out[on] = (np.exp2(log_y)[..., None] * chroma)[on]
     return out
