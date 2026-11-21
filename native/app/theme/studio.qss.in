@@ -116,8 +116,8 @@ QWidget#compareBar { background: var(--bg); }
 QLabel#compareLine { background: transparent; color: var(--ink-3); font-size: 11px; }
 QLabel#compareLine[state="warn"] { color: var(--gold); }
 QLabel#deliverAiFrameInfo[state="warn"] { color: var(--gold); }
-QProgressBar#deliverAiProgress, QProgressBar#viewerAiProgress { background: var(--raise); border: 0; border-radius: 2px; color: var(--ink); font-size: 11px; text-align: center; }
-QProgressBar#deliverAiProgress::chunk, QProgressBar#viewerAiProgress::chunk { background: var(--accent-dim); border-radius: 2px; }
+QProgressBar#deliverAiProgress { background: var(--raise); border: 0; border-radius: 2px; color: var(--ink); font-size: 11px; text-align: center; }
+QProgressBar#deliverAiProgress::chunk { background: var(--accent-dim); border-radius: 2px; }
 QPushButton#compareFit { background: var(--card); border: 1px solid var(--raise); border-radius: 9px; color: var(--ink); padding: 1px 10px; font-size: 11px; }
 QPushButton#compareFit:hover { background: var(--raise-2); }
 /* view revision 6: the viewer toolbar under the compare line */
@@ -283,6 +283,7 @@ QToolButton::menu-indicator { image: none; width: 0; }
 QWidget[role="check"] { background: transparent; }
 QLabel[role="check-lab"] { color: var(--ink); font-size: 13px; }
 QLabel[role="check-hint"] { color: var(--ink-3); font-size: 11px; }
+QLabel[role="check-lab"]:disabled { color: var(--ink-4); }
 
 /* ── sliders: a thin track filled with the accent, a round white key ─ */
 QSlider { background: transparent; min-height: 22px; }

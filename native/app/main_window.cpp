@@ -1830,7 +1830,7 @@ void MainWindow::sync_ui() {
     sync_deliver();
     sync_aces_trims();
     sync_simple();
-    sync_ai_prompt_bar();
+    sync_ai_generation();
 }
 
 void MainWindow::keyPressEvent(QKeyEvent* e) {
@@ -2447,6 +2447,7 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     btn_master_->setToolTip("Click to stop after the frame being written");
     QPointer<MainWindow> self(this);
     // The QC report's context: this render's own request and what is on screen as it starts.
+    render_with_fill_ = deliver_effective().ai_fill;   // 1.2.8: the fill is decided at the start
     render_qc_context_ = qc_context_now(QStringLiteral("Analytic reconstruction"),
                                         QJsonDocument::fromJson(QByteArray::fromStdString(master_request_json(q))).object());
     master_job_ = std::make_unique<MasterJob>(model, q, *targets, std::move(prepare));
@@ -2502,7 +2503,7 @@ void MainWindow::master_finished(const MasterOutcome& o, const QString& folder) 
     refresh_enabled();
     sync_ui();
     // RUDRA 1.1: the AI fill of an analytic EXR render (ACES 2065-1), as the learned route does.
-    if (!movie && !o.error && !o.cancelled && o.completed > 0 && !deliver_aces() && deliver_effective().ai_fill) {
+    if (!movie && !o.error && !o.cancelled && o.completed > 0 && !deliver_aces() && render_with_fill_) {
         QString why;
         GenFillOptions go = deliver_effective().ai;
         go.glob = analytic_fill_glob_;   // this render's frames only (master_targets' names)
@@ -3598,8 +3599,8 @@ int MainWindow::batch_add_media(const QStringList& paths, QString* why) {
             if (BatchJob* j = q.find(id)) j->source_display = aces_source_display_;
         added += int(shots.size());
     };
-    add(stills, deliver_);
-    DeliverChoice whole = deliver_;   // a folder or a movie renders whole (as an EDL's shots), never one still
+    add(stills, deliver_for_batch());   // 21 Nov 2026: no AI fill while Reconstruct's AI generation is off
+    DeliverChoice whole = deliver_for_batch();   // a folder or a movie renders whole (as an EDL's shots), never one still
     if (whole.output == "still") whole.output = "sequence";
     add(ranges, whole);
     q.touch();

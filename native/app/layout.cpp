@@ -33,6 +33,7 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include "main_window.hpp"
@@ -687,7 +688,8 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     vbox->setContentsMargins(0, 0, 0, 0);
     vbox->setSpacing(0);
     build_viewer_toolbar(vbox, viewer_box);
-    build_ai_prompt_bar(vbox, viewer_box);   // 6 Nov 2026: the AI fill's prompt and its suggestions, over the picture
+    // 21 Nov 2026: no AI fill prompt bar over the picture any more; its controls are Reconstruct's AI
+    // generation card, and the viewer keeps one AI fill button (build_viewer_popovers).
     viewer_stack_ = new QStackedWidget(viewer_box);
     viewer_stack_->setObjectName("viewerStack");
     auto* empty = new QWidget(viewer_stack_);
@@ -1192,6 +1194,314 @@ QWidget* MainWindow::build_right_rail() {
     notes_.push_back(n1);
     anv->addWidget(n1);
     recv->addWidget(analytic);
+    // AI generation (21 Nov 2026, user feedback): the AI fill's own place. Its switch turns it on for the
+    // shot; then the area it regenerates (v3 clipped pixels or the v4.3 region, the thresholds, "Where it
+    // fills"), the prompt, Preview and every setting are here. The viewer's "AI fill" button shows the fill
+    // or the master in one click, and Deliver's one checkbox says whether the export includes it.
+    // The controls keep their deliverAi* names (settings keys, the batch and the tests read them).
+    {
+        auto ai_card = card(rec, 12, 4);
+        QWidget* kc = ai_card.first;
+        auto* kcv = ai_card.second;
+        kc->setObjectName("reconAiCard");
+        auto* gen = new CheckRow("reconAiGeneration", "AI generation", "reconAiGenerationHint", "experimental", kc);
+        gen->setToolTip("Turns the AI fill on for this shot: choose what it regenerates, preview it on the frame at "
+                        "the playhead and set it up here. The viewer's AI fill button then shows the fill or the "
+                        "master; Deliver \u203a AI Fill Generation (Experimental) puts it in the export");
+        gen->clicked = [this] { set_deliver("ai_generation", ai_generation_ ? "0" : "1"); };
+        kcv->addWidget(gen);
+        {
+            auto* box = new QWidget(kc);
+            box->setObjectName("deliverAiFillOptions");
+            auto* bv = column(box, 0, 2);
+            bv->setContentsMargins(14, 0, 0, 4);
+            {   // 12 Nov 2026: AI fill v4, region re-render (experimental). First in the list: it replaces v3's controls below
+                // 1.2.6 (18 Nov 2026, user request): a switch between the two, always shown.
+                auto* rr = new Seg("deliverAiVersion", {{"v3", "AI fill v3"}, {"v4", "v4.3 region"}}, box);
+                rr->setToolTip("AI fill v3 draws only inside pixels that are fully clipped, often a fraction of a per "
+                               "cent of the frame. On, AI fill v4 draws the whole bright region again from the source "
+                               "(a window, a door, a sky parked just under white): its detail from the model, its "
+                               "colour and level led by the source, steadied over time. The SDR codes inside the "
+                               "region are NOT kept, unlike v3. It uses its own model (the v4.3 LoRA, a download "
+                               "in File > Model packages) and its own fixed settings: the thresholds, brightness, detail, focus and "
+                               "flicker controls here do not apply to it. Tested on the analytic BT.1886 route; "
+                               "on the learned route it is untested. v3 = clipped pixels only, as released");
+                rr->clicked = [this](const QString& k) { set_deliver("ai_rerender", k == "v4" ? "1" : "0"); };
+                bv->addWidget(rr);
+                // 1.2.7 (multi-role review of 1.2.6): v4.3 redrew a floor grating and a practical lamp in 09V
+                auto* kd = new CheckRow("deliverAiKeepDetail", "Keep small and thin bright parts", "deliverAiKeepDetailHint",
+                                        "v4.3: gratings, railings, lamps stay the master", box);
+                kd->setToolTip("v4.3 only. Bright parts that are thin or broken up (a floor grating, a railing) or "
+                               "smaller than 0.05 % of the frame (a practical lamp, a glint) keep the master instead of "
+                               "being redrawn. Off is v4.3 as its checks ran. \"Where it fills\" follows it.");
+                kd->clicked = [this] { set_deliver("ai_keep_detail", deliver_.ai.rerender_keep_detail ? "0" : "1"); };
+                bv->addWidget(kd);
+            }
+            {   // 6 Nov 2026: the suggested prompts first, one click each (Suggest fills them in)
+                auto* chips = new QWidget(box);
+                chips->setObjectName("aiSuggestChips");
+                auto* cv = new QVBoxLayout(chips);
+                cv->setContentsMargins(0, 0, 0, 2);
+                cv->setSpacing(2);
+                bv->addWidget(chips);
+            }
+            auto spin = [&](const char* id, const QString& key, int lo, int hi, const QString& special, const char* tip) {
+                auto* sb = new QSpinBox(box);
+                sb->setObjectName(id);
+                sb->setRange(lo, hi);
+                if (!special.isEmpty()) sb->setSpecialValueText(special);
+                connect(sb, &QSpinBox::valueChanged, this, [this, key](int value) { set_deliver(key, QString::number(value)); });
+                auto* r = new QWidget(box);
+                auto* rcol = column(r, 0, 2);
+                rcol->addWidget(label(QString::fromUtf8(tip).section('|', 0, 0), {}, "note", r));
+                sb->setToolTip(QString::fromUtf8(tip).section('|', 1));
+                sb->setParent(r);
+                rcol->addWidget(sb);
+                bv->addWidget(r);
+            };
+            auto line = [&](const char* id, const QString& key, const QString& head, const QString& placeholder) {
+                auto* le = new QLineEdit(box);
+                le->setObjectName(id);
+                le->setPlaceholderText(placeholder);
+                connect(le, &QLineEdit::editingFinished, this, [this, le, key] { set_deliver(key, le->text()); });
+                bv->addWidget(label(head, QString::fromLatin1(id) + QStringLiteral("Label"), "note", box));
+                bv->addWidget(le);
+            };
+            line("deliverAiPromptHighlight", "ai_prompt_highlight", "Prompt", "what is in the bright area (optional)");
+            line("deliverAiPromptShadow", "ai_prompt_shadow", "Shadow prompt", "what is in the dark area (optional)");
+            {   // RUDRA 1.1: suggest a prompt from the frame's clipped areas, or pick a preset
+                auto* sg = new QPushButton("Suggest a prompt\u2026", box);
+                sg->setObjectName("deliverAiSuggest");
+                sg->setToolTip("Suggests a prompt for this shot: a small captioning model (Florence-2, about 0.5 GB, "
+                               "downloaded once) describes the frame and its bright area, and \"From this shot\" says "
+                               "what is there (a hazy sky through a door, a lamp, a window). The presets follow, picked "
+                               "from the clipped areas' size, place, shape and colour. A preset marked ready needs no "
+                               "text model when the fill starts");
+                connect(sg, &QPushButton::clicked, this, [this] { suggest_genfill_prompt(); });
+                bv->addWidget(sg);
+            }
+            // 12 Nov 2026: the thresholds and the tuning controls fold away behind "Advanced" (the card was
+            // a wall of fields, taller than the panel). Whether it is open is remembered.
+            QWidget* const ai_box = box;
+            QVBoxLayout* const ai_bv = bv;
+            {
+                auto* fold = new QPushButton(box);
+                fold->setObjectName("deliverAiAdvanced");
+                fold->setCheckable(true);
+                fold->setFixedHeight(26);
+                fold->setToolTip("Thresholds, seed, steps, brightness, strengths, detail and the flicker fallback");
+                auto* adv = new QWidget(box);
+                adv->setObjectName("deliverAiAdvancedBox");
+                auto* av = column(adv, 0, 2);
+                const bool open = QSettings().value("deliver/aiAdvancedOpen", false).toBool();
+                fold->setChecked(open);
+                fold->setText(open ? QStringLiteral("Advanced \u25BE") : QStringLiteral("Advanced \u25B8"));
+                adv->setVisible(open);
+                connect(fold, &QPushButton::toggled, this, [fold, adv](bool on) {
+                    adv->setVisible(on);
+                    fold->setText(on ? QStringLiteral("Advanced \u25BE") : QStringLiteral("Advanced \u25B8"));
+                    QSettings().setValue("deliver/aiAdvancedOpen", on);
+                });
+                bv->addWidget(fold);
+                bv->addWidget(adv);
+                box = adv;
+                bv = av;
+            }
+            spin("deliverAiTauHigh", "ai_tau_high", 128, 256, {},
+                 "Highlight threshold (8-bit code)|The model sees codes at or above it; it fills only the fully "
+                 "clipped areas among them (code 255). 256 fills no highlights. \"Where it fills\" shows both");
+            spin("deliverAiTauLow", "ai_tau_low", -1, 64, "off",
+                 "Shadow threshold (8-bit code)|Codes at or below it are filled; off fills no shadows");
+            spin("deliverAiSeed", "ai_seed", 0, 999999, {}, "Seed|Another seed gives another plausible fill");
+            spin("deliverAiSteps", "ai_steps", 1, 100, {}, "Steps|Denoising steps: more is slower, often cleaner (30)");
+            {   // v3 (30 Oct 2026): the AI draws the shape; how bright it is comes from RUDRA's estimate plus this
+                auto* r = new QWidget(box);
+                auto* rcol = column(r, 0, 2);
+                rcol->addWidget(label("Highlight brightness (stops)", {}, "note", r));
+                auto* bs = new QDoubleSpinBox(r);
+                bs->setObjectName("deliverAiBrightness");
+                bs->setRange(-3.0, 3.0);
+                bs->setSingleStep(0.25);
+                bs->setDecimals(2);
+                bs->setSuffix(" stops");
+                bs->setToolTip("How much brighter (or darker) than RUDRA's estimate the filled highlights are. "
+                               "0 = the estimate. The AI draws the shape inside a clipped area; its brightness is yours to set");
+                connect(bs, &QDoubleSpinBox::valueChanged, this, [this](double v) { set_deliver("ai_brightness", QString::number(v, 'g', 6)); });
+                rcol->addWidget(bs);
+                bv->addWidget(r);
+            }
+            // RUDRA 1.1 (5 Nov 2026): prompt strength and detail strength, 0 to 2, 1 = AI fill v3 as gated.
+            auto dspin = [&](const char* id, const QString& key, const QString& head, const QString& tip) {
+                auto* r = new QWidget(box);
+                auto* rcol = column(r, 0, 2);
+                rcol->addWidget(label(head, {}, "note", r));
+                auto* ds = new QDoubleSpinBox(r);
+                ds->setObjectName(id);
+                ds->setRange(0.0, 2.0);
+                ds->setSingleStep(0.1);
+                ds->setDecimals(2);
+                ds->setValue(1.0);
+                ds->setToolTip(tip);
+                connect(ds, &QDoubleSpinBox::valueChanged, this, [this, key](double v) { set_deliver(key, QString::number(v, 'g', 6)); });
+                rcol->addWidget(ds);
+                bv->addWidget(r);
+            };
+            dspin("deliverAiPromptStrength", "ai_prompt_strength", "Prompt strength",
+                  "How strongly the highlight and shadow prompts steer their regions. 1 = as AI fill v3 was "
+                  "tested; 0 ignores the prompts; above 1 is experimental. No effect without a prompt");
+            dspin("deliverAiShapeGain", "ai_shape_gain", "Detail strength",
+                  "How much the drawn shape varies the brightness inside a filled area. 1 = as tested; "
+                  "0 = a flat fill at the estimated brightness");
+            {   // 7 Nov 2026: the model's pixels spent on the clipped area, not the whole frame
+                auto* fo = new CheckRow("deliverAiFocus", "More detail in the filled area", "deliverAiFocusHint",
+                                        "draws only around it", box);
+                fo->setToolTip("The fill model works at about 832 x 480. On, it sees only boxes around the shot's "
+                               "clipped areas (one per group of areas, the same for every frame), each drawn at up "
+                               "to that size: a lamp or a window in a 4K frame at full resolution, a sky in a door "
+                               "at about twice the detail. Each box is one more model run, so it takes longer. "
+                               "Small specks far from the main areas keep the master. Off = AI fill v3 as tested "
+                               "(the whole frame)");
+                fo->clicked = [this] { set_deliver("ai_focus", deliver_.ai.focus_region ? "0" : "1"); };
+                bv->addWidget(fo);
+            }
+            {   // RUDRA 1.1 priority 5: the fallback when the fill flickers
+                auto* fb = new CheckRow("deliverAiFallback", "Drop flickering fill frames", "deliverAiFallbackHint",
+                                        "keep the master there", box);
+                fb->setToolTip("A frame whose fill jumps by more than a quarter stop into it AND out of it (a "
+                               "one-frame flicker) is written as the master's own frame. A fill that starts or ends "
+                               "is kept. Every dropped frame is listed in genfill.json (fell_back)");
+                fb->clicked = [this] { set_deliver("ai_fallback", deliver_.ai.fallback ? "0" : "1"); };
+                bv->addWidget(fb);
+            }
+            box = ai_box;   // the fold ends: what follows is always shown
+            bv = ai_bv;
+            {
+                auto* rn = label("Fills only inside the luminance region set on the Reconstruct card.",
+                                 "deliverAiRegion", "small", box);
+                rn->setWordWrap(true);
+                rn->hide();
+                bv->addWidget(rn);
+            }
+            auto* setup = label("", "deliverAiSetup", "small", box);
+            setup->setWordWrap(true);
+            bv->addWidget(setup);
+            {   // Where the model is, and the last fill's review before it goes to a client (28 Oct 2026 review).
+                auto* row = new QWidget(box);
+                auto* rh = new QHBoxLayout(row);
+                rh->setContentsMargins(0, 4, 0, 0);
+                auto* su = new QPushButton("Setup…", row);
+                su->setObjectName("deliverAiSetupButton");
+                su->setToolTip("Where the Python, the repository, Wan2.1-VACE and the RUDRA LoRA are; checks them");
+                connect(su, &QPushButton::clicked, this, [this] { GenFillSetupDialog(this).exec(); sync_deliver(); });
+                auto* review = new QPushButton("Review fill…", row);
+                review->setObjectName("deliverAiReview");
+                review->setToolTip("Page through the last AI fill (or one you pick): A master, B fill, the invented pixels, "
+                               "and the frames where the fill flickers");
+                connect(review, &QPushButton::clicked, this, [this] { review_genfill(); });
+                rh->addWidget(su);
+                rh->addWidget(review);
+                rh->addStretch(1);
+                bv->addWidget(row);
+            }
+            {   // 1.2.6 (18 Nov 2026, user feedback on 09V.mp4): on this frame, how much the fill changes and
+                // how much its model only sees, and the viewer's picture of both (MainWindow::sync_ai_frame_info).
+                auto* info = label("", "deliverAiFrameInfo", "small", box);
+                info->setWordWrap(true);
+                info->hide();
+                bv->addWidget(info);
+                auto* row = new QWidget(box);
+                auto* rh = new QHBoxLayout(row);
+                rh->setContentsMargins(0, 2, 0, 0);
+                auto* where = new QPushButton("Where it fills", row);
+                where->setObjectName("deliverAiShowRegion");
+                where->setCheckable(true);
+                where->setToolTip("Shows on the viewer where the AI fill acts on this frame: solid orange it changes "
+                                  "(v3: fully clipped areas; v4.3: the near-white bright region), tinted it leaves "
+                                  "as it is. Click again for the picture");
+                connect(where, &QPushButton::toggled, this, [this](bool on) { set_ai_region_view(on); });
+                rh->addWidget(where);
+                rh->addStretch(1);
+                bv->addWidget(row);
+            }
+            {   // Before the whole shot (4 Nov 2026): the frames around the playhead, filled and shown in the viewer.
+                auto* row = new QWidget(box);
+                auto* rh = new QHBoxLayout(row);
+                rh->setContentsMargins(0, 4, 0, 0);
+                auto* pv = new QPushButton("Preview AI fill", row);
+                pv->setObjectName("deliverAiPreview");
+                pv->setToolTip("Fills the frame at the playhead with these settings and shows it in the viewer (its AI "
+                               "fill button then switches between the fill and the master); with Deliver's AI Fill "
+                               "Generation ticked, the render fills the whole shot. The fill model stays loaded, so the "
+                               "next preview is quicker");
+                connect(pv, &QPushButton::clicked, this, [this] { preview_genfill(); });
+                rh->addWidget(pv, 1);
+                bv->addWidget(row);
+                // 21 Nov 2026 (user feedback): fill or master is the viewer's one AI fill button; the card keeps
+                // only what the viewer has no button for, the pixels the preview invented.
+                row = new QWidget(box);
+                rh = new QHBoxLayout(row);
+                rh->setContentsMargins(0, 2, 0, 0);
+                rh->setSpacing(4);
+                auto* inv = new QPushButton(QStringLiteral("Show what it invented"), row);
+                inv->setObjectName("deliverAiShowMask");
+                inv->setCheckable(true);
+                inv->setToolTip("White where the AI fill invented the pixels on the previewed frame. Click again, or "
+                                "the viewer's AI fill button, for the picture");
+                connect(inv, &QPushButton::clicked, this, [this](bool on) { show_genfill_preview(on ? "mask" : "fill"); });
+                rh->addWidget(inv, 1);
+                bv->addWidget(row);
+                // 1.2.7's note on what a finished preview changed in the view and why (frame_genfill_preview);
+                // was over the viewer, in the prompt bar that is gone.
+                auto* vh = label("", "deliverAiViewHint", "small", box);
+                vh->setWordWrap(true);
+                vh->hide();
+                bv->addWidget(vh);
+                auto* ps = label("", "deliverAiPreviewStatus", "small", box);
+                ps->setWordWrap(true);
+                bv->addWidget(ps);
+                // 1.2.6 (user request): how far the AI fill is, preview or render (MainWindow::set_ai_progress)
+                auto* bar = new QProgressBar(box);
+                bar->setObjectName("deliverAiProgress");
+                bar->setRange(0, 1000);
+                bar->setTextVisible(true);
+                bar->setFixedHeight(16);
+                bar->hide();
+                bv->addWidget(bar);
+            }
+            {   // 1.2.6 (user feedback: the card read as a wall): first whether the fill is set up
+                // (and Setup…), then the prompt, then Preview; the tuning folds away last.
+                auto* status = box->findChild<QWidget*>("deliverAiSetup");
+                auto* setup_row = box->findChild<QWidget*>("deliverAiSetupButton");
+                setup_row = setup_row ? setup_row->parentWidget() : nullptr;
+                int at = 0;
+                for (QWidget* w : {status, setup_row})
+                    if (w) {
+                        bv->removeWidget(w);
+                        bv->insertWidget(at++, w);
+                    }
+                for (const char* id : {"deliverAiAdvanced", "deliverAiAdvancedBox"})
+                    if (auto* w = box->findChild<QWidget*>(id)) {
+                        bv->removeWidget(w);
+                        bv->addWidget(w);
+                    }
+                // 1.2.6: one prompt in sight; the shadow prompt is the first of the Advanced settings
+                if (auto* adv = box->findChild<QWidget*>("deliverAiAdvancedBox")) {
+                    auto* av = static_cast<QVBoxLayout*>(adv->layout());
+                    int k = 0;
+                    for (const char* id : {"deliverAiPromptShadowLabel", "deliverAiPromptShadow"})
+                        if (auto* w = box->findChild<QWidget*>(id)) {
+                            bv->removeWidget(w);
+                            w->setParent(adv);
+                            av->insertWidget(k++, w);
+                        }
+                }
+            }
+            kcv->addWidget(box);
+        }
+        recv->addWidget(kc);
+        // The card's prompt suggestions get their first state once the window is built.
+        QTimer::singleShot(0, this, [this] { refresh_prompt_chips(); });
+    }
     pages->addWidget(rec);
     pages_.push_back(rec);
 
@@ -1413,300 +1723,17 @@ QWidget* MainWindow::build_right_rail() {
             kcv = next.second;
         }
         kc->setObjectName("deliverAiCard");
-        // The AI fill (layer 3, genfill_job.hpp): an AI-filled copy of a learned EXR render.
-        auto* ai = new CheckRow("deliverAiFill", "AI fill (experimental)", "deliverAiFillHint",
-                                "clipped highlights, crushed shadows", kc);
-        ai->setToolTip("After the render, a Wan2.1-VACE model trained on RUDRA's own footage fills only what the "
-                       "8-bit source cannot know: fully clipped highlights and fully crushed shadows. When it finishes "
-                       "it fixes those areas in the master in place and keeps the originals in <name>_before_aifill "
-                       "(the fill and its review stay in <name>_aifill); no 8-bit code of the SDR view changes, and "
-                       "rudra.generated marks every pixel it invented");
+        // 21 Nov 2026 (user feedback): Deliver has ONE AI fill control, whether the export includes the
+        // generated fill. Everything else (the version, the area, the prompt, Preview, Setup, Review and the
+        // tuning) is Reconstruct's AI generation card; the viewer's "AI fill" button shows the fill or not.
+        auto* ai = new CheckRow("deliverAiFill", "AI Fill Generation (Experimental)", "deliverAiFillHint",
+                                "turn on AI generation in Reconstruct first", kc);
+        ai->setToolTip("Includes the AI-generated fill in the export, with the settings of Reconstruct \u203a AI "
+                       "generation. After the render, the fill fixes its areas in the master in place and keeps the "
+                       "originals in <name>_before_aifill (the fill and its review stay in <name>_aifill); "
+                       "rudra.generated marks every pixel it invented. Greyed out until AI generation is on in Reconstruct");
         ai->clicked = [this] { set_deliver("ai_fill", deliver_.ai_fill ? "0" : "1"); };
         kcv->addWidget(ai);
-        {
-            auto* box = new QWidget(kc);
-            box->setObjectName("deliverAiFillOptions");
-            auto* bv = column(box, 0, 2);
-            bv->setContentsMargins(14, 0, 0, 4);
-            {   // 12 Nov 2026: AI fill v4, region re-render (experimental). First in the list: it replaces v3's controls below
-                // 1.2.6 (18 Nov 2026, user request): a switch between the two, always shown.
-                auto* rr = new Seg("deliverAiVersion", {{"v3", "AI fill v3"}, {"v4", "v4.3 region"}}, box);
-                rr->setToolTip("AI fill v3 draws only inside pixels that are fully clipped, often a fraction of a per "
-                               "cent of the frame. On, AI fill v4 draws the whole bright region again from the source "
-                               "(a window, a door, a sky parked just under white): its detail from the model, its "
-                               "colour and level led by the source, steadied over time. The SDR codes inside the "
-                               "region are NOT kept, unlike v3. It uses its own model (the v4.3 LoRA, a download "
-                               "in File > Model packages) and its own fixed settings: the thresholds, brightness, detail, focus and "
-                               "flicker controls here do not apply to it. Tested on the analytic BT.1886 route; "
-                               "on the learned route it is untested. v3 = clipped pixels only, as released");
-                rr->clicked = [this](const QString& k) { set_deliver("ai_rerender", k == "v4" ? "1" : "0"); };
-                bv->addWidget(rr);
-                // 1.2.7 (multi-role review of 1.2.6): v4.3 redrew a floor grating and a practical lamp in 09V
-                auto* kd = new CheckRow("deliverAiKeepDetail", "Keep small and thin bright parts", "deliverAiKeepDetailHint",
-                                        "v4.3: gratings, railings, lamps stay the master", box);
-                kd->setToolTip("v4.3 only. Bright parts that are thin or broken up (a floor grating, a railing) or "
-                               "smaller than 0.05 % of the frame (a practical lamp, a glint) keep the master instead of "
-                               "being redrawn. Off is v4.3 as its checks ran. \"Where it fills\" follows it.");
-                kd->clicked = [this] { set_deliver("ai_keep_detail", deliver_.ai.rerender_keep_detail ? "0" : "1"); };
-                bv->addWidget(kd);
-            }
-            {   // 6 Nov 2026: the suggested prompts first, one click each (Suggest fills them in)
-                auto* chips = new QWidget(box);
-                chips->setObjectName("aiSuggestChips");
-                auto* cv = new QVBoxLayout(chips);
-                cv->setContentsMargins(0, 0, 0, 2);
-                cv->setSpacing(2);
-                bv->addWidget(chips);
-            }
-            auto spin = [&](const char* id, const QString& key, int lo, int hi, const QString& special, const char* tip) {
-                auto* sb = new QSpinBox(box);
-                sb->setObjectName(id);
-                sb->setRange(lo, hi);
-                if (!special.isEmpty()) sb->setSpecialValueText(special);
-                connect(sb, &QSpinBox::valueChanged, this, [this, key](int value) { set_deliver(key, QString::number(value)); });
-                auto* r = new QWidget(box);
-                auto* rcol = column(r, 0, 2);
-                rcol->addWidget(label(QString::fromUtf8(tip).section('|', 0, 0), {}, "note", r));
-                sb->setToolTip(QString::fromUtf8(tip).section('|', 1));
-                sb->setParent(r);
-                rcol->addWidget(sb);
-                bv->addWidget(r);
-            };
-            auto line = [&](const char* id, const QString& key, const QString& head, const QString& placeholder) {
-                auto* le = new QLineEdit(box);
-                le->setObjectName(id);
-                le->setPlaceholderText(placeholder);
-                connect(le, &QLineEdit::editingFinished, this, [this, le, key] { set_deliver(key, le->text()); });
-                bv->addWidget(label(head, QString::fromLatin1(id) + QStringLiteral("Label"), "note", box));
-                bv->addWidget(le);
-            };
-            line("deliverAiPromptHighlight", "ai_prompt_highlight", "Prompt", "what is in the bright area (optional)");
-            line("deliverAiPromptShadow", "ai_prompt_shadow", "Shadow prompt", "what is in the dark area (optional)");
-            {   // RUDRA 1.1: suggest a prompt from the frame's clipped areas, or pick a preset
-                auto* sg = new QPushButton("Suggest a prompt\u2026", box);
-                sg->setObjectName("deliverAiSuggest");
-                sg->setToolTip("Suggests a prompt for this shot: a small captioning model (Florence-2, about 0.5 GB, "
-                               "downloaded once) describes the frame and its bright area, and \"From this shot\" says "
-                               "what is there (a hazy sky through a door, a lamp, a window). The presets follow, picked "
-                               "from the clipped areas' size, place, shape and colour. A preset marked ready needs no "
-                               "text model when the fill starts");
-                connect(sg, &QPushButton::clicked, this, [this] { suggest_genfill_prompt(); });
-                bv->addWidget(sg);
-            }
-            // 12 Nov 2026: the thresholds and the tuning controls fold away behind "Advanced" (the card was
-            // a wall of fields, taller than the panel). Whether it is open is remembered.
-            QWidget* const ai_box = box;
-            QVBoxLayout* const ai_bv = bv;
-            {
-                auto* fold = new QPushButton(box);
-                fold->setObjectName("deliverAiAdvanced");
-                fold->setCheckable(true);
-                fold->setFixedHeight(26);
-                fold->setToolTip("Thresholds, seed, steps, brightness, strengths, detail and the flicker fallback");
-                auto* adv = new QWidget(box);
-                adv->setObjectName("deliverAiAdvancedBox");
-                auto* av = column(adv, 0, 2);
-                const bool open = QSettings().value("deliver/aiAdvancedOpen", false).toBool();
-                fold->setChecked(open);
-                fold->setText(open ? QStringLiteral("Advanced \u25BE") : QStringLiteral("Advanced \u25B8"));
-                adv->setVisible(open);
-                connect(fold, &QPushButton::toggled, this, [fold, adv](bool on) {
-                    adv->setVisible(on);
-                    fold->setText(on ? QStringLiteral("Advanced \u25BE") : QStringLiteral("Advanced \u25B8"));
-                    QSettings().setValue("deliver/aiAdvancedOpen", on);
-                });
-                bv->addWidget(fold);
-                bv->addWidget(adv);
-                box = adv;
-                bv = av;
-            }
-            spin("deliverAiTauHigh", "ai_tau_high", 128, 256, {},
-                 "Highlight threshold (8-bit code)|The model sees codes at or above it; it fills only the fully "
-                 "clipped areas among them (code 255). 256 fills no highlights. \"Where it fills\" shows both");
-            spin("deliverAiTauLow", "ai_tau_low", -1, 64, "off",
-                 "Shadow threshold (8-bit code)|Codes at or below it are filled; off fills no shadows");
-            spin("deliverAiSeed", "ai_seed", 0, 999999, {}, "Seed|Another seed gives another plausible fill");
-            spin("deliverAiSteps", "ai_steps", 1, 100, {}, "Steps|Denoising steps: more is slower, often cleaner (30)");
-            {   // v3 (30 Oct 2026): the AI draws the shape; how bright it is comes from RUDRA's estimate plus this
-                auto* r = new QWidget(box);
-                auto* rcol = column(r, 0, 2);
-                rcol->addWidget(label("Highlight brightness (stops)", {}, "note", r));
-                auto* bs = new QDoubleSpinBox(r);
-                bs->setObjectName("deliverAiBrightness");
-                bs->setRange(-3.0, 3.0);
-                bs->setSingleStep(0.25);
-                bs->setDecimals(2);
-                bs->setSuffix(" stops");
-                bs->setToolTip("How much brighter (or darker) than RUDRA's estimate the filled highlights are. "
-                               "0 = the estimate. The AI draws the shape inside a clipped area; its brightness is yours to set");
-                connect(bs, &QDoubleSpinBox::valueChanged, this, [this](double v) { set_deliver("ai_brightness", QString::number(v, 'g', 6)); });
-                rcol->addWidget(bs);
-                bv->addWidget(r);
-            }
-            // RUDRA 1.1 (5 Nov 2026): prompt strength and detail strength, 0 to 2, 1 = AI fill v3 as gated.
-            auto dspin = [&](const char* id, const QString& key, const QString& head, const QString& tip) {
-                auto* r = new QWidget(box);
-                auto* rcol = column(r, 0, 2);
-                rcol->addWidget(label(head, {}, "note", r));
-                auto* ds = new QDoubleSpinBox(r);
-                ds->setObjectName(id);
-                ds->setRange(0.0, 2.0);
-                ds->setSingleStep(0.1);
-                ds->setDecimals(2);
-                ds->setValue(1.0);
-                ds->setToolTip(tip);
-                connect(ds, &QDoubleSpinBox::valueChanged, this, [this, key](double v) { set_deliver(key, QString::number(v, 'g', 6)); });
-                rcol->addWidget(ds);
-                bv->addWidget(r);
-            };
-            dspin("deliverAiPromptStrength", "ai_prompt_strength", "Prompt strength",
-                  "How strongly the highlight and shadow prompts steer their regions. 1 = as AI fill v3 was "
-                  "tested; 0 ignores the prompts; above 1 is experimental. No effect without a prompt");
-            dspin("deliverAiShapeGain", "ai_shape_gain", "Detail strength",
-                  "How much the drawn shape varies the brightness inside a filled area. 1 = as tested; "
-                  "0 = a flat fill at the estimated brightness");
-            {   // 7 Nov 2026: the model's pixels spent on the clipped area, not the whole frame
-                auto* fo = new CheckRow("deliverAiFocus", "More detail in the filled area", "deliverAiFocusHint",
-                                        "draws only around it", box);
-                fo->setToolTip("The fill model works at about 832 x 480. On, it sees only boxes around the shot's "
-                               "clipped areas (one per group of areas, the same for every frame), each drawn at up "
-                               "to that size: a lamp or a window in a 4K frame at full resolution, a sky in a door "
-                               "at about twice the detail. Each box is one more model run, so it takes longer. "
-                               "Small specks far from the main areas keep the master. Off = AI fill v3 as tested "
-                               "(the whole frame)");
-                fo->clicked = [this] { set_deliver("ai_focus", deliver_.ai.focus_region ? "0" : "1"); };
-                bv->addWidget(fo);
-            }
-            {   // RUDRA 1.1 priority 5: the fallback when the fill flickers
-                auto* fb = new CheckRow("deliverAiFallback", "Drop flickering fill frames", "deliverAiFallbackHint",
-                                        "keep the master there", box);
-                fb->setToolTip("A frame whose fill jumps by more than a quarter stop into it AND out of it (a "
-                               "one-frame flicker) is written as the master's own frame. A fill that starts or ends "
-                               "is kept. Every dropped frame is listed in genfill.json (fell_back)");
-                fb->clicked = [this] { set_deliver("ai_fallback", deliver_.ai.fallback ? "0" : "1"); };
-                bv->addWidget(fb);
-            }
-            box = ai_box;   // the fold ends: what follows is always shown
-            bv = ai_bv;
-            {
-                auto* rn = label("Fills only inside the luminance region set on the Reconstruct card.",
-                                 "deliverAiRegion", "small", box);
-                rn->setWordWrap(true);
-                rn->hide();
-                bv->addWidget(rn);
-            }
-            auto* setup = label("", "deliverAiSetup", "small", box);
-            setup->setWordWrap(true);
-            bv->addWidget(setup);
-            {   // Where the model is, and the last fill's review before it goes to a client (28 Oct 2026 review).
-                auto* row = new QWidget(box);
-                auto* rh = new QHBoxLayout(row);
-                rh->setContentsMargins(0, 4, 0, 0);
-                auto* su = new QPushButton("Setup…", row);
-                su->setObjectName("deliverAiSetupButton");
-                su->setToolTip("Where the Python, the repository, Wan2.1-VACE and the RUDRA LoRA are; checks them");
-                connect(su, &QPushButton::clicked, this, [this] { GenFillSetupDialog(this).exec(); sync_deliver(); });
-                auto* review = new QPushButton("Review fill…", row);
-                review->setObjectName("deliverAiReview");
-                review->setToolTip("Page through the last AI fill (or one you pick): A master, B fill, the invented pixels, "
-                               "and the frames where the fill flickers");
-                connect(review, &QPushButton::clicked, this, [this] { review_genfill(); });
-                rh->addWidget(su);
-                rh->addWidget(review);
-                rh->addStretch(1);
-                bv->addWidget(row);
-            }
-            {   // 1.2.6 (18 Nov 2026, user feedback on 09V.mp4): on this frame, how much the fill changes and
-                // how much its model only sees, and the viewer's picture of both (MainWindow::sync_ai_frame_info).
-                auto* info = label("", "deliverAiFrameInfo", "small", box);
-                info->setWordWrap(true);
-                info->hide();
-                bv->addWidget(info);
-                auto* row = new QWidget(box);
-                auto* rh = new QHBoxLayout(row);
-                rh->setContentsMargins(0, 2, 0, 0);
-                auto* where = new QPushButton("Where it fills", row);
-                where->setObjectName("deliverAiShowRegion");
-                where->setCheckable(true);
-                where->setToolTip("Shows on the viewer where the AI fill acts on this frame: solid orange it changes "
-                                  "(v3: fully clipped areas; v4.3: the near-white bright region), tinted it leaves "
-                                  "as it is. Click again for the picture");
-                connect(where, &QPushButton::toggled, this, [this](bool on) { set_ai_region_view(on); });
-                rh->addWidget(where);
-                rh->addStretch(1);
-                bv->addWidget(row);
-            }
-            {   // Before the whole shot (4 Nov 2026): the frames around the playhead, filled and shown in the viewer.
-                auto* row = new QWidget(box);
-                auto* rh = new QHBoxLayout(row);
-                rh->setContentsMargins(0, 4, 0, 0);
-                auto* pv = new QPushButton("Preview AI fill", row);
-                pv->setObjectName("deliverAiPreview");
-                pv->setToolTip("Fills the frame at the playhead with these settings and shows it here; the render "
-                               "then fills the whole shot. The fill model stays loaded, so the next preview is quicker");
-                connect(pv, &QPushButton::clicked, this, [this] { preview_genfill(); });
-                rh->addWidget(pv, 1);
-                bv->addWidget(row);
-                // 12 Nov 2026: four buttons in one row were cut off ("iew A", "/laste"). The views are a row of three.
-                row = new QWidget(box);
-                rh = new QHBoxLayout(row);
-                rh->setContentsMargins(0, 2, 0, 0);
-                rh->setSpacing(4);
-                for (auto [id, text, which, tip] :
-                     {std::tuple{"deliverAiShowFill", "Fill", "fill", "The previewed frame with the AI fill"},
-                      std::tuple{"deliverAiShowMaster", "Master", "master", "The same frame without it"},
-                      std::tuple{"deliverAiShowMask", "Invented", "mask", "White where the AI fill invented the pixels"}}) {
-                    auto* b = new QPushButton(QString::fromUtf8(text), row);
-                    b->setObjectName(id);
-                    b->setCheckable(true);
-                    b->setToolTip(QString::fromUtf8(tip));
-                    const QString w = QString::fromUtf8(which);
-                    connect(b, &QPushButton::clicked, this, [this, w] { show_genfill_preview(w); });
-                    rh->addWidget(b, 1);
-                }
-                bv->addWidget(row);
-                auto* ps = label("", "deliverAiPreviewStatus", "small", box);
-                ps->setWordWrap(true);
-                bv->addWidget(ps);
-                // 1.2.6 (user request): how far the AI fill is, preview or render (MainWindow::set_ai_progress)
-                auto* bar = new QProgressBar(box);
-                bar->setObjectName("deliverAiProgress");
-                bar->setRange(0, 1000);
-                bar->setTextVisible(true);
-                bar->setFixedHeight(16);
-                bar->hide();
-                bv->addWidget(bar);
-            }
-            {   // 1.2.6 (user feedback: the card read as a wall): first whether the fill is set up
-                // (and Setup…), then the prompt, then Preview; the tuning folds away last.
-                auto* status = box->findChild<QWidget*>("deliverAiSetup");
-                auto* setup_row = box->findChild<QWidget*>("deliverAiSetupButton");
-                setup_row = setup_row ? setup_row->parentWidget() : nullptr;
-                int at = 0;
-                for (QWidget* w : {status, setup_row})
-                    if (w) {
-                        bv->removeWidget(w);
-                        bv->insertWidget(at++, w);
-                    }
-                for (const char* id : {"deliverAiAdvanced", "deliverAiAdvancedBox"})
-                    if (auto* w = box->findChild<QWidget*>(id)) {
-                        bv->removeWidget(w);
-                        bv->addWidget(w);
-                    }
-                // 1.2.6: one prompt in sight; the shadow prompt is the first of the Advanced settings
-                if (auto* adv = box->findChild<QWidget*>("deliverAiAdvancedBox")) {
-                    auto* av = static_cast<QVBoxLayout*>(adv->layout());
-                    int k = 0;
-                    for (const char* id : {"deliverAiPromptShadowLabel", "deliverAiPromptShadow"})
-                        if (auto* w = box->findChild<QWidget*>(id)) {
-                            bv->removeWidget(w);
-                            w->setParent(adv);
-                            av->insertWidget(k++, w);
-                        }
-                }
-            }
-            kcv->addWidget(box);
-        }
         fcv_outer->addWidget(kc);
     }
     auto [ocard, ocv] = card(del, 12, 10);

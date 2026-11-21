@@ -193,6 +193,7 @@ void MainWindow::sync_simple() {
     // guaranteed path, 29 Oct 2026) the analytic reconstruction's Exposure, Strength and Peak.
     const bool routed_now = aces_routed();
     vis("recAnalytic", !simple || !routed_now);
+    vis("reconAiCard", !simple);   // 21 Nov 2026: AI generation is Full's, as the AI fill card in Deliver was
     for (const char* id : {"recSourceTitle", "recSourceCard"}) vis(id, !simple);
     if (mode_seg_) mode_seg_->setVisible(!simple);
     if (preserve_) preserve_->setVisible(!simple);
@@ -328,7 +329,7 @@ void MainWindow::fill_empty_recent() {
 QString MainWindow::deliver_preset() const {
     if (deliver_custom_) return QStringLiteral("custom");
     const DeliverChoice& c = deliver_;
-    if (c.ai_fill) return QStringLiteral("custom");
+    if (c.ai_fill && ai_generation_) return QStringLiteral("custom");
     // The grading master is the learned one when the model runs, the analytic EXR (32-bit, ACES 2065-1) otherwise.
     if ((c.output == "still" || c.output == "sequence") && (c.image == "exr16" || c.image == "exr32") && c.gamut == "ap0" &&
         (c.source == "aces" || c.source == "analytic"))

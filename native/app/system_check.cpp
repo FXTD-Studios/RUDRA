@@ -589,7 +589,7 @@ void SystemCheckDialog::build_parts() {
               installed ? QStringLiteral("ok") : !err.isEmpty() ? QStringLiteral("warn") : QString(), m.id);
     }
 
-    // 2. AI fill's base model and its Python: the setup that already exists (Deliver > AI fill > Setup…).
+    // 2. AI fill's base model and its Python: the setup that already exists (Reconstruct > AI generation > Setup…).
     {
         QString why;
         const auto s = genfill_setup(&why);

@@ -7,7 +7,7 @@
 //
 // Where things are (QSettings, else the first that exists of: <app>/models/genfill,
 // <repo>/models/genfill, $RUDRA_GENFILL_DIR, then the training workstation's folders;
-// Deliver > AI fill > Setup… sets and checks them, 28 Oct 2026 review):
+// Reconstruct > AI generation > Setup… (Deliver > AI fill until 21 Nov 2026) sets and checks them, 28 Oct 2026 review):
 //   genfill/python   the Python with torch, diffusers, peft, OpenEXR, OCIO  (<repo>/.venv/Scripts/python.exe)
 //   genfill/repo     the RUDRA repository (rudra/genfill/run.py)            (found beside the app, upwards)
 //   genfill/base     Wan2.1-VACE-1.3B-diffusers                              (<root>/Wan2.1-VACE-1.3B-diffusers)

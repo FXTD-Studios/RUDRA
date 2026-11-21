@@ -141,6 +141,7 @@ void CheckRow::paintEvent(QPaintEvent*) {
     QPainter p(this);
     style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
     p.setRenderHint(QPainter::Antialiasing);
+    if (!isEnabled()) p.setOpacity(0.35);   // 1.2.8: a switch that cannot be used looks it (Deliver's AI fill)
     // A 38 x 22 switch: the accent when on, the raised grey when off; a white knob.
     const QRectF track(width() - 40.0, height() / 2.0 - 11.0, 38.0, 22.0);
     p.setPen(Qt::NoPen);
