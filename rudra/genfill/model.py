@@ -259,8 +259,15 @@ class WanFill:
 
     @torch.no_grad()
     def denoise(self, ctx: torch.Tensor, s: FillSettings, region_masks: dict | None = None,
-                progress=None) -> torch.Tensor:
-        """ctx (1, 96, f, h, w) -> normalised latents (1, 16, f, h, w)."""
+                progress=None, known: torch.Tensor | None = None, pin: float = 0.0) -> torch.Tensor:
+        """ctx (1, 96, f, h, w) -> normalised latents (1, 16, f, h, w).
+
+        known (1.2.9, window continuation): normalised latents (1, 16, k, h, w) for the window's first k
+        latent frames, the previous window's picture of the frames the two share. For the first `pin` share
+        of the steps those frames are not the model's: after every step they are set to `known` noised to
+        the step's level (x_t = (1 - sigma) x0 + sigma noise, the flow schedule, the window's own noise),
+        so the rest of the window is generated to continue them; after that the model finishes them itself
+        (the seam is crossfaded as before). known None or pin 0: exactly the window as before."""
         self._transformer_to_device(True)
         n_layers = len(self.transformer.config.vace_layers)
         scale = torch.full((n_layers,), float(s.conditioning_scale), device=self.device, dtype=self.dtype)
@@ -275,6 +282,19 @@ class WanFill:
                 regions.append((weights[key], self.prompts.get(text)))
         neg = self.prompts.get(s.negative) if s.guidance > 1 else None
         self.scheduler.set_timesteps(s.steps, device=self.device)
+        steps = len(self.scheduler.timesteps)
+        held = 0 if known is None or pin <= 0 else max(1, min(steps, int(round(float(pin) * steps))))
+        if held:
+            k = int(known.shape[2])
+            if k > shape[2] or tuple(known.shape[3:]) != tuple(shape[3:]):
+                raise ValueError(f'known latents {tuple(known.shape)} do not fit the window {shape}')
+            x0 = known.to(self.device, torch.float32)
+            noise = x.clone()
+            sig = self.scheduler.sigmas.to(self.device, torch.float32)
+
+            def hold(level):
+                x[:, :, :k] = (1 - level) * x0 + level * noise[:, :, :k]
+            hold(sig[0])
         for i, t in enumerate(self.scheduler.timesteps):
             eps = self._predict(x, t, base, ctx, scale)
             for w, e in regions:
@@ -286,6 +306,8 @@ class WanFill:
                 un = self._predict(x, t, neg, ctx, scale)
                 eps = un + s.guidance * (eps - un)
             x = self.scheduler.step(eps, t, x, return_dict=False)[0]
+            if i < held:
+                hold(sig[i + 1])
             if progress:
                 progress(i + 1, len(self.scheduler.timesteps))
         return x

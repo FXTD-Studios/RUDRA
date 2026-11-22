@@ -6604,6 +6604,16 @@ TEST(AppAbout, TheVersionTheMachineAndTheLinks) {
     EXPECT_EQ(discord->toolTip(), "https://discord.gg/C7aTNFhJeP");
     EXPECT_TRUE(discord->text().startsWith("Join our Discord"));
     EXPECT_TRUE(w.sheet()->findChild<QLabel*>("aboutCopyright")->text().contains("Apache License 2.0"));
+    // 1.2.9: no link's text is cut off (the Licences line ended "third part" in 1.2.8). The style's
+    // padding is 12 px a side.
+    w.sheet()->show();
+    QApplication::processEvents();
+    for (auto* b : w.sheet()->findChildren<QPushButton*>()) {
+        if (b->property("role").toString() != "about-link") continue;
+        const QFontMetrics fm(b->font());
+        for (const QString& line : b->text().split('\n'))
+            EXPECT_LE(fm.horizontalAdvance(line) + 24, b->width()) << b->objectName().toStdString() << ": " << line.toStdString();
+    }
     w.sheet()->findChild<QPushButton*>("aboutCopy")->click();
     EXPECT_EQ(last_log(w), "About details copied");
     w.sheet()->findChild<QPushButton*>("aboutClose")->click();
@@ -6783,6 +6793,8 @@ TEST(GenFill, RegionRerenderIsOptInAndRunsAsTested) {
     EXPECT_TRUE(a.contains("--rerender-independent"));   // 15 Nov 2026: as the v4.3 checks ran
     EXPECT_EQ(after("--rerender-calm"), "0.9");
     EXPECT_FALSE(a.contains("--rerender-align"));   // 1.2.8: tried on 09V, moved the horizon more than it saved
+    EXPECT_TRUE(a.contains("--rerender-full-last"));   // 1.2.9: no short last window padded with copies (09V lamp, horizon)
+    EXPECT_FALSE(a.contains("--rerender-follow"));     // 1.2.9: kept for the v5 checks, not the app's
     EXPECT_FALSE(a.contains("--rerender-still"));     // 12 Nov 2026: tried on water, cost 09V its structure: off
     EXPECT_FALSE(a.contains("--source-start"));
     EXPECT_FALSE(a.contains("--brightness-offset"));

@@ -1,0 +1,21 @@
+{
+ "id": "research_genfill_v5_data_20261122",
+ "written": "2026-11-22, after the 1.2.8 release and the 09V end-to-end QC of 21-22 Nov; before any v5 material was collected, any v5 clip built or any v5 output seen.",
+ "author": "FXTD Studios Research; requested by Ahmed (22 Nov 2026: 'collect free materials and add to training')",
+ "parents": [
+  "research_genfill_v4_2_20261114 (the shipped v4.2 LoRA and its clip recipe v4_2)"
+ ],
+ "scope": "Training material and the clip recipe only. No LoRA is trained under this registration; v5 training gets its own registration once the clips are built and reviewed.",
+ "problem": "On 09V (1.2.8, 21-22 Nov) the fill is weakest where the clipped area meets something the training set rarely shows sharply: the practical lamp (a flat disc in the master; with the fill a blotchy, pumping highlight with a hard edge), the antenna and other thin things against the clipped sky (ghost trails fixed at render time in 1.2.8, but the model's own edge is soft and inconsistent), the cargo door's opening onto the sky and sea, and sun glare. The v4_2 clips come from 2k panoramas (about 6 px a degree where the clips want about 15: thin things are lost) and from plates, every clip edge a hard step with the exposure placed in whole stops.",
+ "change": {
+  "material": "tools/collect_genfill_v5.py: CC0 HDR panoramas from Poly Haven and ambientCG at 4k, sorted by their own tags, categories and attributes into six themes (thin things against the sky, doors and openings, practical lights, windows, sun, pure skies), taken theme by theme within a disk budget (default 30 GB), every file with its sha256, licence, source URLs and the API record as fetched; panoramas the run05 registry holds out are never fetched. tools/blender/genfill_v5_scenes.py: authored Blender scenes (procedural geometry only) lit by those skies: thin (antennas, cables, railings, fences, bare branches 0.3-6 px wide), door (a dark bay opening onto sky and sea, figures, a floor grating), window (glazing bars, blinds), practical (bulbs, shades, tubes, panels, neon), glare (the sun in frame, only skies whose sun is not clipped), each with a moving or locked-off camera, depth of field on a quarter and motion blur on a third.",
+  "recipe_v5": "tools/build_genfill_clips.py --recipe v5: v4_2's mix and its still share, plus the panoramas above (a 4k file replaces the scene's 2k job; 6 clips each), the Blender sequences (3 clips each, a fixed crop, sometimes reversed), 'sky' views aimed up into the bright sky for thin and sun themes, lens optics on the truth before its SDR is made (defocus 20 %, motion blur 20 %, veiling glare 35 %, 60 % on sun/glare/practical themes; energy kept) and the exposure placed to a quarter stop. Recipes v1-v4_2 are unchanged."
+ },
+ "licence": "CC0 panoramas and authored geometry only: the clip store's commercial_clean must be true (the build stops otherwise).",
+ "seed": 20261122,
+ "outputs": {
+  "material": "G:/datasets/sources/genfill_v5 (manifest.jsonl, receipts/, polyhaven/, ambientcg/, blender/)",
+  "clips": "G:/datasets/corpora/research_genfill_clips_v5_20261122"
+ },
+ "review_before_training": "The builder's preview clips and summary (by theme, by kind, optics counts) are looked at before a v5 training run is registered."
+}

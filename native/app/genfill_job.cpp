@@ -220,9 +220,15 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
                       "--rerender-dip", "0.3",
                       // 15 Nov 2026, as the v4.3 checks ran: windows from the source alone, and a jump
                       // on still pixels held (the model's detail flickering inside moving highlights)
-                      "--rerender-independent", "--rerender-calm", "0.9", "--json"};
+                      "--rerender-independent", "--rerender-calm", "0.9",
+                      // 1.2.9: the last window a whole window, not a short one padded with copies of the
+                      // shot's last frame (09V, 22 Nov 2026: the lamp's peak rose 1.4 stops and the horizon
+                      // stepped 2.2 px from frame 82; with it 0.5 stops and 0.5 px, the gates unchanged)
+                      "--rerender-full-last", "--json"};
         // Not --rerender-align (1.2.8): lining each window up with the one before it, tried on 09V on the
         // GPU (21 Nov 2026), followed the clouds, not the sea, and moved the horizon more than it saved.
+        // Not --rerender-follow (1.2.9): each window continuing the one before steadied the lamp a little
+        // more on 09V and moved the horizon a little more; kept for the v5 checks.
         if (o.source_start > 0) a << "--source-start" << QString::number(o.source_start);
         if (o.rerender_keep_detail) a << "--rerender-keep-detail";   // 1.2.7
         // The highlight prompt is sent when there is one (12 Nov 2026): the 09V reference

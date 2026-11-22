@@ -51,6 +51,18 @@ window drew its own horizon ~3.9 px higher and the crossfade slid one into the o
 stood still. Tried on the GPU (21 Nov 2026): the shift follows the clouds, not the sea, and over the shot
 it moved the horizon more than it saved (frames 0-74: 1.7 -> 3.4 px; 75-96: 3.9 -> 2.5 px). Off by
 default and off in the app; kept for the experiments that follow (a longer overlap, the sea band alone).
+--rerender-follow <0..1> (1.2.9, 22 Nov 2026): with --rerender-independent, each window continues the one
+before it. The frames the two share are the previous window's picture (VAE-encoded, the whole latent
+frames the overlap covers: 1 + (overlap - 1) // 4 of them) and for this share of the steps they are held
+there, noised to each step's level (model.denoise known/pin), so the rest of the window is drawn to follow
+them: the same horizon, the same clouds, the same lamp. The model finishes the shared frames itself after
+that and the seam is crossfaded as before. 09V 1.2.8: the sky changes character and the horizon steps at
+the joins (frames 25, 50, 75), the lamp pumps in the last window. Off by default (0). On the GPU (22 Nov
+2026, 09V): with the 8-frame overlap only 5 frames are held and the joins barely moved (horizon range 4.4 ->
+3.9 px; the worst join, at frame 83, horizon 2.18 -> 2.04 px, lamp p99 0.40 -> 0.39 stops).
+--rerender-full-last (1.2.9, 22 Nov 2026): the last window is a whole window started earlier (09V: 64-96,
+not 75-96 padded with 3 copies of frame 96), so it shares 19 frames with the one before; with
+--rerender-follow 17 of them are held. The worst join of 09V 1.2.8 is the one into that short window.
 """
 from __future__ import annotations
 
@@ -88,6 +100,8 @@ class Rerender:
     calm: float = 0.0      # > 0: the share of the previous frame kept where the source holds still and the fill would jump (finish_rerender)
     keep_detail: bool = False   # 1.2.7: thin, broken-up and small parts of the region keep the master (composite.detail_keep_weight)
     align: bool = False    # 1.2.8: with independent windows, each one lined up with the previous (window_alignment); tried, off in the app
+    follow: float = 0.0    # 1.2.9: > 0, with independent windows, each continues the previous over the frames they share (model.denoise known/pin): the share of the steps held
+    full_last: bool = False   # 1.2.9: the last window a whole window, sharing more frames with the previous (plan_windows full_last)
     CONDITIONS = ('bt1886', 'aces')
 
 
@@ -206,9 +220,12 @@ def write_frame(path: Path, fr: dict, out_ap1: np.ndarray, alpha: np.ndarray, at
 
 
 # ------------------------------------------------------------------------------ planning
-def plan_windows(n: int, window: int, overlap: int) -> list[tuple[int, int, int]]:
+def plan_windows(n: int, window: int, overlap: int, full_last: bool = False) -> list[tuple[int, int, int]]:
     """Frames 0..n-1 -> [(start, first_new, end)]: the window reads [start, end), writes
-    [first_new, end). Every frame is written once; windows are at most `window` frames."""
+    [first_new, end). Every frame is written once; windows are at most `window` frames.
+    full_last (1.2.9): the last window is a whole window, started earlier (n - window) so it shares more
+    frames with the one before, instead of a short window padded with copies of the shot's last frame
+    (09V, 97 frames: 75-96, 22 frames padded to 25; the worst join of the shot, at frame 83)."""
     if window < 1 or (window - 1) % 4:
         raise ValueError('window must be 4k+1')
     if not 0 <= overlap < window:
@@ -216,6 +233,8 @@ def plan_windows(n: int, window: int, overlap: int) -> list[tuple[int, int, int]
     out, written = [], 0
     while written < n:
         start = max(0, written - overlap) if written else 0
+        if full_last and written and start + window > n:
+            start = max(0, min(start, n - window))
         end = min(n, start + window)
         out.append((start, written, end))
         written = end
@@ -387,6 +406,29 @@ def window_alignment(prev: list, new: list, regions: list) -> tuple[np.ndarray |
     return np.array([[1.0, 0.0, tx], [0.0, 1.0, ty]], np.float32), {'aligned': True, **rep}
 
 
+def follow_frames(carry: dict, start: int, new: int, lane: int) -> int:
+    """1.2.9: how many of a window's first frames the previous window drew (held in carry for the
+    crossfade), counted from the window's start, as whole latent frames of the VAE (frame 0 alone, then
+    groups of 4): 0, 1, 5, 9, 13, ... An overlap of 8 gives 5 (latent frames 0-1); 16 gives 13."""
+    m = 0
+    while start + m < new and lane in carry.get(start + m, {}):
+        m += 1
+    return 0 if m == 0 else 1 + 4 * ((m - 1) // 4)
+
+
+def follow_latents(model, carry: dict, start: int, new: int, lane: int):
+    """1.2.9: the previous window's picture of this window's first frames, as the model's normalised
+    latents (1, 16, k, h, w) for model.denoise(known=...); None when the two windows share no frame.
+    The VAE is causal: latent frame j depends on pixel frames up to 4j alone, so encoding just these
+    frames gives the window's first k latent frames exactly."""
+    import torch
+    n = follow_frames(carry, start, new, lane)
+    if n == 0:
+        return None
+    vid = np.stack([carry[start + j][lane] for j in range(n)]).astype(np.float32)
+    return model.encode_pixels(torch.from_numpy(vid).permute(3, 0, 1, 2)[None])
+
+
 def align_frames(frames: np.ndarray, warp: np.ndarray) -> np.ndarray:
     """(n, h, w, 3) -> the same, each frame moved by window_alignment's warp."""
     import cv2
@@ -538,6 +580,8 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
             raise ValueError(f'hue must be one of {", ".join(RERENDER_HUES)}')
         if rerender.level < 0 or not 0.0 <= rerender.smooth < 1.0 or not 0.0 <= rerender.colour <= 1.0:
             raise ValueError('level must be >= 0, smooth in [0, 1) and colour in [0, 1]')
+        if not (math.isfinite(rerender.follow) and 0.0 <= rerender.follow <= 1.0):
+            raise ValueError('follow must be in [0, 1]')
     finish_state: dict = {}                          # v4 finish: the previous frame's fill
     finish_white = 1.0
     if rerender is not None and rerender.level > 0:  # the shot's SDR white: up to 9 frames along it
@@ -579,7 +623,7 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
         lanes.append({'box': b, 'crop': (slice(b[0], b[1]), slice(b[2], b[3])), 'h': lh, 'w': lw, 'gen_work': {}})
     y0, y1, x0, x1 = lanes[0]['box']
     h, w = lanes[0]['h'], lanes[0]['w']
-    plan = plan_windows(len(frames), window, overlap)
+    plan = plan_windows(len(frames), window, overlap, full_last=bool(rerender is not None and rerender.full_last))
     tmask = TemporalMask(ms)
     prev_b = None
     masks: dict[int, tuple[np.ndarray, np.ndarray]] = {}
@@ -691,8 +735,16 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                 # one bar per window: every lane's steps in turn
                 emit(event='progress', window=wi + 1, windows=len(plan), step=li * b + a, steps=b * len(lanes))
             ctx = model.context(video, mt)
+            known, pin = None, 0.0
+            if indep and rerender.follow > 0 and carry:  # 1.2.9: continue the previous window
+                known = follow_latents(model, carry, start, new, li)
+                if known is not None:
+                    pin = float(rerender.follow)
+                    stats.setdefault('window_follow', []).append({'window': wi + 1, 'lane': li, 'latent_frames': int(known.shape[2]),
+                                                                  'pixel_frames': 1 + 4 * (int(known.shape[2]) - 1), 'pin': pin})
             try:
-                z = model.denoise(ctx, s, regions, progress=step)
+                z = (model.denoise(ctx, s, regions, progress=step, known=known, pin=pin) if known is not None
+                     else model.denoise(ctx, s, regions, progress=step))
             except Stopped:
                 stats['cancelled'] = True
                 break
@@ -721,7 +773,7 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                     t = np.float32((i - start + 1) / float(new - start + 1))
                     for li, c in carry.pop(i).items():
                         dk[li] = c if li not in dk else ((1.0 - t) * c + t * dk[li]).astype(np.float32)
-                if wi < len(plan) - 1 and i >= end - overlap:
+                if wi < len(plan) - 1 and i >= plan[wi + 1][0]:   # the next window shares it (full_last: from its start)
                     carry[i] = dk                        # the next window shares it: written then
                     continue
             need = bool(dk)
@@ -789,7 +841,7 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
             pending = entry
         for L in lanes:                                  # keep only what the next window reads
             for i in list(L['gen_work']):
-                if i < end - overlap:
+                if i < (plan[wi + 1][0] if wi < len(plan) - 1 else end - overlap):
                     del L['gen_work'][i]
         for i in list(masks):
             if i < start:
@@ -1003,7 +1055,9 @@ def serve(model, view, a, emit, FillSettings) -> int:
                                                 float(r.get('rerender_rise', a.rerender_rise)),
                                                 float(r.get('rerender_calm', a.rerender_calm)),
                                                 bool(r.get('rerender_keep_detail', a.rerender_keep_detail)),
-                                                bool(r.get('rerender_align', a.rerender_align)))
+                                                bool(r.get('rerender_align', a.rerender_align)),
+                                                float(r.get('rerender_follow', a.rerender_follow)),
+                                                bool(r.get('rerender_full_last', a.rerender_full_last)))
                               if r.get('region_rerender', a.region_rerender) and r.get('source', a.source) else None)
             tagged(event='done', ok=True, out=str(out), **rep['stats'])
         except Exception as e:  # noqa: BLE001 - one failed request does not end the server
@@ -1094,6 +1148,12 @@ def main(argv=None):
     ap.add_argument('--rerender-align', action='store_true',
                     help="with --rerender-independent (1.2.8): line each window up with the previous one (a shift measured "
                          "on the frames they share) before the crossfade, so a horizon does not slide")
+    ap.add_argument('--rerender-follow', type=float, default=0.0,
+                    help="with --rerender-independent (1.2.9): each window continues the previous one over the frames "
+                         "they share, held for this share of the steps (0..1; 0 off). Try 0.5-0.7")
+    ap.add_argument('--rerender-full-last', action='store_true',
+                    help="with --region-rerender (1.2.9): the last window is a whole window started earlier, sharing more "
+                         "frames with the one before, not a short window padded with copies of the last frame")
     a = ap.parse_args(argv)
     if not a.serve and (not a.master or not a.out):
         ap.error('--master and --out are required (or --serve)')
@@ -1135,7 +1195,8 @@ def main(argv=None):
                           fallback=a.fallback, focus=a.focus,
                           rerender=Rerender(a.source, a.condition, a.rerender_hue, a.rerender_colour, a.rerender_level, a.rerender_smooth,
                                             a.source_start, a.rerender_dip, a.rerender_still, a.rerender_independent,
-                                            a.rerender_rise, a.rerender_calm, a.rerender_keep_detail, a.rerender_align)
+                                            a.rerender_rise, a.rerender_calm, a.rerender_keep_detail, a.rerender_align,
+                                            a.rerender_follow, a.rerender_full_last)
                           if a.region_rerender else None)
         emit(event='done', ok=True, out=str(out), memory=memory_report(device) | {'mode': model.memory_mode},
              **rep['stats'])
