@@ -577,6 +577,7 @@ void MainWindow::preview_genfill() {
                 fill.insert("rerender_dip", 0.3);   // as genfill_arguments
                 fill.insert("rerender_independent", true);
                 fill.insert("rerender_calm", 0.9);
+                fill.insert("rerender_full_last", true);   // 1.2.9, as genfill_arguments
                 if (options.rerender_keep_detail) fill.insert("rerender_keep_detail", true);   // 1.2.7
                 fill.insert("brightness_offset", 0.0);
                 fill.insert("shape_gain", 1.0);

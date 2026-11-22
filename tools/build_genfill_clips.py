@@ -23,6 +23,17 @@ Two stages, one command:
           z0 (16 ch), context (inactive 16 + reactive 16 ch); the mask is kept as packed bits
           (its 64-channel latent form is rebuilt in training). Prompt embeddings of the base
           prompt are made once and stored in prompt_cache/.
+v5 (22 Nov 2026, --recipe v5): v4_2 plus the material collected for what the fill got wrong on 09V and
+testwindow, and more varied clip edges:
+  --v5-hdris   CC0 panoramas sorted by theme (tools/collect_genfill_v5.py: practical lights, windows,
+               doors and openings, sun, thin things against the sky), 4k: they replace a scene's 2k file
+  --v5-scenes  authored Blender scenes lit by those skies (tools/blender/genfill_v5_scenes.py: antennas,
+               cables, railings, branches, cargo-bay doors, windows with glazing bars, lamps, the sun in
+               frame), rendered sequences with their own camera moves
+  optics       on the truth, before its SDR is made (so the two agree, as in a camera): defocus, motion
+               blur and veiling glare round the brightest sources, each on a share of the clips, and the
+               exposure placed to a quarter stop (v5_optics); what was done is in the clip's meta
+  'sky' clips  equirect views aimed up into the bright sky (thin things across it), for thin/sun themes
 Output: shards (z0, ctx fp16; mask bits), clips.jsonl, summary.json, a few preview clips
 (sdr/truth .npy) for review. --render-only writes the rendered clips as .npz (no VAE).
 """
@@ -38,6 +49,9 @@ SOURCES = 'G:/datasets/corpora/rudra_run05_sources_20261022/sources.jsonl'
 POLYHAVEN = 'G:/datasets/sources/polyhaven'
 FRESH = 'G:/rudra_training/research_release_candidate_20261026/fresh_fxtd_grade_v2_20261026/report.json'
 COMMERCIAL = ('CC0', 'FXTD Studios own footage', 'CC0 sources and authored geometry; source receipts retained')
+V5_HDRIS = 'G:/datasets/sources/genfill_v5/manifest.jsonl'
+V5_SCENES = 'G:/datasets/sources/genfill_v5/blender/manifest.jsonl'
+V5_AUTHORED = 'CC0 sources and authored geometry; source receipts retained'
 AP1_Y = np.array([.2722287168, .6740817658, .0536895174], np.float32)
 
 
@@ -106,8 +120,13 @@ def brightest_direction(pano):
 
 
 def equirect_path(pano, rng, F, h, w, kind):
-    yaw0, pitch0 = (brightest_direction(pano) if kind == 'highlight'
-                    else (rng.uniform(-math.pi, math.pi), math.radians(rng.uniform(-25, 20))))
+    if kind == 'highlight':
+        yaw0, pitch0 = brightest_direction(pano)
+    elif kind == 'sky':                                        # v5: up into the sky, near its bright side
+        yaw0 = brightest_direction(pano)[0] + math.radians(rng.uniform(-60, 60))
+        pitch0 = math.radians(rng.uniform(5, 35))
+    else:
+        yaw0, pitch0 = rng.uniform(-math.pi, math.pi), math.radians(rng.uniform(-25, 20))
     fov0 = rng.uniform(55, 85)
     if kind == 'highlight':                                    # the source in frame, not centred
         yaw0 += math.radians(rng.uniform(-0.3, 0.3) * fov0)
@@ -147,6 +166,73 @@ def plate_path(plate, rng, F, h, w):
     return np.stack(out)
 
 
+def read_sequence(folder, n):
+    """v5: a rendered scene (tools/blender/genfill_v5_scenes.py): its EXR frames, Linear Rec.709."""
+    files = sorted(Path(folder).glob('f.*.exr'))[:n]
+    return np.stack([read_exr_rgb(f) for f in files]) if len(files) == n else None
+
+
+def sequence_path(seq, rng, F, h, w):
+    """v5: F frames of a rendered sequence at w x h: a fixed crop (80-100 % of the frame, anywhere in
+    it), sometimes played backwards; the camera move is the scene's own."""
+    import cv2
+    n, H, W = seq.shape[:3]
+    t0 = int(rng.integers(0, n - F + 1))
+    frames = seq[t0:t0 + F]
+    if rng.uniform() < 0.3:
+        frames = frames[::-1]
+    s = rng.uniform(0.8, 1.0)
+    cw = min(W, H * w / h) * s
+    ch = cw * h / w
+    x0, y0 = rng.uniform(0, W - cw), rng.uniform(0, H - ch)
+    out = [cv2.resize(f[int(y0):int(y0 + ch), int(x0):int(x0 + cw)], (w, h), interpolation=cv2.INTER_AREA) for f in frames]
+    return np.stack(out).astype(np.float32)
+
+
+V5_OPTICS = {'defocus': 0.2, 'motion': 0.2, 'glare': 0.35}     # shares of the clips (glare: 0.6 on sun/glare/practical)
+
+
+def v5_optics(ref, rng, themes=()):
+    """v5: the clip's truth through a lens, before its SDR is made: the clipped area's edge as cameras
+    draw it (soft, smeared, haloed), not only as a hard step. ref (F, h, w, 3) scene-linear -> the same,
+    and what was done. Defocus: a disc of radius 0.6-2.5 px; motion: a line of 2-8 px at one angle
+    (shake); glare: a share 10^-3..10^-1.5 of the light spread by two wide gaussians (1.5 % and 6 % of
+    the width), energy kept. Each frame alike (a lens does not change along a clip)."""
+    import cv2
+    F, h, w = ref.shape[:3]
+    did = {}
+    out = ref
+    if rng.uniform() < V5_OPTICS['defocus']:
+        r = float(rng.uniform(0.6, 2.5))
+        k = int(math.ceil(r)) * 2 + 1
+        yy, xx = np.mgrid[:k, :k] - k // 2
+        disc = np.clip(r + 0.5 - np.hypot(yy, xx), 0, 1).astype(np.float32)
+        disc /= disc.sum()
+        out = np.stack([cv2.filter2D(f, -1, disc, borderType=cv2.BORDER_REFLECT) for f in out])
+        did['defocus_px'] = round(r, 2)
+    if rng.uniform() < V5_OPTICS['motion']:
+        L, ang = float(rng.uniform(2, 8)), float(rng.uniform(0, math.pi))
+        k = int(math.ceil(L)) | 1
+        line = np.zeros((k, k), np.float32)
+        c = k // 2
+        for s in np.linspace(-L / 2, L / 2, 4 * k):
+            x, y = c + s * math.cos(ang), c + s * math.sin(ang)
+            xi, yi = int(round(x)), int(round(y))
+            if 0 <= xi < k and 0 <= yi < k:
+                line[yi, xi] += 1
+        line /= line.sum()
+        out = np.stack([cv2.filter2D(f, -1, line, borderType=cv2.BORDER_REFLECT) for f in out])
+        did['motion_px'], did['motion_deg'] = round(L, 2), round(math.degrees(ang), 1)
+    p_glare = 0.6 if set(themes) & {'sun', 'glare', 'practical'} else V5_OPTICS['glare']
+    if rng.uniform() < p_glare:
+        share = float(10 ** rng.uniform(-3, -1.5))
+        a = float(rng.uniform(0.3, 0.7))
+        g = np.stack([a * cv2.GaussianBlur(f, (0, 0), 0.015 * w) + (1 - a) * cv2.GaussianBlur(f, (0, 0), 0.06 * w) for f in out])
+        out = (1 - share) * out + share * g
+        did['glare_share'] = round(share, 5)
+    return np.maximum(out, 0).astype(np.float32), did
+
+
 # ------------------------------------------------------------------------------- one job
 def make_clip(job):
     """One source -> up to `clips` training clips (dicts of arrays + metadata)."""
@@ -160,6 +246,13 @@ def make_clip(job):
     view = ACES2View(threads=1)
     if job['kind'] == 'equirect':
         pano = convert(read_exr_rgb(job['path']), 'rec709', 'ap1')
+        pano = np.nan_to_num(np.maximum(pano, 0), posinf=6e4).astype(np.float32)
+        native = False
+    elif job['kind'] == 'sequence':                            # v5: a rendered Blender scene
+        seq = read_sequence(job['path'], max(F, int(job.get('length', F))))
+        if seq is None or seq.shape[0] < F:
+            return []
+        pano = convert(seq.reshape(-1, 3), 'rec709', 'ap1').reshape(seq.shape)
         pano = np.nan_to_num(np.maximum(pano, 0), posinf=6e4).astype(np.float32)
         native = False
     else:
@@ -180,19 +273,28 @@ def make_clip(job):
             kind = 'highlight' if r < 0.5 else 'shadow' if r < 0.75 else 'random'
         elif recipe in ('v4', 'v4_2'):   # v4 (9 Nov): half 'region' (a bright area parked under white by a display-referred curve)
             kind = 'region' if r < 0.5 else 'highlight' if r < 0.7 else 'broad' if r < 0.85 else 'shadow' if r < 0.95 else 'random'
+        elif recipe == 'v5':             # v5 (22 Nov): v4_2's mix with 'sky' views where the theme has thin things or sun
+            skyish = job['kind'] == 'equirect' and set(job.get('themes', ())) & {'thin', 'sun', 'sky'}
+            kind = ('region' if r < 0.5 else 'highlight' if r < 0.68 else 'sky' if (skyish and r < 0.8) else
+                    'broad' if r < 0.88 else 'shadow' if r < 0.95 else 'random')
         else:   # v2: 'broad' = large areas only just above the clip (the overshoot case of v1.1)
             kind = 'highlight' if r < 0.4 else 'broad' if r < 0.65 else 'shadow' if r < 0.8 else 'random'
         if kind == 'region':
-            clip = region_clip(job, rng, pano if job['kind'] == 'equirect' else plate, native, F, h, w,
-                               static_share=REGION_STATIC_SHARE if recipe == 'v4_2' else 0.0)
+            clip = region_clip(job, rng, pano if job['kind'] in ('equirect', 'sequence') else plate, native, F, h, w,
+                               static_share=REGION_STATIC_SHARE if recipe in ('v4_2', 'v5') else 0.0, v5=recipe == 'v5')
             if clip is not None:
                 out.append(clip)
             continue
         if job['kind'] == 'equirect':
             ref = equirect_path(pano, rng, F, h, w, 'random' if kind == 'broad' else kind)
+        elif job['kind'] == 'sequence':
+            ref = sequence_path(pano, rng, F, h, w)
         else:
             ref = plate_path(plate, rng, F, h, w)
         ref = np.maximum(ref, 0).astype(np.float32)
+        optics = {}
+        if recipe == 'v5':
+            ref, optics = v5_optics(ref, rng, job.get('themes', ()))
         Y = ref[0] @ AP1_Y
         base = 0.0 if native else float(np.clip(np.log2(0.18 / max(float(np.median(Y[Y > 0])) if (Y > 0).any() else 0.18, 1e-6)), -10, 10))
         if kind == 'broad':
@@ -207,7 +309,9 @@ def make_clip(job):
                 continue
         else:
             off = {'highlight': rng.choice([0.0, 1.0, 2.0, 3.0]), 'shadow': rng.choice([-4.0, -3.0, -2.0]),
-                   'random': rng.choice([-1.0, 0.0, 1.0, 2.0, 3.0])}[kind]
+                   'random': rng.choice([-1.0, 0.0, 1.0, 2.0, 3.0]), 'sky': rng.choice([0.0, 1.0, 2.0, 3.0])}[kind]
+            if recipe == 'v5':                               # v5: placed to a quarter stop, not a whole one
+                off = float(off + 0.25 * int(rng.integers(-2, 3)))
         ref *= np.float32(2.0 ** (base + off))
         lin = ref
         noise = bool(rng.uniform() < 0.3)
@@ -234,7 +338,8 @@ def make_clip(job):
                                            'offset': off, 'noise': noise, 'tau_high': ms.tau_high, 'tau_low': ms.tau_low,
                                            'mask_fraction': round(frac, 5), 'core_fraction': round(float(core.mean()), 5),
                                            'curve': 'aces2_view', 'condition': 'aces',
-                                           'split': job['split']}})
+                                           'split': job['split'], **({'themes': list(job.get('themes', ())), 'optics': optics}
+                                                                    if recipe == 'v5' else {})}})
     return out
 
 
@@ -261,7 +366,7 @@ def region_structure(truth0, mask0, erode=6, sigma=6.0):
     return float(hp[m].std()) if m.sum() >= 64 else 0.0
 
 
-def region_clip(job, rng, source, native, F, h, w, static_share=0.0):
+def region_clip(job, rng, source, native, F, h, w, static_share=0.0, v5=False):
     """One 'region' clip (dict as make_clip's), or None when the view has no bright area to park.
 
     static_share (v4.2): this share of the clips holds the camera still (every frame frame 0's view),
@@ -273,8 +378,19 @@ def region_clip(job, rng, source, native, F, h, w, static_share=0.0):
     names = list(REGION_CURVES)
     curve = names[int(rng.choice(len(names), p=np.array([REGION_CURVES[n] for n in names]) / sum(REGION_CURVES.values())))]
     fn = CURVES[curve]
-    ref = equirect_path(source, rng, F, h, w, 'highlight' if rng.uniform() < 0.5 else 'random') if job['kind'] == 'equirect' else plate_path(source, rng, F, h, w)
+    if job['kind'] == 'equirect':
+        aim = 'highlight' if rng.uniform() < 0.5 else 'random'
+        if v5 and aim == 'random' and set(job.get('themes', ())) & {'thin', 'sun', 'sky'} and rng.uniform() < 0.5:
+            aim = 'sky'
+        ref = equirect_path(source, rng, F, h, w, aim)
+    elif job['kind'] == 'sequence':
+        ref = sequence_path(source, rng, F, h, w)
+    else:
+        ref = plate_path(source, rng, F, h, w)
     ref = np.maximum(ref, 0).astype(np.float32)
+    optics = {}
+    if v5:
+        ref, optics = v5_optics(ref, rng, job.get('themes', ()))
     Y = ref[0] @ AP1_Y
     base = 0.0 if native else float(np.clip(np.log2(0.18 / max(float(np.median(Y[Y > 0])) if (Y > 0).any() else 0.18, 1e-6)), -10, 10))
     r709_0 = convert(ref[0], 'ap1', 'rec709')
@@ -289,6 +405,8 @@ def region_clip(job, rng, source, native, F, h, w, static_share=0.0):
             break
     if off is None:
         return None
+    if v5:                                                   # v5: a quarter stop either side of the half-stop step
+        off = float(off + 0.25 * int(rng.integers(-1, 2)))
     ref *= np.float32(2.0 ** (base + off))
     static = bool(static_share > 0 and rng.uniform() < static_share)
     if static:
@@ -319,7 +437,8 @@ def region_clip(job, rng, source, native, F, h, w, static_share=0.0):
                                    'offset': off, 'noise': noise, 'tau_high': ms.tau_high, 'tau_low': ms.tau_low,
                                    'mask_fraction': round(frac, 5), 'core_fraction': round(float(core.mean()), 5),
                                    'curve': curve, 'condition': 'bt1886', 'split': job['split'],
-                                   'static': static, 'structure': round(region_structure(ref[0], mask[0]), 5)}}
+                                   'static': static, 'structure': round(region_structure(ref[0], mask[0]), 5),
+                                   **({'themes': list(job.get('themes', ())), 'optics': optics} if v5 else {})}}
 
 
 # ------------------------------------------------------------------------------- planning
@@ -342,12 +461,48 @@ def plan(a):
                 and r.get('licence_licence') in COMMERCIAL):
             jobs.append({'kind': 'plate', 'row': r, 'asset_id': r['asset_id'], 'scene_id': r['scene_id'],
                          'source': r['source_id'], 'licence': r.get('licence_licence'),
-                         'clips': a.clips_per_fxtd if (r.get('licence_source') == 'fxtd' and a.recipe in ('v2', 'v4', 'v4_2')) else a.clips_per_plate})
+                         'clips': a.clips_per_fxtd if (r.get('licence_source') == 'fxtd' and a.recipe in ('v2', 'v4', 'v4_2', 'v5')) else a.clips_per_plate})
+    if a.recipe == 'v5':
+        jobs = plan_v5(a, jobs, excluded | non_train | set(fresh))
     for j in jobs:
         j.update({'frames': a.frames, 'h': a.height, 'w': a.width, 'seed': a.seed, 'root': a.root, 'recipe': a.recipe,
                   'split': 'dev' if dev_scene(j['scene_id'], a.dev_fraction) else 'train'})
     assert not ({j['scene_id'] for j in jobs} & (excluded | non_train | set(fresh))), 'scene leak'
+    assert not ({j.get('sky_scene_id') for j in jobs} & (excluded | non_train | set(fresh))), 'scene leak (a sky)'
     return jobs, {'excluded_scenes': sorted(excluded), 'fresh_scenes': fresh, 'files': excl_files}
+
+
+def plan_v5(a, jobs, held):
+    """v5: the collected CC0 panoramas (a 4k file replaces the scene's 2k job) and the Blender scenes.
+    A panorama or a scene's sky the registry holds out (held) is never used. Only CC0 rows are read."""
+    rows = []
+    p = Path(gpath(a.v5_hdris, a.root)) if a.v5_hdris else None
+    if p and p.exists():
+        rows = [json.loads(l) for l in p.read_text(encoding='utf-8').splitlines() if l.strip()]
+    by_scene = {}
+    for r in rows:
+        if r.get('licence') != 'CC0' or r['scene_id'] in held or not Path(gpath(r['path'], a.root)).exists():
+            continue
+        by_scene[r['scene_id']] = {'kind': 'equirect', 'path': gpath(r['path'], a.root), 'asset_id': r['asset_id'],
+                                   'scene_id': r['scene_id'], 'source': f"{r['library']}_hdri_v5", 'licence': 'CC0',
+                                   'themes': list(r.get('themes', ())), 'clips': a.clips_per_v5_hdri}
+    jobs = [j for j in jobs if j['scene_id'] not in by_scene] + [by_scene[k] for k in sorted(by_scene)]
+    p = Path(gpath(a.v5_scenes, a.root)) if a.v5_scenes else None
+    if p and p.exists():
+        for line in p.read_text(encoding='utf-8').splitlines():
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            if r['scene_id'] in held or (r.get('sky_scene_id') and r['sky_scene_id'] in held):
+                continue
+            folder = gpath(r['folder'], a.root)
+            if not Path(folder).exists() or int(r.get('frames', 0)) < a.frames:
+                continue
+            jobs.append({'kind': 'sequence', 'path': folder, 'length': int(r['frames']), 'asset_id': r['asset_id'],
+                         'scene_id': r['scene_id'], 'sky_scene_id': r.get('sky_scene_id'), 'source': 'blender_v5',
+                         'licence': V5_AUTHORED, 'themes': [r['kind']] + (['thin'] if r['kind'] == 'glare' else []),
+                         'clips': a.clips_per_scene})
+    return jobs
 
 
 # --------------------------------------------------------------------------------- encode
@@ -367,11 +522,16 @@ def main():
     ap.add_argument('--clips-per-hdri', type=int, default=5)
     ap.add_argument('--clips-per-plate', type=int, default=1)
     ap.add_argument('--clips-per-fxtd', type=int, default=2, help='v2: FXTD own footage weighted up')
-    ap.add_argument('--recipe', choices=('v1', 'v2', 'v4', 'v4_2'), default='v2',
+    ap.add_argument('--v5-hdris', default=V5_HDRIS, help='v5: the collector manifest (tools/collect_genfill_v5.py)')
+    ap.add_argument('--v5-scenes', default=V5_SCENES, help='v5: the Blender scenes manifest (tools/blender/genfill_v5_scenes.py)')
+    ap.add_argument('--clips-per-v5-hdri', type=int, default=6)
+    ap.add_argument('--clips-per-scene', type=int, default=3, help='v5: clips from each Blender scene')
+    ap.add_argument('--recipe', choices=('v1', 'v2', 'v4', 'v4_2', 'v5'), default='v2',
                     help="v2 (29 Oct): 'broad' mildly clipped clips, FXTD x2, code-255/0 core masks and frame-0 truth luminance stored; "
                          "v4 (9 Nov): half the clips 'region': the SDR through a display-referred curve (not the ACES view), "
                          "a bright area parked just under white, the mask over the near-clip band, the condition the BT.1886 inverse; "
-                         "v4_2 (14 Nov): as v4, with 35 %% of the region clips held still and the truth's structure in the region stored")
+                         "v4_2 (14 Nov): as v4, with 35 %% of the region clips held still and the truth's structure in the region stored; "
+                         "v5 (22 Nov): v4_2 plus the collected CC0 panoramas and Blender scenes, lens optics on the truth, quarter-stop exposure")
     ap.add_argument('--dev-fraction', type=float, default=0.03)
     ap.add_argument('--limit', type=int, default=0, help='first N jobs (smoke test)')
     ap.add_argument('--previews', type=int, default=12, help='clips kept as raw sdr/truth for review')
@@ -485,9 +645,13 @@ def main():
     flush(); meta_f.close()
     meta = [json.loads(l) for l in (out / 'clips.jsonl').read_text().splitlines()]
     count = lambda k: dict(sorted({str(v): sum(1 for m in meta if m[k] == v) for v in {m[k] for m in meta}}.items()))
-    summary = {'clips': len(meta), 'recipe': a.recipe, 'has_core': a.recipe in ('v2', 'v4', 'v4_2') and not a.render_only, 'frames': a.frames, 'size': [a.height, a.width], 'sources_used': len({m['asset_id'] for m in meta}),
+    summary = {'clips': len(meta), 'recipe': a.recipe, 'has_core': a.recipe in ('v2', 'v4', 'v4_2', 'v5') and not a.render_only, 'frames': a.frames, 'size': [a.height, a.width], 'sources_used': len({m['asset_id'] for m in meta}),
                'scenes_used': len({m['scene_id'] for m in meta}), 'by_source': count('source'), 'by_kind': count('kind'),
-               'by_curve': count('curve') if a.recipe in ('v4', 'v4_2') else None,
+               'by_curve': count('curve') if a.recipe in ('v4', 'v4_2', 'v5') else None,
+               'by_theme': ({t: sum(t in m.get('themes', ()) for m in meta) for t in ('thin', 'door', 'practical', 'window', 'sun', 'sky', 'glare')}
+                            if a.recipe == 'v5' else None),
+               'optics': ({k: sum(k in (m.get('optics') or {}) for m in meta) for k in ('defocus_px', 'motion_px', 'glare_share')}
+                          if a.recipe == 'v5' else None),
                'by_split': count('split'), 'by_licence': count('licence'),
                'commercial_clean': all(m['licence'] in COMMERCIAL for m in meta),
                'mask_fraction_mean': float(np.mean([m['mask_fraction'] for m in meta])) if meta else 0.0,

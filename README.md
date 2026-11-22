@@ -126,7 +126,7 @@ recovered detail, so check every frame.
 - [User guide](https://www.fxtdstudios.com/rudra-docs/): every control, step by step
   (the same guide as text: [docs/USER_GUIDE.md](docs/USER_GUIDE.md))
 - [Release notes](https://github.com/FXTD-Studios/RUDRA/releases/latest)
-  ([1.2.8 in this repository](docs/RELEASE_NOTES_1.2.8.md))
+  ([1.2.9 in this repository](docs/RELEASE_NOTES_1.2.9.md))
 - [Report a problem](https://github.com/FXTD-Studios/RUDRA/issues)
 - [Report a security problem privately](SECURITY.md)
 - Developers and researchers: [project overview](docs/PROJECT_OVERVIEW.md),

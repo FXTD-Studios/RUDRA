@@ -182,7 +182,8 @@ void MainWindow::open_about() {
         {"aboutWebsite", "www.fxtdstudios.com", "FXTD Studios ↗", QStringLiteral("https://www.fxtdstudios.com")},
         {"aboutGuide", "User guide", "Docs and tutorials ↗", QStringLiteral("https://www.fxtdstudios.com/rudra-docs/")},
         {"aboutNotes", "What’s new", "Release notes ↗", QStringLiteral("https://github.com/FXTD-Studios/RUDRA/releases")},
-        {"aboutLicences", "Licences", "Apache 2.0 · models · third party ↗", QStringLiteral("https://github.com/FXTD-Studios/RUDRA/blob/main/NOTICE")},
+        // 1.2.9: "Apache 2.0 · models · third party ↗" was cut off at "third part" (the grid's first column)
+        {"aboutLicences", "Licences", "Apache 2.0 · third party ↗", QStringLiteral("https://github.com/FXTD-Studios/RUDRA/blob/main/NOTICE")},
         {"aboutIssue", "Report an issue", "GitHub ↗", QStringLiteral("https://github.com/FXTD-Studios/RUDRA/issues")},
         {"aboutUpdates", "Check for updates", "", QString()},
         // 1.2.8: the community, a row of its own under the six
@@ -215,6 +216,7 @@ void MainWindow::open_about() {
             lg->addWidget(b, i / 3, i % 3);
         ++i;
     }
+    for (int c = 0; c < 3; ++c) lg->setColumnStretch(c, 1);   // 1.2.9: spare width shared by the three columns
     v->addWidget(grid);
     v->addSpacing(10);
     auto* foot = new QWidget(d);
