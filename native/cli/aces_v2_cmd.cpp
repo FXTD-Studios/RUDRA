@@ -39,7 +39,7 @@ int fail_v2(const Error& e) {
 
 int cmd_aces_v2(const std::vector<std::string>& args) {
     if (args.size() < 2) {
-        std::fprintf(stderr, "usage: rudra-native aces-v2 <package> <image|folder|video> --out <dir> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml|coreml] [--ocio-threads N] [--no-smoothing] [--luminance-guard|--no-luminance-guard] [--tau-high N] [--tau-low N] [--clean-shadows] [--no-lock] [--exr float|half|none] [--exr-gamut acescg|ap0] [--exr-zip] [--frame N]... [--fps F] [--name NAME [--start N]] [--padding N] [--into-existing [--no-create-dirs]] [--range FIRST:LAST] [--timecode HH:MM:SS:FF] [--reel NAME] [--source-display bt1886|srgb|gamma22] [--strength S] [--saturation S] [--peak-nits N] [--exposure EV] [--contrast C] [--log logc4|acescct|pq1000|pq2000|pq4000|hlg1000|sdr709] [--log-format tiff16,dpx10,prores4444xq|prores4444|prores422hq|mov16|hevc10]\n");
+        std::fprintf(stderr, "usage: rudra-native aces-v2 <package> <image|folder|video> --out <dir> [--runtime libtorch|onnxruntime] [--device cpu|cuda|directml|coreml] [--ocio-threads N] [--no-smoothing] [--luminance-guard|--no-luminance-guard] [--tau-high N] [--tau-low N] [--clean-shadows] [--no-lock] [--exr float|half|none] [--exr-gamut acescg|ap0] [--exr-zip] [--exr-compression none|zip|zips] [--frame N]... [--fps F] [--name NAME [--start N]] [--padding N] [--into-existing [--no-create-dirs]] [--range FIRST:LAST] [--timecode HH:MM:SS:FF] [--reel NAME] [--source-display bt1886|srgb|gamma22] [--strength S] [--saturation S] [--peak-nits N] [--exposure EV] [--contrast C] [--log logc4|acescct|pq1000|pq2000|pq4000|hlg1000|sdr709] [--log-format tiff16,dpx10,prores4444xq|prores4444|prores422hq|mov16|hevc10]\n");
         return 64;
     }
     const fs::path pkg = args[0], input = args[1];
@@ -73,6 +73,15 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
         else if (args[i] == "--exr" && i + 1 < args.size()) deliver["exr"] = args[++i];
         else if (args[i] == "--exr-gamut" && i + 1 < args.size()) deliver["exr_gamut"] = args[++i];
         else if (args[i] == "--exr-zip") deliver["exr_zip"] = true;   // 1.2.6: lossless ZIP (ACEScg only)
+        else if (args[i] == "--exr-compression" && i + 1 < args.size()) {   // 1.3: none, zip or zips (ACEScg only)
+            const std::string c = args[++i];
+            if (c != "none" && c != "zip" && c != "zips") {
+                std::fprintf(stderr, "--exr-compression is none, zip or zips\n");
+                return 64;
+            }
+            deliver["exr_zip"] = c != "none";
+            if (c == "zips") deliver["exr_zip_lines"] = 1;
+        }
         else if (args[i] == "--frame" && i + 1 < args.size()) deliver["frames"].push_back(std::atoi(args[++i].c_str()));
         else if (args[i] == "--fps" && i + 1 < args.size()) deliver["fps"] = std::atof(args[++i].c_str());
         else if (args[i] == "--name" && i + 1 < args.size()) deliver["name"] = args[++i];
@@ -196,7 +205,8 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
         if (!r) return fail_v2(r.error());
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         // The colorist's trims, then the frame's timecode and reel (28 Oct 2026).
-        const PlanarBuffer master = aces_trimmed(*opts, r->acescg, r->mask, **view, f->codes);
+        const int src_w = r->acescg.width(), src_h = r->acescg.height();
+        const PlanarBuffer master = aces_sized(*opts, aces_trimmed(*opts, r->acescg, r->mask, **view, f->codes), r->mask, f->alpha);
         const AcesFrameStamp stamp = aces_frame_stamp(*opts, n, *f, run_fps);
         const AcesLightLevel light = aces_light_level(master, light_view, int(n));
         if (opts->copies.hdr10()) run_stats.push_back(light.stats);
@@ -207,8 +217,9 @@ int cmd_aces_v2(const std::vector<std::string>& args) {
         if (logw && n == 0) logw->set_movie_stamp(stamp.timecode, stamp.reel);
         const std::string stem = aces_frame_stem(*opts, n, f->exr);
         const fs::path exr = out / (stem + ".exr");
-        const ExrAttributes prov = {{"contract", aces_v2::kContractId}, {"g1_sha256", m->g1_sha256},
+        ExrAttributes prov = {{"contract", aces_v2::kContractId}, {"g1_sha256", m->g1_sha256},
                                     {"source", f->source}, {"view", (*view)->identity()}};
+        aces_note_size(*opts, src_w, src_h, prov);   // 1.3: Output size
         if (opts->writes_exr())
             if (auto w = write_aces_master_exr(exr, master, r->mask, *opts, prov,
                                                           exr_timecode_attributes(stamp.timecode, stamp.fps, stamp.reel),

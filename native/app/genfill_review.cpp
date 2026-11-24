@@ -1,4 +1,5 @@
 #include "genfill_review.hpp"
+#include "child_process.hpp"
 
 #include <QDesktopServices>
 #include <QDialogButtonBox>
@@ -489,6 +490,7 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
             automatic->setEnabled(true);
             status->setText("AI fill setup: the Python could not be started.");
         });
+        end_with_rudra(proc);   // 1.3: the set-up (and the installers it runs) ends with RUDRA
         proc->start();
     });
     // 1.2.6 (readiness report, checklist item 7): a facility with no internet installs the models

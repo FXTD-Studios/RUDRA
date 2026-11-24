@@ -98,9 +98,15 @@ void MainWindow::open_colour_config() {
     const auto inputs = ocio_cfg_->inputs();
     const bool known = ocio_input_ == kRudraReading ||
                        std::any_of(inputs.begin(), inputs.end(), [&](const auto& i) { return QString::fromStdString(i.id) == ocio_input_; });
-    // The original through the inverse of the SDR view by default: through the same view it
-    // then looks as it was graded, the reference the user compares RUDRA against.
-    if (!known) ocio_input_ = inputs.empty() ? kRudraReading : QString::fromStdString(inputs.front().id);
+    // 1.3.0 (24 Nov 2026, Ahmed): by default the original is read as an sRGB texture, as Nuke reads an SDR plate in
+    // an ACES 2.0 config (Input Transform: sRGB Encoded Rec.709 (sRGB)), so RUDRA's A | B wipe is the one done in Nuke.
+    // The inverse of the SDR view (the original as it was graded) is the next choice down; without an sRGB texture
+    // space in the config, the first input. A choice the user made is kept (viewer/original).
+    if (!known) {
+        const QString srgb = QStringLiteral("space:sRGB Encoded Rec.709 (sRGB)");
+        const bool has_srgb = std::any_of(inputs.begin(), inputs.end(), [&](const auto& i) { return QString::fromStdString(i.id) == srgb; });
+        ocio_input_ = has_srgb ? srgb : inputs.empty() ? kRudraReading : QString::fromStdString(inputs.front().id);
+    }
 }
 
 void MainWindow::make_colour_transforms() {
@@ -160,6 +166,41 @@ void MainWindow::set_colour_view(const QString& display, const QString& view) {
     }
     make_colour_transforms();
     refresh_colour();
+}
+
+QStringList MainWindow::tone_map_for_fill() {
+    QStringList did;
+    if (!QSettings().value("viewer/fillToneMapped", true).toBool()) return did;
+#ifdef RUDRA_APP_VIEWER
+    // An HDR screen shows the nits as they are: nothing to do.
+    if (viewer_ && viewer_->view().target.path != OutputPath::SdrPqSimulation) return did;
+#endif
+    if (ocio_cfg_ && ocio_display_.isEmpty()) {   // RUDRA's own view: the first ACES 2.0 SDR preset (sRGB first)
+        for (const auto& p : ocio_cfg_->presets()) {
+            const QString d = QString::fromStdString(p.display), v = QString::fromStdString(p.view);
+            if (!v.startsWith(QStringLiteral("ACES 2.0 - SDR 100 nits"))) continue;
+            set_colour_view(d, v);
+            if (ocio_display_ == d && ocio_view_ == v) {
+                fill_view_set_colour_ = std::make_pair(d, v);
+                did << QStringLiteral("tone-mapped view (%1)").arg(QString::fromStdString(p.label));
+            }
+            break;
+        }
+    }
+    if (session_.view_ev == 0.0) {   // only from 0 EV: an exposure the user set stays theirs
+        session_.set_view_ev(-2.0);
+        fill_view_set_ev_ = -2.0;
+        did << QStringLiteral("view at \u22122 EV");
+    }
+    return did;
+}
+
+void MainWindow::untone_map_for_fill() {
+    if (fill_view_set_colour_ && ocio_display_ == fill_view_set_colour_->first && ocio_view_ == fill_view_set_colour_->second)
+        set_colour_view(QString(), QString());   // back to RUDRA's own view, unless the user picked another
+    fill_view_set_colour_.reset();
+    if (fill_view_set_ev_ && session_.view_ev == *fill_view_set_ev_) session_.set_view_ev(0.0);
+    fill_view_set_ev_.reset();
 }
 
 void MainWindow::build_colour_controls(FlowLayout* row) {

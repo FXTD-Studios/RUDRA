@@ -77,7 +77,11 @@ Result<VideoPrediction> VideoPredictor::predict_graded(const SdrImage& rgb, cons
         if (!(hold > 0.0) || !std::isfinite(hold) || smoother.retention() == 0.0) return hold;   // off: exactly its own
         return std::exp2(smoother.hold("anchor_hold", std::log2(hold)));
     };
-    auto g = grade_master(frame, fields, scalars, model, q, settle);
+    // 24 Nov 2026: this frame is canonical (prepare's canonicalize_sdr), never the source's own codes, whatever the
+    // export's settings say (the app writes own_codes for the frames it reads itself).
+    MasterRequest qc = q;
+    qc.own_codes = false;
+    auto g = grade_master(frame, fields, scalars, model, qc, settle);
     if (!g) return g.error();
     PlanarBuffer hdr(3, frame.height(), frame.width());
     const auto in = g->nits.span();

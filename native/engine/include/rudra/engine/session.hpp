@@ -168,6 +168,11 @@ public:
     void redo();
     void set_container(std::string_view kind);
     void set_source(std::string_view id);          // the Source picker (3.1): no-op when unchanged or unknown id
+    // 24 Nov 2026: the SDR holds the source's own codes, as the app reads every shot (stills, and a movie's frames
+    // through PNG): BT.1886 then reads each code as the video code it is (CompositeParams::own_codes). The app sets
+    // it; not part of the grade or undo.
+    void set_own_codes(bool on);
+    bool own_codes() const { return own_codes_; }
     // The Calibrate rows (3.2): slot 0..2; code -1 keeps the slot's code,
     // nits <= 0 empties the slot. No-op when nothing changes.
     void set_calibration(int slot, int code, double nits);
@@ -242,6 +247,7 @@ public:
     void key_up(std::string_view key);
 
 private:
+    bool own_codes_ = false;   // 24 Nov 2026: set_own_codes
     double last_view_ev_ = -2.0;   // toggle_view_ev's other value; -2 until one is set
     Result<void> accepts(HeadroomPolicy policy) const;
     SourceSupport source_support_;

@@ -1,0 +1,20 @@
+{
+ "id": "research_genfill_v5_analytic_123_20261123",
+ "status": "REGISTERED 23 Nov 2026 before its GPU run. A diagnostic beside research_genfill_v5_learned_20261123, not a release gate.",
+ "written": "2026-11-23",
+ "author": "FXTD Studios Research",
+ "parents": [
+  "research_genfill_v5_learned_20261123 (01V, 02V, 03V FAIL T on the learned ACES 2.0 route: 0.112, 0.124, 0.318; limit 0.10)",
+  "research_genfill_v5d_thin_20261123 (AI fill v5 with the thin hold: PASS on the analytic route, on 09V, Porch, testwindow, water)"
+ ],
+ "why": "01V-03V were never run on the analytic route. Run there with nothing else changed, they tell the learned route's share of their T failures from the shots' own. CPU findings before the run (tmp/v5_review/lag_share.py, spike_learned.py): on the T gate's pixels the learned master alone has T p95 0.288, 0.393, 0.921; 03V's spikes (frames 27, 51, 53, 74) are pixels newly clipped after a camera jump or a tube entering the frame, which the region mask (EMA 0.7) covers from their second clipped frame, the learned master showing for one frame 1.8 stops (median) above the fill; without the newly clipped pixels 03V's fill T p95 is 0.124. On the analytic route the fill sits 0.72 stops above the master on Porch.",
+ "inference": "the 1.3 app's arguments on the analytic route (native/app/genfill_job.cpp; deliver_tab.cpp: --condition bt1886), the v5 LoRA (SHA-256 5c5d4ab4...): rudra.genfill.run --region-rerender --source <the movie, as the learned run> --condition bt1886 --tau-high 240 --tau-low -1 --feather 8 --brightness-model none --steps 30 --seed 0 --rerender-hue source --rerender-colour 0.3 --rerender-level 3.3 --rerender-smooth 0.8 --rerender-dip 0.3 --rerender-independent --rerender-calm 0.9 --rerender-full-last --rerender-hold-clipped thin; no highlight prompt (as the learned run for these shots); --save-raw (output unchanged) for finishes replayed offline",
+ "masters": "analytic BT.1886, one per still: rudra-native master analytic <still> --params {\"source_curve\": \"bt1886\"} (as the registered analytic checks, run_v4_confirm.py), from the stills the learned run decoded (tmp/09V_test/learned_v5/<shot>/frames, tools/measure_flicker.decode_movie, frames 0-96)",
+ "evaluation": {
+  "runner": "tmp/RUN_V5_ANALYTIC_123.ps1 (waits until the learned-route run and any AI fill have ended) then tmp/09V_test/v4_gates/run_v5_analytic_123.py; output tmp/09V_test/analytic_v5/<shot>/, tmp/09V_test/v4_gates/analytic_v5_123.json",
+  "shots": "01V, 02V, 03V: T where it can be measured (<= 0.10), O; L and S reported (the learned run's rule for these shots)",
+  "thresholds": "shot_gates.py unchanged: T p95 <= 0.10 EV on the source's clipped (>= 250) still (within 2 codes) pixels; O 0 pixels"
+ },
+ "reading": "Both routes fail a shot: the shot's own (thin practicals under a moving camera), and the learned-route result says nothing new about the route. Analytic passes where learned fails: the learned route's share (its master's flicker and its level against the fill's). Either way the outcome goes into the release notes as measured; this record authorizes nothing.",
+ "release_authorized": false
+}

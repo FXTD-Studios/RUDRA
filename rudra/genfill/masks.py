@@ -43,6 +43,7 @@ class MaskSettings:
     blend_low: int = BLEND_LOW_DEFAULT    # ... and, with shadows on, at max code <= this
     max_gain_stops: float = 3.0           # v2: the fill's luminance at most this many stops over the master (0 = no cap)
     min_core: float = MIN_CORE_DEFAULT    # 1.2.6: blend-core areas smaller than this share of the frame are left alone
+    first_frame: bool = False             # 1.3 (24 Nov 2026), the learned route: a pixel is in from its first clipped frame
 
     def check(self):
         if not (-1 <= self.tau_low < self.tau_high <= 256):
@@ -85,12 +86,19 @@ class TemporalMask:
     def __call__(self, codes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         hi, lo = frame_masks(codes, self.s)
         hi, lo = hi.astype(np.float32), lo.astype(np.float32)
+        now_hi, now_lo = hi > 0.5, lo > 0.5
         if self._hi is not None and self._hi.shape == hi.shape and self.s.ema > 0:
             a = self.s.ema
             hi = a * self._hi + (1 - a) * hi
             lo = a * self._lo + (1 - a) * lo
         self._hi, self._lo = hi, lo
         h, l = hi >= 0.5, lo >= 0.5
+        if self.s.first_frame:
+            # 1.3 (24 Nov 2026), the learned route: with the EMA alone a newly clipped pixel joins at its second
+            # clipped frame, so for one frame it shows the master. The learned master sits 1-2 stops over the fill
+            # there (03V: frame-to-frame jumps of 0.32 EV on still clipped pixels, the T gate's limit 0.10). It now
+            # joins at once; when it leaves is still the EMA's (the analytic route keeps the EMA alone).
+            h, l = h | now_hi, l | now_lo
         return h, l & ~h
 
 

@@ -6,11 +6,11 @@ target_link_libraries(rudra_deliver PUBLIC rudra::rudra_core rudra::rudra_platfo
 # Provenance (roadmap 1.3): every master records the build that wrote it.
 target_compile_definitions(rudra_deliver PRIVATE RUDRA_VERSION_LABEL="${RUDRA_VERSION_LABEL}"
                            RUDRA_BUILD_COMMIT="${RUDRA_BUILD_COMMIT}")
-# 1.2.6 (readiness report, checklist item 8): lossless ZIP EXR for the ACEScg and linear masters.
-# zlib comes with vcpkg (native/vcpkg.json; Qt and OpenEXR use it too) or the system. Without it
-# the masters are written uncompressed and a ZIP EXR is refused when read.
-find_package(ZLIB QUIET)
-if(ZLIB_FOUND)
+# 1.2.6 (readiness report, checklist item 8): lossless ZIP EXR for the ACEScg and linear masters; 1.3: ZIPS.
+# zlib comes with vcpkg (native/vcpkg.json; Qt and OpenEXR use it too), the system, or since 1.3 a pinned
+# copy built with RUDRA (cmake/RudraDeps.cmake). Without it the masters are written uncompressed and a ZIP
+# EXR is refused when read.
+if(TARGET ZLIB::ZLIB)
   target_link_libraries(rudra_deliver PRIVATE ZLIB::ZLIB)
   target_compile_definitions(rudra_deliver PRIVATE RUDRA_HAVE_ZLIB=1)
 else()

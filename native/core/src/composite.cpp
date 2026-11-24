@@ -24,7 +24,7 @@ std::vector<RegionBand> default_region_bands() {
 }
 
 std::vector<float> baseline_curve_params(const FrameScalars& scalars, const CompositeParams& params, float corpus_ev) {
-    std::vector<float> out = effective_curve_params(scalars.curve_params, params.source);
+    std::vector<float> out = effective_curve_params(scalars.curve_params, params.source, params.own_codes);
     std::vector<float> cal;
     if (!params.reference.empty()) cal = reference_params(params.reference, params.source, corpus_ev);
     else if (!params.calibration.empty() && calibration_is_monotone(params.calibration, params.source, corpus_ev))
@@ -53,6 +53,7 @@ std::vector<float> anchor_target_knots(const CompositeParams& params) {
         for (int c = 0; c < 3; ++c) ramp.at(c, 0, k) = float(k) / float(kSourceCurveKnots - 1);
     CompositeParams curve_only;
     curve_only.source = params.source;
+    curve_only.own_codes = params.own_codes;   // 24 Nov 2026: own codes read as the curve reads them
     curve_only.calibration = params.calibration;
     curve_only.reference = params.reference;
     const NetworkLinearImage base =

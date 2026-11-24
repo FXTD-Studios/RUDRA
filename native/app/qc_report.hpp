@@ -46,6 +46,10 @@ struct QcReport {
     // 1.2.6 (readiness report, checklist item 4): the learned route rendered a shot whose Source
     // curve is not ACES; that curve's name, "" otherwise. A Review reason.
     QString curve_mismatch;
+    // 1.3 (23 Nov 2026): the AI fill made over this render, as its disclosure record says (genfill_disclosure);
+    // empty when none. The report was written before the fill and said nothing of it; it is written again,
+    // as <title>_aifill.qc.html, once the fill is in.
+    QJsonObject ai_fill;
 };
 
 struct QcVerdict {
@@ -58,6 +62,8 @@ struct QcVerdict {
 std::vector<QcFrame> qc_frames_from_sidecars(const std::vector<std::filesystem::path>& sidecars, QString* container = nullptr,
                                              QString* transfer = nullptr);
 
+// 1.3: with an AI fill, frames it flagged for flicker or dropped are Review reasons; that the render holds
+// generated pixels is always said (a note), with the share and the worst frame.
 // The checks: MaxCLL over the PQ peak or 10 000 nits, a frame-to-frame jump in MaxFALL of more
 // than half a stop (flicker), invented pixels over 5 % of a frame, the preview-vs-export check
 // over 2 codes, display errors on the learned route, its appearance check, the learned route on

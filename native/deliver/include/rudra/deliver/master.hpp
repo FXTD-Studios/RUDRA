@@ -61,6 +61,11 @@ struct MasterRequest {
     // brackets from the in-memory picture the viewer shows, compared code for code. In the JSON,
     // EXR and sidecar only when on.
     bool brackets = false;
+    // 1.3 (23 Nov 2026): Deliver's Output size (core/resample.hpp): "source", "2x", "uhd" or
+    // "hd". The master, its alpha, mattes and brackets are written at it; the sidecar's
+    // resolution is the file's, with output_size naming the source's. In the JSON only when
+    // not "source", so every master before reads the same.
+    std::string output_size = "source";
     std::vector<MasterBand> regions;        // empty: the neutral default bands
     double region_softness_stops = 1.0;
     bool anchor = true;
@@ -74,10 +79,18 @@ struct MasterRequest {
     // 1.2.6 (readiness report, checklist item 8): lossless ZIP for the ACEScg and linear
     // containers. The ACES 2065-1 file stays the uncompressed ST 2065-4 container.
     bool exr_zip = false;
+    // 1.3 (24 Nov 2026): Deliver's EXR compression: 16 scanlines a block (ZIP) or 1 (ZIPS); in the
+    // JSON only when 1, so every request before reads the same.
+    int exr_zip_lines = 16;
     // Roadmap 3.1: the curve that made the SDR (core/source_curve.hpp ids).
     // "unknown" is the ACES inverse, and is left out of the JSON and the
     // sidecar so every master before 3.1 reads the same.
     std::string source_curve = "unknown";
+    // 24 Nov 2026: the SDR holds the source's own codes (a still, or a movie frame as the app reads it): BT.1886 and
+    // BT.1886 shadows read each code as the BT.709 video code it is (core/composite.hpp CompositeParams::own_codes).
+    // render_master and render_analytic_master set it for the still they decode, the app for every shot;
+    // "own_codes" in the JSON.
+    bool own_codes = false;
     // Roadmap 3.2: the anchors over it; empty for none, left out of the JSON
     // and the sidecar then.
     std::vector<CalibrationPoint> calibration;

@@ -152,11 +152,15 @@ const InverseTable& table(SourceCurve c) {
     }
 }
 
-std::vector<float> build_params(SourceCurve c) {
+std::vector<float> build_params(SourceCurve c, bool own_codes = false) {
     std::vector<float> p(1 + kSourceCurveKnots, 0.0f);
+    const bool video_codes = own_codes && (c == SourceCurve::Bt1886 || c == SourceCurve::Bt1886Shadows);
     for (int code = 0; code < kSourceCurveKnots; ++code) {
         const float display = srgb_to_linear(static_cast<float>(code) / 255.0f);
-        const float want = source_curve_inverse(c, display);
+        // 24 Nov 2026: an own code read as the BT.709 video code it is (the light the video path's canonicalize_sdr
+        // "rec709" gives it); the baseline it corrects is still the ACES inverse of the sRGB reading.
+        const float read = video_codes ? bt709_inverse_oetf(static_cast<float>(code) / 255.0f) : display;
+        const float want = source_curve_inverse(c, read);
         const float have = inverse_aces_approx(display);
         // Both inverses are 0 at code 0; the ratio there is a convention, and
         // the one that keeps the knot line flat into black is the code-1 value.
@@ -237,7 +241,14 @@ float source_curve_inverse(SourceCurve c, float display) noexcept {
     }
 }
 
-std::span<const float> source_curve_params(SourceCurve c) {
+bool reads_video_codes(SourceCurve c) noexcept { return c == SourceCurve::Bt1886 || c == SourceCurve::Bt1886Shadows; }
+
+std::span<const float> source_curve_params(SourceCurve c, bool own_codes) {
+    if (own_codes && reads_video_codes(c)) {   // 24 Nov 2026: own codes as video codes (source_curve.hpp)
+        static const std::vector<float> bt1886_own = build_params(SourceCurve::Bt1886, true),
+                                        bt1886_shadows_own = build_params(SourceCurve::Bt1886Shadows, true);
+        return c == SourceCurve::Bt1886 ? bt1886_own : bt1886_shadows_own;
+    }
     static const std::vector<float> none;
     static const std::vector<float> hable = build_params(SourceCurve::Hable), agx = build_params(SourceCurve::Agx),
                                     camera = build_params(SourceCurve::CameraLog), clip = build_params(SourceCurve::Clip),
@@ -254,8 +265,8 @@ std::span<const float> source_curve_params(SourceCurve c) {
     }
 }
 
-std::vector<float> effective_curve_params(std::span<const float> model_params, SourceCurve source) {
-    const std::span<const float> src = source_curve_params(source);
+std::vector<float> effective_curve_params(std::span<const float> model_params, SourceCurve source, bool own_codes) {
+    const std::span<const float> src = source_curve_params(source, own_codes);
     if (src.empty()) return std::vector<float>(model_params.begin(), model_params.end());
     std::vector<float> out(src.begin(), src.end());
     if (model_params.size() < 3) return out;   // no CurveHead: the source alone

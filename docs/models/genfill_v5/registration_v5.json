@@ -1,0 +1,78 @@
+{
+ "schema": "rudra_model_registration_v1",
+ "model": "RUDRA AI fill v5, region re-render (experimental)",
+ "files": {
+  "rudra_genfill.safetensors": {
+   "sha256": "5c5d4ab4107088f86bdc8213ae2ec21c1a882cc6d942141f0e12fb7733fda5e6",
+   "what": "LoRA (rank 32) for Wan2.1-VACE-1.3B (Apache 2.0), the last checkpoint of research_genfill_v5_20261122"
+  }
+ },
+ "licence": "Apache-2.0; the training material is CC0 (Poly Haven, ambientCG) and FXTD Studios' own Blender scenes",
+ "app": "RUDRA 1.3.0 or later: the app runs it with the 1.3 finish (--rerender-hold-clipped thin)",
+ "training": {
+  "id": "research_genfill_v5_20261122",
+  "parents": [
+   "research_genfill_v5_data_20261122 (the material and recipe v5; its review_before_training is done: see review)",
+   "research_genfill_v4_2_20261114 (the LoRA in 1.2.4-1.2.9; this run uses its training arguments)",
+   "research_genfill_v4_3_20261115 (the shipped inference; 1.2.9 adds --rerender-full-last)"
+  ],
+  "change": {
+   "data": "the v5 store, as built (no rebuild).",
+   "sampling": "tools/genfill_v5_weights.py writes <store>/sampling_v5.json once (rules fixed in the tool, sha256 recorded by the trainer). Each training clip's draw weight = v4.2's structure weight x theme factor x edge factor. Theme factor: the largest of its themes' (door 2, glare 2, practical 1.5, thin 1.5, window 1.25, sun 0.5, sky 0.5; none 1). Edge factor: 2 where frame 0 has 30 or more thin dark pixels (no wider than 6 px, 3 stops or more below the region's median) within 8 px outside the mask, else 1. Expected share of draws (train), structure weight only -> v5: sun 31 -> 25 %, sky 18 -> 6 %, door 9 -> 16 %, practical 14 -> 20 %, thin 18 -> 25 %, window 11 -> 18 %, glare 1.5 -> 2.3 %; clips with a thin edge 48 -> 70 %.",
+   "dev_monitor": "--dev-pick spread (32 clips evenly through the dev set, not its first 32); the 39 dev clips of the 9 crossed scenes left out (sampling_v5.json dev_monitor false). A monitor only: nothing is selected on it.",
+   "trainer": "training/genfill_train.py: --clip-weights and --dev-pick (defaults leave v1-v4.2 runs exactly as they were). Tests: tests/test_genfill_v5_train.py.",
+   "left_out": "tools/genfill_v5_weights.py BROKEN_SCENES: those 9 scenes' 27 clips get weight 0 and stay out of the dev monitor (sampling_v5.json left_out). tools/blender/genfill_v5_scenes.py now keeps each frame's Euler angles closest to the previous frame's (later renders); test_genfill_v5.py checks a pan across +-180 degrees of yaw. The store is not rebuilt."
+  },
+  "training": {
+   "script": "training/genfill_train.py",
+   "init_lora": "G:/rudra_training/research_genfill_v1_20261027/rudra_genfill.safetensors (as v4.2, so the data and the sampling are the only changes)",
+   "args": "--weight-on mask --region-weight 4 --calib-weight 0 --structure-boost 3 --structure-ref 0.10 --temporal-weight 1.0 --temporal-sigma 0.6 --clip-weights <store>/sampling_v5.json --dev-pick spread --dev-clips 32 --steps 6000 --save-every 1000 --max-hours 14 --seed 20261122; rank 32, lr 1e-4, warmup 200, accumulate 4, shift 3 (the defaults, as v4.2)",
+   "out": "G:/rudra_training/research_genfill_v5_20261122",
+   "selection": "none: the last LoRA is the result, as every run before"
+  }
+ },
+ "inference": {
+  "id": "research_genfill_v5d_thin_20261123",
+  "honesty": "Fourth finish on the same four shots, made after their results were seen (v5's rule said nothing is tuned after). Chosen offline: the finish replayed on the real fills saved before it (run.py --save-raw; tmp/v5_review/replay_finish.py, which reproduces the GPU runs' T exactly: v5 0.2292, v5b 0.0804). Porch and 09V shaped it. Counted as evidence: the gates, the 09V lamp, the antenna crops against v5, testwindow and water (not used to choose), and both H sets, all re-run. Still owed: a fresh shot with a thin, still, clipped light that nobody tuned on.",
+  "offline_choice": {
+   "Porch_T_p95": {
+    "v5": 0.2292,
+    "steady7 (v5c)": 0.2191,
+    "hold dips": 0.1757,
+    "hold release": 0.1411,
+    "hold all (v5b)": 0.0804,
+    "hold thin": 0.0804
+   },
+   "09V_frames_0_28": "hold thin: 0 pixels in the antenna crop differ from v5 by more than 0.2 stops (hold all: 65-79 darker); thin changes 33-79 px a frame elsewhere (the lamp, the bright gaps by the soldiers' boots), steadier and with no new structure (tmp/v5_review/09V_thin_check.jpg)",
+   "09V_whole_shot": "replayed on the whole of 09V's saved fill (raw_v5, 17:47) as the GPU run started: T p95 v5 0.0389 (the v5 run's own 0.0389), hold all 0.0317 (v5b's own 0.0317), hold thin 0.0358; beside what the source moves, pixels more than 0.2 stops darker / lighter than v5: hold all 104.6 / 91.0 a frame, hold thin 18.1 / 16.0; antenna crops at 10, 30, 50, 70: thin shows what v5 shows (tmp/v5_review/replay_09V.jpg)"
+  },
+  "change": {
+   "code": "rudra/genfill/composite.py finish_rerender hold='thin': with calm, a pixel the source clips (>= 250) and holds still (2 codes) has its jump held whatever its trust, only where the clipped area's widest point within 40 px is at most 20 px from its edge (px at 1080 lines): a strip light, a tube, a small lamp. A wide clipped sky keeps v5's own finish. App: --rerender-hold-clipped thin with the v5 LoRA.",
+   "lora": {
+    "path": "G:/rudra_training/research_genfill_v5_20261122/rudra_genfill.safetensors",
+    "sha256": "5c5d4ab4107088f86bdc8213ae2ec21c1a882cc6d942141f0e12fb7733fda5e6"
+   },
+   "unchanged": "the LoRA, every other argument (v5's inference), shot_gates.py, thresholds, shots, H sets and rules"
+  },
+  "inference": "the 1.2.9 app's arguments (native/app/genfill_job.cpp), only the LoRA changes: rudra.genfill.run --region-rerender --condition bt1886 --tau-high 240 --tau-low -1 --feather 8 --brightness-model none --steps 30 --seed 0 --rerender-hue source --rerender-colour 0.3 --rerender-level 3.3 --rerender-smooth 0.8 --rerender-dip 0.3 --rerender-independent --rerender-calm 0.9 --rerender-full-last --rerender-hold-clipped thin",
+  "evaluation": {
+   "runner": "tmp/09V_test/v4_gates/run_v5_gates.py --lora <the v5 LoRA> --tag v5d --registration configs/experiments/research_genfill_v5d_thin_20261123.json (fill_v5d, gates_v5d_*, lamp_v5d_09V.json, v5d_verdict.json; H in G:/rudra_training/research_genfill_v5d_eval_region_*, --hold-clipped thin)",
+   "thresholds": "shot_gates.py unchanged: L 2.5-4 x white and hue within 0.15; S >= 0.05 stops; T p95 <= 0.10 EV; O 0 pixels",
+   "shots": {
+    "09V": "L, S, T, O on the 1.2.8 masters (tmp/09V_test/v128/master), as the v4.2 reference tmp/09V_test/v129/full_last",
+    "09V_lamp": "lamp box (356, 86)-(404, 152): p99 range over the shot below the v4.2 reference's (0.539 stops on 22 Nov) and its worst window join no worse (x7.69); the largest frame-to-frame jump reported",
+    "testwindow": "L, T, O; S reported",
+    "Porch": "L, T, O; S reported",
+    "water": "L, O and T p95 at most 0.115 EV (its known limit since 1.2.4: 0.112)"
+   },
+   "ghosts": "reported, not gated: tools/ghost_gate.py against v5 beside what the source moves, and the 09V antenna crops"
+  },
+  "decision_rule": "PASS = v5's rule (every shot, the 09V lamp, both H) AND the 09V antenna crops show nothing v5 does not AND no new defect in the door, lamp and Porch strip crops. Then AI fill v5 with hold thin goes in 1.3 (experimental, as every AI fill). FAIL on any: 1.3 is not published with v5 until Ahmed decides again."
+ },
+ "history": [
+  "v5 (22 Nov 2026): FAIL on Porch T 0.229 EV (a thin LED strip shimmered); every other gate passed",
+  "v5b (23 Nov 2026): a hold of still clipped pixels everywhere; gates PASS, but 09V's crops showed the antenna's ghosts held: not offered",
+  "v5c (23 Nov 2026): a 7-frame median; Porch T 0.219 (the camera pans): stopped",
+  "v5d (23 Nov 2026): the hold only inside thin clipped shapes; see report_v5.json"
+ ]
+}

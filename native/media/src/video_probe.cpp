@@ -1,7 +1,10 @@
 #include "rudra/media/video_probe.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <cstdio>
+#include <regex>
 #include <cstdlib>
 #include <numeric>
 
@@ -221,6 +224,65 @@ Result<VideoSource> open_video_source(const fs::path& file, const VideoArgs& arg
     auto probe = probe_video(file);
     if (!probe) return probe.error();
     return open_video_source(*probe, args);
+}
+
+bool SourceWhiteProbe::present() const noexcept {
+    const int k = 1 << std::max(bits - 8, 0);
+    return measured && above_share() >= 1e-4 && max_code >= white_code + 2 * k;
+}
+
+int planar_luma_bits(std::string_view pix_fmt) {
+    static const std::regex re(R"(yuva?4[0-4][0-4]p(?:(9|10|12|14|16)le)?)");
+    std::cmatch m;
+    if (!std::regex_match(pix_fmt.data(), pix_fmt.data() + pix_fmt.size(), m, re)) return 0;
+    return m[1].matched ? std::atoi(m[1].str().c_str()) : 8;
+}
+
+void add_source_white_samples(SourceWhiteProbe& s, const std::uint16_t* luma, std::size_t n) {
+    for (std::size_t i = 0; i < n; ++i) {
+        const int c = luma[i];
+        s.max_code = std::max(s.max_code, c);
+        if (c > s.white_code) ++s.above;
+        else if (c < s.black_code) ++s.below;
+    }
+    s.samples += n;
+}
+
+Result<SourceWhiteProbe> probe_source_whites(const fs::path& file, const VideoStreamInfo& stream, int frames, double fps,
+                                           int samples, rudra::stop_token stop) {
+    SourceWhiteProbe s;
+    const int bits = planar_luma_bits(stream.pix_fmt);
+    const bool limited = stream.color_range.value_or("tv") == "tv";   // untagged YCbCr is read as limited
+    if (bits == 0 || !limited || stream.width <= 0 || stream.height <= 0) return s;
+    s.bits = bits;
+    const int k = 1 << (bits - 8);
+    s.white_code = 235 * k;
+    s.black_code = 16 * k;
+    auto ffmpeg = require_executable("ffmpeg");
+    if (!ffmpeg) return ffmpeg.error();
+    const std::size_t n = std::size_t(stream.width) * std::size_t(stream.height);
+    const std::size_t bytes = bits == 8 ? 1 : 2;
+    samples = std::max(1, samples);
+    const double seconds = fps > 0 && frames > 1 ? (frames - 1) / fps : 0.0;   // to the last frame's start
+    std::vector<std::uint16_t> luma(n);
+    for (int i = 0; i < samples; ++i) {
+        char at[32];
+        std::snprintf(at, sizeof at, "%.3f", seconds > 0 ? seconds * (i + 0.5) / samples : 0.0);
+        auto r = run_process({ffmpeg->string(), "-v", "error", "-nostdin", "-ss", at, "-i", file.string(), "-map",
+                              "0:" + std::to_string(stream.index), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt",
+                              stream.pix_fmt, "-"},
+                             stop);
+        if (!r) return r.error();
+        if (r->exit_code != 0 || r->out.size() < n * bytes) continue;   // a sample past the end: skip it
+        const auto* p = reinterpret_cast<const unsigned char*>(r->out.data());   // the Y plane comes first
+        for (std::size_t j = 0; j < n; ++j)
+            luma[j] = bytes == 1 ? std::uint16_t(p[j]) : std::uint16_t(p[2 * j] | (p[2 * j + 1] << 8));
+        add_source_white_samples(s, luma.data(), n);
+        ++s.frames;
+        if (seconds <= 0) break;   // no clock: the first frame only
+    }
+    s.measured = s.frames > 0;
+    return s;
 }
 
 }  // namespace rudra

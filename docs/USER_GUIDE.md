@@ -241,9 +241,13 @@ need to open the master in Nuke to check it:
 - **ACEScg / ACES2065-1 (AP0)**: the working space, as a render to that space
   holds the picture (1.0 = diffuse white, 203 nits). The probe shows the
   values in it, and the view's 10-bit codes.
-- **Original**: how the SDR comes in when you wipe RUDRA against it. The
-  default, the inverse of the ACES 2.0 SDR view, makes the original look as it
-  was graded; through the HDR view it is the plain inverse-view up-conversion.
+- **Original** (*SDR shown as*): how the SDR comes in when you wipe RUDRA
+  against it through an OCIO view. The default, *sRGB texture*, reads its codes
+  as linear light, as Nuke's Read does with **sRGB Encoded Rec.709 (sRGB)** in an
+  ACES 2.0 config (since 1.3.0). The inverse of the ACES 2.0 SDR view makes the
+  original look as it was graded instead; through the HDR view that is the plain
+  inverse-view up-conversion. See *Checking a master in Nuke* below for which
+  reading lines up with which master.
 - **Gamut** (Alt+G): magenta bands where the picture is outside the gamut on
   the right (AP1 is what an ACEScg render holds without negative values).
 - **Invalid** (Alt+I): solid green on NaN or infinite values, colours outside
@@ -254,15 +258,55 @@ need to open the master in Nuke to check it:
 
 None of these changes the master.
 
+#### Checking a master in Nuke
+
+RUDRA's EXR masters are ACEScg (AP1 primaries in the file's header; ACES
+2065-1 when you chose AP0), with 1.0 = diffuse white (203 nits). In Nuke with
+an ACES 2.0 config (Nuke's own `fn-nuke_studio-config-v3.0.0_aces-v2.0_ocio-v2.4`,
+for example):
+
+1. Read the master with Input Transform **ACEScg** (that config's float-file
+   role, scene_linear, already is), or **ACES2065-1** for an AP0 master.
+2. Read the SDR, put it on A and the master on B, and wipe. Viewer:
+   **sRGB - Display / ACES 2.0 - SDR 100 nits (Rec.709)**. RUDRA's viewer does
+   the same wipe under View › Colour.
+3. How the SDR is read decides what should line up:
+   - **sRGB Encoded Rec.709 (sRGB)** (RUDRA's viewer default, a common Nuke
+     setup) reads the SDR's codes as linear light. Next to it, an analytic master
+     of a video made with Source BT.1886 (the default for video) is darker in the
+     shadows, by design: about 0.17 stop at code 128, 0.66 at code 51 and 1.3 at
+     code 26. BT.1886 is how a display shows video (code^2.4), and sRGB is a
+     different curve. A learned ACES 2.0 master looks as the SDR was graded, so it
+     looks brighter than an SDR read this way.
+   - **Gamma 2.4 Encoded Rec.709** lines up with an analytic master made with
+     Source BT.1886, everywhere outside the highlights.
+   - **The inverse of the ACES 2.0 SDR view** lines up with a learned ACES 2.0
+     master, everywhere outside the highlights. In Nuke: Read the SDR with
+     **Raw Data** on, then an **OCIODisplay** node with display **Rec.1886
+     Rec.709 - Display**, view **ACES 2.0 - SDR 100 nits (Rec.709)** and
+     **invert** on.
+
+   Where the SDR was clipped, the master holds more: that is the
+   reconstruction.
+4. For HDR, view **Rec.2100-PQ - Display / ACES 2.0 - HDR 1000 nits (P3 D65)**
+   on an HDR monitor.
+
+An sRGB choice in Reconstruct › Source, so that an analytic master lines up with
+an SDR read as sRGB, is planned for 1.3.1.
+
 ### AI fill: the viewer, Reconstruct and Deliver
 
 The AI fill is in three places, each with one job:
 
-- **Viewer**: one **AI fill** button on the viewer's bar shows the generated
-  fill or the master, in one click, to compare. It appears once there is a
-  fill to show (a preview or a finished render) or AI generation is on.
-- **Reconstruct › AI generation** (experimental, off by default): its switch
-  turns the AI fill on for the shot. Below it is everything else: what it
+- **Viewer**: one **AI fill** button on the viewer's bar turns the AI fill on
+  (blue, **AI fill on**) or off (grey, **AI fill**) in one click: on, the
+  viewer shows the fill wherever there is one; off, the master, to compare.
+  It is on the bar whenever a shot is open (in Full), and it is the same
+  switch as Reconstruct › AI generation.
+- **Reconstruct › AI generation** (experimental): its switch turns the AI
+  fill on for the session. It starts on when the computer can run the fill
+  (an NVIDIA GPU with 16 GB of memory, or Apple silicon with 16 GB, and the
+  AI fill installed) and off on any other computer. Below it is everything else: what it
   regenerates (**AI fill v3** or **v4.3 region**, **Keep small and thin bright
   parts**, **Where it fills**, and the thresholds in **Advanced**), the prompt
   and **Suggest a prompt…**, **Preview AI fill**, **Show what it invented**,
@@ -273,7 +317,7 @@ The AI fill is in three places, each with one job:
 
 ### Deliver
 
-- **AI fill** (experimental, off by default; set up in Reconstruct › AI
+- **AI fill** (experimental; Deliver's box starts unticked; set up in Reconstruct › AI
   generation, put in the export with Deliver › AI Fill Generation) draws detail inside fully
   clipped areas. Optional **Highlight / Shadow prompts** steer what it draws
   in each region (only there). **Prompt strength** (1.1, 0 to 2) sets how
@@ -474,5 +518,8 @@ the PATH.
 | G / Shift+G | Action / title safe guides |
 | F1 | This guide |
 | ? | The shortcut sheet |
+
+**Help › Keyboard** (or **?**) shows the shortcuts on a card over the window,
+in groups; Esc, its close button or a click anywhere closes it.
 
 On macOS, Ctrl is Cmd.

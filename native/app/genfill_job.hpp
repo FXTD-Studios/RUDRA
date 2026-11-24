@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <utility>
 #include <vector>
 
 class QObject;
@@ -39,6 +40,10 @@ struct GenFillSetup {
     // 12 Nov 2026: the setup of the region re-render (v4). `lora` is then the v4 LoRA, and the
     // fill starts with the settings v4 was tested with (feather 8, the model's own brightness).
     bool rerender = false;
+    // 1.3: the region LoRA is AI fill v5 (research_genfill_v5d_thin_20261123): the fill then also takes
+    // --rerender-hold-clipped thin and the v5e finish (research_genfill_v5e_20261124). False with v4.3, which runs
+    // exactly as in 1.2.9.
+    bool v5 = false;
 };
 
 // The published AI fill v3 LoRA (docs/MODELS.md; PUBLISH_HF_MODELS.ps1).
@@ -47,6 +52,19 @@ inline constexpr const char* kGenFillV3Sha256 = "9fff7eb8492ae62619a126d302d9c94
 // (research_genfill_v4_2_20261114), run as configs/experiments/research_genfill_v4_3_20261115.json.
 // Experimental; release_authorized false until that decision rule is settled.
 inline constexpr const char* kGenFillV4Sha256 = "406b1dc7b7d3ada5406b396a6aa8c7e5ec9eac8d0be0d04e8038d68b5bf1b390";
+// 1.3 (23 Nov 2026): AI fill v5, the region re-render's LoRA of research_genfill_v5_20261122, run with the
+// 1.3 finish (--rerender-hold-clipped thin; configs/experiments/research_genfill_v5d_thin_20261123.json). Preferred
+// over v4.3 where both are installed. Experimental, as every AI fill.
+inline constexpr const char* kGenFillV5Sha256 = "5c5d4ab4107088f86bdc8213ae2ec21c1a882cc6d942141f0e12fb7733fda5e6";
+// The hold v5 runs with (composite.finish_rerender hold): steady only inside thin clipped shapes (a strip light,
+// a tube, a small lamp). Not the 7-frame median (v5c: Porch failed) nor the hold everywhere (v5b: 09V's antenna ghosts).
+inline constexpr const char* kGenFillV5Hold = "thin";
+// 1.3 (24 Nov 2026, configs/experiments/research_genfill_v5e_20261124.json): with v5 the crossfade's mix settles
+// while the code it follows stays near where it was (--rerender-blend-still), and a held thin shape keeps more of
+// its last frame for a jump (--rerender-hold-calm). 01V and 03V flickered without them (analytic T 0.164, 0.173;
+// replayed with them 0.079, 0.094). On the learned route also --rerender-cap-master and --mask-first-frame.
+inline constexpr const char* kGenFillV5BlendStill = "0.95";
+inline constexpr const char* kGenFillV5HoldCalm = "0.95";
 // SHA-256 of a file, cached in QSettings by path, size and modification time
 // (a LoRA is ~100 MB and the setup is asked often). Empty when unreadable.
 QString genfill_file_sha256(const std::filesystem::path& file);
@@ -122,6 +140,24 @@ std::optional<PromptSuggestions> parse_prompt_suggestions(const QByteArray& json
 // A new folder beside the master: <master>_aifill, else _aifill_2, _3 ... (nothing replaced).
 QString genfill_out_dir(const QString& master);
 
+// 1.3 (23 Nov 2026): what is checked before an AI fill starts. A fill writes uncompressed float EXRs,
+// about 21 bytes a pixel a frame (09V, 97 frames at 1920 x 1080: 4.2 GB; on 22 Nov it ran out of disk
+// at frame 22), and takes about 8 s a frame plus 2 min to load (09V: 13 min), several times longer with
+// the GPU shared (47 min seen). Disk short: not started. GPU busy: a warning, the fill still starts.
+struct GenFillPreflight {
+    bool ok = true;
+    double need_gb = 0.0, free_gb = 0.0, minutes = 0.0;
+    bool gpu_busy = false;
+    QString text;   // one line for the status bar and the log
+};
+constexpr double kGenFillBytesPerPixel = 21.0;
+constexpr double kGenFillSecPerFrame = 8.0;
+// free_bytes < 0: unknown (not checked). gpu_util_pct / gpu_mem_mb < 0: unknown.
+GenFillPreflight genfill_preflight(int frames, int width, int height, qint64 free_bytes, double sec_per_frame,
+                                   int gpu_util_pct, int gpu_mem_mb);
+// nvidia-smi's utilisation (%) and memory used (MiB) of the first GPU, or {-1, -1} (no NVIDIA GPU, no tool).
+std::pair<int, int> genfill_gpu_load();
+
 // 1.2.6 (readiness report, checklist item 6): the AI fill's disclosure record, for a studio that
 // must be told where generative AI was used. Built from the genfill.json a finished fill writes
 // (rudra/genfill/run.py) and what the app knows: which fill (v3 clipped pixels only / v4.3 region
@@ -167,6 +203,11 @@ QString genfill_v4_missing_text();
 // then the training workstation's run folder; only a file that is v4 by its SHA-256).
 std::optional<GenFillSetup> genfill_setup_for(const GenFillOptions& o, QString* why = nullptr);
 std::filesystem::path genfill_v4_lora();   // empty when none is found
+// 1.3: the v5 LoRA (QSettings genfill/loraV5, <download root>/rudra_genfill_v5, <root>/rudra_genfill_v5.safetensors,
+// the training workstation's run folder; only a file that is v5 by its SHA-256); empty when none is found.
+std::filesystem::path genfill_v5_lora();
+// "v5" where the v5 LoRA is installed, else "v4.3": the region fill's name in the card and the frame line.
+QString genfill_region_name();
 // AI fill v4 (region re-render) is parked (13 Nov 2026: it passes 09V and the held-out clips, not a second
 // shot). The app shows and runs it only with RUDRA_GENFILL_V4=1 set, for development.
 bool genfill_v4_enabled();

@@ -135,6 +135,7 @@ CompositeParams Session::composite_params() const {
     for (const auto& r : grade.regions) p.regions.push_back({r.low_nits, r.high_nits, r.ev});
     p.region_softness_stops = 1.0;
     p.source = source_curve();
+    p.own_codes = own_codes_;   // 24 Nov 2026
     p.calibration = grade.reference.empty() ? calibration_points() : std::vector<CalibrationPoint>{};
     p.reference = grade.reference;
     if (grade.masks && !grade.masks->empty()) p.masks = grade.masks;
@@ -406,6 +407,12 @@ void Session::set_source(std::string_view id) {
     push_undo();
     grade.source = std::string(id);
     notify(Grade);
+}
+
+void Session::set_own_codes(bool on) {
+    if (own_codes_ == on) return;
+    own_codes_ = on;
+    notify(Grade);   // the baseline, the anchor's target and the viewer follow
 }
 
 void Session::set_container(std::string_view kind) {

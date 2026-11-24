@@ -1,5 +1,5 @@
 // The window's side of the batch queue (28 Oct 2026, batch_queue.hpp,
-// batch_window.hpp): the queue file, the runner on the kept-loaded engine, and
+// batch_page.hpp, the Batch tab since 1.3): the queue file, the runner on the kept-loaded engine, and
 // adding the shot on screen with the Deliver tab's choice.
 
 #include <QDir>
@@ -10,13 +10,14 @@
 #include <QSettings>
 #include <QSpinBox>
 #include <QStandardPaths>
+#include <QStackedWidget>
 #include <QStatusBar>
 
 #include <algorithm>
 
 #include "aces_engine.hpp"
 #include "paths.hpp"
-#include "batch_window.hpp"
+#include "batch_page.hpp"
 #include "edl.hpp"
 
 #include "main_window.hpp"
@@ -52,15 +53,22 @@ BatchRunner& MainWindow::batch_runner() {
 }
 
 void MainWindow::batch_changed() {
-    if (batch_window_) static_cast<BatchWindow*>(batch_window_.data())->refresh();
+    if (batch_page_) batch_page_->refresh();
+}
+
+BatchPage* MainWindow::batch_page() {
+    if (!batch_page_) {
+        batch_runner();   // the queue and its runner
+        batch_page_ = new BatchPage(this, body_stack_);
+        if (body_stack_) body_stack_->addWidget(batch_page_);
+    }
+    return batch_page_;
 }
 
 void MainWindow::open_batch() {
-    batch_runner();   // the queue and its runner
-    if (!batch_window_) batch_window_ = new BatchWindow(this);
-    static_cast<BatchWindow*>(batch_window_.data())->refresh();
-    batch_window_->show();
-    batch_window_->raise();
+    // 1.3: the Batch tab (batch_page.hpp) replaces the Batch queue dialog.
+    batch_page()->refresh();
+    show_tab(QStringLiteral("batch"));
 }
 
 QString MainWindow::render_dir() const {

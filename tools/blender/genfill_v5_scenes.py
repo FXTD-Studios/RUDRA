@@ -241,13 +241,19 @@ def camera(scene, rng, origin, target, frames, lens=None):
     wob = math.radians(rng.uniform(0.0, 0.12))
     ph = [rng.uniform(0, 6.28) for _ in range(3)]
     still = rng.random() < 0.2                             # a locked-off camera: the fill must hold still
+    prev = None
     for f in range(frames):
         t = 0 if still else f
         jy = wob * (math.sin(0.37 * t + ph[0]) + 0.5 * math.sin(0.91 * t + ph[1]))
         jx = wob * (math.sin(0.29 * t + ph[2]) + 0.5 * math.sin(0.83 * t + ph[0]))
         d = (fwd + right * math.tan(pan * t + jy) + up * math.tan(tilt * t + jx)).normalized()
         ob.location = origin + fwd * dolly * t
-        ob.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
+        # 22 Nov 2026: each frame's Euler angles the closest to the previous frame's. Plain to_euler() can
+        # jump by 360 degrees between two frames (an angle crossing +-180), and Cycles' motion blur then
+        # sweeps the whole turn into the frame (9 of the first 61 motion-blurred scenes smeared in a swirl).
+        q = d.to_track_quat('-Z', 'Y')
+        prev = q.to_euler('XYZ', prev) if prev is not None else q.to_euler('XYZ')
+        ob.rotation_euler = prev
         ob.keyframe_insert('location', frame=f + 1)
         ob.keyframe_insert('rotation_euler', frame=f + 1)
     return ob, fwd, right, up, {'lens': round(cam.lens, 1), 'pan_deg_per_frame': round(math.degrees(pan), 3),

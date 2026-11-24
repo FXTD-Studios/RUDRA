@@ -23,6 +23,7 @@
 #include "rudra/core/measure.hpp"
 #include "rudra/core/metadata.hpp"
 #include "rudra/deliver/exr.hpp"
+#include "rudra/deliver/master.hpp"
 #include "rudra/deliver/sidecars.hpp"
 #include "rudra/platform/npy.hpp"
 #include "rudra/platform/pyjson.hpp"
@@ -241,6 +242,45 @@ TEST(Exr, OnlyAHalfAp0FileIsFlaggedAsTheAcesContainer) {
     EXPECT_TRUE(has(h, "acesImageContainerFlag"));
     EXPECT_FALSE(has(h, "rudra:container"));
     EXPECT_FALSE(has(cg, "acesImageContainerFlag"));
+}
+
+// 1.3 (24 Nov 2026): ZIPS (one scanline a block, compression 2) is lossless too, and read back as written.
+TEST(Exr, ZipsMastersAreLosslessOneLineABlock) {
+    if (!exr_zip_available()) GTEST_SKIP() << "this build has no zlib";
+    PlanarBuffer img(3, 21, 40), mask(1, 21, 40);
+    for (int y = 0; y < 21; ++y)
+        for (int x = 0; x < 40; ++x) {
+            for (int c = 0; c < 3; ++c) img.at(c, y, x) = 0.02f * float(x * (c + 1) + y) - 0.1f;
+            mask.at(0, y, x) = (y > 10) ? 1.0f : 0.0f;
+        }
+    for (bool half : {false, true}) {
+        const auto plain = scratch(half ? "cg_plain_zs_h.exr" : "cg_plain_zs_f.exr"), zips = scratch(half ? "cg_zips_h.exr" : "cg_zips_f.exr");
+        ASSERT_TRUE(write_acescg_exr(plain, img, Primaries::Ap1, 1.0, {}, half, &mask));
+        ASSERT_TRUE(write_acescg_exr(zips, img, Primaries::Ap1, 1.0, {}, half, &mask, {}, nullptr, ExrCompression::Zips));
+        const auto a = read_exr(plain), b = read_exr(zips);
+        ASSERT_TRUE(a && b);
+        int compression = -1;
+        for (const auto& [k, v] : b->attributes)
+            if (k == "compression") compression = int(v.at(0));
+        EXPECT_EQ(compression, 2);
+        ASSERT_EQ(a->pixels.span().size(), b->pixels.span().size());
+        EXPECT_EQ(std::memcmp(a->pixels.span().data(), b->pixels.span().data(), a->pixels.span().size_bytes()), 0);
+        ASSERT_TRUE(a->reconstruction_mask && b->reconstruction_mask);
+        EXPECT_EQ(std::memcmp(a->reconstruction_mask->span().data(), b->reconstruction_mask->span().data(),
+                              a->reconstruction_mask->span().size_bytes()), 0);
+    }
+    // The request carries it only when it is ZIPS, so every request before reads the same.
+    MasterRequest q;
+    q.container = "acescg";
+    q.exr_zip = true;
+    EXPECT_EQ(master_request_json(q).find("exr_zip_lines"), std::string::npos);
+    q.exr_zip_lines = 1;
+    const std::string js = master_request_json(q);
+    EXPECT_NE(js.find("exr_zip_lines"), std::string::npos) << js;
+    const auto back = master_request_from_json(js);
+    ASSERT_TRUE(back);
+    EXPECT_EQ(back->exr_zip_lines, 1);
+    EXPECT_TRUE(back->exr_zip);
 }
 
 // 1.2.6 (readiness report, checklist item 8): lossless ZIP for ACEScg and linear; never AP0.

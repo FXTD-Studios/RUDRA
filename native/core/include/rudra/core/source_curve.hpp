@@ -12,8 +12,10 @@
 // placed per BT.2408), the code being the BT.709 video's: RUDRA reads video
 // through the inverse BT.709 OETF, which this undoes. On real SDR (Meridian,
 // HDRTV1K) it measured far above the ACES inverse (release row R3,
-// docs/RESULTS.md), and the app's sessions start on it. A still read as sRGB
-// comes out about a third of a stop darker in the mid-tones than code^2.4.
+// docs/RESULTS.md), and the app's sessions start on it. The app holds a shot's
+// own codes (a still; a movie's frame through PNG): source_curve_params' own_codes
+// reads them as video codes, code^2.4 (24 Nov 2026; before, they came out 0.36
+// stop dark at code 128 and 2.7 at code 26).
 //
 // The forward curves are pipeline/sdr_render.py's, the ones the corpus was
 // rendered with (tests/test_core.cpp pins the port); the inverses are numeric
@@ -60,13 +62,23 @@ float source_curve_inverse(SourceCurve c, float display_linear) noexcept;
 // The correction over the ACES inverse: [exposure 0, then kSourceCurveKnots
 // values of log2(inverse_c / inverse_aces) at codes 0..255]. Empty for
 // Unknown and Aces. Built once, then a view into a static table.
-std::span<const float> source_curve_params(SourceCurve c);
+//
+// 24 Nov 2026: `own_codes` is true when the SDR holds the source's own code values: a still (PNG, TIFF, JPEG,
+// DPX...), and a movie as the app reads it (a frame through ffmpeg to PNG, then decoded as a still). Only the
+// command-line video path re-encodes a movie's BT.709 light as sRGB codes (canonicalize_sdr "rec709"). BT.1886 and
+// BT.1886 shadows say the SDR is video on a BT.1886 display, so own codes are video codes: with `own_codes` they
+// read each code as the BT.709 code it is, and BT.1886 gives code^2.4 as on the video path. Before, own codes went
+// through the sRGB decode and then the BT.709 OETF: 0.36 stop dark at code 128, 1.3 at 51, 2.8 at 26 (09V's frames:
+// 1.95 stops at the median, 3.6 in the darkest 5 %). The other curves are unchanged by it.
+std::span<const float> source_curve_params(SourceCurve c, bool own_codes = false);
+// BT.1886 and BT.1886 shadows: the curves that read own codes as video codes.
+bool reads_video_codes(SourceCurve c) noexcept;
 
 // What the composite feeds corrected_baseline: the model's own curve params
 // (FrameScalars.curve_params, the CurveHead if it has one) plus the source's,
 // summed in log2 after resampling the model's knots to the source's. Returns
 // the model's params unchanged when the source adds nothing, so a frame with
 // Unknown is the same bytes as before 3.1.
-std::vector<float> effective_curve_params(std::span<const float> model_params, SourceCurve source);
+std::vector<float> effective_curve_params(std::span<const float> model_params, SourceCurve source, bool own_codes = false);
 
 }  // namespace rudra

@@ -16,6 +16,23 @@ if(NOT nlohmann_json_FOUND)
   FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
+# zlib, for the lossless ZIP and ZIPS EXR masters (1.2.6, 1.3). vcpkg and the Linux and macOS systems have it.
+# The Windows package (scripts/PACKAGE_WINDOWS.ps1: Qt from aqt, no vcpkg) and this PC's build did not, so
+# find_package(ZLIB) failed there and every EXR was written uncompressed whatever Deliver asked (24 Nov 2026: the
+# ZIP tests skipped, "this build has no zlib"). Without one it is fetched at a pinned release and linked static.
+find_package(ZLIB QUIET)
+if(NOT TARGET ZLIB::ZLIB)
+  set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
+  FetchContent_Declare(zlib
+    URL https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+    URL_HASH SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+  FetchContent_MakeAvailable(zlib)
+  add_library(ZLIB::ZLIB ALIAS zlibstatic)
+  message(STATUS "zlib 1.3.1 fetched and linked static (no system zlib)")
+endif()
+
 # A Windows executable must carry the runtime matching the headers/import
 # library it was built with. PATH cannot override Windows' System32 copy, which
 # can expose an older C API even when the correct SDK is first on PATH.

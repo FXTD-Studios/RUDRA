@@ -15,6 +15,10 @@ mask (at the latent grid), because the region is all the fill is used for.
 Every --save-every updates: the LoRA (lora_<step>.safetensors) and the dev loss (fixed noise
 and sigmas on the held-out dev clips, a monitor only: the last LoRA is the result, nothing is
 selected on it). Stops at --steps or at the first save after --max-hours.
+
+v5 (22 Nov 2026): --clip-weights <sampling_v5.json> (tools/genfill_v5_weights.py) multiplies each training
+clip's draw weight by the file's (theme and thin-edge factors) and leaves out of the dev monitor the dev clips
+it marks; --dev-pick spread takes the monitor's clips evenly through the dev set, not its first N.
 """
 import argparse, hashlib, json, math, os, shutil, sys, time
 from pathlib import Path
@@ -143,6 +147,35 @@ def sampling_weights(meta, boost, ref):
 AP1_Y = torch.tensor([.2722287168, .6740817658, .0536895174])
 
 
+def load_clip_weights(path, root: Path):
+    """v5: the sampling file of tools/genfill_v5_weights.py -> {(shard, index): row}, checked against the store."""
+    d = json.loads(Path(path).read_text())
+    if d.get('clips_jsonl_sha256') != sha(Path(root) / 'clips.jsonl'):
+        sys.exit(f'{path} was written for another clip store (clips.jsonl sha256 differs)')
+    return {(r['shard'], int(r['index'])): r for r in d['rows']}
+
+
+def apply_clip_weights(train_meta, dev_meta, rows):
+    """v5: (multipliers for the train clips, the dev metas the monitor keeps). Every clip must have a row."""
+    def row(m):
+        r = rows.get((m['shard'], int(m['index'])))
+        if r is None:
+            sys.exit(f"no sampling row for {m['shard']}[{m['index']}]")
+        return r
+    mult = torch.tensor([float(row(m)['weight']) for m in train_meta], dtype=torch.float64)
+    if (mult < 0).any() or not (mult > 0).any():
+        sys.exit('clip weights must be >= 0 and not all 0')
+    return mult, [m for m in dev_meta if row(m).get('dev_monitor', True)]
+
+
+def pick_dev(n_dev, n, how):
+    """The dev monitor's clips: the first n (v1-v4.2) or n spread evenly through the dev set (v5)."""
+    n = min(n, n_dev)
+    if how == 'first' or n == 0:
+        return list(range(n))
+    return sorted({int(round(i * (n_dev - 1) / max(n - 1, 1))) for i in range(n)})
+
+
 def calibration_loss(vae, x0, core0, ylog0, over_weight, latents_mean, latents_inv_std):
     """v2: how bright the predicted fill is, against the truth, on frame 0's fully clipped / crushed
     pixels. The predicted clean latents of the first latent frame (frame 0 alone, the VAE's causal
@@ -189,6 +222,10 @@ def main(argv=None):
     ap.add_argument('--structure-ref', type=float, default=0.10, help='structure (stops) at which the boost is full')
     ap.add_argument('--temporal-weight', type=float, default=0.0, help='v4.2: weight of the frame-to-frame term (0 = off)')
     ap.add_argument('--temporal-sigma', type=float, default=0.6, help='the frame-to-frame term only at noise levels <= this')
+    ap.add_argument('--clip-weights', default='',
+                    help='v5: sampling file (tools/genfill_v5_weights.py): per-clip draw multipliers and the dev clips left out')
+    ap.add_argument('--dev-pick', choices=('first', 'spread'), default='first',
+                    help='the dev monitor takes the first --dev-clips dev clips (v1-v4.2) or spreads them through the dev set')
     ap.add_argument('--no-checkpointing', action='store_true')
     ap.add_argument('--tiny', action='store_true', help=argparse.SUPPRESS)   # tests: a random tiny Wan
     a = ap.parse_args(argv)
@@ -205,6 +242,11 @@ def main(argv=None):
     train, dev = ClipStore(clips, 'train'), ClipStore(clips, 'dev')
     if not len(train):
         sys.exit('no training clips')
+    clip_mult, dev_left_out = None, 0
+    if a.clip_weights:
+        clip_mult, kept = apply_clip_weights(train.meta, dev.meta, load_clip_weights(a.clip_weights, clips))
+        dev_left_out = len(dev.meta) - len(kept)
+        dev.meta = kept
     if a.tiny:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tests'))
         from genfill_tiny import tiny_components
@@ -257,7 +299,7 @@ def main(argv=None):
     gen = torch.Generator().manual_seed(a.seed)
     # the dev monitor: fixed clips, sigmas and noise
     dgen = torch.Generator().manual_seed(a.seed + 1)
-    dev_idx = list(range(min(a.dev_clips, len(dev))))
+    dev_idx = pick_dev(len(dev), a.dev_clips, a.dev_pick)
     dev_fixed = [(sample_sigma(dgen, a.shift)[0].item(), torch.randn((16,) + tuple(dev.get(i)[0].shape[1:]), generator=dgen))
                  for i in dev_idx]
 
@@ -276,8 +318,13 @@ def main(argv=None):
         return tot / len(dev_idx)
 
     weights = sampling_weights(train.meta, a.structure_boost, a.structure_ref)
+    if clip_mult is not None:
+        weights = weights * clip_mult
+    weighted = a.structure_boost > 0 or clip_mult is not None      # v4.2 draws exactly as before
     report_sampling = {'structure_boost': a.structure_boost, 'structure_ref': a.structure_ref,
-                       'weighted_clips': int((weights > 1).sum()), 'mean_weight': round(float(weights.mean()), 4)}
+                       'weighted_clips': int((weights != 1).sum()), 'mean_weight': round(float(weights.mean()), 4),
+                       'clip_weights': a.clip_weights or None, 'clip_weights_sha256': sha(a.clip_weights) if a.clip_weights else None,
+                       'dev_left_out': dev_left_out, 'dev_pick': a.dev_pick, 'dev_monitor_clips': len(dev_idx)}
     log = (out / 'log.jsonl').open('w')
     t0 = time.time(); step = 0; order = []
     report = {'clips': str(clips), 'clips_summary_sha256': sha(clips / 'summary.json'), 'base': a.base,
@@ -298,7 +345,7 @@ def main(argv=None):
         for _ in range(a.accumulate):
             if not order:
                 order = (torch.multinomial(weights, len(train), replacement=True, generator=gen).tolist()
-                         if a.structure_boost > 0 else torch.randperm(len(train), generator=gen).tolist())
+                         if weighted else torch.randperm(len(train), generator=gen).tolist())
             idx = order.pop()
             z0, ctx, m = train.get(idx)
             core = ylog = None

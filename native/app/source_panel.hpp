@@ -50,7 +50,7 @@ class SourcePanel : public QWidget {
 public:
     explicit SourcePanel(QWidget* parent = nullptr);
     void inspect_source(bool loaded, bool movie, const std::optional<VideoStreamInfo>& stream,
-                        const std::optional<StillColour>& still = {});
+                        const std::optional<StillColour>& still = {}, const std::optional<SourceWhiteProbe>& whites = {});
     // The session's choice, its anchors by slot, and the loaded model's
     // exposure convention.
     void sync(SourceCurve source, const std::vector<CalibrationPoint>& calibration, float corpus_ev,
@@ -66,6 +66,13 @@ public:
     // it), or its Clear.
     std::function<void()> load_reference;
     std::function<void()> reference_cleared;
+    // 1.3 (24 Nov 2026, Ahmed): Check compression, under the reported source. The app measures the JPEG / MP4
+    // block grid and cleans it when there is one (Reconstruct > Clean compression is the same action); the line
+    // beside the button says what it found. `state`: "" (not checked), "busy", "ok" or "warn"; `button`, when
+    // given, the button's new text ("Check compression", "Use the original").
+    std::function<void()> check_compression;
+    void set_compression_status(const QString& text, const QString& state, const QString& button = {});
+    void set_compression_busy(bool busy);
     void set_armed(int slot);          // -1 for none; the button shows it
     int armed() const { return armed_; }
     // A click landed for the armed slot: the code it read goes into the row;
@@ -92,6 +99,9 @@ private:
     QLabel *ref_file_ = nullptr, *ref_exposure_ = nullptr, *ref_residual_ = nullptr, *ref_codes_ = nullptr,
            *ref_line_ = nullptr;
     QWidget* ref_stats_ = nullptr;
+    QWidget* compression_ = nullptr;          // the row: shown with a shot
+    QPushButton* compression_btn_ = nullptr;
+    QLabel* compression_line_ = nullptr;      // a NoteLabel
     int armed_ = -1;
     SourceCurve source_ = SourceCurve::Unknown;
     float corpus_ev_ = -1.0f;

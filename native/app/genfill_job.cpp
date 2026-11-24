@@ -1,4 +1,5 @@
 #include "genfill_job.hpp"
+#include "child_process.hpp"
 #include "model_downloads.hpp"
 #include "paths.hpp"
 
@@ -18,6 +19,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -118,8 +120,9 @@ void downloaded_loras(std::vector<fs::path>& out) {
     QStringList dirs = root.entryList({"rudra_genfill*"}, QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
     std::sort(dirs.begin(), dirs.end(), [](const QString& a, const QString& b) { return a > b; });   // v3 before v2
     // rudra_genfill_v4 (12 Nov 2026) is the region re-render's LoRA, not a hole filler: genfill_v4_lora finds it.
-    for (const QString& d : dirs)
-        if (!d.startsWith("rudra_genfill_v4")) out.push_back(pq(root.filePath(d)) / "rudra_genfill.safetensors");
+    for (const QString& d : dirs)   // 1.3: nor is rudra_genfill_v5 (genfill_v5_lora)
+        if (!d.startsWith("rudra_genfill_v4") && !d.startsWith("rudra_genfill_v5"))
+            out.push_back(pq(root.filePath(d)) / "rudra_genfill.safetensors");
 }
 
 // A saved path wins while it is there; gone (moved, deleted), the search again.
@@ -237,6 +240,18 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
         if (!o.prompt_highlight.trimmed().isEmpty()) a << "--prompt-highlight" << o.prompt_highlight.trimmed();
         if (!o.region_json.isEmpty()) a << "--region" << o.region_json;
         if (!o.glob.isEmpty()) a << "--glob" << o.glob;
+        // 1.3, AI fill v5 only: inside a thin clipped shape that the source holds still, a jump is held (v5 redrew
+        // Porch's thin LED strip a little differently every frame; research_genfill_v5d_thin_20261123).
+        if (s.v5) {
+            a << "--rerender-hold-clipped" << QString::fromLatin1(kGenFillV5Hold);
+            // 1.3 (24 Nov 2026, research_genfill_v5e_20261124): the mix settles against the codec's noise and a thin
+            // clipped shape is held more (01V and 03V flickered on both routes) ...
+            a << "--rerender-blend-still" << QString::fromLatin1(kGenFillV5BlendStill) << "--rerender-hold-calm"
+              << QString::fromLatin1(kGenFillV5HoldCalm);
+            // ... and on the learned route the learned master's share stays at or under the fill, and a newly
+            // clipped pixel joins the mask at once (research_genfill_v5_learned_20261123 failed: flicker, Porch's L)
+            if (o.condition == QLatin1String("aces")) a << "--rerender-cap-master" << "--mask-first-frame";
+        }
         return a;
     }
     QStringList a{"-m", "rudra.genfill.run", "--master", master, "--out", out, "--base", qp(s.base), "--lora", qp(s.lora),
@@ -269,23 +284,40 @@ fs::path genfill_v4_lora() {
     return {};
 }
 
+fs::path genfill_v5_lora() {
+    std::vector<fs::path> places;
+    if (const QString saved = QSettings().value("genfill/loraV5").toString(); !saved.isEmpty()) places.push_back(pq(saved));
+    places.push_back(pq(default_download_root()) / "rudra_genfill_v5" / "rudra_genfill.safetensors");   // File > Model packages
+    for (const auto& r : genfill_roots(find_repo())) places.push_back(r / "rudra_genfill_v5.safetensors");
+    if (training_workstation()) places.push_back("G:/rudra_training/research_genfill_v5_20261122/rudra_genfill.safetensors");
+    std::error_code ec;
+    for (const auto& p : places)
+        if (fs::is_regular_file(p, ec) && genfill_lora_is_v3(p, QString::fromLatin1(kGenFillV5Sha256))) return p;
+    return {};
+}
+
+QString genfill_region_name() { return genfill_v5_lora().empty() ? QStringLiteral("v4.3") : QStringLiteral("v5"); }
+
 QString genfill_v4_missing_text() {
-    // 1.2.7: v4.3 is a published download (docs/MODELS.md) and v3 / v4.3 is a switch in the card.
-    return QStringLiteral("AI fill v4.3 region: its model is not installed. Download it from File \u203a Model "
-                          "packages\u2026 (RUDRA AI fill v4.3, experimental), or switch the card to AI fill v3.");
+    // 1.2.7: the region fill is a published download (docs/MODELS.md) and v3 / region is a switch in the card.
+    // 1.3: v5 is the one to get; v4.3 still runs where it is installed.
+    return QStringLiteral("AI fill v5 region: its model is not installed. Download it from File \u203a Model "
+                          "packages\u2026 (RUDRA AI fill v5, experimental), or switch the card to AI fill v3.");
 }
 
 std::optional<GenFillSetup> genfill_setup_for(const GenFillOptions& o, QString* why) {
     auto s = genfill_setup(why);
     if (!s || !o.rerender) return s;
-    const fs::path v4 = genfill_v4_lora();
-    if (v4.empty()) {
+    const fs::path v5 = genfill_v5_lora();   // 1.3: v5 first, v4.3 where only it is installed
+    const fs::path region = v5.empty() ? genfill_v4_lora() : v5;
+    if (region.empty()) {
         if (why)
             *why = genfill_v4_missing_text();
         return std::nullopt;
     }
-    s->lora = v4;
+    s->lora = region;
     s->rerender = true;
+    s->v5 = !v5.empty();
     return s;
 }
 
@@ -358,7 +390,10 @@ QJsonObject genfill_disclosure(const QJsonObject& g, const QString& route, const
         {"generated_content", true},
         {"tool", QStringLiteral("RUDRA %1").arg(app_version)},
         {"when", QDateTime::currentDateTime().toString(Qt::ISODate)},
-        {"fill", v4 ? "AI fill v4.3 region re-render (experimental)" : "AI fill v3, fully clipped pixels only"},
+        {"fill", !v4 ? QStringLiteral("AI fill v3, fully clipped pixels only")
+                 : model.value("lora_sha256").toString() == QLatin1String(kGenFillV5Sha256)
+                     ? QStringLiteral("AI fill v5 region re-render (experimental)")
+                     : QStringLiteral("AI fill v4.3 region re-render (experimental)")},
         {"contract", g.value("contract")},
         {"route", route},
         {"base_model", model.value("base")},
@@ -397,6 +432,56 @@ QString write_genfill_disclosure(const QString& fill_out, const QString& route) 
     if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) return {};
     out.write(QJsonDocument(genfill_disclosure(g, route, QCoreApplication::applicationVersion())).toJson(QJsonDocument::Indented));
     return path;
+}
+
+GenFillPreflight genfill_preflight(int frames, int width, int height, qint64 free_bytes, double sec_per_frame,
+                                   int gpu_util_pct, int gpu_mem_mb) {
+    GenFillPreflight p;
+    constexpr double GiB = 1024.0 * 1024.0 * 1024.0;
+    frames = std::max(frames, 0);
+    p.need_gb = (double(frames) * std::max(width, 0) * std::max(height, 0) * kGenFillBytesPerPixel * 1.1 + 0.5 * GiB) / GiB;
+    p.free_gb = free_bytes >= 0 ? double(free_bytes) / GiB : -1.0;
+    p.minutes = 2.0 + frames * (sec_per_frame > 0 ? sec_per_frame : kGenFillSecPerFrame) / 60.0;
+    p.gpu_busy = gpu_util_pct >= 30 || gpu_mem_mb >= 2048;
+    QStringList parts;
+    if (free_bytes >= 0 && p.free_gb < p.need_gb) {
+        p.ok = false;
+        p.text = QStringLiteral("AI fill not started: it needs about %1 GB for %2 frame(s) and the drive has %3 GB free. "
+                                "Free some space or render to another drive.")
+                     .arg(p.need_gb, 0, 'f', 1).arg(frames).arg(p.free_gb, 0, 'f', 1);
+        return p;
+    }
+    parts << QStringLiteral("AI fill: %1 frame(s), about %2 min, about %3 GB").arg(frames).arg(std::lround(p.minutes)).arg(p.need_gb, 0, 'f', 1);
+    if (p.gpu_busy)
+        parts << QStringLiteral("the GPU is already in use (%1 %, %2 MB): the fill will be several times slower, and so will "
+                                "the other program. Close it for full speed")
+                     .arg(std::max(gpu_util_pct, 0)).arg(std::max(gpu_mem_mb, 0));
+    p.text = parts.join(QStringLiteral(" · "));
+    return p;
+}
+
+std::pair<int, int> genfill_gpu_load() {
+    // 1.3 (24 Nov 2026, audit): by its full path (the PATH, then System32 where the driver puts it), never
+    // a bare name, which CreateProcess would also look for in the current folder.
+    QString smi = QStandardPaths::findExecutable(QStringLiteral("nvidia-smi"));
+#ifdef _WIN32
+    if (smi.isEmpty()) {
+        const QString sys = QDir(qEnvironmentVariable("SystemRoot", QStringLiteral("C:/Windows"))).filePath(QStringLiteral("System32/nvidia-smi.exe"));
+        if (QFileInfo::exists(sys)) smi = sys;
+    }
+#endif
+    if (smi.isEmpty()) return {-1, -1};
+    QProcess p;
+    p.start(smi, {QStringLiteral("--query-gpu=utilization.gpu,memory.used"),
+                                           QStringLiteral("--format=csv,noheader,nounits")});
+    if (!p.waitForStarted(1500) || !p.waitForFinished(3000) || p.exitCode() != 0) {
+        p.kill();
+        return {-1, -1};
+    }
+    const QStringList f = QString::fromLocal8Bit(p.readAllStandardOutput()).split(QLatin1Char('\n')).value(0).split(QLatin1Char(','));
+    bool a = false, b = false;
+    const int util = f.value(0).trimmed().toInt(&a), mem = f.value(1).trimmed().toInt(&b);
+    return {a ? util : -1, b ? mem : -1};
 }
 
 QString genfill_out_dir(const QString& master) {
@@ -556,6 +641,7 @@ bool GenFillJob::start(const GenFillSetup& s, const GenFillOptions& o, const QSt
             }
         }
     });
+    end_with_rudra(proc_);   // 1.3: the fill (about 16 GB of VRAM) ends with RUDRA, crash or not
     proc_->start(qp(s.python), genfill_arguments(s, o, master, out));
     return true;
 }

@@ -111,7 +111,7 @@ def test_cleanup_recognizes_all_trainer_dir_patterns(tmp_path):
     import cleanup_checkpoints as cc
 
     live_names = [
-        "turbo_flux", "full_ltxvideo",            # build_all_decoders
+        "turbo_flux", "full_wan21",               # build_all_decoders
         "flux_turbo_decoder", "sdxl_full_decoder", # train_all_decoders
         "flux1_turbo", "wan21_full", "flux1_lora", # retrain_all
         "sdr2hdr_image_v2",                        # train_sdr2hdr

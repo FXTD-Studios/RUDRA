@@ -92,6 +92,16 @@ QString aifill_machine_problem(const MachineFacts& f);
 // genfill_setup()'s reason as a user reads it: what is missing, and where it is set up (this window),
 // instead of a path and a script name ("no Wan2.1-VACE-1.3B model at ... (run scripts/genfill_setup.sh)").
 QString genfill_missing_text(const QString& why);
+// 24 Nov 2026 (Ahmed): the AI fill starts on (the viewer's AI fill button, which is Reconstruct > AI
+// generation) where this computer can run it: aifill_machine_problem() finds nothing and the AI fill is
+// installed (genfill_setup). Read at launch. why: empty when it runs here, else what stops it, a sentence.
+struct AiFillHere {
+    bool runs = false;
+    QString why;
+};
+AiFillHere aifill_here();
+// The tests: a computer that can (true) or cannot (false) run the AI fill; nullopt reads this one again.
+void set_aifill_here_for_tests(std::optional<bool> runs);
 
 // ---- The window ----------------------------------------------------------------------------
 class SystemCheckDialog : public QDialog {

@@ -27,6 +27,7 @@
 #include <cmath>
 
 #include "genfill_job.hpp"
+#include "child_process.hpp"
 #include "main_window.hpp"
 #include "rudra/platform/png8.hpp"
 
@@ -136,6 +137,7 @@ void MainWindow::run_prompt_suggestions(bool popup, bool quiet) {
         auto* b = findChild<QPushButton*>("deliverAiSuggest");
         menu->popup(b && b->isVisible() ? b->mapToGlobal(QPoint(0, b->height())) : QCursor::pos());
     });
+    end_with_rudra(proc);   // 1.3: Florence-2 ends with RUDRA, crash or not
     proc->start(QString::fromStdString(setup->python.string()), genfill_suggest_arguments(*setup, deliver_effective().ai, {file}, /*describe=*/!quiet));
 }
 
@@ -227,19 +229,31 @@ void MainWindow::sync_ai_generation() {
     // generation holds the area, the prompt, Preview and every setting; Deliver has one checkbox.
     // The prompt bar that sat over the viewer (6 Nov 2026) is gone: its prompt, suggestions, v3 / v4.3
     // switch, progress and note are all on the card.
-    const bool have_fill = genfill_preview_.has_value() || !genfill_last_out_.isEmpty();
+    const bool full = workspace_ != "simple";   // Simple has no AI generation card, so no AI fill on its bar
     if (auto* b = findChild<QPushButton*>(QStringLiteral("vtAiFill"))) {
-        // Offered while AI generation is on, or while there is a fill to show (a preview, a finished render).
-        b->setVisible(!frames_.empty() && (ai_generation_ || have_fill || fill_view_on_));
-        if (b->isChecked() != fill_view_on_) {
+        // 24 Nov 2026 (Ahmed, the approved mockup): the button IS the AI fill, on or off for this session, the same
+        // switch as Reconstruct > AI generation: grey "AI fill" off, blue "AI fill on" on (studio.qss). It starts on
+        // where this computer can run the fill (load_deliver_settings). On, the viewer shows the fill wherever there
+        // is one (set_deliver). On the bar whenever a shot is open.
+        b->setVisible(!frames_.empty() && full);
+        if (b->isChecked() != ai_generation_) {
             const QSignalBlocker block(b);
-            b->setChecked(fill_view_on_);
+            b->setChecked(ai_generation_);
         }
-        b->setToolTip(fill_view_on_ ? QStringLiteral("Showing the AI fill. Click for the master without it")
-                                    : have_fill ? QStringLiteral("Showing the master. Click for the AI fill (the preview's "
-                                                                 "frames or the last finished fill); Changes shows what it invented")
-                                                : QStringLiteral("No AI fill to show yet: Reconstruct \u203a AI generation \u203a "
-                                                                 "Preview AI fill makes one"));
+        b->setText(ai_generation_ ? QStringLiteral("AI fill on") : QStringLiteral("AI fill"));
+        b->setToolTip(ai_generation_
+                          ? QStringLiteral("AI fill is on: the viewer shows the fill wherever there is one (Reconstruct \u203a "
+                                           "AI generation \u203a Preview AI fill makes one). Click to turn it off and see the master")
+                          : QStringLiteral("AI fill is off. Click to turn it on") +
+                                (aifill_why_.isEmpty() ? QString() : QStringLiteral("\n") + aifill_why_));
+    }
+    if (auto* d = findChild<QPushButton*>(QStringLiteral("vtAiInvented"))) {   // 1.3: what the preview invented
+        d->setVisible(!frames_.empty() && full && ai_generation_ && genfill_preview_.has_value());
+        const bool mask = genfill_preview_.has_value() && genfill_preview_pinned_ && genfill_preview_show_ == "mask";
+        if (d->isChecked() != mask) {
+            const QSignalBlocker block(d);
+            d->setChecked(mask);
+        }
     }
     if (auto* pv = findChild<QPushButton*>(QStringLiteral("deliverAiPreview")))
         pv->setText(genfill_preview_busy_ ? QStringLiteral("Stop preview")

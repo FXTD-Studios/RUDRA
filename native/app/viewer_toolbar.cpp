@@ -14,6 +14,7 @@
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QStandardItemModel>
+#include <QStatusBar>
 #include <QStyle>
 #include <QVBoxLayout>
 
@@ -159,6 +160,12 @@ void MainWindow::build_viewer_popovers(FlowLayout* row) {
                 fill->setParent(hud);
                 hud_flow->insert_widget(hud_flow->indexOf(vt_overlays_) + 1, fill);
                 fill->hide();   // sync_ai_generation shows it once there is a fill, or AI generation is on
+                if (auto* drew = find("vtAiInvented")) {   // 1.3: right after it
+                    if (QWidget* old = drew->parentWidget(); old && old->layout()) old->layout()->removeWidget(drew);
+                    drew->setParent(hud);
+                    hud_flow->insert_widget(hud_flow->indexOf(fill) + 1, drew);
+                    drew->hide();
+                }
             }
         }
         for (auto* b : p.panel->findChildren<QPushButton*>())
@@ -347,12 +354,32 @@ void MainWindow::build_viewer_toolbar(QVBoxLayout* v, QWidget* parent) {
     // 4 Nov 2026: the AI fill in the viewer, frame by frame and playing (the preview's
     // frames, or the last finished fill); with Changes on, what it invented.
     auto* fill = tool_button("AI fill", "vtAiFill",
-                             "Show the AI fill on every frame that has one: the preview's frames (Reconstruct \u203a AI "
-                             "generation \u203a Preview AI fill) or the last finished fill; click again for the master. "
-                             "Turn Changes on to see what it invented.",
+                             "The AI fill, on or off: on, the viewer shows the fill on every frame that has one (the "
+                             "preview's frames, Reconstruct \u203a AI generation \u203a Preview AI fill, or the last finished "
+                             "fill); off, the master. What AI drew shows what it invented.",
                              vtool_, true);
-    connect(fill, &QPushButton::toggled, this, [this](bool on) { set_fill_view(on); });
+    connect(fill, &QPushButton::toggled, this, [this](bool on) {
+        // 24 Nov 2026 (Ahmed, the approved mockup): the button is the AI fill, on or off for this session, and
+        // Reconstruct > AI generation is the same switch: grey off, blue on. On, the viewer shows the fill wherever
+        // there is one (set_deliver); with none yet, it says how to make one. Off, the master.
+        if (on != ai_generation_) set_deliver("ai_generation", on ? "1" : "0");
+        if (on && !aifill_runs_here_ && !aifill_why_.isEmpty())
+            statusBar()->showMessage(QStringLiteral("AI fill is on. ") + aifill_why_, 12000);
+        else if (on && !genfill_preview_.has_value() && genfill_last_out_.isEmpty())
+            statusBar()->showMessage(QStringLiteral("AI fill is on: Reconstruct \u203a AI generation \u203a Preview AI fill makes "
+                                                    "one on this frame"),
+                                     10000);
+        sync_ai_generation();
+    });
     row->addWidget(fill);
+    // 1.3 (23 Nov 2026): the check every fill needs, beside the fill itself (it was only at the bottom of
+    // Reconstruct > AI generation, as "Show what it invented"). Shown while there is a preview.
+    auto* drew = tool_button("What AI drew", "vtAiInvented",
+                             "White where the AI fill invented the pixels on the previewed frame; click again for the "
+                             "picture. The same as Reconstruct \u203a AI generation \u203a Show what it invented",
+                             vtool_, true);
+    connect(drew, &QPushButton::clicked, this, [this](bool on) { show_genfill_preview(on ? "mask" : "fill"); });
+    row->addWidget(drew);
     vt_badge_ = new QLabel(vtool_);
     vt_badge_->setObjectName("vtBadge");
     vt_badge_->setToolTip("The viewer is not neutral: what you see is gained, the master is not");

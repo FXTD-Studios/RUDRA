@@ -21,6 +21,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif
 
 using namespace rudra;
@@ -155,6 +157,34 @@ TEST(Process, KillEndsARunningProgram) {
     (*p)->kill();
     (*p)->wait();
     EXPECT_FALSE((*p)->running());
+}
+
+// 1.3 (24 Nov 2026, audit): a child joins the job that ends it with this program, crash or not.
+TEST(Process, AChildEndsWithThisProgram) {
+    EXPECT_FALSE(bind_child_to_this_process(0));
+#ifdef _WIN32
+    STARTUPINFOW si{};
+    si.cb = sizeof si;
+    PROCESS_INFORMATION pi{};
+    std::wstring cmd = L"\"" + std::filesystem::path(RUDRA_CMAKE_COMMAND).wstring() + L"\" -E sleep 30";
+    ASSERT_TRUE(CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi));
+    EXPECT_TRUE(bind_child_to_this_process(std::int64_t(pi.dwProcessId)));
+    BOOL in = FALSE;
+    EXPECT_TRUE(IsProcessInJob(pi.hProcess, nullptr, &in));
+    EXPECT_TRUE(in);
+    TerminateProcess(pi.hProcess, 1);
+    WaitForSingleObject(pi.hProcess, 5000);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    // A program Process starts is in it from the start.
+    auto p = Process::start({RUDRA_CMAKE_COMMAND, "-E", "sleep", "30"});
+    ASSERT_TRUE(p.ok());
+    EXPECT_TRUE((*p)->running());
+    (*p)->kill();
+    (*p)->wait();
+#else
+    EXPECT_FALSE(bind_child_to_this_process(std::int64_t(getpid())));
+#endif
 }
 
 // A failed write says why (9 Oct 2026: a master failed with only "The EXR file

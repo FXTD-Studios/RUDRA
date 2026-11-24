@@ -132,6 +132,71 @@ TEST(AcesDeliver, OptionsRefuseWhatCannotBeWritten) {
     EXPECT_FALSE(parse_aces_log("logc4", "prores4444p10"));
 }
 
+TEST(AcesDeliver, TheOutputSizeResizesTheMasterItsMaskAndAlpha) {
+    // 1.3 (23 Nov 2026): Deliver's Output size on the learned route.
+    auto o = aces_deliver_from_json({{"output_size", "uhd"}});
+    ASSERT_TRUE(o);
+    EXPECT_EQ(o->output_size, "uhd");
+    EXPECT_EQ(aces_deliver_from_json(json::object())->output_size, "source");
+    EXPECT_FALSE(aces_deliver_from_json({{"output_size", "4x"}}));
+    PlanarBuffer master(3, 9, 16, 0.18f), mask(1, 9, 16, 0.0f);
+    master.at(1, 4, 8) = 60.0f;   // a highlight: no ring round it
+    mask.at(0, 4, 8) = 1.0f;
+    std::optional<PlanarBuffer> alpha = PlanarBuffer(1, 9, 16, 1.0f);
+    o->output_size = "2x";
+    const PlanarBuffer big = aces_sized(*o, master, mask, alpha);
+    EXPECT_EQ(big.width(), 32);
+    EXPECT_EQ(big.height(), 18);
+    EXPECT_EQ(mask.width(), 32);
+    ASSERT_TRUE(alpha);
+    EXPECT_EQ(alpha->height(), 18);
+    float lo = 1e9f;
+    for (float v : big.span()) lo = std::min(lo, v);
+    EXPECT_GE(lo, 0.18f - 1e-6f);
+    ExrAttributes prov;
+    aces_note_size(*o, 16, 9, prov);
+    ASSERT_EQ(prov.size(), 1u);
+    EXPECT_EQ(prov[0].first, "rudra:outputSize");
+    o->output_size = "source";
+    PlanarBuffer m2(1, 9, 16);
+    std::optional<PlanarBuffer> none;
+    EXPECT_EQ(aces_sized(*o, master, m2, none).width(), 16);
+    ExrAttributes nothing;
+    aces_note_size(*o, 16, 9, nothing);
+    EXPECT_TRUE(nothing.empty());
+}
+
+TEST(AcesDeliver, TheOutputSizeReachesTheMasterAndTheMovieOfTheLearnedRoute) {
+    // 1.3: as aces-v2-serve runs a frame: aces_trimmed, then aces_sized, then the EXR (with its mask) and the movie.
+    if (!have("ffmpeg") || !have("ffprobe")) GTEST_SKIP() << "ffmpeg and ffprobe are not on the PATH";
+    const auto d = tmp("output_size");
+    auto o = aces_deliver_from_json({{"exr", "float"}, {"exr_gamut", "acescg"}, {"log", "logc4"},
+                                     {"log_formats", "prores422hq"}, {"output_size", "2x"}});
+    ASSERT_TRUE(o) << o.error().message;
+    auto w = AcesLogWriter::open(o->copies, d, d / "shot.mov", 24.0);
+    ASSERT_TRUE(w) << w.error().message;
+    for (int k = 0; k < 2; ++k) {
+        PlanarBuffer mask(1, 8, 12, 0.0f);
+        mask.plane(0)[20] = 1.0f;
+        std::optional<PlanarBuffer> alpha;
+        const PlanarBuffer master = aces_sized(*o, ramp(8, 12), mask, alpha);
+        ASSERT_EQ(master.width(), 24);
+        ExrAttributes prov;
+        aces_note_size(*o, 12, 8, prov);
+        const fs::path exr = d / ("f" + std::to_string(k) + ".exr");
+        ASSERT_TRUE(write_aces_master_exr(exr, master, mask, *o, prov));
+        auto r = read_exr(exr);
+        ASSERT_TRUE(r) << r.error().message;
+        EXPECT_EQ(r->pixels.width(), 24);
+        EXPECT_EQ(r->pixels.height(), 16);
+        ASSERT_TRUE((*w)->write(master, exr.filename().string()));
+    }
+    ASSERT_TRUE((*w)->finish());
+    const auto info = probe(d / "shot.mov", "width,height");
+    EXPECT_NE(info.find("width=24"), std::string::npos) << info;
+    EXPECT_NE(info.find("height=16"), std::string::npos) << info;
+}
+
 TEST(AcesDeliver, NamesFramesAndTheMovie) {
     auto o = aces_deliver_from_json({{"name", "SH010_rudra"}, {"start", 1001}, {"log", "logc4"}, {"log_formats", "mov16"}});
     ASSERT_TRUE(o);

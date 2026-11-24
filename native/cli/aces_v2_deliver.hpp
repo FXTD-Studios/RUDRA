@@ -42,6 +42,7 @@ struct AcesDeliverOptions {
     std::string exr = "float";
     std::string exr_gamut = "acescg";
     bool exr_zip = false;   // 1.2.6 (item 8): lossless ZIP for the ACEScg master; never the AP0 container
+    int exr_zip_lines = 16; // 1.3: 16 scanlines a block (ZIP) or 1 (ZIPS)
     AcesLogOptions copies;
     std::vector<int> frames;
     int range_first = -1, range_last = -1;
@@ -61,6 +62,9 @@ struct AcesDeliverOptions {
     // the model reads), "srgb" (piecewise sRGB) or "gamma22". Others are re-encoded to
     // BT.1886 code values first, so the same display light reaches the model.
     std::string source_display = "bt1886";
+    // 1.3 (23 Nov 2026): Deliver's Output size, core/resample.hpp: "source", "2x", "uhd" or "hd".
+    // Every file of the run (EXR, DPX, movie) is written at it; the model runs at the source's.
+    std::string output_size = "source";
     bool writes_exr() const { return exr != "none"; }
 };
 
@@ -132,6 +136,11 @@ AcesFrameStamp aces_frame_stamp(const AcesDeliverOptions& o, std::size_t i, cons
 // weights, clamped to [0, 1]; w 0 is the plain ACES inverse bit for bit. Off: `acescg` itself.
 PlanarBuffer aces_region_blend(const ReconstructionRegion& region, const PlanarBuffer& acescg, const PlanarBuffer& baseline,
                                const PlanarBuffer& codes);
+// 1.3: the master, its mask and the source's alpha at the Output size ("source": as they are).
+PlanarBuffer aces_sized(const AcesDeliverOptions& o, PlanarBuffer master, PlanarBuffer& mask, std::optional<PlanarBuffer>& alpha);
+// The EXR attribute rudra:outputSize, added when the size is not the source's.
+void aces_note_size(const AcesDeliverOptions& o, int src_width, int src_height, ExrAttributes& prov);
+
 PlanarBuffer aces_trimmed(const AcesDeliverOptions& o, const PlanarBuffer& acescg, const PlanarBuffer& mask,
                           const aces_v2::AcesView& view, const PlanarBuffer& codes);
 // A frame's light level (28 Oct 2026): MaxCLL is the brightest pixel's largest

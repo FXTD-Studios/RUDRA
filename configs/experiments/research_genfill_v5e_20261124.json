@@ -1,0 +1,241 @@
+{
+  "id": "research_genfill_v5e_20261124",
+  "status": "REGISTERED 24 Nov 2026 about 10:40 Cairo, before its GPU run; the finish was chosen first by replaying it offline on the registered runs' saved fills (as research_genfill_v5d_thin_20261123 was). Asked for by Ahmed: fix the learned route's shots before 1.3.0 ships; the learned route's held-out check later. RUN 24 Nov 12:16-15:30: FAIL (02V on the learned route); shipped in 1.3.0 by Ahmed's decision against the rule (outcome).",
+  "written": "2026-11-24",
+  "author": "FXTD Studios Research",
+  "parents": [
+    "research_genfill_v5d_thin_20261123 (AI fill v5 with the thin hold: PASS on the analytic route, 4 check shots and the held-out clips)",
+    "research_genfill_v5_learned_20261123 (the learned ACES 2.0 route: FAIL; 01V T 0.112, 02V 0.124, 03V 0.318, water 0.136, Porch L 4.074; held-out PU21 +43.1, closer in 1 of 21)",
+    "research_genfill_v5_analytic_123_20261123 (01V-03V on the analytic route: 01V T 0.164 FAIL, 02V 0.088, 03V 0.173 FAIL)"
+  ],
+  "why": "v5 flickers on 01V and 03V on both routes; neither was among its four check shots. Cause (analytic 01V, replayed): the finish crossfades the master into the fill by the source's code, and on a still shot the codec moves a code near the clip by 1-2 codes from frame to frame; at code 251 that moves the mix by up to 0.12 and, with the analytic master about 1.7 stops under the fill's level, the pixel by up to 0.2 stops (98 % of the worst changes within 4 px of a clipped edge). 03V adds the inside of thin clipped shapes, which v5 redraws a little differently every frame. On the learned route the learned master rebuilds a clipped area itself, brighter than the fill's level and unsteady near the clip (master alone: Porch L 7.83 x white, T 0.749 EV; water L 23.96, T 0.671; 01V T 0.275), so its share of the crossfade comes through as flicker and as a rim brighter than the core (Porch L 4.07), and a newly clipped pixel shows it for one frame before the mask takes it (03V's jumps).",
+  "change": {
+    "both routes, with v5": "--rerender-blend-still 0.95 (composite.finish_rerender blend_still: the crossfade's mix keeps 0.95 of the previous frame's while the code it follows, blurred and lifted beside something dark, stays within 3 codes of where the hold began) and --rerender-hold-calm 0.95 (a pixel the thin hold holds keeps 0.95 for a jump instead of calm's 0.9; calm itself unchanged, so a wide sky's clouds are finished as before)",
+    "the learned route, with v5": "also --rerender-cap-master (the master's share of a region pixel never brighter than the fill there) and --mask-first-frame (a newly clipped pixel joins the mask at its first clipped frame)",
+    "v4.3 and v3": "unchanged (as 1.2.9)"
+  },
+  "offline_choice": {
+    "method": "tmp/v5_review/replay7.py: the finish replayed on the saved fills of the registered runs (v5d: raw_v5d of 09V, Porch, water, testwindow; research_genfill_v5_analytic_123: raw of 01V-03V), measured as shot_gates.py measures T, L and S. The replay of v5d's own finish reproduces those runs' T, L and S to the 4th decimal.",
+    "chosen (v5e) against v5d, T p95 EV": {
+      "01V": [
+        0.1637,
+        0.0792
+      ],
+      "02V": [
+        0.0882,
+        0.0716
+      ],
+      "03V": [
+        0.1726,
+        0.0941
+      ],
+      "09V": [
+        0.0358,
+        0.0242
+      ],
+      "Porch": [
+        0.0804,
+        0.0498
+      ],
+      "testwindow": [
+        0.0273,
+        0.0064
+      ],
+      "water": [
+        0.0794,
+        0.0789
+      ]
+    },
+    "chosen (v5e) against v5d, L median x white": {
+      "01V": [
+        2.686,
+        2.652
+      ],
+      "02V": [
+        0.77,
+        0.77
+      ],
+      "03V": [
+        3.082,
+        3.075
+      ],
+      "09V": [
+        3.093,
+        3.078
+      ],
+      "Porch": [
+        3.05,
+        2.993
+      ],
+      "testwindow": [
+        3.304,
+        3.283
+      ],
+      "water": [
+        3.161,
+        3.156
+      ]
+    },
+    "09V S": {
+      "v5d": [
+        0.104,
+        0.176,
+        0.129
+      ],
+      "v5e": [
+        0.104,
+        0.177,
+        0.129
+      ]
+    },
+    "09V antenna": "no copies beside the drifting antenna (tmp/v5_review/09V_ba3_antenna3x.jpg, 09V_ba3_antenna3x_zoom.jpg); the antenna's one-pixel edge differs by up to 0.3 stops",
+    "rejected": {
+      "mix held where the pixel's own codes hold still (+ calm 0.95)": "01V T 0.067, 03V 0.071, but faint dotted copies of 09V's antenna beside it (09V_bh95c95_antenna3x.jpg)",
+      "mix held where its code moved 4 or less from the last frame (+ calm 0.95)": "03V T 0.076, but a fan of faint antennas (09V_bt95c95t4_antenna3x.jpg)",
+      "mix held where its code moved 2 or less (+ calm 0.95)": "03V T 0.106: fails",
+      "held only after 3 still frames": "03V T 0.0999 (no margin)",
+      "calm 0.95 alone": "01V T 0.154: fails",
+      "steady 7 (v5c's median)": "03V T 0.1125: fails"
+    }
+  },
+  "honesty": "The finish was chosen on the same seven analytic shots it is checked on, as v5d's thin hold was; a fresh shot is still to come. 03V passes by 0.006 EV. The analytic shots are confirmed by the replays above (exactly run.py's finish on the runs' own fills; the model's output does not depend on the finish), not by a new GPU run. The learned route's ten shots are not graded through ACES 2.0 (the app steers them to the analytic route), so on them this checks that the fill is steady and leaves the rest alone, not that it is right. The learned route's held-out check is not repeated: its master is the exact ACES 2.0 inverse of the very view that made the clips, within 0.25 stops of the truth, which no fill beats; a held-out test like real footage (codec compression) is for 1.3.x.",
+  "inference": {
+    "analytic route": "rudra.genfill.run --region-rerender --condition bt1886 --tau-high 240 --tau-low -1 --feather 8 --brightness-model none --steps 30 --seed 0 --rerender-hue source --rerender-colour 0.3 --rerender-level 3.3 --rerender-smooth 0.8 --rerender-dip 0.3 --rerender-independent --rerender-calm 0.9 --rerender-full-last --rerender-hold-clipped thin --rerender-blend-still 0.95 --rerender-hold-calm 0.95",
+    "learned route": "the same with --condition aces --rerender-cap-master --mask-first-frame"
+  },
+  "evaluation": {
+    "runner": "tmp/RUN_V5E.ps1 -> tmp/09V_test/v4_gates/run_v5e.py (v5e_verdict.json)",
+    "learned shots": "the ten shots of D:\\video on their learned masters (tmp/09V_test/learned_v5/<shot>/master, frames 0-96), fills into G:\\rudra_training\\research_genfill_v5e_learned\\<shot>, shot_gates.py. 09V: L, S, T, O; testwindow and Porch: L, T, O; water: L, O and T <= 0.115; the others: T where measurable, O",
+    "analytic held-out": "tools/evaluate_genfill_region.py --finish --no-raw with the v5e finish: gated_96_119 (rule ci, as v5d) and seen_120_126 (better in at least 5 of 7)",
+    "analytic shots": "the replays of offline_choice (all seven pass: 01V-03V T and O; 09V L, S, T; Porch and testwindow L, T; water L and T <= 0.115)"
+  },
+  "decision_rule": "PASS when every learned shot passes its gates and both analytic held-out rules pass. Then 1.3.0's app runs v5 with this finish on both routes (native/app/genfill_job.cpp, genfill_preview.cpp), and the release notes and MODELS.md give these numbers. FAIL: 1.3.0 ships v5 with v5d's finish (the app's v5e arguments taken out again) and the limits stated: 01V and 03V flicker on both routes, the learned route as research_genfill_v5_learned_20261123 found.",
+  "outcome": {
+    "run": "24 Nov 2026 12:16-15:30 Cairo (tmp/RUN_V5E.ps1); tmp/09V_test/v4_gates/v5e_verdict.json, left as the run wrote it",
+    "verdict": "FAIL",
+    "why": "02V on the learned route: T p95 0.1184 EV against the 0.10 limit (v5d 0.1235). The other nine learned shots pass, and both analytic held-out rules pass.",
+    "learned_T_p95_EV": {
+      "01V": {
+        "v5e": 0.0689,
+        "v5d": 0.1124,
+        "pass_v5e": true
+      },
+      "02V": {
+        "v5e": 0.1184,
+        "v5d": 0.1235,
+        "pass_v5e": false
+      },
+      "03V": {
+        "v5e": 0.0475,
+        "v5d": 0.3182,
+        "pass_v5e": true
+      },
+      "04V": {
+        "v5e": 0.0539,
+        "v5d": 0.0539,
+        "pass_v5e": true
+      },
+      "07V": {
+        "v5e": 0.0486,
+        "v5d": 0.0486,
+        "pass_v5e": true
+      },
+      "09V": {
+        "v5e": 0.0264,
+        "v5d": 0.0303,
+        "pass_v5e": true
+      },
+      "fire": {
+        "v5e": 0.0894,
+        "v5d": 0.0917,
+        "pass_v5e": true
+      },
+      "Porch": {
+        "v5e": 0.0414,
+        "v5d": 0.0733,
+        "pass_v5e": true,
+        "L": {
+          "v5e": 3.694,
+          "v5d": 4.074
+        }
+      },
+      "testwindow": {
+        "v5e": 0.0059,
+        "v5d": 0.0252,
+        "pass_v5e": true
+      },
+      "water": {
+        "v5e": 0.1068,
+        "v5d": 0.1359,
+        "pass_v5e": true
+      }
+    },
+    "learned_pass": {
+      "v5e": "9 of 10",
+      "v5d": "5 of 10 (research_genfill_v5_learned_20261123)"
+    },
+    "analytic_T_p95_EV": {
+      "01V": {
+        "v5e": 0.0792,
+        "v5d": 0.1637
+      },
+      "02V": {
+        "v5e": 0.0716,
+        "v5d": 0.0882
+      },
+      "03V": {
+        "v5e": 0.0941,
+        "v5d": 0.1726
+      },
+      "09V": {
+        "v5e": 0.0242,
+        "v5d": 0.0358
+      },
+      "Porch": {
+        "v5e": 0.0498,
+        "v5d": 0.0804
+      },
+      "testwindow": {
+        "v5e": 0.0064,
+        "v5d": 0.0273
+      },
+      "water": {
+        "v5e": 0.0789,
+        "v5d": 0.0794
+      }
+    },
+    "analytic_pass": {
+      "v5e": "7 of 7 (the replays)",
+      "v5d": "5 of 7 (01V 0.1637 and 03V 0.1726 fail)"
+    },
+    "analytic_held_out_pu21_mean_delta": {
+      "gated_96_119": {
+        "v5e": -30.47,
+        "ci95": [
+          -37.89,
+          -22.94
+        ],
+        "better_in": "21 of 22",
+        "pass": true
+      },
+      "seen_120_126": {
+        "v5e": -31.27,
+        "ci95": [
+          -48.94,
+          -15.92
+        ],
+        "better_in": "7 of 7",
+        "pass": true
+      }
+    },
+    "analytic_held_out_v5d": {
+      "gated_96_119": -30.34,
+      "seen_120_126": -32.31,
+      "from": "docs/models/genfill_v5/report_v5.json verdict.H"
+    },
+    "decision": "Ahmed (FXTD Studios), 24 Nov 2026 about 15:45 Cairo: 1.3.0 ships v5 with the v5e finish, against this registration's decision rule. Reason: v5e is better than or equal to v5d on every shot measured, on both routes, and equal to it on the analytic held-out clips, so the rule's fallback would ship the worse finish. This is an override of a registered rule, made after seeing the results; it is not a PASS.",
+    "known_limit": "02V on the learned route flickers (T p95 0.118 EV against 0.10), as it did under v5d (0.124). The release notes say so and keep recommending the analytic route for the AI fill."
+  },
+  "release_authorized": true,
+  "release_authorized_by": "Ahmed's decision of 24 Nov 2026 (outcome.decision), against the decision rule"
+}

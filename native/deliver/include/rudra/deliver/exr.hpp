@@ -40,7 +40,9 @@ extern const Chromaticities kRec709Chromaticities;   // RUDRA 1.1: the linear Re
 // scanlines, compression 3), for the ACEScg and linear masters: what Nuke, Resolve and every
 // OpenEXR reader take, a third to a half of the size. The ACES 2065-1 file stays the uncompressed
 // SMPTE ST 2065-4 container (write_aces_exr has no choice). A build without zlib writes None.
-enum class ExrCompression { None, Zip };
+// 1.3 (24 Nov 2026): ZIPS as well (OpenEXR's ZIPS_COMPRESSION, compression 2: the same zlib, one
+// scanline a block: a little larger than ZIP, quicker to read a few lines of); Deliver's EXR compression.
+enum class ExrCompression { None, Zip, Zips };
 // Whether this build can write and read ZIP (zlib found at configure time).
 bool exr_zip_available() noexcept;
 

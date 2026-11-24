@@ -16,6 +16,7 @@
 #include "rudra/core/compare.hpp"
 #include "rudra/core/master.hpp"
 #include "rudra/core/measure.hpp"
+#include "rudra/core/resample.hpp"
 #include "rudra/core/view.hpp"
 #include "rudra/platform/png8.hpp"
 #include "rudra/deliver/exr.hpp"
@@ -145,7 +146,9 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
         r.container = j.value("container", std::string("aces"));
         r.exr_half = j.value("exr_half", true);
         r.exr_zip = j.value("exr_zip", false);
+        r.exr_zip_lines = j.value("exr_zip_lines", 16) == 1 ? 1 : 16;   // 1.3: ZIPS
         r.source_curve = j.value("source_curve", std::string("unknown"));
+        r.own_codes = j.value("own_codes", false);   // 24 Nov 2026
         if (j.contains("calibration"))
             for (const auto& c : j.at("calibration"))
                 r.calibration.push_back({c.at("code").get<int>(), c.at("nits").get<double>()});
@@ -171,6 +174,9 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
         }
         r.mattes = j.value("mattes", false);
         r.brackets = j.value("brackets", false);
+        r.output_size = j.value("output_size", std::string("source"));
+        if (!valid_output_size(r.output_size))
+            return make_error(ErrorCode::InvalidArgument, "output_size is source, 2x, uhd or hd", r.output_size);
         r.clip_fill = j.value("clip_fill", true);
         r.highlight_detail = j.value("highlight_detail", 1.0);
         r.lossy_source = j.value("lossy_source", false);
@@ -217,12 +223,15 @@ std::string master_request_json(const MasterRequest& q) {
         regions.push_back({{"label", b.label}, {"low_nits", b.low_nits}, {"high_nits", b.high_nits}, {"ev", b.ev}});
     j["regions"] = regions;
     if (q.source_curve != "unknown") j["source_curve"] = q.source_curve;
+    if (q.own_codes) j["own_codes"] = true;   // 24 Nov 2026
     if (!q.exr_half) j["exr_half"] = false;
     if (q.exr_zip) j["exr_zip"] = true;
+    if (q.exr_zip && q.exr_zip_lines == 1) j["exr_zip_lines"] = 1;   // 1.3: ZIPS
     if (q.exposure_ev != 0.0) j["exposure_ev"] = q.exposure_ev;
     if (q.region.enabled) j["reconstruction_region"] = region_to_json(q.region);
     if (q.mattes) j["mattes"] = true;
     if (q.brackets) j["brackets"] = true;
+    if (q.output_size != "source") j["output_size"] = q.output_size;
     if (q.analytic) j["analytic"] = true;
     if (!q.calibration.empty()) {
         auto cal = nlohmann::json::array();
@@ -271,6 +280,7 @@ Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, con
     cp.preserve_outside = q.preserve_outside;
     cp.region = q.region;
     cp.source = *source;
+    cp.own_codes = q.own_codes;   // 24 Nov 2026: own codes as video codes under BT.1886
     for (const auto& c : q.calibration)
         if (c.nits > 0.0 && c.code >= 0 && c.code <= 255) cp.calibration.push_back(c);
     if (!cp.calibration.empty() && !calibration_is_monotone(cp.calibration, cp.source, model.corpus_ev))
@@ -324,12 +334,19 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         masks_path.replace_extension(".masks.png");
         if (auto w = write_mask_set(masks_path, *cp.masks); !w) return w.error();
     }
-    const PlanarBuffer linear = scene_linear(nits);
+    // 1.3 (23 Nov 2026), Deliver's Output size: the master, its alpha, mattes and brackets are
+    // written at the size asked for (core/resample.hpp, no ringing, nothing invented); the
+    // reconstruction above ran at the source's, and its measurements stay on it.
+    const OutputSize to = output_size(q.output_size, nits.width(), nits.height());
+    const bool resized = to.width != nits.width() || to.height != nits.height();
+    const NitsFrame sized = resized ? resample_hdr(nits, to.height, to.width) : NitsFrame{};
+    const NitsFrame& out_nits = resized ? sized : nits;
+    const PlanarBuffer linear = scene_linear(out_nits);
 
-    const FrameStats stats = analyze_frame(nits, 0);
+    const FrameStats stats = analyze_frame(out_nits, 0);
     const StaticMetadata md = maxcll_maxfall(std::span(&stats, 1));
     double peak = -INFINITY;
-    for (double v : nits.span()) peak = std::max(peak, v);
+    for (double v : out_nits.span()) peak = std::max(peak, v);
 
     std::string region_text = "neutral";
     if (graded) {
@@ -361,12 +378,15 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         provenance.emplace_back("rudra:sourceSha256", source_sha);
     }
     if (*source != SourceCurve::Unknown) provenance.emplace_back("rudra:sourceCurve", q.source_curve);
+    if (q.own_codes && reads_video_codes(*source))   // 24 Nov 2026: how this curve read the codes
+        provenance.emplace_back("rudra:sourceCodes", "own codes read as BT.709 video codes");
     if (q.exposure_ev != 0.0) {
         char b[32];
         std::snprintf(b, sizeof b, "%+.2f", q.exposure_ev);
         provenance.emplace_back("rudra:exposureEV", b);
     }
     if (q.analytic) provenance.emplace_back("rudra:reconstruction", "analytic (no model)");
+    if (resized) provenance.emplace_back("rudra:outputSize", output_size_note(q.output_size, nits.width(), nits.height()));
     if (q.region.enabled) provenance.emplace_back("rudra:reconstructionRegion", region_to_json(q.region).dump());
     if (!q.exr_half) provenance.emplace_back("rudra:sampleType", "float32");
     if (q.analytic) provenance.emplace_back("rudra:clipFill", clip_fill_text(q));
@@ -407,8 +427,12 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     // The linear container is scene-linear Rec.2020, converted from the
     // plate's primaries and stamped so (it carried the plate's primaries
     // untagged until 9 Oct 2026, as the Studio did).
-    const PlanarBuffer* alpha = q.alpha && q.alpha->height() == linear.height() && q.alpha->width() == linear.width()
-                                    ? &*q.alpha : nullptr;
+    const std::optional<PlanarBuffer> sized_alpha =
+        resized && q.alpha && q.alpha->height() == nits.height() && q.alpha->width() == nits.width()
+            ? std::optional<PlanarBuffer>(resample_hdr(*q.alpha, to.height, to.width)) : std::nullopt;
+    const std::optional<PlanarBuffer>& alpha_in = resized ? sized_alpha : q.alpha;
+    const PlanarBuffer* alpha = alpha_in && alpha_in->height() == linear.height() && alpha_in->width() == linear.width()
+                                    ? &*alpha_in : nullptr;
     if (q.alpha && !alpha) return make_error(ErrorCode::InvalidArgument, "The alpha is not the size of the picture.");
     if (alpha && !aces && !acescg) provenance.emplace_back("rudra:alpha", "the source's straight alpha as A; RGB premultiplied by it (OpenEXR associated alpha)");
     auto rec2020_rgba = [&] {   // the linear container with A: RGB premultiplied, as the ACES writers do
@@ -422,7 +446,8 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         }
         return rgba;
     };
-    const ExrCompression zip = q.exr_zip ? ExrCompression::Zip : ExrCompression::None;   // never the AP0 container
+    const ExrCompression zip = !q.exr_zip ? ExrCompression::None : q.exr_zip_lines == 1 ? ExrCompression::Zips
+                                                                                         : ExrCompression::Zip;   // never the AP0 container
     auto w = aces     ? write_aces_exr(out, linear, *src, 1.0, provenance, q.exr_half, nullptr, {}, alpha)
              : acescg ? write_acescg_exr(out, linear, *src, 1.0, provenance, q.exr_half, nullptr, {}, alpha, zip)
                       : write_exr(out, rec2020_rgba(), q.exr_half, rec709 ? kRec709Chromaticities : kRec2020Chromaticities,
@@ -526,6 +551,8 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
                 planes.emplace_back("rudra.paint." + std::to_string(band), std::move(p));
             }
         for (const auto& pl : planes) matte_names.push_back(pl.first);
+        if (resized)   // 1.3: the mattes line up with the master they belong to
+            for (auto& pl : planes) pl.second = resample_hdr(pl.second, to.height, to.width);
         ExrAttributes ma{{"rudra:mattesOf", out.filename().string()},
                          {"rudra:mattes", "highlight / shadow: the gate's priors as applied (mode, region, strength, "
                                           "recovery mask); changed: 1 where the reconstruction differs from the baseline; "
@@ -544,7 +571,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         {"maxcll_nits", md.maxcll},
         {"maxfall_nits", md.maxfall},
         {"peak_nits", py_round1(peak)},
-        {"resolution", pyjson::List{sdr.width(), sdr.height()}},
+        {"resolution", pyjson::List{linear.width(), linear.height()}},
         {"source_bits", source_bits},
         {"container", aces ? "ACES 2065-1 (AP0)" : acescg ? "ACEScg (AP1)" : rec709 ? "scene-linear Rec.709"
                                                                                  : "scene-linear Rec.2020"},
@@ -571,6 +598,10 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     if (!source_sha.empty()) sidecar_dict.emplace_back("source_sha256", source_sha);
     if (*source != SourceCurve::Unknown) sidecar_dict.emplace_back("source_curve", q.source_curve);
     if (q.exposure_ev != 0.0) sidecar_dict.emplace_back("exposure_ev", q.exposure_ev);
+    if (resized)
+        sidecar_dict.emplace_back("output_size", pyjson::Dict{{"choice", q.output_size},
+                                                              {"source_resolution", pyjson::List{nits.width(), nits.height()}},
+                                                              {"note", output_size_note(q.output_size, nits.width(), nits.height())}});
     if (q.brackets) {
         pyjson::List files, evs;
         for (const auto& f : bracket_files) files.push_back(f.filename().string());
@@ -657,8 +688,8 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     r.maxcll = md.maxcll;
     r.maxfall = md.maxfall;
     r.peak_nits = py_round1(peak);
-    r.width = sdr.width();
-    r.height = sdr.height();
+    r.width = linear.width();
+    r.height = linear.height();
     r.source_bits = source_bits;
     r.exr = out;
     r.sidecar = side;

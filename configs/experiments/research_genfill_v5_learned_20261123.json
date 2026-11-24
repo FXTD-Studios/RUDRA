@@ -1,0 +1,25 @@
+{
+ "id": "research_genfill_v5_learned_20261123",
+ "status": "REGISTERED 23 Nov 2026 before its GPU run; asked for by Ahmed (test the learned ACES route, with every shot in D:\\video, before releasing 1.3).",
+ "written": "2026-11-23",
+ "author": "FXTD Studios Research",
+ "parents": [
+  "research_genfill_v5d_thin_20261123 (AI fill v5 with the thin hold: PASS on the analytic route)"
+ ],
+ "why": "Every AI fill so far (v4.x, v5) was checked on the analytic BT.1886 route only. The app also runs it on the learned ACES 2.0 route (RUDRA ACES 2 masters, the fill conditioned with the ACES 2.0 inverse: --condition aces). v5's training has 3,348 clips made through the ACES 2.0 view with that condition, but no check measured it.",
+ "honesty": "The ten shots in D:\\video are not graded through ACES 2.0 (the app steers them to the analytic route), so on them this checks that the learned route's fill is steady and touches nothing outside its region, not that it is right. The held-out clips are made through the exact ACES 2.0 view: there it is measured against the truth.",
+ "inference": "the 1.2.9 app's arguments (native/app/genfill_job.cpp), only the LoRA changes: rudra.genfill.run --region-rerender --condition aces --tau-high 240 --tau-low -1 --feather 8 --brightness-model none --steps 30 --seed 0 --rerender-hue source --rerender-colour 0.3 --rerender-level 3.3 --rerender-smooth 0.8 --rerender-dip 0.3 --rerender-independent --rerender-calm 0.9 --rerender-full-last --rerender-hold-clipped thin (as the 1.3 app on the learned route: --condition aces)",
+ "evaluation": {
+  "runner": "tmp/RUN_V5_LEARNED.ps1 (learned masters: rudra-native aces-v2, RUDRA ACES 2, frames 0-96, half EXR) then tmp/09V_test/v4_gates/run_v5_learned.py (learned_v5_verdict.json)",
+  "shots": {
+   "09V": "L, S, T, O",
+   "testwindow, Porch": "L, T, O",
+   "water": "L, O, T <= 0.115",
+   "01V, 02V, 03V, 04V, 07V, fire": "T where it can be measured (<= 0.10), O; L and S reported"
+  },
+  "H": "tools/evaluate_genfill_region.py --route aces --finish --no-raw --dip 0.3 --independent --calm 0.9 --hold-clipped thin: clips through the exact ACES 2.0 view (the builder's 'highlight' views), master = the exact ACES 2.0 inverse, gated 96-119: PU21 at -3 EV better with the 95 % CI excluding 0; seen 120-126: better in >= 5 of 7",
+  "thresholds": "shot_gates.py unchanged: L 2.5-4 x white and hue within 0.15; S >= 0.05 stops; T p95 <= 0.10 EV; O 0 pixels"
+ },
+ "decision_rule": "PASS = every shot as listed and both H sets, and the crops (09V antenna and lamp; any shot's worst frame) show no defect the analytic route does not. Then 1.3 says AI fill v5 is tested on both routes. FAIL: the release notes say the learned route is untested or limited, as Ahmed decides.",
+ "release_authorized": false
+}

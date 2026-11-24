@@ -44,6 +44,14 @@ struct DeliverChoice {
     double fps = 24.0;               // a movie made from stills
     bool ai_fill = false;            // learned EXR still / sequence: then the AI fill of the master
     GenFillOptions ai;               // its thresholds, prompts, seed and steps
+    // 1.3 (23 Nov 2026): Output size, core/resample.hpp: "source", "2x", "uhd" (3840 wide) or
+    // "hd" (1920 wide). A clean resize of the master (no ringing, nothing invented); the source's
+    // own size while the AI fill is on, and for the analytic movie of a movie (the export queue).
+    QString size = "source";
+    // 1.3 (24 Nov 2026): EXR compression, lossless: "zip" (16 scanlines a block, the default since
+    // 1.2.6), "zips" (1 scanline) or "none". The ACES 2065-1 container is always uncompressed
+    // (SMPTE ST 2065-4), whatever this says.
+    QString exr_compression = "zip";
     bool operator==(const DeliverChoice&) const = default;
 };
 
@@ -59,6 +67,8 @@ bool ai_fill_possible(const DeliverChoice& c, bool aces_source);
 // The learned engine's master request fields (cli/aces_v2_deliver.hpp):
 // exr, exr_gamut, log, log_formats. Frames, fps, name and start are the window's.
 QJsonObject aces_deliver_fields(const DeliverChoice& c);
+// The file fields alone (what aces_deliver_fields adds the Output size to).
+QJsonObject aces_deliver_format_fields(const DeliverChoice& c);
 
 // The trims as the engine takes them ({} when they change nothing).
 QJsonObject aces_trims_fields(double strength, double saturation, double peak_nits, double exposure_ev = 0.0,

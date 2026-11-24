@@ -198,6 +198,19 @@ QcVerdict qc_verdict(const QcReport& r, int pq_peak_nits) {
                    .arg(kQcSpeckRatio, 0, 'f', 0)
                    .arg(worst_file)
                    .arg(worst_ratio, 0, 'f', 1));
+    if (!r.ai_fill.isEmpty()) {   // 1.3 (23 Nov 2026)
+        const int flagged = r.ai_fill.value("flagged_frames").toInt(), fell = r.ai_fill.value("fallback_frames").toInt();
+        if (flagged) review(QStringLiteral("%1 frame(s) of the AI fill were flagged for flicker").arg(flagged));
+        if (fell) review(QStringLiteral("%1 frame(s) of the AI fill fell back to the master (the fill there was dropped)").arg(fell));
+        double worst = 0;
+        for (const auto& f : r.ai_fill.value("frames").toArray()) worst = std::max(worst, f.toObject().value("generated_pct").toDouble());
+        v.notes << QStringLiteral("Contains AI-generated pixels: %1 % over %2 frame(s), worst frame %3 %. They are generated, not "
+                                  "recovered: review every frame (Reconstruct \u203a AI generation \u203a Review fill\u2026) before "
+                                  "delivery. MaxCLL and MaxFALL above are the master's, before the fill.")
+                       .arg(r.ai_fill.value("generated_pct").toDouble(), 0, 'f', 2)
+                       .arg(r.ai_fill.value("frames_total").toInt())
+                       .arg(worst, 0, 'f', 2);
+    }
     if (r.lossy_source)
         v.notes << QStringLiteral("The source was compressed (JPEG or an 8-bit movie codec): the highlight fill smoothed its "
                                   "compression noise near white.");
@@ -223,8 +236,13 @@ QString qc_html(const QcReport& r, const QcVerdict& v) {
              .arg(esc(r.title), qc_css());
     h += QStringLiteral("<h1>QC report · %1</h1><div class=\"sub\">%2 · RUDRA %3%4</div>")
              .arg(esc(r.title), esc(r.when), esc(r.app_version), r.build.isEmpty() ? QString() : QStringLiteral(" (") + esc(r.build) + ")");
-    h += QStringLiteral("<div class=\"verdict %1\"><b>%2</b>").arg(v.pass ? "pass" : "review", v.pass ? "Pass" : "Review");
-    if (v.pass) h += QStringLiteral("<div>No check found anything to look at.</div>");
+    // 1.3: a pass over AI-generated pixels says so in its title: the checks cannot judge what was invented.
+    const bool fill = !r.ai_fill.isEmpty();
+    h += QStringLiteral("<div class=\"verdict %1\"><b>%2</b>")
+             .arg(v.pass ? "pass" : "review", v.pass ? (fill ? "Pass \u00b7 contains AI fill" : "Pass") : "Review");
+    if (v.pass)
+        h += fill ? QStringLiteral("<div>No check found anything to look at; the AI fill still needs a person's review.</div>")
+                  : QStringLiteral("<div>No check found anything to look at.</div>");
     else {
         h += QStringLiteral("<ul>");
         for (const auto& s : v.reasons) h += QStringLiteral("<li>") + esc(s) + QStringLiteral("</li>");
@@ -292,6 +310,33 @@ QString qc_html(const QcReport& r, const QcVerdict& v) {
         h += QStringLiteral("</table>");
         if (shown < r.frames.size()) h += QStringLiteral("<p>… and %1 more (every frame is in its sidecar JSON)</p>").arg(r.frames.size() - shown);
     }
+    if (!r.ai_fill.isEmpty()) {   // 1.3 (23 Nov 2026): what the AI fill made, from its disclosure record
+        const QJsonObject& a = r.ai_fill;
+        h += QStringLiteral("<h2>AI fill</h2><table>");
+        row(QStringLiteral("Fill"), a.value("fill").toString());
+        row(QStringLiteral("Generated"), QStringLiteral("%1 % of the pixels over %2 frame(s)")
+                                             .arg(a.value("generated_pct").toDouble(), 0, 'f', 2).arg(a.value("frames_total").toInt()));
+        row(QStringLiteral("Prompt"), a.value("prompt_highlight").toString());
+        row(QStringLiteral("Model"), QFileInfo(a.value("base_model").toString()).fileName());
+        row(QStringLiteral("LoRA"), QFileInfo(a.value("lora").toString()).fileName() +
+                                        (a.value("lora_sha256").toString().isEmpty() ? QString()
+                                                                                     : QStringLiteral(" (SHA-256 %1\u2026)").arg(a.value("lora_sha256").toString().left(12))));
+        row(QStringLiteral("Seed, steps"), QStringLiteral("%1, %2").arg(a.value("seed").toVariant().toString(), a.value("steps").toVariant().toString()));
+        row(QStringLiteral("Flagged for flicker"), QString::number(a.value("flagged_frames").toInt()));
+        row(QStringLiteral("Fell back to the master"), QString::number(a.value("fallback_frames").toInt()));
+        row(QStringLiteral("Marking"), a.value("marking").toString());
+        h += QStringLiteral("</table>");
+        std::vector<std::pair<double, QString>> most;
+        for (const auto& f : a.value("frames").toArray())
+            most.emplace_back(f.toObject().value("generated_pct").toDouble(), f.toObject().value("name").toString());
+        std::sort(most.begin(), most.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
+        if (!most.empty()) {
+            h += QStringLiteral("<h3>Most generated frames</h3><table><tr><th>Frame</th><th>Generated %</th></tr>");
+            for (std::size_t i = 0; i < std::min<std::size_t>(most.size(), 10); ++i)
+                h += QStringLiteral("<tr><td class=\"mono\">%1</td><td>%2</td></tr>").arg(esc(most[i].second), num(most[i].first, 2));
+            h += QStringLiteral("</table>");
+        }
+    }
     if (!r.files.isEmpty()) {
         h += QStringLiteral("<h2>Files written</h2><div class=\"mono\">");
         for (const auto& f : r.files) h += esc(f) + QStringLiteral("<br>");
@@ -343,6 +388,7 @@ QJsonObject qc_json(const QcReport& r, const QcVerdict& v) {
                        {"maxfall_nits", maxfall},
                        {"settings", r.settings},
                        {"frames", frames},
+                       {"ai_fill", r.ai_fill.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(r.ai_fill)},
                        {"files", QJsonArray::fromStringList(r.files)}};
 }
 

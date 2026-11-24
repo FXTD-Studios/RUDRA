@@ -1,4 +1,5 @@
 #include "aces_master.hpp"
+#include "child_process.hpp"
 #include "scope_widgets.hpp"
 #include "paths.hpp"
 
@@ -840,6 +841,7 @@ void AcesMasterDialog::start() {
         });
     }
     proc_->setProcessEnvironment(aces_child_environment());
+    end_with_rudra(proc_);   // 1.3: the CLI ends with RUDRA, crash or not
     proc_->start(qp(s.cli), args);
     update_state();
 }
