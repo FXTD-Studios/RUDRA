@@ -68,6 +68,10 @@
 #include <QStandardPaths>
 #include <QStyle>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QMouseEvent>
+#include <QPaintEvent>
+#include <QPainter>
 
 #include "export_sheet.hpp"
 #include "model_dialogs.hpp"
@@ -75,6 +79,7 @@
 #include "scope_widgets.hpp"
 #include "source_panel.hpp"
 #include "widgets.hpp"
+#include "theme.hpp"   // 24 Nov 2026: the Keyboard sheet's dim (theme_colour)
 
 #include <algorithm>
 #include <fstream>
@@ -156,6 +161,9 @@ MainWindow::MainWindow(bool with_viewer, bool headroom_capable)
       headroom_capable_(headroom_capable) {
     setWindowTitle("RUDRA");
     resize(1600, 1000);
+    // 24 Nov 2026: the app holds every shot's own codes (a still as decoded; a movie's frame through ffmpeg to PNG),
+    // so BT.1886 reads them as the video codes they are: code^2.4 (core/source_curve.hpp source_curve_params).
+    session_.set_own_codes(true);
     aces_view_ = QSettings().value("aces/viewer", true).toBool();
     load_deliver_settings();
     {
@@ -314,6 +322,8 @@ MainWindow::~MainWindow() {
     queues_.reset();
     if (model_worker_.joinable()) model_worker_.join();   // a package still loading
     if (stats_worker_.joinable()) stats_worker_.join();   // a measurement in flight uses the frame
+    source_whites_stop_.request_stop();   // ends its ffmpeg
+    if (source_whites_worker_.joinable()) source_whites_worker_.join();
     master_job_.reset();   // cancels and waits: it uses the backend
     encode_cancel_ = true;
     if (encode_worker_.joinable()) encode_worker_.join();   // a movie being encoded from mastered frames
@@ -403,6 +413,7 @@ void MainWindow::bind_handlers() {
     h["playback-realtime"] = [this] { set_playback_realtime(!realtime_); };
     h["steady-shots"] = [this] { set_steady_shots(!steady_); };
     h["keep-super-whites"] = [this] { toggle_super_whites(); };
+    h["clean-compression"] = [this] { clean_compression(); };   // 1.3
     h["user-guide"] = [this] {
         log("user guide: " + user_guide_url());
         QDesktopServices::openUrl(QUrl(user_guide_url()));
@@ -435,12 +446,7 @@ void MainWindow::bind_handlers() {
     // The page's grading state and its undo: engine/session.
     for (const auto& spec : action_specs())
         if (Session::owns(spec.id)) h[std::string(spec.id)] = [this, id = std::string(spec.id)] { session_.run(id); };
-    h["shortcuts"] = [this] {
-        std::vector<std::pair<QString, QString>> rows;
-        for (const auto& r : shortcut_sheet()) rows.emplace_back(qs(r.keys), qs(r.what));
-        rows.emplace_back("F", "Fit image to window");
-        show_sheet("Keyboard", rows);
-    };
+    h["shortcuts"] = [this] { show_keyboard(); };
     h["about"] = [this] { open_about(); };
 
     h["view-image"] = [this] { session_.set_view_layer(0); };
@@ -629,6 +635,8 @@ void MainWindow::sync_checks() {
     set("steady-shots", steady_);
     set("auto-updates", QSettings().value("updates/auto", true).toBool());
     set("keep-super-whites", session_.grade.headroom_policy != HeadroomPolicy::Disabled);
+    set("clean-compression", shot_clean_sidecar().has_value());   // 1.3: a cleaned copy is the shot
+    sync_compression_status();                                       // and the Source card's line says so
     for (SourceCurve c : all_source_curves())
         set("source-" + std::string(source_curve_id(c)), grade.source == source_curve_id(c));
     set("container-aces", session_.container == "aces");
@@ -666,44 +674,186 @@ void MainWindow::sync_checks() {
 
 namespace {
 
-// The page's overlay sheet: Esc, or a click anywhere, closes it.
+// The page's overlay sheet: Esc, or a click anywhere, closes it. 24 Nov 2026 (Ahmed, the approved mockup): a
+// card over the dimmed window, as the welcome tips' card is (coach_marks.cpp), not a window with a title bar.
+// A window of its own over the main window's client area: the viewer is a native swapchain that a child
+// widget cannot paint over on every platform.
 class Sheet : public QDialog {
 public:
-    using QDialog::QDialog;
+    explicit Sheet(QWidget* host) : QDialog(host, Qt::Dialog | Qt::FramelessWindowHint), host_(host) {
+        setAttribute(Qt::WA_TranslucentBackground, true);
+        setAttribute(Qt::WA_NoSystemBackground, true);
+        if (host) host->installEventFilter(this);
+    }
+    // Over the host's client area, and again when it moves or changes size.
+    void place() {
+        if (host_) setGeometry(QRect(host_->mapToGlobal(QPoint(0, 0)), host_->size()));
+    }
 
 protected:
     void mousePressEvent(QMouseEvent*) override { accept(); }
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);
+        QColor dim = theme_colour(QStringLiteral("line"));   // black, dimmed as the welcome tips dim the window
+        dim.setAlpha(170);
+        p.fillRect(rect(), dim);
+    }
+    bool eventFilter(QObject* o, QEvent* e) override {
+        if (o == host_ && isVisible() &&
+            (e->type() == QEvent::Resize || e->type() == QEvent::Move || e->type() == QEvent::WindowStateChange))
+            place();
+        return QDialog::eventFilter(o, e);
+    }
+
+private:
+    QPointer<QWidget> host_;
 };
+
+using KeyRows = std::vector<std::pair<QString, QString>>;   // keys, what they do
+
+// The rows by what they are about (the approved mockup's groups). A row no group names goes under More,
+// so a key the page's sheet gains is never lost.
+std::vector<std::pair<QString, KeyRows>> keyboard_groups(const KeyRows& rows) {
+    const std::vector<std::pair<QString, QStringList>> groups = {
+        {QStringLiteral("Viewer"),
+         {QStringLiteral("B (hold)"), QStringLiteral("W"), QStringLiteral("\u2190 \u2192"), QStringLiteral("F")}},
+        {QStringLiteral("Playback"), {QStringLiteral(", / ."), QStringLiteral("Home / End"), QStringLiteral("Space")}},
+        {QStringLiteral("Shot"), {QStringLiteral("O"), QStringLiteral("M")}},
+        {QStringLiteral("Grade"), {QStringLiteral("[ / ]"), QStringLiteral("1 2 3 4"), QStringLiteral("P")}},
+        {QStringLiteral("Edit"), {QStringLiteral("Z / Y"), QStringLiteral("?")}},
+    };
+    std::vector<std::pair<QString, KeyRows>> out;
+    std::vector<bool> used(rows.size(), false);
+    for (const auto& [title, keys] : groups) {
+        KeyRows in;
+        for (const QString& k : keys)
+            for (std::size_t i = 0; i < rows.size(); ++i)
+                if (!used[i] && rows[i].first == k) {
+                    in.push_back(rows[i]);
+                    used[i] = true;
+                }
+        if (!in.empty()) out.emplace_back(title, std::move(in));
+    }
+    KeyRows more;
+    for (std::size_t i = 0; i < rows.size(); ++i)
+        if (!used[i]) more.push_back(rows[i]);
+    if (!more.empty()) out.emplace_back(QStringLiteral("More"), std::move(more));
+    return out;
+}
+
+// Each key a keycap: "Home / End" is two with a slash between, "1 2 3 4" four, "B (hold)" one and "hold".
+void add_keycaps(QHBoxLayout* into, QWidget* parent, QString keys) {
+    auto small = [parent](const QString& text) {
+        auto* l = new QLabel(text, parent);
+        l->setProperty("role", "kbd-sep");
+        return l;
+    };
+    QString after;
+    if (keys.endsWith(QStringLiteral(" (hold)"))) {
+        keys.chop(7);
+        after = QStringLiteral("hold");
+    }
+    const QStringList alternatives = keys.split(QStringLiteral(" / "));
+    for (qsizetype a = 0; a < alternatives.size(); ++a) {
+        if (a) into->addWidget(small(QStringLiteral("/")));
+        for (const QString& k : alternatives[a].split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+            auto* cap = new QLabel(k, parent);
+            cap->setProperty("role", "kbd");
+            cap->setAlignment(Qt::AlignCenter);
+            cap->setMinimumWidth(24);
+            cap->setFixedHeight(22);
+            into->addWidget(cap);
+        }
+    }
+    if (!after.isEmpty()) into->addWidget(small(after));
+}
 
 }  // namespace
 
-void MainWindow::show_sheet(const QString& title, const std::vector<std::pair<QString, QString>>& rows) {
+void MainWindow::show_keyboard() {
     if (sheet_) sheet_->close();
+    KeyRows rows;
+    for (const auto& r : shortcut_sheet()) rows.emplace_back(qs(r.keys), qs(r.what));
+    rows.emplace_back(QStringLiteral("F"), QStringLiteral("Fit image to window"));   // native (Window > Fit)
     auto* d = new Sheet(this);
     d->setAttribute(Qt::WA_DeleteOnClose);
     d->setObjectName("sheet");
-    d->setWindowTitle(title);
-    auto* grid = new QGridLayout(d);
-    auto* head = new QLabel(title, d);
-    head->setObjectName("sheetTitle");
-    head->setProperty("role", "plabel");
-    grid->addWidget(head, 0, 0, 1, 2);
-    int r = 1;
-    for (const auto& [k, v] : rows) {
-        auto* kl = new QLabel(k, d);
-        kl->setProperty("role", "value");
-        auto* vl = new QLabel(v, d);
-        vl->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        grid->addWidget(kl, r, 0);
-        grid->addWidget(vl, r, 1);
-        ++r;
+    d->setWindowTitle(QStringLiteral("Keyboard"));
+    auto* outer = new QVBoxLayout(d);
+    outer->setContentsMargins(20, 20, 20, 20);
+    auto* card = new QFrame(d);
+    card->setObjectName("sheetCard");
+    card->setAttribute(Qt::WA_StyledBackground, true);
+    card->setFixedWidth(std::clamp(width() - 48, 460, 700));
+    outer->addStretch(1);
+    outer->addWidget(card, 0, Qt::AlignHCenter);
+    outer->addStretch(1);
+    auto* v = new QVBoxLayout(card);
+    v->setContentsMargins(24, 20, 24, 16);
+    v->setSpacing(16);
+    auto* head = new QHBoxLayout;
+    head->setSpacing(16);
+    auto* title = new QLabel(QStringLiteral("Keyboard shortcuts"), card);
+    title->setObjectName("sheetTitle");
+    head->addWidget(title, 1);
+    auto* x = new QPushButton(QStringLiteral("\u00d7"), card);
+    x->setObjectName("sheetCloseBtn");
+    x->setToolTip(QStringLiteral("Close (Esc)"));
+    x->setAccessibleName(QStringLiteral("Close"));
+    x->setFocusPolicy(Qt::NoFocus);
+    x->setFixedSize(28, 28);
+    connect(x, &QPushButton::clicked, d, &QDialog::accept);
+    head->addWidget(x, 0, Qt::AlignTop);
+    v->addLayout(head);
+    // Two columns: the viewer and playback on the left; the shot, the grade and editing on the right.
+    auto* cols = new QHBoxLayout;
+    cols->setSpacing(36);
+    QVBoxLayout* col[2] = {new QVBoxLayout, new QVBoxLayout};
+    for (auto* c : col) c->setSpacing(14);
+    for (const auto& [group, in] : keyboard_groups(rows)) {
+        auto* sec = new QVBoxLayout;
+        sec->setSpacing(0);
+        auto* name = new QLabel(group.toUpper(), card);
+        name->setProperty("role", "sheet-head");
+        sec->addWidget(name);
+        sec->addSpacing(2);
+        for (const auto& [keys, what] : in) {
+            auto* row = new QWidget(card);
+            row->setMinimumHeight(32);
+            auto* rh = new QHBoxLayout(row);
+            rh->setContentsMargins(0, 0, 0, 0);
+            rh->setSpacing(14);
+            auto* words = new QLabel(what, row);
+            words->setProperty("role", "kbd-what");
+            words->setWordWrap(true);
+            rh->addWidget(words, 1);
+            auto* caps = new QHBoxLayout;
+            caps->setSpacing(5);
+            add_keycaps(caps, row, keys);
+            rh->addLayout(caps);
+            sec->addWidget(row);
+        }
+        const bool left = group == QLatin1String("Viewer") || group == QLatin1String("Playback");
+        col[left ? 0 : 1]->addLayout(sec);
     }
-    auto* close = new QLabel("Esc, or click anywhere, to close", d);
+    for (auto* c : col) {
+        c->addStretch(1);
+        cols->addLayout(c, 1);
+    }
+    v->addLayout(cols);
+    auto* rule = new QWidget(card);
+    rule->setObjectName("sheetRule");
+    rule->setAttribute(Qt::WA_StyledBackground, true);
+    rule->setFixedHeight(1);
+    v->addWidget(rule);
+    auto* close = new QLabel(QStringLiteral("Esc, or click anywhere, to close"), card);
     close->setObjectName("sheetClose");
-    close->setProperty("role", "note");
-    grid->addWidget(close, r, 0, 1, 2);
+    v->addWidget(close);
     sheet_ = d;
+    d->place();
     d->show();
+    d->raise();
+    d->activateWindow();
 }
 
 void MainWindow::session_changed(std::uint32_t what) {
@@ -764,6 +914,7 @@ void MainWindow::session_changed(std::uint32_t what) {
             if (aces_routed()) {
                 CompositeParams bt;
                 bt.source = SourceCurve::Bt1886;
+                bt.own_codes = session_.own_codes();   // 24 Nov 2026: the codes the server reads, as video codes
                 v.anchor_knots = anchor_target_knots(bt);
             } else {
                 v.anchor_knots = anchor_target_knots(session_.composite_params());
@@ -1663,8 +1814,36 @@ void MainWindow::inspect_source() {
         if (current_ >= 0 && std::size_t(current_) < source_sizes_->colour.size())
             still = source_sizes_->colour[std::size_t(current_)];
     }
+    if (shot_video_ && shot_video_->stream && shot_video_->path != source_whites_for_) start_source_whites_probe();
     source_panel_->inspect_source(!frames_.empty(), shot_video_.has_value(),
-                                  shot_video_ ? shot_video_->stream : std::nullopt, still);
+                                  shot_video_ ? shot_video_->stream : std::nullopt, still,
+                                  shot_video_ && shot_video_->path == source_whites_for_ ? source_whites_ : std::nullopt);
+}
+
+void MainWindow::start_source_whites_probe() {
+    source_whites_stop_.request_stop();
+    if (source_whites_worker_.joinable()) source_whites_worker_.join();
+    source_whites_stop_ = rudra::stop_source{};
+    source_whites_.reset();
+    source_whites_for_ = shot_video_->path;
+    const QPointer<MainWindow> self(this);
+    source_whites_worker_ = std::thread([self, path = shot_video_->path, stream = *shot_video_->stream, n = shot_video_->count(),
+                                         fps = shot_video_->fps.value_or(0.0), stop = source_whites_stop_.get_token()] {
+        auto r = probe_source_whites(path, stream, n, fps, 8, stop);
+        if (stop.stop_requested()) return;
+        std::optional<SourceWhiteProbe> found;
+        if (r) found = *r;
+        QMetaObject::invokeMethod(qApp, [self, path, found] {
+            if (!self || self->source_whites_for_ != path) return;
+            self->source_whites_ = found;
+            if (found && found->measured)
+                self->log(found->present()
+                              ? QStringLiteral("source: %1 % of the sampled pixels are above white (super-whites), up to code %2")
+                                    .arg(100.0 * found->above_share(), 0, 'f', 3).arg(found->max_code)
+                              : QStringLiteral("source: no detail above white on %1 sampled frames").arg(found->frames));
+            self->inspect_source();
+        });
+    });
 }
 
 RegionOverlayGate MainWindow::region_overlay_gate() const {
@@ -1792,6 +1971,7 @@ void MainWindow::sync_ui() {
     tabs_->set_on(shown);
     const int page = shown == "grade" ? 1 : shown == "deliver" ? 2 : shown == "check" ? 3 : 0;
     for (int i = 0; i < int(pages_.size()); ++i) pages_[std::size_t(i)]->setVisible(i == page);
+    if (body_stack_) body_stack_->setCurrentIndex(shown == "batch" && batch_page_ ? 1 : 0);
     // 1.2.6: the long notes are their cards' tooltips; the one-line ones ("keep") stay in Full
     for (auto* n : notes_) n->setVisible(workspace_ != "simple" && n->property("keep").toBool());
     // Frames (drawFrames)
@@ -1869,6 +2049,7 @@ void MainWindow::show_tab(const QString& tab) {
         return show_tab(QStringLiteral("rec"));
     }
     if (tab != tab_) simple_scopes_.reset();
+    if (tab == "batch") batch_page();   // made the first time it is shown
     tab_ = tab;
     sync_ui();
 }
@@ -2339,10 +2520,12 @@ MasterRequest MainWindow::master_request() const {
     q.carry_chroma = session_.carry_chroma;
     q.container = session_.container;
     q.exr_half = false;  // Grading masters retain float32 precision and range.
-    // 1.2.6 (checklist item 8): lossless ZIP for ACEScg and linear (deliver/exrZip, on by default);
-    // the ACES 2065-1 container is never compressed.
-    q.exr_zip = QSettings().value("deliver/exrZip", true).toBool();
+    // 1.2.6 (checklist item 8): lossless ZIP for ACEScg and linear; 1.3: Deliver's EXR compression
+    // (ZIP, ZIPS or none). The ACES 2065-1 container is never compressed.
+    q.exr_zip = deliver_.exr_compression != "none";
+    q.exr_zip_lines = deliver_.exr_compression == "zips" ? 1 : 16;
     q.source_curve = session_.grade.source;
+    q.own_codes = session_.own_codes();   // 24 Nov 2026: the app's frames are the source's own codes
     q.calibration = session_.calibration_points();
     q.reference = session_.grade.reference;
     q.masks = session_.composite_params().masks;
@@ -2434,6 +2617,7 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
         }
     }
     q.brackets = !to_movie && deliver_effective().brackets;   // RUDRA 1.1: -2 / 0 / +2 EV and the export check
+    q.output_size = deliver_effective().size.toStdString();   // 1.3: Output size
     const ModelConstants model = frame_constants();
     if (!prepare) {
         prepare = master_prepare(sources, q);
@@ -3161,6 +3345,9 @@ bool MainWindow::wide_screen() const {
 }
 
 bool MainWindow::source_is_lossy() const {
+    // 1.3: a cleaned copy (Reconstruct > Clean compression) is lossless itself, but what it shows came through a
+    // lossy codec: its compression noise near white still wants the lossy source's fill.
+    if (const auto side = shot_clean_sidecar()) return side->original_lossy;
     if (shot_video_) return movie_is_lossy(from_path(shot_video_->path));   // 1.2.6: footage too
     return !frames_.empty() && is_lossy_still_path(from_path(frames_.front()).toStdString());
 }
@@ -3169,8 +3356,13 @@ bool MainWindow::movie_is_lossy(const QString& path) const {
     // ffprobe's codec and pixel format of the first video stream, once per file (a second or less).
     const QString key = MediaLibrary::clean(path);
     if (const auto it = lossy_movies_.find(key); it != lossy_movies_.end()) return it->second;
+    // 1.3 (24 Nov 2026, audit): ffprobe by its path on the PATH (the package puts its own first), never a
+    // bare name: CreateProcess looks in the current folder before the PATH, so a folder holding its own
+    // ffprobe.exe would have had it run (as edl.cpp and the native launcher already do).
+    const QString ffprobe = QStandardPaths::findExecutable(QStringLiteral("ffprobe"));
+    if (ffprobe.isEmpty()) return false;   // not cached: an ffprobe put on the PATH later is used
     QProcess p;
-    p.start(QStringLiteral("ffprobe"), {QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-select_streams"),
+    p.start(ffprobe, {QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-select_streams"),
                                         QStringLiteral("v:0"), QStringLiteral("-show_entries"),
                                         QStringLiteral("stream=codec_name,pix_fmt"), QStringLiteral("-of"), QStringLiteral("json"),
                                         path});
@@ -3628,6 +3820,24 @@ MainWindow::QcContext MainWindow::qc_context_now(const QString& route, const QJs
     return x;
 }
 
+QString MainWindow::rewrite_qc_with_fill(const QString& master_dir, const QString& disclosure_json) {
+    if (!last_qc_ || disclosure_json.isEmpty() || QDir(last_qc_->output_folder) != QDir(master_dir)) return {};
+    QFile f(disclosure_json);
+    if (!f.open(QIODevice::ReadOnly)) return {};
+    QcReport r = *last_qc_;
+    r.ai_fill = QJsonDocument::fromJson(f.readAll()).object();
+    if (r.ai_fill.isEmpty()) return {};
+    r.title += QStringLiteral("_aifill");
+    r.when = QDateTime::currentDateTime().toString(Qt::ISODate);
+    r.files << QDir(master_dir).relativeFilePath(disclosure_json);
+    const QString path = write_qc_report(r, last_qc_peak_);
+    if (!path.isEmpty()) {
+        const QcVerdict v = qc_verdict(r, last_qc_peak_);
+        log(QStringLiteral("QC report with the AI fill: %1 (%2)").arg(QDir::toNativeSeparators(path), v.pass ? QStringLiteral("Pass") : QStringLiteral("Review")));
+    }
+    return path;
+}
+
 QString MainWindow::write_render_qc(const QString& folder, const std::vector<std::filesystem::path>& masters, const QString& route,
                                     const QJsonObject& learned) {
     // The render's own context, taken when it started; "now" only for a caller that took none.
@@ -3691,6 +3901,8 @@ QString MainWindow::write_render_qc(const QString& folder, const std::vector<std
     if (!c.encoding.isEmpty() && (c.output == "movie" || c.image == "dpx10")) r.settings["deliver_encoding"] = c.encoding;   // only where it applies
     if (c.encoding == "pq") r.settings["pq_peak_nits"] = c.pq_peak;
     const QString path = write_qc_report(r, c.pq_peak > 0 ? c.pq_peak : 1000);
+    last_qc_ = std::make_shared<QcReport>(r);   // 1.3: for the AI fill's own report
+    last_qc_peak_ = c.pq_peak > 0 ? c.pq_peak : 1000;
     if (!path.isEmpty()) {
         const QcVerdict v = qc_verdict(r, c.pq_peak > 0 ? c.pq_peak : 1000);
         log(QStringLiteral("QC report: %1 (%2)").arg(QDir::toNativeSeparators(path), v.pass ? QStringLiteral("Pass") : QStringLiteral("Review")));

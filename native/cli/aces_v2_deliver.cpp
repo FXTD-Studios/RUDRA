@@ -2,6 +2,8 @@
 #include <random>
 #include "aces_v2_deliver.hpp"
 
+#include <rudra/core/resample.hpp>
+
 #include <cctype>
 
 #include "rudra/core/gamut.hpp"
@@ -51,6 +53,7 @@ Result<AcesDeliverOptions> aces_deliver_from_json(const nlohmann::json& req) {
         o.exr = req.value("exr", std::string("float"));
         o.exr_gamut = req.value("exr_gamut", std::string("acescg"));
         o.exr_zip = req.value("exr_zip", false);
+        o.exr_zip_lines = req.value("exr_zip_lines", 16) == 1 ? 1 : 16;   // 1.3: ZIPS
         if (req.contains("frames"))
             for (const auto& f : req.at("frames")) o.frames.push_back(f.get<int>());
         o.fps = req.value("fps", 0.0);
@@ -69,9 +72,12 @@ Result<AcesDeliverOptions> aces_deliver_from_json(const nlohmann::json& req) {
         o.create_dirs = req.value("create_dirs", true);
         o.reel = req.value("reel", std::string());
         o.source_display = req.value("source_display", std::string("bt1886"));
+        o.output_size = req.value("output_size", std::string("source"));
     } catch (const std::exception& e) {
         return make_error(ErrorCode::InvalidArgument, "Bad delivery options.", e.what());
     }
+    if (!valid_output_size(o.output_size))
+        return make_error(ErrorCode::InvalidArgument, "output_size is source, 2x, uhd or hd.", o.output_size);
     if (!aces_valid_source_display(o.source_display))
         return make_error(ErrorCode::InvalidArgument, "source_display is bt1886, srgb or gamma22.", o.source_display);
     if (o.exr != "float" && o.exr != "half" && o.exr != "none")
@@ -228,7 +234,8 @@ std::string aces_exr_label(const AcesDeliverOptions& o) {
         return "ACES 2065-1 (AP0), SMPTE ST 2065-4 container: half float RGB, uncompressed, acesImageContainerFlag 1; "
                "scene-linear, signed, unclamped; the reconstruction mask in mask/<frame>.exr";
     return std::string("ACEScg scene-linear, signed, unclamped, ") + (o.exr == "half" ? "half float (16-bit)" : "float32") +
-           (o.exr_zip && exr_zip_available() ? ", ZIP (lossless)" : "") + "; the reconstruction mask as the rudra.reconstructed channel";
+           (o.exr_zip && exr_zip_available() ? (o.exr_zip_lines == 1 ? ", ZIPS (lossless, one scanline a block)" : ", ZIP (lossless)") : "") +
+           "; the reconstruction mask as the rudra.reconstructed channel";
 }
 
 Result<void> write_aces_master_exr(const fs::path& path, const PlanarBuffer& acescg, const PlanarBuffer& mask,
@@ -240,7 +247,7 @@ Result<void> write_aces_master_exr(const fs::path& path, const PlanarBuffer& ace
     const bool ap0 = o.exr_gamut == "ap0";
     auto w = ap0 ? write_aces_exr(part, acescg, Primaries::Ap1, 1.0, provenance, true, nullptr, typed, alpha)
                  : write_acescg_exr(part, acescg, Primaries::Ap1, 1.0, provenance, half, &mask, typed, alpha,
-                                    o.exr_zip ? ExrCompression::Zip : ExrCompression::None);
+                                    !o.exr_zip ? ExrCompression::None : o.exr_zip_lines == 1 ? ExrCompression::Zips : ExrCompression::Zip);
     std::error_code ec;
     if (!w) {
         fs::remove(part, ec);
@@ -379,6 +386,19 @@ PlanarBuffer aces_region_blend(const ReconstructionRegion& region, const PlanarB
         }
     }
     return out;
+}
+
+PlanarBuffer aces_sized(const AcesDeliverOptions& o, PlanarBuffer master, PlanarBuffer& mask, std::optional<PlanarBuffer>& alpha) {
+    const OutputSize to = output_size(o.output_size, master.width(), master.height());
+    if (to.width == master.width() && to.height == master.height()) return master;
+    if (!mask.empty()) mask = resample_hdr(mask, to.height, to.width);
+    if (alpha) alpha = resample_hdr(*alpha, to.height, to.width);
+    return resample_hdr(master, to.height, to.width);
+}
+
+void aces_note_size(const AcesDeliverOptions& o, int src_width, int src_height, ExrAttributes& prov) {
+    if (output_size(o.output_size, src_width, src_height) != OutputSize{src_width, src_height})
+        prov.emplace_back("rudra:outputSize", output_size_note(o.output_size, src_width, src_height));
 }
 
 PlanarBuffer aces_trimmed(const AcesDeliverOptions& o, const PlanarBuffer& acescg, const PlanarBuffer& mask,

@@ -21,6 +21,12 @@ Measured where the source's max code >= tau_high, master and filled against the 
   level  the region's median log2 Y over the truth's (stops): how far off the brightness is
 Gate (registered): PU21 at -3 EV better than the BT.1886 condition's, the 95 % bootstrap CI over the
 gated clips excluding 0. report.json has one verdict per variant.
+
+--route aces (RUDRA 1.3, 23 Nov 2026): the learned ACES 2.0 route. Each clip is made as the clip builder makes
+its ACES clips (a 'highlight' view through the exact ACES 2.0 SDR 100-nit view, 8-bit codes; the builder's
+condition 'aces'), the master is the exact ACES 2.0 inverse of the codes (the learned route without its model),
+and the fill runs with --condition aces, as the app runs it on the learned route. The gate is the same, against
+that master.
 """
 import argparse, json, sys, time
 from pathlib import Path
@@ -71,6 +77,28 @@ def load_source(src, a):
     if k > 1:
         plate = cv2.resize(plate, (int(plate.shape[1] / k), int(plate.shape[0] / k)), interpolation=cv2.INTER_AREA)
     return plate, row.get('licence_source') == 'fxtd'
+
+
+def aces_clip(rng, source, native, kind_of_source, F, h, w, view):
+    """A held-out clip through the exact ACES 2.0 SDR view (the learned route's SDR), as build_genfill_clips.make_clip
+    makes its 'highlight' clips: -> dict(sdr, truth, cond = the ACES 2.0 inverse, meta) or None."""
+    from tools.build_genfill_clips import equirect_path, plate_path
+    from rudra.genfill.masks import MaskSettings, TemporalMask
+    ref = equirect_path(source, rng, F, h, w, 'highlight') if kind_of_source == 'equirect' else plate_path(source, rng, F, h, w)
+    ref = np.maximum(ref, 0).astype(np.float32)
+    Y = ref[0] @ AP1_Y
+    base = 0.0 if native else float(np.clip(np.log2(0.18 / max(float(np.median(Y[Y > 0])) if (Y > 0).any() else 0.18, 1e-6)), -10, 10))
+    off = float(rng.choice([0.0, 1.0, 2.0, 3.0]))
+    ref *= np.float32(2.0 ** (base + off))
+    codes = np.rint(np.clip(view.forward(ref.reshape(-1, 3)).reshape(ref.shape), 0, 1) * 255).astype(np.uint8)
+    ms = MaskSettings(tau_high=int(rng.integers(240, 255)), tau_low=-1, dilate=2, ema=0.7)
+    tm = TemporalMask(ms)
+    frac = float(np.stack([np.logical_or(*tm(c)) for c in codes]).mean())
+    if not 0.002 <= frac <= 0.6:
+        return None
+    cond = view.inverse((codes.astype(np.float32) / 255).reshape(-1, 3)).reshape(codes.shape).astype(np.float32)
+    return {'sdr': codes, 'truth': np.minimum(ref, 6e4).astype(np.float16), 'cond': cond.astype(np.float16),
+            'meta': {'curve': 'aces2_view', 'condition': 'aces', 'tau_high': ms.tau_high, 'ev': round(base + off, 4)}}
 
 
 def lum(x):
@@ -126,6 +154,12 @@ def main(argv=None):
     ap.add_argument('--still', type=float, default=0.0, help='with --finish: --rerender-still')
     ap.add_argument('--independent', action='store_true', help='with --finish: --rerender-independent')
     ap.add_argument('--calm', type=float, default=0.0, help='with --finish: --rerender-calm')
+    ap.add_argument('--hold-clipped', nargs='?', const='all', default='', help='with --finish: --rerender-hold-clipped (1.3: thin with v5)')
+    ap.add_argument('--steady', type=int, default=0, help='with --finish: --rerender-steady (1.3, AI fill v5: 7)')
+    ap.add_argument('--blend-still', type=float, default=0.0, help='with --finish: --rerender-blend-still (1.3 v5e: 0.95)')
+    ap.add_argument('--hold-calm', type=float, default=0.0, help='with --finish: --rerender-hold-calm (1.3 v5e: 0.95)')
+    ap.add_argument('--cap-master', action='store_true', help='with --finish: --rerender-cap-master (1.3, the learned route)')
+    ap.add_argument('--mask-first-frame', action='store_true', help='--mask-first-frame (1.3, the learned route)')
     ap.add_argument('--frames', type=int, default=33)
     ap.add_argument('--height', type=int, default=288)
     ap.add_argument('--width', type=int, default=512)
@@ -135,6 +169,9 @@ def main(argv=None):
     ap.add_argument('--seed', type=int, default=20261110)
     ap.add_argument('--device', default='cuda')
     ap.add_argument('--registration', default='configs/experiments/research_genfill_v4_20261109.json')
+    ap.add_argument('--route', choices=('bt1886', 'aces'), default='bt1886',
+                    help='aces (1.3): clips through the exact ACES 2.0 view, the ACES 2.0 inverse as the master, the fill '
+                         'conditioned as on the learned route')
     a = ap.parse_args(argv)
     import cv2
     import torch
@@ -150,9 +187,11 @@ def main(argv=None):
     dev = a.device if (a.device != 'cuda' or torch.cuda.is_available()) else 'cpu'
     model = WanFill.load(a.base, a.lora, device=dev, prompt_cache=Path(a.lora).parent / 'prompt_cache', text_device='cpu')
     s = FillSettings(steps=a.steps, seed=0)
-    variants = {} if (a.no_raw and a.finish) else {'raw': lambda src: Rerender(src, 'bt1886')}
+    cond_name = a.route
+    variants = {} if (a.no_raw and a.finish) else {'raw': lambda src: Rerender(src, cond_name)}
     if a.finish:
-        variants['finish'] = lambda src: Rerender(src, 'bt1886', 'source', a.colour, a.level, a.smooth, 0, a.dip, a.still, a.independent, calm=a.calm)
+        variants['finish'] = lambda src: Rerender(src, cond_name, 'source', a.colour, a.level, a.smooth, 0, a.dip, a.still, a.independent, calm=a.calm, hold_clipped=a.hold_clipped, steady=a.steady,
+                                                  cap_master=a.cap_master, blend_still=a.blend_still, hold_calm=a.hold_calm)
     rows, t0 = [], time.time()
     for i, src in enumerate(srcs):
         picture, native = load_source(src, a)
@@ -160,7 +199,9 @@ def main(argv=None):
                'licence': '', 'split': 'evaluation'}
         clip = None
         for attempt in range(6):                             # a view with no bright area to park: another one
-            clip = region_clip(job, np.random.default_rng([a.seed, i, attempt]), picture, native, a.frames, a.height, a.width)
+            rng = np.random.default_rng([a.seed, i, attempt])
+            clip = (aces_clip(rng, picture, native, src['kind'], a.frames, a.height, a.width, view) if a.route == 'aces'
+                    else region_clip(job, rng, picture, native, a.frames, a.height, a.width))
             if clip is not None:
                 break
         if clip is None:
@@ -178,7 +219,7 @@ def main(argv=None):
         for t, c in enumerate(codes):
             cv2.imwrite(str(cdir / 'source' / f'clip.{1001 + t:06d}.png'), np.ascontiguousarray(c[..., ::-1]))
         write_master_folder(cdir / 'master', cond)
-        ms = MaskSettings(tau_high=tau, tau_low=-1, feather=8)
+        ms = MaskSettings(tau_high=tau, tau_low=-1, feather=8, first_frame=a.mask_first_frame)
         m = {'clip': name, 'scene_id': src['scene_id'], 'secondary': bool(src['secondary']), 'curve': clip['meta']['curve'],
              'tau_high': tau, 'region_fraction': float(region.mean()), 'master': region_metrics(truth, cond, region)}
         for v, make in variants.items():
@@ -195,9 +236,11 @@ def main(argv=None):
     rep = {'registration': a.registration, 'registration_sha256': sha(a.registration) if Path(a.registration).exists() else None,
            'lora': a.lora, 'lora_sha256': sha(a.lora) if Path(a.lora).exists() else None, 'model': model.identity,
            'held_polyhaven': held, 'ph_offset': a.ph_offset, 'clips': len(rows), 'seconds': round(time.time() - t0),
-           'finish': {'colour': a.colour, 'level': a.level, 'smooth': a.smooth, 'dip': a.dip, 'still': a.still, 'independent': a.independent, 'calm': a.calm} if a.finish else None,
+           'finish': {'colour': a.colour, 'level': a.level, 'smooth': a.smooth, 'dip': a.dip, 'still': a.still, 'independent': a.independent, 'calm': a.calm, 'hold_clipped': a.hold_clipped, 'steady': a.steady} if a.finish else None,
            'gates': g, 'verdict': {v: 'PASS' if g[v]['pass'] else 'FAIL' for v in g}, 'rows': rows,
-           'note': 'master = the BT.1886 reading of the codes (the condition); region = source max code >= tau_high',
+           'route': a.route,
+           'note': ('master = the exact ACES 2.0 inverse of the codes (the learned route without its model)' if a.route == 'aces'
+                    else 'master = the BT.1886 reading of the codes (the condition)') + '; region = source max code >= tau_high',
            'release_authorized': False}
     (out / 'report.json').write_text(json.dumps(rep, indent=1))
     print(json.dumps({'verdict': rep['verdict'], 'gates': g}, indent=1), flush=True)

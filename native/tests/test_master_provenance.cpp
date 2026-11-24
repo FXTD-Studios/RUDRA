@@ -183,3 +183,39 @@ TEST(MasterProvenance, AnalyticMastersCarryTheSourceAlpha) {
     }
     fs::remove_all(root);
 }
+
+TEST(MasterProvenance, TheOutputSizeWritesTheMasterItsAlphaAndMattesAtIt) {
+    // 1.3 (23 Nov 2026): Deliver's Output size. The 12 x 16 frame is written at 24 x 32; the
+    // sidecar's resolution is the file's and output_size names the source's.
+    const fs::path root = fresh("output-size");
+    MasterRequest q;
+    q.container = "linear";
+    q.exr_half = false;
+    q.analytic = true;
+    q.mattes = true;
+    q.output_size = "2x";
+    PlanarBuffer a(1, 12, 16, 1.0f);
+    q.alpha = a;
+    auto restored = master_request_from_json(master_request_json(q));
+    ASSERT_TRUE(restored);
+    EXPECT_EQ(restored->output_size, "2x");
+    EXPECT_FALSE(master_request_from_json(R"({"output_size": "8k"})"));
+    EXPECT_EQ(master_request_json(MasterRequest{}).find("output_size"), std::string::npos);   // masters before read the same
+    const Written w = master(root, q);
+    EXPECT_EQ(w.exr.pixels.width(), 32);
+    EXPECT_EQ(w.exr.pixels.height(), 24);
+    ASSERT_EQ(w.exr.pixels.channels(), 4);
+    EXPECT_FLOAT_EQ(w.exr.pixels.at(3, 11, 17), 1.0f);
+    EXPECT_EQ(w.side.at("resolution"), nlohmann::json::array({32, 24}));
+    EXPECT_EQ(w.side.at("output_size").at("source_resolution"), nlohmann::json::array({16, 12}));
+    EXPECT_EQ(attr(w.exr, "rudra:outputSize").rfind("32 x 24 from 16 x 12 (2x", 0), 0u);
+    auto m = read_exr(root / "m.mattes.exr");
+    ASSERT_TRUE(m);
+    EXPECT_EQ(m->pixels.width(), 32);
+    // A flat grey frame stays flat: the resize adds nothing.
+    const float v = w.exr.pixels.at(0, 0, 0);
+    for (int y = 0; y < 24; ++y)
+        for (int x = 0; x < 32; ++x) ASSERT_NEAR(w.exr.pixels.at(0, y, x), v, 1e-5f);
+    fs::remove_all(root);
+}
+

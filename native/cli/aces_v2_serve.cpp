@@ -570,7 +570,8 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     }
                     const double ms = ms_since(t);
                     // The colorist's trims, then the frame's timecode and reel (28 Oct 2026).
-                    const PlanarBuffer master = aces_trimmed(*opts, r->acescg, r->mask, **view, f->codes);
+                    const int src_w = r->acescg.width(), src_h = r->acescg.height();
+                    const PlanarBuffer master = aces_sized(*opts, aces_trimmed(*opts, r->acescg, r->mask, **view, f->codes), r->mask, f->alpha);
                     const AcesFrameStamp stamp = aces_frame_stamp(*opts, i, *f, run_fps);
                     // HDR10 numbers on the PQ deliverable (its own peak), else on the PQ 1000 output.
                     const aces_v2::AcesView* light_view =
@@ -584,8 +585,9 @@ int cmd_aces_v2_serve(const std::vector<std::string>& args) {
                     if (logw && i == 0) logw->set_movie_stamp(stamp.timecode, stamp.reel);
                     const std::string stem = aces_frame_stem(*opts, i, f->exr);
                     const fs::path exr = opts->writes_exr() ? out / (stem + ".exr") : fs::path();
-                    const ExrAttributes prov = {{"contract", aces_v2::kContractId}, {"g1_sha256", m->g1_sha256},
+                    ExrAttributes prov = {{"contract", aces_v2::kContractId}, {"g1_sha256", m->g1_sha256},
                                                 {"source", f->source}, {"view", (*view)->identity()}};
+                    aces_note_size(*opts, src_w, src_h, prov);   // 1.3: Output size
                     if (opts->writes_exr())
                         if (auto w = write_aces_master_exr(exr, master, r->mask, *opts, prov,
                                                                       exr_timecode_attributes(stamp.timecode, stamp.fps, stamp.reel),

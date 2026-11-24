@@ -143,6 +143,11 @@ constexpr const char* kKnownModelFiles[] = {
     "406b1dc7b7d3ada5406b396a6aa8c7e5ec9eac8d0be0d04e8038d68b5bf1b390",   // rudra_genfill.safetensors (v4.2 training)
     "8f2324358a10feb7599446443af7622a096f360f99d16a12830f5ebc6a68e90d",   // registration_v4.json (docs/models/genfill_v4)
     "d2f507bbcfdcc0203bec82050a3f5ef89188b12e8310b8b5f5a12d7816b5db8c",   // report_v4.json (docs/models/genfill_v4)
+    // AI fill v5, region re-render (experimental, 1.3), folder rudra_genfill_v5: the LoRA of
+    // research_genfill_v5_20261122, run with --rerender-hold-clipped thin (research_genfill_v5d_thin_20261123)
+    "5c5d4ab4107088f86bdc8213ae2ec21c1a882cc6d942141f0e12fb7733fda5e6",   // rudra_genfill.safetensors (v5 training)
+    "1d9d6a5a1803ca8704dff357c1a1a06065486ff0d65c272bed979f5a14df1039",   // registration_v5.json (docs/models/genfill_v5)
+    "bc17f9678828e0957efbd4d581c9a1a2cfa783101fa01402873c584173ae2237",   // report_v5.json (docs/models/genfill_v5)
     // Florence-2 base (MIT; Suggest a prompt), kind "florence", folder Florence-2-base: florence-community/
     // Florence-2-base at revision 00921df66db728a9ceb750f5eca43e5c203a2051, as in rudra/genfill/model_manifest.json
     // (1.2.6). Downloaded from its own Hugging Face repo at that revision; listed in Check this computer.

@@ -113,6 +113,10 @@ struct CompositeParams {
     double exposure_ev = 0.0;
     // Spec revision 2 (5 Nov 2026): where the reconstruction may act. Off: revision 1.
     ReconstructionRegion region;
+    // 24 Nov 2026: the SDR holds the source's own codes (a still, or a movie as the app reads it), not BT.709 light
+    // re-encoded as sRGB (the command-line video path): BT.1886 and BT.1886 shadows then read each code as the
+    // BT.709 video code it is (source_curve.hpp source_curve_params). Other curves: no change.
+    bool own_codes = false;
 };
 
 // The gate of spec section 2 steps 3 and 4 for one pixel: the priors at SDR

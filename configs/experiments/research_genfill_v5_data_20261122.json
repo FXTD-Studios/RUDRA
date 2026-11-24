@@ -17,5 +17,6 @@
   "material": "G:/datasets/sources/genfill_v5 (manifest.jsonl, receipts/, polyhaven/, ambientcg/, blender/)",
   "clips": "G:/datasets/corpora/research_genfill_clips_v5_20261122"
  },
- "review_before_training": "The builder's preview clips and summary (by theme, by kind, optics counts) are looked at before a v5 training run is registered."
+ "review_before_training": "The builder's preview clips and summary (by theme, by kind, optics counts) are looked at before a v5 training run is registered.",
+ "review_2026_11_22": "Done (after the build): tmp/v5_review/REVIEW_2026-11-22.md. The store is sound; sampling and the dev monitor are set in research_genfill_v5_20261122 (draft), which registers the v5 training run."
 }

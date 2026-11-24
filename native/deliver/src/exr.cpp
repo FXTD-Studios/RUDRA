@@ -185,7 +185,8 @@ std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, co
                                        int w, int h, bool half, const std::optional<Chromaticities>& chroma,
                                        const ExrAttributes& attributes, const ExrTypedAttributes& typed,
                                        ExrCompression compression) {
-    const bool zip = compression == ExrCompression::Zip && exr_zip_available();
+    const bool zip = (compression == ExrCompression::Zip || compression == ExrCompression::Zips) && exr_zip_available();
+    const int zip_lines = compression == ExrCompression::Zips ? 1 : kZipLines;   // ZIPS: one scanline a block
     std::vector<int> order(names.size());
     for (std::size_t i = 0; i < names.size(); ++i) order[i] = static_cast<int>(i);
     std::sort(order.begin(), order.end(), [&](int a, int b) { return names[a] < names[b]; });
@@ -203,7 +204,7 @@ std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, co
         ch.push_back(0);
         attr(head, "channels", "chlist", ch);
     }
-    attr(head, "compression", "compression", {std::uint8_t(zip ? 3 : 0)});
+    attr(head, "compression", "compression", {std::uint8_t(!zip ? 0 : zip_lines == 1 ? 2 : 3)});
     std::vector<std::uint8_t> box;
     for (int v : {0, 0, w - 1, h - 1}) put_i32(box, v);
     attr(head, "dataWindow", "box2i", box);
@@ -246,13 +247,13 @@ std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, co
         if (half) v = std::clamp(v, -65504.0f, 65504.0f);
         return v;
     };
-    if (zip) {   // blocks of 16 scanlines, each zipped; the offset table one entry a block
-        const int blocks = (h + kZipLines - 1) / kZipLines;
+    if (zip) {   // blocks of 16 scanlines (ZIPS: 1), each zipped; the offset table one entry a block
+        const int blocks = (h + zip_lines - 1) / zip_lines;
         std::vector<std::vector<std::uint8_t>> zipped(static_cast<std::size_t>(blocks));
         std::vector<std::uint8_t> raw;
         for (int bi = 0; bi < blocks; ++bi) {
             raw.clear();
-            for (int y = bi * kZipLines; y < std::min(h, (bi + 1) * kZipLines); ++y)
+            for (int y = bi * zip_lines; y < std::min(h, (bi + 1) * zip_lines); ++y)
                 for (int c : order) {
                     const float* row = planes[std::size_t(c)] + std::size_t(y) * std::size_t(w);
                     for (int x = 0; x < w; ++x) {
@@ -277,7 +278,7 @@ std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, co
             at += 8 + d.size();
         }
         for (int bi = 0; bi < blocks; ++bi) {
-            put_i32(out, bi * kZipLines);
+            put_i32(out, bi * zip_lines);
             put_i32(out, static_cast<std::int32_t>(zipped[std::size_t(bi)].size()));
             out.insert(out.end(), zipped[std::size_t(bi)].begin(), zipped[std::size_t(bi)].end());
         }

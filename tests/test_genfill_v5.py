@@ -328,3 +328,28 @@ def test_the_blender_scenes_render_every_kind(tmp_path):
     gs.main(['--out', str(out), '--count', '5', '--frames', '2', '--width', '64', '--height', '36',
              '--samples', '2', '--device', 'CPU', '--no-denoise'])
     assert len((out / 'manifest.jsonl').read_text().splitlines()) == 5          # resumed: nothing twice
+
+
+def test_the_blender_camera_never_turns_round_between_frames():
+    """22 Nov 2026: a camera panning across +-180 degrees of yaw must not jump 360 degrees between two
+    keyframes (Cycles' motion blur swept the turn into the frame: 9 swirled scenes in the first build)."""
+    pytest.importorskip('bpy')
+    import math
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'blender'))
+    import genfill_v5_scenes as gs
+
+    class Most:                                     # every draw at its top: the fastest pan, no still camera
+        def uniform(self, a, b):
+            return b
+
+        def random(self):
+            return 0.99
+    for aim in ((-1, 0.02, 0.4), (-1, -0.02, 0.6), (0.02, -1, 0.3)):
+        scene = gs.reset()
+        cam = gs.camera(scene, Most(), (0, 0, 0), aim, 33)[0]
+        vals = []
+        for f in range(1, 34):
+            scene.frame_set(f)
+            vals.append(tuple(cam.rotation_euler))
+        for a, b in zip(vals, vals[1:]):
+            assert max(abs(x - y) for x, y in zip(a, b)) < math.radians(10), (aim, a, b)

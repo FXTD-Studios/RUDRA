@@ -35,6 +35,7 @@ Result<MasterResult> render_analytic_master(const std::filesystem::path& image, 
     if (!decoded) return decoded.error();
     MasterRequest qa = q;
     qa.analytic = true;
+    qa.own_codes = true;   // 24 Nov 2026: a still's own codes (core/source_curve.hpp)
     qa.checkpoint.clear();
     qa.checkpoint_sha256.clear();
     qa.source_file = image;
@@ -56,6 +57,7 @@ Result<MasterResult> render_master(const ModelManifest& pkg, InferenceBackend& b
     // label the master gets is then true.
     if (q.analytic) {
         MasterRequest qa = q;
+        qa.own_codes = true;   // 24 Nov 2026: a still's own codes (core/source_curve.hpp)
         qa.checkpoint.clear();
         qa.checkpoint_sha256.clear();
         qa.source_file = image;
@@ -67,6 +69,7 @@ Result<MasterResult> render_master(const ModelManifest& pkg, InferenceBackend& b
     auto fr = infer_frame(backend, decoded->rgb, TileConfig{0, 0});
     if (!fr) return fr.error();
     MasterRequest qm = q;   // provenance: the package's checkpoint hash, the source, the pass
+    qm.own_codes = true;   // 24 Nov 2026: a still's own codes (core/source_curve.hpp)
     qm.checkpoint_sha256 = pkg.source_sha256;
     qm.source_file = image;
     qm.tiled = fr->tiled;
@@ -87,6 +90,7 @@ Result<CorrectionEntry> log_master_correction(const ModelManifest* pkg, Inferenc
     auto decoded = decode_sdr_file(image);
     if (!decoded) return decoded.error();
     MasterRequest qg = q;
+    qg.own_codes = true;   // 24 Nov 2026: a still's own codes (core/source_curve.hpp)
     qg.source_space = q.source_space == "rec709" ? primaries_id(decoded->colour.primaries) : q.source_space;
     qg.source_file = image;
     Result<GradedMaster> g = make_error(ErrorCode::InvalidArgument, "no grade");

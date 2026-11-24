@@ -63,6 +63,18 @@ the joins (frames 25, 50, 75), the lamp pumps in the last window. Off by default
 --rerender-full-last (1.2.9, 22 Nov 2026): the last window is a whole window started earlier (09V: 64-96,
 not 75-96 padded with 3 copies of frame 96), so it shares 19 frames with the one before; with
 --rerender-follow 17 of them are held. The worst join of 09V 1.2.8 is the one into that short window.
+--rerender-cap-master, --mask-first-frame (1.3, 24 Nov 2026; research_genfill_v5e_20261124.json):
+the learned route. v5 failed there (research_genfill_v5_learned_20261123): the learned master rebuilds a
+clipped area itself, brighter than the fill's level and unsteady near the clip, and its share of the
+crossfade came through as flicker and a rim brighter than the core; a newly clipped pixel showed that
+master for one frame before the mask took it. The first keeps the master's share at or under the fill
+(composite.finish_rerender cap), the second takes a pixel into the mask at its first clipped frame
+(masks.TemporalMask). The app sets both on the learned route with v5 only.
+--rerender-blend-still <0..1>, --rerender-hold-calm <0..1> (1.3, 24 Nov 2026; research_genfill_v5e_20261124.json):
+both routes. v5 flickered on 01V and 03V (T 0.164, 0.173 on the analytic route; neither was among its four check
+shots). The crossfade's mix follows the source's code, which the codec moves 1-2 codes on a still shot; the
+first settles it while that code stays near where it was (composite.finish_rerender blend_still), the second
+holds the inside of a thin clipped shape more (hold_calm). The app sets both with v5: 0.95 and 0.95.
 """
 from __future__ import annotations
 
@@ -102,7 +114,28 @@ class Rerender:
     align: bool = False    # 1.2.8: with independent windows, each one lined up with the previous (window_alignment); tried, off in the app
     follow: float = 0.0    # 1.2.9: > 0, with independent windows, each continues the previous over the frames they share (model.denoise known/pin): the share of the steps held
     full_last: bool = False   # 1.2.9: the last window a whole window, sharing more frames with the previous (plan_windows full_last)
+    hold_clipped: bool | str = False   # 1.3: with calm, still clipped pixels held whatever their trust (finish_rerender hold): '' / False off, 'all' (v5b research), 'thin' (the app's with v5), 'dips', 'release'
+    steady: int = 0        # 1.3 (AI fill v5): > 1, the median of the fill's last frames where the source clips and holds still (finish_rerender steady)
+    cap_master: bool = False   # 1.3 (24 Nov 2026), the learned route: the master's share never over the fill's own value (finish_rerender cap)
+    blend_still: float = 0.0   # 1.3 (24 Nov 2026): the crossfade's mix keeps this share of the previous frame's where its code holds still (finish_rerender blend_still)
+    hold_calm: float = 0.0     # 1.3 (24 Nov 2026): with hold_clipped, the share a held pixel keeps for a jump instead of calm (finish_rerender hold_calm)
     CONDITIONS = ('bt1886', 'aces')
+
+
+HOLD_MODES = ('all', 'thin', 'dips', 'release')
+
+
+def hold_mode(v) -> str:
+    """--rerender-hold-clipped / the server's rerender_hold_clipped: '' (off), or one of HOLD_MODES; true is 'all'
+    (v5b, as it ran on 23 Nov 2026)."""
+    if v is True:
+        return 'all'
+    if v in (None, False, '', 'off', 0):
+        return ''
+    v = str(v)
+    if v not in HOLD_MODES:
+        raise ValueError(f'rerender hold must be off or one of {", ".join(HOLD_MODES)}, not {v!r}')
+    return v
 
 
 class SourceCodes:
@@ -535,7 +568,8 @@ class Emitter:
 
 def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, window=33, overlap=8,
                 max_area=832 * 480, emit=None, cancel=None, pattern='*.exr', brightness=None,
-                region=None, fallback: str = 'none', focus: str = 'frame', rerender: Rerender | None = None) -> dict:
+                region=None, fallback: str = 'none', focus: str = 'frame', rerender: Rerender | None = None,
+                save_raw: Path | None = None) -> dict:
     """brightness: a brightness.BrightnessSettings for the v3 split (shape from the model, brightness
     from the estimator plus the artist's offset); None keeps the model's own brightness (v1-v2).
     region: a rudra.delivery.region.ReconstructionRegion (RUDRA 1.1). On, the fill (and its prompts)
@@ -564,6 +598,9 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     emit = emit or (lambda **o: None)
     frames = list_frames(master, pattern)
     out.mkdir(parents=True, exist_ok=False)
+    if save_raw is not None:                     # 1.3: the fill before the finish (--save-raw)
+        save_raw = Path(save_raw)
+        save_raw.mkdir(parents=True, exist_ok=True)
     first = read_frame(frames[0])
     H, W = first['ap1'].shape[:2]
     region_on = recon_region is not None and recon_region.enabled
@@ -582,6 +619,10 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
             raise ValueError('level must be >= 0, smooth in [0, 1) and colour in [0, 1]')
         if not (math.isfinite(rerender.follow) and 0.0 <= rerender.follow <= 1.0):
             raise ValueError('follow must be in [0, 1]')
+        if not (math.isfinite(rerender.blend_still) and 0.0 <= rerender.blend_still < 1.0):
+            raise ValueError('blend_still must be in [0, 1)')
+        if not (math.isfinite(rerender.hold_calm) and 0.0 <= rerender.hold_calm < 1.0):
+            raise ValueError('hold_calm must be in [0, 1)')
     finish_state: dict = {}                          # v4 finish: the previous frame's fill
     finish_white = 1.0
     if rerender is not None and rerender.level > 0:  # the shot's SDR white: up to 9 frames along it
@@ -814,11 +855,20 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                         w_plain = (w_plain * neutral_weight(codes[i])).astype(np.float32)
                     if rerender.keep_detail:                   # 1.2.7: a grating, a railing, a lamp keep their picture
                         w_plain = (w_plain * detail_keep_weight(codes[i], ms.tau_high)).astype(np.float32)
-                    if rerender.hue != 'model' or rerender.level > 0 or rerender.smooth > 0 or rerender.still > 0 or rerender.calm > 0:
+                    if save_raw is not None:                   # 1.3: the fill before the finish, for finishes tried offline
+                        if not (save_raw / 'finish.json').exists():
+                            (save_raw / 'finish.json').write_text(json.dumps({'white': float(finish_white), 'tau_high': int(ms.tau_high),
+                                                                              'rerender': asdict(rerender)}, indent=1))
+                        np.save(save_raw / f'{frames[i].stem}.fill.npy', fill_lin.astype(np.float16))
+                        np.save(save_raw / f'{frames[i].stem}.weight.npy', w_plain.astype(np.float16))
+                    if (rerender.hue != 'model' or rerender.level > 0 or rerender.smooth > 0 or rerender.still > 0 or rerender.calm > 0
+                            or rerender.steady > 1):
                         fill_lin = finish_rerender(fill_lin, fr['ap1'], condition_of(codes[i], 'bt1886', view), codes[i], w_plain,
                                                    rerender.hue, rerender.colour, rerender.level, rerender.smooth,
                                                    finish_white, ms.tau_high, finish_state, dip=rerender.dip, still=rerender.still,
-                                                   rise=rerender.rise, calm=rerender.calm)
+                                                   rise=rerender.rise, calm=rerender.calm, hold=rerender.hold_clipped,
+                                                   steady=rerender.steady, cap=rerender.cap_master, blend_still=rerender.blend_still,
+                                                   hold_calm=rerender.hold_calm)
                     out_ap1, alpha = plain_blend(fr['ap1'], fill_lin, w_plain)
                 else:
                     out_ap1, alpha = r_safe_blend(fr['ap1'], fill_lin, weight, view)
@@ -1033,7 +1083,8 @@ def serve(model, view, a, emit, FillSettings) -> int:
             prepare_prompts(model.prompts, [s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative], tagged)
             ms = MaskSettings(tau_high=int(r.get('tau_high', a.tau_high)), tau_low=int(r.get('tau_low', a.tau_low)),
                               blend_high=a.blend_high, blend_low=a.blend_low, feather=a.feather,
-                              max_gain_stops=a.max_gain_stops).check()
+                              max_gain_stops=a.max_gain_stops,
+                              first_frame=bool(r.get('mask_first_frame', a.mask_first_frame))).check()
             out = Path(r['out'])
             if out.exists():
                 raise FileExistsError(f'{out} exists: the fill writes a new folder')
@@ -1057,7 +1108,12 @@ def serve(model, view, a, emit, FillSettings) -> int:
                                                 bool(r.get('rerender_keep_detail', a.rerender_keep_detail)),
                                                 bool(r.get('rerender_align', a.rerender_align)),
                                                 float(r.get('rerender_follow', a.rerender_follow)),
-                                                bool(r.get('rerender_full_last', a.rerender_full_last)))
+                                                bool(r.get('rerender_full_last', a.rerender_full_last)),
+                                                hold_mode(r.get('rerender_hold_clipped', a.rerender_hold_clipped)),
+                                                int(r.get('rerender_steady', a.rerender_steady)),
+                                                bool(r.get('rerender_cap_master', a.rerender_cap_master)),
+                                                float(r.get('rerender_blend_still', a.rerender_blend_still)),
+                                                float(r.get('rerender_hold_calm', a.rerender_hold_calm)))
                               if r.get('region_rerender', a.region_rerender) and r.get('source', a.source) else None)
             tagged(event='done', ok=True, out=str(out), **rep['stats'])
         except Exception as e:  # noqa: BLE001 - one failed request does not end the server
@@ -1151,6 +1207,34 @@ def main(argv=None):
     ap.add_argument('--rerender-follow', type=float, default=0.0,
                     help="with --rerender-independent (1.2.9): each window continues the previous one over the frames "
                          "they share, held for this share of the steps (0..1; 0 off). Try 0.5-0.7")
+    ap.add_argument('--rerender-steady', type=int, default=0,
+                    help="with --region-rerender (1.3, AI fill v5): where the source clips and holds still, the fill's "
+                         "luminance is the median of its last N frames (no shimmer on a still lamp, nothing held of its "
+                         "own); 0 is off, the app uses 7")
+    ap.add_argument('--save-raw', default='',
+                    help="with --region-rerender: also write each frame's fill before the finish and its weight "
+                         "(<frame>.fill.npy, .weight.npy, float16) into this folder, to try finishes offline")
+    ap.add_argument('--rerender-hold-clipped', nargs='?', const='all', default='', type=hold_mode,
+                    help="with --rerender-calm: a pixel the source clips and holds still has its jump held whatever its "
+                         "trust. 'thin' (the app's with AI fill v5): only inside a thin clipped shape (a strip light, a "
+                         "tube, a small lamp); alone or 'all' (v5b research): everywhere, which also held a drifting "
+                         "antenna's ghosts in a wide clipped sky; 'dips', 'release': tried, weaker")
+    ap.add_argument('--rerender-cap-master', action='store_true',
+                    help="with --region-rerender and a level (1.3, the app's on the learned route with AI fill v5): the "
+                         "master's share of a region pixel is never brighter than the fill there. The learned master "
+                         "rebuilds a clipped area brighter than the fill and unsteady near the clip; the analytic one "
+                         "sits under the fill's level, where this changes nothing")
+    ap.add_argument('--rerender-blend-still', type=float, default=0.0,
+                    help="with --region-rerender and a level (1.3): where the code the crossfade follows holds still "
+                         "(2 codes), its mix keeps this share of the previous frame's. The codec's noise near the clip "
+                         "moved the mix and so the pixel (01V: up to 0.2 stops); 0 is off")
+    ap.add_argument('--rerender-hold-calm', type=float, default=0.0,
+                    help="with --rerender-hold-clipped (1.3): the share a held pixel keeps for a jump, instead of "
+                         "--rerender-calm (v5 redraws the inside of a thin clipped shape a little differently every "
+                         "frame); 0 uses --rerender-calm")
+    ap.add_argument('--mask-first-frame', action='store_true',
+                    help="1.3 (the app's on the learned route with AI fill v5): a newly clipped pixel joins the mask at "
+                         "its first clipped frame, not its second (the mask's EMA still decides when it leaves)")
     ap.add_argument('--rerender-full-last', action='store_true',
                     help="with --region-rerender (1.2.9): the last window is a whole window started earlier, sharing more "
                          "frames with the one before, not a short window padded with copies of the last frame")
@@ -1185,7 +1269,7 @@ def main(argv=None):
             return serve(model, view, a, emit, FillSettings)
         ms = MaskSettings(tau_high=a.tau_high, tau_low=a.tau_low, blend_high=a.blend_high,
                           blend_low=a.blend_low, feather=a.feather,
-                          max_gain_stops=a.max_gain_stops).check()
+                          max_gain_stops=a.max_gain_stops, first_frame=a.mask_first_frame).check()
         stop = threading.Event()
         if a.json:
             watch_stdin(stop)
@@ -1196,8 +1280,9 @@ def main(argv=None):
                           rerender=Rerender(a.source, a.condition, a.rerender_hue, a.rerender_colour, a.rerender_level, a.rerender_smooth,
                                             a.source_start, a.rerender_dip, a.rerender_still, a.rerender_independent,
                                             a.rerender_rise, a.rerender_calm, a.rerender_keep_detail, a.rerender_align,
-                                            a.rerender_follow, a.rerender_full_last)
-                          if a.region_rerender else None)
+                                            a.rerender_follow, a.rerender_full_last, hold_mode(a.rerender_hold_clipped), a.rerender_steady,
+                                            a.rerender_cap_master, a.rerender_blend_still, a.rerender_hold_calm)
+                          if a.region_rerender else None, save_raw=Path(a.save_raw) if a.save_raw else None)
         emit(event='done', ok=True, out=str(out), memory=memory_report(device) | {'mode': model.memory_mode},
              **rep['stats'])
         return 0

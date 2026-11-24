@@ -1,4 +1,5 @@
 #include "aces_engine.hpp"
+#include "child_process.hpp"
 #include "paths.hpp"
 
 #include <QCoreApplication>
@@ -117,6 +118,7 @@ bool AcesEngine::start(const Config& c) {
     lines_.clear();
     stderr_tail_.clear();
     set_state(State::Loading);
+    end_with_rudra(proc_);   // 1.3: the engine ends with RUDRA, crash or not
     proc_->start(qp(c.cli), {"aces-v2-serve", qp(c.package), "--runtime", QString::fromStdString(c.runtime), "--device",
                              QString::fromStdString(c.device), "--ocio-threads", QString::number(c.ocio_threads)});
     return true;

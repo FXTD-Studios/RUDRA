@@ -85,5 +85,31 @@ std::string decoder_filter(const InputContract& contract, bool alpha);
 Result<VideoSource> open_video_source(const VideoProbe& probe, const VideoArgs& args);
 Result<VideoSource> open_video_source(const std::filesystem::path& file, const VideoArgs& args);
 
+// 1.3 (23 Nov 2026): whether a limited-range movie holds detail above nominal white ("super-whites", 8-bit
+// codes 236-254), measured on its own luma codes. The Source panel said only that such detail WOULD be
+// clipped, never whether there was any; and the headroom work (archive/docs/HEADROOM_APP_INTEGRATION_
+// 2026-10-17.md, E2) listed "no headroom-aware probe of the source SDR codes" as open.
+struct SourceWhiteProbe {
+    bool measured = false;              // false: not planar YCbCr, full range, or no sample could be read
+    int frames = 0, bits = 8;
+    int white_code = 235, black_code = 16, max_code = 0;   // at the movie's own depth
+    std::uint64_t samples = 0, above = 0, below = 0;      // luma samples, above white, below black
+    double above_share() const noexcept { return samples ? double(above) / double(samples) : 0.0; }
+    double below_share() const noexcept { return samples ? double(below) / double(samples) : 0.0; }
+    // Real detail, not noise round white: at least 0.01 % of the samples above white, reaching 2 codes
+    // (8-bit scale) over it.
+    bool present() const noexcept;
+};
+// The luma depth of a planar YCbCr pix_fmt (yuv420p 8, yuv422p10le 10, yuva444p12le 12, ...); 0 for anything
+// else (full-range yuvj*, semi-planar nv12 / p010, packed, RGB, big-endian).
+int planar_luma_bits(std::string_view pix_fmt);
+// Adds one frame's luma codes (its own depth) to the counts.
+void add_source_white_samples(SourceWhiteProbe& s, const std::uint16_t* luma, std::size_t n);
+// Reads `samples` frames spread over the movie (frame count and rate as the shot knows them), each decoded
+// to its own pix_fmt (no scaler, so no range conversion can touch the codes), and counts the luma plane.
+// A full-range or non-planar movie is not measured (measured false), not refused.
+Result<SourceWhiteProbe> probe_source_whites(const std::filesystem::path& file, const VideoStreamInfo& stream,
+                                           int frames, double fps, int samples = 8, rudra::stop_token stop = {});
+
 
 }  // namespace rudra

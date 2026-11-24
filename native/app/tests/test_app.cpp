@@ -52,6 +52,7 @@
 #include <QToolButton>
 #include <QTreeWidget>
 
+#include "clean_compression.hpp"
 #include "paths.hpp"
 #include "json_lines.hpp"
 #include "rudra/core/hdr10.hpp"
@@ -88,6 +89,37 @@ TEST(AppSourceInspection, ReportsTagsAndClearsWarningsWhenSourceChanges) {
     EXPECT_TRUE(label->text().contains("unavailable"));
     panel.inspect_source(false, false, {});
     EXPECT_TRUE(label->text().contains("Open a source"));
+}
+
+// 1.3 (23 Nov 2026): the Source panel says whether a limited-range movie actually holds detail above
+// white (probe_source_whites), not only that such detail would be clipped.
+TEST(AppSourceInspection, SaysWhetherTheMovieHasDetailAboveWhite) {
+    rudra::app::SourcePanel panel;
+    auto* label = panel.findChild<QLabel*>("sourceInspection");
+    ASSERT_NE(label, nullptr);
+    rudra::VideoStreamInfo stream;
+    stream.width = 1920;
+    stream.height = 1080;
+    stream.color_range = "tv";
+    rudra::SourceWhiteProbe found;
+    found.measured = true;
+    found.frames = 8;
+    found.samples = 1000000;
+    found.above = 2500;
+    found.max_code = 251;
+    panel.inspect_source(true, true, stream, {}, found);
+    EXPECT_TRUE(label->text().contains("with detail above white")) << label->text().toStdString();
+    EXPECT_TRUE(label->text().contains("0.25 %"));
+    EXPECT_TRUE(label->text().contains("Keep super-whites"));
+    rudra::SourceWhiteProbe none;
+    none.measured = true;
+    none.frames = 8;
+    none.samples = 1000000;
+    none.max_code = 235;
+    panel.inspect_source(true, true, stream, {}, none);
+    EXPECT_TRUE(label->text().contains("nothing is lost at decode")) << label->text().toStdString();
+    panel.inspect_source(true, true, stream);   // not measured yet: the warning as before
+    EXPECT_TRUE(label->text().contains("does not mean such detail was detected"));
 }
 
 TEST(AppSourceInspection, StillProfileAndFallbackAreExplicitAndPlainText) {
@@ -620,7 +652,10 @@ TEST(AppLayout, TheWordsAreThePages) {
             for (auto* b : x->findChildren<QPushButton*>(QString(), Qt::FindDirectChildrenOnly))
                 if (!b->isHidden()) got.push_back(norm(b->text()).toStdString());   // Simple's Check tab is hidden in Full
             auto want = e["buttons"].get<std::vector<std::string>>();
-            if (id == "itabs") std::erase(want, std::string("Grade"));   // 1.2.6: Region EV is in Reconstruct
+            if (id == "itabs") {
+                std::erase(want, std::string("Grade"));   // 1.2.6: Region EV is in Reconstruct
+                want.push_back("Batch");                  // 1.3: the Batch tab, beside Reconstruct and Deliver
+            }
             EXPECT_EQ(got, want) << id;
             continue;
         }
@@ -1249,6 +1284,42 @@ TEST(AppDeliver, MasterRendersThePlanAndSaysSo) {
     w.master(prepare, 3);
     EXPECT_EQ(status_of(w), "Stopped after 0 / 1: Choose an absolute render folder on the Studio computer");
     std::filesystem::remove_all(root);
+}
+
+TEST(AppDeliver, TheOutputSizeWritesTheMastersAtItAndTheAiFillKeepsTheSources) {
+    // 1.3 (23 Nov 2026): Output size on the Deliver tab; the analytic master is written at it.
+    QSettings().setValue("deliver/size", "2x");
+    {
+        app::MainWindow w(false);
+        w.show();
+        ASSERT_TRUE(QTest::qWaitForWindowExposed(&w));
+        auto* sz = w.findChild<QComboBox*>("deliverSize");
+        ASSERT_NE(sz, nullptr);
+        EXPECT_EQ(sz->count(), 4);
+        EXPECT_EQ(sz->currentData().toString(), "2x");
+        EXPECT_TRUE(sz->isEnabled());
+        EXPECT_EQ(w.deliver_effective().size, "2x");
+        const auto root = fresh_dir("output-size");
+        w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(root.string()));
+        w.findChild<QLineEdit*>("renderName")->setText("big");
+        auto prepare = [](std::size_t) -> Result<MasterFrame> { return small_frame(); };
+        w.master(prepare, 1);
+        ASSERT_TRUE(wait_for([&] { return !w.mastering() && status_of(w).startsWith("Rendered"); }));
+        const QString log = w.findChild<QPlainTextEdit*>("log")->toPlainText();
+        EXPECT_TRUE(log.contains(QString::fromStdString("Saved " + (root / "big.exr").string() + " \u00b7 40x24"))) << log.toStdString();
+        std::filesystem::remove_all(root);
+        // The AI fill works at the source's size: the choice rests while it is on.
+        w.set_deliver("source", "analytic");
+        w.set_deliver("ai_generation", "1");
+        w.set_deliver("ai_fill", "1");
+        ASSERT_TRUE(w.deliver_effective().ai_fill);
+        EXPECT_EQ(w.deliver_effective().size, "source");
+        EXPECT_FALSE(sz->isEnabled());
+        EXPECT_TRUE(sz->toolTip().contains("source size"));
+        w.set_deliver("size", "hd");
+        EXPECT_EQ(QSettings().value("deliver/size").toString(), "hd");
+    }
+    QSettings().clear();
 }
 
 TEST(AppDeliver, MasterEXRStopsARenderAfterTheFrameInHand) {
@@ -2143,10 +2214,32 @@ TEST(AppCopy, SheetsAreThePagesAndAClickClosesThem) {
     w.run("shortcuts");
     ASSERT_NE(w.sheet(), nullptr);
     EXPECT_TRUE(w.sheet()->isVisible());
-    EXPECT_EQ(w.sheet()->findChild<QLabel*>("sheetTitle")->text(), "Keyboard");
+    // 24 Nov 2026 (Ahmed, the approved mockup): a card over the dimmed window, not a window with a title bar.
+    EXPECT_TRUE(w.sheet()->windowFlags().testFlag(Qt::FramelessWindowHint));
+    EXPECT_EQ(w.sheet()->findChild<QLabel*>("sheetTitle")->text(), "Keyboard shortcuts");
     EXPECT_EQ(w.sheet()->findChild<QLabel*>("sheetClose")->text(), "Esc, or click anywhere, to close");
-    // The title, the rows (key and what), the close line.
-    EXPECT_EQ(w.sheet()->findChildren<QLabel*>().size(), qsizetype(2 + 2 * (shortcut_sheet().size() + 1))); // native F row
+    ASSERT_NE(w.sheet()->findChild<QPushButton*>("sheetCloseBtn"), nullptr);
+    QStringList heads, whats, keys;
+    for (auto* l : w.sheet()->findChildren<QLabel*>()) {
+        const QString role = l->property("role").toString();
+        if (role == "sheet-head") heads << l->text();
+        else if (role == "kbd-what") whats << l->text();
+        else if (role == "kbd") keys << l->text();
+    }
+    // The page's rows in groups, every one in a group (no MORE), and the native F.
+    EXPECT_EQ(heads, (QStringList{"VIEWER", "PLAYBACK", "SHOT", "GRADE", "EDIT"}));
+    ASSERT_EQ(whats.size(), qsizetype(shortcut_sheet().size() + 1));
+    for (const auto& r : shortcut_sheet()) EXPECT_EQ(whats.count(qs(r.what)), 1) << r.what;
+    EXPECT_EQ(whats.count("Fit image to window"), 1);
+    // Each key a keycap: "Home / End" two, "1 2 3 4" four, "B (hold)" one (and the word hold beside it).
+    const QStringList caps = {QStringLiteral("B"), QStringLiteral("W"), QStringLiteral("\u2190"), QStringLiteral("\u2192"),
+                              QStringLiteral("O"), QStringLiteral("M"), QStringLiteral(","), QStringLiteral("."),
+                              QStringLiteral("Home"), QStringLiteral("End"), QStringLiteral("Space"), QStringLiteral("["),
+                              QStringLiteral("]"), QStringLiteral("1"), QStringLiteral("2"), QStringLiteral("3"),
+                              QStringLiteral("4"), QStringLiteral("P"), QStringLiteral("Z"), QStringLiteral("Y"),
+                              QStringLiteral("?"), QStringLiteral("F")};
+    for (const QString& k : caps) EXPECT_EQ(keys.count(k), 1) << k.toStdString();
+    EXPECT_EQ(keys.size(), caps.size());
     QPointer<QDialog> first = w.sheet();
     QTest::mouseClick(first, Qt::LeftButton);
     QApplication::processEvents();
@@ -3257,6 +3350,9 @@ int main(int argc, char** argv) {
                                                     .string()));
     app::ThemeReport theme = app::apply_theme(app);
     g_theme = &theme;
+    // 24 Nov 2026: the AI fill starts on where the computer can run it. The tests run as on one that cannot, so a
+    // machine with a 16 GB GPU and the fill installed tests as any other (AppFillView.TheAiFillStartsOn... has both).
+    app::set_aifill_here_for_tests(false);
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
@@ -3766,7 +3862,10 @@ TEST(AppHeadroom, ReplacingTheShotReopensOrLeavesTheRoute) {
 #include <QPushButton>
 #include "aces_master.hpp"
 #include "batch_queue.hpp"
-#include "batch_window.hpp"
+#include "batch_page.hpp"
+#include <QAction>
+#include <QCheckBox>
+#include <QStackedWidget>
 #include "edl.hpp"
 #include <QJsonArray>
 #include "aces_engine.hpp"
@@ -4303,6 +4402,20 @@ TEST(Deliver, ChoicesMapToTheEnginesFields) {
     EXPECT_EQ(app::analytic_movie_format(c), "prores422hq");
     c.bits = 16;
     EXPECT_EQ(app::analytic_movie_format(c), "rgb16mov");
+}
+
+TEST(Deliver, TheOutputSizeGoesToTheEngineOnlyWhenItIsNotTheSources) {
+    // 1.3 (23 Nov 2026): Deliver's Output size.
+    app::DeliverChoice c;
+    EXPECT_FALSE(app::aces_deliver_fields(c).contains("output_size"));
+    c.size = "2x";
+    EXPECT_EQ(app::aces_deliver_fields(c).value("output_size").toString(), "2x");
+    c.output = "movie";
+    EXPECT_EQ(app::aces_deliver_fields(c).value("output_size").toString(), "2x");
+    c.size = "8k";
+    EXPECT_EQ(app::deliver_fit(c, true, true, false).size, "source");
+    c.size = "hd";
+    EXPECT_EQ(app::deliver_fit(c, false, false, true).size, "hd");
 }
 
 TEST(Deliver, TheAnalyticSourceKeepsWhatItCanWrite) {
@@ -4869,6 +4982,23 @@ TEST(Batch, TheQueueKeepsItsJobsAndBuildsTheirRequests) {
     EXPECT_EQ(r["frames"].toArray(), QJsonArray{0});
     EXPECT_EQ(q.find(ids[1])->start, 1);
     EXPECT_EQ(app::batch_output_text(*q.find(ids[1])), "ACEScg EXR, half · first frame");
+    {   // 1.3 (audit item 17): the Output size and the EXR compression survive the queue file
+        app::DeliverChoice big = still;
+        big.size = "uhd";
+        big.exr_compression = "zips";
+        q.apply({ids[1]}, big, {}, 1);
+        q.save();
+        app::BatchQueue again(file);
+        const app::BatchJob* back = again.find(ids[1]);
+        ASSERT_NE(back, nullptr);
+        EXPECT_EQ(back->choice.size, "uhd");
+        EXPECT_EQ(back->choice.exr_compression, "zips");
+        const QJsonObject rr = app::batch_request(*back);
+        EXPECT_EQ(rr["output_size"].toString(), "uhd");
+        EXPECT_TRUE(rr["exr_zip"].toBool());
+        EXPECT_EQ(rr["exr_zip_lines"].toInt(), 1);
+        q.apply({ids[1]}, still, {}, 1);   // back to what the rest of this test expects
+    }
     // Order, names, retry, removal.
     q.move(ids[1], -1);
     EXPECT_EQ(q.jobs()[0].id, ids[1]);
@@ -4927,11 +5057,11 @@ for line in sys.stdin:
     c.device = "cpu";
     w.aces_engine()->start(c);
     ASSERT_TRUE(wait_for([&] { return w.aces_engine()->state() == app::AcesEngine::State::Ready; }));
-    w.open_batch();
-    auto* win = w.findChild<QDialog*>("batchWindow");
-    ASSERT_NE(win, nullptr);
+    w.open_batch();   // 1.3: the Batch tab
+    auto* page = static_cast<app::BatchPage*>(w.findChild<QWidget*>("batchPage"));
+    ASSERT_NE(page, nullptr);
     w.findChild<QLineEdit*>("batchDir")->setText(QString::fromStdString((root / "out").string()));
-    static_cast<app::BatchWindow*>(win)->add_paths({QString::fromStdString((root / "in").string())});
+    page->add_paths({QString::fromStdString((root / "in").string())});
     ASSERT_EQ(w.batch_queue().jobs().size(), 2u);
     // A shot whose file has gone fails on its own; the rest still render.
     w.batch_queue().add({app::BatchShot{"gone", "still", {root / "in" / "B.png"}}}, w.deliver_choice(),
@@ -4946,7 +5076,12 @@ for line in sys.stdin:
     EXPECT_EQ(q.jobs()[0].status, "done");
     EXPECT_EQ(q.jobs()[1].status, "done");
     EXPECT_DOUBLE_EQ(q.jobs()[1].maxcll, 1000.0);   // the shot's light level, from the render
-    EXPECT_EQ(w.findChild<QTreeWidget*>("batchList")->topLevelItem(1)->text(6), "1000 / 120");
+    {   // the shot's MaxCLL / MaxFALL, in the panel's Details (the dialog's column)
+        auto* list = w.findChild<QTreeWidget*>("batchList");
+        list->setCurrentItem(list->topLevelItem(1));
+        EXPECT_TRUE(w.findChild<QLabel*>("batchInfo")->text().contains("MaxCLL / MaxFALL: 1000 / 120 nits"))
+            << w.findChild<QLabel*>("batchInfo")->text().toStdString();
+    }
     EXPECT_EQ(q.jobs()[2].status, "failed");
     EXPECT_TRUE(w.findChild<QLabel*>("batchStatus")->text().startsWith("Batch ended: 2 done, 0 waiting, 1 failed"))
         << w.findChild<QLabel*>("batchStatus")->text().toStdString();
@@ -4965,6 +5100,136 @@ for line in sys.stdin:
     app::BatchQueue again(root / "queue.json");
     EXPECT_EQ(again.jobs().size(), 3u);
     EXPECT_EQ(again.jobs()[0].status, "done");
+    QSettings().clear();
+}
+
+// 1.3 (24 Nov 2026): EXR compression in Deliver: ZIP (the default since 1.2.6), ZIPS or none, to the
+// learned engine and the analytic master; the ACES 2065-1 container stays uncompressed (ST 2065-4).
+TEST(AppDeliver, TheExrCompressionGoesToTheEnginesAndAcesStaysUncompressed) {
+    app::DeliverChoice c;
+    c.source = "aces";
+    c.output = "sequence";
+    c.image = "exr32";
+    c.gamut = "acescg";
+    EXPECT_EQ(c.exr_compression, "zip");
+    QJsonObject f = app::aces_deliver_format_fields(c);
+    EXPECT_TRUE(f.value("exr_zip").toBool());
+    EXPECT_FALSE(f.contains("exr_zip_lines"));
+    c.exr_compression = "zips";
+    f = app::aces_deliver_format_fields(c);
+    EXPECT_TRUE(f.value("exr_zip").toBool());
+    EXPECT_EQ(f.value("exr_zip_lines").toInt(), 1);
+    c.exr_compression = "none";
+    EXPECT_FALSE(app::aces_deliver_format_fields(c).value("exr_zip").toBool());
+    c.exr_compression = "zips";
+    c.gamut = "ap0";
+    f = app::aces_deliver_format_fields(c);
+    EXPECT_FALSE(f.value("exr_zip").toBool());
+    EXPECT_FALSE(f.contains("exr_zip_lines"));
+    c.exr_compression = "lz4";   // not one of the three: back to ZIP
+    EXPECT_EQ(app::deliver_fit(c, true, false, false).exr_compression, "zip");
+
+    QSettings().clear();
+    {
+        app::MainWindow w(false);
+        auto* zc = w.findChild<QComboBox*>("deliverExrCompression");
+        ASSERT_NE(zc, nullptr);
+        EXPECT_EQ(zc->count(), 3);
+        EXPECT_EQ(w.deliver_choice().exr_compression, "zip");
+        w.set_deliver("exr_compression", "zips");
+        EXPECT_EQ(w.deliver_choice().exr_compression, "zips");
+        EXPECT_EQ(QSettings().value("deliver/exrCompression").toString(), "zips");
+        w.set_deliver("exr_compression", "lz4");   // refused
+        EXPECT_EQ(w.deliver_choice().exr_compression, "zips");
+    }
+    // Before 1.3 the hidden deliver/exrZip decided: turned off, it reads as none.
+    QSettings().clear();
+    QSettings().setValue("deliver/exrZip", false);
+    {
+        app::MainWindow w(false);
+        EXPECT_EQ(w.deliver_choice().exr_compression, "none");
+    }
+    QSettings().clear();
+}
+
+// The Batch tab (1.3, docs/PLAN_1_4_BATCH.md): the queue in a tab of its own, in place of the dialog.
+TEST(AppBatch, TheBatchTabTakesTheBodyAndGivesItBack) {
+    QSettings().clear();
+    const auto root = aces_tmp("batch_tab_show");
+    QSettings().setValue("batch/file", QString::fromStdString((root / "queue.json").string()));
+    app::MainWindow w(false);
+    auto* tab = w.findChild<QPushButton*>("tabBatch");
+    ASSERT_NE(tab, nullptr);
+    EXPECT_EQ(tab->text(), "Batch");
+    auto* stack = w.findChild<QStackedWidget*>("bodyStack");
+    ASSERT_NE(stack, nullptr);
+    EXPECT_EQ(stack->currentIndex(), 0);
+    tab->click();
+    ASSERT_NE(w.findChild<QWidget*>("batchPage"), nullptr);
+    EXPECT_EQ(stack->currentWidget()->objectName(), "batchPage");
+    w.findChild<QPushButton*>("tabRec")->click();
+    EXPECT_EQ(stack->currentIndex(), 0);
+    w.open_batch();   // Deliver > Batch queue… and Ctrl+Shift+B open the tab
+    EXPECT_EQ(stack->currentWidget()->objectName(), "batchPage");
+    EXPECT_EQ(w.findChild<QDialog*>("batchWindow"), nullptr);
+    QSettings().clear();
+}
+
+// Every control the Batch queue dialog had has a place in the tab (the + menu, the panel, Details, the footer).
+TEST(AppBatch, EveryControlOfTheOldDialogHasAHomeInTheTab) {
+    QSettings().clear();
+    const auto root = aces_tmp("batch_tab_controls");
+    QSettings().setValue("batch/file", QString::fromStdString((root / "queue.json").string()));
+    write_text(root / "in" / "clip.mov", "x");
+    write_text(root / "in" / "S.png", "x");
+    app::MainWindow w(false);
+    auto& q = w.batch_queue();
+    const auto ids = q.add({app::BatchShot{"clip.mov", "movie", {root / "in" / "clip.mov"}},
+                            app::BatchShot{"S", "still", {root / "in" / "S.png"}}},
+                           w.deliver_choice(), QString::fromStdString((root / "out").string()), 1001);
+    ASSERT_EQ(ids.size(), 2u);
+    w.open_batch();
+    auto* page = static_cast<app::BatchPage*>(w.findChild<QWidget*>("batchPage"));
+    ASSERT_NE(page, nullptr);
+    for (const char* a : {"batchAddFiles", "batchAddFolder", "batchAddCurrent", "batchImportEdl", "batchQueueWindow"})
+        EXPECT_NE(w.findChild<QAction*>(a), nullptr) << a;
+    for (const char* b : {"batchApply", "batchStart", "batchStopNow", "batchDetails", "batchBrowse"})
+        EXPECT_NE(w.findChild<QPushButton*>(b), nullptr) << b;
+    EXPECT_NE(w.findChild<QLineEdit*>("batchDir"), nullptr);
+    auto* list = w.findChild<QTreeWidget*>("batchList");
+    ASSERT_EQ(list->topLevelItemCount(), 2);
+    // The movie's frames and name (the dialog's Range and Name columns), in Details.
+    list->setCurrentItem(list->topLevelItem(0));
+    auto* range = w.findChild<QLineEdit*>("batchRange");
+    range->setText("120-480");
+    emit range->editingFinished();
+    EXPECT_EQ(q.find(ids[0])->first, 120);
+    EXPECT_EQ(q.find(ids[0])->last, 480);
+    auto* name = w.findChild<QLineEdit*>("batchName");
+    name->setText("SH010_v2");
+    emit name->editingFinished();
+    EXPECT_EQ(q.find(ids[0])->name, "SH010_v2");
+    // The AI fill switch acts on the selected shot only (the dialog's AI fill on / off).
+    auto* ai = w.findChild<QCheckBox*>("batchAi");
+    ASSERT_NE(ai, nullptr);
+    const bool before = q.find(ids[1])->choice.ai_fill;
+    ai->setChecked(!ai->isChecked());
+    EXPECT_EQ(q.find(ids[0])->choice.ai_fill, ai->isChecked());
+    EXPECT_EQ(q.find(ids[1])->choice.ai_fill, before);
+    // Needs attention: a failed shot; Done: the finished ones.
+    q.find(ids[1])->status = "failed";
+    q.touch();
+    page->set_filter("attention");
+    EXPECT_TRUE(list->topLevelItem(0)->isHidden());
+    EXPECT_FALSE(list->topLevelItem(1)->isHidden());
+    EXPECT_EQ(list->topLevelItem(1)->text(1), "Failed");
+    page->set_filter("all");
+    EXPECT_FALSE(list->topLevelItem(0)->isHidden());
+    // Retry and Remove (the right-click menu, Delete) act on the queue the list shows.
+    q.retry({ids[1]});
+    EXPECT_EQ(q.find(ids[1])->status, "pending");
+    q.remove({ids[1]});
+    EXPECT_EQ(list->topLevelItemCount(), 1);
     QSettings().clear();
 }
 
@@ -6766,6 +7031,29 @@ TEST(GenFill, PromptSuggestionsAreReadBack) {
 // 12 Nov 2026: AI fill v4, region re-render, experimental and off by default. On, the fill runs the
 // amended inference of 11 Nov exactly (its own thresholds and finish), from the shot's source, and
 // v3's controls are not sent.
+// ---- 1.3 (23 Nov 2026): disk, time and a busy GPU before an AI fill (09V ran out of disk at frame 22) ----
+TEST(GenFill, ThePreflightRefusesAShortDiskAndWarnsOfABusyGpu) {
+    constexpr qint64 GiB = 1024LL * 1024 * 1024;
+    // 09V: 97 frames at 1920 x 1080 wrote 4.2 GB.
+    const app::GenFillPreflight ok = app::genfill_preflight(97, 1920, 1080, 22 * GiB, 0.0, 3, 500);
+    EXPECT_TRUE(ok.ok);
+    EXPECT_NEAR(ok.need_gb, 4.6, 0.3);
+    EXPECT_NEAR(ok.minutes, 2.0 + 97 * app::kGenFillSecPerFrame / 60.0, 1e-9);
+    EXPECT_FALSE(ok.gpu_busy);
+    EXPECT_TRUE(ok.text.contains("97 frame(s)")) << ok.text.toStdString();
+    const app::GenFillPreflight full = app::genfill_preflight(97, 1920, 1080, 1 * GiB, 0.0, 3, 500);
+    EXPECT_FALSE(full.ok);
+    EXPECT_TRUE(full.text.startsWith("AI fill not started")) << full.text.toStdString();
+    const app::GenFillPreflight busy = app::genfill_preflight(97, 1920, 1080, 22 * GiB, 13.0 * 60 / 97, 85, 9000);
+    EXPECT_TRUE(busy.ok);
+    EXPECT_TRUE(busy.gpu_busy);
+    EXPECT_TRUE(busy.text.contains("GPU is already in use")) << busy.text.toStdString();
+    EXPECT_NEAR(busy.minutes, 15.0, 1e-6);   // this machine's measured speed
+    const app::GenFillPreflight unknown = app::genfill_preflight(10, 640, 360, -1, 0.0, -1, -1);
+    EXPECT_TRUE(unknown.ok);   // nothing known: never refused
+    EXPECT_FALSE(unknown.gpu_busy);
+}
+
 TEST(GenFill, RegionRerenderIsOptInAndRunsAsTested) {
     app::GenFillSetup s{"/py", "/repo", "/models/wan", "/runs/v4.safetensors"};
     app::GenFillOptions o;
@@ -6795,6 +7083,8 @@ TEST(GenFill, RegionRerenderIsOptInAndRunsAsTested) {
     EXPECT_FALSE(a.contains("--rerender-align"));   // 1.2.8: tried on 09V, moved the horizon more than it saved
     EXPECT_TRUE(a.contains("--rerender-full-last"));   // 1.2.9: no short last window padded with copies (09V lamp, horizon)
     EXPECT_FALSE(a.contains("--rerender-follow"));     // 1.2.9: kept for the v5 checks, not the app's
+    EXPECT_FALSE(a.contains("--rerender-steady"));         // 1.3 research (v5c): never the app's
+    EXPECT_FALSE(a.contains("--rerender-hold-clipped"));   // 1.3: v5's finish only; v4.3 runs as in 1.2.9
     EXPECT_FALSE(a.contains("--rerender-still"));     // 12 Nov 2026: tried on water, cost 09V its structure: off
     EXPECT_FALSE(a.contains("--source-start"));
     EXPECT_FALSE(a.contains("--brightness-offset"));
@@ -6854,6 +7144,68 @@ TEST(GenFill, KeepDetailIsOptInAndReachesTheFill) {
     w.set_deliver("ai_keep_detail", "1");
     EXPECT_TRUE(w.deliver_choice().ai.rerender_keep_detail);
     EXPECT_TRUE(QSettings().value("deliver/aiKeepDetail").toBool());
+    QSettings().clear();
+}
+
+// 1.3 (23 Nov 2026): AI fill v5. Its LoRA is found by its SHA-256 and preferred over v4.3; a v5 setup adds the
+// thin hold (--rerender-hold-clipped thin) and nothing else; the card's switch and the frame line name it.
+TEST(GenFill, AiFillV5IsFoundByItsShaAndTakesTheThinHold) {
+    QSettings().clear();
+    QTemporaryDir tmp;
+    const QString path = QDir(tmp.path()).filePath("v5.safetensors");
+    {
+        QFile f(path);
+        ASSERT_TRUE(f.open(QIODevice::WriteOnly));
+        f.write("not really a LoRA");
+    }
+    // The SHA-256 cache, as genfill_file_sha256 keeps it: this file stands for the v5 LoRA.
+    const QFileInfo fi(path);
+    const QString key = QStringLiteral("genfill/sha256_cache/") +
+                        QString::fromLatin1(QCryptographicHash::hash(path.toUtf8(), QCryptographicHash::Sha1).toHex());
+    QSettings().setValue(key, QStringList{QString::number(fi.size()) + ":" + QString::number(fi.lastModified().toMSecsSinceEpoch()),
+                                          QString::fromLatin1(app::kGenFillV5Sha256)});
+    QSettings().setValue("genfill/loraV5", path);
+    EXPECT_FALSE(app::genfill_v5_lora().empty());
+    EXPECT_EQ(app::genfill_region_name(), "v5");
+    EXPECT_TRUE(app::genfill_v4_missing_text().contains("AI fill v5")) << app::genfill_v4_missing_text().toStdString();
+    app::GenFillSetup s{"/py", "/repo", "/models/wan", path.toStdString()};
+    s.rerender = true;
+    app::GenFillOptions o;
+    o.rerender = true;
+    o.source = "D:/video/09V.mp4";
+    EXPECT_FALSE(app::genfill_arguments(s, o, "m", "o").contains("--rerender-hold-clipped"));   // v4.3: as 1.2.9
+    s.v5 = true;
+    QStringList a = app::genfill_arguments(s, o, "m", "o");
+    ASSERT_TRUE(a.contains("--rerender-hold-clipped"));
+    EXPECT_EQ(a.value(a.indexOf("--rerender-hold-clipped") + 1), "thin");
+    EXPECT_TRUE(a.contains("--rerender-full-last"));
+    EXPECT_EQ(a.value(a.indexOf("--rerender-calm") + 1), "0.9");
+    EXPECT_FALSE(a.contains("--rerender-steady"));   // v5c's median: Porch failed
+    // 1.3 (24 Nov 2026, research_genfill_v5e_20261124): the settled mix and the thin shape's stronger hold, both
+    // routes; the learned master's cap and the mask at the first clipped frame on the learned route only.
+    EXPECT_EQ(a.value(a.indexOf("--rerender-blend-still") + 1), "0.95");
+    EXPECT_EQ(a.value(a.indexOf("--rerender-hold-calm") + 1), "0.95");
+    EXPECT_FALSE(a.contains("--rerender-cap-master"));   // o.condition is the analytic route's
+    EXPECT_FALSE(a.contains("--mask-first-frame"));
+    o.condition = "aces";
+    a = app::genfill_arguments(s, o, "m", "o");
+    EXPECT_TRUE(a.contains("--rerender-cap-master"));
+    EXPECT_TRUE(a.contains("--mask-first-frame"));
+    EXPECT_EQ(a.value(a.indexOf("--rerender-blend-still") + 1), "0.95");
+    s.v5 = false;   // v4.3 on the learned route runs as in 1.2.9
+    a = app::genfill_arguments(s, o, "m", "o");
+    EXPECT_FALSE(a.contains("--rerender-cap-master") || a.contains("--rerender-blend-still") || a.contains("--mask-first-frame"));
+    s.v5 = true;
+    o.condition = "bt1886";
+    o.rerender = false;   // v3 has no hold
+    EXPECT_FALSE(app::genfill_arguments(s, o, "m", "o").contains("--rerender-hold-clipped"));
+    {
+        app::MainWindow w(false);
+        auto* sw = dynamic_cast<app::Seg*>(w.findChild<QWidget*>("deliverAiVersion"));
+        ASSERT_NE(sw, nullptr);
+        w.set_deliver("ai_rerender", "1");
+        EXPECT_EQ(sw->button("v4")->text(), "v5 region");
+    }
     QSettings().clear();
 }
 
@@ -7051,7 +7403,9 @@ TEST(AppColourView, TheViewerOffersTheOcioViewsTheWorkingSpacesAndTheChecks) {
     ASSERT_NE(v.ocio, nullptr);
     EXPECT_EQ(v.ocio->view, "ACES 2.0 - HDR 1000 nits (P3 D65)");
     EXPECT_TRUE(v.ocio->hdr);
-    EXPECT_NE(v.original, nullptr);   // the original through the inverse of the SDR view
+    EXPECT_NE(v.original, nullptr);   // the original through an input transform
+    // 1.3.0 (24 Nov 2026): read as an sRGB texture by default, as Nuke reads an SDR plate in an ACES 2.0 config.
+    EXPECT_EQ(w.findChild<QComboBox*>("vtOriginal")->currentData().toString(), "space:sRGB Encoded Rec.709 (sRGB)");
     // ACES2065-1: the view is made again for it, and the probe reads it.
     auto* work = w.findChild<QComboBox*>("vtWorking");
     work->setCurrentIndex(1);
@@ -7282,32 +7636,115 @@ TEST(GenFillSwap, FilledFramesReplaceTheMasterAndTheOriginalsAreKept) {
 
 // ---- the viewer's AI fill (4 Nov 2026) ----
 TEST(AppFillView, TheViewerHasAnAiFillToggleThatIsSafeWithoutAFill) {
+    QSettings().clear();
     app::MainWindow w(false);
     auto* b = w.findChild<QPushButton*>("vtAiFill");
     if (!b) GTEST_SKIP() << "the viewer bar is built with the viewer only";
     EXPECT_TRUE(b->isCheckable());
+    // 24 Nov 2026 (Ahmed, the approved mockup): the button IS the AI fill, on or off, the same switch as Reconstruct
+    // > AI generation; grey "AI fill" off, blue "AI fill on" on. A computer that cannot run it (the tests' main):
+    // off at launch, and the tooltip says why.
+    EXPECT_FALSE(w.ai_generation());
     EXPECT_FALSE(b->isChecked());
-    b->setChecked(true);   // nothing filled yet: no crash, just a message
-    EXPECT_TRUE(w.fill_view_on());
-    b->setChecked(false);
+    EXPECT_EQ(b->text(), "AI fill");
+    EXPECT_TRUE(b->toolTip().startsWith("AI fill is off. Click to turn it on")) << b->toolTip().toStdString();
+    EXPECT_TRUE(b->toolTip().contains("cannot run")) << b->toolTip().toStdString();
+    // Nothing filled yet: a click turns it on (and Reconstruct's switch with it); the viewer has nothing to show.
+    b->setChecked(true);
+    EXPECT_TRUE(b->isChecked());
+    EXPECT_TRUE(w.ai_generation());
     EXPECT_FALSE(w.fill_view_on());
-    // 21 Nov 2026 (testwindow.mp4: "we cannot see it in the viewport"): every start is an SDR | RUDRA
-    // wipe, and a fill on the left half was under the SDR. On, the button takes the wipe off and
-    // shows RUDRA; off, the wipe comes back where it was.
+    EXPECT_EQ(b->text(), "AI fill on");
+    EXPECT_TRUE(dynamic_cast<app::CheckRow*>(w.findChild<QWidget*>("reconAiGeneration"))->on());
+    // Reconstruct's switch is the same switch, both ways.
+    w.set_deliver("ai_generation", "0");
+    EXPECT_FALSE(b->isChecked());
+    EXPECT_EQ(b->text(), "AI fill");
+    w.set_deliver("ai_generation", "1");
+    EXPECT_TRUE(b->isChecked());
+    EXPECT_EQ(b->text(), "AI fill on");
+    // A fill on screen (a preview or a finished fill; here the view itself) leaves the button as it is; a click
+    // off takes the fill off the viewer too.
+    w.set_fill_view(true);
+    EXPECT_TRUE(b->isChecked());
+    b->setChecked(false);
+    EXPECT_FALSE(w.ai_generation());
+    EXPECT_FALSE(w.fill_view_on());
+    EXPECT_EQ(b->text(), "AI fill");
+    // 1.3 (24 Nov 2026, Ahmed): the fill is on the RUDRA side only and the SDR side shows the source, so showing it
+    // leaves the start's SDR | RUDRA wipe where it is (21 Nov it took the wipe off), in both states.
     w.open_compare_view();
     w.session().set_wipe(0.3);
     ASSERT_TRUE(w.session().wipe.has_value());
-    b->setChecked(true);
-    EXPECT_FALSE(w.session().wipe.has_value());
-    EXPECT_EQ(w.session().show, "model");
-    b->setChecked(false);
+    w.set_fill_view(true);
     ASSERT_TRUE(w.session().wipe.has_value());
     EXPECT_DOUBLE_EQ(*w.session().wipe, 0.3);
-    // Baseline shown: the button shows RUDRA, where the fill is.
+    EXPECT_EQ(w.session().wipe_left, "sdr");
+    EXPECT_EQ(w.session().wipe_right, "model");
+    w.set_fill_view(false);
+    ASSERT_TRUE(w.session().wipe.has_value());
+    EXPECT_DOUBLE_EQ(*w.session().wipe, 0.3);
+    // A wipe with no RUDRA side (SDR | Original): the fill takes the right side.
+    w.session().set_wipe_sources("sdr", "baseline");
+    w.set_fill_view(true);
+    EXPECT_EQ(w.session().wipe_left, "sdr");
+    EXPECT_EQ(w.session().wipe_right, "model");
+    w.set_fill_view(false);
+    // No wipe, Baseline shown: RUDRA is shown, where the fill is.
+    w.session().toggle_wipe();
+    ASSERT_FALSE(w.session().wipe.has_value());
     w.session().set_show("baseline");
-    b->setChecked(true);
+    w.set_fill_view(true);
     EXPECT_EQ(w.session().show, "model");
-    b->setChecked(false);
+    EXPECT_FALSE(w.session().wipe.has_value());
+    w.set_fill_view(false);
+}
+
+// ---- 1.3 (23 Nov 2026): "What AI drew" sits beside the AI fill button, shown while there is a preview ----
+TEST(AppFillView, WhatAiDrewSitsBesideTheAiFillButton) {
+    app::MainWindow w(false);
+    auto* fill = w.findChild<QPushButton*>("vtAiFill");
+    auto* drew = w.findChild<QPushButton*>("vtAiInvented");
+    if (!fill) GTEST_SKIP() << "the viewer bar is built with the viewer only";
+    ASSERT_NE(drew, nullptr);
+    EXPECT_TRUE(drew->isCheckable());
+    EXPECT_EQ(drew->parentWidget(), fill->parentWidget());   // on the viewer's bar, with the fill
+    w.sync_ai_generation();
+    EXPECT_TRUE(drew->isHidden());                             // no preview, nothing to show
+    drew->click();                                             // safe without a preview
+}
+
+// ---- 1.3 (23 Nov 2026): on an SDR screen the AI fill is shown through a tone-mapped view ----
+// RUDRA's own view does no tone mapping: a fill above SDR white was plain white (09V's door, 21 Nov).
+TEST(AppFillView, TheFillIsShownThroughAToneMappedViewAndTheViewComesBack) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    w.set_colour_view(QString(), QString());
+    w.session().set_view_ev(0.0);
+    w.set_fill_view(true);
+    EXPECT_DOUBLE_EQ(w.session().view_ev, -2.0);
+    const bool ocio = !w.colour_display().isEmpty();   // the built-in config needs OpenColorIO
+    if (ocio) EXPECT_TRUE(w.colour_view().startsWith("ACES 2.0 - SDR 100 nits")) << w.colour_view().toStdString();
+    w.set_fill_view(false);
+    EXPECT_TRUE(w.colour_display().isEmpty());
+    EXPECT_DOUBLE_EQ(w.session().view_ev, 0.0);
+    // What the user changes while it is on stays theirs.
+    w.set_fill_view(true);
+    w.session().set_view_ev(-1.0);
+    w.set_fill_view(false);
+    EXPECT_DOUBLE_EQ(w.session().view_ev, -1.0);
+    // An exposure the user set before is not touched; nor is an OCIO view they picked.
+    w.set_fill_view(true);
+    EXPECT_DOUBLE_EQ(w.session().view_ev, -1.0);
+    w.set_fill_view(false);
+    // Off in the settings: nothing changes.
+    QSettings().setValue("viewer/fillToneMapped", false);
+    w.session().set_view_ev(0.0);
+    w.set_fill_view(true);
+    EXPECT_DOUBLE_EQ(w.session().view_ev, 0.0);
+    EXPECT_TRUE(w.colour_display().isEmpty());
+    w.set_fill_view(false);
+    QSettings().clear();
 }
 
 // ---- why a finished preview may look like nothing (6 Nov 2026) ----
@@ -7401,7 +7838,7 @@ TEST(AppFillView, TheAiFillCardShowsWhereItFillsOnTheFrameOnScreen) {
     EXPECT_NEAR(w.ai_fill_region_now()->seen_pct, 100.0 * 18 * 20 / (64 * 48), 0.01);
     // v4.3 region redraws its whole region (codes 240 and up), the near-white door included.
     w.set_deliver("ai_rerender", "1");
-    EXPECT_TRUE(info->text().contains("v4.3 redraws 33.3 %")) << info->text().toStdString();
+    EXPECT_TRUE(info->text().contains(app::genfill_region_name() + " redraws 33.3 %")) << info->text().toStdString();
     EXPECT_NEAR(w.ai_fill_region_now()->filled_pct, 100.0 * 32 * 32 / (64 * 48), 0.01);
     w.set_deliver("ai_rerender", "0");
     EXPECT_TRUE(info->text().contains("fills")) << info->text().toStdString();
@@ -7506,7 +7943,7 @@ TEST(AppFillView, TheAiFillIsSplitIntoViewerReconstructAndDeliver) {
         w.set_deliver("ai_fill", "1");
         EXPECT_FALSE(w.deliver_for_batch().ai_fill);
         w.set_deliver("ai_generation", "1");
-        EXPECT_TRUE(QSettings().value("reconstruct/aiGeneration").toBool());
+        EXPECT_FALSE(QSettings().contains("reconstruct/aiGeneration"));   // 24 Nov 2026: for this session only
         EXPECT_TRUE(fill->isEnabled());
         EXPECT_TRUE(dynamic_cast<app::CheckRow*>(fill)->hint()->isHidden());
         EXPECT_FALSE(w.findChild<QWidget*>("deliverAiFillOptions")->isHidden());
@@ -7518,11 +7955,54 @@ TEST(AppFillView, TheAiFillIsSplitIntoViewerReconstructAndDeliver) {
         w.set_deliver("ai_generation", "1");
         EXPECT_TRUE(w.deliver_for_batch().ai_fill);   // Deliver's own choice was kept
     }
-    // Before the move, an AI fill on in Deliver turns AI generation on, so it stays in use.
+    // 24 Nov 2026 (Ahmed): on a computer that cannot run the fill (the tests' main) it is off at launch, whatever an
+    // older RUDRA saved; TheAiFillStartsOnWhereThisComputerCanRunIt has the computer that can.
     QSettings().clear();
     QSettings().setValue("deliver/aiFill", true);
+    QSettings().setValue("reconstruct/aiGeneration", true);
     app::MainWindow old(false);
-    EXPECT_TRUE(old.ai_generation());
+    EXPECT_FALSE(old.ai_generation());
+    EXPECT_FALSE(old.deliver_for_batch().ai_fill);
+    QSettings().clear();
+}
+
+// ---- 24 Nov 2026 (Ahmed): the AI fill starts on where this computer can run it (a 16 GB NVIDIA GPU, or Apple
+// silicon with 16 GB, and the AI fill installed) and off anywhere else. Deliver's checkbox stays off at launch:
+// a render adds the fill only when it is ticked. ----
+TEST(AppFillView, TheAiFillStartsOnWhereThisComputerCanRunIt) {
+    QSettings().clear();
+    QSettings().setValue("deliver/aiFill", true);               // what an older RUDRA saved: not read
+    QSettings().setValue("reconstruct/aiGeneration", false);    // nor this
+    app::set_aifill_here_for_tests(true);
+    {
+        app::MainWindow w(false);
+        EXPECT_TRUE(w.ai_generation());
+        EXPECT_FALSE(w.deliver_for_batch().ai_fill);
+        EXPECT_FALSE(w.findChild<QWidget*>("deliverAiFillOptions")->isHidden());
+        EXPECT_TRUE(dynamic_cast<app::CheckRow*>(w.findChild<QWidget*>("reconAiGeneration"))->on());
+        if (auto* b = w.findChild<QPushButton*>("vtAiFill")) {
+            EXPECT_TRUE(b->isChecked());
+            EXPECT_EQ(b->text(), "AI fill on");
+            b->setChecked(false);   // one click: off, for this session
+            EXPECT_FALSE(w.ai_generation());
+            EXPECT_EQ(b->text(), "AI fill");
+            EXPECT_EQ(b->toolTip(), "AI fill is off. Click to turn it on");   // nothing stops it here
+        }
+    }
+    {
+        app::MainWindow again(false);   // the next launch decides again
+        EXPECT_TRUE(again.ai_generation());
+    }
+    app::set_aifill_here_for_tests(false);
+    {
+        app::MainWindow w(false);
+        EXPECT_FALSE(w.ai_generation());
+        EXPECT_FALSE(w.deliver_for_batch().ai_fill);
+        if (auto* b = w.findChild<QPushButton*>("vtAiFill")) {
+            EXPECT_FALSE(b->isChecked());
+            EXPECT_EQ(b->text(), "AI fill");
+        }
+    }
     QSettings().clear();
 }
 
@@ -7957,7 +8437,7 @@ TEST(AppLayout, TheViewerBarIsThreeButtonsAndNothingIsLost) {
         EXPECT_FALSE(win.shown(win.get(id))) << id;   // until the panel is opened
     }
     // 21 Nov 2026 (user feedback): the AI fill is one button on the viewer's bar, not in Overlays;
-    // it shows once there is a fill to show or AI generation is on.
+    // 24 Nov 2026 (Ahmed): it is there whenever a shot is open (none here), off by default.
     EXPECT_FALSE(inside(win.get("vtAiFill"), "vtOverlaysPanel"));
     EXPECT_TRUE(inside(win.get("vtAiFill"), "hud"));
     EXPECT_FALSE(win.shown(win.get("vtAiFill")));
@@ -8386,6 +8866,48 @@ TEST(QcReport, PixelsOutsideP3AreMeasuredFromTheMasters) {
 
 // 1.2.7 (multi-role review of 1.2.6): a MaxCLL set by a few pixels wants a look (07V: 4,386 nits
 // from a 24-pixel spark, 182 at the 99.99th percentile).
+// 1.3 (23 Nov 2026): the AI fill made over a render is in its QC report (written again once the fill is in).
+TEST(QcReport, TheAiFillIsReportedAndItsFlaggedFramesWantALook) {
+    app::QcReport r;
+    r.title = "09V";
+    r.output_folder = "/renders";
+    app::QcFrame f;
+    f.file = "09V.000001";
+    f.maxcll = 900;
+    f.maxfall = 60;
+    r.frames = {f};
+    EXPECT_TRUE(app::qc_verdict(r).pass);
+    r.ai_fill = QJsonObject{{"fill", "AI fill v4.3 region re-render (experimental)"},
+                            {"generated_pct", 11.4},
+                            {"frames_total", 97},
+                            {"flagged_frames", 0},
+                            {"fallback_frames", 0},
+                            {"prompt_highlight", "overcast sky over the sea"},
+                            {"lora", "/models/rudra_genfill.safetensors"},
+                            {"lora_sha256", "406b1dc7b7d3ada5406b"},
+                            {"frames", QJsonArray{QJsonObject{{"name", "09V.000048"}, {"generated_pct", 12.9}},
+                                                  QJsonObject{{"name", "09V.000001"}, {"generated_pct", 10.1}}}}};
+    auto v = app::qc_verdict(r);
+    EXPECT_TRUE(v.pass);   // nothing flagged: a note, not a reason
+    ASSERT_FALSE(v.notes.isEmpty());
+    EXPECT_TRUE(v.notes.join(" ").contains("Contains AI-generated pixels: 11.40 % over 97 frame(s), worst frame 12.90 %"))
+        << v.notes.join(" | ").toStdString();
+    const QString html = app::qc_html(r, v);
+    EXPECT_TRUE(html.contains("<h2>AI fill</h2>"));
+    EXPECT_TRUE(html.contains("Pass \u00b7 contains AI fill"));
+    EXPECT_TRUE(html.contains("overcast sky over the sea"));
+    EXPECT_TRUE(html.indexOf("09V.000048") < html.indexOf("09V.000001", html.indexOf("Most generated")));   // most first
+    EXPECT_EQ(app::qc_json(r, v).value("ai_fill").toObject().value("generated_pct").toDouble(), 11.4);
+    r.ai_fill["flagged_frames"] = 2;
+    r.ai_fill["fallback_frames"] = 1;
+    v = app::qc_verdict(r);
+    EXPECT_FALSE(v.pass);
+    EXPECT_TRUE(v.reasons.join(" ").contains("2 frame(s) of the AI fill were flagged for flicker"));
+    EXPECT_TRUE(v.reasons.join(" ").contains("1 frame(s) of the AI fill fell back"));
+    r.ai_fill = {};
+    EXPECT_TRUE(app::qc_json(r, app::qc_verdict(r)).value("ai_fill").isNull());
+}
+
 TEST(QcReport, AMaxCllSetByAFewPixelsWantsALook) {
     app::QcReport r;
     app::QcFrame f;
@@ -8628,6 +9150,13 @@ TEST(GenFill, TheDisclosureRecordSaysWhatWasGeneratedAndHow) {
     QJsonObject g4 = g;
     g4["rerender"] = QJsonObject{{"strength", 0.5}};
     EXPECT_TRUE(rudra::app::genfill_disclosure(g4, "Analytic", "1.2.6").value("fill").toString().contains("v4.3"));
+    {   // 1.3: a fill with the v5 LoRA says v5
+        QJsonObject g5 = g4, m5 = g4.value("model").toObject();
+        m5["lora_sha256"] = QString::fromLatin1(rudra::app::kGenFillV5Sha256);
+        g5["model"] = m5;
+        EXPECT_EQ(rudra::app::genfill_disclosure(g5, "Analytic", "1.3.0").value("fill").toString(),
+                  "AI fill v5 region re-render (experimental)");
+    }
 
     QTemporaryDir tmp;
     EXPECT_TRUE(rudra::app::write_genfill_disclosure(tmp.path(), "Analytic").isEmpty());   // no fill, no record
@@ -8681,9 +9210,21 @@ TEST(GenFill, TheSetupDialogInstallsFromAFolderOrZip) {
 
 // 1.2.6: Florence-2 (Suggest a prompt) is downloaded with the models the first time: Check this computer
 // lists it ticked where AI fill can run, and once it is in, Suggest a prompt uses that folder offline.
+// 1.3 (23 Nov 2026): the studio PC has a real Wan base with a Florence-2 beside it (G:\\datasets\\models),
+// which the app finds on its own, so "no Florence-2 here" was false there and two tests failed on that PC
+// only. A test that needs no Florence-2 points the AI fill's base at an empty stand-in first.
+static void stand_in_genfill_base(const QTemporaryDir& tmp) {
+    QDir().mkpath(tmp.path() + "/stand_in_base/transformer");
+    QFile cfg(tmp.path() + "/stand_in_base/transformer/config.json");
+    if (cfg.open(QIODevice::WriteOnly)) cfg.write("{}");
+    cfg.close();
+    QSettings().setValue("genfill/base", tmp.path() + "/stand_in_base");
+}
+
 TEST(AppCheck, FlorenceIsOfferedWithTheModelsAndUsedOnceDownloaded) {
     QSettings().clear();
     QTemporaryDir tmp;
+    stand_in_genfill_base(tmp);
     QSettings().setValue("models/indexUrl", QUrl::fromLocalFile(tmp.path() + "/none.json").toString());
     // Its files are trusted from the published list: every SHA-256 is compiled in.
     EXPECT_TRUE(app::is_known_model_file("62f3e696da74f8869a68ddb529a9b3e14eb25b21c592cb3dea6179bf944df6a0"));   // model.safetensors
@@ -8789,6 +9330,7 @@ TEST(GenFill, FlorenceIsDownloadableWithoutThePublishedList) {
     EXPECT_EQ(published.size(), 1u);
     // AI fill setup offers the download while no Florence-2 is found.
     QTemporaryDir tmp;
+    stand_in_genfill_base(tmp);
     QSettings().setValue("models/downloadRoot", tmp.path());
     app::MainWindow w(false);
     app::GenFillSetupDialog d(&w);
@@ -8890,4 +9432,157 @@ TEST(QcReport, TheReportIsTheRendersOwnContext) {
     EXPECT_EQ(j.value("title").toString(), "shot_A");
     EXPECT_DOUBLE_EQ(j.value("settings").toObject().value("exposure_ev").toDouble(), 1.25);
     QSettings().clear();
+}
+
+#ifdef RUDRA_HAVE_STILL_DECODE   // a movie opens through the frame cache
+// 1.3 (23 Nov 2026): opening a limited-range movie measures its codes above white in the background and the
+// Source panel says what it found (MainWindow::start_source_whites_probe).
+TEST(AppSourceInspection, AMovieWithSuperWhitesIsMeasuredWhenOpened) {
+    const auto ffmpeg = rudra::find_executable("ffmpeg");
+    if (!ffmpeg || !rudra::find_executable("ffprobe")) GTEST_SKIP() << "FFmpeg and ffprobe required";
+    QTemporaryDir tmp;
+    const std::filesystem::path dir = tmp.path().toStdString();
+    const int w = 64, h = 16, frames = 6;
+    std::string yuv;
+    for (int f = 0; f < frames; ++f) {
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x) yuv.push_back(char(y < 2 ? 250 : 16 + (219 * x) / (w - 1)));
+        yuv.append(std::size_t(w * h / 2), char(128));
+    }
+    {
+        std::ofstream out(dir / "sw.yuv", std::ios::binary);
+        out.write(yuv.data(), std::streamsize(yuv.size()));
+    }
+    const auto movie = dir / "sw.mkv";
+    const auto made = rudra::run_process({ffmpeg->string(), "-v", "error", "-nostdin", "-f", "rawvideo", "-pixel_format", "yuv420p",
+                                          "-video_size", "64x16", "-framerate", "6", "-color_range", "tv", "-i", (dir / "sw.yuv").string(),
+                                          "-c:v", "copy", "-color_range", "tv", "-colorspace", "bt709",   // the codes as written
+                                          "-color_trc", "bt709", "-color_primaries", "bt709", movie.string()});
+    ASSERT_TRUE(made);
+    ASSERT_EQ(made->exit_code, 0) << made->err;
+    QSettings().clear();
+    app::MainWindow win(false);
+    win.open_paths({QString::fromStdString(movie.string())});
+    auto* label = win.findChild<QLabel*>("sourceInspection");
+    ASSERT_NE(label, nullptr);
+    EXPECT_TRUE(wait_for([&] { return label->text().contains("with detail above white"); }, 20000)) << label->text().toStdString();
+    QSettings().clear();
+}
+#endif  // RUDRA_HAVE_STILL_DECODE
+
+// ---- 1.3 (24 Nov 2026): Reconstruct > Clean compression ----
+TEST(CleanCompression, TheCommandsMeasureCleanAndKeepTheSource) {
+    EXPECT_TRUE(app::clean_filter(0).isEmpty());
+    EXPECT_EQ(app::clean_filter(4), "spp=quality=3:qp=4");
+    const QStringList movie_probe = app::clean_probe_arguments("D:/video/01V.mp4", 2.5);
+    EXPECT_TRUE(movie_probe.contains("-ss"));
+    const QString graph = movie_probe.value(movie_probe.indexOf("-filter_complex") + 1);
+    EXPECT_TRUE(graph.contains("vstack=inputs=5")) << graph.toStdString();
+    for (int qp : {2, 4, 6, 8}) EXPECT_TRUE(graph.contains(QStringLiteral("qp=%1").arg(qp))) << qp;
+    EXPECT_TRUE(graph.contains("format=gray"));
+    EXPECT_FALSE(app::clean_probe_arguments("D:/stills/a.jpg", -1.0).contains("-ss"));   // a still: no seek
+    const QStringList mv = app::clean_movie_arguments("in.mp4", "out.mkv", 4);
+    EXPECT_EQ(mv.value(mv.indexOf("-vf") + 1), "spp=quality=3:qp=4");
+    EXPECT_EQ(mv.value(mv.indexOf("-c:v") + 1), "ffv1");      // lossless: the cleaned pictures exactly
+    EXPECT_TRUE(mv.contains("0:a?"));                          // the audio, if any, kept
+    EXPECT_EQ(mv.value(mv.indexOf("-map_metadata") + 1), "0"); // the timecode kept
+    EXPECT_FALSE(mv.contains("-pix_fmt"));                     // the source's own pixel format (10-bit stays 10-bit)
+    EXPECT_EQ(mv.last(), "out.mkv");
+    const QStringList st = app::clean_still_arguments("in.jpg", "out.png", 2);
+    EXPECT_EQ(st.value(st.indexOf("-vf") + 1), "spp=quality=3:qp=2,format=rgb24");
+    EXPECT_EQ(st.last(), "out.png");
+}
+
+TEST(CleanCompression, AStackIsMeasuredPictureByPicture) {
+    const int w = 64, h = 32;
+    QByteArray raw(w * h * 2, 0);
+    quint32 seed = 7;   // a little noise in both, as in a real frame (flat blocks leave nothing to compare the edges with)
+    auto rnd = [&seed] { seed = seed * 1664525u + 1013904223u; return int((seed >> 24) & 7); };
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            raw[y * w + x] = char(40 + ((x / 8) * 13 + (y / 8) * 29) % 90 + rnd());   // blocks: 11.4 here
+            raw[w * h + y * w + x] = char(40 + (x + y) / 2 + rnd());                  // smooth: 0.98
+        }
+    const auto g = app::clean_stack_grids(raw, w, h, 2);
+    ASSERT_EQ(g.size(), 2u);
+    EXPECT_GT(g[0], 2.0);
+    EXPECT_LT(g[1], 1.3);
+    EXPECT_TRUE(app::clean_stack_grids(raw, w, h, 3).empty());   // too short a stack: nothing
+}
+
+TEST(CleanCompression, TheSidecarSaysWhatWasDoneAndKeepsTheShotLossy) {
+    QTemporaryDir tmp;
+    const QString copy = QDir(tmp.path()).filePath("01V_clean.mkv");
+    {
+        QFile f(copy);
+        ASSERT_TRUE(f.open(QIODevice::WriteOnly));
+        f.write("x");
+    }
+    EXPECT_FALSE(app::read_clean_sidecar(copy).has_value());
+    app::CleanSidecar s{"D:/video/01V.mp4", "spp=quality=3:qp=4", 4, 1.66, 1.06, true, 97, "2026-11-24T14:00:00"};
+    ASSERT_TRUE(app::write_clean_sidecar(copy, s));
+    EXPECT_EQ(app::clean_sidecar_path(copy), copy + ".rudra_clean.json");
+    const auto r = app::read_clean_sidecar(copy);
+    ASSERT_TRUE(r.has_value());
+    EXPECT_EQ(r->original, "D:/video/01V.mp4");
+    EXPECT_EQ(r->qp, 4);
+    EXPECT_DOUBLE_EQ(r->grid_before, 1.66);
+    EXPECT_DOUBLE_EQ(r->grid_after, 1.06);
+    EXPECT_TRUE(r->original_lossy);
+    EXPECT_EQ(r->frames, 97);
+    EXPECT_EQ(app::clean_sidecar_path(tmp.path()), QDir(tmp.path()).filePath("rudra_clean.json"));   // a folder of stills
+    // Two copies of one source at two strengths do not share a folder; the cache is per file and strength.
+    EXPECT_NE(app::clean_cache_dir(copy, 2), app::clean_cache_dir(copy, 4));
+    app::MainWindow w(false);
+    ASSERT_NE(w.action("clean-compression"), nullptr);
+    EXPECT_TRUE(w.action("clean-compression")->isCheckable());
+    w.run("clean-compression");   // no shot: a message, nothing else
+    EXPECT_FALSE(w.action("clean-compression")->isChecked());
+}
+
+// ---- 1.3 (24 Nov 2026, Ahmed): Check compression in the Source card, and what it found beside the button ----
+#ifdef RUDRA_HAVE_STILL_DECODE
+TEST(CleanCompression, TheSourceCardChecksTheShotAndSaysWhatItFound) {
+    QSettings().clear();
+    Window win("full");
+    auto& w = win.w;
+    auto* row = w.findChild<QWidget*>("sourceCompression");
+    auto* btn = w.findChild<QPushButton*>("sourceCheckCompression");
+    auto* line = w.findChild<QLabel*>("sourceCompressionStatus");
+    ASSERT_NE(row, nullptr);
+    ASSERT_NE(btn, nullptr);
+    ASSERT_NE(line, nullptr);
+    EXPECT_TRUE(row->isHidden());   // no shot, nothing to check
+    const QString a = png("png8_rgb.png"), b = png("bmp24.bmp");
+    w.open_media(a);   // lossless: no compression artifacts
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == 0; }));
+    EXPECT_FALSE(row->isHidden());
+    EXPECT_EQ(btn->text(), "Check compression");
+    EXPECT_TRUE(line->text().isEmpty());   // not checked yet
+    btn->click();
+    EXPECT_TRUE(line->text().startsWith("OK")) << line->text().toStdString();
+    EXPECT_TRUE(line->text().contains("no compression artifacts"));
+    EXPECT_EQ(line->property("state").toString(), "ok");
+    w.sync_compression_status();   // the same shot: the line stays
+    EXPECT_TRUE(line->text().startsWith("OK"));
+    w.open_media(b);   // another shot: not checked yet
+    ASSERT_TRUE(wait_for([&] { return !w.frames().empty() && QFileInfo(app::from_path(w.frames()[0])) == QFileInfo(b); }));
+    w.sync_compression_status();
+    EXPECT_TRUE(line->text().isEmpty());
+    EXPECT_EQ(btn->text(), "Check compression");
+}
+#endif
+
+// ---- 24 Nov 2026: the app holds every shot's own codes (a still; a movie's frame through PNG), which BT.1886 reads as
+// the video codes they are (core/source_curve.hpp); its masters carry it, through their JSON too ----
+TEST(AppSource, TheAppsFramesAreReadAsTheirOwnCodes) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    EXPECT_TRUE(w.session().own_codes());
+    EXPECT_TRUE(w.session().composite_params().own_codes);
+    const MasterRequest q = w.master_request();
+    EXPECT_TRUE(q.own_codes);
+    const auto back = master_request_from_json(master_request_json(q));
+    ASSERT_TRUE(bool(back));
+    EXPECT_TRUE(back->own_codes);
 }

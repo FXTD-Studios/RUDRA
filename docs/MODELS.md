@@ -4,7 +4,7 @@ One table for every model RUDRA has published. The README, the Hugging Face
 model card, the user guide and `models.json` must say the same thing; if they
 disagree, this file is the one to correct them from.
 
-Updated 12 November 2026 (RUDRA 1.2.4).
+Updated 24 November 2026 (RUDRA 1.3.0).
 
 ## In the app (downloaded, not bundled)
 
@@ -19,11 +19,13 @@ reconstruction, which needs no model, is the default.
 | **AI fill v3** (Wan2.1-VACE-1.3B LoRA + brightness estimator) | `rudra_genfill.safetensors` `9fff7eb8492ae626…`<br>`brightness.json` `34892fb840de138f…` | Apache 2.0; base model Wan2.1-VACE-1.3B is Apache 2.0 (Wan-AI) | Yes | **Experimental**, off by default. Passed its pre-registered gates on 25 held-out Poly Haven scenes (30 Oct 2026; `registration_v3.json`, `report_v3.json`) |
 
 | **AI fill v4, region re-render** (Wan2.1-VACE-1.3B LoRA; needs RUDRA 1.2.4) | `rudra_genfill.safetensors` `406b1dc7b7d3ada5…` | Apache 2.0; base model Wan2.1-VACE-1.3B is Apache 2.0 (Wan-AI) | Yes | **Experimental**, off by default (15 Nov 2026; `research_genfill_v4_3_20261115.json`). Draws a whole bright region again; not a hole filler (v3 stays for that). Passed on 09V, a window and a softbox shot and on 29 held-out scenes; on fast-moving water its flicker is 0.11 EV against a 0.10 limit. Tested on the analytic route |
+| **AI fill v5, region re-render** (Wan2.1-VACE-1.3B LoRA; needs RUDRA 1.3.0, which runs it with its thin hold and steadier blend) | `rudra_genfill.safetensors` `5c5d4ab4107088f8…`<br>`registration_v5.json`, `report_v5.json` | Apache 2.0; base model Wan2.1-VACE-1.3B is Apache 2.0 (Wan-AI) | Yes | **Experimental**, off by default (23 Nov 2026; `research_genfill_v5_20261122.json`, run as `research_genfill_v5d_thin_20261123.json` and `research_genfill_v5e_20261124.json`). Trained on top of v4.2's material with practical lamps, windows, doors, sun glare and thin objects against the sky (CC0 HDRIs, FXTD Studios' Blender scenes). On the analytic route, with RUDRA 1.3.0's hold for thin lights and steadier blend, all seven check shots pass (01V flicker 0.079 EV, 03V 0.094, Porch 0.050, water 0.079) and so do 29 held-out scenes (PU21 -30.5 on 22, closer in 21; -31.3 on 7, closer in 7). On the learned ACES 2.0 route 9 of 10 check shots pass with the steadier blend (5 before, `research_genfill_v5_learned_20261123.json`; 02V flickers, 0.118 EV against 0.10), and its held-out fill was further from the truth than the learned reconstruction (PU21 +43.1 on 21 scenes, measured before the steadier blend); use it with the analytic route. The steadier blend ships by a recorded decision: its registered check failed on 02V |
 
 Training data for RUDRA ACES 2 and AI fill v3: Poly Haven HDRIs (CC0), FXTD Studios' own footage and
 renders, procedurally generated scenes, CC0 plates. No non-commercial data,
 and no third-party model code, weights or outputs. AI fill v4: CC0 HDRIs, FXTD Studios' own footage, and
-CC0 sources with FXTD-authored geometry (source receipts kept); its build report marks the set commercial-clean.
+CC0 sources with FXTD-authored geometry (source receipts kept); its build report marks the set commercial-clean. AI fill v5: v4's material plus 803 CC0
+panoramas (Poly Haven, ambientCG) and 200 procedural Blender scenes by FXTD Studios (8,982 clips; commercial-clean).
 
 ### Which route for which footage (9 Nov 2026)
 

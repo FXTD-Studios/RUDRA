@@ -28,6 +28,7 @@
 
 #include <thread>
 
+#include "clean_compression.hpp"
 #include "rudra/core/composite.hpp"
 #include "rudra/core/fill_region.hpp"
 #include "rudra/core/model_manifest.hpp"
@@ -54,7 +55,7 @@
 
 class QAction;
 class QLabel;
-namespace rudra::app { class GenFillJob; class GenFillServer; class MediaLibrary; class MediaPanel; }
+namespace rudra::app { class GenFillJob; class GenFillServer; class MediaLibrary; class MediaPanel; struct QcReport; }
 class QLineEdit;
 class QMenu;
 class QNetworkAccessManager;
@@ -82,6 +83,7 @@ namespace ocio_viewer { class Config; }
 namespace rudra::app {
 
 class AcesEngine;
+class BatchPage;
 class CheckRow;
 class IconButton;
 class RegionEditor;
@@ -290,7 +292,8 @@ public:
     BatchQueue& batch_queue();
     BatchRunner& batch_runner();
     bool batch_running() const { return batch_runner_ && batch_runner_->running(); }
-    void open_batch();                            // Deliver > Batch queue… (Ctrl+Shift+B)
+    void open_batch();                            // the Batch tab (1.3; Deliver > Batch queue… opens it)
+    BatchPage* batch_page();                      // the Batch tab's page, made when first shown
     // The shot on screen, with the Deliver tab's choice, name and start frame
     // (Ctrl+B); `dir` overrides the Deliver tab's render folder.
     bool batch_add_current(QString* why = nullptr, const QString& dir = {});
@@ -309,6 +312,8 @@ public:
     void open_export_sheet();
     // Phase 4 step 11: a movie as a shot, and its exports as queue jobs.
     bool shot_is_video() const { return shot_video_.has_value(); }
+    // 1.3: the shot's size as decoded (what the Source panel shows); {0, 0} before a frame is shown.
+    std::pair<int, int> shot_source_size() const;
     const std::optional<FrameSequence>& shot_video() const { return shot_video_; }
     QString shot_title() const;                  // the movie, the folder or the still
     std::string frame_name(std::size_t i) const; // what the Frames rail and a master call frame i
@@ -364,7 +369,7 @@ public:
     // project opens, so a project's own view peak replaces it; the tests keep the
     // page's defaults (no wipe, 203 nits).
     void open_compare_view();
-    // The sheet on screen (show_sheet), if any.
+    // The sheet on screen (show_keyboard), if any.
     QDialog* sheet() const { return sheet_; }
     // What Deliver > Copy writes (deliveryRecord()).
     std::string delivery_text() const;
@@ -556,6 +561,14 @@ public:
     // support if needed (remembered for the next start) and sets the policy;
     // on again, back to the usual reading. Refusals are in problem().
     void toggle_super_whites();
+    // 1.3 (24 Nov 2026): Reconstruct > Clean compression (clean_compression.cpp): a cleaned copy of a JPEG or MP4
+    // shot opens as the shot; on a cleaned copy it goes back to the original.
+    void clean_compression();
+    std::optional<CleanSidecar> shot_clean_sidecar() const;
+    // 1.3 (24 Nov 2026, Ahmed): the Source card's Check compression line: what the check found for this shot, kept
+    // while the shot is the same one (a cleaned copy says so itself); a new shot starts unchecked.
+    void compression_status(const QString& text, const QString& state, const QString& button = {});
+    void sync_compression_status();
     QString problem() const { return problem_; }
     const HeadroomShown* headroom_frame() const { return headroom_shown_ ? &*headroom_shown_ : nullptr; }
     QString headroom_problem() const { return headroom_problem_; }   // why nothing is shown, or empty
@@ -670,7 +683,8 @@ private:
     std::optional<bool> have_aces_package_;   // cached: reset by a rescan and a download
     QString update_state_;
     void bind_handlers();
-    void show_sheet(const QString& title, const std::vector<std::pair<QString, QString>>& rows);
+    // Help > Keyboard (?): the shortcuts on a card over the dimmed window (24 Nov 2026, the approved mockup).
+    void show_keyboard();
     void sync_checks();
     void sync_ui();
     void sync_playhead();   // playing: the timecode and the scrub bar only
@@ -950,6 +964,11 @@ public:
     std::optional<QcContext> render_qc_context_;
     QString write_render_qc(const QString& folder, const std::vector<std::filesystem::path>& masters, const QString& route,
                             const QJsonObject& learned = {});
+    // 1.3 (23 Nov 2026): the last render's QC report as written, so the AI fill made over it can be added
+    // (rewrite_qc_with_fill, as <title>_aifill.qc.html) once the fill is in.
+    std::shared_ptr<QcReport> last_qc_;
+    int last_qc_peak_ = 1000;
+    QString rewrite_qc_with_fill(const QString& master_dir, const QString& disclosure_json);
 private:
     struct FramesMovie {
         QString format;                      // hdr10, hlg, prores422hq, prores4444
@@ -978,6 +997,13 @@ private:
     bool loading_model_ = false;
     std::thread model_worker_;
     std::thread stats_worker_;   // the measurement off the UI thread; joined, never left running
+    // 1.3 (23 Nov 2026): what a limited-range movie holds above white (probe_source_whites), measured once
+    // per movie off the UI thread; the Source panel says whether anything is lost at decode.
+    std::optional<SourceWhiteProbe> source_whites_;
+    std::filesystem::path source_whites_for_;
+    std::thread source_whites_worker_;
+    rudra::stop_source source_whites_stop_;
+    void start_source_whites_probe();
     std::optional<BackendChoice> backend_choice_;
     QPointer<QDialog> manager_, first_run_, sheet_, aces_master_, system_check_;
     std::shared_ptr<AcesEngine> aces_engine_;   // shared_ptr: the type stays incomplete here
@@ -988,6 +1014,8 @@ private:
     std::unique_ptr<ModelManifest> manifest_;
     std::unique_ptr<InferenceBackend> backend_;   // used only from the engine's worker
     std::vector<std::filesystem::path> frames_;
+    bool cleaning_ = false;   // 1.3: Clean compression is making a copy
+    QString compression_status_shot_;   // the shot the Source card's compression line speaks of
     std::unique_ptr<FrameEngine> engine_;         // declared after the backend: destroyed first
     int engine_gen_ = 0;                          // which engine a delivered frame came from
     // Each frame's size as decoded, before the preview downscale (the header's source_resolution).
@@ -1014,6 +1042,10 @@ private:
     // deliver_.ai (unchanged keys); deliver_.ai_fill is Deliver's one checkbox, which counts only while
     // this is on (deliver_effective, deliver_for_batch).
     bool ai_generation_ = false;
+    // 24 Nov 2026 (Ahmed): read at launch (aifill_here): ai_generation_ starts as aifill_runs_here_; aifill_why_ is
+    // what stops the fill here (empty when it runs), for the viewer button's tooltip and the note when it is turned on.
+    bool aifill_runs_here_ = false;
+    QString aifill_why_;
     aces_v2::AcesTrims aces_trims_;
     QString aces_monitor_ = "scene";
     QString aces_source_display_ = "bt1886";
@@ -1044,7 +1076,8 @@ private:
     std::shared_ptr<const SdrImage> aces_sdr_img_;   // view revision 6
     std::unique_ptr<BatchQueue> batch_;
     std::unique_ptr<BatchRunner> batch_runner_;
-    QPointer<QDialog> batch_window_;
+    BatchPage* batch_page_ = nullptr;             // 1.3: the Batch tab (batch_page.hpp)
+    QStackedWidget* body_stack_ = nullptr;        // the rails and viewer (0) or the Batch tab (1)
     QString render_name_for_fill_;
     // 6 Nov 2026: a learned movie with the AI fill is three steps: the EXR masters, their
     // AI fill, then this "encode" request (aces-v2-serve) makes the movie from the filled
@@ -1085,7 +1118,14 @@ private:
     // 21 Nov 2026: the wipe the AI fill button took off to show the fill (its position), put back when
     // the button goes off. Every start opens SDR | RUDRA as a wipe at the middle, and a fill on the
     // left half of the frame (testwindow.mp4's sky) was under the SDR side: "we cannot see it".
-    std::optional<double> fill_view_hid_wipe_;
+    // 1.3 (23 Nov 2026): on an SDR screen RUDRA's own view does no tone mapping, so a fill above SDR white
+    // showed as plain white (09V's door, 21 Nov: the clouds only showed through ACES 2.0 SDR at -2 EV).
+    // The AI fill button picks a tone-mapped view and -2 EV for as long as it is on; these are what it set,
+    // put back when it goes off unless the user changed them meanwhile. Setting viewer/fillToneMapped.
+    std::optional<std::pair<QString, QString>> fill_view_set_colour_;
+    std::optional<double> fill_view_set_ev_;
+    QStringList tone_map_for_fill();
+    void untone_map_for_fill();
     std::map<int, std::shared_ptr<const NetworkLinearImage>> fill_view_cache_;
     QStringList fill_view_files_;   // the last finished fill's frames, in order
     QString genfill_last_master_;   // the master folder the last fill was for (its frames are the fill once moved in place)

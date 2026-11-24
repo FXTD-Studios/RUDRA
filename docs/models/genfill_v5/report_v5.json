@@ -1,0 +1,1630 @@
+{
+ "schema": "rudra_model_report_v1",
+ "model": "RUDRA AI fill v5, region re-render (experimental)",
+ "lora_sha256": "5c5d4ab4107088f86bdc8213ae2ec21c1a882cc6d942141f0e12fb7733fda5e6",
+ "registration": "configs/experiments/research_genfill_v5d_thin_20261123.json",
+ "verdict": {
+  "registration": "configs\\experiments\\research_genfill_v5d_thin_20261123.json",
+  "lora": "G:\\rudra_training\\research_genfill_v5_20261122\\rudra_genfill.safetensors",
+  "inference": [
+   "--rerender-hue",
+   "source",
+   "--rerender-colour",
+   "0.3",
+   "--rerender-level",
+   "3.3",
+   "--rerender-smooth",
+   "0.8",
+   "--rerender-dip",
+   "0.3",
+   "--rerender-independent",
+   "--rerender-calm",
+   "0.9",
+   "--rerender-full-last",
+   "--rerender-hold-clipped",
+   "thin"
+  ],
+  "shots": {
+   "Porch": {
+    "needs": [
+     "L",
+     "T",
+     "O"
+    ],
+    "pass": true,
+    "all_gates": "FAIL",
+    "gates": {
+     "L": true,
+     "S": false,
+     "T": true,
+     "O": true
+    },
+    "L": 3.049,
+    "hue": [
+     1.033,
+     1.091
+    ],
+    "source_hue": [
+     1.003,
+     1.014
+    ],
+    "S": [
+     0.027,
+     0.011
+    ],
+    "T": [
+     0.0236,
+     0.0804
+    ],
+    "O": [
+     0,
+     0,
+     0
+    ]
+   },
+   "09V": {
+    "needs": [
+     "L",
+     "S",
+     "T",
+     "O"
+    ],
+    "pass": true,
+    "all_gates": "PASS",
+    "gates": {
+     "L": true,
+     "S": true,
+     "T": true,
+     "O": true
+    },
+    "L": 3.093,
+    "hue": [
+     1.11,
+     1.279
+    ],
+    "source_hue": [
+     1.078,
+     1.077
+    ],
+    "S": [
+     0.104,
+     0.176,
+     0.129
+    ],
+    "T": [
+     0.0036,
+     0.0358
+    ],
+    "O": [
+     0,
+     0,
+     0
+    ]
+   },
+   "testwindow": {
+    "needs": [
+     "L",
+     "T",
+     "O"
+    ],
+    "pass": true,
+    "all_gates": "FAIL",
+    "gates": {
+     "L": true,
+     "S": false,
+     "T": true,
+     "O": true
+    },
+    "L": 3.304,
+    "hue": [
+     1.004,
+     1.011
+    ],
+    "source_hue": [
+     0.978,
+     0.94
+    ],
+    "S": [
+     0.01,
+     0.008,
+     0.008
+    ],
+    "T": [
+     0.0017,
+     0.0273
+    ],
+    "O": [
+     0,
+     0,
+     0
+    ]
+   },
+   "water": {
+    "needs": [
+     "L",
+     "O",
+     "T<=0.115"
+    ],
+    "pass": true,
+    "all_gates": "FAIL",
+    "gates": {
+     "L": true,
+     "S": false,
+     "T": true,
+     "O": true
+    },
+    "L": 3.161,
+    "hue": [
+     0.991,
+     1.053
+    ],
+    "source_hue": [
+     1.0,
+     1.0
+    ],
+    "S": [
+     0.041,
+     0.046,
+     0.063
+    ],
+    "T": [
+     0.0282,
+     0.0794
+    ],
+    "O": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "lamp_09V": {
+   "pass": true,
+   "rule": "p99 range below the reference's and worst lamp join no worse",
+   "lamp99_range_stops": {
+    "v5": 0.186,
+    "v4_2": 0.539
+   },
+   "lamp99_max_jump_stops": {
+    "v5": 0.033,
+    "v4_2": 0.029
+   },
+   "lamp99_worst_join": {
+    "v5": 1.38,
+    "v4_2": 7.69
+   },
+   "texture_worst_join": {
+    "v5": 0.6,
+    "v4_2": 1.13
+   }
+  },
+  "H": {
+   "gated_96_119": {
+    "variant": "finish",
+    "clips": 22,
+    "pu21_-3_mean_delta": -30.33560978121183,
+    "ci95": [
+     -37.78190602249625,
+     -22.805313020094747
+    ],
+    "better_in": 21,
+    "rule": "ci",
+    "pass": true
+   },
+   "seen_120_126": {
+    "variant": "finish",
+    "clips": 7,
+    "pu21_-3_mean_delta": -32.31022585838408,
+    "ci95": [
+     -49.19072627769047,
+     -17.537415707636388
+    ],
+    "better_in": 7,
+    "rule": "5of7",
+    "pass": true
+   }
+  },
+  "verdict": "PASS",
+  "release_authorized": false
+ },
+ "v5_without_the_hold": {
+  "registration": "configs/experiments/research_genfill_v5_20261122.json",
+  "lora": "G:\\rudra_training\\research_genfill_v5_20261122\\rudra_genfill.safetensors",
+  "inference": [
+   "--rerender-hue",
+   "source",
+   "--rerender-colour",
+   "0.3",
+   "--rerender-level",
+   "3.3",
+   "--rerender-smooth",
+   "0.8",
+   "--rerender-dip",
+   "0.3",
+   "--rerender-independent",
+   "--rerender-calm",
+   "0.9",
+   "--rerender-full-last"
+  ],
+  "shots": {
+   "09V": {
+    "needs": [
+     "L",
+     "S",
+     "T",
+     "O"
+    ],
+    "pass": true,
+    "all_gates": "PASS",
+    "gates": {
+     "L": true,
+     "S": true,
+     "T": true,
+     "O": true
+    },
+    "L": 3.093,
+    "hue": [
+     1.11,
+     1.279
+    ],
+    "source_hue": [
+     1.078,
+     1.077
+    ],
+    "S": [
+     0.104,
+     0.176,
+     0.129
+    ],
+    "T": [
+     0.0037,
+     0.0389
+    ],
+    "O": [
+     0,
+     0,
+     0
+    ]
+   },
+   "testwindow": {
+    "needs": [
+     "L",
+     "T",
+     "O"
+    ],
+    "pass": true,
+    "all_gates": "FAIL",
+    "gates": {
+     "L": true,
+     "S": false,
+     "T": true,
+     "O": true
+    },
+    "L": 3.304,
+    "hue": [
+     1.004,
+     1.011
+    ],
+    "source_hue": [
+     0.978,
+     0.94
+    ],
+    "S": [
+     0.01,
+     0.008,
+     0.008
+    ],
+    "T": [
+     0.0017,
+     0.0273
+    ],
+    "O": [
+     0,
+     0,
+     0
+    ]
+   },
+   "water": {
+    "needs": [
+     "L",
+     "O",
+     "T<=0.115"
+    ],
+    "pass": true,
+    "all_gates": "FAIL",
+    "gates": {
+     "L": true,
+     "S": false,
+     "T": true,
+     "O": true
+    },
+    "L": 3.165,
+    "hue": [
+     0.991,
+     1.053
+    ],
+    "source_hue": [
+     1.0,
+     1.0
+    ],
+    "S": [
+     0.041,
+     0.046,
+     0.064
+    ],
+    "T": [
+     0.0285,
+     0.0889
+    ],
+    "O": [
+     0,
+     0,
+     0
+    ]
+   },
+   "Porch": {
+    "needs": [
+     "L",
+     "T",
+     "O"
+    ],
+    "pass": false,
+    "all_gates": "FAIL",
+    "gates": {
+     "L": true,
+     "S": false,
+     "T": false,
+     "O": true
+    },
+    "L": 3.031,
+    "hue": [
+     1.033,
+     1.091
+    ],
+    "source_hue": [
+     1.003,
+     1.014
+    ],
+    "S": [
+     0.027,
+     0.01
+    ],
+    "T": [
+     0.0323,
+     0.2292
+    ],
+    "O": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "lamp_09V": {
+   "pass": true,
+   "rule": "p99 range below the reference's and worst lamp join no worse",
+   "lamp99_range_stops": {
+    "v5": 0.184,
+    "v4_2": 0.539
+   },
+   "lamp99_max_jump_stops": {
+    "v5": 0.033,
+    "v4_2": 0.029
+   },
+   "lamp99_worst_join": {
+    "v5": 1.97,
+    "v4_2": 7.69
+   },
+   "texture_worst_join": {
+    "v5": 0.59,
+    "v4_2": 1.13
+   }
+  },
+  "H": {
+   "gated_96_119": {
+    "variant": "finish",
+    "clips": 22,
+    "pu21_-3_mean_delta": -30.361624197964044,
+    "ci95": [
+     -37.80382019567396,
+     -22.811008354555838
+    ],
+    "better_in": 21,
+    "rule": "ci",
+    "pass": true
+   },
+   "seen_120_126": {
+    "variant": "finish",
+    "clips": 7,
+    "pu21_-3_mean_delta": -32.33083887379898,
+    "ci95": [
+     -49.19177148267132,
+     -17.56349334123002
+    ],
+    "better_in": 7,
+    "rule": "5of7",
+    "pass": true
+   }
+  },
+  "verdict": "FAIL",
+  "release_authorized": false
+ },
+ "ghosts_09V_against_v5": {
+  "fill": "v4_gates/fill_v5d",
+  "ref": "v4_gates/fill_v5",
+  "frames_read": 12,
+  "darker_mean": 18.9,
+  "darker_max": 60,
+  "lighter_mean": 15.3,
+  "per_frame": [
+   {
+    "frame": 8,
+    "band_px": 76390,
+    "darker": 30,
+    "lighter": 0
+   },
+   {
+    "frame": 16,
+    "band_px": 79307,
+    "darker": 60,
+    "lighter": 0
+   },
+   {
+    "frame": 24,
+    "band_px": 79198,
+    "darker": 9,
+    "lighter": 56
+   },
+   {
+    "frame": 32,
+    "band_px": 78685,
+    "darker": 36,
+    "lighter": 41
+   },
+   {
+    "frame": 40,
+    "band_px": 78927,
+    "darker": 38,
+    "lighter": 24
+   },
+   {
+    "frame": 48,
+    "band_px": 80004,
+    "darker": 22,
+    "lighter": 10
+   },
+   {
+    "frame": 56,
+    "band_px": 78429,
+    "darker": 2,
+    "lighter": 23
+   },
+   {
+    "frame": 64,
+    "band_px": 78485,
+    "darker": 9,
+    "lighter": 6
+   },
+   {
+    "frame": 72,
+    "band_px": 76946,
+    "darker": 0,
+    "lighter": 6
+   },
+   {
+    "frame": 80,
+    "band_px": 81166,
+    "darker": 0,
+    "lighter": 8
+   },
+   {
+    "frame": 88,
+    "band_px": 79102,
+    "darker": 18,
+    "lighter": 7
+   },
+   {
+    "frame": 96,
+    "band_px": 81232,
+    "darker": 3,
+    "lighter": 3
+   }
+  ]
+ },
+ "offline_replays": {
+  "Porch_T_p95": {
+   "v5": 0.2292,
+   "steady7 (v5c)": 0.2191,
+   "hold dips": 0.1757,
+   "hold release": 0.1411,
+   "hold all (v5b)": 0.0804,
+   "hold thin": 0.0804
+  },
+  "09V_frames_0_28": "hold thin: 0 pixels in the antenna crop differ from v5 by more than 0.2 stops (hold all: 65-79 darker); thin changes 33-79 px a frame elsewhere (the lamp, the bright gaps by the soldiers' boots), steadier and with no new structure (tmp/v5_review/09V_thin_check.jpg)",
+  "09V_whole_shot": "replayed on the whole of 09V's saved fill (raw_v5, 17:47) as the GPU run started: T p95 v5 0.0389 (the v5 run's own 0.0389), hold all 0.0317 (v5b's own 0.0317), hold thin 0.0358; beside what the source moves, pixels more than 0.2 stops darker / lighter than v5: hold all 104.6 / 91.0 a frame, hold thin 18.1 / 16.0; antenna crops at 10, 30, 50, 70: thin shows what v5 shows (tmp/v5_review/replay_09V.jpg)"
+ },
+ "owed": "a fresh shot with a thin, still, clipped light that nobody tuned on",
+ "learned_route": {
+  "registration": "configs/experiments/research_genfill_v5_learned_20261123.json",
+  "summary": "FAIL on the learned ACES 2.0 route: 5 of 10 check shots passed (04V, 07V, 09V, fire, testwindow). Failed: 01V: flicker, T 0.1124 EV (limit 0.1); 02V: flicker, T 0.1235 EV (limit 0.1); 03V: flicker, T 0.3182 EV (limit 0.1); Porch: too bright, L 4.074 (limit 2.5-4 x white); water: flicker, T 0.1359 EV (limit 0.115). Held-out (gated_96_119: PU21 +43.1 on 21 scenes, closer in 1; seen_120_126: PU21 +71.2 on 6 scenes, closer in 0; a positive PU21 is further from the truth than the learned reconstruction alone). v5 was checked and passed on the analytic route: use it there.",
+  "result": {
+   "registration": "configs/experiments/research_genfill_v5_learned_20261123.json",
+   "lora": "G:\\rudra_training\\research_genfill_v5_20261122\\rudra_genfill.safetensors",
+   "route": "learned ACES 2.0 (RUDRA ACES 2 masters, --condition aces)",
+   "inference": [
+    "--rerender-hue",
+    "source",
+    "--rerender-colour",
+    "0.3",
+    "--rerender-level",
+    "3.3",
+    "--rerender-smooth",
+    "0.8",
+    "--rerender-dip",
+    "0.3",
+    "--rerender-independent",
+    "--rerender-calm",
+    "0.9",
+    "--rerender-full-last",
+    "--rerender-hold-clipped",
+    "thin"
+   ],
+   "shots": {
+    "01V": {
+     "needs": [
+      "T where measurable",
+      "O"
+     ],
+     "pass": false,
+     "frames": 97,
+     "gates": {
+      "L": false,
+      "S": null,
+      "T": false,
+      "O": true
+     },
+     "L": 4.204,
+     "S": [],
+     "T": [
+      0.0345,
+      0.1124
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "generated_fraction": 0.004787142436680667,
+     "flagged_frames": 0
+    },
+    "02V": {
+     "needs": [
+      "T where measurable",
+      "O"
+     ],
+     "pass": false,
+     "frames": 97,
+     "gates": {
+      "L": false,
+      "S": null,
+      "T": false,
+      "O": true
+     },
+     "L": 0.88,
+     "S": [],
+     "T": [
+      0.0372,
+      0.1235
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "generated_fraction": 0.002722134720631284,
+     "flagged_frames": 0
+    },
+    "03V": {
+     "needs": [
+      "T where measurable",
+      "O"
+     ],
+     "pass": false,
+     "frames": 97,
+     "gates": {
+      "L": false,
+      "S": null,
+      "T": false,
+      "O": true
+     },
+     "L": 3.378,
+     "S": [],
+     "T": [
+      0.0315,
+      0.3182
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "generated_fraction": 0.016566929768041236,
+     "flagged_frames": 0
+    },
+    "04V": {
+     "needs": [
+      "T where measurable",
+      "O"
+     ],
+     "pass": true,
+     "frames": 97,
+     "gates": {
+      "L": false,
+      "S": false,
+      "T": true,
+      "O": true
+     },
+     "L": 1.273,
+     "S": [
+      0.038,
+      0.029,
+      0.046
+     ],
+     "T": [
+      0.0153,
+      0.0539
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "generated_fraction": 0.005771923125875016,
+     "flagged_frames": 0
+    },
+    "07V": {
+     "needs": [
+      "T where measurable",
+      "O"
+     ],
+     "pass": true,
+     "frames": 97,
+     "gates": {
+      "L": false,
+      "S": false,
+      "T": true,
+      "O": true
+     },
+     "L": 1.681,
+     "S": [
+      0.043,
+      0.039,
+      0.032
+     ],
+     "T": [
+      0.0124,
+      0.0486
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "generated_fraction": 0.0133607322689958,
+     "flagged_frames": 0
+    },
+    "09V": {
+     "needs": [
+      "L",
+      "S",
+      "T",
+      "O"
+     ],
+     "pass": true,
+     "frames": 97,
+     "gates": {
+      "L": true,
+      "S": true,
+      "T": true,
+      "O": true
+     },
+     "L": 3.429,
+     "S": [
+      0.11,
+      0.141,
+      0.132
+     ],
+     "T": [
+      0.0069,
+      0.0303
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "generated_fraction": 0.1141867870609011,
+     "flagged_frames": 0
+    },
+    "fire": {
+     "needs": [
+      "T where measurable",
+      "O"
+     ],
+     "pass": true,
+     "frames": 97,
+     "gates": {
+      "L": false,
+      "S": true,
+      "T": true,
+      "O": true
+     },
+     "L": 1.322,
+     "S": [
+      0.215,
+      0.28,
+      0.316
+     ],
+     "T": [
+      0.0288,
+      0.0917
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "generated_fraction": 0.006676515567328497,
+     "flagged_frames": 0
+    },
+    "Porch": {
+     "needs": [
+      "L",
+      "T",
+      "O"
+     ],
+     "pass": false,
+     "frames": 97,
+     "gates": {
+      "L": false,
+      "S": false,
+      "T": true,
+      "O": true
+     },
+     "L": 4.074,
+     "S": [
+      0.028,
+      0.014
+     ],
+     "T": [
+      0.0215,
+      0.0733
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "generated_fraction": 0.03619507286496118,
+     "flagged_frames": 0
+    },
+    "testwindow": {
+     "needs": [
+      "L",
+      "T",
+      "O"
+     ],
+     "pass": true,
+     "frames": 97,
+     "gates": {
+      "L": true,
+      "S": false,
+      "T": true,
+      "O": true
+     },
+     "L": 3.653,
+     "S": [
+      0.011,
+      0.011,
+      0.021
+     ],
+     "T": [
+      0.0035,
+      0.0252
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "generated_fraction": 0.21728093777841415,
+     "flagged_frames": 0
+    },
+    "water": {
+     "needs": [
+      "L",
+      "O"
+     ],
+     "pass": false,
+     "frames": 97,
+     "gates": {
+      "L": true,
+      "S": true,
+      "T": false,
+      "O": true
+     },
+     "L": 3.445,
+     "S": [
+      0.076,
+      0.073,
+      0.081
+     ],
+     "T": [
+      0.0317,
+      0.1359
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "generated_fraction": 0.0434281734366051,
+     "flagged_frames": 0
+    }
+   },
+   "H": {
+    "gated_96_119": {
+     "variant": "finish",
+     "clips": 21,
+     "pu21_-3_mean_delta": 43.1377758864295,
+     "ci95": [
+      27.55871424075206,
+      60.00509416415096
+     ],
+     "better_in": 1,
+     "rule": "ci",
+     "pass": false
+    },
+    "seen_120_126": {
+     "variant": "finish",
+     "clips": 6,
+     "pu21_-3_mean_delta": 71.18914539280705,
+     "ci95": [
+      9.574612061443371,
+      143.08001979561055
+     ],
+     "better_in": 0,
+     "rule": "5of7",
+     "pass": false
+    }
+   },
+   "verdict": "FAIL",
+   "release_authorized": false
+  }
+ },
+ "v5e": {
+  "registration": "configs/experiments/research_genfill_v5e_20261124.json",
+  "change": {
+   "both routes, with v5": "--rerender-blend-still 0.95 (composite.finish_rerender blend_still: the crossfade's mix keeps 0.95 of the previous frame's while the code it follows, blurred and lifted beside something dark, stays within 3 codes of where the hold began) and --rerender-hold-calm 0.95 (a pixel the thin hold holds keeps 0.95 for a jump instead of calm's 0.9; calm itself unchanged, so a wide sky's clouds are finished as before)",
+   "the learned route, with v5": "also --rerender-cap-master (the master's share of a region pixel never brighter than the fill there) and --mask-first-frame (a newly clipped pixel joins the mask at its first clipped frame)",
+   "v4.3 and v3": "unchanged (as 1.2.9)"
+  },
+  "offline_choice": {
+   "method": "tmp/v5_review/replay7.py: the finish replayed on the saved fills of the registered runs (v5d: raw_v5d of 09V, Porch, water, testwindow; research_genfill_v5_analytic_123: raw of 01V-03V), measured as shot_gates.py measures T, L and S. The replay of v5d's own finish reproduces those runs' T, L and S to the 4th decimal.",
+   "chosen (v5e) against v5d, T p95 EV": {
+    "01V": [
+     0.1637,
+     0.0792
+    ],
+    "02V": [
+     0.0882,
+     0.0716
+    ],
+    "03V": [
+     0.1726,
+     0.0941
+    ],
+    "09V": [
+     0.0358,
+     0.0242
+    ],
+    "Porch": [
+     0.0804,
+     0.0498
+    ],
+    "testwindow": [
+     0.0273,
+     0.0064
+    ],
+    "water": [
+     0.0794,
+     0.0789
+    ]
+   },
+   "chosen (v5e) against v5d, L median x white": {
+    "01V": [
+     2.686,
+     2.652
+    ],
+    "02V": [
+     0.77,
+     0.77
+    ],
+    "03V": [
+     3.082,
+     3.075
+    ],
+    "09V": [
+     3.093,
+     3.078
+    ],
+    "Porch": [
+     3.05,
+     2.993
+    ],
+    "testwindow": [
+     3.304,
+     3.283
+    ],
+    "water": [
+     3.161,
+     3.156
+    ]
+   },
+   "09V S": {
+    "v5d": [
+     0.104,
+     0.176,
+     0.129
+    ],
+    "v5e": [
+     0.104,
+     0.177,
+     0.129
+    ]
+   },
+   "09V antenna": "no copies beside the drifting antenna (tmp/v5_review/09V_ba3_antenna3x.jpg, 09V_ba3_antenna3x_zoom.jpg); the antenna's one-pixel edge differs by up to 0.3 stops",
+   "rejected": {
+    "mix held where the pixel's own codes hold still (+ calm 0.95)": "01V T 0.067, 03V 0.071, but faint dotted copies of 09V's antenna beside it (09V_bh95c95_antenna3x.jpg)",
+    "mix held where its code moved 4 or less from the last frame (+ calm 0.95)": "03V T 0.076, but a fan of faint antennas (09V_bt95c95t4_antenna3x.jpg)",
+    "mix held where its code moved 2 or less (+ calm 0.95)": "03V T 0.106: fails",
+    "held only after 3 still frames": "03V T 0.0999 (no margin)",
+    "calm 0.95 alone": "01V T 0.154: fails",
+    "steady 7 (v5c's median)": "03V T 0.1125: fails"
+   }
+  },
+  "honesty": "The finish was chosen on the same seven analytic shots it is checked on, as v5d's thin hold was; a fresh shot is still to come. 03V passes by 0.006 EV. The analytic shots are confirmed by the replays above (exactly run.py's finish on the runs' own fills; the model's output does not depend on the finish), not by a new GPU run. The learned route's ten shots are not graded through ACES 2.0 (the app steers them to the analytic route), so on them this checks that the fill is steady and leaves the rest alone, not that it is right. The learned route's held-out check is not repeated: its master is the exact ACES 2.0 inverse of the very view that made the clips, within 0.25 stops of the truth, which no fill beats; a held-out test like real footage (codec compression) is for 1.3.x.",
+  "verdict": {
+   "registration": "configs/experiments/research_genfill_v5e_20261124.json",
+   "lora": "G:\\rudra_training\\research_genfill_v5_20261122\\rudra_genfill.safetensors",
+   "inference": {
+    "both routes": [
+     "--rerender-hue",
+     "source",
+     "--rerender-colour",
+     "0.3",
+     "--rerender-level",
+     "3.3",
+     "--rerender-smooth",
+     "0.8",
+     "--rerender-dip",
+     "0.3",
+     "--rerender-independent",
+     "--rerender-calm",
+     "0.9",
+     "--rerender-full-last",
+     "--rerender-hold-clipped",
+     "thin",
+     "--rerender-blend-still",
+     "0.95",
+     "--rerender-hold-calm",
+     "0.95"
+    ],
+    "learned route adds": [
+     "--rerender-cap-master",
+     "--mask-first-frame"
+    ]
+   },
+   "learned_shots": {
+    "01V": {
+     "needs": [
+      "T where measurable",
+      "O"
+     ],
+     "pass": true,
+     "gates": {
+      "L": false,
+      "S": null,
+      "T": true,
+      "O": true
+     },
+     "L": 3.432,
+     "S": [],
+     "T": [
+      0.0238,
+      0.0689
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "v5d_T": [
+      0.0345,
+      0.1124
+     ],
+     "v5d_L": 4.204,
+     "generated_fraction": 0.004863164415489373,
+     "flagged_frames": 0
+    },
+    "02V": {
+     "needs": [
+      "T where measurable",
+      "O"
+     ],
+     "pass": false,
+     "gates": {
+      "L": false,
+      "S": null,
+      "T": false,
+      "O": true
+     },
+     "L": 0.88,
+     "S": [],
+     "T": [
+      0.0301,
+      0.1184
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "v5d_T": [
+      0.0372,
+      0.1235
+     ],
+     "v5d_L": 0.88,
+     "generated_fraction": 0.0027221744940817104,
+     "flagged_frames": 0
+    },
+    "03V": {
+     "needs": [
+      "T where measurable",
+      "O"
+     ],
+     "pass": true,
+     "gates": {
+      "L": false,
+      "S": null,
+      "T": true,
+      "O": true
+     },
+     "L": 3.369,
+     "S": [],
+     "T": [
+      0.0215,
+      0.0475
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "v5d_T": [
+      0.0315,
+      0.3182
+     ],
+     "v5d_L": 3.378,
+     "generated_fraction": 0.016908847206312843,
+     "flagged_frames": 0
+    },
+    "04V": {
+     "needs": [
+      "T where measurable",
+      "O"
+     ],
+     "pass": true,
+     "gates": {
+      "L": false,
+      "S": false,
+      "T": true,
+      "O": true
+     },
+     "L": 1.273,
+     "S": [
+      0.038,
+      0.029,
+      0.046
+     ],
+     "T": [
+      0.0153,
+      0.0539
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "v5d_T": [
+      0.0153,
+      0.0539
+     ],
+     "v5d_L": 1.273,
+     "generated_fraction": 0.005778262019536719,
+     "flagged_frames": 0
+    },
+    "07V": {
+     "needs": [
+      "T where measurable",
+      "O"
+     ],
+     "pass": true,
+     "gates": {
+      "L": false,
+      "S": false,
+      "T": true,
+      "O": true
+     },
+     "L": 1.681,
+     "S": [
+      0.043,
+      0.039,
+      0.032
+     ],
+     "T": [
+      0.0124,
+      0.0486
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "v5d_T": [
+      0.0124,
+      0.0486
+     ],
+     "v5d_L": 1.681,
+     "generated_fraction": 0.013367434095392643,
+     "flagged_frames": 0
+    },
+    "09V": {
+     "needs": [
+      "L",
+      "S",
+      "T",
+      "O"
+     ],
+     "pass": true,
+     "gates": {
+      "L": true,
+      "S": true,
+      "T": true,
+      "O": true
+     },
+     "L": 3.356,
+     "S": [
+      0.118,
+      0.142,
+      0.138
+     ],
+     "T": [
+      0.0055,
+      0.0264
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "v5d_T": [
+      0.0069,
+      0.0303
+     ],
+     "v5d_L": 3.429,
+     "generated_fraction": 0.11419725742172585,
+     "flagged_frames": 0
+    },
+    "fire": {
+     "needs": [
+      "T where measurable",
+      "O"
+     ],
+     "pass": true,
+     "gates": {
+      "L": false,
+      "S": true,
+      "T": true,
+      "O": true
+     },
+     "L": 1.322,
+     "S": [
+      0.215,
+      0.276,
+      0.316
+     ],
+     "T": [
+      0.0266,
+      0.0894
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "v5d_T": [
+      0.0288,
+      0.0917
+     ],
+     "v5d_L": 1.322,
+     "generated_fraction": 0.0067124160780196,
+     "flagged_frames": 0
+    },
+    "Porch": {
+     "needs": [
+      "L",
+      "T",
+      "O"
+     ],
+     "pass": true,
+     "gates": {
+      "L": true,
+      "S": false,
+      "T": true,
+      "O": true
+     },
+     "L": 3.694,
+     "S": [
+      0.037,
+      0.013
+     ],
+     "T": [
+      0.0167,
+      0.0414
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "v5d_T": [
+      0.0215,
+      0.0733
+     ],
+     "v5d_L": 4.074,
+     "generated_fraction": 0.03623151031723304,
+     "flagged_frames": 0
+    },
+    "testwindow": {
+     "needs": [
+      "L",
+      "T",
+      "O"
+     ],
+     "pass": true,
+     "gates": {
+      "L": true,
+      "S": false,
+      "T": true,
+      "O": true
+     },
+     "L": 3.434,
+     "S": [
+      0.012,
+      0.011,
+      0.022
+     ],
+     "T": [
+      0.0016,
+      0.0059
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "v5d_T": [
+      0.0035,
+      0.0252
+     ],
+     "v5d_L": 3.653,
+     "generated_fraction": 0.2179863845535828,
+     "flagged_frames": 0
+    },
+    "water": {
+     "needs": [
+      "L",
+      "O"
+     ],
+     "pass": true,
+     "gates": {
+      "L": true,
+      "S": true,
+      "T": false,
+      "O": true
+     },
+     "L": 3.294,
+     "S": [
+      0.078,
+      0.055,
+      0.083
+     ],
+     "T": [
+      0.03,
+      0.1068
+     ],
+     "O": [
+      0,
+      0,
+      0
+     ],
+     "v5d_T": [
+      0.0317,
+      0.1359
+     ],
+     "v5d_L": 3.445,
+     "generated_fraction": 0.04528061629707188,
+     "flagged_frames": 0
+    }
+   },
+   "H_analytic": {
+    "gated_96_119": {
+     "variant": "finish",
+     "clips": 22,
+     "pu21_-3_mean_delta": -30.473684294042002,
+     "ci95": [
+      -37.894210295483134,
+      -22.94054730048722
+     ],
+     "better_in": 21,
+     "rule": "ci",
+     "pass": true
+    },
+    "seen_120_126": {
+     "variant": "finish",
+     "clips": 7,
+     "pu21_-3_mean_delta": -31.265049467417818,
+     "ci95": [
+      -48.940717308601116,
+      -15.919607563526869
+     ],
+     "better_in": 7,
+     "rule": "5of7",
+     "pass": true
+    }
+   },
+   "analytic_shots_replayed": {
+    "01V": {
+     "T_p95": 0.0792,
+     "L_median": 2.652,
+     "S": [],
+     "ghost_vs_first_darker_lighter_max": [
+      0,
+      0
+     ],
+     "ghost_frames_over_50px": 0,
+     "wake_mean_stops_and_share_darker_0.2": {},
+     "replay": "01V_final"
+    },
+    "02V": {
+     "T_p95": 0.0716,
+     "L_median": 0.77,
+     "S": [],
+     "ghost_vs_first_darker_lighter_max": [
+      0,
+      0
+     ],
+     "ghost_frames_over_50px": 0,
+     "wake_mean_stops_and_share_darker_0.2": {},
+     "replay": "02V_final"
+    },
+    "03V": {
+     "T_p95": 0.0941,
+     "L_median": 3.075,
+     "S": [],
+     "ghost_vs_first_darker_lighter_max": [
+      0,
+      0
+     ],
+     "ghost_frames_over_50px": 0,
+     "wake_mean_stops_and_share_darker_0.2": {},
+     "replay": "03V_final"
+    },
+    "09V": {
+     "T_p95": 0.0242,
+     "L_median": 3.078,
+     "S": [
+      0.104,
+      0.177,
+      0.129
+     ],
+     "ghost_vs_first_darker_lighter_max": [
+      0,
+      0
+     ],
+     "ghost_frames_over_50px": 0,
+     "wake_mean_stops_and_share_darker_0.2": {},
+     "replay": "09V_final"
+    },
+    "Porch": {
+     "T_p95": 0.0498,
+     "L_median": 2.993,
+     "S": [
+      0.05,
+      0.042
+     ],
+     "ghost_vs_first_darker_lighter_max": [
+      0,
+      0
+     ],
+     "ghost_frames_over_50px": 0,
+     "wake_mean_stops_and_share_darker_0.2": {},
+     "replay": "Porch_final"
+    },
+    "testwindow": {
+     "T_p95": 0.0064,
+     "L_median": 3.283,
+     "S": [
+      0.01,
+      0.014,
+      0.018
+     ],
+     "ghost_vs_first_darker_lighter_max": [
+      0,
+      0
+     ],
+     "ghost_frames_over_50px": 0,
+     "wake_mean_stops_and_share_darker_0.2": {},
+     "replay": "testwindow_final"
+    },
+    "water": {
+     "T_p95": 0.0789,
+     "L_median": 3.156,
+     "S": [
+      0.041,
+      0.05,
+      0.065
+     ],
+     "ghost_vs_first_darker_lighter_max": [
+      0,
+      0
+     ],
+     "ghost_frames_over_50px": 0,
+     "wake_mean_stops_and_share_darker_0.2": {},
+     "replay": "water_final"
+    }
+   },
+   "verdict": "FAIL",
+   "release_authorized": false
+  },
+  "outcome": {
+   "run": "24 Nov 2026 12:16-15:30 Cairo (tmp/RUN_V5E.ps1); tmp/09V_test/v4_gates/v5e_verdict.json, left as the run wrote it",
+   "verdict": "FAIL",
+   "why": "02V on the learned route: T p95 0.1184 EV against the 0.10 limit (v5d 0.1235). The other nine learned shots pass, and both analytic held-out rules pass.",
+   "learned_T_p95_EV": {
+    "01V": {
+     "v5e": 0.0689,
+     "v5d": 0.1124,
+     "pass_v5e": true
+    },
+    "02V": {
+     "v5e": 0.1184,
+     "v5d": 0.1235,
+     "pass_v5e": false
+    },
+    "03V": {
+     "v5e": 0.0475,
+     "v5d": 0.3182,
+     "pass_v5e": true
+    },
+    "04V": {
+     "v5e": 0.0539,
+     "v5d": 0.0539,
+     "pass_v5e": true
+    },
+    "07V": {
+     "v5e": 0.0486,
+     "v5d": 0.0486,
+     "pass_v5e": true
+    },
+    "09V": {
+     "v5e": 0.0264,
+     "v5d": 0.0303,
+     "pass_v5e": true
+    },
+    "fire": {
+     "v5e": 0.0894,
+     "v5d": 0.0917,
+     "pass_v5e": true
+    },
+    "Porch": {
+     "v5e": 0.0414,
+     "v5d": 0.0733,
+     "pass_v5e": true,
+     "L": {
+      "v5e": 3.694,
+      "v5d": 4.074
+     }
+    },
+    "testwindow": {
+     "v5e": 0.0059,
+     "v5d": 0.0252,
+     "pass_v5e": true
+    },
+    "water": {
+     "v5e": 0.1068,
+     "v5d": 0.1359,
+     "pass_v5e": true
+    }
+   },
+   "learned_pass": {
+    "v5e": "9 of 10",
+    "v5d": "5 of 10 (research_genfill_v5_learned_20261123)"
+   },
+   "analytic_T_p95_EV": {
+    "01V": {
+     "v5e": 0.0792,
+     "v5d": 0.1637
+    },
+    "02V": {
+     "v5e": 0.0716,
+     "v5d": 0.0882
+    },
+    "03V": {
+     "v5e": 0.0941,
+     "v5d": 0.1726
+    },
+    "09V": {
+     "v5e": 0.0242,
+     "v5d": 0.0358
+    },
+    "Porch": {
+     "v5e": 0.0498,
+     "v5d": 0.0804
+    },
+    "testwindow": {
+     "v5e": 0.0064,
+     "v5d": 0.0273
+    },
+    "water": {
+     "v5e": 0.0789,
+     "v5d": 0.0794
+    }
+   },
+   "analytic_pass": {
+    "v5e": "7 of 7 (the replays)",
+    "v5d": "5 of 7 (01V 0.1637 and 03V 0.1726 fail)"
+   },
+   "analytic_held_out_pu21_mean_delta": {
+    "gated_96_119": {
+     "v5e": -30.47,
+     "ci95": [
+      -37.89,
+      -22.94
+     ],
+     "better_in": "21 of 22",
+     "pass": true
+    },
+    "seen_120_126": {
+     "v5e": -31.27,
+     "ci95": [
+      -48.94,
+      -15.92
+     ],
+     "better_in": "7 of 7",
+     "pass": true
+    }
+   },
+   "analytic_held_out_v5d": {
+    "gated_96_119": -30.34,
+    "seen_120_126": -32.31,
+    "from": "docs/models/genfill_v5/report_v5.json verdict.H"
+   },
+   "decision": "Ahmed (FXTD Studios), 24 Nov 2026 about 15:45 Cairo: 1.3.0 ships v5 with the v5e finish, against this registration's decision rule. Reason: v5e is better than or equal to v5d on every shot measured, on both routes, and equal to it on the analytic held-out clips, so the rule's fallback would ship the worse finish. This is an override of a registered rule, made after seeing the results; it is not a PASS.",
+   "known_limit": "02V on the learned route flickers (T p95 0.118 EV against 0.10), as it did under v5d (0.124). The release notes say so and keep recommending the analytic route for the AI fill."
+  },
+  "release_authorized": true,
+  "release_authorized_by": "Ahmed's decision of 24 Nov 2026 (outcome.decision), against the decision rule"
+ }
+}

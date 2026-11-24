@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QMenu>
 #include <QProcess>
+#include <QStandardItemModel>
 #include <QProcessEnvironment>
 #include <QStatusBar>
 #include <QComboBox>
@@ -24,6 +25,7 @@
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QStorageInfo>
 
 #include <algorithm>
 #include <cmath>
@@ -38,7 +40,9 @@
 #include "genfill_review.hpp"
 #include "main_window.hpp"
 #include "system_check.hpp"   // genfill_missing_text (1.2.5)
+#include <rudra/core/resample.hpp>
 #include "rudra/core/timecode.hpp"
+#include "rudra/deliver/exr.hpp"
 #include "rudra/platform/png8.hpp"
 #include "widgets.hpp"
 
@@ -60,6 +64,16 @@ QString clean_name(QString n) {
 
 }  // namespace
 
+std::pair<int, int> MainWindow::shot_source_size() const {
+    if (!current_frame_) return {0, 0};
+    const QString r = QString::fromStdString(current_frame_->header.source_resolution.value_or(std::string()));
+    const QStringList p = r.split(QLatin1Char('x'));
+    if (p.size() != 2) return {0, 0};
+    bool okw = false, okh = false;
+    const int w = p[0].toInt(&okw), h = p[1].toInt(&okh);
+    return okw && okh && w > 0 && h > 0 ? std::pair{w, h} : std::pair{0, 0};
+}
+
 bool MainWindow::deliver_aces() const {
     return deliver_.source == "aces" && aces_engine_ && aces_engine_->state() == AcesEngine::State::Ready;
 }
@@ -79,12 +93,20 @@ DeliverChoice MainWindow::deliver_effective() const {
     // 21 Nov 2026: Deliver's AI fill checkbox counts only while Reconstruct > AI generation is on.
     if (!ai_generation_) c.ai_fill = false;
     const bool movie = shot_is_video();
-    return deliver_fit(c, aces, movie, !movie && frames_.size() > 1);
+    DeliverChoice fit = deliver_fit(c, aces, movie, !movie && frames_.size() > 1);
+    // 1.3: Output size. The AI fill works at the source's size (the model's, and a 2x fill would take
+    // four times the disk and the time); the analytic movie of a movie is the export queue's, which
+    // writes the source's size.
+    if (fit.ai_fill || (!aces && fit.output == "movie" && movie)) fit.size = QStringLiteral("source");
+    // 1.3 (24 Nov 2026, audit): a size past 8192 on a side for this shot is written at the source's.
+    if (const auto [sw, sh] = shot_source_size(); !output_size_fits(fit.size.toStdString(), sw, sh)) fit.size = QStringLiteral("source");
+    return fit;
 }
 
 DeliverChoice MainWindow::deliver_for_batch() const {
     DeliverChoice c = deliver_;
     if (!ai_generation_) c.ai_fill = false;
+    if (c.ai_fill) c.size = QStringLiteral("source");   // 1.3: the fill works at the source's size
     return c;
 }
 
@@ -103,7 +125,13 @@ void MainWindow::load_deliver_settings() {
     c.mattes = st.value("deliver/mattes", c.mattes).toBool();
     c.brackets = st.value("deliver/brackets", c.brackets).toBool();
     c.fps = st.value("deliver/fps", c.fps).toDouble();
-    c.ai_fill = st.value("deliver/aiFill", c.ai_fill).toBool();
+    c.size = st.value("deliver/size", c.size).toString();   // 1.3: Output size
+    // 1.3: EXR compression; before it, the hidden deliver/exrZip (on unless turned off) decided.
+    c.exr_compression = st.value("deliver/exrCompression", st.value("deliver/exrZip", true).toBool() ? "zip" : "none").toString();
+    // 24 Nov 2026 (Ahmed): Deliver's checkbox (the export includes the fill) is off at every launch; ticked, it stays
+    // on for this session only. Reconstruct > AI generation starts on where this computer can run the fill (below).
+    // Its settings (prompts, strengths, seed) are kept.
+    c.ai_fill = false;
     c.ai.tau_high = st.value("deliver/aiTauHigh", c.ai.tau_high).toInt();
     c.ai.tau_low = st.value("deliver/aiTauLow", c.ai.tau_low).toInt();
     c.ai.seed = st.value("deliver/aiSeed", c.ai.seed).toInt();
@@ -119,9 +147,13 @@ void MainWindow::load_deliver_settings() {
     c.ai.rerender_keep_detail = st.value("deliver/aiKeepDetail", false).toBool();   // 1.2.7
     c.ai.prompt_highlight = st.value("deliver/aiPromptHighlight").toString();
     c.ai.prompt_shadow = st.value("deliver/aiPromptShadow").toString();
-    // 21 Nov 2026: Reconstruct > AI generation. Never set before: on where Deliver's AI fill was on, so
-    // an AI fill in use before the move stays in use.
-    ai_generation_ = st.value("reconstruct/aiGeneration", c.ai_fill).toBool();
+    // 21 Nov 2026: Reconstruct > AI generation, which the viewer's AI fill button is. 24 Nov 2026 (Ahmed): at launch
+    // it is on where this computer can run the fill (a 16 GB NVIDIA GPU, or Apple silicon with 16 GB, and the AI
+    // fill installed) and off anywhere else, whatever an older RUDRA saved; a click changes it for this session.
+    const AiFillHere here = aifill_here();
+    aifill_runs_here_ = here.runs;
+    aifill_why_ = here.why;
+    ai_generation_ = here.runs;
     if (c.source != "aces" && c.source != "analytic") c.source = "aces";
     deliver_ = deliver_fit(c, true, true, true);   // only the values; the shot decides the rest
 }
@@ -171,6 +203,12 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
     } else if (key == "keep_exr") {
         deliver_.keep_exr = value == "1" || value == "true";
         st.setValue("deliver/keepExr", deliver_.keep_exr);
+    } else if (key == "size" && (value == "source" || value == "2x" || value == "uhd" || value == "hd")) {   // 1.3
+        deliver_.size = value;
+        st.setValue("deliver/size", value);
+    } else if (key == "exr_compression" && (value == "zip" || value == "zips" || value == "none")) {   // 1.3
+        deliver_.exr_compression = value;
+        st.setValue("deliver/exrCompression", value);
     } else if (key == "fps") {
         bool ok = false;
         const double f = value.toDouble(&ok);
@@ -178,15 +216,22 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
             deliver_.fps = f;
             st.setValue("deliver/fps", f);
         }
-    } else if (key == "ai_generation") {   // 21 Nov 2026: Reconstruct > AI generation
-        ai_generation_ = value == "1" || value == "true";
-        st.setValue("reconstruct/aiGeneration", ai_generation_);
+    } else if (key == "ai_generation") {   // 21 Nov 2026: Reconstruct > AI generation; 24 Nov: the viewer's AI fill button
+        const bool was = ai_generation_;
+        ai_generation_ = value == "1" || value == "true";   // for this session (the next launch decides again)
         if (!ai_generation_ && ai_region_view_) set_ai_region_view(false);
         log(ai_generation_ ? QStringLiteral("AI generation on (Reconstruct)") : QStringLiteral("AI generation off (Reconstruct)"));
+        // 24 Nov 2026 (Ahmed): one AI fill, on or off. On, the viewer shows the fill wherever there is one (the
+        // preview's frames or the last finished fill); off, the master.
+        if (ai_generation_ != was) {
+            if (ai_generation_ && !frames_.empty() && (genfill_preview_.has_value() || !genfill_last_out_.isEmpty()))
+                set_fill_view(true);
+            else if (!ai_generation_ && fill_view_on_)
+                set_fill_view(false);
+        }
         sync_ai_generation();
     } else if (key == "ai_fill") {   // Deliver's one checkbox: the export includes the fill
-        deliver_.ai_fill = value == "1" || value == "true";
-        st.setValue("deliver/aiFill", deliver_.ai_fill);
+        deliver_.ai_fill = value == "1" || value == "true";   // for this session (off at the next launch)
     } else if (key == "ai_tau_high" || key == "ai_tau_low" || key == "ai_seed" || key == "ai_steps") {
         bool ok = false;
         const int v = value.toInt(&ok);
@@ -327,6 +372,54 @@ void MainWindow::sync_deliver() {
         for (int i = 0; i < fps->count(); ++i)
             if (std::abs(fps->itemData(i).toDouble() - c.fps) < 1e-6) fps->setCurrentIndex(i);
     }
+    // 1.3: Output size, each choice with the size it writes for this shot.
+    const bool queue_movie = !aces && movie && movie_shot;
+    show("deliverSizeRow", !queue_movie);
+    if (auto* sz = findChild<QComboBox*>("deliverSize")) {
+        const QSignalBlocker b(sz);
+        const auto [sw, sh] = shot_source_size();
+        auto* model = qobject_cast<QStandardItemModel*>(sz->model());
+        for (int i = 0; i < sz->count(); ++i) {
+            const QString k = sz->itemData(i).toString();
+            const OutputSize o = output_size(k.toStdString(), sw, sh);
+            // 1.3 (24 Nov 2026, audit): a size with a side past 8192 is greyed out (2x of a 6K or 8K source).
+            const bool fits = output_size_fits(k.toStdString(), sw, sh);
+            QString text = k == "source" ? QStringLiteral("Source") : k == "2x" ? QStringLiteral("2\u00d7")
+                           : k == "uhd" ? QStringLiteral("UHD") : QStringLiteral("HD");
+            if (sw > 0) text += fits ? QStringLiteral(" \u00b7 %1 \u00d7 %2").arg(o.width).arg(o.height)
+                                     : QStringLiteral(" \u00b7 over %1 pixels").arg(kMaxOutputSide);
+            sz->setItemText(i, text);
+            if (model)
+                if (QStandardItem* item = model->item(i)) item->setEnabled(fits);
+            sz->setItemData(i, fits ? QVariant() : QVariant(QStringLiteral("More than %1 pixels on a side for this shot: too large to "
+                                                                           "write (memory, and HEVC stops at 8192 x 4320)")
+                                                                .arg(kMaxOutputSide)),
+                            Qt::ToolTipRole);
+        }
+        sz->setCurrentIndex(std::max(0, sz->findData(output_size_fits(c.size.toStdString(), sw, sh) ? c.size : QStringLiteral("source"))));
+        sz->setEnabled(!c.ai_fill);
+        sz->setToolTip(c.ai_fill ? QStringLiteral("The AI fill works at the source size; turn it off to write another size.")
+                                 : QStringLiteral("A clean resize of the master in linear light: Lanczos 3 held between "
+                                                  "neighbouring pixels, so no halo or dark ring round a highlight, and "
+                                                  "nothing invented. The model runs at the source size."));
+    }
+    {   // 1.3 (24 Nov 2026): EXR compression, where an EXR is written; ACES 2065-1 is uncompressed by its standard
+        const bool exr = c.output == "movie" ? (aces && c.keep_exr) : c.image != "dpx10";
+        show("deliverExrCompressionRow", exr);
+        if (auto* zc = findChild<QComboBox*>("deliverExrCompression")) {
+            const QSignalBlocker b(zc);
+            const bool ap0 = c.gamut == "ap0";
+            const bool zlib = rudra::exr_zip_available();   // a build without zlib writes every EXR uncompressed
+            zc->setCurrentIndex(std::max(0, zc->findData(ap0 || !zlib ? QStringLiteral("none") : c.exr_compression)));
+            zc->setEnabled(!ap0 && zlib);
+            zc->setToolTip(!zlib ? QStringLiteral("This build of RUDRA has no zlib: EXRs are written uncompressed.")
+                           : ap0 ? QStringLiteral("ACES 2065-1 files are uncompressed: the SMPTE ST 2065-4 container asks for it. "
+                                                "ACEScg or linear can be ZIP or ZIPS.")
+                               : QStringLiteral("How the EXR masters are stored. ZIP and ZIPS are lossless (every value kept "
+                                                "exactly) and make smaller files; ZIPS packs one line at a time instead of 16, a "
+                                                "little faster to read a line at a time. Every OpenEXR reader takes all three."));
+        }
+    }
     show("deliverKeepExr", aces && movie);
     if (auto* keep = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverKeepExr"))) keep->set_on(c.keep_exr);
     show("deliverMattes", !aces);   // a movie's mattes go to <name>_mattes, a frame each
@@ -374,7 +467,10 @@ void MainWindow::sync_deliver() {
         }
     if (auto* fb = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFallback"))) fb->set_on(c.ai.fallback);
     if (auto* fo = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiFocus"))) fo->set_on(c.ai.focus_region);
-    if (auto* v = dynamic_cast<Seg*>(findChild<QWidget*>("deliverAiVersion"))) v->set_on(c.ai.rerender ? "v4" : "v3");
+    if (auto* v = dynamic_cast<Seg*>(findChild<QWidget*>("deliverAiVersion"))) {
+        v->set_on(c.ai.rerender ? "v4" : "v3");
+        if (auto* b = v->button("v4")) b->setText(genfill_region_name() + QStringLiteral(" region"));   // 1.3: v5 where installed
+    }
     if (auto* kd = dynamic_cast<CheckRow*>(findChild<QWidget*>("deliverAiKeepDetail"))) {   // 1.2.7: v4.3 only
         kd->set_on(c.ai.rerender_keep_detail);
         kd->setVisible(c.ai.rerender);
@@ -406,15 +502,22 @@ void MainWindow::sync_deliver() {
         const auto s = genfill_setup(&why);
         if (genfill_ready_ != bool(s)) {   // the viewer's AI fill button and Preview follow (7 Nov 2026)
             genfill_ready_ = bool(s);
+            if (genfill_ready_ && !aifill_runs_here_) {   // 24 Nov 2026: set up since launch; the button's note follows
+                const AiFillHere now = aifill_here();
+                aifill_runs_here_ = now.runs;
+                aifill_why_ = now.why;
+            }
             sync_ai_generation();
         }
         if (s && c.ai.rerender) {   // 12 Nov 2026: v4 is on, so the line names v4's LoRA, not v3's
-            const auto v4 = genfill_v4_lora();
+            // 1.3: v5 first, v4.3 where only it is installed (genfill_setup_for)
+            const auto v5 = genfill_v5_lora();
+            const auto region = v5.empty() ? genfill_v4_lora() : v5;
             // One short line (12 Nov 2026); where the parts are is in the tooltip and in Setup…
-            // 1.2.7: v4.3 is a download now, and v3 / v4.3 a switch just below
-            st->setText(v4.empty() ? genfill_v4_missing_text()
-                                   : QStringLiteral("Ready · AI fill v4.3 region (experimental)"));
-            st->setToolTip(QStringLiteral("Wan2.1-VACE-1.3B: %1\nLoRA: %2").arg(from_path(s->base), from_path(v4)));
+            st->setText(region.empty() ? genfill_v4_missing_text()
+                        : v5.empty()   ? QStringLiteral("Ready · AI fill v4.3 region (experimental; v5 in File \u203a Model packages)")
+                                       : QStringLiteral("Ready · AI fill v5 region (experimental)"));
+            st->setToolTip(QStringLiteral("Wan2.1-VACE-1.3B: %1\nLoRA: %2").arg(from_path(s->base), from_path(region)));
         } else if (s) {
             st->setText(s->lora_is_v3 ? QStringLiteral("Ready · AI fill v3")
                                       : QStringLiteral("Ready, but the LoRA is NOT AI fill v3: Setup… to switch"));
@@ -483,10 +586,16 @@ void MainWindow::sync_deliver() {
     }
     if (auto* n = findChild<QLabel*>("deliverNote")) {
         // 12 Nov 2026: what is written, in one line; the rest (the AI fill's folders, nothing replaced) on hover
-        const QString brief = note.contains(QStringLiteral(" into the File's folder"))
-                                  ? note.section(QStringLiteral(" into the File's folder"), 0, 0) +
-                                        (c.ai_fill && aces ? QStringLiteral(", then AI fill") : QString())
-                                  : note;
+        QString brief = note.contains(QStringLiteral(" into the File's folder"))
+                            ? note.section(QStringLiteral(" into the File's folder"), 0, 0) +
+                                  (c.ai_fill && aces ? QStringLiteral(", then AI fill") : QString())
+                            : note;
+        if (const auto [sw, sh] = shot_source_size(); c.size != "source" && sw > 0 && !brief.isEmpty()) {   // 1.3
+            const OutputSize o = output_size(c.size.toStdString(), sw, sh);
+            if (brief.endsWith(QLatin1Char('.'))) brief.chop(1);
+            brief += QStringLiteral(", at %1 \u00d7 %2.").arg(o.width).arg(o.height);
+            if (note != brief && !note.contains(QStringLiteral(" into the File's folder"))) note = brief;
+        }
         n->setText(brief);
         n->setToolTip(brief == note ? QString() : note);
         n->setVisible(!note.isEmpty());
@@ -614,7 +723,7 @@ void MainWindow::deliver_render() {
         return;
     }
     if (deliver_aces() && batch_running()) {   // one master at a time through the engine
-        say(QStringLiteral("The batch queue is rendering through the model; stop it first (Deliver > Batch queue…)."));
+        say(QStringLiteral("The batch queue is rendering through the model; stop it first (the Batch tab)."));
         return;
     }
     if (deliver_aces()) {
@@ -901,6 +1010,39 @@ bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOpti
                               : QStringLiteral("AI fill: v3, clipped pixels only (LoRA %1)").arg(qp(setup->lora)));
     const QString out = genfill_out_dir(out_base.isEmpty() ? master_dir : out_base);
     auto* status = findChild<QLabel*>("renderStatus");
+    // 1.3 (23 Nov 2026): disk space, time and a busy GPU, before anything starts (genfill_preflight).
+    {
+        const QFileInfo mi(master_dir);
+        QStringList files;
+        if (mi.isFile()) files << mi.absoluteFilePath();
+        else
+            for (const QString& f : QDir(master_dir).entryList({fill_options.glob.isEmpty() ? QStringLiteral("*.exr") : fill_options.glob},
+                                                               QDir::Files, QDir::Name))
+                files << QDir(master_dir).filePath(f);
+        int fw = 0, fh = 0;
+        if (!files.isEmpty())
+            if (auto e = read_exr(to_path(files.front()))) fw = e->pixels.width(), fh = e->pixels.height();
+        QString disk = QFileInfo(out).absolutePath();
+        while (!disk.isEmpty() && !QFileInfo::exists(disk)) {
+            const QString up = QFileInfo(disk).absolutePath();
+            if (up == disk) break;
+            disk = up;
+        }
+        const QStorageInfo si(disk);
+        const qint64 free = si.isValid() && si.isReady() ? si.bytesAvailable() : -1;
+        auto load = QSettings().value("genfill/checkGpu", true).toBool() ? genfill_gpu_load() : std::pair<int, int>{-1, -1};
+        if (genfill_server_ && genfill_server_->loaded()) load.second = -1;   // the memory is our own warm preview model
+        const GenFillPreflight pf = genfill_preflight(int(files.size()), fw, fh, free,
+                                                      QSettings().value("genfill/secPerFrame", kGenFillSecPerFrame).toDouble(),
+                                                      load.first, load.second);
+        log(pf.text);
+        if (!pf.ok) return refuse(pf.text);
+        if (status) {
+            status->setText(pf.text);
+            status->show();
+        }
+        statusBar()->showMessage(pf.text, 15000);
+    }
     const QPointer<MainWindow> self(this);
     const bool ok = genfill_->start(
         *setup, fill_options, master_dir, out,
@@ -938,6 +1080,10 @@ bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOpti
             auto* st = self->findChild<QLabel*>("renderStatus");
             QString text;
             if (done) {
+                // 1.3: this machine's speed, for the next fill's time estimate (genfill_preflight)
+                const int nf = last.value("frames").toInt();
+                if (nf > 0 && last.value("seconds").toDouble() > 0)
+                    QSettings().setValue("genfill/secPerFrame", last.value("seconds").toDouble() / nf);
                 self->genfill_last_out_ = out;
                 self->genfill_last_master_ = master_dir;
                 self->fill_view_cache_.clear();
@@ -957,6 +1103,8 @@ bool MainWindow::start_genfill_with(const QString& master_dir, const GenFillOpti
                                                                                            : QStringLiteral("Analytic");
                 const QString disclosure = write_genfill_disclosure(out, route);
                 if (!disclosure.isEmpty()) where += QStringLiteral(" · disclosure: %1").arg(QDir::toNativeSeparators(disclosure));
+                if (const QString qc = self->rewrite_qc_with_fill(master_dir, disclosure); !qc.isEmpty())   // 1.3
+                    where += QStringLiteral(" · QC: %1").arg(QFileInfo(qc).fileName());
                 text = QStringLiteral("AI fill: %1 frame(s) %2 · %3 % of pixels generated")
                            .arg(last.value("frames").toInt())
                            .arg(where)

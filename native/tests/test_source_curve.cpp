@@ -285,3 +285,45 @@ TEST(SourceCurve, Bt1886IsTheDisplayDecode) {
     const float d = srgb_to_linear(118.0f / 255.0f);   // the knots are at sRGB codes of that light
     EXPECT_NEAR(inverse_aces_approx(d) * std::exp2(p[1 + 118]), source_curve_inverse(SourceCurve::Bt1886, d), 2e-4f);
 }
+
+// 24 Nov 2026: a still, and a movie as the app reads it (each frame through ffmpeg to PNG), hold the source's own
+// codes, not the video path's canonical ones. BT.1886 then reads each code as the video code it is: code^2.4. Before,
+// the own code went through the sRGB decode and then the BT.709 OETF: 2.7 stops dark at code 26, 1.3 at 51, 0.36 at
+// 128 (09V's frames: 1.95 stops at the median). The other curves read own codes as before.
+TEST(SourceCurve, Bt1886ReadsOwnCodesAsTheVideoCodesTheyAre) {
+    const auto own = source_curve_params(SourceCurve::Bt1886, true);
+    ASSERT_EQ(own.size(), std::size_t(1 + kSourceCurveKnots));
+    for (int code = 2; code < 255; ++code) {   // code 1 is code 2's ratio by convention; 255 meets the 0.995 clamp
+        const double got = double(inverse_aces_approx(srgb_to_linear(float(code) / 255.0f))) * std::exp2(double(own[1 + std::size_t(code)]));
+        EXPECT_NEAR(std::log2(got / std::pow(code / 255.0, 2.4)), 0.0, 0.01) << code;
+    }
+    const auto canonical = source_curve_params(SourceCurve::Bt1886, false);   // the video path: unchanged
+    const double before = double(inverse_aces_approx(srgb_to_linear(26.0f / 255.0f))) * std::exp2(double(canonical[1 + 26]));
+    EXPECT_LT(std::log2(before / std::pow(26.0 / 255.0, 2.4)), -2.5);   // what an own code got before
+    // BT.1886 shadows: BT.1886 from where the video light's code reaches 40, its measured table below.
+    const auto shadows = source_curve_params(SourceCurve::Bt1886Shadows, true);
+    const double at51 = double(inverse_aces_approx(srgb_to_linear(51.0f / 255.0f))) * std::exp2(double(shadows[1 + 51]));
+    EXPECT_NEAR(std::log2(at51 / std::pow(51.0 / 255.0, 2.4)), 0.0, 0.01);
+    for (SourceCurve c : {SourceCurve::Unknown, SourceCurve::Aces, SourceCurve::Hable, SourceCurve::Agx, SourceCurve::CameraLog,
+                          SourceCurve::Clip}) {
+        const auto a = source_curve_params(c, true), b = source_curve_params(c, false);
+        ASSERT_EQ(a.size(), b.size());
+        for (std::size_t i = 0; i < a.size(); ++i) EXPECT_EQ(a[i], b[i]) << source_curve_id(c) << " " << i;
+    }
+    EXPECT_TRUE(reads_video_codes(SourceCurve::Bt1886));
+    EXPECT_TRUE(reads_video_codes(SourceCurve::Bt1886Shadows));
+    EXPECT_FALSE(reads_video_codes(SourceCurve::Clip));
+    // Through the composite: the anchor's target and the session's params carry it.
+    CompositeParams cp;
+    cp.source = SourceCurve::Bt1886;
+    cp.own_codes = true;
+    const auto t = anchor_target_knots(cp);
+    ASSERT_EQ(t.size(), std::size_t(kSourceCurveKnots));
+    for (int code : {26, 51, 128})
+        EXPECT_NEAR(t[std::size_t(code)], std::log2(std::pow(code / 255.0, 2.4) / double(srgb_to_linear(float(code) / 255.0f))), 0.01) << code;
+    Session s;
+    EXPECT_FALSE(s.composite_params().own_codes);
+    s.set_own_codes(true);
+    EXPECT_TRUE(s.own_codes());
+    EXPECT_TRUE(s.composite_params().own_codes);
+}

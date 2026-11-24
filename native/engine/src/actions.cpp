@@ -105,6 +105,8 @@ const std::vector<ActionSpec> kActions = {
     // limited-range BT.709 movie read with its detail above white kept
     // (bt1886-headroom-v1) instead of clipped and filled. Experimental.
     {"keep-super-whites", "Keep super-whites (experimental)", "", "superWhites", O::Native, E::Always, ""},
+    // 1.3 (24 Nov 2026): a cleaned copy of a JPEG or MP4 shot, its codec's block grid taken down (clean_compression).
+    {"clean-compression", "Clean compression (JPEG/MP4)", "", "cleanCompression", O::Native, E::AnyFrames, ""},
     // Playback with the model (10 Oct 2026): the size the model runs at
     // while playing (full where the playhead stops), and whether playback
     // keeps time by skipping frames the model has not reached.
@@ -153,7 +155,7 @@ const std::vector<MenuSpec> kMenus = {
      {"first", "prev", "next", "last", "-", "play", "-", ">While playing", "playback-side-0", "playback-side-960",
       "playback-side-640", "-", "playback-realtime", "<", "steady-shots"}},
     {"Reconstruct",
-     {"use-model", "-", "clip-fill", "clip-peak", "clip-peaks-clear", "keep-super-whites", "-", ">Source", "source-bt1886", "source-bt1886_shadows", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
+     {"use-model", "-", "clip-fill", "clip-peak", "clip-peaks-clear", "keep-super-whites", "clean-compression", "-", ">Source", "source-bt1886", "source-bt1886_shadows", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
       "exposure-down", "exposure-up", "exposure-reset", "-", "mode-all", "mode-highlights", "mode-shadows", "mode-off", "-", "preserve", "-", "strength-down", "strength-up"}},
     {"Measure", {"copy-metrics", "copy-scopes", "-", "remeasure"}},
     {"Deliver", {"master", "aces-master", "-", "batch-add", "batch-queue", "-", "container-aces", "container-linear", "-", "copy-delivery"}},

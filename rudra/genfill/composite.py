@@ -54,6 +54,13 @@ RERENDER_RISE_PX = 150.0        # pixels at 1080 lines: with `rise`, the depth i
 
 
 RERENDER_CALM_STOPS = (0.1, 0.3) # stops: with `calm`, a still pixel's fill that would move this much starts to be held; fully from the second
+RERENDER_STEADY_MAX = 15       # 1.3: the longest median `steady` takes
+RERENDER_RELEASE_PX = 7        # 1.3 research: hold 'release' lets go of a carried dark line narrower than this
+RERENDER_RELEASE_STOPS = 0.15  # ... that its closing lifts by more than this
+RERENDER_THIN_PX = 20.0        # 1.3: hold 'thin' holds a clipped shape at most this far (px at 1080) from its edge at its widest
+RERENDER_THIN_REACH_PX = 40    # ... its widest point looked for this far around (px at 1080)
+RERENDER_HOLD_CODE = 250       # 1.3: with `calm`, a still pixel the source clips at this code is held whole (the T gate's clipped)
+RERENDER_STILL_TOP = 3.0       # 1.3: with `blend_still`, the crossfade's code (blurred) within this many codes of where its hold began
 RERENDER_NEUTRAL = (0.78, 0.88) # the source's min over max code: below the first the region is left to the master, whole from the second
 
 
@@ -109,7 +116,8 @@ def white_scale(master: np.ndarray, codes: np.ndarray) -> float | None:
 def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray, codes: np.ndarray, weight: np.ndarray,
                     hue: str = 'model', colour: float = 0.0, level: float = 0.0, smooth: float = 0.0,
                     white: float = 1.0, tau_high: int = 240, state: dict | None = None, dip: float = 0.0,
-                    still: float = 0.0, rise: float = 0.0, calm: float = 0.0) -> np.ndarray:
+                    still: float = 0.0, rise: float = 0.0, calm: float = 0.0, hold: bool | str = False,
+                    steady: int = 0, cap: bool = False, blend_still: float = 0.0, hold_calm: float = 0.0) -> np.ndarray:
     """The region re-render's fill, finished before the blend (10 Nov 2026, after the v4 gates on 09V:
     the v4 LoRA drew the structure, but too blue, at 1.2 x white where 2.5-4 was asked, its level
     drifting 0.85-1.72 x white along the shot with jumps at the window seams, and brighter where the
@@ -169,13 +177,46 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
                     glare keeps rising towards its source. In a clipped core the only evidence left
                     is how far the clip reaches; a wider clip is taken as a brighter one. Fine detail
                     is untouched (it adds no structure, so it does not move the S gate). Off (0) is
-                    the fill as gated on 11 Nov."""
+                    the fill as gated on 11 Nov.
+      steady > 1    1.3 (23 Nov 2026, AI fill v5): where the source clips (RERENDER_HOLD_CODE) and holds
+                    still (2 codes), the fill's own log luminance is the median of its last `steady`
+                    frames (as many as the pixel has held still), before `smooth` / `calm`. v5 redraws a
+                    thin LED strip a little differently every frame (Porch: static clipped p95 0.229 EV,
+                    limit 0.10) beside the dark, where the 1.2.8 trust lets `calm` hold nothing; holding
+                    regardless (v5b) carried 09V's drifting antenna's ghosts for frames. A median keeps
+                    nothing of its own: it only ever chooses among the model's own recent values (where the
+                    pixel has held still for all of them), so a copy the model drew in fewer than half of
+                    them is dropped and none can outlast the
+                    model drawing it by more than steady // 2 frames. Kept in state: the last frames'
+                    values (the ring), never an output.
+                    0 or 1: off.
+      cap           with a level (1.3, 24 Nov 2026, the learned route): in the crossfade the master's share is
+                    never brighter than the fill's own value there. The learned ACES 2.0 master rebuilds a clipped
+                    area itself, brighter than the fill's level and unsteady near the clip (Porch: 7.8 x white, its
+                    still clipped pixels moving 0.75 EV p95; water 24 x white, 0.67 EV), so its share of a region
+                    pixel came through as a rim brighter than the core and as flicker (the T gate on 01V, 02V,
+                    water; L 4.07 on Porch). The analytic master sits near white there, under the fill's level,
+                    where the cap changes nothing; the app sets it on the learned route only. Off: as gated.
+      blend_still   with a level and `state` (1.3, 24 Nov 2026): while the code the crossfade follows stays within
+                    RERENDER_STILL_TOP of where it was when the hold began, the crossfade's share of the fill (s)
+                    keeps this share of the previous frame's. s follows the source's code, and on a still shot a
+                    code near the clip moves 1-2 codes from frame to frame (the codec's noise): at code 251 that
+                    moves s by up to 0.12, and with the analytic master about 1.7 stops under the fill's level the
+                    pixel moved up to 0.2 stops (01V on the analytic route: T 0.164, 98 % of the worst changes
+                    within 4 px of a clipped edge; with 0.95, 0.079). 0: as gated.
+      hold_calm     with `hold` (1.3, 24 Nov 2026): the share a held pixel keeps for a jump, instead of `calm`.
+                    v5 redraws the inside of a thin clipped shape a little differently every frame (03V: T 0.17
+                    with the mix settled, 0.094 with 0.95 here); `calm` itself stays as gated, so a wide clipped
+                    sky's clouds are finished as before. 0: `calm`."""
     if hue not in RERENDER_HUES:
         raise ValueError(f'hue must be one of {", ".join(RERENDER_HUES)}')
     if (not 0.0 <= smooth < 1.0 or not 0.0 <= colour <= 1.0 or level < 0 or dip < 0 or rise < 0 or not 0.0 <= still < 1.0
-            or not 0.0 <= calm < 1.0):
-        raise ValueError('smooth, still and calm must be in [0, 1), colour in [0, 1], level, dip and rise >= 0')
-    if hue == 'model' and level <= 0 and smooth <= 0 and still <= 0 and calm <= 0:
+            or not 0.0 <= calm < 1.0 or not 0 <= int(steady) <= RERENDER_STEADY_MAX or not 0.0 <= blend_still < 1.0
+            or not 0.0 <= hold_calm < 1.0):
+        raise ValueError('smooth, still and calm must be in [0, 1), colour in [0, 1], level, dip and rise >= 0, '
+                         f'steady 0..{RERENDER_STEADY_MAX}')
+    steady = int(steady)
+    if hue == 'model' and level <= 0 and smooth <= 0 and still <= 0 and calm <= 0 and steady <= 1:
         return fill
     import cv2
     on = weight > 0
@@ -211,6 +252,22 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
         top = cv2.GaussianBlur(top_code, (0, 0), 2.0)
         s = np.clip((top - tau_high) / max(1.0, float(RERENDER_FULL_CODE - tau_high)), 0.0, 1.0)
         s = s * s * (3.0 - 2.0 * s)
+        if blend_still > 0 and state is not None:       # 1.3: the mix settles while its code holds still
+            # Held while `top`, the code s is made from (blurred, and lifted beside something dark), stays within
+            # RERENDER_STILL_TOP of where the hold began: the codec's noise moves it about there and back. A
+            # thin dark object drifting under a pixel a frame (09V's antenna) moves it as little from one frame
+            # to the next, but on and on, so it soon leaves the band and the mix follows again. Holding on the
+            # frame-to-frame change instead (the pixel's own codes, or `top`) left faint copies of the antenna
+            # beside it (24 Nov 2026 replays, tmp/v5_review/09V_*_antenna3x.jpg).
+            ps, ref, pon = state.get('s'), state.get('top_ref'), state.get('on')
+            if ps is not None and ps.shape == s.shape and ref is not None and ref.shape == top.shape and pon is not None:
+                held = (np.abs(top - ref) <= np.float32(RERENDER_STILL_TOP)) & on & pon
+                s = np.where(held, np.float32(blend_still) * ps + np.float32(1.0 - blend_still) * s, s)
+                ref = np.where(held, ref, top)
+            else:
+                ref = top
+            s = s.astype(np.float32)
+            state['s'], state['top_ref'] = s, ref.astype(np.float32)
         floor = np.float32(np.log2(level * white))
         detail = log_y - low
         if dip > 0:
@@ -226,9 +283,9 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
         y_m = np.maximum(master @ LUMA_AP1, 1e-6).astype(np.float32)
         log_m = np.log2(y_m).astype(np.float32)
         whole = whole.astype(np.float32)
-        log_y = ((1.0 - s) * log_m + s * whole).astype(np.float32)
+        log_y = ((1.0 - s) * (np.minimum(log_m, whole) if cap else log_m) + s * whole).astype(np.float32)
         chroma = ((1.0 - s[..., None]) * (master / y_m[..., None]) + s[..., None] * chroma).astype(np.float32)
-    if (smooth > 0 or still > 0 or calm > 0) and state is not None:
+    if (smooth > 0 or still > 0 or calm > 0 or steady > 1) and state is not None:
         # 1.2.8 (QC of v4.3 on 09V, 21 Nov 2026): what is carried from frame to frame is the fill's own
         # log luminance (`whole` with a level), never the master's share of a region-edge pixel. The
         # carried value had (1 - s) of the master in it, so a dark thin object moving along the edge (09V's
@@ -240,6 +297,8 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
         # the model's value there also drew the antenna, so it is carried that much less (the GPU check of
         # 21 Nov 2026 left a faint fan with the first fix alone).
         trust = (s * conf).astype(np.float32) if level > 0 else on.astype(np.float32)
+        if steady > 1:                                  # 1.3: the median of the model's own recent values
+            own = steady_median(own, codes, on, state, steady)
         prev = state.get('log_y')
         if prev is not None and prev.shape == own.shape:
             both = on & state['on']
@@ -257,14 +316,83 @@ def finish_rerender(fill: np.ndarray, master: np.ndarray, source_lin: np.ndarray
                     keep = np.where(held, np.maximum(keep, jump), keep).astype(np.float32)
             pt = state.get('trust')
             if pt is not None and pt.shape == keep.shape:
-                keep = (keep * pt).astype(np.float32)
+                scaled = (keep * pt).astype(np.float32)
+                if hold and calm > 0 and pc is not None and pc.shape == codes.shape:
+                    # 1.3 research (23 Nov 2026, v5b; `hold`, off by default and in the app): a pixel the source
+                    # clips and holds still is held whole, trust or not. v5 redraws Porch's thin LED strip a little
+                    # differently every frame (static clipped p95 0.229 EV, v4.3 0.058) and the strip lies within
+                    # RERENDER_FRINGE_PX of the dark ceiling, where the trust above holds nothing; with the hold
+                    # 0.080. But the sky beside 09V's drifting antenna is clipped and still too: there the hold
+                    # keeps the model's own antennas for frames (v5b: 150-300 px a frame up to 0.87 stops darker
+                    # than v5, 4-23 px from it). Not usable as it is.
+                    clipped = held & (codes.max(-1) >= RERENDER_HOLD_CODE) & (pc.max(-1) >= RERENDER_HOLD_CODE)
+                    mode = hold if isinstance(hold, str) else 'all'
+                    if mode == 'dips':
+                        # only a dip is held: a pixel getting brighter is never held back, so a dark copy the
+                        # model drew cannot stay once it moves on (the v5b ghosts were dark)
+                        clipped &= own < prev
+                    elif mode == 'release':
+                        # held, except where what would be carried is a thin dark line in the last frame (a copy
+                        # of something thin): its grey closing over RERENDER_RELEASE_PX lifts it more than
+                        # RERENDER_RELEASE_STOPS
+                        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (RERENDER_RELEASE_PX, RERENDER_RELEASE_PX))
+                        clipped &= (cv2.morphologyEx(prev, cv2.MORPH_CLOSE, k) - prev) <= RERENDER_RELEASE_STOPS
+                    elif mode == 'thin':
+                        # held only inside a thin clipped shape (a strip light, a tube, a small lamp): where the
+                        # widest point of the clipped area within RERENDER_THIN_REACH_PX is at most RERENDER_THIN_PX
+                        # from its edge. A wide clipped sky (09V's door, beside the drifting antenna) keeps v5's own
+                        # finish, whose trust already holds its interior.
+                        top_c = (codes.max(-1) >= RERENDER_HOLD_CODE).astype(np.uint8)
+                        dt = cv2.distanceTransform(top_c, cv2.DIST_L2, 3)
+                        reach = max(3, int(round(RERENDER_THIN_REACH_PX * px)) | 1)
+                        widest = cv2.dilate(dt, cv2.getStructuringElement(cv2.MORPH_RECT, (2 * reach + 1, 2 * reach + 1)))
+                        clipped &= widest <= np.float32(RERENDER_THIN_PX * px)
+                    elif mode != 'all':
+                        raise ValueError(f'hold must be off, all, dips, release or thin, not {hold!r}')
+                    if hold_calm > 0:                   # 1.3: the held pixels' own share for a jump
+                        jump = np.float32(smooth) + (np.float32(hold_calm) - np.float32(smooth)) * t
+                    scaled = np.where(clipped, np.maximum(scaled, jump), scaled).astype(np.float32)
+                keep = scaled
             own = own.copy()
             own[both] = keep[both] * prev[both] + (1.0 - keep[both]) * own[both]
-            log_y = ((1.0 - s) * log_m + s * own).astype(np.float32) if level > 0 else own
+            log_y = ((1.0 - s) * (np.minimum(log_m, own) if cap else log_m) + s * own).astype(np.float32) if level > 0 else own
         state['log_y'], state['on'], state['codes'], state['trust'] = own, on, codes.copy(), trust
     out = np.array(fill, np.float32, copy=True)
     out[on] = (np.exp2(log_y)[..., None] * chroma)[on]
     return out
+
+
+def steady_median(own: np.ndarray, codes: np.ndarray, on: np.ndarray, state: dict, n: int) -> np.ndarray:
+    """finish_rerender's `steady` (1.3): own (H, W) the fill's own log luminance this frame -> the same, where the
+    source clips (RERENDER_HOLD_CODE) and has held still (2 codes) for all of the last n frames, the median of the
+    n values the fill had there. state['steady_ring'] keeps the last n - 1 frames' own values as they came in
+    (never an output), state['steady_run'] how many frames each pixel has held, state['steady_codes'] last codes."""
+    top = codes.max(-1)
+    pc = state.get('steady_codes')
+    run = state.get('steady_run')
+    if pc is not None and pc.shape == codes.shape:
+        held = ((np.abs(codes.astype(np.int16) - pc.astype(np.int16)).max(-1) <= 2) & (top >= RERENDER_HOLD_CODE)
+                & (pc.max(-1) >= RERENDER_HOLD_CODE))
+    else:
+        held = np.zeros(top.shape, bool)
+    run = np.where(held, (run if run is not None and run.shape == top.shape else np.zeros(top.shape, np.int16)) + 1,
+                   0).astype(np.int16)
+    ring = [r for r in state.get('steady_ring', []) if r.shape == own.shape]
+    state['steady_ring'] = (ring + [own.astype(np.float32, copy=True)])[-(n - 1):] if n > 1 else []
+    state['steady_run'], state['steady_codes'] = run, codes.copy()
+    if not ring:
+        return own
+    if len(ring) < n - 1:
+        return own
+    # Only where the source has held still for the whole window (a partial 2- or 3-frame median keeps a copy
+    # drawn just after something passed). A value is in the output only while the model drew it in most of
+    # the last n frames: a copy drawn in fewer than n // 2 + 1 of them never shows, and every copy is gone
+    # n // 2 frames after the model stops drawing it.
+    sel = (run >= n - 1) & on
+    out = own.copy()
+    if sel.any():
+        out[sel] = np.median(np.stack([f[sel] for f in ring + [own]]), axis=0)
+    return out.astype(own.dtype)
 
 
 def r_safe_blend(master: np.ndarray, fill: np.ndarray, weight: np.ndarray, view,

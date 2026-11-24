@@ -104,6 +104,9 @@ std::vector<fs::path> files_in(const fs::path& dir) {
 QJsonObject choice_json(const DeliverChoice& c) {
     return {{"output", c.output}, {"image", c.image}, {"gamut", c.gamut}, {"encoding", c.encoding}, {"pq_peak", c.pq_peak}, {"bits", c.bits},
             {"codec", c.codec}, {"keep_exr", c.keep_exr}, {"mattes", c.mattes}, {"brackets", c.brackets}, {"fps", c.fps}, {"ai_fill", c.ai_fill},
+            // 1.3 (24 Nov 2026, audit): the Output size and the EXR compression go into the queue file too: before
+            // this a shot queued at 2x or UHD came back at the source's size after a restart.
+            {"size", c.size}, {"exr_compression", c.exr_compression},
             {"ai", QJsonObject{{"tau_high", c.ai.tau_high}, {"tau_low", c.ai.tau_low}, {"seed", c.ai.seed}, {"steps", c.ai.steps}, {"brightness", c.ai.brightness},
                                {"prompt_highlight", c.ai.prompt_highlight}, {"prompt_shadow", c.ai.prompt_shadow},
                                {"prompt_strength", c.ai.prompt_strength}, {"shape_gain", c.ai.shape_gain},
@@ -124,6 +127,8 @@ DeliverChoice choice_from(const QJsonObject& o) {
     c.brackets = o.value("brackets").toBool(false);
     c.fps = o.value("fps").toDouble(c.fps);
     c.ai_fill = o.value("ai_fill").toBool(false);
+    c.size = o.value("size").toString(c.size);                                  // 1.3
+    c.exr_compression = o.value("exr_compression").toString(c.exr_compression);  // 1.3
     const QJsonObject ai = o.value("ai").toObject();
     c.ai.tau_high = ai.value("tau_high").toInt(c.ai.tau_high);
     c.ai.tau_low = ai.value("tau_low").toInt(c.ai.tau_low);

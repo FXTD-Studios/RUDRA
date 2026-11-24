@@ -167,7 +167,8 @@ void SourceCurvePlot::paintEvent(QPaintEvent*) {
 }
 
 void SourcePanel::inspect_source(bool loaded, bool movie, const std::optional<VideoStreamInfo>& stream,
-                                 const std::optional<StillColour>& still) {
+                                 const std::optional<StillColour>& still, const std::optional<SourceWhiteProbe>& whites) {
+    if (compression_) compression_->setVisible(loaded);
     QString text = "Open a source to inspect its color information.";
     if (loaded && !movie) {
         text = "Still / frame sequence: color profile not available for this frame yet.";
@@ -185,8 +186,20 @@ void SourcePanel::inspect_source(bool loaded, bool movie, const std::optional<Vi
             text = QStringLiteral("Reported source: %1 x %2 | %3\nPrimaries: %4 | Transfer: %5\nMatrix: %6 | Range: %7")
                 .arg(stream->width).arg(stream->height).arg(QString::fromStdString(stream->pix_fmt))
                 .arg(tag(stream->color_primaries), tag(stream->color_transfer), tag(stream->color_space), tag(stream->color_range));
-            if (stream->color_range == "tv")
-                text += "\nLimited range: detail above nominal white is currently clipped during decoding. This warning does not mean such detail was detected.";
+            if (stream->color_range == "tv") {
+                // 1.3 (23 Nov 2026): measured on the movie's own codes (probe_source_whites), not only warned.
+                if (whites && whites->measured && whites->present())
+                    text += QStringLiteral("\nLimited range, with detail above white: %1 % of the pixels on %2 sampled frames "
+                                           "(up to code %3; white is %4). It is clipped at decode and Fill clipped highlights "
+                                           "rebuilds it; Reconstruct \u203a Keep super-whites (experimental) keeps it instead.")
+                                .arg(100.0 * whites->above_share(), 0, 'f', whites->above_share() < 1e-3 ? 3 : 2)
+                                .arg(whites->frames).arg(whites->max_code).arg(whites->white_code);
+                else if (whites && whites->measured)
+                    text += QStringLiteral("\nLimited range: no detail above white on %1 sampled frames, so nothing is lost at decode.")
+                                .arg(whites->frames);
+                else
+                    text += "\nLimited range: detail above nominal white is currently clipped during decoding. This warning does not mean such detail was detected.";
+            }
             if (stream->color_transfer == "smpte2084" || stream->color_transfer == "arib-std-b67")
                 text += "\nHDR source detected. This SDR reconstruction workflow is not an HDR passthrough; use an SDR source.";
             text += "\nTags do not identify the original tone mapper. Choose the reconstruction curve below.";
@@ -207,6 +220,27 @@ SourcePanel::SourcePanel(QWidget* parent) : QWidget(parent) {
     inspection_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     v->addWidget(inspection_);
     inspect_source(false, false, {});
+    // 1.3 (24 Nov 2026, Ahmed): JPEG / MP4 block artifacts, checked (and cleaned when there are any) from here,
+    // under what the source reports; the line beside the button says what was found.
+    compression_ = new QWidget(this);
+    compression_->setObjectName("sourceCompression");
+    auto* ch = new QHBoxLayout(compression_);
+    ch->setContentsMargins(0, 0, 0, 0);
+    ch->setSpacing(10);
+    compression_btn_ = new QPushButton(QStringLiteral("Check compression"), compression_);
+    compression_btn_->setObjectName("sourceCheckCompression");
+    compression_btn_->setToolTip(QStringLiteral("Measures JPEG and MP4 block artifacts on 5 frames of the shot. When there are any, "
+                                                "RUDRA cleans them into a lossless copy at the gentlest strength that removes them "
+                                                "and uses that copy as the shot; the original file is not touched"));
+    connect(compression_btn_, &QPushButton::clicked, this, [this] {
+        if (check_compression) check_compression();
+    });
+    compression_line_ = new NoteLabel({}, "sourceCompressionStatus", {}, compression_);
+    compression_line_->setTextFormat(Qt::PlainText);
+    ch->addWidget(compression_btn_, 0, Qt::AlignTop);
+    ch->addWidget(compression_line_, 1);
+    v->addWidget(compression_);
+    compression_->hide();   // with a shot (inspect_source)
     std::vector<std::pair<QString, QString>> buttons;
     for (SourceCurve c : all_source_curves())
         buttons.push_back({QString::fromUtf8(source_curve_id(c).data(), int(source_curve_id(c).size())),
@@ -485,6 +519,21 @@ void SourcePanel::sync(SourceCurve source, const std::vector<CalibrationPoint>& 
     else
         delta_->setText(stops_text(g, source_code_nits(SourceCurve::Aces, 118, corpus_ev)) + " · " +
                         stops_text(w, source_code_nits(SourceCurve::Aces, 235, corpus_ev)) + " stops");
+}
+
+void SourcePanel::set_compression_status(const QString& text, const QString& state, const QString& button) {
+    if (!compression_line_) return;
+    if (compression_line_->text() != text) static_cast<NoteLabel*>(compression_line_)->setText(text);
+    if (compression_line_->property("state").toString() != state) {
+        compression_line_->setProperty("state", state);
+        compression_line_->style()->unpolish(compression_line_);
+        compression_line_->style()->polish(compression_line_);
+    }
+    if (!button.isEmpty()) compression_btn_->setText(button);
+}
+
+void SourcePanel::set_compression_busy(bool busy) {
+    if (compression_btn_) compression_btn_->setEnabled(!busy);
 }
 
 }  // namespace rudra::app

@@ -112,6 +112,24 @@ QWidget#hud QPushButton#changesBtn { background: transparent; border: 0; color: 
 QWidget#hud QPushButton#changesBtn:checked { background: var(--raise-2); color: var(--gold); }
 QWidget#hud QPushButton#inventedBtn { background: transparent; border: 0; color: var(--ink-2); padding: 4px 10px; font-size: 12px; }
 QWidget#hud QPushButton#inventedBtn:checked { background: var(--raise-2); color: var(--violet); }
+/* 24 Nov 2026 (Ahmed, the approved mockup): the AI fill is grey when off and blue when on (the accent: the active
+   control), its text saying which; on at launch where this computer can run it. Overlays and What AI drew sit
+   flat beside it, as Scopes and Guides do, so the one filled button on the bar is the AI fill. */
+QWidget#hud QPushButton#vtAiFill { background: var(--raise); color: var(--ink-2); border: 0; border-radius: var(--radius); padding: 4px 12px; font-size: 12px; font-weight: 500; }
+QWidget#hud QPushButton#vtAiFill:hover { background: var(--raise-2); color: var(--ink); }
+QWidget#hud QPushButton#vtAiFill:checked { background: var(--accent); color: var(--white); font-weight: 600; }
+QWidget#hud QPushButton#vtAiFill:checked:hover { background: var(--accent-line); }
+QWidget#hud QPushButton#vtAiInvented { background: transparent; border: 0; color: var(--ink-2); padding: 4px 10px; font-size: 12px; }
+QWidget#hud QPushButton#vtAiInvented:hover { background: var(--raise-2); color: var(--ink); }
+QWidget#hud QPushButton#vtAiInvented:checked { background: var(--raise-2); color: var(--ink); }
+QWidget#hud QPushButton#vtOverlays { background: transparent; border: 0; color: var(--ink-2); padding: 4px 10px; font-size: 12px; }
+QWidget#hud QPushButton#vtOverlays:hover { background: var(--raise-2); color: var(--ink); }
+QWidget#hud QPushButton#vtOverlays[on="true"] { color: var(--gold); }
+/* 1.3 (24 Nov 2026): the Source card's Check compression line */
+QLabel#sourceCompressionStatus { color: var(--ink-3); font-size: 12px; }
+QLabel#sourceCompressionStatus[state="ok"] { color: var(--ok); }
+QLabel#sourceCompressionStatus[state="warn"] { color: var(--gold); }
+QLabel#sourceCompressionStatus[state="busy"] { color: var(--ink-2); }
 QWidget#compareBar { background: var(--bg); }
 QLabel#compareLine { background: transparent; color: var(--ink-3); font-size: 11px; }
 QLabel#compareLine[state="warn"] { color: var(--gold); }
@@ -326,7 +344,21 @@ QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 
 /* ── sheets, dialogs and tool tips ─────────────────────────────────── */
 QDialog { background: var(--card); }
-QDialog#sheet, QDialog#exportSheet, QDialog#modelManager { background: var(--card); border: 1px solid var(--raise-2); }
+QDialog#exportSheet, QDialog#modelManager { background: var(--card); border: 1px solid var(--raise-2); }
+/* 24 Nov 2026 (Ahmed, the approved mockup): Help > Keyboard, a card over the dimmed window (the welcome tips'
+   card), the shortcuts in groups, each key a keycap. The dialog itself is the dim (main_window.cpp, Sheet). */
+QDialog#sheet { background: transparent; border: 0; }
+QFrame#sheetCard { background: var(--card); border: 1px solid var(--raise-2); border-radius: 14px; }
+QFrame#sheetCard QLabel { background: transparent; }
+QFrame#sheetCard QLabel#sheetTitle { color: var(--ink); font-size: 17px; font-weight: 600; }
+QFrame#sheetCard QLabel#sheetClose { color: var(--ink-3); font-size: 12px; }
+QFrame#sheetCard QLabel[role="sheet-head"] { color: var(--ink-3); font-size: 10px; font-weight: 600; }
+QFrame#sheetCard QLabel[role="kbd-what"] { color: var(--ink); font-size: 13px; }
+QFrame#sheetCard QLabel[role="kbd"] { background: var(--raise); color: var(--ink); border: 1px solid var(--raise-2); border-radius: 6px; padding: 0 7px; font-family: "var(--mono-family)"; font-size: 12px; font-weight: 500; }
+QFrame#sheetCard QLabel[role="kbd-sep"] { color: var(--ink-3); font-size: 12px; }
+QFrame#sheetCard QWidget#sheetRule { background: var(--raise); }
+QFrame#sheetCard QPushButton#sheetCloseBtn { background: var(--raise); color: var(--ink-2); border: 0; border-radius: 14px; padding: 0; font-size: 15px; }
+QFrame#sheetCard QPushButton#sheetCloseBtn:hover { background: var(--raise-2); color: var(--ink); }
 QDialog QLabel { background: transparent; }
 QWidget[role="tile"] { background: var(--panel); border: 2px solid transparent; border-radius: var(--radius-card); }
 QWidget[role="tile"][on="true"] { background: var(--accent-dim); border: 2px solid var(--accent); }
@@ -466,3 +498,27 @@ QDialog#systemCheck QLabel[role="check-dot"][state="fail"] { background: var(--b
 QDialog#systemCheck QWidget[role="card"] { background: var(--card); border-radius: var(--radius-card); }
 QDialog#systemCheck QProgressBar { background: var(--raise); border: 0; border-radius: 2px; }
 QDialog#systemCheck QProgressBar::chunk { background: var(--accent); border-radius: 2px; }
+
+/* The Batch tab (1.3, batch_page.cpp; the approved mockup): one list, one panel, one button. */
+QWidget#batchPage { background: var(--bg); }
+QWidget#batchMain { background: var(--bg); }
+QLabel[role="batch-title"] { font-size: 28px; font-weight: 600; color: var(--ink); }
+QLabel[role="batch-sub"] { font-size: 13px; color: var(--ink-3); }
+QLabel[role="batch-drop"] { color: var(--ink-4); border: 1px dashed var(--line-2); border-radius: 12px; }
+QLabel[role="batch-status"] { font-size: 13px; color: var(--ink-2); }
+QLabel[role="batch-panel-title"] { font-size: 20px; font-weight: 600; color: var(--ink); }
+QLabel[role="batch-panel-status"] { font-size: 13px; font-weight: 600; color: var(--ink); }
+QToolButton#batchAdd { min-width: 32px; min-height: 32px; border-radius: 16px; background: var(--card); color: var(--ink); font-size: 18px; }
+QToolButton#batchAdd::menu-indicator { image: none; width: 0; }
+QTreeWidget#batchList { background: var(--bg); font-size: 13px; }
+QTreeWidget#batchList::item { padding: 6px 4px; border-bottom: 1px solid var(--side); color: var(--ink); }
+QTreeWidget#batchList::item:hover { background: var(--panel-2); }
+QTreeWidget#batchList::item:selected { background: var(--card); color: var(--ink); }
+QWidget#batchPanel, QWidget#batchPanelInner { background: var(--panel); }
+QWidget#batchPanel { border-left: 1px solid var(--line); }
+QLabel#batchPanelThumb { background: var(--scope-bg); border-radius: 10px; }
+QWidget#batchSettings { background: var(--side); border-radius: 12px; }
+QWidget#batchFoot { background: var(--panel); border-top: 1px solid var(--line); }
+QProgressBar#batchProgress { background: var(--card); border: 0; border-radius: 0; }
+QProgressBar#batchProgress::chunk { background: var(--ink); }
+QPushButton#batchStart { min-width: 96px; min-height: 30px; border-radius: 15px; }

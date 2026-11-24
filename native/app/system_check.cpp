@@ -354,6 +354,25 @@ QString genfill_missing_text(const QString& why) {
     return QStringLiteral("AI fill is not set up yet: %1. Help › Check this computer… sets it up in one place.").arg(part);
 }
 
+namespace {
+std::optional<bool> g_aifill_here_for_tests;
+}  // namespace
+
+void set_aifill_here_for_tests(std::optional<bool> runs) { g_aifill_here_for_tests = runs; }
+
+AiFillHere aifill_here() {
+    if (g_aifill_here_for_tests)
+        return {*g_aifill_here_for_tests,
+                *g_aifill_here_for_tests ? QString() : QStringLiteral("This computer cannot run the AI fill.")};
+    const MachineFacts f = read_machine_facts(QString());
+    // A GPU that could not be read is not taken for one that can: the AI fill starts off.
+    if (!f.mac && !f.gpus) return {false, QStringLiteral("RUDRA could not read this computer's GPU.")};
+    if (const QString problem = aifill_machine_problem(f); !problem.isEmpty()) return {false, problem};
+    QString why;
+    if (!genfill_setup(&why)) return {false, genfill_missing_text(why)};
+    return {true, {}};
+}
+
 // ---- The window --------------------------------------------------------------------------------
 
 SystemCheckDialog::SystemCheckDialog(MainWindow* w, bool first_run)

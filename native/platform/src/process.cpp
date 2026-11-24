@@ -63,6 +63,27 @@ std::optional<fs::path> find_executable(const std::string& name) {
 
 namespace {
 
+// The job every child of this program is put in (bind_child_to_this_process). Never closed here: the
+// system closes it when this process ends, and JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE then ends every child.
+HANDLE lifetime_job() {
+    static const HANDLE job = [] {
+        HANDLE j = CreateJobObjectW(nullptr, nullptr);
+        if (!j) return HANDLE(nullptr);
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION info{};
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!SetInformationJobObject(j, JobObjectExtendedLimitInformation, &info, sizeof info)) {
+            CloseHandle(j);
+            return HANDLE(nullptr);
+        }
+        return j;
+    }();
+    return job;
+}
+
+void bind_handle(HANDLE process) {
+    if (HANDLE job = lifetime_job(); job && process) AssignProcessToJobObject(job, process);
+}
+
 std::wstring widen(const std::string& s) {
     if (s.empty()) return {};
     const int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), int(s.size()), nullptr, 0);
@@ -165,6 +186,7 @@ Result<std::unique_ptr<Process>> Process::start_writer(const std::vector<std::st
     auto impl = std::make_unique<Impl>();
     const BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si,
                                    &impl->pi);
+    if (ok) bind_handle(impl->pi.hProcess);
     CloseHandle(rd);
     if (err != INVALID_HANDLE_VALUE) CloseHandle(err);
     if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
@@ -218,6 +240,7 @@ Result<std::unique_ptr<Process>> Process::start(const std::vector<std::string>& 
     auto impl = std::make_unique<Impl>();
     const BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si,
                                    &impl->pi);
+    if (ok) bind_handle(impl->pi.hProcess);
     CloseHandle(wr);
     if (err != INVALID_HANDLE_VALUE) CloseHandle(err);
     if (in != INVALID_HANDLE_VALUE) CloseHandle(in);
@@ -291,6 +314,7 @@ Result<ProcessOutput> run_process(const std::vector<std::string>& argv, rudra::s
     std::wstring cmd = command_line(argv);
     PROCESS_INFORMATION pi{};
     const BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    if (ok) bind_handle(pi.hProcess);
     CloseHandle(owr);
     CloseHandle(ewr);
     if (in != INVALID_HANDLE_VALUE) CloseHandle(in);
@@ -320,7 +344,19 @@ Result<ProcessOutput> run_process(const std::vector<std::string>& argv, rudra::s
     return r;
 }
 
+bool bind_child_to_this_process(std::int64_t pid) {
+    HANDLE job = lifetime_job();
+    if (!job || pid <= 0) return false;
+    HANDLE p = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, FALSE, DWORD(pid));
+    if (!p) return false;
+    const BOOL ok = AssignProcessToJobObject(job, p);
+    CloseHandle(p);
+    return ok != FALSE;
+}
+
 #else  // POSIX
+
+bool bind_child_to_this_process(std::int64_t) { return false; }
 
 namespace {
 

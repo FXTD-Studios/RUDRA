@@ -33,6 +33,13 @@ struct ProcessOutput {
 // Intended for leaf tools such as ffprobe, not shells that spawn descendants.
 Result<ProcessOutput> run_process(const std::vector<std::string>& argv, rudra::stop_token stop = {});
 
+// 1.3 (24 Nov 2026, audit): the child `pid` ends with this program, also when this program crashes or
+// is ended from Task Manager. Windows: a job object that kills its processes when its last handle closes,
+// which the system does when this process ends (the AI fill's Python held about 16 GB of VRAM after a
+// crash). The child's own children join the job with it. False when it cannot be done (no rights, a
+// Windows without nested jobs); elsewhere a no-op that returns false.
+bool bind_child_to_this_process(std::int64_t pid);
+
 // video.executable: shutil.which or "<name> is required on PATH".
 Result<std::filesystem::path> require_executable(const std::string& name);
 // video.run: stdout, or "<program> failed: <last 4000 bytes of stderr>".

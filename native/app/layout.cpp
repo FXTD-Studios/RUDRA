@@ -284,7 +284,11 @@ void MainWindow::build_ui(bool with_viewer) {
         h->addWidget(scopes_dock_);
     }
     h->addWidget(rail_right_);
-    v->addWidget(body, 1);
+    // 1.3: the Batch tab takes the whole body (its own list and panel); the toolbar stays.
+    body_stack_ = new QStackedWidget(app);
+    body_stack_->setObjectName("bodyStack");
+    body_stack_->addWidget(body);
+    v->addWidget(body_stack_, 1);
     setCentralWidget(app);
     menuBar()->setFixedHeight(28);
 }
@@ -309,12 +313,14 @@ QWidget* MainWindow::build_toolbar() {
     h->addWidget(title);
     h->addStretch(1);
     // Check is Simple's (29 Oct 2026): Look, Check, Deliver; Full keeps Reconstruct, Grade, Deliver.
-    tabs_ = new Seg("itabs", {{"rec", "Reconstruct"}, {"grade", "Grade"}, {"check", "Check"}, {"deliver", "Deliver"}}, bar);
+    tabs_ = new Seg("itabs", {{"rec", "Reconstruct"}, {"grade", "Grade"}, {"check", "Check"}, {"deliver", "Deliver"}, {"batch", "Batch"}}, bar);
     tabs_->button("rec")->setObjectName("tabRec");
     tabs_->button("grade")->setObjectName("tabGrade");
     tabs_->button("check")->setObjectName("tabCheck");
     tabs_->button("check")->hide();
     tabs_->button("deliver")->setObjectName("tabDeliver");
+    tabs_->button("batch")->setObjectName("tabBatch");   // 1.3: both queues in one tab (batch_page.hpp)
+    tabs_->button("batch")->setToolTip("Shots waiting to render, and the video exports");
     tabs_->clicked = [this](const QString& k) {
         if (!session_.rail_right) run("rail-right");   // a tab brings its inspector back
         show_tab(k);
@@ -1004,6 +1010,7 @@ QWidget* MainWindow::build_right_rail() {
         source_panel_->cleared = [this] { session_.clear_calibration(); };
         source_panel_->load_reference = [this] { load_reference({}); };
         source_panel_->reference_cleared = [this] { session_.clear_reference(); };
+        source_panel_->check_compression = [this] { clean_compression(); };   // 1.3 (24 Nov 2026)
         scard.second->addWidget(source_panel_);
         scard.first->setObjectName("recSourceCard");
         anv->addWidget(scard.first);
@@ -1217,12 +1224,12 @@ QWidget* MainWindow::build_right_rail() {
             bv->setContentsMargins(14, 0, 0, 4);
             {   // 12 Nov 2026: AI fill v4, region re-render (experimental). First in the list: it replaces v3's controls below
                 // 1.2.6 (18 Nov 2026, user request): a switch between the two, always shown.
-                auto* rr = new Seg("deliverAiVersion", {{"v3", "AI fill v3"}, {"v4", "v4.3 region"}}, box);
+                auto* rr = new Seg("deliverAiVersion", {{"v3", "AI fill v3"}, {"v4", "v5 region"}}, box);
                 rr->setToolTip("AI fill v3 draws only inside pixels that are fully clipped, often a fraction of a per "
-                               "cent of the frame. On, AI fill v4 draws the whole bright region again from the source "
+                               "cent of the frame. The region fill (v5; v4.3 where only it is installed) draws the whole bright region again from the source "
                                "(a window, a door, a sky parked just under white): its detail from the model, its "
                                "colour and level led by the source, steadied over time. The SDR codes inside the "
-                               "region are NOT kept, unlike v3. It uses its own model (the v4.3 LoRA, a download "
+                               "region are NOT kept, unlike v3. It uses its own model (the v5 LoRA, a download "
                                "in File > Model packages) and its own fixed settings: the thresholds, brightness, detail, focus and "
                                "flicker controls here do not apply to it. Tested on the analytic BT.1886 route; "
                                "on the learned route it is untested. v3 = clipped pixels only, as released");
@@ -1230,10 +1237,10 @@ QWidget* MainWindow::build_right_rail() {
                 bv->addWidget(rr);
                 // 1.2.7 (multi-role review of 1.2.6): v4.3 redrew a floor grating and a practical lamp in 09V
                 auto* kd = new CheckRow("deliverAiKeepDetail", "Keep small and thin bright parts", "deliverAiKeepDetailHint",
-                                        "v4.3: gratings, railings, lamps stay the master", box);
-                kd->setToolTip("v4.3 only. Bright parts that are thin or broken up (a floor grating, a railing) or "
+                                        "region: gratings, railings, lamps stay the master", box);
+                kd->setToolTip("The region fill only (v5, v4.3). Bright parts that are thin or broken up (a floor grating, a railing) or "
                                "smaller than 0.05 % of the frame (a practical lamp, a glint) keep the master instead of "
-                               "being redrawn. Off is v4.3 as its checks ran. \"Where it fills\" follows it.");
+                               "being redrawn. Off is the region fill as its checks ran. \"Where it fills\" follows it.");
                 kd->clicked = [this] { set_deliver("ai_keep_detail", deliver_.ai.rerender_keep_detail ? "0" : "1"); };
                 bv->addWidget(kd);
             }
@@ -1680,6 +1687,29 @@ QWidget* MainWindow::build_right_rail() {
         connect(fps, &QComboBox::activated, this,
                 [this, fps](int i) { set_deliver("fps", QString::number(fps->itemData(i).toDouble(), 'g', 12)); });
         field("Frame rate", fps, "deliverFpsRow", "A movie made from stills has no clock of its own: its frame rate");
+        {   // 1.3 (23 Nov 2026): Output size; sync_deliver adds the size each writes for the shot
+            auto* sz = new QComboBox;
+            sz->setObjectName("deliverSize");
+            sz->addItem("Source", "source");
+            sz->addItem("2\u00d7", "2x");
+            sz->addItem("UHD", "uhd");
+            sz->addItem("HD", "hd");
+            connect(sz, &QComboBox::activated, this, [this, sz](int i) { set_deliver("size", sz->itemData(i).toString()); });
+            field("Output size", sz, "deliverSizeRow",
+                  "The size the files are written at: the source's, twice it, UHD (3840 wide) or HD (1920 wide), "
+                  "keeping the picture's shape. A clean resize, never an AI upscale");
+        }
+        {   // 1.3 (24 Nov 2026): EXR compression, lossless; sync_deliver greys it for ACES 2065-1 (ST 2065-4)
+            auto* zc = new QComboBox;
+            zc->setObjectName("deliverExrCompression");
+            zc->addItem("ZIP \u00b7 lossless, smaller", "zip");
+            zc->addItem("ZIPS \u00b7 lossless, one line a block", "zips");
+            zc->addItem("None \u00b7 uncompressed", "none");
+            connect(zc, &QComboBox::activated, this, [this, zc](int i) { set_deliver("exr_compression", zc->itemData(i).toString()); });
+            field("EXR compression", zc, "deliverExrCompressionRow",
+                  "How the EXR masters are stored. ZIP and ZIPS are lossless (every value kept exactly) and about half "
+                  "the size; ZIPS reads a few lines faster. Nuke, Resolve and every OpenEXR reader take all three");
+        }
         auto* keep = new CheckRow("deliverKeepExr", "Keep the EXR masters", "deliverKeepExrHint", "beside the movie", kc);
         keep->setToolTip("Also write the EXR master of every frame: ACEScg float32 with the mask channel, or ACES 2065-1 "
                          "half (ST 2065-4) with the mask in mask/");
@@ -1933,7 +1963,7 @@ QWidget* MainWindow::build_right_rail() {
     auto* batch_add = new QPushButton("Add to batch queue", rendc);
     batch_add->setObjectName("btnBatchAdd");
     batch_add->setToolTip("Queue this shot with these settings, to render with others through the learned ACES 2.0 "
-                          "model (Ctrl+B; Deliver > Batch queue… shows the queue)");
+                          "model (Ctrl+B; the Batch tab shows the queue)");
     connect(batch_add, &QPushButton::clicked, this, [this] { run("batch-add"); });
     form->addWidget(batch_add);
     dv->addWidget(rendc);

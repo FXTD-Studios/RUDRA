@@ -29,6 +29,8 @@ DeliverChoice deliver_fit(DeliverChoice c, bool aces_source, bool shot_movie, bo
         c.bits = 10;
     }
     if (!(c.fps > 0.0 && c.fps <= 240.0)) c.fps = 24.0;
+    if (c.size != "source" && c.size != "2x" && c.size != "uhd" && c.size != "hd") c.size = "source";
+    if (c.exr_compression != "zip" && c.exr_compression != "zips" && c.exr_compression != "none") c.exr_compression = "zip";
     // A movie is made from a movie or a folder of frames, not from one still.
     if (c.output == "movie" && !shot_movie && !shot_folder) c.output = "still";
     c.ai.tau_high = std::clamp(c.ai.tau_high, 128, 256);
@@ -65,6 +67,12 @@ bool ai_fill_possible(const DeliverChoice& c, bool aces_source) {
 }
 
 QJsonObject aces_deliver_fields(const DeliverChoice& c) {
+    QJsonObject o = aces_deliver_format_fields(c);
+    if (c.size != "source") o["output_size"] = c.size;   // 1.3: Output size
+    return o;
+}
+
+QJsonObject aces_deliver_format_fields(const DeliverChoice& c) {
     const QString log = c.encoding == "pq"    ? QStringLiteral("pq%1").arg(c.pq_peak)
                         : c.encoding == "hlg" ? QStringLiteral("hlg1000")
                         : c.encoding == "sdr" ? QStringLiteral("sdr709")
@@ -75,10 +83,12 @@ QJsonObject aces_deliver_fields(const DeliverChoice& c) {
                 {"log_formats", fmt}};
     }
     if (c.image == "dpx10") return {{"exr", "none"}, {"log", log}, {"log_formats", "dpx10"}};
-    // 1.2.6 (readiness report, checklist item 8): the ACEScg master lossless ZIP (deliver/exrZip,
-    // on by default); the ACES 2065-1 container is never compressed.
-    return {{"exr", c.image == "exr16" ? "half" : "float"}, {"exr_gamut", c.gamut},
-            {"exr_zip", c.gamut != "ap0" && QSettings().value("deliver/exrZip", true).toBool()}};
+    // 1.2.6 (readiness report, checklist item 8): the ACEScg master lossless ZIP; 1.3 (24 Nov 2026):
+    // Deliver's EXR compression (ZIP, ZIPS or none). The ACES 2065-1 container is never compressed.
+    const bool zip = c.gamut != "ap0" && c.exr_compression != "none";
+    QJsonObject o{{"exr", c.image == "exr16" ? "half" : "float"}, {"exr_gamut", c.gamut}, {"exr_zip", zip}};
+    if (zip && c.exr_compression == "zips") o["exr_zip_lines"] = 1;
+    return o;
 }
 
 QJsonObject aces_trims_fields(double strength, double saturation, double peak_nits, double exposure_ev, double contrast) {

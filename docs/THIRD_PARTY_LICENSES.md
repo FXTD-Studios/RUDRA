@@ -17,6 +17,7 @@ Drafted 25 Oct 2026 for the ACES v2 release. **Status: draft, to verify against 
 | OpenCV | 4.14.0 | `opencv_world` DLL | Apache-2.0 | Licence and NOTICE |
 | Qt 6 (app only) | 6.8.3 | DLLs, dynamically linked | LGPL-3.0 (or commercial) | LGPL text; users must be able to relink or replace the Qt DLLs; offer the Qt source or say where it is |
 | nlohmann/json | per vcpkg | header-only | MIT | Notice |
+| zlib (ZIP and ZIPS EXR masters) | 1.3.1, SHA-256 pinned (`native/cmake/RudraDeps.cmake`), or the system's / vcpkg's | static inside RUDRA.exe and rudra-native.exe (1.3) | zlib | None required in a binary; listed here as good practice |
 | FFmpeg (ffmpeg.exe, ffprobe.exe) | 8.1.2 gyan.dev "full", SHA-256 pinned | separate programs | **GPL-3.0** | Already handled: `ffmpeg\LICENSE.txt`, `ffmpeg\SOURCE.txt`, NOTICE section. Run as a separate process, never linked |
 
 Not shipped: GoogleTest (tests only, BSD-3), Python and its packages (research tools only).

@@ -603,3 +603,83 @@ TEST_F(FloatDecode, PlaybackSeekMatchesEverySampleAcrossRatesOffsetsAndKeyframeB
             }
         }
 }
+
+// ---- 1.3 (23 Nov 2026): super-whites measured on the movie's own luma codes ----
+TEST(SuperWhites, PlanarDepthsAndTheCounts) {
+    EXPECT_EQ(planar_luma_bits("yuv420p"), 8);
+    EXPECT_EQ(planar_luma_bits("yuv422p10le"), 10);
+    EXPECT_EQ(planar_luma_bits("yuva444p12le"), 12);
+    EXPECT_EQ(planar_luma_bits("yuv444p16le"), 16);
+    for (const char* other : {"yuvj420p", "nv12", "p010le", "uyvy422", "rgb24", "gbrp10le", "yuv420p10be", ""})
+        EXPECT_EQ(planar_luma_bits(other), 0) << other;
+    SourceWhiteProbe s;
+    s.measured = true;
+    const std::vector<std::uint16_t> noise(10000, 236);   // one code over white: noise, not detail
+    add_source_white_samples(s, noise.data(), noise.size());
+    EXPECT_EQ(s.above, 10000u);
+    EXPECT_FALSE(s.present());                            // max 236: under white + 2
+    std::vector<std::uint16_t> detail(10000, 200);
+    detail[0] = 250;                                      // 0.01 % at 250
+    SourceWhiteProbe d;
+    d.measured = true;
+    add_source_white_samples(d, detail.data(), detail.size());
+    EXPECT_TRUE(d.present());
+    EXPECT_EQ(d.max_code, 250);
+    EXPECT_DOUBLE_EQ(d.above_share(), 1e-4);
+}
+
+TEST_F(FloatDecode, SuperWhitesAreReadFromTheMoviesOwnCodes) {
+    auto ffmpeg = find_executable("ffmpeg");
+    if (!ffmpeg || !find_executable("ffprobe")) GTEST_SKIP() << "FFmpeg and ffprobe required";
+    for (int bits : {8, 10}) {
+        for (bool with_detail : {true, false}) {
+            SCOPED_TRACE(std::to_string(bits) + (with_detail ? " with super-whites" : " without"));
+            const int k = 1 << (bits - 8), w = 64, h = 16, frames = 4;
+            const std::string fmt = bits == 8 ? "yuv420p" : "yuv420p10le";
+            std::vector<std::uint16_t> codes;
+            for (int f = 0; f < frames; ++f) {
+                for (int y = 0; y < h; ++y)
+                    for (int x = 0; x < w; ++x)   // a ramp to white; with detail, the top rows go to code 250
+                        codes.push_back(std::uint16_t((with_detail && y < 2 ? 250 : 16 + (219 * x) / (w - 1)) * k));
+                codes.insert(codes.end(), std::size_t(w * h / 2), std::uint16_t(128 * k));   // Cb, Cr (4:2:0)
+            }
+            fs::path raw;
+            const auto stem = std::to_string(bits) + (with_detail ? "-sw" : "-plain");
+            if (bits == 8) {
+                std::vector<std::uint8_t> b(codes.begin(), codes.end());
+                raw = write_bytes(stem + ".yuv", std::as_bytes(std::span(b)));
+            } else raw = write_bytes(stem + ".yuv", std::as_bytes(std::span(codes)));
+            const auto movie = dir / (stem + ".nut");   // NUT holds 10-bit rawvideo; Matroska does not
+            // The codes copied as they are (rawvideo, -c:v copy): an encode let FFmpeg 8 on the studio PC change them
+            // and drop the tags (23 Nov 2026), so the movie no longer held what the test wrote.
+            const auto made = run_process({ffmpeg->string(), "-v", "error", "-nostdin", "-f", "rawvideo", "-pixel_format", fmt,
+                "-video_size", std::to_string(w) + "x" + std::to_string(h), "-framerate", "4", "-color_range", "tv",
+                "-i", raw.string(), "-c:v", "copy", "-color_range", "tv",
+                "-colorspace", "bt709", "-color_trc", "bt709", "-color_primaries", "bt709", movie.string()});
+            ASSERT_TRUE(made);
+            ASSERT_EQ(made->exit_code, 0) << made->err;
+            VideoArgs va;
+            va.input_transfer = "rec709";   // whatever the container kept of the tags
+            va.input_primaries = "rec709";   // NUT keeps no colour tags
+            va.input_matrix = "bt709";
+            va.input_range = "limited";
+            auto source = open_video_source(movie, va);
+            ASSERT_TRUE(source) << source.error().message;
+            auto s = probe_source_whites(movie, source->stream, frames, 4.0, 3);
+            ASSERT_TRUE(s) << s.error().message;
+            EXPECT_TRUE(s->measured);
+            EXPECT_EQ(s->bits, bits);
+            EXPECT_EQ(s->frames, 3);
+            EXPECT_EQ(s->present(), with_detail);
+            EXPECT_EQ(s->max_code, (with_detail ? 250 : 235) * k);   // the codes as stored: nothing converted
+            if (with_detail) EXPECT_NEAR(s->above_share(), 2.0 / h, 1e-9);
+            else EXPECT_EQ(s->above, 0u);
+        }
+    }
+    // A full-range movie is not measured: its codes have no room above white.
+    VideoStreamInfo full;
+    full.width = 4, full.height = 4, full.pix_fmt = "yuvj420p", full.color_range = "pc";
+    auto none = probe_source_whites(dir / "missing.mkv", full, 4, 4.0);
+    ASSERT_TRUE(none);
+    EXPECT_FALSE(none->measured);
+}

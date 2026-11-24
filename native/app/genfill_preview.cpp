@@ -1,4 +1,5 @@
 #include "genfill_preview.hpp"
+#include "child_process.hpp"
 #include "genfill_swap.hpp"
 
 #include <QCoreApplication>
@@ -31,6 +32,7 @@
 #include "main_window.hpp"
 #include "paths.hpp"
 #include "system_check.hpp"   // genfill_missing_text (1.2.5)
+#include "rudra/core/baseline.hpp"
 #include "rudra/core/gamut.hpp"
 #include "rudra/deliver/exr.hpp"
 #ifdef RUDRA_APP_VIEWER
@@ -103,6 +105,7 @@ bool GenFillServer::ensure(const GenFillSetup& s, QString* why) {
     QStringList args{"-m", "rudra.genfill.run", "--serve", "--json", "--base", from_path(s.base), "--lora", from_path(s.lora)};
     // v4, region re-render: the settings a request cannot carry, as it was tested (12 Nov 2026).
     if (s.rerender) args << "--feather" << "8" << "--brightness-model" << "none";
+    end_with_rudra(p);   // 1.3: the preview's model ends with RUDRA, crash or not
     p->start(from_path(s.python), args);
     if (!p->waitForStarted(10000)) {
         if (why) *why = QStringLiteral("AI fill preview: %1 did not start (%2).").arg(from_path(s.python), p->errorString());
@@ -267,12 +270,15 @@ QString ai_fill_frame_text(const AiFillRegion& r, int tau_high, bool v4) {
     if (v4) {   // 1.2.6: v4.3 redraws its region, the codes inside it not kept
         // 1.2.7: what it really redraws; codes >= 240 it leaves to the master (saturated, or kept detail) said too
         const double kept = std::max(0.0, r.seen_pct - r.filled_pct);
+        const QString name = genfill_region_name();   // 1.3: v5, or v4.3 where only it is installed
         if (r.empty())
-            return r.seen_pct < 0.05 ? QStringLiteral("This frame: nothing for v4.3 to redraw (nothing at code %1 or above).").arg(tau_high)
-                                     : QStringLiteral("This frame: nothing for v4.3 to redraw. Its bright area (%1 %) is saturated "
+            return r.seen_pct < 0.05 ? QStringLiteral("This frame: nothing for %1 to redraw (nothing at code %2 or above).").arg(name).arg(tau_high)
+                                     : QStringLiteral("This frame: nothing for %1 to redraw. Its bright area (%2 %) is saturated "
                                                       "colour, which stays the master.")
+                                           .arg(name)
                                            .arg(r.seen_pct, 0, 'f', 1);
-        QString t = QStringLiteral("This frame: v4.3 redraws %1 % (codes %2 and up)")
+        QString t = QStringLiteral("This frame: %1 redraws %2 % (codes %3 and up)")
+                        .arg(name)
                         .arg(r.filled_pct, 0, 'f', r.filled_pct < 1.0 ? 2 : 1)
                         .arg(tau_high);
         if (kept >= 0.05) t += QStringLiteral(" \u00b7 %1 % stays the master").arg(kept, 0, 'f', 1);
@@ -290,7 +296,7 @@ QString ai_fill_frame_text(const AiFillRegion& r, int tau_high, bool v4) {
 
 QString ai_fill_frame_tip(const AiFillRegion& r, int tau_high, bool v4) {
     if (v4)
-        return QStringLiteral("AI fill v4.3 region (experimental) draws the near-white pixels at code %1 or above again "
+        return QStringLiteral("AI fill region (experimental; v5, or v4.3 where only it is installed) draws the near-white pixels at code %1 or above again "
                               "from the source: its detail from the model, its colour and level led by the source. Unlike v3 "
                               "the SDR codes there are not kept. A saturated highlight (a sunset, a flame) stays the master, "
                               "and so, with Keep detail, do thin and small bright parts. \"Where it fills\" shows what is "
@@ -489,8 +495,9 @@ void MainWindow::preview_genfill() {
     if (auto* btn = findChild<QPushButton*>("deliverAiPreview")) btn->setText(QStringLiteral("Stop preview"));
     const int frames = b - a + 1;
     // Which fill this is, in the log and the status (12 Nov 2026: v3 or v4 could not be told apart).
-    log(c.ai.rerender ? QStringLiteral("AI fill preview: v4, region re-render (LoRA %1, condition %2)")
-                            .arg(from_path(setup->lora), learned ? QStringLiteral("aces") : QStringLiteral("bt1886"))
+    log(c.ai.rerender ? QStringLiteral("AI fill preview: %1, region re-render (LoRA %2, condition %3)")
+                            .arg(setup->v5 ? QStringLiteral("v5") : QStringLiteral("v4.3"), from_path(setup->lora),
+                                 learned ? QStringLiteral("aces") : QStringLiteral("bt1886"))
                       : QStringLiteral("AI fill preview: v3, clipped pixels only (LoRA %1)").arg(from_path(setup->lora)));
     // 12 Nov 2026: the prompt in the log too (an empty box looked filled: its grey example text)
     log(c.ai.prompt_highlight.trimmed().isEmpty()
@@ -578,6 +585,14 @@ void MainWindow::preview_genfill() {
                 fill.insert("rerender_independent", true);
                 fill.insert("rerender_calm", 0.9);
                 fill.insert("rerender_full_last", true);   // 1.2.9, as genfill_arguments
+                // 1.3: v5's finish, as genfill_arguments; "" sent with v4.3 so the warm server drops an earlier v5 request's
+                fill.insert("rerender_hold_clipped", setup.v5 ? QString::fromLatin1(kGenFillV5Hold) : QString());
+                // 1.3 (24 Nov 2026): the v5e finish, as genfill_arguments; 0 / false with v4.3 so the warm server
+                // drops an earlier v5 request's
+                fill.insert("rerender_blend_still", setup.v5 ? QString::fromLatin1(kGenFillV5BlendStill).toDouble() : 0.0);
+                fill.insert("rerender_hold_calm", setup.v5 ? QString::fromLatin1(kGenFillV5HoldCalm).toDouble() : 0.0);
+                fill.insert("rerender_cap_master", setup.v5 && rr_condition == QLatin1String("aces"));
+                fill.insert("mask_first_frame", setup.v5 && rr_condition == QLatin1String("aces"));
                 if (options.rerender_keep_detail) fill.insert("rerender_keep_detail", true);   // 1.2.7
                 fill.insert("brightness_offset", 0.0);
                 fill.insert("shape_gain", 1.0);
@@ -765,10 +780,8 @@ void MainWindow::start_analytic_preview_master(const QString& mdir, int a, int b
 void MainWindow::frame_genfill_preview() {
     if (!genfill_preview_ || !QSettings().value("genfill/previewFrames", true).toBool()) return;
     QStringList did;
-    if (session_.wipe) {   // the SDR side of the wipe shows the source, not the fill
-        session_.toggle_wipe();
-        did << QStringLiteral("wipe off (W)");
-    }
+    // 1.3 (24 Nov 2026): the wipe stays; the fill is on its RUDRA side, the SDR side shows the source
+    if (session_.wipe) did << QStringLiteral("the fill is on the RUDRA side of the wipe (drag it to see more)");
     // Only from 0 EV: a view exposure the user set stays theirs. The f/stop button (Alt+E) goes back to 0.
     if (session_.view_ev == 0.0 && genfill_preview_->changed > 0.0) {
         session_.set_view_ev(-2.0);
@@ -803,16 +816,17 @@ void MainWindow::show_genfill_preview(const QString& which) {
     genfill_preview_show_ = which;
     const auto& p = *genfill_preview_;
     if (which == "fill") {
-        // The AI fill: the viewer's AI fill switch on, so it stays on this frame and the
-        // previewed ones around it whatever the route renders next (6 Nov 2026).
+        // The AI fill: on (24 Nov 2026: the viewer's AI fill button is AI generation itself), so it stays on this
+        // frame and the previewed ones around it whatever the route renders next (6 Nov 2026).
         genfill_preview_pinned_ = false;
-        if (auto* t = findChild<QPushButton*>("vtAiFill"); t && !t->isChecked()) t->setChecked(true);   // -> set_fill_view
-        else set_fill_view(true);
+        if (!ai_generation_) set_deliver("ai_generation", "1");   // the button turns blue and shows the fill
+        set_fill_view(true);
     } else {
         genfill_preview_pinned_ = true;
         if (!away) apply_fill_view();
     }
     if (auto* b = findChild<QPushButton*>("deliverAiShowMask")) b->setChecked(which == "mask");
+    sync_ai_generation();   // 1.3: the viewer's What AI drew follows
     statusBar()->showMessage(which == "master" ? QStringLiteral("Viewer: the master (no AI fill), frame %1").arg(p.index + 1)
                              : which == "mask" ? QStringLiteral("Viewer: the pixels the AI fill invented (white), frame %1").arg(p.index + 1)
                                                : QStringLiteral("Viewer: the AI fill preview, frame %1").arg(p.index + 1),
@@ -877,13 +891,29 @@ std::shared_ptr<const NetworkLinearImage> MainWindow::fill_view_frame(int index)
 bool MainWindow::apply_fill_view(bool quiet) {
 #ifdef RUDRA_APP_VIEWER
     // The base the Changes layer compares with: the plain ACES inverse when it is this size.
+    // 1.3 (24 Nov 2026, Ahmed: "AI fill only on the RUDRA side"): the SDR side of the viewer (the wipe's left, Hold B,
+    // the Original SDR view) is always the frame as it came in, never the fill: the learned route's own SDR and
+    // plain inverse, or the analytic frame's SDR and baseline. The analytic route had neither here, so its
+    // baseline was the fill itself and its SDR side showed the fill.
     auto show = [this](const NetworkLinearImage& img, const NetworkLinearImage& fallback_base) {
         if (!viewer_) return;
-        const bool base_ok = aces_base_img_ && aces_base_img_->width() == img.width() && aces_base_img_->height() == img.height();
+        const auto fits = [&img](int w, int h) { return w == img.width() && h == img.height(); };
+        const bool base_ok = aces_base_img_ && fits(aces_base_img_->width(), aces_base_img_->height());
+        const bool sdr_ok = aces_sdr_img_ && fits(aces_sdr_img_->width(), aces_sdr_img_->height());
+        const auto* cur = (current_frame_ && current_frame_->index == current_ &&
+                           fits(current_frame_->sdr.width(), current_frame_->sdr.height()))
+                              ? current_frame_.get()
+                              : nullptr;
+        std::shared_ptr<const NetworkLinearImage> own_base;
+        if (!base_ok && cur)
+            own_base = (cur->baseline && fits(cur->baseline->width(), cur->baseline->height()))
+                           ? cur->baseline
+                           : std::make_shared<const NetworkLinearImage>(analytic_baseline(cur->sdr, cur->model.corpus_ev));
         const bool codes_ok = aces_codes_.size() == std::size_t(img.width()) * std::size_t(img.height());
-        viewer_->set_composited(img, base_ok ? *aces_base_img_ : fallback_base, codes_ok ? aces_codes_ : std::vector<float>{});
-        if (aces_sdr_img_ && aces_sdr_img_->width() == img.width() && aces_sdr_img_->height() == img.height())
-            viewer_->set_source_sdr(*aces_sdr_img_);
+        viewer_->set_composited(img, base_ok ? *aces_base_img_ : own_base ? *own_base : fallback_base,
+                                codes_ok ? aces_codes_ : std::vector<float>{});
+        if (sdr_ok) viewer_->set_source_sdr(*aces_sdr_img_);
+        else if (cur) viewer_->set_source_sdr(cur->sdr);
     };
 #endif
     if (frames_.empty()) return false;
@@ -939,20 +969,23 @@ void MainWindow::set_fill_view(bool on) {
     sync_ai_generation();
     if (auto* m = findChild<QPushButton*>("deliverAiShowMask")) m->setChecked(false);   // the button's picture replaces it
     if (on) {
-        // 21 Nov 2026 (user report, testwindow.mp4: "we cannot see it in the viewport"): the fill is drawn
-        // on RUDRA's side only. With the start's SDR | RUDRA wipe, a fill on the left of the frame was
-        // under the SDR, and with Baseline shown it was nowhere. The whole picture is the fill's now; the
-        // wipe comes back when the button goes off.
+        // The fill is drawn on RUDRA's side only. 21 Nov 2026 (testwindow.mp4: "we cannot see it in the
+        // viewport") the button took the start's SDR | RUDRA wipe off, since a fill on the left of the frame
+        // was under the SDR. 1.3 (24 Nov 2026, Ahmed): the wipe stays where it is, its SDR side shows the
+        // source, and one side is RUDRA; without a wipe RUDRA is shown, as before.
         QStringList did;
         if (session_.wipe) {
-            fill_view_hid_wipe_ = session_.wipe;
-            session_.toggle_wipe();
-            did << QStringLiteral("wipe off until AI fill is off");
-        }
-        if (session_.show != "model") {
+            if (session_.wipe_left != "model" && session_.wipe_right != "model") {
+                const std::string left = session_.wipe_left;   // a copy: set_wipe_sources writes wipe_left
+                session_.set_wipe_sources(left, "model");
+                did << QStringLiteral("RUDRA on the wipe's right");
+            }
+            did << QStringLiteral("the fill is on the RUDRA side of the wipe (drag it to see more)");
+        } else if (session_.show != "model") {
             session_.set_show("model");
             did << QStringLiteral("RUDRA shown");
         }
+        did << tone_map_for_fill();   // 1.3: on an SDR screen, a view that shows a fill above white
         genfill_preview_pinned_ = false;
         if (!apply_fill_view()) return;
         statusBar()->showMessage(QStringLiteral("Viewer: the AI fill (Changes shows what it invented)") +
@@ -960,8 +993,7 @@ void MainWindow::set_fill_view(bool on) {
                                  6000);
     } else {
         genfill_preview_pinned_ = false;
-        if (fill_view_hid_wipe_ && !session_.wipe) session_.set_wipe(*fill_view_hid_wipe_);   // the comparison as it was
-        fill_view_hid_wipe_.reset();
+        untone_map_for_fill();
         if (!frames_.empty()) step_to(current_);   // back to the frame without the fill, on whichever route
     }
 }
