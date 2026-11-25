@@ -275,6 +275,31 @@ def test_spike_fallback_writes_the_masters_frame_and_keeps_onset_and_end(tmp_pat
             assert np.array_equal(a['channels'][c], b['channels'][c])
 
 
+def test_region_fallback_through_the_whole_run(tmp_path, monkeypatch):
+    """1.3.1: fallback='regions' runs end to end; with every region a jump it is 'spikes' (every region back)."""
+    import rudra.genfill.run as R
+    from genfill_tiny import tiny_fill
+    from rudra.aces_view import ACES2View
+    master = tmp_path / 'master'
+    write_master(master, n=5)
+    monkeypatch.setattr(R, 'TEMPORAL_FLAG', -1.0)
+    out = tmp_path / 'filled'
+    rep = fill_master(master, out, tiny_fill(), ACES2View(), FillSettings(steps=2, seed=1), MaskSettings(dilate=2),
+                      window=5, overlap=2, max_area=48 * 64, fallback='regions')
+    frames = rep['frames']
+    assert rep['fallback'] == 'regions'
+    assert frames[0]['fell_back'] is None and frames[-1]['fell_back'] is None
+    middle = [f for f in frames[1:-1] if f['temporal_excess_stops'] is not None and f['regions']]
+    assert middle and all(f['fell_back'] == 'flicker' and f['regions_fell_back'] == f['regions'] for f in middle)
+    assert rep['stats']['fallback_frames'] == len(middle)       # every region back: counted as whole frames
+    assert rep['stats']['region_fallback_frames'] == 0 and rep['stats']['fallback_regions'] == 0
+    for f in middle:
+        a, b = read_frame(master / f['name']), read_frame(out / f['name'])
+        assert not (b['channels']['rudra.generated'] > 0).any()
+        for c in 'RGB':
+            assert np.array_equal(a['channels'][c], b['channels'][c])
+
+
 def test_no_fallback_is_v3(tmp_path):
     from genfill_tiny import tiny_fill
     from rudra.aces_view import ACES2View

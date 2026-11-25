@@ -1372,11 +1372,13 @@ QWidget* MainWindow::build_right_rail() {
                 bv->addWidget(fo);
             }
             {   // RUDRA 1.1 priority 5: the fallback when the fill flickers
-                auto* fb = new CheckRow("deliverAiFallback", "Drop flickering fill frames", "deliverAiFallbackHint",
+                auto* fb = new CheckRow("deliverAiFallback", "Drop flickering fill", "deliverAiFallbackHint",
                                         "keep the master there", box);
-                fb->setToolTip("A frame whose fill jumps by more than a quarter stop into it AND out of it (a "
-                               "one-frame flicker) is written as the master's own frame. A fill that starts or ends "
-                               "is kept. Every dropped frame is listed in genfill.json (fell_back)");
+                fb->setToolTip("A fill region (a lamp, an arc, a window) whose fill jumps by more than a quarter stop "
+                               "into a frame AND out of it (a one-frame flicker) is written as the master's own pixels "
+                               "in that frame; the frame's other regions keep their fill (1.3.1; before, the whole "
+                               "frame was dropped). A fill that starts or ends is kept. Every dropped region is counted "
+                               "in genfill.json (regions_fell_back) and the QC report");
                 fb->clicked = [this] { set_deliver("ai_fallback", deliver_.ai.fallback ? "0" : "1"); };
                 bv->addWidget(fb);
             }

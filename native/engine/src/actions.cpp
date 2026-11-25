@@ -81,6 +81,7 @@ const std::vector<ActionSpec> kActions = {
     {"source-bt1886", "Source: BT.1886 (display, the default)", "", "source:bt1886", O::Native, E::Always, ""},
     // 14 Oct 2026, opt-in: BT.1886 with the measured real-SDR blacks below code 40.
     {"source-bt1886_shadows", "Source: BT.1886, real-SDR shadows", "", "source:bt1886_shadows", O::Native, E::Always, ""},
+    {"source-bt1886_shoulder", "Source: BT.1886, highlight shoulder", "", "source:bt1886_shoulder", O::Native, E::Always, ""},
     // 13 Oct 2026: the master exposure, in thirds of a stop.
     {"exposure-down", "Exposure: down a third of a stop", "", "", O::Native, E::Always, "Ctrl+Shift+Down"},
     {"exposure-up", "Exposure: up a third of a stop", "", "", O::Native, E::Always, "Ctrl+Shift+Up"},
@@ -89,7 +90,7 @@ const std::vector<ActionSpec> kActions = {
     {"source-hable", "Source: filmic (Hable)", "", "source:hable", O::Native, E::Always, ""},
     {"source-agx", "Source: AgX", "", "source:agx", O::Native, E::Always, ""},
     {"source-camera_log", "Source: camera log", "", "source:camera_log", O::Native, E::Always, ""},
-    {"source-clip", "Source: Rec.709, plain clip", "", "source:clip", O::Native, E::Always, ""},
+    {"source-clip", "Source: sRGB, plain clip", "", "source:clip", O::Native, E::Always, ""},
     // Projects (engine/project.hpp): the shot, the model and the grade in a
     // .rudra file; the app autosaves the session and can reopen it.
     // The reconstruction (the 10 Oct review): the analytic inverse by default,
@@ -155,7 +156,7 @@ const std::vector<MenuSpec> kMenus = {
      {"first", "prev", "next", "last", "-", "play", "-", ">While playing", "playback-side-0", "playback-side-960",
       "playback-side-640", "-", "playback-realtime", "<", "steady-shots"}},
     {"Reconstruct",
-     {"use-model", "-", "clip-fill", "clip-peak", "clip-peaks-clear", "keep-super-whites", "clean-compression", "-", ">Source", "source-bt1886", "source-bt1886_shadows", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
+     {"use-model", "-", "clip-fill", "clip-peak", "clip-peaks-clear", "keep-super-whites", "clean-compression", "-", ">Source", "source-bt1886", "source-bt1886_shadows", "source-bt1886_shoulder", "source-unknown", "source-aces", "source-hable", "source-agx", "source-camera_log", "source-clip", "<", "-",
       "exposure-down", "exposure-up", "exposure-reset", "-", "mode-all", "mode-highlights", "mode-shadows", "mode-off", "-", "preserve", "-", "strength-down", "strength-up"}},
     {"Measure", {"copy-metrics", "copy-scopes", "-", "remeasure"}},
     {"Deliver", {"master", "aces-master", "-", "batch-add", "batch-queue", "-", "container-aces", "container-linear", "-", "copy-delivery"}},

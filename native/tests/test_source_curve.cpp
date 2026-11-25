@@ -37,12 +37,14 @@ constexpr Pin kPins[] = {
 TEST(SourceCurve, IdsRoundTrip) {
     for (SourceCurve c : all_source_curves()) EXPECT_EQ(parse_source_curve(source_curve_id(c)), c);
     EXPECT_FALSE(parse_source_curve("narkowicz"));
-    EXPECT_EQ(all_source_curves().size(), 8u);
+    EXPECT_EQ(all_source_curves().size(), 9u);
     EXPECT_EQ(source_curve_id(SourceCurve::Bt1886), "bt1886");
     EXPECT_EQ(source_curve_id(SourceCurve::Bt1886Shadows), "bt1886_shadows");
     // Appended last: every stored enum value keeps its meaning.
     EXPECT_EQ(int(SourceCurve::Bt1886), 6);
     EXPECT_EQ(int(SourceCurve::Bt1886Shadows), 7);
+    EXPECT_EQ(int(SourceCurve::Bt1886Shoulder), 8);   // appended: stored indices keep their meaning
+    EXPECT_EQ(source_curve_id(SourceCurve::Bt1886Shoulder), "bt1886_shoulder");
 }
 
 // 14 Oct 2026: BT.1886 shadows is BT.1886 from code 40 up, brighter below it,
@@ -326,4 +328,23 @@ TEST(SourceCurve, Bt1886ReadsOwnCodesAsTheVideoCodesTheyAre) {
     s.set_own_codes(true);
     EXPECT_TRUE(s.own_codes());
     EXPECT_TRUE(s.composite_params().own_codes);
+}
+
+// 1.3.1 (25 Nov 2026): BT.1886 shoulder is BT.1886 up to code 165, then rises by 2 t^3 stops, +2 at white;
+// smooth at the knee, rising at every code, and read as video codes like BT.1886.
+TEST(SourceCurve, Bt1886ShoulderRollsTheHighlightsBackOut) {
+    const auto at = [](SourceCurve c, int code) { return source_curve_inverse(c, srgb_to_linear(float(code) / 255.0f)); };
+    const auto own = source_curve_params(SourceCurve::Bt1886Shoulder, true);
+    const auto plain = source_curve_params(SourceCurve::Bt1886, true);
+    for (int code = 2; code <= 165; ++code) EXPECT_NEAR(own[1 + std::size_t(code)], plain[1 + std::size_t(code)], 1e-5f) << code;
+    for (int code = 166; code < 255; ++code) {
+        const float t = (float(code) / 255.0f - 165.0f / 255.0f) / (90.0f / 255.0f);
+        EXPECT_NEAR(own[1 + std::size_t(code)] - plain[1 + std::size_t(code)], 2.0f * t * t * t, 2e-3f) << code;
+        EXPECT_GT(own[1 + std::size_t(code)] + std::log2(inverse_aces_approx(srgb_to_linear(float(code) / 255.0f))),
+                  own[std::size_t(code)] + std::log2(inverse_aces_approx(srgb_to_linear(float(code - 1) / 255.0f))))
+            << code;
+    }
+    EXPECT_GT(at(SourceCurve::Bt1886Shoulder, 230), at(SourceCurve::Bt1886, 230));
+    EXPECT_TRUE(reads_video_codes(SourceCurve::Bt1886Shoulder));
+    EXPECT_EQ(parse_source_curve("bt1886_shoulder"), SourceCurve::Bt1886Shoulder);
 }

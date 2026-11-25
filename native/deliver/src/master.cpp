@@ -305,8 +305,10 @@ Result<GradedMaster> grade_master(const SdrImage& sdr, const Fields& fields, con
     // The grade goes LAST (core/master.cpp render_master_pixels, ui/server.py
     // since 9 Oct 2026): before the anchor, the anchor divided it back out.
     // The anchor follows the Source picker, its calibration and reference (13 Oct 2026).
-    if (q.anchor) anchor_to_sdr(g.nits, sdr, q.anchor_knee, kAnchorSoftness, settle_hold, anchor_target_knots(cp));
-    if (q.carry_chroma) carry_source_chroma(g.nits, sdr, q.chroma_knee);
+    // The colour carry reads the SDR through the same curve (1.3.1, 25 Nov 2026).
+    const std::vector<float> target_knots = anchor_target_knots(cp);
+    if (q.anchor) anchor_to_sdr(g.nits, sdr, q.anchor_knee, kAnchorSoftness, settle_hold, target_knots);
+    if (q.carry_chroma) carry_source_chroma(g.nits, sdr, q.chroma_knee, kChromaSoftness, kChromaMaskSigma, target_knots);
     if (q.settle_grain) settle_highlight_grain(g.nits, sdr, q.anchor_knee);
     apply_region_ev(g.nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0, cp.masks.get(), q.exposure_ev);
     g.params = std::move(cp);

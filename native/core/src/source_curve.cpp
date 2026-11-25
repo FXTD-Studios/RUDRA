@@ -11,9 +11,9 @@ namespace {
 
 // The picker's order: BT.1886, the app's default since 13 Oct 2026, beside
 // Unknown; its measured-shadows variant (opt-in) right after it.
-constexpr std::array<SourceCurve, 8> kAll = {SourceCurve::Unknown,   SourceCurve::Bt1886, SourceCurve::Bt1886Shadows,
-                                             SourceCurve::Aces,      SourceCurve::Hable,  SourceCurve::Agx,
-                                             SourceCurve::CameraLog, SourceCurve::Clip};
+constexpr std::array<SourceCurve, 9> kAll = {SourceCurve::Unknown,   SourceCurve::Bt1886, SourceCurve::Bt1886Shadows,
+                                             SourceCurve::Bt1886Shoulder, SourceCurve::Aces, SourceCurve::Hable,
+                                             SourceCurve::Agx,       SourceCurve::CameraLog, SourceCurve::Clip};
 
 // pipeline/sdr_render.py, float32 as numpy runs it; the constants are its.
 float forward_aces(float x) noexcept {
@@ -57,6 +57,28 @@ float bt709_oetf(float x) noexcept { return x < 0.018f ? 4.5f * x : 1.099f * std
 float bt709_inverse_oetf(float v) noexcept { return v < 0.081f ? v / 4.5f : std::pow((v + 0.099f) / 1.099f, 1.0f / 0.45f); }
 float forward_bt1886(float x) noexcept { return bt709_inverse_oetf(std::pow(std::clamp(x, 0.0f, 1.0f), 1.0f / 2.4f)); }
 float inverse_bt1886(float display) noexcept { return std::pow(bt709_oetf(std::clamp(display, 0.0f, 0.995f)), 2.4f); }
+
+// BT.1886 shoulder (1.3.1, source_curve.hpp): BT.1886 times 2^(kShoulderStops t^3) above the knee code, the
+// code being the video's (bt709_oetf of the display light, as inverse_bt1886 reads it).
+float shoulder_log2(float code) noexcept {
+    const float t = std::clamp((code - kShoulderKneeCode) / (1.0f - kShoulderKneeCode), 0.0f, 1.0f);
+    return kShoulderStops * t * t * t;
+}
+float inverse_bt1886_shoulder(float display) noexcept {
+    const float code = bt709_oetf(std::clamp(display, 0.0f, 0.995f));
+    return std::pow(code, 2.4f) * std::exp2(shoulder_log2(code));
+}
+float forward_bt1886_shoulder(float x) noexcept {
+    // code^2.4 x 2^shoulder(code) rises with the code: bisect for the code, then the display light it decodes to.
+    if (x <= 0.0f) return 0.0f;
+    if (x >= std::exp2(kShoulderStops)) return 1.0f;
+    float lo = 0.0f, hi = 1.0f;
+    for (int k = 0; k < 40; ++k) {
+        const float mid = 0.5f * (lo + hi);
+        (std::pow(mid, 2.4f) * std::exp2(shoulder_log2(mid)) < x ? lo : hi) = mid;
+    }
+    return bt709_inverse_oetf(0.5f * (lo + hi));
+}
 
 // BT.1886 shadows (14 Oct 2026). log2 scene-linear (diffuse white 1.0 = 203
 // nits) at SDR codes 1..39: the median target of the training titles (Cosmos
@@ -154,7 +176,7 @@ const InverseTable& table(SourceCurve c) {
 
 std::vector<float> build_params(SourceCurve c, bool own_codes = false) {
     std::vector<float> p(1 + kSourceCurveKnots, 0.0f);
-    const bool video_codes = own_codes && (c == SourceCurve::Bt1886 || c == SourceCurve::Bt1886Shadows);
+    const bool video_codes = own_codes && reads_video_codes(c);
     for (int code = 0; code < kSourceCurveKnots; ++code) {
         const float display = srgb_to_linear(static_cast<float>(code) / 255.0f);
         // 24 Nov 2026: an own code read as the BT.709 video code it is (the light the video path's canonicalize_sdr
@@ -181,6 +203,7 @@ std::string_view source_curve_id(SourceCurve c) noexcept {
         case SourceCurve::Clip: return "clip";
         case SourceCurve::Bt1886: return "bt1886";
         case SourceCurve::Bt1886Shadows: return "bt1886_shadows";
+        case SourceCurve::Bt1886Shoulder: return "bt1886_shoulder";
         default: return "unknown";
     }
 }
@@ -199,9 +222,13 @@ std::string_view source_curve_label(SourceCurve c) noexcept {
         case SourceCurve::Hable: return "Filmic";
         case SourceCurve::Agx: return "AgX";
         case SourceCurve::CameraLog: return "Camera log";
-        case SourceCurve::Clip: return "Rec.709";
+        // 1.3.1 (25 Nov 2026): "sRGB", was "Rec.709". Its inverse is the display light itself, so on a shot's own
+        // codes it is the sRGB reading exactly (and its anchor target too): the Source to choose when the SDR is
+        // read as sRGB, as Nuke's sRGB Encoded Rec.709 reads it. The id stays "clip" for saved projects.
+        case SourceCurve::Clip: return "sRGB";
         case SourceCurve::Bt1886: return "BT.1886";
         case SourceCurve::Bt1886Shadows: return "BT.1886 shadows";
+        case SourceCurve::Bt1886Shoulder: return "BT.1886 shoulder";
         default: return "Unknown";
     }
 }
@@ -212,9 +239,10 @@ std::string_view source_curve_detail(SourceCurve c) noexcept {
         case SourceCurve::Hable: return "Hable";
         case SourceCurve::Agx: return "sigmoid";
         case SourceCurve::CameraLog: return "log to 709";
-        case SourceCurve::Clip: return "plain clip";
+        case SourceCurve::Clip: return "plain clip; lines up with an SDR read as sRGB";
         case SourceCurve::Bt1886: return "display 2.4";
         case SourceCurve::Bt1886Shadows: return "BT.1886, measured real-SDR blacks below code 40";
+        case SourceCurve::Bt1886Shoulder: return "BT.1886, an ACES-style highlight shoulder rolled out above code 165 (+2 stops at white)";
         default: return "ACES, as before";
     }
 }
@@ -227,6 +255,7 @@ float source_curve_forward(SourceCurve c, float x) noexcept {
         case SourceCurve::Clip: return forward_clip(x);
         case SourceCurve::Bt1886: return forward_bt1886(x);
         case SourceCurve::Bt1886Shadows: return forward_bt1886_shadows(x);
+        case SourceCurve::Bt1886Shoulder: return forward_bt1886_shoulder(x);
         default: return forward_aces(x);
     }
 }
@@ -237,23 +266,28 @@ float source_curve_inverse(SourceCurve c, float display) noexcept {
         case SourceCurve::Aces: return inverse_aces_approx(display);
         case SourceCurve::Bt1886: return inverse_bt1886(display);
         case SourceCurve::Bt1886Shadows: return inverse_bt1886_shadows(display);
+        case SourceCurve::Bt1886Shoulder: return inverse_bt1886_shoulder(display);
         default: return table(c).at(display);
     }
 }
 
-bool reads_video_codes(SourceCurve c) noexcept { return c == SourceCurve::Bt1886 || c == SourceCurve::Bt1886Shadows; }
+bool reads_video_codes(SourceCurve c) noexcept {
+    return c == SourceCurve::Bt1886 || c == SourceCurve::Bt1886Shadows || c == SourceCurve::Bt1886Shoulder;
+}
 
 std::span<const float> source_curve_params(SourceCurve c, bool own_codes) {
     if (own_codes && reads_video_codes(c)) {   // 24 Nov 2026: own codes as video codes (source_curve.hpp)
         static const std::vector<float> bt1886_own = build_params(SourceCurve::Bt1886, true),
-                                        bt1886_shadows_own = build_params(SourceCurve::Bt1886Shadows, true);
-        return c == SourceCurve::Bt1886 ? bt1886_own : bt1886_shadows_own;
+                                        bt1886_shadows_own = build_params(SourceCurve::Bt1886Shadows, true),
+                                        bt1886_shoulder_own = build_params(SourceCurve::Bt1886Shoulder, true);
+        return c == SourceCurve::Bt1886 ? bt1886_own : c == SourceCurve::Bt1886Shadows ? bt1886_shadows_own : bt1886_shoulder_own;
     }
     static const std::vector<float> none;
     static const std::vector<float> hable = build_params(SourceCurve::Hable), agx = build_params(SourceCurve::Agx),
                                     camera = build_params(SourceCurve::CameraLog), clip = build_params(SourceCurve::Clip),
                                     bt1886 = build_params(SourceCurve::Bt1886),
-                                    bt1886_shadows = build_params(SourceCurve::Bt1886Shadows);
+                                    bt1886_shadows = build_params(SourceCurve::Bt1886Shadows),
+                                    bt1886_shoulder = build_params(SourceCurve::Bt1886Shoulder);
     switch (c) {
         case SourceCurve::Hable: return hable;
         case SourceCurve::Agx: return agx;
@@ -261,6 +295,7 @@ std::span<const float> source_curve_params(SourceCurve c, bool own_codes) {
         case SourceCurve::Clip: return clip;
         case SourceCurve::Bt1886: return bt1886;
         case SourceCurve::Bt1886Shadows: return bt1886_shadows;
+        case SourceCurve::Bt1886Shoulder: return bt1886_shoulder;
         default: return none;
     }
 }

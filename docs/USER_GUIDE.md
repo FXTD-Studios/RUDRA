@@ -102,11 +102,23 @@ grade and does not identify the original tone mapper.
     it scored +0.04 to +1.3 dB PU21 over BT.1886, but on very dark scenes it
     can lift blacks about half a stop above some grades, so judge it on an
     HDR display (docs/ai/SHADOW_CORRECTION_RESULT.md).
+  - *BT.1886 shoulder* (opt-in, 1.3.1): BT.1886 up to SDR code 165 and,
+    above it, the highlight shoulder an ACES-style render puts on video
+    rolled back out: +0.1 stop at code 200, +0.5 at 222, +1.25 at 242 and
+    +2 stops at white. Lamps, windows and the bright side of a face get
+    light above SDR white instead of stopping at it, and Fill clipped
+    highlights builds on top. It is one curve for every shot: the learned
+    ACES 2.0 route measured +1.7 stops at code 242 on a welding shot and
+    +0.5 on a sunrise. Large blown areas get brighter but no more detail:
+    judge them at -3 EV, and use AI fill or a lower Strength there.
   - *Unknown (ACES inverse)*: RUDRA's default before 13 Oct 2026; projects
     saved with it keep it.
   - *ACES*, *filmic (Hable)*, *AgX*: CG renders and games with those tone mappers.
   - *Camera log*: a log clip viewed through a LUT you know.
-  - *Rec.709, plain clip*: video that was simply clipped at white.
+  - *sRGB, plain clip* (called *Rec.709, plain clip* before 1.3.1): the SDR's
+    codes read as sRGB, the light a still or a CG render clipped at white
+    holds. A master made with it lines up with the SDR read as sRGB, as Nuke's
+    **sRGB Encoded Rec.709 (sRGB)** reads it.
 
 **Generated video** (text-to-video and image-to-video tools, renders from
 game engines, upscaler output): these are 8-bit SDR with clipped highlights
@@ -276,7 +288,8 @@ for example):
      of a video made with Source BT.1886 (the default for video) is darker in the
      shadows, by design: about 0.17 stop at code 128, 0.66 at code 51 and 1.3 at
      code 26. BT.1886 is how a display shows video (code^2.4), and sRGB is a
-     different curve. A learned ACES 2.0 master looks as the SDR was graded, so it
+     different curve. To make a master that lines up with this reading, choose
+     Source *sRGB, plain clip*. A learned ACES 2.0 master looks as the SDR was graded, so it
      looks brighter than an SDR read this way.
    - **Gamma 2.4 Encoded Rec.709** lines up with an analytic master made with
      Source BT.1886, everywhere outside the highlights.

@@ -489,7 +489,8 @@ def list_frames(master: Path, pattern: str = '*.exr') -> list[Path]:
 REVIEW_STOPS = 3.0        # the review pictures are 3 stops down, so the invented highlights show
 REVIEW_SIDE = 960
 TEMPORAL_FLAG = 0.25      # stops of frame-to-frame change the fill adds beyond the master's own
-FALLBACKS = ('none', 'spikes')   # RUDRA 1.1: what a flickering fill frame falls back to (fill_master)
+FALLBACKS = ('none', 'spikes', 'regions')   # RUDRA 1.1: what a flickering fill falls back to (fill_master); 1.3.1 regions
+REGION_GAP_PX = 8         # 1.3.1: fill areas closer than this are one region (a lamp and its glints)
 
 
 def _over(temporal) -> bool:
@@ -531,6 +532,108 @@ def temporal_excess(prev, cur) -> float | None:
     d_fill = np.abs(lum(cur[1]) - lum(prev[1]))[sel].mean()
     d_master = np.abs(lum(cur[0]) - lum(prev[0]))[sel].mean()
     return float(max(0.0, d_fill - d_master))
+
+
+def fill_regions(alpha: np.ndarray, gap: int = REGION_GAP_PX) -> tuple[np.ndarray, int]:
+    """1.3.1: the frame's fill split into regions: connected areas of alpha > 0, areas within `gap` pixels
+    joined. Returns (labels, count): labels 0 outside the fill, 1..count inside (int32, the frame's size)."""
+    import cv2
+    on = (alpha > 0).astype(np.uint8)
+    if not on.any():
+        return np.zeros(alpha.shape, np.int32), 0
+    grown = cv2.dilate(on, np.ones((2 * gap + 1, 2 * gap + 1), np.uint8)) if gap > 0 else on
+    n, labels = cv2.connectedComponents(grown, connectivity=8)
+    labels = np.where(on > 0, labels, 0).astype(np.int32)
+    return labels, int(n - 1)
+
+
+def shrink_labels(labels: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+    """Nearest-neighbour labels at `shape` (the size small() gives), pixel centres as cv2 INTER_NEAREST."""
+    h, w = labels.shape
+    ys = np.minimum((np.arange(shape[0]) * h) // shape[0], h - 1)
+    xs = np.minimum((np.arange(shape[1]) * w) // shape[1], w - 1)
+    return labels[np.ix_(ys, xs)]
+
+
+def region_excess(prev, cur, labels_small: np.ndarray, count: int) -> np.ndarray:
+    """temporal_excess per region (NaN where a region has no pixels at this size, or there is no prev)."""
+    out = np.full(count + 1, np.nan)
+    if prev is None or prev[0].shape != cur[0].shape or labels_small.shape != cur[0].shape[:2]:
+        return out
+    lum = lambda x: np.log2(np.maximum(x @ np.array([0.2722, 0.6741, 0.0537], np.float32), 1e-4))
+    d_fill = np.abs(lum(cur[1]) - lum(prev[1]))
+    d_master = np.abs(lum(cur[0]) - lum(prev[0]))
+    touched = (cur[2] > 0) | (prev[2] > 0)
+    for k in range(1, count + 1):
+        sel = touched & (labels_small == k)
+        if sel.any():
+            out[k] = max(0.0, float(d_fill[sel].mean() - d_master[sel].mean()))
+    return out
+
+
+def flickering_regions(prev, cur, nxt, labels: np.ndarray, count: int) -> list[int]:
+    """1.3.1: the regions of `cur` whose fill jumps more than TEMPORAL_FLAG stops beyond the master's own
+    change both into this frame and out of it (fallback 'spikes', one region at a time)."""
+    if count == 0 or prev is None or nxt is None:
+        return []
+    ls = shrink_labels(labels, cur[0].shape[:2])
+    into, out_of = region_excess(prev, cur, ls, count), region_excess(cur, nxt, ls, count)
+    return [k for k in range(1, count + 1) if into[k] > TEMPORAL_FLAG and out_of[k] > TEMPORAL_FLAG]
+
+
+def revert_regions(master: np.ndarray, out: np.ndarray, alpha: np.ndarray, labels: np.ndarray,
+                   bad: list[int]) -> tuple[np.ndarray, np.ndarray]:
+    """Those regions back to the master, bit for bit (and out of rudra.generated); every other fill kept.
+    A region holds all of its fill (alpha falls to 0 at its edge), so no seam is left."""
+    if not bad:
+        return out, alpha
+    r = np.isin(labels, bad)
+    out, alpha = out.copy(), alpha.copy()
+    out[r] = master[r]
+    alpha[r] = 0.0
+    return out, alpha
+
+
+FLICKER_LIMIT_EV = 0.10   # 1.3.1: the shot check's T limit, now measured on every fill for the QC report
+FLICKER_CLIP_CODE = 250   # still clipped pixels: the source's largest code at least this ...
+FLICKER_STILL_CODES = 2   # ... and moving at most this many codes since the frame before
+
+
+class FlickerMeter:
+    """1.3.1: flicker inside the fill, as the shot check measures it (gate T, shot_gates.py): over the pixels
+    the source clips and holds still, the frame-to-frame change of the written picture's log2 luminance, its
+    median and 95th percentile in stops (limit FLICKER_LIMIT_EV). A histogram, so a long 4K shot costs no memory."""
+    BINS = np.linspace(0.0, 4.0, 4001)
+    LUMA = np.array([0.2722287168, 0.6740817658, 0.0536895174], np.float32)
+
+    def __init__(self):
+        self.hist = np.zeros(len(self.BINS) - 1, np.int64)
+        self.prev = None
+
+    def add(self, codes: np.ndarray, picture_ap1: np.ndarray) -> None:
+        y = picture_ap1.astype(np.float32) @ self.LUMA
+        top = codes.max(-1)
+        if self.prev is not None and self.prev[0].shape == codes.shape:
+            pc, py = self.prev
+            still = ((top >= FLICKER_CLIP_CODE) & (np.abs(codes.astype(np.int16) - pc.astype(np.int16)).max(-1) <= FLICKER_STILL_CODES)
+                     & (y > 0) & (py > 0))
+            if still.any():
+                d = np.abs(np.log2(y[still]) - np.log2(py[still]))
+                self.hist += np.histogram(np.minimum(d, self.BINS[-1] - 1e-6), self.BINS)[0]
+        self.prev = (codes, y)
+
+    def quantile(self, q: float) -> float | None:
+        n = int(self.hist.sum())
+        if n == 0:
+            return None
+        k = int(np.searchsorted(np.cumsum(self.hist), q * n))
+        return float(self.BINS[min(k + 1, len(self.BINS) - 1)])
+
+    def report(self) -> dict:
+        p95 = self.quantile(0.95)
+        return {'fill_flicker_median_ev': self.quantile(0.5), 'fill_flicker_p95_ev': p95,
+                'fill_flicker_limit_ev': FLICKER_LIMIT_EV, 'fill_flicker_pixels': int(self.hist.sum()),
+                'fill_flicker_pass': None if p95 is None else bool(p95 <= FLICKER_LIMIT_EV)}
 
 
 def small(x: np.ndarray, side: int = 256) -> np.ndarray:
@@ -575,7 +678,9 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     region: a rudra.delivery.region.ReconstructionRegion (RUDRA 1.1). On, the fill (and its prompts)
     acts only inside it: the model's fill regions are cut to it and the blend weight is scaled by it,
     so every pixel outside is the master's, bit for bit. None or off: unchanged.
-    fallback (RUDRA 1.1 priority 5): 'spikes' writes the master's own frame (no fill) for a frame whose
+    fallback (RUDRA 1.1 priority 5): 'regions' (1.3.1) does what 'spikes' does one fill region at a time
+    (fill_regions: a lamp, an arc, a window), so a flickering arc goes back to the master and the steady
+    lamps in the same frame keep their fill. 'spikes' writes the master's own frame (no fill) for a frame whose
     fill jumps more than TEMPORAL_FLAG stops beyond the master's own change both INTO it and OUT of it
     (a one-frame flicker; a fill appearing or ending jumps on one side only and is kept). 'none' keeps
     every fill (v3). Either way a fill that is not finite falls back. Each frame is written once the
@@ -671,20 +776,35 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     rweights: dict[int, np.ndarray] = {}             # the reconstruction region's weight, per frame (when on)
     t0 = time.time()
     pending = None                                   # RUDRA 1.1: the frame waiting for the next one
+    flicker = FlickerMeter()                         # 1.3.1: flicker inside the fill, for the QC report
 
-    def commit(e, spike_reason):
-        """Write one frame: its fill, or the master's own frame when it falls back."""
+    def commit(e, spike_reason, nxt_small=None):
+        """Write one frame: its fill, or the master's own frame when it falls back (whole, or per region)."""
         fr, out_ap1, alpha = e['fr'], e['out'], e['alpha']
         reason = e['reason'] or spike_reason
+        regions_back, regions_n = 0, 0
         if reason and alpha.any():
             out_ap1, alpha = fr['ap1'], np.zeros_like(alpha)
+        elif fallback == 'regions' and alpha.any():
+            labels, regions_n = fill_regions(alpha)
+            bad = flickering_regions(e.get('prev_small'), e.get('small'), nxt_small, labels, regions_n)
+            if bad and len(bad) == regions_n:
+                out_ap1, alpha, reason = fr['ap1'], np.zeros_like(alpha), 'flicker'
+            elif bad:                                # some regions back, the rest of the frame keeps its fill
+                out_ap1, alpha = revert_regions(fr['ap1'], out_ap1, alpha, labels, bad)
+                stats['fallback_regions'] = stats.get('fallback_regions', 0) + len(bad)
+            regions_back = len(bad)
+            stats['fill_regions'] = stats.get('fill_regions', 0) + regions_n
         name = frames[e['i']].name
         write_frame(out / name, fr, out_ap1, alpha, attrs, highlight=e['highlight'])
+        if e.get('codes') is not None:
+            flicker.add(e['codes'], out_ap1)              # 1.3.1: the picture as written, fallbacks included
         write_review(out, name, view, fr['ap1'], out_ap1, alpha)
         gen_frac = float((alpha > 0).mean())
         temporal = e['temporal']
         per_frame.append({'name': name, 'generated_fraction': gen_frac, 'temporal_excess_stops': temporal,
-                          'flagged': _over(temporal), 'fell_back': reason})
+                          'flagged': _over(temporal), 'fell_back': reason, 'regions': regions_n,
+                          'regions_fell_back': regions_back})
         stats['generated_pixels'] += int((alpha > 0).sum())
         stats['region_pixels'] += e['region_px']
         emit(event='frame', index=e['i'] + 1, of=len(frames), file=str(out / name), generated_fraction=gen_frac,
@@ -881,13 +1001,14 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
                 out_ap1, alpha = fr['ap1'], np.zeros((H, W), np.float32)
             cur_small = (small(fr['ap1']), small(out_ap1), small(alpha.astype(np.float32)))
             temporal = temporal_excess(prev_small, cur_small)   # measured along the fills as made
-            prev_small = cur_small
+            prev_for_entry, prev_small = prev_small, cur_small
             entry = {'i': i, 'fr': fr, 'out': out_ap1, 'alpha': alpha, 'highlight': masks[i][0],
-                     'region_px': int(region.sum()), 'temporal': temporal, 'reason': reason}
+                     'region_px': int(region.sum()), 'temporal': temporal, 'reason': reason,
+                     'small': cur_small, 'prev_small': prev_for_entry, 'codes': codes.get(i)}
             if pending is not None:
                 spike = (fallback == 'spikes' and pending['alpha'].any() and _over(pending['temporal'])
                          and _over(temporal))
-                commit(pending, 'flicker' if spike else None)
+                commit(pending, 'flicker' if spike else None, nxt_small=cur_small)
             pending = entry
         for L in lanes:                                  # keep only what the next window reads
             for i in list(L['gen_work']):
@@ -902,6 +1023,9 @@ def fill_master(master: Path, out: Path, model, view, s, ms: MaskSettings, windo
     stats['seconds'] = round(time.time() - t0, 1)
     stats['flagged_frames'] = sum(1 for f in per_frame if f['flagged'])
     stats['fallback_frames'] = sum(1 for f in per_frame if f['fell_back'])
+    stats.update(flicker.report())
+    stats['region_fallback_frames'] = sum(1 for f in per_frame if f.get('regions_fell_back') and not f['fell_back'])
+    stats.setdefault('fallback_regions', 0)
     stats['generated_fraction'] = stats['generated_pixels'] / float(max(1, len(frames) * H * W))
     report = {'master': str(master), 'out': str(out), 'model': model.identity, 'settings': asdict(s), 'brightness': bid,
               'mask': asdict(ms), 'region': asdict(recon_region) if region_on else None, 'fallback': fallback, 'window': window, 'overlap': overlap, 'max_area': max_area,
@@ -1159,7 +1283,8 @@ def main(argv=None):
     ap.add_argument('--prompt-strength', type=float, default=1.0,
                     help='RUDRA 1.1: how strongly a region prompt steers its region (0..2; 1 = as v3 was gated)')
     ap.add_argument('--fallback', default='none', choices=FALLBACKS,
-                    help="RUDRA 1.1: 'spikes' writes the master's own frame where the fill flickers for one frame")
+                    help="RUDRA 1.1: 'spikes' writes the master's own frame where the fill flickers for one frame; "
+                         "1.3.1 'regions' does it one fill region at a time")
     ap.add_argument('--focus', default='frame', choices=FOCUS,
                     help="'region': the model draws only the box around what the shot fills, at the working size (more detail); "
                          "'areas': one box per group of areas, each at up to the working size (far-apart highlights in 4K)")

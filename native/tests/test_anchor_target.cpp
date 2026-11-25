@@ -119,3 +119,20 @@ TEST(AnchorTarget, TheViewHoldAndGainFollowIt) {
     const PlanarBuffer want = render_view(m, corrected_baseline(sdr, 0.0f, {}), plain, &sdr);
     for (int x = 8; x < 200; ++x) EXPECT_NEAR(got.at(1, 0, x), want.at(1, 0, x), 2e-3 * want.at(1, 0, x) + 1e-6) << x;
 }
+
+// 1.3.1 (25 Nov 2026): Source "sRGB, plain clip" (id clip) is the sRGB reading of a shot's own codes, its anchor
+// target too, so a master made with it lines up with the SDR read as sRGB (Nuke: sRGB Encoded Rec.709).
+TEST(AnchorTarget, SrgbIsTheSrgbReading) {
+    EXPECT_EQ(source_curve_label(SourceCurve::Clip), "sRGB");
+    EXPECT_EQ(source_curve_id(SourceCurve::Clip), "clip");   // saved projects keep it
+    const auto p = source_curve_params(SourceCurve::Clip, true);
+    for (int code = 2; code < 255; ++code) {
+        const float d = srgb_to_linear(float(code) / 255.0f);
+        EXPECT_NEAR(p[1 + std::size_t(code)], std::log2(d / inverse_aces_approx(d)), 1e-4) << code;
+    }
+    CompositeParams cp;
+    cp.source = SourceCurve::Clip;
+    cp.own_codes = true;
+    const auto knots = anchor_target_knots(cp);
+    for (int code = 1; code < 255; ++code) EXPECT_NEAR(knots[std::size_t(code)], 0.0f, 1e-4) << code;
+}

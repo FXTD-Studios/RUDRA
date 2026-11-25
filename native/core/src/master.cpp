@@ -138,7 +138,8 @@ std::vector<float> gaussian_blur_replicate(std::span<const float> plane, int hei
     return out;
 }
 
-void carry_source_chroma(NitsFrame& nits, const SdrImage& sdr, double knee, double softness, double mask_sigma) {
+void carry_source_chroma(NitsFrame& nits, const SdrImage& sdr, double knee, double softness, double mask_sigma,
+                         std::span<const float> target_knots) {
     assert(nits.height() == sdr.height() && nits.width() == sdr.width());
     assert(knee > 0.0 && knee < 1.0);
     const std::size_t n = nits.plane_size();
@@ -153,7 +154,12 @@ void carry_source_chroma(NitsFrame& nits, const SdrImage& sdr, double knee, doub
     for (std::size_t i = 0; i < n; ++i) {
         double source[3], source_luma = 0.0, hdr_luma = 0.0;
         for (int c = 0; c < 3; ++c) {
-            source[c] = srgb_to_linear_d(s.plane(c)[i]) * kDiffuseWhiteNits;
+            // The light of the channel's code through the Source curve, as anchor_to_sdr reads it
+            // (1.3.1): under BT.1886 the sRGB reading took 16 % of the colour out of mid-tones, 38 % of shadows.
+            const double v = s.plane(c)[i];
+            double light = srgb_to_linear_d(v);
+            if (!target_knots.empty()) light *= std::exp2(double(anchor_target_log2(float(v), target_knots)));
+            source[c] = light * kDiffuseWhiteNits;
             source_luma += source[c] * kLuma2020[c];
             hdr_luma += nits.plane(c)[i] * kLuma2020[c];
         }

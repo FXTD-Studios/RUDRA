@@ -263,7 +263,7 @@ QStringList genfill_arguments(const GenFillSetup& s, const GenFillOptions& o, co
     if (o.prompt_strength != 1.0) a << "--prompt-strength" << QString::number(o.prompt_strength, 'g', 6);
     if (o.shape_gain != 1.0) a << "--shape-gain" << QString::number(o.shape_gain, 'g', 6);
     if (!o.region_json.isEmpty()) a << "--region" << o.region_json;
-    if (o.fallback) a << "--fallback" << "spikes";
+    if (o.fallback) a << "--fallback" << "regions";   // 1.3.1: one fill region at a time (was "spikes", whole frames)
     if (o.focus_region) a << "--focus" << "areas";   // 8 Nov 2026: a box per group of areas (one area: as region)
     if (!o.glob.isEmpty()) a << "--glob" << o.glob;
     return a;
@@ -408,6 +408,13 @@ QJsonObject genfill_disclosure(const QJsonObject& g, const QString& route, const
         {"generated_pct", 100.0 * stats.value("generated_fraction").toDouble()},
         {"flagged_frames", stats.value("flagged_frames")},
         {"fallback_frames", stats.value("fallback_frames")},
+        {"fallback_regions", stats.value("fallback_regions").toInt()},            // 1.3.1: per region
+        {"region_fallback_frames", stats.value("region_fallback_frames").toInt()},
+        // 1.3.1: flicker inside the fill (the shot check's gate T); null when the shot has no still clipped pixels
+        {"fill_flicker_p95_ev", stats.value("fill_flicker_p95_ev")},
+        {"fill_flicker_median_ev", stats.value("fill_flicker_median_ev")},
+        {"fill_flicker_limit_ev", stats.value("fill_flicker_limit_ev")},
+        {"fill_flicker_pixels", stats.value("fill_flicker_pixels")},
         {"release_authorized", g.value("release_authorized")},
         {"marking", "every generated pixel is non-zero in each EXR's rudra.generated channel; the settings are in its rudra:genfill attribute"},
         {"frames", frames}};
