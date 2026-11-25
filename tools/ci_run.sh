@@ -27,6 +27,13 @@ if [ "$code" -ne 0 ]; then
   if [ -n "$asserts" ]; then
     echo "::error title=${title}: failing assertions::$(printf '%s\n' "$asserts" | esc)"
   fi
+  # A crash's backtrace (scripts/native_app.sh prints it between these markers, 26 Nov 2026), on its own:
+  # the tail below keeps only the last lines, and a crash in a test prints no failing assertion.
+  crash=$(awk '/^=== end crash backtrace ===$/ { on = 0 } on { print } /^=== crash backtrace ===$/ { on = 1 }' "$log" |
+    head -n 26 | cut -c1-150)
+  if [ -n "$crash" ]; then
+    echo "::error title=${title}: crash backtrace::$(printf '%s\n' "$crash" | esc)"
+  fi
   # Workflow commands take one line: %, CR and LF are escaped.
   # The end of the log: GitHub keeps only the first few KB of an annotation, so 60 long lines of a
   # build lost the error that ended them (the v1.2.6 Linux job, 19 Nov 2026). The last ~3 KB of them.
