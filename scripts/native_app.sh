@@ -132,7 +132,33 @@ if [ -z "${SKIP_BUILD:-}" ]; then
     say "The app's Qt tests (offscreen)"
     TEST_EXE=$(find "$BUILD/app" -name rudra_app_tests -type f -perm -u+x | head -1)
     [ -n "$TEST_EXE" ] || fail "rudra_app_tests not built"
-    QT_QPA_PLATFORM=offscreen "$TEST_EXE" || fail "app tests"
+    TEST_LOG=$DEPS/app_tests.log
+    code=0
+    QT_QPA_PLATFORM=offscreen "$TEST_EXE" 2>&1 | tee "$TEST_LOG" || code=${PIPESTATUS[0]}
+    if [ "$code" -ne 0 ]; then
+      # A crash (a signal: exit above 128) leaves no failing assertion to read. On a Mac the test it crashed in is
+      # run again under lldb, alone and then (if it passes alone) with the whole run, and the backtrace goes
+      # between the markers tools/ci_run.sh publishes (26 Nov 2026: v1.3.1's macOS job crashed twice in
+      # AppDeliver.AFirstRunWithoutAModelCanMaster, Linux and Windows passed).
+      if [ "$code" -gt 128 ] && [ "$OS" = mac ] && command -v lldb >/dev/null; then
+        crashed_in=$(grep -E '^\[ RUN      \] ' "$TEST_LOG" | tail -n 1 | awk '{print $4}')
+        sudo -n DevToolsSecurity -enable >/dev/null 2>&1 || true
+        backtrace() {   # the crashed thread's frames, short: lldb's own lines, without the addresses
+          QT_QPA_PLATFORM=offscreen lldb --batch -o run -k "thread backtrace -c 24" -k "quit 1" -- "$TEST_EXE" "$@" 2>&1 |
+            grep -E 'stop reason|frame #|exited with status|^error' | sed -E '/frame #/ s/0x[0-9a-f]{8,16} //' | cut -c1-150 || true
+        }
+        say "The app tests crashed (signal $((code - 128))) in ${crashed_in:-an unknown test}: that test alone, under lldb"
+        alone=$(backtrace "--gtest_filter=${crashed_in:-*}")
+        echo "=== crash backtrace ==="
+        printf '%s\n' "$alone"
+        if grep -q 'exited with status' <<<"$alone"; then
+          echo "(it passed alone: the whole run again, under lldb)"
+          backtrace | grep -v 'exited with status' | head -n 26
+        fi
+        echo "=== end crash backtrace ==="
+      fi
+      fail "app tests"
+    fi
   fi
 fi
 
