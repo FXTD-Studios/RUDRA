@@ -202,6 +202,19 @@ QcVerdict qc_verdict(const QcReport& r, int pq_peak_nits) {
         const int flagged = r.ai_fill.value("flagged_frames").toInt(), fell = r.ai_fill.value("fallback_frames").toInt();
         if (flagged) review(QStringLiteral("%1 frame(s) of the AI fill were flagged for flicker").arg(flagged));
         if (fell) review(QStringLiteral("%1 frame(s) of the AI fill fell back to the master (the fill there was dropped)").arg(fell));
+        // 1.3.1: flicker inside the fill, measured on every fill (the shot check's gate T)
+        if (const QJsonValue p95 = r.ai_fill.value("fill_flicker_p95_ev"); p95.isDouble()) {
+            const double limit = r.ai_fill.value("fill_flicker_limit_ev").toDouble(0.10);
+            if (p95.toDouble() > limit)
+                review(QStringLiteral("The AI fill flickers: %1 stop frame to frame where the SDR is clipped and still "
+                                      "(95th percentile; limit %2). Play the fill before delivery, or turn it off for this shot")
+                           .arg(p95.toDouble(), 0, 'f', 3)
+                           .arg(limit, 0, 'f', 2));
+        }
+        if (const int regions = r.ai_fill.value("fallback_regions").toInt(), in = r.ai_fill.value("region_fallback_frames").toInt();
+            regions && in)   // 1.3.1: the flickering regions only, the rest of those frames kept their fill
+            review(QStringLiteral("%1 flickering AI fill region(s) in %2 frame(s) fell back to the master; the rest of "
+                                  "those frames kept the fill").arg(regions).arg(in));
         double worst = 0;
         for (const auto& f : r.ai_fill.value("frames").toArray()) worst = std::max(worst, f.toObject().value("generated_pct").toDouble());
         v.notes << QStringLiteral("Contains AI-generated pixels: %1 % over %2 frame(s), worst frame %3 %. They are generated, not "
@@ -324,6 +337,12 @@ QString qc_html(const QcReport& r, const QcVerdict& v) {
         row(QStringLiteral("Seed, steps"), QStringLiteral("%1, %2").arg(a.value("seed").toVariant().toString(), a.value("steps").toVariant().toString()));
         row(QStringLiteral("Flagged for flicker"), QString::number(a.value("flagged_frames").toInt()));
         row(QStringLiteral("Fell back to the master"), QString::number(a.value("fallback_frames").toInt()));
+        row(QStringLiteral("Flicker in the fill (p95, still clipped pixels)"),
+            a.value("fill_flicker_p95_ev").isDouble()
+                ? QStringLiteral("%1 stop (limit %2)").arg(a.value("fill_flicker_p95_ev").toDouble(), 0, 'f', 3)
+                      .arg(a.value("fill_flicker_limit_ev").toDouble(0.10), 0, 'f', 2)
+                : QStringLiteral("not measured (no still clipped pixels)"));
+        row(QStringLiteral("Regions fell back"), QStringLiteral("%1 in %2 frame(s)").arg(a.value("fallback_regions").toInt()).arg(a.value("region_fallback_frames").toInt()));
         row(QStringLiteral("Marking"), a.value("marking").toString());
         h += QStringLiteral("</table>");
         std::vector<std::pair<double, QString>> most;

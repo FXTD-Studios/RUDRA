@@ -86,7 +86,7 @@ struct GenFillOptions {
     double shape_gain = 1.0;        // detail strength: how much the drawn shape varies the brightness (0..2)
     QString region_json;            // the grade's reconstruction region (deliver reconstruction_region_json); "" = none
     // RUDRA 1.1 priority 5: a frame whose fill flickers for one frame is written as the master's own
-    // (--fallback spikes). Off here so a bare GenFillOptions is v3; Deliver turns it on by default.
+    // (--fallback regions since 1.3.1: a flickering fill region goes back to the master, the rest of the frame keeps its fill). Off here so a bare GenFillOptions is v3; Deliver turns it on by default.
     bool fallback = false;
     // 7 Nov 2026: the model draws only the box around what the shot fills, at its working size
     // (--focus region): more detail where the fill is. Off = v3 (the whole frame, as gated).

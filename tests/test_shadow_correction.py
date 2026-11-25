@@ -12,7 +12,8 @@ def test_appended_last_and_not_the_default():
     assert BASELINE_CURVES[:7] == ("unknown", "bt1886", "aces", "hable", "agx", "camera_log", "clip")
     assert baseline_curve_index("bt1886_shadows") == 7
     assert DEFAULT_BASELINE == "bt1886"
-    assert knots_table().shape == (8, 256)
+    assert baseline_curve_index("bt1886_shoulder") == 8   # 1.3.1: appended after it, indices kept
+    assert knots_table().shape == (9, 256)
 
 
 def test_bt1886_from_code_40_and_lifted_below():

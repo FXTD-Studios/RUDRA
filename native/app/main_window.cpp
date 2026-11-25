@@ -581,7 +581,7 @@ void MainWindow::build_menus() {
                 {"act:copy-delivery", "deliver"}, {"act:mode-all", "rec"},         {"act:mode-highlights", "rec"},
                 {"act:mode-shadows", "rec"},      {"act:mode-off", "rec"},         {"act:preserve", "rec"},
                 {"act:source-unknown", "rec"},    {"act:source-bt1886", "rec"},   {"act:source-aces", "rec"},
-                {"act:source-bt1886_shadows", "rec"},
+                {"act:source-bt1886_shadows", "rec"},   {"act:source-bt1886_shoulder", "rec"},
                 {"act:source-hable", "rec"},
                 {"act:source-agx", "rec"},        {"act:source-camera_log", "rec"}, {"act:source-clip", "rec"},
                 {"act:exposure-up", "rec"},      {"act:exposure-down", "rec"},  {"act:exposure-reset", "rec"},

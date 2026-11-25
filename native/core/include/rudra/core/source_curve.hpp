@@ -33,7 +33,14 @@ namespace rudra {
 // below it, the median HDR the real Netflix Open Content trims hold per code
 // (docs/ai/SHADOW_CORRECTION_RESULT.md): real masters keep blacks well above
 // code^2.4. Appended last so every stored id and index keeps its meaning.
-enum class SourceCurve : std::uint8_t { Unknown, Aces, Hable, Agx, CameraLog, Clip, Bt1886, Bt1886Shadows };
+//
+// BT.1886 shoulder (1.3.1, 25 Nov 2026, opt-in) is BT.1886 up to SDR code 165 and, above it, the highlight
+// shoulder an ACES-style render put on the video rolled back out: log2 scene gains kShoulderStops x t^3,
+// t = (code - 165) / 90, +2 stops at white. Fitted to what the learned ACES 2.0 master adds over the analytic
+// BT.1886 one on two shots (04 welder: +0.23 stop at code 200, +1.72 at 242; 02 sunrise: +0.11, +0.48): the
+// model scales it to the content, this is one curve between them. Appended last, as BT.1886 shadows.
+enum class SourceCurve : std::uint8_t { Unknown, Aces, Hable, Agx, CameraLog, Clip, Bt1886, Bt1886Shadows, Bt1886Shoulder };
+inline constexpr float kShoulderKneeCode = 165.0f / 255.0f, kShoulderStops = 2.0f;
 
 inline constexpr int kSourceCurveKnots = 256;   // one knot per 8-bit code
 
@@ -71,7 +78,7 @@ float source_curve_inverse(SourceCurve c, float display_linear) noexcept;
 // through the sRGB decode and then the BT.709 OETF: 0.36 stop dark at code 128, 1.3 at 51, 2.8 at 26 (09V's frames:
 // 1.95 stops at the median, 3.6 in the darkest 5 %). The other curves are unchanged by it.
 std::span<const float> source_curve_params(SourceCurve c, bool own_codes = false);
-// BT.1886 and BT.1886 shadows: the curves that read own codes as video codes.
+// BT.1886, BT.1886 shadows and BT.1886 shoulder: the curves that read own codes as video codes.
 bool reads_video_codes(SourceCurve c) noexcept;
 
 // What the composite feeds corrected_baseline: the model's own curve params

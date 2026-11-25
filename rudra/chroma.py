@@ -47,9 +47,22 @@ def srgb_to_linear(srgb: np.ndarray) -> np.ndarray:
     return np.where(srgb <= 0.04045, srgb / 12.92, ((srgb + 0.055) / 1.055) ** 2.4)
 
 
+def target_factor_log2(code: np.ndarray, knots: np.ndarray) -> np.ndarray:
+    """native core/composite.cpp ``anchor_target_log2``: log2 of the Source curve's light over the
+    sRGB reading at ``code`` (0..1), linear between the knots (one per 8-bit code), in float32."""
+    k = np.asarray(knots, dtype=np.float32)
+    n = k.size
+    pos = np.clip(np.asarray(code, dtype=np.float32), 0.0, 1.0) * np.float32(n - 1)
+    lo = np.minimum(np.floor(pos).astype(np.int64), n - 2)
+    frac = pos - lo.astype(np.float32)
+    v0, v1 = k[lo], k[lo + 1]
+    return v0 + (v1 - v0) * frac
+
+
 def carry_source_chroma(hdr_nits: np.ndarray, sdr_srgb: np.ndarray,
                         knee: float = DEFAULT_KNEE, softness: float = 0.01,
-                        mask_sigma: float = 2.0) -> np.ndarray:
+                        mask_sigma: float = 2.0,
+                        target_log2: np.ndarray | None = None) -> np.ndarray:
     """``hdr_nits`` luminance, the source's chromaticity, below the knee.
 
     Luminance is preserved exactly BELOW the knee: scaling the source triplet
@@ -57,13 +70,21 @@ def carry_source_chroma(hdr_nits: np.ndarray, sdr_srgb: np.ndarray,
     ``hdr_luma`` by construction, so below the knee this changes hue and
     saturation only. Inside the blend band the two chroma sources are mixed and
     luminance moves by a fraction of a nit; above it nothing is touched.
+
+    ``target_log2`` (1.3.1, 25 Nov 2026): the anchor's knots (native ``anchor_target_knots``), so the
+    source's colour is read per channel through the Source curve, as its level is. Without them the
+    colour is the sRGB reading: under BT.1886 that took 16 % of the saturation out of the mid-tones
+    and 38 % out of the shadows (04.mp4, 24 Nov 2026).
     """
     if hdr_nits.shape != sdr_srgb.shape:
         raise ValueError(f"shape mismatch: {hdr_nits.shape} vs {sdr_srgb.shape}")
     if not 0.0 < knee < 1.0:
         raise ValueError(f"knee must be inside (0, 1), got {knee}")
 
-    source = srgb_to_linear(sdr_srgb) * DIFFUSE_WHITE_NITS
+    source = srgb_to_linear(sdr_srgb)
+    if target_log2 is not None and np.size(target_log2) >= 2:
+        source = source * np.exp2(target_factor_log2(sdr_srgb, target_log2).astype(np.float64))
+    source = source * DIFFUSE_WHITE_NITS
     eps = 1e-6
     source_luma = source @ LUMA_REC2020
     hdr_luma = hdr_nits @ LUMA_REC2020

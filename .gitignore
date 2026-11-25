@@ -158,3 +158,8 @@ SCRUB_TRAILERS.txt
 
 # Ad hoc output at the repo root (3 Nov 2026)
 /result.json
+
+# Source snapshots and CI scratch shipped by accident in 1.2.6 (removed 25 Nov 2026).
+/rudra_src.tgz
+/rudra_files.txt
+/ci_failed_*.txt

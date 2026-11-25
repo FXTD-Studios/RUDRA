@@ -22,8 +22,13 @@ from functools import lru_cache
 import numpy as np
 import torch
 
-# "bt1886_shadows" (14 Oct 2026, opt-in) is appended last so existing indices keep their meaning.
-BASELINE_CURVES: tuple[str, ...] = ("unknown", "bt1886", "aces", "hable", "agx", "camera_log", "clip", "bt1886_shadows")
+# "bt1886_shadows" (14 Oct 2026, opt-in) is appended last so existing indices keep their meaning; so is
+# "bt1886_shoulder" (1.3.1, 25 Nov 2026, opt-in).
+BASELINE_CURVES: tuple[str, ...] = ("unknown", "bt1886", "aces", "hable", "agx", "camera_log", "clip", "bt1886_shadows",
+                                    "bt1886_shoulder")
+# native source_curve.hpp kShoulderKneeCode / kShoulderStops.
+SHOULDER_KNEE_CODE = 165.0 / 255.0
+SHOULDER_STOPS = 2.0
 DEFAULT_BASELINE = "bt1886"     # the app's default for new sessions since 13 Oct 2026
 KNOTS = 256
 
@@ -134,6 +139,13 @@ def _inverse_bt1886_shadows(display):
     return np.where(display >= knee_display, _inverse_bt1886(display), lifted).astype(np.float32)
 
 
+def _inverse_bt1886_shoulder(display):
+    """native inverse_bt1886_shoulder: BT.1886 x 2^(SHOULDER_STOPS t^3) above the knee code (the video code)."""
+    code = _bt709_oetf(np.clip(np.asarray(display, np.float32), 0.0, 0.995)).astype(np.float32)
+    t = np.clip((code - np.float32(SHOULDER_KNEE_CODE)) / np.float32(1.0 - SHOULDER_KNEE_CODE), 0.0, 1.0)
+    return (np.power(code, 2.4) * np.exp2(np.float32(SHOULDER_STOPS) * t * t * t)).astype(np.float32)
+
+
 def _inverse(curve: str, display: np.ndarray) -> np.ndarray:
     if curve in ("unknown", "aces"):
         return _inverse_aces(display)
@@ -141,6 +153,8 @@ def _inverse(curve: str, display: np.ndarray) -> np.ndarray:
         return _inverse_bt1886(display)
     if curve == "bt1886_shadows":
         return _inverse_bt1886_shadows(display)
+    if curve == "bt1886_shoulder":
+        return _inverse_bt1886_shoulder(display)
     if curve == "clip":
         return np.clip(display, 0.0, 0.995).astype(np.float32)
     forward = {"hable": _forward_hable, "agx": _forward_agx, "camera_log": _forward_camera_log}[curve]

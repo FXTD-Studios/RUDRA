@@ -7245,7 +7245,7 @@ TEST(GenFill, TheFlickerFallbackIsOnInDeliver) {
     EXPECT_FALSE(app::genfill_arguments(s, o, "m", "o").contains("--fallback"));
     o.fallback = true;
     const QStringList a = app::genfill_arguments(s, o, "m", "o");
-    EXPECT_EQ(a[a.indexOf("--fallback") + 1], "spikes");
+    EXPECT_EQ(a[a.indexOf("--fallback") + 1], "regions");   // 1.3.1
     QSettings().clear();
     app::MainWindow w(false);
     EXPECT_TRUE(w.deliver_choice().ai.fallback);
@@ -8906,6 +8906,32 @@ TEST(QcReport, TheAiFillIsReportedAndItsFlaggedFramesWantALook) {
     EXPECT_TRUE(v.reasons.join(" ").contains("1 frame(s) of the AI fill fell back"));
     r.ai_fill = {};
     EXPECT_TRUE(app::qc_json(r, app::qc_verdict(r)).value("ai_fill").isNull());
+}
+
+// 1.3.1 (25 Nov 2026): flicker inside the fill (the shot check's gate T) and the per-region fallback reach the report.
+TEST(QcReport, FlickerInsideTheFillAndRegionFallbacksAreReported) {
+    app::QcReport r;
+    r.title = "04";
+    app::QcFrame f;
+    f.file = "04.000001";
+    f.maxcll = 900;
+    f.maxfall = 60;
+    r.frames = {f};
+    r.ai_fill = QJsonObject{{"generated_pct", 1.2}, {"frames_total", 97}, {"flagged_frames", 0}, {"fallback_frames", 0},
+                            {"fill_flicker_p95_ev", 0.094}, {"fill_flicker_limit_ev", 0.10},
+                            {"fallback_regions", 0}, {"region_fallback_frames", 0}};
+    auto v = app::qc_verdict(r);
+    EXPECT_TRUE(v.pass) << v.reasons.join(" | ").toStdString();
+    EXPECT_TRUE(app::qc_html(r, v).contains("0.094 stop (limit 0.10)"));
+    r.ai_fill["fill_flicker_p95_ev"] = 0.227;   // 04's analytic fill in 1.3.0
+    r.ai_fill["fallback_regions"] = 3;
+    r.ai_fill["region_fallback_frames"] = 2;
+    v = app::qc_verdict(r);
+    EXPECT_FALSE(v.pass);
+    EXPECT_TRUE(v.reasons.join(" ").contains("The AI fill flickers: 0.227 stop")) << v.reasons.join(" | ").toStdString();
+    EXPECT_TRUE(v.reasons.join(" ").contains("3 flickering AI fill region(s) in 2 frame(s) fell back"));
+    r.ai_fill["fill_flicker_p95_ev"] = QJsonValue();   // a shot with no still clipped pixels: not measured
+    EXPECT_TRUE(app::qc_html(r, app::qc_verdict(r)).contains("not measured"));
 }
 
 TEST(QcReport, AMaxCllSetByAFewPixelsWantsALook) {

@@ -89,9 +89,12 @@ void anchor_to_sdr(NitsFrame& nits, const SdrImage& sdr, double knee = kAnchorKn
 // OpenCV's kernel size (round(8 sigma + 1) | 1) and its float32 kernel.
 std::vector<float> gaussian_blur_replicate(std::span<const float> plane, int height, int width, double sigma);
 
-// rudra.chroma.carry_source_chroma.
+// rudra.chroma.carry_source_chroma. `target_knots` (composite.hpp anchor_target_knots, as the anchor
+// takes them): the source's colour is read per channel through the Source curve, as its level is
+// (1.3.1, 25 Nov 2026); empty reads it as sRGB, as before.
 void carry_source_chroma(NitsFrame& nits, const SdrImage& sdr, double knee = kChromaKnee,
-                         double softness = kChromaSoftness, double mask_sigma = kChromaMaskSigma);
+                         double softness = kChromaSoftness, double mask_sigma = kChromaMaskSigma,
+                         std::span<const float> target_knots = {});
 
 // cv2.GaussianBlur(src, (0,0), sigma, BORDER_REFLECT) for one float64 plane:
 // OpenCV's kernel size and its float64 kernel.
