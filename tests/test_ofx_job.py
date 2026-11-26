@@ -148,3 +148,71 @@ def test_steps_and_the_shared_prompt_cache(tmp_path):
     folder.mkdir(parents=True)
     cache = ofx_job.prompt_cache_for(folder, lora)
     assert cache == tmp_path / "ofx_fill" / "prompt_cache" and (cache / "abc.pt").read_bytes() == b"x"
+
+
+def test_prompt_strength_reaches_the_fill(tmp_path, monkeypatch):
+    """1.3.2: the plug-in's Prompt strength (0..2) goes to the fill as the app's Deliver passes it: only when not 1,
+    and only with a prompt."""
+    assert ofx_job.strength_of({"prompt_strength": 1.5}) == 1.5
+    assert ofx_job.strength_of({"prompt_strength": 9}) == 2.0 and ofx_job.strength_of({"prompt_strength": -1}) == 0.0
+    assert ofx_job.strength_of({}) == 1.0 and ofx_job.strength_of({"prompt_strength": "x"}) == 1.0
+    assert ofx_job.strength_of({"prompt_strength": float("nan")}) == 1.0
+    a = ofx_job.recipe("M", "O", "S", "B", "L", "bt1886", 0, "sky", "", 30, "", 1.5)
+    assert a[a.index("--prompt-strength") + 1] == "1.5"
+    assert "--prompt-strength" not in ofx_job.recipe("M", "O", "S", "B", "L", "bt1886", 0, "sky", "", 30, "", 1.0)
+    assert "--prompt-strength" not in ofx_job.recipe("M", "O", "S", "B", "L", "bt1886", 0, "", "", 30, "", 1.5)
+    d = stored_shot(tmp_path)
+    req = json.loads((d / "request.json").read_text(encoding="utf-8"))
+    req["prompt_strength"] = 0.5
+    (d / "request.json").write_text(json.dumps(req), encoding="utf-8")
+    assert run_job(tmp_path, d, "ok", monkeypatch) == 0
+    assert "--prompt-strength 0.5" in (d / "job.log").read_text(encoding="utf-8")
+
+
+class _Status:
+    def __init__(self):
+        self.messages = []
+
+    def set(self, **kw):
+        self.messages.append(kw.get("message", ""))
+
+
+def test_the_fill_waits_while_the_prompt_is_read(tmp_path):
+    """1.3.2: Generate starts reading a new prompt (ofx_prompt.py embed) while the frames are collected; the fill
+    waits for its lock, ignores a lock left by a process that ended, and gives up waiting after the limit."""
+    cache = tmp_path / "prompt_cache"
+    cache.mkdir()
+    assert ofx_job.wait_for_embedding(cache, _Status(), poll=0.05)               # no lock: at once
+    lock = cache / ofx_job.EMBED_LOCK
+    lock.write_text("{}")
+    threading.Timer(1.0, lock.unlink).start()
+    st, t0 = _Status(), time.time()
+    assert ofx_job.wait_for_embedding(cache, st, poll=0.05)
+    assert 0.8 < time.time() - t0 < 20 and "reading the prompt" in st.messages[-1]
+    lock.write_text("{}")
+    old = time.time() - ofx_job.EMBED_STALE - 5
+    import os
+    os.utime(lock, (old, old))                                                    # its process ended long ago
+    assert not ofx_job.embedding_running(cache) and ofx_job.wait_for_embedding(cache, _Status(), poll=0.05)
+    os.utime(lock, None)
+    assert not ofx_job.wait_for_embedding(cache, _Status(), limit=0.2, poll=0.05)  # gave up
+    lock.unlink()
+
+
+def test_the_seed_skips_the_lock_and_hidden_files(tmp_path):
+    lora = tmp_path / "models" / "rudra_genfill.safetensors"
+    beside = lora.parent / "prompt_cache"
+    beside.mkdir(parents=True)
+    (beside / "abc.pt").write_bytes(b"x")
+    (beside / ofx_job.EMBED_LOCK).write_text("{}")
+    cache = ofx_job.seed_cache(tmp_path / "cache", lora)
+    assert (cache / "abc.pt").is_file() and not (cache / ofx_job.EMBED_LOCK).exists()
+
+
+def test_the_plug_ins_time_estimate_knows_the_prompt_pass():
+    """1.3.2: the plug-in counts a second transformer pass a step for a blended prompt (fill_store.hpp
+    kSinglePromptPass), which must be run.py's PROMPT_PASS."""
+    from rudra.genfill import run
+    hpp = (REPO / "native" / "ofx" / "fill_store.hpp").read_text(encoding="utf-8")
+    m = re.search(r"kSinglePromptPass\s*=\s*(true|false)", hpp)
+    assert m and (m.group(1) == "true") == (run.PROMPT_PASS == "single")

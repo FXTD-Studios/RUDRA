@@ -32,6 +32,9 @@ namespace rudra::ofx_engine {
 // AI fill (phase 3, 26 Nov 2026): what the RUDRA app's AI fill runs on (Deliver > AI fill > Setup).
 struct GenFillConfig {
     std::filesystem::path python, repo, base, lora;
+    // 1.3.2: Florence-2 base for Suggest prompt ("florence" in the file, else beside the base model as the app's setup
+    // puts it); empty when it is not set up (Suggest prompt then offers the presets).
+    std::filesystem::path florence;
 };
 
 struct EngineConfig {

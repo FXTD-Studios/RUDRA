@@ -55,3 +55,25 @@ def test_no_gpu_reason_names_the_actual_problem():
     gpu_less = no_gpu_reason({"torch": "2.5.1+cu128", "device": "cpu", "memory_gb": None})
     assert "found no CUDA GPU" in gpu_less and "CPU-only" not in gpu_less
     assert "needs 16 GB" in no_gpu_reason({"torch": "2.5.1", "device": "cuda", "memory_gb": 8.0})
+
+
+def test_a_new_prompt_says_how_long_it_took_and_where_in_the_log(capsys):
+    """1.3.2: the log (stderr, not the app's events) says how long new prompts took and on which device."""
+    bank = FakeBank({"base"})
+    bank.encoder_device = "cuda"
+    events = []
+    prepare_prompts(bank, ["base", "my own sky"], lambda **o: events.append(o))
+    err = capsys.readouterr().err
+    assert "1 new embedded in" in err and "on the cuda" in err
+    assert [e["event"] for e in events] == ["embedding"]                 # no new event for the app to read
+    prepare_prompts(FakeBank({"base"}), ["base"], lambda **o: None)
+    assert capsys.readouterr().err == ""                                 # nothing new: nothing said
+
+
+def test_prompt_pass_is_blend_or_single():
+    import pytest
+    from rudra.genfill.run import PROMPT_PASS, checked_prompt_pass
+    assert checked_prompt_pass("single") == "single" and checked_prompt_pass("blend") == "blend"
+    assert PROMPT_PASS in ("blend", "single")
+    with pytest.raises(ValueError, match="blend or single"):
+        checked_prompt_pass("both")

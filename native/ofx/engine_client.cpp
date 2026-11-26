@@ -375,7 +375,7 @@ Result<GenFillConfig> load_genfill_config() {
     }
     const json& j = *jr;
     if (!j.contains("genfill") || !j["genfill"].is_object())
-        return make_error(ErrorCode::NotFound, "AI fill is not set up for the plug-in: run tmp\\BUILD_OFX.ps1 -Install, or set up AI fill in the RUDRA app (Deliver > AI fill > Setup).");
+        return make_error(ErrorCode::NotFound, "AI fill is not set up for the plug-in: set up AI fill in RUDRA (Reconstruct > AI generation > Setup), then choose Help > Install the OFX plug-in again.");
     const json& g = j["genfill"];
     GenFillConfig c{utf8_path(g.value("python", std::string())), utf8_path(g.value("repo", std::string())),
                     utf8_path(g.value("base", std::string())), utf8_path(g.value("lora", std::string()))};
@@ -388,6 +388,11 @@ Result<GenFillConfig> load_genfill_config() {
         return make_error(ErrorCode::NotFound, "AI fill: the Wan2.1-VACE-1.3B base model is not where the settings say.", c.base.string());
     if (c.lora.empty() || !fs::is_regular_file(c.lora, ec))
         return make_error(ErrorCode::NotFound, "AI fill v5 is not installed (File > Model packages in RUDRA).", c.lora.string());
+    const auto florence_at = [&ec](const fs::path& d) { return !d.empty() && fs::is_regular_file(d / "config.json", ec); };
+    if (const fs::path f = utf8_path(g.value("florence", std::string())); florence_at(f))
+        c.florence = f;
+    else if (florence_at(c.base.parent_path() / "Florence-2-base"))
+        c.florence = c.base.parent_path() / "Florence-2-base";
     return c;
 }
 

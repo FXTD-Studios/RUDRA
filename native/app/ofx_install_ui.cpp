@@ -151,7 +151,7 @@ QString MainWindow::install_ofx(bool interactive) {
     }
     QString why;
     if (const auto g = genfill_setup(&why); g && g->v5) {
-        s.genfill = OfxEngineSettings::GenFill{g->python, g->repo, g->base, g->lora};
+        s.genfill = OfxEngineSettings::GenFill{g->python, g->repo, g->base, g->lora, genfill_florence_dir(*g)};
         aifill = QStringLiteral("ready (AI fill v5)");
     } else {
         aifill = g ? QStringLiteral("not yet: it needs AI fill v5 (File › Model packages)")

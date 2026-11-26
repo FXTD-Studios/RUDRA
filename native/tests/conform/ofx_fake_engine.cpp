@@ -7,6 +7,9 @@
 // Started as `<it> .../ofx_job.py --dir <folder> ...` (26 Nov 2026), it stands in for AI fill's job
 // (rudra/genfill/ofx_job.py): each stored master becomes the "fill" of its frame, and status.json says done
 // (RUDRA_OFX_FAKE_JOB=fail: failed).
+// Started as `<it> .../ofx_prompt.py suggest|embed ...` (1.3.2), it stands in for the plug-in's prompt helpers:
+// suggest writes two highlight suggestions and a shadow one to --out (RUDRA_OFX_FAKE_SUGGEST=slow: after 1.5 s;
+// fail: an error; nothing: no suggestion), embed writes --text and --device to <--cache>/embed_called.txt.
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -18,6 +21,7 @@
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -59,12 +63,52 @@ int fake_job(int argc, char** argv) {
     return 0;
 }
 
+int fake_prompt(int argc, char** argv) {
+    namespace fs = std::filesystem;
+    const auto arg = [&](const char* name) -> std::string {
+        for (int i = 3; i + 1 < argc; ++i)
+            if (std::string(argv[i]) == name) return argv[i + 1];
+        return {};
+    };
+    const std::string cmd = argc > 2 ? argv[2] : "";
+    const char* m = std::getenv("RUDRA_OFX_FAKE_SUGGEST");
+    const std::string mode = m ? m : "";
+    if (cmd == "embed") {
+        std::ofstream(fs::path(arg("--cache")) / "embed_called.txt") << arg("--text") << "\n" << arg("--device") << "\n";
+        return 0;
+    }
+    if (cmd != "suggest") return 2;
+    if (mode == "slow") std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    json out;
+    if (mode == "fail" || !fs::is_regular_file(arg("--frame"))) {
+        out = {{"ok", false}, {"error", "the stand-in could not read the frame"}};
+    } else if (mode == "nothing") {
+        out = {{"ok", true}, {"suggestions", json::array()}, {"describe_error", "Florence-2 is not set up"}};
+    } else {
+        const std::string florence = arg("--florence");
+        out = {{"ok", true},
+               {"clipped_fraction", 0.2},
+               {"suggestions",
+                json::array({{{"id", "shot"}, {"label", "From this shot"}, {"text", "bright hazy sky, stand-in"}, {"region", "highlight"},
+                              {"reason", "stand-in on " + arg("--device") + (florence.empty() ? "" : ", Florence " + florence)}},
+                             {{"id", "shadow_detail"}, {"label", "Shadow detail"}, {"text", "dark"}, {"region", "shadow"}, {"reason", "x"}},
+                             {{"id", "sky_overcast"}, {"label", "Overcast sky"}, {"text", "bright overcast sky"}, {"region", "highlight"},
+                              {"reason", "a large clipped area"}}})}};
+    }
+    const fs::path to = arg("--out"), part = to.string() + ".part";
+    std::ofstream(part, std::ios::trunc) << out.dump();
+    std::error_code ec;
+    fs::rename(part, to, ec);
+    return ec ? 2 : 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     if (argc >= 2) {
         const std::string first = argv[1];
         if (first.size() >= 10 && first.compare(first.size() - 10, 10, "ofx_job.py") == 0) return fake_job(argc, argv);
+        if (first.size() >= 13 && first.compare(first.size() - 13, 13, "ofx_prompt.py") == 0) return fake_prompt(argc, argv);
     }
     if (argc < 3 || std::string(argv[1]) != "aces-v2-serve") return 2;
     if (const char* f = std::getenv("RUDRA_OFX_FAKE_ENGINE"); f && std::string(f) == "error") {

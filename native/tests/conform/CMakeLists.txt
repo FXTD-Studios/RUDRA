@@ -32,7 +32,8 @@ if(RUDRA_OFX_HOST_TEST)
   target_link_libraries(rudra_ofx_host_tests PRIVATE rudra_ofx_hostsupport $<LINK_ONLY:rudra_ofx_process> GTest::gtest_main)
   target_include_directories(rudra_ofx_host_tests PRIVATE ${PROJECT_SOURCE_DIR}/ofx)
   target_include_directories(rudra_ofx_host_tests BEFORE PRIVATE $<TARGET_PROPERTY:GTest::gtest,INTERFACE_INCLUDE_DIRECTORIES>)
-  target_compile_definitions(rudra_ofx_host_tests PRIVATE RUDRA_OFX_BUNDLE_DIR="${CMAKE_BINARY_DIR}")
-  add_dependencies(rudra_ofx_host_tests rudra_ofx_plugin)
+  target_compile_definitions(rudra_ofx_host_tests PRIVATE RUDRA_OFX_BUNDLE_DIR="${CMAKE_BINARY_DIR}"
+                             RUDRA_OFX_FAKE_ENGINE="$<TARGET_FILE:rudra_ofx_fake_engine>")   # 1.3.2: Suggest prompt's stand-in
+  add_dependencies(rudra_ofx_host_tests rudra_ofx_plugin rudra_ofx_fake_engine)
   gtest_discover_tests(rudra_ofx_host_tests DISCOVERY_MODE PRE_TEST)
 endif()

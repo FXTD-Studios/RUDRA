@@ -24,14 +24,18 @@ Memory (16 Nov 2026, RUDRA 1.2.5): set_memory_mode() lets the fill run on GPUs u
 """
 from __future__ import annotations
 
+import gc
 import hashlib
 import json
+import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import torch
 import torch.nn.functional as F
 
+PROMPT_PASSES = ('blend', 'single')
 BASE_PROMPT = ('scene-referred high dynamic range footage, natural light, physically plausible '
                'highlights and shadow detail')
 MAX_SEQUENCE_LENGTH = 512
@@ -47,14 +51,79 @@ def sha256_file(p: str | Path) -> str:
 
 
 # ---------------------------------------------------------------------------------- prompts
+# 1.3.2 (26 Nov 2026): a new prompt is read faster. The encoder reads the prompt's own tokens, not all 512 padded
+# ones: the padded positions are masked out of every attention, so the prompt's tokens come out as before, up to
+# bfloat16 rounding (diffusers' Wan pipeline keeps only those and zero-pads, as get() does), at a fraction of the
+# work (a 30-token prompt: 1/17). With device 'auto' the encoder runs on the GPU when the GPU has its size free
+# (make_room, set by WanFill, may first move the fill's transformer to the CPU), else on the CPU as before.
+TEXT_ENCODER_MARGIN = 768 * 2 ** 20      # beyond the weights: activations and the CUDA allocator's slack
+
+
+def text_encoder_parameters(base: str | Path | None) -> int:
+    """The text encoder's parameter count, from its safetensors headers (nothing loaded); 0 when unknown."""
+    if base is None:
+        return 0
+    n = 0
+    for f in sorted((Path(base) / 'text_encoder').glob('*.safetensors')):
+        try:
+            with open(f, 'rb') as fh:
+                size = int.from_bytes(fh.read(8), 'little')
+                head = json.loads(fh.read(size))
+        except (OSError, ValueError):
+            return 0
+        for k, v in head.items():
+            if k != '__metadata__':
+                c = 1
+                for d in v.get('shape', []):
+                    c *= int(d)
+                n += c
+    return n
+
+
+def gpu_free_bytes() -> int:
+    """GPU memory free for this process now (CUDA; 0 elsewhere), within RUDRA_GENFILL_MEMORY_CAP_GB when set."""
+    if not torch.cuda.is_available():
+        return 0
+    try:
+        free, _total = torch.cuda.mem_get_info()
+    except Exception:  # noqa: BLE001 - a driver that cannot say: as if nothing were free
+        return 0
+    cap = os.environ.get('RUDRA_GENFILL_MEMORY_CAP_GB', '').strip()
+    if cap:
+        try:
+            free = min(free, int(float(cap) * 2 ** 30) - torch.cuda.memory_reserved())
+        except ValueError:
+            pass
+    return max(0, int(free))
+
+
+def encode_tokens(encoder, input_ids: torch.Tensor, attention_mask: torch.Tensor, device) -> torch.Tensor:
+    """(1, L, dim) float32 on the CPU, L = input_ids' length: the encoder on the prompt's own tokens (the mask's
+    leading ones, as the tokenizer pads on the right), zeros after them. A mask that is not leading ones (a
+    tokenizer padding on the left) is encoded whole, masked, as before 1.3.2."""
+    n = int(attention_mask.gt(0).sum())
+    if n > 0 and bool(attention_mask[0, :n].gt(0).all()):
+        h = encoder(input_ids[:, :n].to(device), attention_mask[:, :n].to(device)).last_hidden_state.float().cpu()
+        e = torch.zeros((1, input_ids.shape[1], h.shape[-1]), dtype=torch.float32)
+        e[:, :n] = h
+        return e
+    e = encoder(input_ids.to(device), attention_mask.to(device)).last_hidden_state.float().cpu()
+    e[:, n:] = 0
+    return e
+
+
 class PromptBank:
     """umT5 prompt embeddings, cached on disk by text (so the 11 GB encoder loads at most once)."""
 
     def __init__(self, base: str | Path | None, cache: str | Path | None, device='cpu', dtype=torch.bfloat16):
+        """device: where the encoder runs; 'auto' (1.3.2): the GPU when it has the room, else the CPU."""
         self.base, self.device, self.dtype = base, device, dtype
         self.cache = Path(cache) if cache else None
         self._mem: dict[str, torch.Tensor] = {}
         self._encoder = None
+        self.make_room = None            # WanFill.load: frees the GPU for the encoder (its transformer to the CPU)
+        self.encoder_device = None       # where the encoder ran last, for the log
+        self.seconds = 0.0               # time spent loading the encoder and embedding, for the log
 
     @staticmethod
     def key(text: str) -> str:
@@ -68,14 +137,44 @@ class PromptBank:
     def put(self, text: str, embeds: torch.Tensor):
         self._mem[self.key(text)] = embeds
 
+    def _encoder_room(self) -> str:
+        """'cuda' when the GPU has the encoder's weights and TEXT_ENCODER_MARGIN free (after make_room if
+        need be), else 'cpu'. Only for device 'auto'."""
+        if not torch.cuda.is_available():
+            return 'cpu'
+        params = text_encoder_parameters(self.base)
+        if params <= 0:
+            return 'cpu'
+        need = params * torch.tensor([], dtype=self.dtype).element_size() + TEXT_ENCODER_MARGIN
+        if gpu_free_bytes() >= need:
+            return 'cuda'
+        if self.make_room is not None:
+            self.make_room()
+            torch.cuda.empty_cache()
+            if gpu_free_bytes() >= need:
+                return 'cuda'
+        return 'cpu'
+
     def _load_encoder(self):
         from transformers import AutoTokenizer, UMT5EncoderModel
         tok = AutoTokenizer.from_pretrained(self.base, subfolder='tokenizer')
-        enc = UMT5EncoderModel.from_pretrained(self.base, subfolder='text_encoder', torch_dtype=self.dtype)
-        self._encoder = (tok, enc.to(self.device).eval())
+        enc = UMT5EncoderModel.from_pretrained(self.base, subfolder='text_encoder', torch_dtype=self.dtype).eval()
+        device = self._encoder_room() if self.device == 'auto' else self.device
+        if device != 'cpu':
+            oom = (getattr(torch.cuda, 'OutOfMemoryError', RuntimeError), RuntimeError)
+            try:
+                enc = enc.to(device)
+            except oom:                       # the room went to someone else meanwhile: the CPU, as before 1.3.2
+                enc = enc.to('cpu')
+                device = 'cpu'
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+        self._encoder = (tok, enc, device)
+        self.encoder_device = device
 
     def release(self):
         self._encoder = None
+        gc.collect()                          # the 11 GB go back now, not at the next collection
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         elif getattr(torch.backends, 'mps', None) and torch.backends.mps.is_available():
@@ -94,14 +193,15 @@ class PromptBank:
             return e
         if self.base is None:
             raise KeyError(f'no embeddings for prompt {text!r} and no text encoder to make them')
+        t0 = time.time()
         if self._encoder is None:
             self._load_encoder()
-        tok, enc = self._encoder
+        tok, enc, device = self._encoder
         t = tok([' '.join(text.split())], padding='max_length', max_length=MAX_SEQUENCE_LENGTH, truncation=True,
                 add_special_tokens=True, return_attention_mask=True, return_tensors='pt')
         n = int(t.attention_mask.gt(0).sum())
-        e = enc(t.input_ids.to(self.device), t.attention_mask.to(self.device)).last_hidden_state.float().cpu()
-        e[:, n:] = 0
+        e = encode_tokens(enc, t.input_ids, t.attention_mask, device)
+        self.seconds += time.time() - t0
         if f:
             f.parent.mkdir(parents=True, exist_ok=True)
             torch.save(e, f)
@@ -126,6 +226,13 @@ class FillSettings:
     # above 1 extrapolates away from the base prompt (stronger adherence, experimental: the v3
     # gates were passed at 1).
     prompt_strength: float = 1.0
+    # 1.3.2 (26 Nov 2026): how a single region prompt at strength 1 is applied. 'blend': a prediction with the
+    # base prompt everywhere and one with the region prompt, blended by the region's mask (two transformer
+    # passes a step, as gated). 'single': the region prompt drives the whole window in one pass: inside the
+    # region that is the prediction 'blend' takes there, outside it the window is the master's own context
+    # (VACE keeps it), so the fill comes out nearly the same in half the time. Two region prompts, or a
+    # strength other than 1, always blend.
+    prompt_pass: str = 'blend'
     extra: dict = field(default_factory=dict)
 
 
@@ -181,7 +288,10 @@ class WanFill:
 
     @classmethod
     def load(cls, base: str | Path, lora: str | Path | None = None, device='cuda', dtype=torch.bfloat16,
-             flow_shift: float = 3.0, prompt_cache: str | Path | None = None, text_device: str | None = None):
+             flow_shift: float = 3.0, prompt_cache: str | Path | None = None, text_device: str | None = None,
+             prompts: PromptBank | None = None):
+        """prompts (1.3.2): a PromptBank made before the model, whose prompts were read while the GPU was free;
+        else one is made here (text_device, else the model's device)."""
         from diffusers import AutoencoderKLWan, WanVACETransformer3DModel
         from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
         vae = AutoencoderKLWan.from_pretrained(base, subfolder='vae', torch_dtype=torch.float32).to(device).eval()
@@ -191,8 +301,10 @@ class WanFill:
         tr = tr.to(device).eval()
         sch = UniPCMultistepScheduler.from_pretrained(base, subfolder='scheduler')
         sch = UniPCMultistepScheduler.from_config(sch.config, flow_shift=flow_shift)
-        pb = PromptBank(base, prompt_cache, device=text_device or device, dtype=dtype)
+        pb = prompts if prompts is not None else PromptBank(base, prompt_cache, device=text_device or device, dtype=dtype)
         self = cls(vae, tr, sch, pb, device=device, dtype=dtype)
+        if self.device.type == 'cuda':
+            pb.make_room = lambda: self._transformer_to_device(False)   # denoise() brings it back
         self.identity = {'base': str(base), 'lora': str(lora) if lora else None,
                          'lora_sha256': sha256_file(lora) if lora else None, 'flow_shift': flow_shift,
                          'dtype': str(dtype).replace('torch.', ''), 'vae_dtype': 'float32'}
@@ -268,12 +380,9 @@ class WanFill:
         the step's level (x_t = (1 - sigma) x0 + sigma noise, the flow schedule, the window's own noise),
         so the rest of the window is generated to continue them; after that the model finishes them itself
         (the seam is crossfaded as before). known None or pin 0: exactly the window as before."""
-        self._transformer_to_device(True)
-        n_layers = len(self.transformer.config.vace_layers)
-        scale = torch.full((n_layers,), float(s.conditioning_scale), device=self.device, dtype=self.dtype)
-        g = torch.Generator('cpu').manual_seed(int(s.seed))
+        # The prompts first (1.3.2): one not read yet loads the text encoder, which may move the transformer off
+        # the GPU to make room; it comes back just below.
         shape = (1, self.transformer.config.in_channels) + tuple(ctx.shape[2:])
-        x = torch.randn(shape, generator=g, dtype=torch.float32).to(self.device)
         base = self.prompts.get(s.prompt)
         regions = []
         weights = self._region_weights(region_masks or {}, shape)
@@ -281,6 +390,16 @@ class WanFill:
             if text.strip() and key in weights and weights[key].any():
                 regions.append((weights[key], self.prompts.get(text)))
         neg = self.prompts.get(s.negative) if s.guidance > 1 else None
+        self._transformer_to_device(True)
+        n_layers = len(self.transformer.config.vace_layers)
+        scale = torch.full((n_layers,), float(s.conditioning_scale), device=self.device, dtype=self.dtype)
+        g = torch.Generator('cpu').manual_seed(int(s.seed))
+        x = torch.randn(shape, generator=g, dtype=torch.float32).to(self.device)
+        if s.prompt_pass not in PROMPT_PASSES:
+            raise ValueError(f"prompt_pass must be one of {', '.join(PROMPT_PASSES)} (got {s.prompt_pass!r})")
+        drive = base
+        if s.prompt_pass == 'single' and len(regions) == 1 and s.prompt_strength == 1.0:
+            drive, regions = regions[0][1], []     # one pass a step: the region prompt drives the window
         self.scheduler.set_timesteps(s.steps, device=self.device)
         steps = len(self.scheduler.timesteps)
         held = 0 if known is None or pin <= 0 else max(1, min(steps, int(round(float(pin) * steps))))
@@ -296,7 +415,7 @@ class WanFill:
                 x[:, :, :k] = (1 - level) * x0 + level * noise[:, :, :k]
             hold(sig[0])
         for i, t in enumerate(self.scheduler.timesteps):
-            eps = self._predict(x, t, base, ctx, scale)
+            eps = self._predict(x, t, drive, ctx, scale)
             for w, e in regions:
                 if s.prompt_strength == 1.0:
                     eps = eps * (1 - w) + self._predict(x, t, e, ctx, scale) * w

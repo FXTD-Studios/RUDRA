@@ -1049,6 +1049,19 @@ def checked_prompt_strength(v) -> float:
     return x
 
 
+# 1.3.2 (26 Nov 2026): model.FillSettings.prompt_pass. 'blend' as AI fill v5 was gated; tools/prompt_check.py
+# (tmp/09V_test/v4_gates/run_prompt_check.py) measures 'single' against it on the gate shots.
+PROMPT_PASS = 'blend'
+
+
+def checked_prompt_pass(v) -> str:
+    """--prompt-pass / a request's prompt_pass: 'blend' or 'single'."""
+    x = str(v)
+    if x not in ('blend', 'single'):
+        raise ValueError(f'prompt_pass must be blend or single (got {v!r})')
+    return x
+
+
 def checked_shape_gain(v) -> float:
     """--shape-gain / a request's shape_gain: 0..2, finite (RUDRA 1.1 exposes it as Detail strength)."""
     x = float(v)
@@ -1154,9 +1167,13 @@ def prepare_prompts(bank, texts, emit) -> None:
     new = [t for t in texts if not bank.has(t)]
     if new:
         emit(event='embedding', prompts=new, text=f'embedding {len(new)} new prompt(s): once, a minute or more')
+    t0 = time.time()
     for t in texts:
         bank.get(t)
     bank.release()
+    if new:   # the log only (stderr): how long a new prompt took, and where (1.3.2)
+        where = getattr(bank, 'encoder_device', None) or '?'
+        print(f'prompts: {len(new)} new embedded in {time.time() - t0:.1f} s on the {where}', file=sys.stderr, flush=True)
 
 
 def serve(model, view, a, emit, FillSettings) -> int:
@@ -1201,9 +1218,11 @@ def serve(model, view, a, emit, FillSettings) -> int:
         try:
             s = FillSettings(steps=int(r.get('steps', a.steps)), seed=int(r.get('seed', a.seed)),
                              guidance=float(r.get('guidance', a.guidance)),
+                             negative=str(r.get('negative', a.negative)),
                              prompt_highlight=str(r.get('prompt_highlight', a.prompt_highlight)),
                              prompt_shadow=str(r.get('prompt_shadow', a.prompt_shadow)),
-                             prompt_strength=checked_prompt_strength(r.get('prompt_strength', a.prompt_strength)))
+                             prompt_strength=checked_prompt_strength(r.get('prompt_strength', a.prompt_strength)),
+                             prompt_pass=checked_prompt_pass(r.get('prompt_pass', a.prompt_pass)))
             prepare_prompts(model.prompts, [s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative], tagged)
             ms = MaskSettings(tau_high=int(r.get('tau_high', a.tau_high)), tau_low=int(r.get('tau_low', a.tau_low)),
                               blend_high=a.blend_high, blend_low=a.blend_low, feather=a.feather,
@@ -1261,6 +1280,9 @@ def main(argv=None):
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--steps', type=int, default=30)
     ap.add_argument('--guidance', type=float, default=1.0)
+    ap.add_argument('--negative', default='', help='with --guidance above 1: the prompt guided away from ("" the empty prompt)')
+    ap.add_argument('--prompt-pass', default=PROMPT_PASS, choices=('blend', 'single'),
+                    help="1.3.2: one region prompt at strength 1: 'blend' (two passes a step, as gated) or 'single' (one)")
     ap.add_argument('--window', type=int, default=33)
     ap.add_argument('--overlap', type=int, default=8)
     ap.add_argument('--max-area', type=int, default=832 * 480)
@@ -1380,14 +1402,22 @@ def main(argv=None):
         apply_memory_cap(device)                         # the benchmark's stand-in for a smaller card
         t0 = time.time()
         cache = Path(a.prompt_cache) if a.prompt_cache else Path(a.lora).with_suffix('').parent / 'prompt_cache'
-        model = WanFill.load(a.base, a.lora, device=device, dtype=dtype, prompt_cache=cache, text_device='cpu')  # umT5 (11 GB) never on a 16 GB GPU beside the model
-        model.set_memory_mode(memory_mode(a.low_memory, gpu_memory_gb(device)))
         checked_shape_gain(a.shape_gain)
         region = parse_region(a.region)                  # refused before the model loads
-        s = FillSettings(steps=a.steps, seed=a.seed, guidance=a.guidance,
+        s = FillSettings(steps=a.steps, seed=a.seed, guidance=a.guidance, negative=a.negative,
                          prompt_highlight=a.prompt_highlight, prompt_shadow=a.prompt_shadow,
-                         prompt_strength=checked_prompt_strength(a.prompt_strength))
-        prepare_prompts(model.prompts, [s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative], emit)
+                         prompt_strength=checked_prompt_strength(a.prompt_strength),
+                         prompt_pass=checked_prompt_pass(a.prompt_pass))
+        # The prompts before the model (1.3.2): a new one is read on the GPU while the GPU is still free (umT5,
+        # 11 GB, never beside the model on a 16 GB card), else on the CPU as before. The serve mode's later
+        # prompts take the GPU when it has room (the transformer may step off it meanwhile: PromptBank.make_room).
+        from .model import PromptBank
+        bank = PromptBank(a.base, cache, device='auto' if device == 'cuda' else 'cpu', dtype=dtype)
+        prepare_prompts(bank, [s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative], emit)
+        if device == 'cuda':
+            torch.cuda.reset_peak_memory_stats()        # the fill's own peak in memory_report, not the text encoder's
+        model = WanFill.load(a.base, a.lora, device=device, dtype=dtype, prompt_cache=cache, prompts=bank)
+        model.set_memory_mode(memory_mode(a.low_memory, gpu_memory_gb(device)))
         view = ACES2View(threads=max(1, min(16, a.ocio_threads)))
         emit(event='ready', device=device, load_seconds=round(time.time() - t0, 1), model=model.identity)
         if a.serve:

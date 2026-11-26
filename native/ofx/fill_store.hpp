@@ -35,11 +35,18 @@ struct FillRequest {
     std::string prompt;        // what to draw in the highlights ("" none, as the app's default)
     int seed = 0;
     int steps = 30;            // the fill's denoising steps (27 Nov 2026: the plug-in's Steps, 10 .. 50)
+    double prompt_strength = 1.0;   // 1.3.2: the plug-in's Prompt strength, 0 .. 2 (1 with no prompt)
     std::string region_json;   // the luminance limit, deliver reconstruction_region_json ("" the whole frame)
     std::string master_key;    // every other setting that changes the master (route, Source, Strength ...)
     int frames() const { return last - first + 1; }
     std::string key() const;   // 16 hex digits
 };
+
+// rudra/genfill/run.py PROMPT_PASS == "single" (1.3.2): one region prompt at strength 1 costs one transformer pass
+// a step instead of two, which the time Generate announces counts (tests/test_ofx_job.py checks the two agree).
+inline constexpr bool kSinglePromptPass = false;
+// The transformer passes a step of this request's fill: 1 without a prompt, 2 when its prompt is blended in.
+int prompt_passes(const FillRequest& r);
 
 enum class State { None, Collecting, Running, Done, Failed, Cancelled };
 
@@ -83,5 +90,18 @@ std::optional<PlanarBuffer> master_frame(const FillRequest& r, int frame, const 
 
 // One line for the plug-in's Status parameter and messages.
 std::string status_text(const Status& s);
+
+// 1.3.2: the prompt read while the frames are collected (rudra/genfill/ofx_prompt.py embed, beside the host, on the
+// CPU), into <root>/prompt_cache, so the fill does not wait for the text encoder after the last frame. Started by
+// Generate with a prompt; one at a time (a reading that runs is left alone).
+Result<void> start_prompt_embed(const FillRequest& r, const ofx_engine::GenFillConfig& cfg);
+
+// 1.3.2, Suggest prompt: <root>/<shot id>/suggest/ (frame.tif, suggest.json, suggest.log). The frame's codes go to
+// ofx_prompt.py suggest beside the host (Florence-2 from cfg.florence when set up; on the CPU when `cpu`). Refused
+// while a suggestion for this shot is still being made.
+Result<void> start_suggest(const std::string& shot_id, const SdrImage& codes, const ofx_engine::GenFillConfig& cfg, bool cpu);
+// The answer (suggest.json's text) once written; nullopt while it is being made; an error when none was started
+// or it ended without one.
+Result<std::optional<std::string>> suggest_answer(const std::string& shot_id);
 
 }  // namespace rudra::ofx_fill

@@ -40,6 +40,7 @@ struct OfxEngineSettings {
     std::string runtime = "onnxruntime", device = "cpu";
     struct GenFill {
         std::filesystem::path python, repo, base, lora;   // genfill_setup(), AI fill v5 only
+        std::filesystem::path florence;                    // 1.3.2: Florence-2 for Suggest prompt; empty when not set up
     };
     std::optional<GenFill> genfill;
 };

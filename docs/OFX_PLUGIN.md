@@ -66,7 +66,12 @@ steps, the same in Nuke and Resolve:
 
 1. **Generate.** Open the AI fill group and press Generate, with a Prompt naming what the clipped areas show if
    you like, a **Seed** (another seed draws another fill) and **Steps** (30, as AI fill v5 was tested: about 20
-   minutes for 100 frames; fewer is faster, but below 20 it can draw stripes). **From frame** and **To frame**
+   minutes for 100 frames; fewer is faster, but below 20 it can draw stripes). **Suggest prompt** (1.3.2) writes a
+   prompt for the frame on screen into Prompt, as the RUDRA app's Suggest a prompt does: Florence-2 describes the
+   frame when RUDRA's AI fill setup installed it ("From this shot"), else the presets its clipped areas point to;
+   the status says where it came from and the other choices, and you can edit it. **Prompt strength** (0 to 2, 1 as
+   AI fill v5 was tested) is the app's Deliver setting: above 1 the fill follows the prompt more closely
+   (experimental). **From frame** and **To frame**
    choose the frames it draws (0: the clip's first and last): try it on a few, then the shot. The status says how
    many frames and roughly how long. The node starts collecting.
    **In Resolve, put the playhead on the first frame to draw before you press Generate.** Resolve numbers a
@@ -81,13 +86,17 @@ steps, the same in Nuke and Resolve:
    shown meanwhile. When **Refresh status** says ready, the host renders the clip again and every frame shows the
    stored fill, after Exposure and in the chosen Output. **Alpha › What AI drew** shows where it drew.
 
-A prompt costs time once: a prompt the fill has not read before loads the 11 GB text model on the CPU to read it,
-a minute or two before drawing starts (the status says so). Every prompt read is kept for every RUDRA node, beside
+A prompt costs time once: a prompt the fill has not read before needs the 11 GB text model to read it. Since 1.3.2
+Generate starts reading it at once, on the CPU, while the frames are collected, so by the last frame it is usually
+read; if not, the fill waits for it (the status says so). Every prompt read is kept for every RUDRA node, beside
 the stored fills (`ofx_fill\prompt_cache`), and the prompts the RUDRA app already knows are copied in: the same
-prompt again costs nothing. An empty prompt draws from the picture alone and needs no text model.
+prompt again costs nothing. An empty prompt draws from the picture alone and needs no text model. A prompt is blended
+into the fill with a second pass of the model each step, so a fill with a prompt takes about twice as long; the time
+Generate announces counts it.
 
 A stored fill belongs to the settings it was made with. A changed route, Source, Strength, Recovery, luminance
-limit, prompt, seed or steps makes it **out of date**, and the master is shown until you Generate again or set it back.
+limit, prompt, prompt strength, seed or steps makes it **out of date**, and the master is shown until you Generate
+again or set it back.
 Exposure, Output, Alpha and the Mask can change freely: the mask limits where the fill is shown. A frame whose picture coming into the node has changed since
 Generate (a grade above it, say) shows the master too. **Cancel** stops collecting, or the fill being drawn;
 **Clear stored fill** deletes the node's stored frames and fills from the disk.
@@ -106,6 +115,10 @@ for 100 frames), four times that at 4K.
   outside the clip's range; "full-size renders only" means a proxy is on.
 - The fill finished but the master is still shown: press **Refresh status**. If the host still shows the old
   frames, turn AI fill off and on.
+- **Suggest prompt** waits up to 45 seconds (Florence-2 loads the first time). If the status says it is still
+  reading, press **Refresh status** a little later: the suggestion goes into Prompt then, unless you typed one
+  meanwhile. Its log is `suggest.log` in `ofx_fill\<node>\suggest\`; a prompt read during collection logs to
+  `ofx_fill\prompt_cache\embed.log`.
 - Learned ACES 2.0 in Nuke ending at once with **0xC0000139** ("a DLL of another version") came from the DLL
   folder Nuke hands every program it starts. The engine now starts from a folder holding its own DLLs: the
   installed RUDRA's, or `build\ofx_engine` from `tmp\BUILD_OFX.ps1 -Install`.

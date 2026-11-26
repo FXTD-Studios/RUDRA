@@ -3009,6 +3009,14 @@ TEST(AppHelp, TheOfxInstallsVersionsAndHostsAreRead) {
     const QJsonObject j = QJsonDocument::fromJson(QByteArray::fromStdString(app::ofx_engine_json(s))).object();
     EXPECT_EQ(j.value("device").toString(), "dml");
     EXPECT_FALSE(j.contains("genfill"));
+    // 1.3.2: AI fill's paths, and Florence-2 for Suggest prompt only when it is set up.
+    s.genfill = app::OfxEngineSettings::GenFill{"py", "repo", "base", "lora", {}};
+    QJsonObject g = QJsonDocument::fromJson(QByteArray::fromStdString(app::ofx_engine_json(s))).object().value("genfill").toObject();
+    EXPECT_EQ(g.value("lora").toString(), "lora");
+    EXPECT_FALSE(g.contains("florence"));
+    s.genfill->florence = "models/Florence-2-base";
+    g = QJsonDocument::fromJson(QByteArray::fromStdString(app::ofx_engine_json(s))).object().value("genfill").toObject();
+    EXPECT_EQ(g.value("florence").toString(), "models/Florence-2-base");
     const auto c = app::elevated_copy_command("/a b/RUDRA.ofx.bundle", "/OFX/Plugins", "/tmp/e");
     ASSERT_FALSE(c.empty());
 #ifdef _WIN32

@@ -30,6 +30,7 @@
 // negative stride for OFX's bottom-up images), so the learned model and AI fill see the picture upright.
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -56,6 +57,7 @@ struct Settings {
     std::string prompt;
     int seed = 0;
     int steps = 30;                        // the fill's steps (27 Nov 2026): fewer is faster, below 20 can draw stripes
+    double prompt_strength = 1.0;          // 1.3.2: how strongly the prompt steers the fill, 0 .. 2 (the app's Deliver's)
     int frame = 0, first_frame = 0, last_frame = 0;   // this frame and the clip's
     bool full_size = true;                 // render scale 1: only then is a frame stored or a stored fill shown
     // The Mask input (27 Nov 2026): width x height weights, the top row first, 0 .. 1; empty = none. Where it is 0
@@ -88,6 +90,22 @@ std::string ai_cancel(const Settings& s);
 std::string ai_clear(const Settings& s);
 std::string ai_status(const Settings& s);   // one line for the Status parameter
 std::string new_shot_id();                  // 16 hex digits, for the hidden parameter
+
+// Suggest prompt (1.3.2): a prompt for AI fill from one frame, as the RUDRA app's Suggest a prompt makes it (what the
+// clipped areas point to and, when RUDRA's AI fill setup installed Florence-2, "From this shot" first).
+struct PromptSuggestion {
+    bool ready = false;                 // false and no error: still being made (ask again with ai_suggestion)
+    std::string error;                  // why there is none
+    std::string text, label, reason;    // the first suggestion, what Prompt takes
+    std::vector<std::string> others;    // the other suggestions' labels
+    std::string note;                   // why there is no "From this shot", when there is none
+};
+// From the host's main thread: starts a suggestion for this frame (8-bit RGB, the top row first) and waits up to
+// `wait_seconds` for it, calling `tick` (the share of the wait gone) meanwhile; tick returning false stops the wait.
+PromptSuggestion ai_suggest(const Settings& s, const unsigned char* rgb, int width, int height, double wait_seconds,
+                            const std::function<bool(double)>& tick = {});
+// The suggestion started last for this shot, read again (ready once made).
+PromptSuggestion ai_suggestion(const Settings& s);
 
 // Ends the learned engine, if one runs (the plug-in's unload). A running AI fill ends with the host.
 void stop_engine();

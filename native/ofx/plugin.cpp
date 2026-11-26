@@ -46,7 +46,9 @@ constexpr const char* kAlphas[] = {"source", "limit", "ai_fill"};
 constexpr const char* kAiGroup = "aiGroup", *kAiFill = "aiFill", *kAiPrompt = "aiPrompt", *kAiSeed = "aiSeed",
                       *kAiGenerate = "aiGenerate", *kAiCancel = "aiCancel", *kAiRefresh = "aiRefresh", *kAiClear = "aiClear",
                       *kAiStatus = "aiStatus", *kAiShot = "aiShot", *kAiShown = "aiShown", *kAiOffset = "aiOffset", *kAiSteps = "aiSteps",
-                      *kAiFrom = "aiFrom", *kAiTo = "aiTo";
+                      *kAiFrom = "aiFrom", *kAiTo = "aiTo", *kAiSuggest = "aiSuggest", *kAiStrength = "aiStrength";
+// Suggest prompt (1.3.2): how long the button waits for Florence-2 before it leaves the answer to Refresh status.
+constexpr double kSuggestWait = 45.0;
 // The Mask input (27 Nov 2026, the general context: Nuke) and its invert switch.
 constexpr const char* kMaskClip = "Mask", *kMaskInvert = "maskInvert";
 
@@ -98,6 +100,7 @@ public:
         ai_steps_ = fetchIntParam(kAiSteps);
         ai_from_ = fetchIntParam(kAiFrom);
         ai_to_ = fetchIntParam(kAiTo);
+        ai_strength_ = fetchDoubleParam(kAiStrength);
         mask_invert_ = fetchBooleanParam(kMaskInvert);
         if (getContext() == OFX::eContextGeneral) mask_ = fetchClip(kMaskClip);   // Resolve (filter): the node's own key
         update_enabled();
@@ -105,6 +108,11 @@ public:
 
     void changedParam(const OFX::InstanceChangedArgs& args, const std::string& name) {
         if (name == kAiStatus || name == kAiShot || name == kAiShown || name == kAiOffset) return;   // the plug-in's own writes
+        if (name == kAiPrompt && args.reason == OFX::eChangeUserEdit) suggest_pending_ = false;   // typed: no late suggestion over it
+        if (name == kAiSuggest) {   // 1.3.2: it writes the Prompt and the Status itself
+            suggest_prompt(args);
+            return;
+        }
         if (name == kRoute || name == kLimit) update_enabled();
         rudra_ofx::Settings s = settings_at(args.time);
         std::string why;
@@ -157,6 +165,8 @@ public:
             ai_shown_->getValue(shown);
             ai_shown_->setValue(shown % 1000000 + 1);
         }
+        // A suggestion that was still being made when Suggest prompt stopped waiting (1.3.2).
+        if (name == kAiRefresh && suggest_pending_) finish_suggestion(rudra_ofx::ai_suggestion(s), suggest_frame_);
     }
 
     void render(const OFX::RenderArguments& args) {
@@ -193,6 +203,7 @@ public:
         }
         if (!result.error.empty())
             fail(result.error + " (" + s.route + " route, " + std::to_string(w) + " x " + std::to_string(h) + ")");
+        if (s.full_size) keep_frame(top, src_row, w, h, s.frame);   // Suggest prompt's frame where the host gives none there
         if (!result.note.empty() && (result.note.rfind("AI fill failed", 0) == 0 || result.note.find("out of date") != std::string::npos ||
                                      result.note.find("not ") != std::string::npos)) {
             log_note_once(result.note);   // in the log as well: Nuke shows a node's warning only on the node
@@ -279,6 +290,7 @@ private:
         ai_prompt_->getValue(s.prompt);
         ai_seed_->getValue(seed);
         ai_steps_->getValue(s.steps);
+        ai_strength_->getValue(s.prompt_strength);
         ai_shot_->getValue(s.shot_id);
         const std::vector<std::string> ids = rudra_ofx::source_ids();
         s.route = kRoutes[clamp_index(route, 2)];
@@ -313,6 +325,100 @@ private:
         return offset;
     }
 
+    // The SDR as 8-bit RGB codes, the top row first (Suggest prompt's frame): RGBA floats, a row `row` floats apart.
+    static void to_rgb8(const float* top, std::ptrdiff_t row, int w, int h, std::vector<unsigned char>& rgb) {
+        rgb.resize(std::size_t(w) * std::size_t(h) * 3);
+        for (int y = 0; y < h; ++y) {
+            const float* r = top + std::ptrdiff_t(y) * row;
+            unsigned char* o = rgb.data() + std::size_t(y) * std::size_t(w) * 3;
+            for (int x = 0; x < w; ++x)
+                for (int c = 0; c < 3; ++c) {
+                    const float v = r[std::ptrdiff_t(x) * 4 + c];
+                    o[std::size_t(x) * 3 + std::size_t(c)] =
+                        static_cast<unsigned char>(std::lround((std::isfinite(v) ? std::clamp(v, 0.0f, 1.0f) : 0.0f) * 255.0f));
+                }
+        }
+    }
+
+    // The last frame rendered at full size, for Suggest prompt in a host that gives no image outside a render.
+    void keep_frame(const float* top, std::ptrdiff_t row, int w, int h, int frame) {
+        std::vector<unsigned char> rgb;
+        to_rgb8(top, row, w, h, rgb);
+        std::lock_guard<std::mutex> lock(frame_mutex_);
+        last_rgb_.swap(rgb);
+        last_w_ = w, last_h_ = h, last_frame_ = frame;
+    }
+
+    // This frame from the host here, outside a render (the OFX spec allows it in changedParam; Nuke gives it). False
+    // when the host gives none.
+    bool frame_now(double time, std::vector<unsigned char>& rgb, int& w, int& h) {
+        try {
+            std::unique_ptr<OFX::Image> img(src_->fetchImage(time));
+            if (!img || img->getPixelDepth() != OFX::eBitDepthFloat || img->getPixelComponents() != OFX::ePixelComponentRGBA)
+                return false;
+            const OfxRectI b = img->getBounds();
+            w = b.x2 - b.x1, h = b.y2 - b.y1;
+            if (w <= 0 || h <= 0) return false;
+            const auto* top = static_cast<const float*>(img->getPixelAddress(b.x1, b.y2 - 1));
+            if (!top) return false;
+            to_rgb8(top, -(img->getRowBytes() / std::ptrdiff_t(sizeof(float))), w, h, rgb);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    // Suggest prompt (1.3.2): this frame (or the last one shown at full size) to RUDRA's prompt suggester, waiting up
+    // to kSuggestWait with the host's progress bar; Prompt takes the first suggestion.
+    void suggest_prompt(const OFX::InstanceChangedArgs& args) {
+        rudra_ofx::Settings s = settings_at(args.time);
+        if (s.shot_id.empty()) {
+            s.shot_id = rudra_ofx::new_shot_id();
+            ai_shot_->setValue(s.shot_id);
+        }
+        std::vector<unsigned char> rgb;
+        int w = 0, h = 0, frame = int(std::lround(args.time));
+        if (!frame_now(args.time, rgb, w, h)) {
+            std::lock_guard<std::mutex> lock(frame_mutex_);
+            rgb = last_rgb_;
+            w = last_w_, h = last_h_, frame = last_frame_;
+        }
+        if (rgb.empty()) {
+            say_suggestion("Suggest prompt: show a frame of this clip at full size first, then press it again.");
+            return;
+        }
+        progressStart("RUDRA: suggesting a prompt");
+        const auto r = rudra_ofx::ai_suggest(s, rgb.data(), w, h, kSuggestWait, [this](double f) { return progressUpdate(f); });
+        progressEnd();
+        finish_suggestion(r, frame);
+    }
+
+    void finish_suggestion(const rudra_ofx::PromptSuggestion& r, int frame) {
+        const std::string at = "frame " + std::to_string(frame);
+        if (!r.ready && r.error.empty()) {
+            suggest_pending_ = true;
+            suggest_frame_ = frame;
+            say_suggestion("Suggest prompt: still reading " + at + " (Florence-2 loads the first time): press Refresh status in a few seconds.");
+            return;
+        }
+        suggest_pending_ = false;
+        if (!r.error.empty()) {
+            say_suggestion("Suggest prompt (" + at + "): " + r.error);
+            return;
+        }
+        ai_prompt_->setValue(r.text);   // as if typed: the stored fill's key follows it
+        std::string msg = "Prompt suggested from " + at + ": " + r.label;
+        if (!r.reason.empty()) msg += " (" + r.reason + ")";
+        for (std::size_t i = 0; i < r.others.size(); ++i) msg += (i ? ", " : ". Others: ") + r.others[i];
+        if (!r.note.empty()) msg += ". " + r.note;
+        say_suggestion(msg + ". Edit it as you like.");
+    }
+
+    void say_suggestion(const std::string& m) {
+        ai_status_->setValue(m);
+        log_failure(m);   // the log too: Resolve may not show the status field
+    }
+
     static bool resolve_host() {
         const OFX::ImageEffectHostDescription* host = OFX::getImageEffectHostDescription();
         return host && host->hostName.find("DaVinci") != std::string::npos;
@@ -344,8 +450,14 @@ private:
     OFX::BooleanParam *clip_fill_ = nullptr, *anchor_ = nullptr, *ai_fill_ = nullptr, *mask_invert_ = nullptr;
     OFX::StringParam *ai_prompt_ = nullptr, *ai_status_ = nullptr, *ai_shot_ = nullptr;
     OFX::IntParam *ai_seed_ = nullptr, *ai_shown_ = nullptr, *ai_offset_ = nullptr, *ai_steps_ = nullptr, *ai_from_ = nullptr, *ai_to_ = nullptr;
+    OFX::DoubleParam* ai_strength_ = nullptr;
     std::mutex note_mutex_;
     std::string last_note_;
+    std::mutex frame_mutex_;                 // the last full-size frame (keep_frame), for Suggest prompt
+    std::vector<unsigned char> last_rgb_;
+    int last_w_ = 0, last_h_ = 0, last_frame_ = 0;
+    bool suggest_pending_ = false;           // a suggestion still being made when the button stopped waiting
+    int suggest_frame_ = 0;
 };
 
 mDeclarePluginFactory(RudraFactory, {}, { rudra_ofx::stop_engine(); });
@@ -509,6 +621,25 @@ void RudraFactory::describeInContext(OFX::ImageEffectDescriptor& desc, OFX::Cont
     prompt->setDefault("");
     prompt->setAnimates(false);
     prompt->setParent(*ai);
+    // 1.3.2: the app's Suggest a prompt and Deliver's Prompt strength, here too.
+    OFX::PushButtonParamDescriptor* suggest = desc.definePushButtonParam(kAiSuggest);
+    suggest->setLabels("Suggest prompt", "Suggest prompt", "Suggest a prompt from this frame");
+    suggest->setHint("Writes a prompt for this frame's clipped highlights into Prompt, as RUDRA's Suggest a prompt does: "
+                     "Florence-2 describes the frame when RUDRA's AI fill setup installed it, else the presets the clipped "
+                     "areas point to. Edit it as you like.");
+    suggest->setParent(*ai);
+    OFX::DoubleParamDescriptor* prompt_strength = desc.defineDoubleParam(kAiStrength);
+    prompt_strength->setLabels("Prompt strength", "Prompt strength", "Prompt strength");
+    prompt_strength->setHint("How strongly the Prompt steers what AI draws in the clipped areas: 1 is how AI fill v5 was tested, "
+                      "0 ignores the prompt, above 1 follows it more closely (experimental). Changing it makes a stored "
+                      "fill out of date.");
+    prompt_strength->setDefault(1.0);
+    prompt_strength->setRange(0.0, 2.0);
+    prompt_strength->setDisplayRange(0.0, 2.0);
+    prompt_strength->setIncrement(0.1);
+    prompt_strength->setDigits(2);
+    prompt_strength->setAnimates(false);
+    prompt_strength->setParent(*ai);
     struct Edge { const char* name; const char* label; const char* hint; };
     for (const Edge& e : {Edge{kAiFrom, "From frame", "The first frame AI fill draws (0: the clip's first). Generate collects and draws only "
                                                     "From to To: a few frames to try it, the shot to deliver it."},

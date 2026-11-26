@@ -138,6 +138,7 @@ std::string ofx_engine_json(const OfxEngineSettings& s) {
                         {"repo", utf8(s.genfill->repo)},
                         {"base", utf8(s.genfill->base)},
                         {"lora", utf8(s.genfill->lora)}};
+        if (!s.genfill->florence.empty()) j["genfill"]["florence"] = utf8(s.genfill->florence);   // Suggest prompt
     }
     j["written_by"] = "RUDRA, Help > Install the OFX plug-in";
     return j.dump(2) + "\n";

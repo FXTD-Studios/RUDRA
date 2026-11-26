@@ -8,7 +8,10 @@
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <list>
 #include <map>
 #include <memory>
@@ -432,3 +435,53 @@ TEST(OfxHost, TheMaskInputIsNukesAndBlendsThePicture) {
     }
     g_mask = -1.0f;
 }
+
+#ifdef RUDRA_OFX_FAKE_ENGINE
+// 1.3.2: Suggest prompt writes a suggestion into Prompt and says where it came from (the stand-in suggester answers;
+// the frame is the one the host gives in changedParam).
+TEST(OfxHost, SuggestPromptPutsASuggestionInThePrompt) {
+    namespace fs = std::filesystem;
+    auto* plugin = loaded().plugin;
+    ASSERT_NE(plugin, nullptr);
+    const auto set_env = [](const char* name, const std::string& value) {
+#ifdef _WIN32
+        _putenv_s(name, value.c_str());
+#else
+        setenv(name, value.c_str(), 1);
+#endif
+    };
+    const fs::path root = fs::temp_directory_path() / "rudra_ofx_host_suggest";
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(root / "repo" / "rudra" / "genfill");
+    std::ofstream(root / "repo" / "rudra" / "genfill" / "ofx_job.py") << "# stand-in\n";
+    fs::create_directories(root / "base" / "transformer");
+    std::ofstream(root / "base" / "transformer" / "config.json") << "{}";
+    std::ofstream(root / "lora.safetensors") << "x";
+    const auto q = [](const fs::path& p) { return "\"" + p.generic_string() + "\""; };
+    std::ofstream(root / "ofx_engine.json") << "{\"cli\": \"\", \"package\": \"\", \"genfill\": {\"python\": "
+                                            << q(RUDRA_OFX_FAKE_ENGINE) << ", \"repo\": " << q(root / "repo") << ", \"base\": "
+                                            << q(root / "base") << ", \"lora\": " << q(root / "lora.safetensors") << "}}";
+    set_env("RUDRA_OFX_ENGINE_CONFIG", (root / "ofx_engine.json").string());
+    set_env("RUDRA_OFX_FILL_ROOT", (root / "store").string());
+    g_values = {};
+    std::unique_ptr<ImageEffect::Instance> instance(plugin->createInstance(kOfxImageEffectContextFilter, nullptr));
+    ASSERT_TRUE(instance);
+    const OfxStatus created = instance->createInstanceAction();
+    ASSERT_TRUE(created == kOfxStatOK || created == kOfxStatReplyDefault);
+    const OfxPointD scale{1.0, 1.0};
+    instance->beginInstanceChangedAction(kOfxChangeUserEdited);
+    instance->paramInstanceChangedAction("aiSuggest", kOfxChangeUserEdited, 0.0, scale);
+    instance->endInstanceChangedAction(kOfxChangeUserEdited);
+    std::string prompt, status;
+    if (auto* p = dynamic_cast<StringValue*>(instance->getParam("aiPrompt"))) p->get(prompt);
+    if (auto* p = dynamic_cast<StringValue*>(instance->getParam("aiStatus"))) p->get(status);
+    EXPECT_EQ(prompt, "bright hazy sky, stand-in");
+    EXPECT_NE(status.find("Prompt suggested from frame 0: From this shot"), std::string::npos) << status;
+    EXPECT_NE(status.find("Others: Overcast sky"), std::string::npos) << status;
+    instance.reset();
+    set_env("RUDRA_OFX_ENGINE_CONFIG", "");
+    set_env("RUDRA_OFX_FILL_ROOT", "");
+    fs::remove_all(root, ec);
+}
+#endif

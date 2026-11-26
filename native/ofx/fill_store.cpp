@@ -168,6 +168,8 @@ std::string FillRequest::key() const {
     json j = {{"first", first}, {"last", last},       {"condition", condition}, {"prompt", prompt},
               {"seed", seed},   {"region", region_json}, {"master", master_key}, {"recipe", "ai-fill-v5 rudra-1.3.1"}};
     if (steps != 30) j["steps"] = steps;   // 30, the default, keeps the keys fills were stored under before Steps
+    if (prompt_strength != 1.0) j["prompt_strength"] = prompt_strength;   // 1.3.2, as Steps
+    if (kSinglePromptPass && !prompt.empty() && prompt_strength == 1.0) j["pass"] = "single";   // another picture
     const std::string s = j.dump();
     return hex(xxh64(std::as_bytes(std::span<const char>(s.data(), s.size()))));
 }
@@ -187,6 +189,11 @@ fs::path root() {
 }
 
 fs::path folder(const FillRequest& r) { return root() / r.shot_id / r.key(); }
+
+int prompt_passes(const FillRequest& r) {
+    if (r.prompt.empty()) return 1;
+    return kSinglePromptPass && r.prompt_strength == 1.0 ? 1 : 2;
+}
 
 std::string frame_stem(int index) {
     char b[24];
@@ -218,7 +225,7 @@ Result<void> begin_collect(const FillRequest& r) {
     fs::remove(d / "cancel", ec);
     json req = {{"shot_id", r.shot_id}, {"key", r.key()}, {"first", r.first}, {"last", r.last},   {"frames", r.frames()},
                 {"condition", r.condition}, {"prompt", r.prompt}, {"seed", r.seed}, {"steps", r.steps}, {"master", r.master_key},
-                {"created", now_seconds()}};
+                {"prompt_strength", r.prompt_strength}, {"created", now_seconds()}};
     req["region"] = r.region_json.empty() ? json() : json::parse(r.region_json, nullptr, false);
     if (req["region"].is_discarded()) return make_error(ErrorCode::InvalidArgument, "AI fill: the luminance limit is not valid JSON.");
     if (auto old = read_json(d / "request.json")) {   // the size the first stored frame set
@@ -304,6 +311,68 @@ Result<void> start_job(const FillRequest& r, const ofx_engine::GenFillConfig& cf
     jobs()[utf8(d)] = std::move(*p);
     fs::remove(d / "collect", ec);   // collected
     return {};
+}
+
+Result<void> start_prompt_embed(const FillRequest& r, const ofx_engine::GenFillConfig& cfg) {
+    if (r.prompt.empty()) return {};
+    static std::mutex m;
+    static std::unique_ptr<Process>* running = new std::unique_ptr<Process>();   // never destroyed, as jobs()
+    std::lock_guard<std::mutex> lock(m);
+    if (*running && (*running)->running()) return {};   // one reading at a time; ofx_prompt.py checks its lock too
+    const fs::path cache = root() / "prompt_cache";
+    std::error_code ec;
+    fs::create_directories(cache, ec);
+    const std::vector<std::string> argv = {utf8(cfg.python), utf8(cfg.repo / "rudra" / "genfill" / "ofx_prompt.py"), "embed",
+                                           "--repo", utf8(cfg.repo), "--base", utf8(cfg.base), "--lora", utf8(cfg.lora),
+                                           "--cache", utf8(cache), "--text", r.prompt, "--device", "cpu"};
+    auto p = Process::start_duplex(argv, cache / "embed.log", utf8(cfg.python.parent_path()));
+    if (!p) return p.error();
+    (*p)->close_input();
+    *running = std::move(*p);
+    return {};
+}
+
+namespace {
+fs::path suggest_dir(const std::string& shot_id) { return root() / shot_id / "suggest"; }
+bool valid_shot(const std::string& shot_id) { return !shot_id.empty() && shot_id.find_first_of("/\\.:") == std::string::npos; }
+}  // namespace
+
+Result<void> start_suggest(const std::string& shot_id, const SdrImage& codes, const ofx_engine::GenFillConfig& cfg, bool cpu) {
+    if (!valid_shot(shot_id)) return make_error(ErrorCode::InvalidArgument, "Suggest prompt: this instance has no shot id.");
+    std::lock_guard<std::mutex> lock(store_mutex());
+    const fs::path d = suggest_dir(shot_id);
+    auto& job = jobs()[utf8(d)];
+    std::error_code ec;
+    if (job && job->running()) {
+        if (!fs::is_regular_file(d / "suggest.json", ec))
+            return make_error(ErrorCode::InvalidArgument, "Suggest prompt is still reading a frame: press Refresh status in a moment.");
+        job->wait();   // it has answered and is ending
+    }
+    fs::create_directories(d, ec);
+    if (ec) return make_error(ErrorCode::IoError, "Suggest prompt: could not make its folder.", utf8(d));
+    fs::remove(d / "suggest.json", ec);
+    if (auto w = ofx_engine::write_tiff16(d / "frame.tif", codes); !w) return w.error();
+    std::vector<std::string> argv = {utf8(cfg.python), utf8(cfg.repo / "rudra" / "genfill" / "ofx_prompt.py"), "suggest",
+                                     "--repo", utf8(cfg.repo), "--frame", utf8(d / "frame.tif"), "--out", utf8(d / "suggest.json"),
+                                     "--cache", utf8(root() / "prompt_cache"), "--tau-high", "240", "--device", cpu ? "cpu" : "auto"};
+    if (!cfg.florence.empty()) argv.insert(argv.end(), {"--florence", utf8(cfg.florence)});
+    auto p = Process::start_duplex(argv, d / "suggest.log", utf8(cfg.python.parent_path()));
+    if (!p) return p.error();
+    (*p)->close_input();
+    job = std::move(*p);
+    return {};
+}
+
+Result<std::optional<std::string>> suggest_answer(const std::string& shot_id) {
+    if (!valid_shot(shot_id)) return make_error(ErrorCode::InvalidArgument, "Suggest prompt: this instance has no shot id.");
+    std::lock_guard<std::mutex> lock(store_mutex());
+    const fs::path d = suggest_dir(shot_id);
+    std::error_code ec;
+    if (fs::is_regular_file(d / "suggest.json", ec)) return std::optional<std::string>(read_text(d / "suggest.json"));
+    auto it = jobs().find(utf8(d));
+    if (it != jobs().end() && it->second && it->second->running()) return std::optional<std::string>();
+    if (it == jobs().end() || !it->second) return make_error(ErrorCode::NotFound, "Suggest prompt: press it first.");
+    return make_error(ErrorCode::IoError, "Suggest prompt ended without an answer (its log: " + utf8(d / "suggest.log") + ").");
 }
 
 Result<void> cancel(const FillRequest& r) {

@@ -22,7 +22,7 @@ def test_genfill_imports_as_packaged(tmp_path):
     for name in ("rudra", "config"):
         if (ROOT / name).is_dir():
             shutil.copytree(ROOT / name, tmp_path / name, ignore=shutil.ignore_patterns("__pycache__"))
-    code = ("import sys; sys.path.insert(0, '.'); import rudra.genfill.run, rudra.genfill.ofx_job, rudra.genfill.decode as d;"
+    code = ("import sys; sys.path.insert(0, '.'); import rudra.genfill.run, rudra.genfill.ofx_job, rudra.genfill.ofx_prompt, rudra.genfill.prompts, rudra.genfill.decode as d;"
             "assert '.png' in d.FRAME_EXT and callable(d.decode_movie)")
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
     r = subprocess.run([sys.executable, "-I", "-c", code], cwd=tmp_path, env=env, capture_output=True, text=True)

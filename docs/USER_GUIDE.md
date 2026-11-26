@@ -345,7 +345,13 @@ The AI fill is in three places, each with one job:
   prompt box; you can still edit it. No model runs for the suggestion. A
   preset marked *ready* is already embedded, so the fill starts without
   loading the 11 GB text model; `scripts\GENFILL.ps1 -PrecachePrompts` embeds
-  them all once. With **Limit to a
+  them all once. (1.3.2) The suggestions describe more of what the area looks
+  like and end with the words the AI fill model was trained under
+  ("scene-referred high dynamic range footage, physically plausible
+  highlights"), so a prompt steers what is drawn without leaving the
+  conditions the model learned in. A new prompt is read faster: the text
+  model reads only the prompt's own words, on the GPU when it has the room
+  (before the fill's model loads), else on the CPU. With **Limit to a
   luminance region** on (Reconstruct), the fill acts only inside that region
   and every pixel outside it is the master's, bit for bit. No 8-bit code of
   the SDR view ever changes, and every drawn pixel is marked in

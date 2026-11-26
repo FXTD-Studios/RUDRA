@@ -7,6 +7,9 @@
 #include <cstdio>
 #include <optional>
 #include <random>
+#include <thread>
+
+#include <nlohmann/json.hpp>
 
 #include "rudra/core/gamut.hpp"
 #include "rudra/core/hdr10.hpp"
@@ -226,6 +229,10 @@ rudra::ofx_fill::FillRequest fill_request(const Settings& s, const rudra::OfxGra
     r.prompt = s.prompt;
     r.seed = s.seed;
     r.steps = std::clamp(s.steps, 10, 50);
+    // 1.3.2: 0 .. 2 in hundredths (a host's slider leaves float noise), and 1 without a prompt (nothing to steer).
+    r.prompt_strength = s.prompt.empty() || !std::isfinite(s.prompt_strength)
+                            ? 1.0
+                            : std::round(std::clamp(s.prompt_strength, 0.0, 2.0) * 100.0) / 100.0;
     r.region_json = g.region.enabled ? rudra::reconstruction_region_json(g.region) : std::string();
     char b[256];
     std::snprintf(b, sizeof b, "%s|%s|%.6f|%s|%d|%d", g.route.c_str(), g.source_curve.c_str(), g.strength, g.recovery_mode.c_str(),
@@ -374,9 +381,14 @@ std::string render(const std::string& route, const std::string& source_curve, do
 std::string ai_generate(const Settings& s) {
     const rudra::OfxGrade g = rudra::ofx_grade(s);
     if (auto ok = rudra::check_grade(g); !ok) return ok.error().message;
-    if (auto cfg = rudra::ofx_engine::load_genfill_config(); !cfg) return cfg.error().message;
-    auto r = rudra::ofx_fill::begin_collect(fill_request(s, g));
-    return r ? std::string() : r.error().message;
+    auto cfg = rudra::ofx_engine::load_genfill_config();
+    if (!cfg) return cfg.error().message;
+    const auto req = fill_request(s, g);
+    auto r = rudra::ofx_fill::begin_collect(req);
+    if (!r) return r.error().message;
+    // 1.3.2: a new prompt is read while the frames are collected, not after them (the fill waits for it if need be).
+    (void)rudra::ofx_fill::start_prompt_embed(req, *cfg);
+    return {};
 }
 
 std::string ai_cancel(const Settings& s) {
@@ -399,12 +411,95 @@ std::string ai_status(const Settings& s) {
         return "AI fill: out of date (a setting has changed since Generate). Generate again, or set it back.";
     std::string text = fill::status_text(st);
     if (st.state == fill::State::Collecting || st.state == fill::State::None) {
-        // What Generate will cost (27 Nov 2026): 100 frames at 30 steps took about 20 minutes on the 1.3.1 test shot.
-        const int n = req.frames(), minutes = std::max(1, int(std::lround(double(n) * req.steps / 150.0)));
+        // What Generate will cost (27 Nov 2026): 100 frames at 30 steps took about 20 minutes on the 1.3.1 test shot,
+        // with no prompt; a prompt blended in takes a second transformer pass a step (1.3.2).
+        const int n = req.frames(),
+                  minutes = std::max(1, int(std::lround(double(n) * req.steps * fill::prompt_passes(req) / 150.0)));
         text += " Frames " + std::to_string(req.first) + " to " + std::to_string(req.last) + " (" + std::to_string(n) +
                 "): about " + std::to_string(minutes) + " minutes to draw at " + std::to_string(req.steps) + " steps.";
     }
     return text;
+}
+
+namespace {
+
+// suggest.json (rudra/genfill/ofx_prompt.py) as the plug-in shows it: the first highlight suggestion for Prompt.
+PromptSuggestion read_suggestion(const std::string& text) {
+    PromptSuggestion out;
+    const nlohmann::json j = nlohmann::json::parse(text, nullptr, false);
+    if (j.is_discarded() || !j.is_object()) {
+        out.error = "its answer is not readable.";
+        return out;
+    }
+    if (!j.value("ok", false)) {
+        out.error = j.value("error", std::string("it failed."));
+        return out;
+    }
+    out.note = j.value("describe_error", std::string());
+    if (j.contains("suggestions") && j["suggestions"].is_array())
+        for (const auto& s : j["suggestions"]) {
+            if (!s.is_object() || s.value("region", std::string("highlight")) != "highlight") continue;
+            if (out.text.empty()) {
+                out.text = s.value("text", std::string());
+                out.label = s.value("label", std::string());
+                out.reason = s.value("reason", std::string());
+            } else if (out.others.size() < 3) {
+                out.others.push_back(s.value("label", std::string()));
+            }
+        }
+    if (out.text.empty())
+        out.error = "nothing is fully clipped in this frame, so AI fill has nothing to draw here: try a frame with clipped highlights.";
+    else
+        out.ready = true;
+    return out;
+}
+
+}  // namespace
+
+PromptSuggestion ai_suggest(const Settings& s, const unsigned char* rgb, int width, int height, double wait_seconds,
+                            const std::function<bool(double)>& tick) {
+    namespace fill = rudra::ofx_fill;
+    PromptSuggestion out;
+    if (!rgb || width <= 0 || height <= 0) {
+        out.error = "no frame to read.";
+        return out;
+    }
+    auto cfg = rudra::ofx_engine::load_genfill_config();
+    if (!cfg) {
+        out.error = cfg.error().message;
+        return out;
+    }
+    rudra::PlanarBuffer code(3, height, width);
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
+            for (int c = 0; c < 3; ++c)
+                code.plane(c)[std::size_t(y) * std::size_t(width) + std::size_t(x)] =
+                    float(rgb[(std::size_t(y) * std::size_t(width) + std::size_t(x)) * 3 + std::size_t(c)]) / 255.0f;
+    // Florence-2 on the CPU while this shot's fill holds the GPU.
+    const bool busy = !s.shot_id.empty() && fill::status(fill_request(s, rudra::ofx_grade(s))).state == fill::State::Running;
+    if (auto started = fill::start_suggest(s.shot_id, rudra::SdrImage(std::move(code)), *cfg, busy); !started) {
+        out.error = started.error().message;
+        return out;
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (;;) {
+        PromptSuggestion now = ai_suggestion(s);
+        if (now.ready || !now.error.empty()) return now;
+        const double gone = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        if (gone >= wait_seconds || (tick && !tick(std::min(1.0, gone / std::max(1e-3, wait_seconds))))) return now;
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    }
+}
+
+PromptSuggestion ai_suggestion(const Settings& s) {
+    PromptSuggestion out;
+    auto a = rudra::ofx_fill::suggest_answer(s.shot_id);
+    if (!a) {
+        out.error = a.error().message;
+        return out;
+    }
+    if (!*a) return out;   // still being made
+    return read_suggestion(**a);
 }
 
 std::string new_shot_id() {

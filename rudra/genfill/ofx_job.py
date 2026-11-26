@@ -41,11 +41,18 @@ V5_BLEND_STILL = "0.95"
 V5_HOLD_CALM = "0.95"
 STEPS = 30          # 1.3.1: 8 steps drew stripes on 09V (G:\rudra_training\shot_check_1_3_1); the app's 30
 HEARTBEAT = 30.0    # seconds between status writes at the least
+# 1.3.2: ofx_prompt.py embed reads a new prompt while the frames are collected and holds this file in the prompt
+# cache meanwhile, touching it every EMBED_BEAT seconds; the fill waits for it (one 11 GB encoder at a time).
+EMBED_LOCK = ".embedding.lock"
+EMBED_BEAT = 10.0
+EMBED_STALE = 90.0  # a lock not touched for this long was left by a process that ended
+EMBED_WAIT = 1800.0
 
 
 def recipe(master: str, out: str, source: str, base: str, lora: str, condition: str, seed: int, prompt: str,
-           region_json: str, steps: int = STEPS, prompt_cache: str = "") -> list[str]:
-    """The command line after the Python: genfill_job.cpp genfill_arguments with rerender on and AI fill v5."""
+           region_json: str, steps: int = STEPS, prompt_cache: str = "", prompt_strength: float = 1.0) -> list[str]:
+    """The command line after the Python: genfill_job.cpp genfill_arguments with rerender on and AI fill v5.
+    prompt_strength (1.3.2): the plug-in's Prompt strength, as the app's Deliver passes it (only when not 1)."""
     a = ["-m", "rudra.genfill.run", "--master", master, "--out", out, "--base", base, "--lora", lora,
          "--region-rerender", "--source", source, "--condition", condition,
          "--tau-high", "240", "--tau-low", "-1", "--feather", "8", "--brightness-model", "none",
@@ -57,6 +64,8 @@ def recipe(master: str, out: str, source: str, base: str, lora: str, condition: 
          "--rerender-full-last", "--json"]
     if prompt.strip():
         a += ["--prompt-highlight", prompt.strip()]
+        if prompt_strength != 1.0:
+            a += ["--prompt-strength", f"{prompt_strength:g}"]
     if prompt_cache:
         a += ["--prompt-cache", prompt_cache]
     if region_json:
@@ -100,19 +109,51 @@ def sha256(path: Path) -> str:
 
 def prompt_cache_for(folder: Path, lora: Path) -> Path:
     """One prompt cache for every OFX fill (27 Nov 2026): <ofx_fill>/prompt_cache. A prompt not in it loads umT5
-    (11 GB, on the CPU) to embed it, a minute or two, once; the cache beside the LoRA (the app's presets, the
-    prompts the app has embedded) is copied in first, so a prompt the app knows costs nothing."""
-    cache = folder.parent.parent / "prompt_cache"
+    (11 GB) to embed it, once; the cache beside the LoRA (the app's presets, the prompts the app has embedded) is
+    copied in first, so a prompt the app knows costs nothing."""
+    return seed_cache(folder.parent.parent / "prompt_cache", lora)
+
+
+def seed_cache(cache: Path, lora: Path) -> Path:
+    """`cache`, made, with what the cache beside the LoRA has that it has not."""
     cache.mkdir(parents=True, exist_ok=True)
     beside = lora.parent / "prompt_cache"
     if beside.is_dir():
         for f in beside.iterdir():
-            if f.is_file() and not (cache / f.name).exists():
+            if f.is_file() and not f.name.startswith(".") and not (cache / f.name).exists():
                 try:
                     shutil.copy2(f, cache / f.name)
                 except OSError:
                     pass
     return cache
+
+
+def embedding_running(cache: Path) -> bool:
+    """Whether ofx_prompt.py embed holds the cache (its lock touched within EMBED_STALE seconds)."""
+    try:
+        return time.time() - (cache / EMBED_LOCK).stat().st_mtime < EMBED_STALE
+    except OSError:
+        return False
+
+
+def wait_for_embedding(cache: Path, status, limit: float = EMBED_WAIT, poll: float = 2.0) -> bool:
+    """Waits while the prompt is read beside the collection (status says so); False when it gave up waiting."""
+    t0 = time.time()
+    while embedding_running(cache):
+        if time.time() - t0 > limit:
+            return False
+        status.set(message="reading the prompt (started when Generate was pressed; once per new prompt)")
+        time.sleep(poll)
+    return True
+
+
+def strength_of(req: dict) -> float:
+    """The request's prompt strength (the plug-in's Prompt strength), 0..2; 1 when it has none."""
+    try:
+        v = float(req.get("prompt_strength", 1.0))
+    except (TypeError, ValueError):
+        return 1.0
+    return max(0.0, min(2.0, v)) if v == v else 1.0
 
 
 def steps_of(req: dict) -> int:
@@ -165,9 +206,11 @@ def _main(argv: list[str] | None, runner: list[str] | None) -> int:
     region = req.get("region")
     prompt = req.get("prompt", "")
     cache = prompt_cache_for(folder, Path(a.lora)) if prompt.strip() else None
+    if cache is not None:
+        wait_for_embedding(cache, status)
     args = recipe(str(folder / "master"), str(out), str(folder / "codes"), a.base, a.lora, req["condition"],
                   int(req.get("seed", 0)), prompt, json.dumps(region) if region else "", steps_of(req),
-                  str(cache) if cache else "")
+                  str(cache) if cache else "", strength_of(req))
     cmd = (runner or [sys.executable]) + args
     env = dict(os.environ)
     env["PYTHONPATH"] = str(repo) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
@@ -201,7 +244,7 @@ def _main(argv: list[str] | None, runner: list[str] | None) -> int:
             continue
         ev = e.get("event")
         if ev == "embedding":
-            status.set(message="reading the prompt (a new prompt loads the 11 GB text model once: a minute or two)")
+            status.set(message="reading a new prompt (its 11 GB text model loads once)")
         elif ev == "ready":
             status.set(message="model loaded")
         elif ev == "progress":

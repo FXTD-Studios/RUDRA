@@ -3,6 +3,7 @@
 // frame's "fill"), and the stored fill shown from then on, only for the same settings and the same codes.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -88,6 +89,7 @@ protected:
         set_env("RUDRA_OFX_FILL_ROOT", (root_ / "store").string());
         set_env("RUDRA_OFX_ENGINE_CONFIG", fill_config(root_).string());
         set_env("RUDRA_OFX_FAKE_JOB", "");
+        set_env("RUDRA_OFX_FAKE_SUGGEST", "");
     }
     // Polls the status line until it holds `text` (the job runs beside the test): at most 20 s.
     static bool wait_for(const rudra_ofx::Settings& s, const std::string& text) {
@@ -274,4 +276,143 @@ TEST_F(OfxFill, TheStatusSaysWhichFramesAndHowLong) {
     const std::string st = rudra_ofx::ai_status(s);
     EXPECT_NE(st.find("collecting frames, 0 of 30"), std::string::npos) << st;
     EXPECT_NE(st.find("Frames 1 to 30 (30): about 4 minutes to draw at 20 steps."), std::string::npos) << st;
+}
+
+// ---- 1.3.2 (26 Nov 2026): Prompt strength, the prompt read while the frames are collected, Suggest prompt ----
+
+TEST_F(OfxFill, PromptStrengthIsInTheKeyOnlyWhenItIsNotOneAndReachesTheRequest) {
+    auto r = request();
+    r.prompt = "sky";
+    const std::string one = r.key();
+    r.prompt_strength = 1.0;
+    EXPECT_EQ(r.key(), one);                       // 1, the default, keeps the keys fills were stored under
+    r.prompt_strength = 1.5;
+    EXPECT_NE(r.key(), one);
+    rudra_ofx::Settings s;
+    s.ai_fill = true, s.shot_id = "test20", s.first_frame = 1, s.last_frame = 3;
+    s.prompt_strength = 1.234;                     // no prompt: nothing to steer, 1
+    ASSERT_EQ(rudra_ofx::ai_generate(s), "");
+    s.prompt = "sky";                              // in hundredths
+    ASSERT_EQ(rudra_ofx::ai_generate(s), "");
+    std::vector<double> got;
+    for (const auto& d : fs::recursive_directory_iterator(root_ / "store" / "test20"))
+        if (d.path().filename() == "request.json") {
+            std::ifstream f(d.path());
+            got.push_back(nlohmann::json::parse(f).value("prompt_strength", -1.0));
+        }
+    std::sort(got.begin(), got.end());
+    ASSERT_EQ(got.size(), 2u);
+    EXPECT_DOUBLE_EQ(got[0], 1.0);
+    EXPECT_DOUBLE_EQ(got[1], 1.23);
+}
+
+TEST_F(OfxFill, TheTimeGenerateAnnouncesCountsTheSecondPassOfABlendedPrompt) {
+    rudra_ofx::Settings s;
+    s.ai_fill = true, s.shot_id = "test21", s.first_frame = 1, s.last_frame = 30, s.steps = 20;
+    const std::string plain = rudra_ofx::ai_status(s);
+    EXPECT_NE(plain.find("about 4 minutes"), std::string::npos) << plain;
+    s.prompt = "sky";
+    const std::string prompted = rudra_ofx::ai_status(s);
+    EXPECT_NE(prompted.find(fill::kSinglePromptPass ? "about 4 minutes" : "about 8 minutes"), std::string::npos) << prompted;
+    s.prompt_strength = 1.5;                       // a strength other than 1 always blends
+    EXPECT_NE(rudra_ofx::ai_status(s).find("about 8 minutes"), std::string::npos);
+}
+
+TEST_F(OfxFill, GenerateWithAPromptReadsItWhileTheFramesAreCollected) {
+    rudra_ofx::Settings s;
+    s.ai_fill = true, s.shot_id = "test22", s.first_frame = 1, s.last_frame = 3, s.prompt = "my sky";
+    ASSERT_EQ(rudra_ofx::ai_generate(s), "");
+    const fs::path called = root_ / "store" / "prompt_cache" / "embed_called.txt";
+    std::string text, device;
+    for (int i = 0; i < 100 && text != "my sky"; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::ifstream f(called);
+        std::getline(f, text);
+        std::getline(f, device);
+    }
+    EXPECT_EQ(text, "my sky");
+    EXPECT_EQ(device, "cpu");                      // the learned engine may hold the GPU while frames are collected
+}
+
+TEST_F(OfxFill, SuggestPromptReadsTheFrameAndAnswersWithTheFirstHighlightSuggestion) {
+    rudra_ofx::Settings s;
+    s.shot_id = "test23";
+    const std::vector<unsigned char> rgb(std::size_t(kW) * kH * 3, 200);
+    const auto r = rudra_ofx::ai_suggest(s, rgb.data(), kW, kH, 20.0);
+    ASSERT_TRUE(r.ready) << r.error;
+    EXPECT_EQ(r.text, "bright hazy sky, stand-in");
+    EXPECT_EQ(r.label, "From this shot");
+    EXPECT_EQ(r.others, std::vector<std::string>{"Overcast sky"});   // the shadow suggestion is not Prompt's
+    EXPECT_NE(r.reason.find("stand-in on auto"), std::string::npos) << r.reason;
+    EXPECT_TRUE(fs::is_regular_file(root_ / "store" / "test23" / "suggest" / "frame.tif"));
+    const auto again = rudra_ofx::ai_suggestion(s);   // read again: the same answer
+    EXPECT_TRUE(again.ready);
+    EXPECT_EQ(again.text, r.text);
+}
+
+TEST_F(OfxFill, ASuggestionStillBeingMadeIsReadLater) {
+    set_env("RUDRA_OFX_FAKE_SUGGEST", "slow");
+    rudra_ofx::Settings s;
+    s.shot_id = "test24";
+    const std::vector<unsigned char> rgb(std::size_t(kW) * kH * 3, 200);
+    int ticks = 0;
+    const auto first = rudra_ofx::ai_suggest(s, rgb.data(), kW, kH, 0.3, [&](double) { return ++ticks < 1000; });
+    EXPECT_FALSE(first.ready);
+    EXPECT_TRUE(first.error.empty()) << first.error;
+    EXPECT_GT(ticks, 0);
+    const auto busy = rudra_ofx::ai_suggest(s, rgb.data(), kW, kH, 0.0);
+    EXPECT_NE(busy.error.find("still reading a frame"), std::string::npos) << busy.error;
+    rudra_ofx::PromptSuggestion later;
+    for (int i = 0; i < 100 && !later.ready; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        later = rudra_ofx::ai_suggestion(s);
+    }
+    EXPECT_TRUE(later.ready) << later.error;
+    set_env("RUDRA_OFX_FAKE_SUGGEST", "");
+}
+
+TEST_F(OfxFill, SuggestPromptSaysWhyWhenThereIsNone) {
+    rudra_ofx::Settings s;
+    s.shot_id = "test25";
+    const std::vector<unsigned char> rgb(std::size_t(kW) * kH * 3, 200);
+    EXPECT_EQ(rudra_ofx::ai_suggest(s, nullptr, kW, kH, 1.0).error, "no frame to read.");
+    EXPECT_NE(rudra_ofx::ai_suggestion(s).error.find("press it first"), std::string::npos);
+    set_env("RUDRA_OFX_FAKE_SUGGEST", "fail");
+    auto r = rudra_ofx::ai_suggest(s, rgb.data(), kW, kH, 20.0);
+    EXPECT_NE(r.error.find("could not read the frame"), std::string::npos) << r.error;
+    set_env("RUDRA_OFX_FAKE_SUGGEST", "nothing");
+    r = rudra_ofx::ai_suggest(s, rgb.data(), kW, kH, 20.0);
+    EXPECT_NE(r.error.find("nothing is fully clipped"), std::string::npos) << r.error;
+    set_env("RUDRA_OFX_FAKE_SUGGEST", "");
+    set_env("RUDRA_OFX_ENGINE_CONFIG", (root_ / "missing.json").string());
+    r = rudra_ofx::ai_suggest(s, rgb.data(), kW, kH, 1.0);
+    EXPECT_FALSE(r.ready);
+    EXPECT_FALSE(r.error.empty());
+}
+
+TEST_F(OfxFill, FlorenceIsReadFromTheSettingsElseBesideTheBaseModel) {
+    auto cfg = ofx_engine::load_genfill_config();
+    ASSERT_TRUE(cfg) << cfg.error().message;
+    EXPECT_TRUE(cfg->florence.empty());
+    fs::create_directories(root_ / "Florence-2-base");   // beside the base model (root_/base), as the app's setup puts it
+    std::ofstream(root_ / "Florence-2-base" / "config.json") << "{}";
+    cfg = ofx_engine::load_genfill_config();
+    ASSERT_TRUE(cfg);
+    EXPECT_EQ(cfg->florence, root_ / "Florence-2-base");
+    fs::create_directories(root_ / "elsewhere");
+    std::ofstream(root_ / "elsewhere" / "config.json") << "{}";
+    std::ifstream in(root_ / "ofx_engine.json");
+    nlohmann::json j = nlohmann::json::parse(in);
+    in.close();
+    j["genfill"]["florence"] = (root_ / "elsewhere").generic_string();
+    std::ofstream(root_ / "ofx_engine.json", std::ios::trunc) << j.dump();
+    cfg = ofx_engine::load_genfill_config();
+    ASSERT_TRUE(cfg);
+    EXPECT_EQ(fs::path(cfg->florence).lexically_normal(), (root_ / "elsewhere").lexically_normal());
+    rudra_ofx::Settings s;
+    s.shot_id = "test26";
+    const std::vector<unsigned char> rgb(std::size_t(kW) * kH * 3, 200);
+    const auto r = rudra_ofx::ai_suggest(s, rgb.data(), kW, kH, 20.0);
+    ASSERT_TRUE(r.ready) << r.error;
+    EXPECT_NE(r.reason.find("Florence"), std::string::npos) << r.reason;   // its folder reached the suggester
 }
