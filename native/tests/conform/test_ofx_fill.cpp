@@ -144,7 +144,8 @@ TEST_F(OfxFill, EverySettingThatChangesTheFillIsAnotherKey) {
     const auto r = request();
     for (auto change : {+[](fill::FillRequest& x) { x.prompt = "sky"; }, +[](fill::FillRequest& x) { x.seed = 1; },
                         +[](fill::FillRequest& x) { x.region_json = "{}"; }, +[](fill::FillRequest& x) { x.master_key = "learned"; },
-                        +[](fill::FillRequest& x) { x.first = 11; }, +[](fill::FillRequest& x) { x.condition = "aces"; }}) {
+                        +[](fill::FillRequest& x) { x.first = 11; }, +[](fill::FillRequest& x) { x.condition = "aces"; },
+                        +[](fill::FillRequest& x) { x.steps = 20; }}) {   // 27 Nov 2026: Steps
         auto other = r;
         change(other);
         EXPECT_NE(other.key(), r.key());
@@ -258,9 +259,19 @@ TEST_F(OfxFill, AFrameOutsideTheClipIsNotStoredAndSaysWhy) {
     s.frame = 0;
     const auto r = rudra_ofx::render(s, px.data(), kW * 4, out.data(), kW * 4, kW, kH);
     ASSERT_EQ(r.error, "");
-    EXPECT_EQ(r.note, "AI fill: frame 0 is outside the clip (1001 to 1002), so it is not stored.");
+    EXPECT_EQ(r.note, "AI fill: frame 0 is outside its frames (1001 to 1002), so it is not stored.");
     EXPECT_NE(rudra_ofx::ai_status(s).find("collecting frames, 0 of 2"), std::string::npos) << rudra_ofx::ai_status(s);
     s.frame = 1001;   // inside: stored
     ASSERT_EQ(rudra_ofx::render(s, px.data(), kW * 4, out.data(), kW * 4, kW, kH).error, "");
     EXPECT_NE(rudra_ofx::ai_status(s).find("collecting frames, 1 of 2"), std::string::npos) << rudra_ofx::ai_status(s);
+}
+
+// 27 Nov 2026: Generate's status says which frames and what they cost (the 823-frame clip that waited for all 823).
+TEST_F(OfxFill, TheStatusSaysWhichFramesAndHowLong) {
+    rudra_ofx::Settings s;
+    s.ai_fill = true, s.shot_id = "test08", s.first_frame = 1, s.last_frame = 30, s.steps = 20;
+    ASSERT_EQ(rudra_ofx::ai_generate(s), "");
+    const std::string st = rudra_ofx::ai_status(s);
+    EXPECT_NE(st.find("collecting frames, 0 of 30"), std::string::npos) << st;
+    EXPECT_NE(st.find("Frames 1 to 30 (30): about 4 minutes to draw at 20 steps."), std::string::npos) << st;
 }

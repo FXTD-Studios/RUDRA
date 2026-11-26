@@ -53,7 +53,11 @@ Feed it the SDR's own code values:
   edge with its Softness. Outside the limit the picture is RUDRA's plain inverse (of the Source curve on the
   analytic route, of the ACES 2.0 view on the learned route).
 - **Alpha:** the source's alpha, the luminance limit as a matte, or what AI drew (`rudra.generated`), for keying
-  or checking in the host.
+  or checking in the host. With a Mask, each is the mask's too.
+- **Mask** (Nuke's mask input): where RUDRA acts, the reconstruction and AI fill alike; outside it the picture is
+  the plain inverse, as outside the luminance limit. **Invert mask** (in the Luminance limit group) swaps inside and
+  outside. In Resolve, limit the node with its own Power Window or qualifier instead: Resolve keys an OpenFX node
+  itself.
 
 ## AI fill (experimental)
 
@@ -61,7 +65,10 @@ OFX hands a plug-in one frame at a time, but AI fill draws a shot in windows of 
 steps, the same in Nuke and Resolve:
 
 1. **Generate.** Open the AI fill group and press Generate, with a Prompt naming what the clipped areas show if
-   you like. The node starts collecting.
+   you like, a **Seed** (another seed draws another fill) and **Steps** (30, as AI fill v5 was tested: about 20
+   minutes for 100 frames; fewer is faster, but below 20 it can draw stripes). **From frame** and **To frame**
+   choose the frames it draws (0: the clip's first and last): try it on a few, then the shot. The status says how
+   many frames and roughly how long. The node starts collecting.
 2. **Play the clip once at full size.** Nuke: proxy off and the viewer's downscale at 1:1, or render the node.
    Resolve: playback with no timeline proxy. Every frame the host renders is stored, its SDR codes and its master;
    **Refresh status** shows "collecting frames, k of n".
@@ -70,9 +77,14 @@ steps, the same in Nuke and Resolve:
    shown meanwhile. When **Refresh status** says ready, the host renders the clip again and every frame shows the
    stored fill, after Exposure and in the chosen Output. **Alpha › What AI drew** shows where it drew.
 
+A prompt costs time once: a prompt the fill has not read before loads the 11 GB text model on the CPU to read it,
+a minute or two before drawing starts (the status says so). Every prompt read is kept for every RUDRA node, beside
+the stored fills (`ofx_fill\prompt_cache`), and the prompts the RUDRA app already knows are copied in: the same
+prompt again costs nothing. An empty prompt draws from the picture alone and needs no text model.
+
 A stored fill belongs to the settings it was made with. A changed route, Source, Strength, Recovery, luminance
-limit, prompt or seed makes it **out of date**, and the master is shown until you Generate again or set it back.
-Exposure, Output and Alpha can change freely. A frame whose picture coming into the node has changed since
+limit, prompt, seed or steps makes it **out of date**, and the master is shown until you Generate again or set it back.
+Exposure, Output, Alpha and the Mask can change freely: the mask limits where the fill is shown. A frame whose picture coming into the node has changed since
 Generate (a grade above it, say) shows the master too. **Cancel** stops collecting, or the fill being drawn;
 **Clear stored fill** deletes the node's stored frames and fills from the disk.
 

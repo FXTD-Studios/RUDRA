@@ -130,3 +130,21 @@ def test_a_lora_that_is_not_v5_is_refused(tmp_path):
     lora.write_bytes(b"not v5")
     assert ofx_job.main(["--dir", str(d), "--repo", str(REPO), "--base", "b", "--lora", str(lora)]) == 2
     assert "is not AI fill v5" in status(d)["message"]
+
+
+def test_steps_and_the_shared_prompt_cache(tmp_path):
+    """27 Nov 2026: the plug-in's Steps reach the fill (10..50), and a prompt is read from one cache for every OFX
+    fill, seeded from the cache beside the LoRA (the app's presets)."""
+    assert ofx_job.steps_of({"steps": 20}) == 20
+    assert ofx_job.steps_of({"steps": 3}) == 10 and ofx_job.steps_of({"steps": 99}) == 50
+    assert ofx_job.steps_of({}) == ofx_job.STEPS and ofx_job.steps_of({"steps": "x"}) == ofx_job.STEPS
+    a = ofx_job.recipe("M", "O", "S", "B", "L", "bt1886", 0, "sky", "", 20, "C")
+    assert a[a.index("--steps") + 1] == "20" and a[a.index("--prompt-cache") + 1] == "C"
+    assert "--prompt-cache" not in ofx_job.recipe("M", "O", "S", "B", "L", "bt1886", 0, "", "")
+    lora = tmp_path / "models" / "rudra_genfill.safetensors"
+    (lora.parent / "prompt_cache").mkdir(parents=True)
+    (lora.parent / "prompt_cache" / "abc.pt").write_bytes(b"x")
+    folder = tmp_path / "ofx_fill" / "shot" / "key"
+    folder.mkdir(parents=True)
+    cache = ofx_job.prompt_cache_for(folder, lora)
+    assert cache == tmp_path / "ofx_fill" / "prompt_cache" and (cache / "abc.pt").read_bytes() == b"x"

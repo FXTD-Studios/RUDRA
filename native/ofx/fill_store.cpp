@@ -165,8 +165,9 @@ Result<void> check(const FillRequest& r) {
 }  // namespace
 
 std::string FillRequest::key() const {
-    const json j = {{"first", first}, {"last", last},       {"condition", condition}, {"prompt", prompt},
-                    {"seed", seed},   {"region", region_json}, {"master", master_key}, {"recipe", "ai-fill-v5 rudra-1.3.1"}};
+    json j = {{"first", first}, {"last", last},       {"condition", condition}, {"prompt", prompt},
+              {"seed", seed},   {"region", region_json}, {"master", master_key}, {"recipe", "ai-fill-v5 rudra-1.3.1"}};
+    if (steps != 30) j["steps"] = steps;   // 30, the default, keeps the keys fills were stored under before Steps
     const std::string s = j.dump();
     return hex(xxh64(std::as_bytes(std::span<const char>(s.data(), s.size()))));
 }
@@ -216,7 +217,7 @@ Result<void> begin_collect(const FillRequest& r) {
     if (s.state == State::Failed || s.state == State::Cancelled) fs::remove(d / "status.json", ec);   // a new start
     fs::remove(d / "cancel", ec);
     json req = {{"shot_id", r.shot_id}, {"key", r.key()}, {"first", r.first}, {"last", r.last},   {"frames", r.frames()},
-                {"condition", r.condition}, {"prompt", r.prompt}, {"seed", r.seed}, {"master", r.master_key},
+                {"condition", r.condition}, {"prompt", r.prompt}, {"seed", r.seed}, {"steps", r.steps}, {"master", r.master_key},
                 {"created", now_seconds()}};
     req["region"] = r.region_json.empty() ? json() : json::parse(r.region_json, nullptr, false);
     if (req["region"].is_discarded()) return make_error(ErrorCode::InvalidArgument, "AI fill: the luminance limit is not valid JSON.");
@@ -395,7 +396,7 @@ std::string status_text(const Status& s) {
         case State::None: return "AI fill: press Generate, then play or render the shot once at full size.";
         case State::Collecting:
             return "AI fill: collecting frames, " + std::to_string(s.done) + " of " + std::to_string(s.of) +
-                   " (play or render the whole shot at full size; the fill starts when all are in).";
+                   " (play or render those frames at full size; the fill starts when all are in).";
         case State::Running:
             return "AI fill: drawing, frame " + std::to_string(s.done) + " of " + std::to_string(s.of) +
                    (s.message.empty() ? std::string() : " (" + s.message + ")") + ". The master is shown meanwhile.";

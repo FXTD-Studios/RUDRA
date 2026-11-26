@@ -44,7 +44,7 @@ HEARTBEAT = 30.0    # seconds between status writes at the least
 
 
 def recipe(master: str, out: str, source: str, base: str, lora: str, condition: str, seed: int, prompt: str,
-           region_json: str, steps: int = STEPS) -> list[str]:
+           region_json: str, steps: int = STEPS, prompt_cache: str = "") -> list[str]:
     """The command line after the Python: genfill_job.cpp genfill_arguments with rerender on and AI fill v5."""
     a = ["-m", "rudra.genfill.run", "--master", master, "--out", out, "--base", base, "--lora", lora,
          "--region-rerender", "--source", source, "--condition", condition,
@@ -57,6 +57,8 @@ def recipe(master: str, out: str, source: str, base: str, lora: str, condition: 
          "--rerender-full-last", "--json"]
     if prompt.strip():
         a += ["--prompt-highlight", prompt.strip()]
+    if prompt_cache:
+        a += ["--prompt-cache", prompt_cache]
     if region_json:
         a += ["--region", region_json]
     a += ["--glob", "f.*.exr"]
@@ -94,6 +96,31 @@ def sha256(path: Path) -> str:
         for b in iter(lambda: f.read(1 << 20), b""):
             h.update(b)
     return h.hexdigest()
+
+
+def prompt_cache_for(folder: Path, lora: Path) -> Path:
+    """One prompt cache for every OFX fill (27 Nov 2026): <ofx_fill>/prompt_cache. A prompt not in it loads umT5
+    (11 GB, on the CPU) to embed it, a minute or two, once; the cache beside the LoRA (the app's presets, the
+    prompts the app has embedded) is copied in first, so a prompt the app knows costs nothing."""
+    cache = folder.parent.parent / "prompt_cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    beside = lora.parent / "prompt_cache"
+    if beside.is_dir():
+        for f in beside.iterdir():
+            if f.is_file() and not (cache / f.name).exists():
+                try:
+                    shutil.copy2(f, cache / f.name)
+                except OSError:
+                    pass
+    return cache
+
+
+def steps_of(req: dict) -> int:
+    """The request's steps (the plug-in's Steps), 10..50; 30 when it has none."""
+    try:
+        return max(10, min(50, int(req.get("steps", STEPS))))
+    except (TypeError, ValueError):
+        return STEPS
 
 
 def check_frames(folder: Path, n: int) -> str | None:
@@ -136,8 +163,11 @@ def _main(argv: list[str] | None, runner: list[str] | None) -> int:
     out, final = folder / "fill.part", folder / "fill"
     shutil.rmtree(out, ignore_errors=True)
     region = req.get("region")
+    prompt = req.get("prompt", "")
+    cache = prompt_cache_for(folder, Path(a.lora)) if prompt.strip() else None
     args = recipe(str(folder / "master"), str(out), str(folder / "codes"), a.base, a.lora, req["condition"],
-                  int(req.get("seed", 0)), req.get("prompt", ""), json.dumps(region) if region else "")
+                  int(req.get("seed", 0)), prompt, json.dumps(region) if region else "", steps_of(req),
+                  str(cache) if cache else "")
     cmd = (runner or [sys.executable]) + args
     env = dict(os.environ)
     env["PYTHONPATH"] = str(repo) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
@@ -171,7 +201,7 @@ def _main(argv: list[str] | None, runner: list[str] | None) -> int:
             continue
         ev = e.get("event")
         if ev == "embedding":
-            status.set(message="embedding the prompt, once")
+            status.set(message="reading the prompt (a new prompt loads the 11 GB text model once: a minute or two)")
         elif ev == "ready":
             status.set(message="model loaded")
         elif ev == "progress":

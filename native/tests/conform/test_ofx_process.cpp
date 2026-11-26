@@ -176,3 +176,35 @@ TEST(OfxProcess, ABadLimitIsRefused) {
     s.limit = "off", s.alpha = "everything";
     EXPECT_NE(rudra_ofx::render(s, in.data(), kW * 4, out.data(), kW * 4, kW, kH).error, "");
 }
+
+// 27 Nov 2026: the Mask input. 1 everywhere is the picture without a mask; 0 everywhere is the plain inverse (a
+// limit with no reconstruction); half way between them where it is 0.5. The limit's alpha is the mask's too.
+TEST(OfxProcess, TheMaskBlendsRudraIntoThePlainInverse) {
+    const auto in = rgba();
+    const std::size_t n = std::size_t(kW) * kH;
+    std::vector<float> full(in.size()), none(in.size()), half(in.size()), plain(in.size()), out(in.size());
+    rudra_ofx::Settings s;
+    ASSERT_EQ(rudra_ofx::render(s, in.data(), kW * 4, full.data(), kW * 4, kW, kH).error, "");
+    rudra_ofx::Settings p = s;   // the plain inverse: a limit with both strengths 0
+    OfxGrade pg = ofx_grade(p);
+    pg.region.enabled = true, pg.region.highlight_strength = pg.region.shadow_strength = 0.0f;
+    ASSERT_TRUE(render_sdr_to_hdr(pg, in.data(), kW * 4, plain.data(), kW * 4, kW, kH));
+    s.mask.assign(n, 1.0f);
+    ASSERT_EQ(rudra_ofx::render(s, in.data(), kW * 4, out.data(), kW * 4, kW, kH).error, "");
+    for (std::size_t i = 0; i < in.size(); ++i) EXPECT_NEAR(out[i], full[i], 1e-6f * std::max(1.0f, full[i])) << i;
+    s.mask.assign(n, 0.0f);
+    ASSERT_EQ(rudra_ofx::render(s, in.data(), kW * 4, none.data(), kW * 4, kW, kH).error, "");
+    for (std::size_t i = 0; i < in.size(); ++i) EXPECT_NEAR(none[i], plain[i], 1e-6f * std::max(1.0f, plain[i])) << i;
+    s.mask.assign(n, 0.5f);
+    ASSERT_EQ(rudra_ofx::render(s, in.data(), kW * 4, half.data(), kW * 4, kW, kH).error, "");
+    for (std::size_t i = 0; i < n; ++i)
+        for (int c = 0; c < 3; ++c) {
+            const std::size_t k = i * 4 + std::size_t(c);
+            EXPECT_NEAR(half[k], 0.5f * (full[k] + plain[k]), 1e-5f * std::max(1.0f, full[k])) << k;
+        }
+    s.mask.assign(n, 0.5f), s.alpha = "limit";   // no limit: the alpha is the mask
+    ASSERT_EQ(rudra_ofx::render(s, in.data(), kW * 4, out.data(), kW * 4, kW, kH).error, "");
+    EXPECT_FLOAT_EQ(out[3], 0.5f);
+    s.mask.assign(3, 1.0f);   // not the picture's size
+    EXPECT_NE(rudra_ofx::render(s, in.data(), kW * 4, out.data(), kW * 4, kW, kH).error, "");
+}

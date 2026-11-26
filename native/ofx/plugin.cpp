@@ -45,7 +45,10 @@ constexpr const char* kAlpha = "alphaOut";
 constexpr const char* kAlphas[] = {"source", "limit", "ai_fill"};
 constexpr const char* kAiGroup = "aiGroup", *kAiFill = "aiFill", *kAiPrompt = "aiPrompt", *kAiSeed = "aiSeed",
                       *kAiGenerate = "aiGenerate", *kAiCancel = "aiCancel", *kAiRefresh = "aiRefresh", *kAiClear = "aiClear",
-                      *kAiStatus = "aiStatus", *kAiShot = "aiShot", *kAiShown = "aiShown";
+                      *kAiStatus = "aiStatus", *kAiShot = "aiShot", *kAiShown = "aiShown", *kAiSteps = "aiSteps",
+                      *kAiFrom = "aiFrom", *kAiTo = "aiTo";
+// The Mask input (27 Nov 2026, the general context: Nuke) and its invert switch.
+constexpr const char* kMaskClip = "Mask", *kMaskInvert = "maskInvert";
 
 int clamp_index(int i, int n) { return std::max(0, std::min(i, n - 1)); }
 
@@ -91,6 +94,11 @@ public:
         ai_status_ = fetchStringParam(kAiStatus);
         ai_shot_ = fetchStringParam(kAiShot);
         ai_shown_ = fetchIntParam(kAiShown);
+        ai_steps_ = fetchIntParam(kAiSteps);
+        ai_from_ = fetchIntParam(kAiFrom);
+        ai_to_ = fetchIntParam(kAiTo);
+        mask_invert_ = fetchBooleanParam(kMaskInvert);
+        if (getContext() == OFX::eContextGeneral) mask_ = fetchClip(kMaskClip);   // Resolve (filter): the node's own key
         update_enabled();
     }
 
@@ -124,7 +132,12 @@ public:
             log_failure(why);
             sendMessage(OFX::Message::eMessageError, "", "RUDRA: " + why);
         }
-        if (s.ai_fill || name == kAiFill) ai_status_->setValue(rudra_ofx::ai_status(s));
+        const std::string now = (s.ai_fill || name == kAiFill) ? rudra_ofx::ai_status(s) : std::string();
+        if (s.ai_fill || name == kAiFill) ai_status_->setValue(now);
+        // What a press did, in the log (27 Nov 2026): the host may not show the status field.
+        if (name == kAiGenerate || name == kAiCancel || name == kAiClear || name == kAiRefresh)
+            log_failure(name + " pressed (frames " + std::to_string(s.first_frame) + " to " + std::to_string(s.last_frame) +
+                        ", steps " + std::to_string(s.steps) + "): " + (why.empty() ? now : why));
         // The host keeps the frames it rendered and asks again only when a parameter changes; a button
         // press changes none. Generate, Cancel, Clear and Refresh status change this hidden number, so the
         // clip is rendered again: its frames are collected after a Generate, and the stored fill replaces
@@ -147,6 +160,7 @@ public:
             OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
         }
         rudra_ofx::Settings s = settings_at(args.time);
+        s.mask = mask_plane(args.time, src->getBounds());
         s.full_size = std::fabs(args.renderScale.x - 1.0) < 1e-9 && std::fabs(args.renderScale.y - 1.0) < 1e-9;
 
         // The whole source frame (the anchor and the grain settling look at neighbours), then the render
@@ -192,6 +206,32 @@ public:
     }
 
 private:
+    // The Mask input as weights over the source's bounds, the top row first (RUDRA's order): its alpha (or its only
+    // channel), 0 outside the mask's own bounds, inverted when asked. Empty when nothing is connected.
+    std::vector<float> mask_plane(double time, const OfxRectI& sb) {
+        if (!mask_ || !mask_->isConnected()) return {};
+        std::unique_ptr<OFX::Image> m(mask_->fetchImage(time));
+        if (!m || m->getPixelDepth() != OFX::eBitDepthFloat) return {};
+        bool invert = false;
+        mask_invert_->getValueAtTime(time, invert);
+        const int w = sb.x2 - sb.x1, h = sb.y2 - sb.y1;
+        const int comps = m->getPixelComponents() == OFX::ePixelComponentAlpha ? 1 : 4;
+        const OfxRectI mb = m->getBounds();
+        std::vector<float> out(std::size_t(w) * std::size_t(h), 0.0f);
+        for (int r = 0; r < h; ++r) {
+            const int y = sb.y2 - 1 - r;   // RUDRA's row r is OFX's row y
+            for (int x = 0; x < w; ++x) {
+                const int X = sb.x1 + x;
+                float v = 0.0f;
+                if (X >= mb.x1 && X < mb.x2 && y >= mb.y1 && y < mb.y2)
+                    if (const auto* p = static_cast<const float*>(m->getPixelAddress(X, y))) v = p[comps - 1];
+                v = std::clamp(std::isfinite(v) ? v : 0.0f, 0.0f, 1.0f);
+                out[std::size_t(r) * std::size_t(w) + std::size_t(x)] = invert ? 1.0f - v : v;
+            }
+        }
+        return out;
+    }
+
     // A warning once per change, not once per frame (renders run on several threads).
     void log_note_once(const std::string& note) {
         std::lock_guard<std::mutex> lock(note_mutex_);
@@ -228,6 +268,7 @@ private:
         ai_fill_->getValueAtTime(time, s.ai_fill);
         ai_prompt_->getValue(s.prompt);
         ai_seed_->getValue(seed);
+        ai_steps_->getValue(s.steps);
         ai_shot_->getValue(s.shot_id);
         const std::vector<std::string> ids = rudra_ofx::source_ids();
         s.route = kRoutes[clamp_index(route, 2)];
@@ -241,6 +282,13 @@ private:
         const OfxRangeD range = src_->getFrameRange();
         s.first_frame = int(std::lround(range.min));
         s.last_frame = int(std::lround(range.max));
+        // AI fill's frames (27 Nov 2026): From / To inside the clip; 0 is the clip's own first or last frame. A test
+        // on a long clip draws a few frames, not all 823.
+        int from = 0, to = 0;
+        ai_from_->getValue(from);
+        ai_to_->getValue(to);
+        if (from != 0) s.first_frame = std::clamp(from, s.first_frame, s.last_frame);
+        if (to != 0) s.last_frame = std::clamp(to, s.first_frame, s.last_frame);
         s.frame = int(std::lround(time));
         return s;
     }
@@ -263,14 +311,14 @@ private:
         limit_softness_->setEnabled(l != "off");
     }
 
-    OFX::Clip *dst_ = nullptr, *src_ = nullptr;
+    OFX::Clip *dst_ = nullptr, *src_ = nullptr, *mask_ = nullptr;
     OFX::ChoiceParam *route_ = nullptr, *source_ = nullptr, *recovery_ = nullptr, *output_ = nullptr, *limit_ = nullptr,
                      *alpha_ = nullptr;
     OFX::DoubleParam *exposure_ = nullptr, *strength_ = nullptr, *highlights_from_ = nullptr, *shadows_below_ = nullptr,
                      *band_from_ = nullptr, *band_to_ = nullptr, *limit_softness_ = nullptr;
-    OFX::BooleanParam *clip_fill_ = nullptr, *anchor_ = nullptr, *ai_fill_ = nullptr;
+    OFX::BooleanParam *clip_fill_ = nullptr, *anchor_ = nullptr, *ai_fill_ = nullptr, *mask_invert_ = nullptr;
     OFX::StringParam *ai_prompt_ = nullptr, *ai_status_ = nullptr, *ai_shot_ = nullptr;
-    OFX::IntParam *ai_seed_ = nullptr, *ai_shown_ = nullptr;
+    OFX::IntParam *ai_seed_ = nullptr, *ai_shown_ = nullptr, *ai_steps_ = nullptr, *ai_from_ = nullptr, *ai_to_ = nullptr;
     std::mutex note_mutex_;
     std::string last_note_;
 };
@@ -301,7 +349,7 @@ void RudraFactory::describe(OFX::ImageEffectDescriptor& desc) {
     desc.setRenderThreadSafety(OFX::eRenderFullySafe);
 }
 
-void RudraFactory::describeInContext(OFX::ImageEffectDescriptor& desc, OFX::ContextEnum) {
+void RudraFactory::describeInContext(OFX::ImageEffectDescriptor& desc, OFX::ContextEnum context) {
     OFX::ClipDescriptor* src = desc.defineClip(kOfxImageEffectSimpleSourceClipName);
     src->addSupportedComponent(OFX::ePixelComponentRGBA);
     src->setTemporalClipAccess(false);
@@ -310,6 +358,17 @@ void RudraFactory::describeInContext(OFX::ImageEffectDescriptor& desc, OFX::Cont
     OFX::ClipDescriptor* dst = desc.defineClip(kOfxImageEffectOutputClipName);
     dst->addSupportedComponent(OFX::ePixelComponentRGBA);
     dst->setSupportsTiles(false);
+    // The Mask (27 Nov 2026): where RUDRA acts, reconstruction and AI fill alike; outside it the plain inverse.
+    // The general context only (Nuke's mask input); in Resolve the node's own window or qualifier limits it.
+    if (context == OFX::eContextGeneral) {
+        OFX::ClipDescriptor* mask = desc.defineClip(kMaskClip);
+        mask->addSupportedComponent(OFX::ePixelComponentAlpha);
+        mask->addSupportedComponent(OFX::ePixelComponentRGBA);
+        mask->setTemporalClipAccess(false);
+        mask->setSupportsTiles(false);
+        mask->setOptional(true);
+        mask->setIsMask(true);
+    }
 
     OFX::ChoiceParamDescriptor* route = desc.defineChoiceParam(kRoute);
     route->setLabels("Route", "Route", "Reconstruction route");
@@ -393,6 +452,12 @@ void RudraFactory::describeInContext(OFX::ImageEffectDescriptor& desc, OFX::Cont
     softness->setRange(0.0, 0.5);
     softness->setDisplayRange(0.0, 0.5);
     softness->setParent(*limits);
+    OFX::BooleanParamDescriptor* invert = desc.defineBooleanParam(kMaskInvert);
+    invert->setLabels("Invert mask", "Invert mask", "Invert the Mask input");
+    invert->setHint("With a Mask connected (Nuke): RUDRA acts outside the mask instead of inside it.");
+    invert->setDefault(false);
+    invert->setAnimates(false);
+    invert->setParent(*limits);
 
     OFX::ChoiceParamDescriptor* alpha = desc.defineChoiceParam(kAlpha);
     alpha->setLabels("Alpha", "Alpha", "Output alpha");
@@ -419,6 +484,28 @@ void RudraFactory::describeInContext(OFX::ImageEffectDescriptor& desc, OFX::Cont
     prompt->setDefault("");
     prompt->setAnimates(false);
     prompt->setParent(*ai);
+    struct Edge { const char* name; const char* label; const char* hint; };
+    for (const Edge& e : {Edge{kAiFrom, "From frame", "The first frame AI fill draws (0: the clip's first). Generate collects and draws only "
+                                                    "From to To: a few frames to try it, the shot to deliver it."},
+                          Edge{kAiTo, "To frame", "The last frame AI fill draws (0: the clip's last)."}}) {
+        OFX::IntParamDescriptor* d = desc.defineIntParam(e.name);
+        d->setLabels(e.label, e.label, e.label);
+        d->setHint(e.hint);
+        d->setDefault(0);
+        d->setRange(-1000000, 1000000);
+        d->setDisplayRange(0, 1000);
+        d->setAnimates(false);
+        d->setParent(*ai);
+    }
+    OFX::IntParamDescriptor* steps = desc.defineIntParam(kAiSteps);
+    steps->setLabels("Steps", "Steps", "Denoising steps");
+    steps->setHint("How many steps the fill takes: 30 is what AI fill v5 was tested with (about 20 minutes a 100 frames). "
+                   "Fewer is faster; below 20 it can draw stripes. Changing it makes a stored fill out of date.");
+    steps->setDefault(30);
+    steps->setRange(10, 50);
+    steps->setDisplayRange(10, 50);
+    steps->setAnimates(false);
+    steps->setParent(*ai);
     OFX::IntParamDescriptor* seed = desc.defineIntParam(kAiSeed);
     seed->setLabels("Seed", "Seed", "Seed");
     seed->setHint("Another seed draws another fill.");
@@ -442,7 +529,10 @@ void RudraFactory::describeInContext(OFX::ImageEffectDescriptor& desc, OFX::Cont
     OFX::StringParamDescriptor* status = desc.defineStringParam(kAiStatus);
     status->setLabels("Status", "Status", "AI fill status");
     status->setDefault("AI fill is off.");
-    status->setStringType(OFX::eStringTypeLabel);
+    // A one-line field, greyed (27 Nov 2026): Nuke draws a label parameter once, from its default, and never showed
+    // what the plug-in wrote into it ("AI fill is off." stayed after Generate).
+    status->setStringType(OFX::eStringTypeSingleLine);
+    status->setEnabled(false);
     status->setAnimates(false);
     status->setEvaluateOnChange(false);
     status->setParent(*ai);

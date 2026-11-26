@@ -55,8 +55,12 @@ struct Settings {
     std::string shot_id;                   // the instance's own (a hidden parameter, made at the first Generate)
     std::string prompt;
     int seed = 0;
+    int steps = 30;                        // the fill's steps (27 Nov 2026): fewer is faster, below 20 can draw stripes
     int frame = 0, first_frame = 0, last_frame = 0;   // this frame and the clip's
     bool full_size = true;                 // render scale 1: only then is a frame stored or a stored fill shown
+    // The Mask input (27 Nov 2026): width x height weights, the top row first, 0 .. 1; empty = none. Where it is 0
+    // the picture is RUDRA's plain inverse (no reconstruction, no AI fill), where it is 1 RUDRA's in full.
+    std::vector<float> mask;
 };
 
 // What a render did: `error` empty on success; `note` AI fill's state in one line ("" when off).

@@ -40,6 +40,8 @@ constexpr int kW = 48, kH = 27;
 
 // What the test sets before an instance is made: parameter values by name.
 std::map<std::string, double> g_values;
+// The Mask input (27 Nov 2026): every pixel's weight, or below 0 for nothing connected.
+float g_mask = -1.0f;
 
 std::vector<float> source_pixels() {
     std::vector<float> p(std::size_t(kW) * kH * 4);
@@ -100,7 +102,7 @@ public:
         static const std::string v(kOfxImageFieldNone);
         return v;
     }
-    bool getConnected() const { return true; }
+    bool getConnected() const { return name_ != "Mask" || g_mask >= 0.0f; }
     double getUnmappedFrameRate() const { return 24.0; }
     void getUnmappedFrameRange(double& a, double& b) const { a = 0, b = 1; }
     bool getContinuousSamples() const { return false; }
@@ -111,6 +113,7 @@ public:
             output_->addReference();
             return output_;
         }
+        if (name_ == "Mask") return new FloatImage(*this, std::vector<float>(std::size_t(kW) * kH * 4, g_mask));
         return new FloatImage(*this, source_pixels());
     }
 #ifdef OFX_SUPPORTS_OPENGLRENDER
@@ -283,11 +286,12 @@ Loaded& loaded() {
 }
 
 // One frame through the plug-in, with these parameter values.
-std::vector<float> render(const std::map<std::string, double>& values, std::vector<std::string>* messages = nullptr) {
+std::vector<float> render(const std::map<std::string, double>& values, std::vector<std::string>* messages = nullptr,
+                          const char* context = kOfxImageEffectContextFilter) {
     g_values = values;
     auto* plugin = loaded().plugin;
     if (!plugin) return {};
-    std::unique_ptr<ImageEffect::Instance> instance(plugin->createInstance(kOfxImageEffectContextFilter, nullptr));
+    std::unique_ptr<ImageEffect::Instance> instance(plugin->createInstance(context, nullptr));
     if (!instance) return {};
     const OfxStatus created = instance->createInstanceAction();
     if (created != kOfxStatOK && created != kOfxStatReplyDefault) return {};
@@ -405,4 +409,26 @@ TEST(OfxHost, RefreshStatusMakesTheHostRenderAgain) {
     };
     EXPECT_EQ(shown_after({{"aiFill", 1.0}}, "aiRefresh"), 1);
     EXPECT_EQ(shown_after({}, "aiRefresh"), 0);   // AI fill off: nothing new to show
+}
+
+// 27 Nov 2026: in the general context (Nuke) the effect has a Mask input. Unconnected, the picture is as in the filter
+// context (Resolve); connected, its alpha blends RUDRA into the plain inverse (OfxProcess.TheMaskBlends...).
+TEST(OfxHost, TheMaskInputIsNukesAndBlendsThePicture) {
+    const auto filter = render({});
+    ASSERT_EQ(filter.size(), std::size_t(kW) * kH * 4);
+    g_mask = -1.0f;
+    EXPECT_EQ(render({}, nullptr, kOfxImageEffectContextGeneral), filter);
+    const auto src = source_pixels();
+    for (float m : {0.0f, 0.5f}) {
+        g_mask = m;
+        const auto got = render({}, nullptr, kOfxImageEffectContextGeneral);
+        rudra_ofx::Settings s;
+        s.mask.assign(std::size_t(kW) * kH, m);
+        std::vector<float> want(src.size());
+        const std::ptrdiff_t last = std::ptrdiff_t(kH - 1) * kW * 4;
+        ASSERT_EQ(rudra_ofx::render(s, src.data() + last, -kW * 4, want.data() + last, -kW * 4, kW, kH).error, "");
+        ASSERT_EQ(got.size(), want.size()) << m;
+        for (std::size_t i = 0; i < got.size(); ++i) ASSERT_EQ(got[i], want[i]) << "mask " << m << ", float " << i;
+    }
+    g_mask = -1.0f;
 }

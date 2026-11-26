@@ -7,12 +7,16 @@
 #include <cstring>
 #include <iterator>
 #include <cstdio>
+#include <chrono>
+#include <ctime>
+#include <deque>
 #include <fstream>
 #include <memory>
 #include <mutex>
 
 #include <nlohmann/json.hpp>
 
+#include "rudra/platform/hash.hpp"
 #include "rudra/platform/process.hpp"
 
 namespace rudra::ofx_engine {
@@ -78,14 +82,34 @@ class Engine {
 public:
     Result<PlanarBuffer> master(const SdrImage& codes, double strength, const std::string& region_json) {
         std::lock_guard<std::mutex> lock(mu_);
+        // 27 Nov 2026: the frames already made, by their codes and settings. A host asks for the same frame again
+        // and again (the viewer, its alpha, a changed Exposure or Output, scrubbing back): each was a full trip
+        // through the engine, a second or more at 1080p ("slow, every frame, learned").
+        const std::uint64_t key = cache_key(codes, strength, region_json);
+        ++asked_;
+        for (const auto& [k, planes] : cache_)
+            if (k == key) {
+                ++hits_;
+                return planes;
+            }
+        const auto t0 = std::chrono::steady_clock::now();
         for (int attempt = 0; attempt < 2; ++attempt) {
             if (!proc_ || !proc_->running()) {
                 auto started = start();
                 if (!started) return started.error();
             }
             auto r = request(codes, strength, region_json);
+            if (r) {
+                remember(key, *r);
+                const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+                if (++made_ == 1 || made_ % 25 == 0)   // what a frame costs, now and then, in the plug-in's log
+                    log_line("learned route: " + std::to_string(codes.width()) + " x " + std::to_string(codes.height()) + " in " +
+                             std::to_string(int(ms)) + " ms (the engine's own " + std::to_string(int(last_engine_ms_)) + " ms); " +
+                             std::to_string(hits_) + " of " + std::to_string(asked_) + " frames from the cache");
+            }
             if (r || (proc_ && proc_->running())) return r;   // a refused frame is an answer; a dead engine is retried once
             proc_.reset();
+            cache_.clear();
             if (attempt == 1) return r;
         }
         return make_error(ErrorCode::IoError, "RUDRA's learned engine stopped.");
@@ -93,6 +117,7 @@ public:
 
     void stop() {
         std::lock_guard<std::mutex> lock(mu_);
+        cache_.clear();   // the next engine may be another model or settings file
         if (proc_ && proc_->running()) {
             static const char quit[] = "{\"op\":\"quit\"}\n";
             proc_->write({reinterpret_cast<const std::uint8_t*>(quit), sizeof quit - 1});
@@ -102,6 +127,37 @@ public:
     }
 
 private:
+    static std::uint64_t cache_key(const SdrImage& codes, double strength, const std::string& region_json) {
+        const auto data = codes.buffer().span();
+        const std::uint64_t h = xxh64(std::as_bytes(data));
+        const std::string k = std::to_string(h) + "|" + std::to_string(codes.width()) + "x" + std::to_string(codes.height()) + "|" +
+                              std::to_string(strength) + "|" + region_json;
+        return xxh64(std::as_bytes(std::span<const char>(k.data(), k.size())));
+    }
+
+    // At most ~600 MB of masters (about 8 frames of 1080p, 2 of 4K), the oldest out first.
+    void remember(std::uint64_t key, const PlanarBuffer& planes) {
+        static constexpr std::size_t kBytes = std::size_t(600) << 20;
+        cache_.emplace_back(key, planes);
+        std::size_t total = 0;
+        for (const auto& e : cache_) total += e.second.span().size() * sizeof(float);
+        while (cache_.size() > 1 && total > kBytes) {
+            total -= cache_.front().second.span().size() * sizeof(float);
+            cache_.pop_front();
+        }
+    }
+
+    static void log_line(const std::string& text) {
+        std::error_code ec;
+        const fs::path dir = fs::temp_directory_path(ec);
+        if (ec) return;
+        std::ofstream f(dir / "rudra_ofx.log", std::ios::app);
+        const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        char stamp[32] = {};
+        std::strftime(stamp, sizeof stamp, "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+        f << stamp << "  " << text << "\n";
+    }
+
     Result<void> start() {
         auto cfg = load_engine_config();
         if (!cfg) return cfg.error();
@@ -162,6 +218,7 @@ private:
             json j = json::parse(*ans, nullptr, false);
             if (j.is_discarded() || !j.contains("id") || j["id"] != id) continue;
             if (!j.value("ok", false)) return make_error(ErrorCode::IoError, "RUDRA's learned engine: " + j.value("error", j.dump()));
+            last_engine_ms_ = j.value("ms", 0.0);
             break;
         }
         const std::size_t n = std::size_t(w) * std::size_t(h);
@@ -193,6 +250,9 @@ private:
     }
 
     std::mutex mu_;
+    std::deque<std::pair<std::uint64_t, PlanarBuffer>> cache_;
+    std::uint64_t asked_ = 0, hits_ = 0, made_ = 0;
+    double last_engine_ms_ = 0.0;
     std::unique_ptr<Process> proc_;
     std::string buffer_;
     std::atomic<std::uint64_t> next_id_{0};

@@ -141,6 +141,33 @@ void write_output(const Master& m, double exposure_ev, const std::string& output
     }
 }
 
+// The grade with no reconstruction anywhere (27 Nov 2026, the Mask input): the luminance limit on, both strengths
+// 0, so both routes give their plain inverse, as they give it outside a limit.
+OfxGrade base_grade(OfxGrade g) {
+    g.region = ReconstructionRegion{};
+    g.region.enabled = true;
+    g.region.highlight_strength = g.region.shadow_strength = 0.0f;
+    return g;
+}
+
+// x = base + mask * (x - base), in x's primaries.
+void apply_mask(Master& x, Master base, const std::vector<float>& mask, int width, int height) {
+    if (base.primaries != x.primaries) {
+        PlanarBuffer b = master_ap1(base, width, height);
+        if (x.primaries != Primaries::Ap1) b = convert_primaries(b, Primaries::Ap1, x.primaries);
+        base.primaries = x.primaries;
+        const auto v = b.span();
+        for (std::size_t i = 0; i < v.size(); ++i) base.nits[i] = double(v[i]) * kDiffuseWhiteNits;
+    }
+    const std::size_t n = std::size_t(width) * std::size_t(height);
+    for (int c = 0; c < 3; ++c)
+        for (std::size_t i = 0; i < n; ++i) {
+            const double m = std::clamp(double(mask[i]), 0.0, 1.0);
+            const std::size_t k = std::size_t(c) * n + i;
+            x.nits[k] = base.nits[k] + m * (x.nits[k] - base.nits[k]);
+        }
+}
+
 }  // namespace
 
 ReconstructionRegion ofx_region(const rudra_ofx::Settings& s) {
@@ -198,6 +225,7 @@ rudra::ofx_fill::FillRequest fill_request(const Settings& s, const rudra::OfxGra
     r.condition = g.route == "learned" ? "aces" : "bt1886";   // the app's: the route's own inverse
     r.prompt = s.prompt;
     r.seed = s.seed;
+    r.steps = std::clamp(s.steps, 10, 50);
     r.region_json = g.region.enabled ? rudra::reconstruction_region_json(g.region) : std::string();
     char b[256];
     std::snprintf(b, sizeof b, "%s|%s|%.6f|%s|%d|%d", g.route.c_str(), g.source_curve.c_str(), g.strength, g.recovery_mode.c_str(),
@@ -236,28 +264,58 @@ Outcome render(const Settings& s, const float* src, std::ptrdiff_t src_row, floa
     if (width <= 0 || height <= 0 || !src || !dst) return {"No picture to render", {}};
     const OfxGrade g = ofx_grade(s);
     if (auto ok = check_grade(g); !ok) return {ok.error().message, {}};
-    if (!s.ai_fill) {
+    const std::size_t n = std::size_t(width) * std::size_t(height);
+    const bool masked = !s.mask.empty();
+    if (masked && s.mask.size() != n) return {"The mask is not the picture's size", {}};
+    if (!s.ai_fill && !masked) {
         auto r = render_sdr_to_hdr(g, src, src_row, dst, dst_row, width, height);
         return {r ? std::string() : r.error().message, {}};
     }
 
-    // AI fill (phase 3): the stored fill when it is done, else the master, stored while collecting.
     const SdrImage sdr = codes_of(src, src_row, width, height);
-    const fill::FillRequest req = fill_request(s, g);
-    const fill::Status st = fill::status(req);
-    std::optional<PlanarBuffer> alpha;
-    auto show = [&](const Master& m, const PlanarBuffer* generated) {
+    // The Mask (27 Nov 2026): outside it the plain inverse, made once per frame when a mask is connected.
+    std::optional<Master> base;
+    std::string base_error;
+    auto show = [&](Master m, const PlanarBuffer* generated) {
+        if (masked) {
+            if (!base) {
+                auto b = make_master(base_grade(g), sdr);
+                if (!b) {
+                    base_error = b.error().message;
+                    return;
+                }
+                base = std::move(*b);
+            }
+            apply_mask(m, *base, s.mask, width, height);
+        }
+        std::optional<PlanarBuffer> alpha;
         if (g.alpha == "limit") alpha = limit_plane(sdr, g.region);
         if (g.alpha == "ai_fill") alpha = generated ? *generated : PlanarBuffer(1, height, width, 0.0f);
+        if (alpha && masked)
+            for (std::size_t i = 0; i < n; ++i) alpha->plane(0)[i] *= std::clamp(s.mask[i], 0.0f, 1.0f);
         write_output(m, g.exposure_ev, g.output, src, src_row, dst, dst_row, width, height, alpha ? &*alpha : nullptr);
     };
+    auto shown = [&](Outcome o) -> Outcome {
+        if (!base_error.empty()) o.error = base_error;
+        return o;
+    };
+    if (!s.ai_fill) {
+        auto m = make_master(g, sdr);
+        if (!m) return {m.error().message, {}};
+        show(std::move(*m), nullptr);
+        return shown(out);
+    }
+
+    // AI fill (phase 3): the stored fill when it is done, else the master, stored while collecting.
+    const fill::FillRequest req = fill_request(s, g);
+    const fill::Status st = fill::status(req);
     if (st.state == fill::State::Done) {
         std::string why = "shown at full size only (this render is a proxy)";
         if (s.full_size) {
             if (auto f = fill::fill_frame(req, s.frame, sdr, &why)) {
                 show(master_from_ap1(f->ap1), &f->generated);
                 out.note = fill::status_text(st);
-                return out;
+                return shown(out);
             }
         }
         out.note = "AI fill: " + why + ". The master is shown.";
@@ -266,7 +324,7 @@ Outcome render(const Settings& s, const float* src, std::ptrdiff_t src_row, floa
         if (auto stored = fill::master_frame(req, s.frame, sdr)) {
             show(master_from_ap1(*stored), nullptr);
             out.note = fill::status_text(st);
-            return out;
+            return shown(out);
         }
     }
     auto m = make_master(g, sdr);
@@ -277,7 +335,7 @@ Outcome render(const Settings& s, const float* src, std::ptrdiff_t src_row, floa
         } else if (s.frame < req.first || s.frame > req.last) {
             // The clip's range is the host's (Settings::first_frame/last_frame): said, so a host whose frame
             // numbers do not match it shows why nothing is collected (26 Nov 2026).
-            out.note = "AI fill: frame " + std::to_string(s.frame) + " is outside the clip (" + std::to_string(req.first) + " to " +
+            out.note = "AI fill: frame " + std::to_string(s.frame) + " is outside its frames (" + std::to_string(req.first) + " to " +
                        std::to_string(req.last) + "), so it is not stored.";
         } else if (auto last = fill::store_frame(req, s.frame, sdr, master_ap1(*m, width, height)); !last) {
             out.note = last.error().message;
@@ -289,7 +347,7 @@ Outcome render(const Settings& s, const float* src, std::ptrdiff_t src_row, floa
             } else {
                 ofx_engine::stop_engine();
                 auto started = fill::start_job(req, *cfg);
-                out.note = started ? "AI fill: every frame is in; the fill has started (about 20 minutes a 100 frames)."
+                out.note = started ? "AI fill: every frame is in; the fill has started (about 20 minutes a 100 frames at 30 steps)."
                                    : started.error().message;
             }
         } else {
@@ -300,8 +358,8 @@ Outcome render(const Settings& s, const float* src, std::ptrdiff_t src_row, floa
         if (st.state == fill::State::None && fill::other_fill(req))
             out.note = "AI fill: out of date (a setting has changed since Generate). Generate again, or set it back.";
     }
-    show(*m, nullptr);
-    return out;
+    show(std::move(*m), nullptr);
+    return shown(out);
 }
 
 std::string render(const std::string& route, const std::string& source_curve, double exposure_ev, double strength,
@@ -339,7 +397,14 @@ std::string ai_status(const Settings& s) {
     const fill::Status st = fill::status(req);
     if (st.state == fill::State::None && fill::other_fill(req))
         return "AI fill: out of date (a setting has changed since Generate). Generate again, or set it back.";
-    return fill::status_text(st);
+    std::string text = fill::status_text(st);
+    if (st.state == fill::State::Collecting || st.state == fill::State::None) {
+        // What Generate will cost (27 Nov 2026): 100 frames at 30 steps took about 20 minutes on the 1.3.1 test shot.
+        const int n = req.frames(), minutes = std::max(1, int(std::lround(double(n) * req.steps / 150.0)));
+        text += " Frames " + std::to_string(req.first) + " to " + std::to_string(req.last) + " (" + std::to_string(n) +
+                "): about " + std::to_string(minutes) + " minutes to draw at " + std::to_string(req.steps) + " steps.";
+    }
+    return text;
 }
 
 std::string new_shot_id() {

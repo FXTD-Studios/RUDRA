@@ -34,6 +34,7 @@ struct FillRequest {
     std::string condition;     // "bt1886" (the analytic route's master) or "aces" (the learned route's)
     std::string prompt;        // what to draw in the highlights ("" none, as the app's default)
     int seed = 0;
+    int steps = 30;            // the fill's denoising steps (27 Nov 2026: the plug-in's Steps, 10 .. 50)
     std::string region_json;   // the luminance limit, deliver reconstruction_region_json ("" the whole frame)
     std::string master_key;    // every other setting that changes the master (route, Source, Strength ...)
     int frames() const { return last - first + 1; }
