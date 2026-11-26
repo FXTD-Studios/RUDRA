@@ -426,6 +426,9 @@ foreach ($d in "rudra", "config") {
 $global:LASTEXITCODE = 0
 Copy-Item scripts\genfill_bootstrap.ps1, scripts\genfill_bootstrap.sh, scripts\genfill_constraints.txt $OutPy
 if (-not (Test-Path (Join-Path $OutPy "rudra\genfill\run.py"))) { Fail "the package has no python\rudra\genfill" }
+# The package has only rudra and config: a rudra module that imports tools\ fails in the app (1.3.1, AI fill).
+$outside = Get-ChildItem (Join-Path $OutPy "rudra") -Recurse -Filter *.py | Select-String -Pattern "^\s*(from|import)\s+(tools|scripts|tests)\b"
+if ($outside) { Fail ("python\rudra imports outside the package: " + (($outside | ForEach-Object { "$($_.Filename):$($_.LineNumber)" }) -join ", ")) }
 if ($BundleModels -and $AllowNonCommercialWeights -and (Test-Path checkpoints\LICENSE)) { Copy-Item checkpoints\LICENSE (Join-Path $Out "LICENSE-weights") }
 if ($NoModels) {
     "Analytic evaluation package. No model weights bundled. This is not commercial or legal clearance." |

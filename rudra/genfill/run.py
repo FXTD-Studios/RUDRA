@@ -140,10 +140,10 @@ def hold_mode(v) -> str:
 
 class SourceCodes:
     """The source's 8-bit codes per frame index, (H, W, 3) uint8 at the master's size, decoded as the
-    engine reads them (tools/measure_flicker: a movie through ffmpeg, stills through OpenCV)."""
+    engine reads them (rudra.genfill.decode: a movie through ffmpeg, stills through OpenCV)."""
 
     def __init__(self, source: Path, count: int, size, start: int = 0):
-        from tools.measure_flicker import decode_frames, decode_movie, FRAME_EXT
+        from rudra.genfill.decode import decode_frames, decode_movie, FRAME_EXT
         # start (12 Nov 2026): a master that is part of the shot (the app previews the frame at the
         # playhead) begins at that source frame; index i here is still the master's own.
         if start < 0:
