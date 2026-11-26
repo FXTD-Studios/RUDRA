@@ -41,6 +41,10 @@ and when Resolve or Nuke is still open. Details: [OFX_PLUGIN.md](OFX_PLUGIN.md).
   of RUDRA itself, a test loads AI fill the way the installed app does, and the Windows build stops if any of
   RUDRA's Python imports from outside what it ships.
 
+- **AI fill in Resolve collected no frames.** Resolve numbers a clip's frames from its source media but gives
+  the clip's range from 0, so every frame fell outside the range and the status stayed at "0 of n". In Resolve,
+  AI fill now counts its frames from the playhead: put it on the first frame to draw, then press Generate.
+
 ## Also
 
 - `RUDRA.ofx` carries a version resource and is signed with RUDRA.exe and rudra-native.exe.

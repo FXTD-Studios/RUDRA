@@ -69,6 +69,10 @@ steps, the same in Nuke and Resolve:
    minutes for 100 frames; fewer is faster, but below 20 it can draw stripes). **From frame** and **To frame**
    choose the frames it draws (0: the clip's first and last): try it on a few, then the shot. The status says how
    many frames and roughly how long. The node starts collecting.
+   **In Resolve, put the playhead on the first frame to draw before you press Generate.** Resolve numbers a
+   clip's frames from its source media (129, 130, ...) while it gives the clip's range from 0, so there the
+   frames are counted from the playhead: From (or the clip's first frame) is the frame under it. The status shows
+   Resolve's own frame numbers. Clear stored fill forgets it.
 2. **Play the clip once at full size.** Nuke: proxy off and the viewer's downscale at 1:1, or render the node.
    Resolve: playback with no timeline proxy. Every frame the host renders is stored, its SDR codes and its master;
    **Refresh status** shows "collecting frames, k of n".

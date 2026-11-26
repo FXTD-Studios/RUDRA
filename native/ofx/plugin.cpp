@@ -45,7 +45,7 @@ constexpr const char* kAlpha = "alphaOut";
 constexpr const char* kAlphas[] = {"source", "limit", "ai_fill"};
 constexpr const char* kAiGroup = "aiGroup", *kAiFill = "aiFill", *kAiPrompt = "aiPrompt", *kAiSeed = "aiSeed",
                       *kAiGenerate = "aiGenerate", *kAiCancel = "aiCancel", *kAiRefresh = "aiRefresh", *kAiClear = "aiClear",
-                      *kAiStatus = "aiStatus", *kAiShot = "aiShot", *kAiShown = "aiShown", *kAiSteps = "aiSteps",
+                      *kAiStatus = "aiStatus", *kAiShot = "aiShot", *kAiShown = "aiShown", *kAiOffset = "aiOffset", *kAiSteps = "aiSteps",
                       *kAiFrom = "aiFrom", *kAiTo = "aiTo";
 // The Mask input (27 Nov 2026, the general context: Nuke) and its invert switch.
 constexpr const char* kMaskClip = "Mask", *kMaskInvert = "maskInvert";
@@ -94,6 +94,7 @@ public:
         ai_status_ = fetchStringParam(kAiStatus);
         ai_shot_ = fetchStringParam(kAiShot);
         ai_shown_ = fetchIntParam(kAiShown);
+        ai_offset_ = fetchIntParam(kAiOffset);
         ai_steps_ = fetchIntParam(kAiSteps);
         ai_from_ = fetchIntParam(kAiFrom);
         ai_to_ = fetchIntParam(kAiTo);
@@ -103,7 +104,7 @@ public:
     }
 
     void changedParam(const OFX::InstanceChangedArgs& args, const std::string& name) {
-        if (name == kAiStatus || name == kAiShot || name == kAiShown) return;   // the plug-in's own writes
+        if (name == kAiStatus || name == kAiShot || name == kAiShown || name == kAiOffset) return;   // the plug-in's own writes
         if (name == kRoute || name == kLimit) update_enabled();
         rudra_ofx::Settings s = settings_at(args.time);
         std::string why;
@@ -117,6 +118,14 @@ public:
                 s.ai_fill = true;
                 ai_fill_->setValue(true);
             }
+            // Resolve (1.3.2): it renders a clip at its source media's frame numbers (129, 130, ...) but gives the
+            // clip's range from 0 (0 to 96), so no frame was ever inside the range and nothing was collected. There
+            // the range starts at the playhead: From (or the clip's first frame) is the frame Generate is pressed on.
+            const int offset = resolve_host() ? int(std::lround(args.time)) - (s.first_frame - current_offset()) : 0;
+            if (offset != current_offset()) {
+                ai_offset_->setValue(offset);
+                s = settings_at(args.time);
+            }
             why = rudra_ofx::ai_generate(s);
             render_again = why.empty();
         } else if (name == kAiCancel) {
@@ -124,6 +133,7 @@ public:
             render_again = true;
         } else if (name == kAiClear) {
             why = rudra_ofx::ai_clear(s);
+            if (why.empty()) ai_offset_->setValue(0);
             render_again = why.empty();
         } else if (name == kAiRefresh) {
             render_again = s.ai_fill;
@@ -289,8 +299,23 @@ private:
         ai_to_->getValue(to);
         if (from != 0) s.first_frame = std::clamp(from, s.first_frame, s.last_frame);
         if (to != 0) s.last_frame = std::clamp(to, s.first_frame, s.last_frame);
+        // Resolve's frames from the playhead at Generate (changedParam); 0 in every other host.
+        const int offset = current_offset();
+        s.first_frame += offset;
+        s.last_frame += offset;
         s.frame = int(std::lround(time));
         return s;
+    }
+
+    int current_offset() const {
+        int offset = 0;
+        ai_offset_->getValue(offset);
+        return offset;
+    }
+
+    static bool resolve_host() {
+        const OFX::ImageEffectHostDescription* host = OFX::getImageEffectHostDescription();
+        return host && host->hostName.find("DaVinci") != std::string::npos;
     }
 
     // The analytic route's own controls are greyed out on the learned route; each limit's edges only for it.
@@ -318,7 +343,7 @@ private:
                      *band_from_ = nullptr, *band_to_ = nullptr, *limit_softness_ = nullptr;
     OFX::BooleanParam *clip_fill_ = nullptr, *anchor_ = nullptr, *ai_fill_ = nullptr, *mask_invert_ = nullptr;
     OFX::StringParam *ai_prompt_ = nullptr, *ai_status_ = nullptr, *ai_shot_ = nullptr;
-    OFX::IntParam *ai_seed_ = nullptr, *ai_shown_ = nullptr, *ai_steps_ = nullptr, *ai_from_ = nullptr, *ai_to_ = nullptr;
+    OFX::IntParam *ai_seed_ = nullptr, *ai_shown_ = nullptr, *ai_offset_ = nullptr, *ai_steps_ = nullptr, *ai_from_ = nullptr, *ai_to_ = nullptr;
     std::mutex note_mutex_;
     std::string last_note_;
 };
@@ -517,7 +542,8 @@ void RudraFactory::describeInContext(OFX::ImageEffectDescriptor& desc, OFX::Cont
     struct Button { const char* name; const char* label; const char* hint; };
     for (const Button& b : {Button{kAiGenerate, "Generate", "Start AI fill for this clip: then play or render the whole clip once at full "
                                                              "size; when every frame is in, the fill is drawn beside the host (about 20 "
-                                                             "minutes a 100 frames of 1080p) and shown from then on."},
+                                                             "minutes a 100 frames of 1080p) and shown from then on. In Resolve, put the playhead on "
+                                                             "the first frame to draw (From, or the clip's first) before pressing it."},
                             Button{kAiCancel, "Cancel", "Stop collecting, or stop the fill being drawn."},
                             Button{kAiRefresh, "Refresh status", "Read the AI fill's progress again."},
                             Button{kAiClear, "Clear stored fill", "Delete this node's stored frames and fills from the disk."}}) {
@@ -550,6 +576,14 @@ void RudraFactory::describeInContext(OFX::ImageEffectDescriptor& desc, OFX::Cont
     shown->setIsSecret(true);
     shown->setAnimates(false);
     shown->setParent(*ai);
+    // Resolve's frame numbers against the clip's range (1.3.2): set by Generate, cleared by Clear stored fill.
+    OFX::IntParamDescriptor* offset = desc.defineIntParam(kAiOffset);
+    offset->setLabels("AI fill frame offset", "AI fill frame offset", "AI fill frame offset");
+    offset->setDefault(0);
+    offset->setIsSecret(true);
+    offset->setAnimates(false);
+    offset->setEvaluateOnChange(false);
+    offset->setParent(*ai);
 }
 
 OFX::ImageEffect* RudraFactory::createInstance(OfxImageEffectHandle handle, OFX::ContextEnum) {
