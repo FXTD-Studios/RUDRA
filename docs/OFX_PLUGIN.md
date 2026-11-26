@@ -20,7 +20,7 @@ process. A small settings file tells the plug-in where RUDRA's engine, model and
 
 ## Install
 
-Every RUDRA package carries the plug-in (from the release after 1.3.1). Close Resolve and Nuke, then in RUDRA choose
+Every RUDRA package carries the plug-in (from 1.3.2). Close Resolve and Nuke, then in RUDRA choose
 **Help › Install the OFX plug-in for Resolve and Nuke…**. It:
 
 1. copies `RUDRA.ofx.bundle` into the system's OFX folder, asking once for an administrator

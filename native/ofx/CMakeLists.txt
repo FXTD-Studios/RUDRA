@@ -47,6 +47,13 @@ target_include_directories(rudra_ofx_plugin PRIVATE ${RUDRA_OFX_SDK_DIR}/include
 # plug-in builds as C++17 (below); it needs nothing from it but the plain interface.
 target_include_directories(rudra_ofx_plugin PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(rudra_ofx_plugin PRIVATE $<LINK_ONLY:rudra_ofx_process>)
+if(WIN32)
+  # 1.3.2: a version resource, as RUDRA.exe and rudra-native.exe have. SignPath signs a file only when its
+  # product name and version are the release's (docs/CODE_SIGNING_POLICY.md).
+  enable_language(RC)
+  configure_file(windows/rudra_ofx.rc.in "${CMAKE_CURRENT_BINARY_DIR}/rudra_ofx.rc" @ONLY)
+  target_sources(rudra_ofx_plugin PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/rudra_ofx.rc")
+endif()
 # The 1.5 SDK builds as C++17 (its own CMakeLists sets it; the 1.4 Support
 # library's dynamic exception specifications are gone). RUDRA itself is reached
 # through rudra_ofx_process's plain interface.

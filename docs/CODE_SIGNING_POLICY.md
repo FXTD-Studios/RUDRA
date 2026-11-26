@@ -9,8 +9,8 @@ This page says what is signed, how, by whom, and what RUDRA sends over the netwo
 
 ## What is signed
 
-- `RUDRA.exe` and `rudra-native.exe`, RUDRA's own programs, in both the installer and the
-  portable ZIP, and the installer `RUDRA-<version>-windows-x64-setup.exe`.
+- `RUDRA.exe` and `rudra-native.exe`, RUDRA's own programs, and the OFX plug-in `RUDRA.ofx`
+  (from 1.3.2), in both the installer and the portable ZIP, and the installer `RUDRA-<version>-windows-x64-setup.exe`.
 - Only the files of a release published on
   [GitHub](https://github.com/FXTD-Studios/RUDRA/releases). They are built from the tagged
   commit of this repository by [`.github/workflows/release.yml`](../.github/workflows/release.yml)

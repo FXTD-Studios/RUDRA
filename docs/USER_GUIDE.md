@@ -304,8 +304,8 @@ for example):
 4. For HDR, view **Rec.2100-PQ - Display / ACES 2.0 - HDR 1000 nits (P3 D65)**
    on an HDR monitor.
 
-An sRGB choice in Reconstruct › Source, so that an analytic master lines up with
-an SDR read as sRGB, is planned for 1.3.1.
+Reconstruct › Source › sRGB (1.3.1) makes an analytic master line up with an SDR
+read as sRGB.
 
 ### AI fill: the viewer, Reconstruct and Deliver
 
