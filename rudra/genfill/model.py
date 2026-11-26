@@ -52,10 +52,12 @@ def sha256_file(p: str | Path) -> str:
 
 # ---------------------------------------------------------------------------------- prompts
 # 1.3.2 (26 Nov 2026): a new prompt is read faster. The encoder reads the prompt's own tokens, not all 512 padded
-# ones: the padded positions are masked out of every attention, so the prompt's tokens come out as before, up to
-# bfloat16 rounding (diffusers' Wan pipeline keeps only those and zero-pads, as get() does), at a fraction of the
-# work (a 30-token prompt: 1/17). With device 'auto' the encoder runs on the GPU when the GPU has its size free
-# (make_room, set by WanFill, may first move the fill's transformer to the CPU), else on the CPU as before.
+# ones: the padded positions are masked out of every attention, so the prompt's tokens come out as before (measured on
+# the CPU: identical, cosine 1.0; diffusers' Wan pipeline keeps only those and zero-pads, as get() does), at a
+# fraction of the work: a 21-token prompt took 1.2 s on the CPU instead of 516.6 s. With device 'auto' the encoder
+# runs on the GPU when the GPU has its size free (make_room, set by WanFill, may first move the fill's transformer to
+# the CPU), else on the CPU; measured slower than the CPU now (moving 11 GB costs more than the reading), so RUDRA's
+# fills and the plug-in read on the CPU.
 TEXT_ENCODER_MARGIN = 768 * 2 ** 20      # beyond the weights: activations and the CUDA allocator's slack
 
 
@@ -230,8 +232,8 @@ class FillSettings:
     # base prompt everywhere and one with the region prompt, blended by the region's mask (two transformer
     # passes a step, as gated). 'single': the region prompt drives the whole window in one pass: inside the
     # region that is the prediction 'blend' takes there, outside it the window is the master's own context
-    # (VACE keeps it), so the fill comes out nearly the same in half the time. Two region prompts, or a
-    # strength other than 1, always blend.
+    # (VACE keeps it), so the fill comes out nearly the same (measured: run.py PROMPT_PASS), faster. Two region
+    # prompts, or a strength other than 1, always blend. The default here stays 'blend'; run.py runs 'single'.
     prompt_pass: str = 'blend'
     extra: dict = field(default_factory=dict)
 

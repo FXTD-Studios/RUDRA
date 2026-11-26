@@ -1049,9 +1049,11 @@ def checked_prompt_strength(v) -> float:
     return x
 
 
-# 1.3.2 (26 Nov 2026): model.FillSettings.prompt_pass. 'blend' as AI fill v5 was gated; tools/prompt_check.py
-# (tmp/09V_test/v4_gates/run_prompt_check.py) measures 'single' against it on the gate shots.
-PROMPT_PASS = 'blend'
+# 1.3.2 (26 Nov 2026): model.FillSettings.prompt_pass for what RUDRA runs. Measured on the gate shots
+# (tmp/09V_test/v4_gates/run_prompt_check.py, 33 frames, 1.3.2's wording): 'single' against 'blend' moved the clipped
+# areas by 0.006 stops on average (p95 0.026) on 09V and 0.003 (0.016) on 04, with the same gate results, in 20 to
+# 26 % less time; a prompt at strength 1 now costs what no prompt costs. The library's own default stays 'blend'.
+PROMPT_PASS = 'single'
 
 
 def checked_prompt_pass(v) -> str:
@@ -1408,11 +1410,11 @@ def main(argv=None):
                          prompt_highlight=a.prompt_highlight, prompt_shadow=a.prompt_shadow,
                          prompt_strength=checked_prompt_strength(a.prompt_strength),
                          prompt_pass=checked_prompt_pass(a.prompt_pass))
-        # The prompts before the model (1.3.2): a new one is read on the GPU while the GPU is still free (umT5,
-        # 11 GB, never beside the model on a 16 GB card), else on the CPU as before. The serve mode's later
-        # prompts take the GPU when it has room (the transformer may step off it meanwhile: PromptBank.make_room).
+        # The prompts before the model (1.3.2), on the CPU. Reading only the prompt's own tokens took a new prompt
+        # from 516.6 s to 1.2 s on the CPU (the same embedding, cosine 1.0); on the GPU it took longer (8 s in a
+        # fill, most of it moving the 11 GB encoder there), so the GPU (PromptBank 'auto') is not used.
         from .model import PromptBank
-        bank = PromptBank(a.base, cache, device='auto' if device == 'cuda' else 'cpu', dtype=dtype)
+        bank = PromptBank(a.base, cache, device='cpu', dtype=dtype)
         prepare_prompts(bank, [s.prompt, s.prompt_highlight, s.prompt_shadow, s.negative], emit)
         if device == 'cuda':
             torch.cuda.reset_peak_memory_stats()        # the fill's own peak in memory_report, not the text encoder's

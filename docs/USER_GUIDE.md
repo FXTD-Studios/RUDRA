@@ -349,9 +349,10 @@ The AI fill is in three places, each with one job:
   like and end with the words the AI fill model was trained under
   ("scene-referred high dynamic range footage, physically plausible
   highlights"), so a prompt steers what is drawn without leaving the
-  conditions the model learned in. A new prompt is read faster: the text
-  model reads only the prompt's own words, on the GPU when it has the room
-  (before the fill's model loads), else on the CPU. With **Limit to a
+  conditions the model learned in. A new prompt is read in seconds, not
+  minutes: the text model reads only the prompt's own words. At Prompt
+  strength 1 a prompt no longer slows the fill (one pass of the model a
+  step); another strength takes about a third longer. With **Limit to a
   luminance region** on (Reconstruct), the fill acts only inside that region
   and every pixel outside it is the master's, bit for bit. No 8-bit code of
   the SDR view ever changes, and every drawn pixel is marked in

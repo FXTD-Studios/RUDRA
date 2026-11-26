@@ -90,9 +90,9 @@ A prompt costs time once: a prompt the fill has not read before needs the 11 GB 
 Generate starts reading it at once, on the CPU, while the frames are collected, so by the last frame it is usually
 read; if not, the fill waits for it (the status says so). Every prompt read is kept for every RUDRA node, beside
 the stored fills (`ofx_fill\prompt_cache`), and the prompts the RUDRA app already knows are copied in: the same
-prompt again costs nothing. An empty prompt draws from the picture alone and needs no text model. A prompt is blended
-into the fill with a second pass of the model each step, so a fill with a prompt takes about twice as long; the time
-Generate announces counts it.
+prompt again costs nothing. An empty prompt draws from the picture alone and needs no text model. At Prompt
+strength 1 a prompt costs no extra drawing time; at another strength it is blended in with a second pass of the
+model each step, about a third longer, which the time Generate announces counts.
 
 A stored fill belongs to the settings it was made with. A changed route, Source, Strength, Recovery, luminance
 limit, prompt, prompt strength, seed or steps makes it **out of date**, and the master is shown until you Generate

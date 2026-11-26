@@ -228,6 +228,9 @@ DESCRIBE_MODEL = "florence-community/Florence-2-base"
 
 # What a caption may say about the bright area, in the order they are tried: (words, subject, preset).
 _SUBJECTS: tuple[tuple[tuple[str, ...], str, str], ...] = (
+    # 1.3.2: Florence-2 calls the welding shot (04) "a welder ... sparks flying", which named no subject before
+    (("weld", "welds", "welding", "welder", "welders", "spark", "sparks", "arc welding", "welding arc"),
+     "welding arc, intense blue-white core with bright sparks and a hot glow", "light_source"),
     (("fire", "flame", "flames", "candle", "bonfire", "fireplace", "burning"),
      "flame, bright yellow-white core with flickering orange edges and a soft glow", "flame"),
     (("sunset", "sunrise", "dusk", "golden hour", "orange sky", "pink sky"),
@@ -386,7 +389,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.cmd == "precache":
         from .model import BASE_PROMPT, PromptBank
-        bank = PromptBank(a.base, a.cache, device="auto")   # 1.3.2: the GPU when it has the room
+        bank = PromptBank(a.base, a.cache, device="cpu")    # 1.3.2: the prompt's own tokens, seconds on the CPU
         for text in (BASE_PROMPT,) + tuple(p.text for p in PRESETS):
             was = cached(text, a.cache)
             bank.get(text)

@@ -38,20 +38,24 @@ and when Resolve or Nuke is still open. Details: [OFX_PLUGIN.md](OFX_PLUGIN.md).
 
 ## Prompts for AI fill
 
+- **Read in seconds.** A prompt not used before waited while the 11 GB text model read it on the CPU: 8.6 minutes
+  for a short prompt on the test machine. The text model now reads only the prompt's own words (about 40 of the
+  512 it read before) and gives exactly the same result, in about a second plus loading the model. In the plug-in,
+  Generate starts reading the prompt while the frames are collected.
+- **No extra time for a prompt.** A prompt used to be blended into the fill with a second pass of the model at
+  every step. At Prompt strength 1 it now drives the fill in one pass: on the gate shots the picture moved by
+  under 0.03 stop (p95, in the clipped areas), passed the same checks, and took 20 to 26 % less time, the same as
+  no prompt. Other strengths still blend, about a third longer; the time the plug-in announces counts it.
 - **Better wording.** The suggested prompts (the presets and "From this shot") describe more of what the clipped area
   looks like, a sky's gradient or a lamp's core and falloff, and end with the words the AI fill model was trained
   under ("scene-referred high dynamic range footage, physically plausible highlights"). The model learned to fill
-  under those words only, so a prompt now steers what is drawn without leaving them.
-- **Read faster.** A prompt not used before used to wait a minute or two while the 11 GB text model read it on the
-  CPU. The text model now reads only the prompt's own words (a typical prompt is about 40 of the 512 it read before),
-  runs on the GPU when the GPU has room, and reads the prompt before the fill's model loads, when the GPU is free.
-  In the plug-in, Generate starts reading the prompt while the frames are collected.
+  under those words only, so a prompt now steers what is drawn without leaving them. On 09V (a sky through a cargo
+  door) the new wording drew softer clouds and flickered less than 1.3.1's (0.024 stop against 0.028). A welding
+  shot is now suggested as a welding arc, not as specular glints.
 - **Suggest prompt in Resolve and Nuke.** The plug-in's Suggest prompt writes a prompt for the frame on screen, as
   the app's Suggest a prompt does, with Florence-2 when RUDRA's AI fill setup installed it.
 - **Prompt strength in the plug-in**, as in the app's Deliver: above 1 the fill follows the prompt more closely
-  (experimental).
-- The time Generate announces counts the second pass of the model a prompt takes each step: a fill with a prompt
-  takes about twice as long as one without.
+  (experimental). At 1.5 the sky on 09V came out smoother and still passed every check.
 
 ## Fixed
 
@@ -73,10 +77,14 @@ and when Resolve or Nuke is still open. Details: [OFX_PLUGIN.md](OFX_PLUGIN.md).
 
 ## Tested
 
-- OFX: the plug-in's picture tests (26 of 26), a test host that loads the bundle and renders through it, with
-  the mask (6 of 6), and the AI fill job (8 of 8). App tests: 223 pass; 11 skip because they need the learned
-  model loaded.
+- OFX: the plug-in's tests (33 of 33: the picture, the learned engine, AI fill, Suggest prompt, Prompt strength) and
+  a test host that loads the bundle and renders through it, with the mask and Suggest prompt (7 of 7). App tests
+  for AI fill, Deliver, Batch, the QC report and Help: 68 pass; 6 skip because they need the learned model loaded.
+- Python, AI fill and the plug-in's helpers with PyTorch: 149 pass.
 - AI fill in an installed layout: `rudra.genfill` loads with only RUDRA's shipped folders on the path.
+- Prompts on the gate shots (33 frames each, the analytic route): no prompt, 1.3.1's and 1.3.2's wording, one pass
+  against the blend, strength 1.5 and guidance 2. 09V passes every check in every variant. 04 fails the flicker
+  check in every variant, prompt or not (0.22 stop against 0.10), as in 1.3.1 (below).
 - In Resolve and Nuke: to be completed before release.
 
 ## Known limits

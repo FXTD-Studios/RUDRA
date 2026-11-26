@@ -42,11 +42,13 @@ struct FillRequest {
     std::string key() const;   // 16 hex digits
 };
 
-// rudra/genfill/run.py PROMPT_PASS == "single" (1.3.2): one region prompt at strength 1 costs one transformer pass
-// a step instead of two, which the time Generate announces counts (tests/test_ofx_job.py checks the two agree).
-inline constexpr bool kSinglePromptPass = false;
-// The transformer passes a step of this request's fill: 1 without a prompt, 2 when its prompt is blended in.
-int prompt_passes(const FillRequest& r);
+// rudra/genfill/run.py PROMPT_PASS == "single" (1.3.2): one region prompt at strength 1 in one transformer pass a
+// step, so it costs what no prompt costs (tests/test_ofx_job.py checks the two agree).
+inline constexpr bool kSinglePromptPass = true;
+// What this request's fill costs against one with no prompt: 1, or kBlendedPromptCost when its prompt is blended in
+// (a second pass a step; measured 1.28 to 1.38 times on the gate shots, 26 Nov 2026).
+inline constexpr double kBlendedPromptCost = 1.35;
+double prompt_cost(const FillRequest& r);
 
 enum class State { None, Collecting, Running, Done, Failed, Cancelled };
 

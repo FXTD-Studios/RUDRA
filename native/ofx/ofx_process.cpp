@@ -412,9 +412,9 @@ std::string ai_status(const Settings& s) {
     std::string text = fill::status_text(st);
     if (st.state == fill::State::Collecting || st.state == fill::State::None) {
         // What Generate will cost (27 Nov 2026): 100 frames at 30 steps took about 20 minutes on the 1.3.1 test shot,
-        // with no prompt; a prompt blended in takes a second transformer pass a step (1.3.2).
+        // with no prompt; a prompt blended in (a strength other than 1) takes about a third longer (1.3.2).
         const int n = req.frames(),
-                  minutes = std::max(1, int(std::lround(double(n) * req.steps * fill::prompt_passes(req) / 150.0)));
+                  minutes = std::max(1, int(std::lround(double(n) * req.steps * fill::prompt_cost(req) / 150.0)));
         text += " Frames " + std::to_string(req.first) + " to " + std::to_string(req.last) + " (" + std::to_string(n) +
                 "): about " + std::to_string(minutes) + " minutes to draw at " + std::to_string(req.steps) + " steps.";
     }

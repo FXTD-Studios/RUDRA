@@ -214,3 +214,15 @@ def test_cli_describe_device_reaches_florence(tmp_path, capsys, monkeypatch):
     assert P.main(["suggest", str(f), "--json", "--describe", "auto", "--describe-device", "cpu"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert seen == ["cpu"] and out["suggestions"][0]["id"] == "shot"
+
+
+def test_a_welding_shot_is_suggested_as_a_welding_arc():
+    """1.3.2: Florence-2's captions of the welding shot (04) named no subject the rules knew, so the suggestion
+    fell back to specular glints."""
+    scene = ("The image shows a welder wearing a helmet and welding a large metal pipe in a factory. The factory is "
+             "filled with machines and lights, and the welder is focused on the task at hand.")
+    area = "The image shows a welder working on a piece of metal in a factory, with sparks flying from the welding process."
+    text, pid = P.shot_prompt(scene, area, fallback="specular_glints")
+    assert pid == "light_source" and text.startswith("welding arc, intense blue-white core with bright sparks")
+    assert "welder" not in text and text.endswith(P.HIGHLIGHT_TAIL)
+    assert P.shot_prompt("A dark archway in an old town.", "")[1] != "light_source"   # "arc" alone is not welding

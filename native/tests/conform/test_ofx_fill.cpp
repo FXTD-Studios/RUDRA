@@ -311,11 +311,11 @@ TEST_F(OfxFill, TheTimeGenerateAnnouncesCountsTheSecondPassOfABlendedPrompt) {
     s.ai_fill = true, s.shot_id = "test21", s.first_frame = 1, s.last_frame = 30, s.steps = 20;
     const std::string plain = rudra_ofx::ai_status(s);
     EXPECT_NE(plain.find("about 4 minutes"), std::string::npos) << plain;
-    s.prompt = "sky";
+    s.prompt = "sky";                              // one pass a step at strength 1: what no prompt costs
     const std::string prompted = rudra_ofx::ai_status(s);
-    EXPECT_NE(prompted.find(fill::kSinglePromptPass ? "about 4 minutes" : "about 8 minutes"), std::string::npos) << prompted;
-    s.prompt_strength = 1.5;                       // a strength other than 1 always blends
-    EXPECT_NE(rudra_ofx::ai_status(s).find("about 8 minutes"), std::string::npos);
+    EXPECT_NE(prompted.find(fill::kSinglePromptPass ? "about 4 minutes" : "about 5 minutes"), std::string::npos) << prompted;
+    s.prompt_strength = 1.5;                       // a strength other than 1 always blends: 4 x 1.35
+    EXPECT_NE(rudra_ofx::ai_status(s).find("about 5 minutes"), std::string::npos) << rudra_ofx::ai_status(s);
 }
 
 TEST_F(OfxFill, GenerateWithAPromptReadsItWhileTheFramesAreCollected) {

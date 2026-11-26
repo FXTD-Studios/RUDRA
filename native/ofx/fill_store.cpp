@@ -190,9 +190,9 @@ fs::path root() {
 
 fs::path folder(const FillRequest& r) { return root() / r.shot_id / r.key(); }
 
-int prompt_passes(const FillRequest& r) {
-    if (r.prompt.empty()) return 1;
-    return kSinglePromptPass && r.prompt_strength == 1.0 ? 1 : 2;
+double prompt_cost(const FillRequest& r) {
+    if (r.prompt.empty() || (kSinglePromptPass && r.prompt_strength == 1.0)) return 1.0;
+    return kBlendedPromptCost;
 }
 
 std::string frame_stem(int index) {
