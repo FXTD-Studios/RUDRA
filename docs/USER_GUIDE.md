@@ -497,6 +497,15 @@ The packaged ffmpeg is used first. To use your own instead, set
 `RUDRA_FFMPEG_DIR` to its folder, or `RUDRA_FFMPEG_DIR=path` for the one on
 the PATH.
 
+### In Resolve and Nuke: the OFX plug-in
+
+**RUDRA SDR to HDR** (in development) is the same master chain as an OpenFX
+effect for DaVinci Resolve and Nuke: the analytic and learned ACES 2.0
+routes, the luminance limit with its matte, and AI fill (Generate, then play
+the clip once). It downloads no model: it uses the RUDRA installed on the
+same computer: **Help › Install the OFX plug-in for Resolve and Nuke…** puts it in both hosts. Setup, the controls and AI fill's steps are in
+[OFX_PLUGIN.md](OFX_PLUGIN.md).
+
 ## 6. When something goes wrong
 
 - **Help > Check this computer…** first: it names what is missing and

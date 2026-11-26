@@ -2960,6 +2960,68 @@ TEST(AppUpdates, TheCheckSaysWhatIsNewer) {
     QCoreApplication::setApplicationVersion(keep);
 }
 
+#include <QJsonDocument>
+#include <iterator>
+
+#include "ofx_install.hpp"
+
+// 26 Nov 2026: Help > Install the OFX plug-in for Resolve and Nuke. The package's ofx/ folder (a stand-in here),
+// copied into the OFX folder (a folder of the test's own, so no administrator), the plug-in's settings file
+// written for this RUDRA, Nuke's toolbar files and init.py line added once; again, nothing is copied.
+TEST(AppHelp, InstallTheOfxPlugInCopiesItWritesItsSettingsAndNukesIcon) {
+    namespace fs = std::filesystem;
+    const fs::path root = fresh_dir("ofx_install");
+    const fs::path shipped = root / "app" / "ofx" / "RUDRA.ofx.bundle";
+    fs::create_directories(shipped / "Contents" / "Resources");
+    std::ofstream(shipped / "Contents" / "Resources" / "version.txt") << "1.3.2\n";
+    fs::create_directories(root / "app" / "ofx" / "nuke");
+    std::ofstream(root / "app" / "ofx" / "nuke" / "menu.py") << "# menu\n";
+    qputenv("RUDRA_OFX_APP_DIR", QString::fromStdString((root / "app").string()).toUtf8());
+    qputenv("RUDRA_OFX_PLUGIN_DIR", QString::fromStdString((root / "OFX" / "Plugins").string()).toUtf8());
+    qputenv("RUDRA_OFX_ENGINE_CONFIG", QString::fromStdString((root / "cfg" / "ofx_engine.json").string()).toUtf8());
+    qputenv("RUDRA_NUKE_HOME", QString::fromStdString((root / "nuke").string()).toUtf8());
+    QSettings().clear();
+    app::MainWindow w(false);
+    EXPECT_EQ(w.action("install-ofx")->text(), "Install the OFX plug-in for Resolve and Nuke\u2026");
+    const QString said = w.install_ofx(false);
+    if (said.startsWith("Close ")) GTEST_SKIP() << said.toStdString();   // a host is open on this computer
+    EXPECT_TRUE(said.contains("RUDRA SDR to HDR 1.3.2 is in")) << said.toStdString();
+    EXPECT_EQ(app::ofx_bundle_version(root / "OFX" / "Plugins" / "RUDRA.ofx.bundle"), "1.3.2");
+    EXPECT_TRUE(fs::is_regular_file(root / "cfg" / "ofx_engine.json"));
+    EXPECT_TRUE(fs::is_regular_file(root / "nuke" / "RUDRA" / "menu.py"));
+    auto init = [&] {
+        std::ifstream f(root / "nuke" / "init.py");
+        return std::string(std::istreambuf_iterator<char>(f), {});
+    };
+    EXPECT_TRUE(app::nuke_init_has_rudra(init()));
+    const std::string once = init();
+    w.install_ofx(false);   // installed already: the settings again, nothing copied, init.py as it was
+    EXPECT_EQ(init(), once);
+    for (const char* v : {"RUDRA_OFX_APP_DIR", "RUDRA_OFX_PLUGIN_DIR", "RUDRA_OFX_ENGINE_CONFIG", "RUDRA_NUKE_HOME"}) qunsetenv(v);
+    std::filesystem::remove_all(root);
+}
+
+TEST(AppHelp, TheOfxInstallsVersionsAndHostsAreRead) {
+    EXPECT_EQ(app::ofx_hosts_running({"explorer.exe", "Nuke15.1.exe", "Resolve.exe", "Code.exe"}),
+              (std::vector<std::string>{"Nuke15.1.exe", "Resolve.exe"}));
+    app::OfxEngineSettings s;
+    s.cli = "rudra-native", s.package = "RUDRA_ACES_2", s.runtime = "onnxruntime", s.device = "dml";
+    const QJsonObject j = QJsonDocument::fromJson(QByteArray::fromStdString(app::ofx_engine_json(s))).object();
+    EXPECT_EQ(j.value("device").toString(), "dml");
+    EXPECT_FALSE(j.contains("genfill"));
+    const auto c = app::elevated_copy_command("/a b/RUDRA.ofx.bundle", "/OFX/Plugins", "/tmp/e");
+    ASSERT_FALSE(c.empty());
+#ifdef _WIN32
+    EXPECT_EQ(c[0], "powershell.exe");
+    EXPECT_NE(c.back().find("Copy-Item -LiteralPath '"), std::string::npos);
+#elif defined(__APPLE__)
+    EXPECT_EQ(c[0], "osascript");
+    EXPECT_NE(c.back().find("with administrator privileges"), std::string::npos);
+#else
+    EXPECT_EQ(c[0], "pkexec");
+#endif
+}
+
 TEST(AppHelp, GettingStartedTheGuideAndTips) {
     QSettings().clear();
     app::MainWindow w(false);

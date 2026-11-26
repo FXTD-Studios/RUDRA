@@ -63,9 +63,18 @@ public:
     bool write(std::span<const std::uint8_t> in);
     // Closes stdin so the program sees the end of its input.
     void close_input();
+    // A program talked to both ways (25 Nov 2026, the OFX plug-in's learned engine): requests on its
+    // stdin, answers read from its stdout, stderr to the file. `path_prepend` (folders separated as PATH
+    // separates them) goes in front of the child's PATH only; this process's own PATH is not touched
+    // (the plug-in runs inside Resolve or Nuke).
+    static Result<std::unique_ptr<Process>> start_duplex(const std::vector<std::string>& argv,
+                                                         const std::filesystem::path& stderr_file = {},
+                                                         const std::string& path_prepend = {});
     // Reads up to out.size() bytes, looping until the buffer is full or the
     // stream ends; returns how many were read (less only at the end).
     std::size_t read(std::span<std::uint8_t> out);
+    // Reads what is there, at least one byte, waiting for it; 0 only at the end of the stream.
+    std::size_t read_some(std::span<std::uint8_t> out);
     // Waits for the program to end; its exit code.
     int wait();
     // Ends it now (the Python's kill on an error path).

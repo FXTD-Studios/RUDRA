@@ -310,9 +310,9 @@ if (-not $SkipBuild) {
     & $cmake -S native -B $Build -G $tc.Generator -A x64 `
         "-DRUDRA_BUILD_TESTS=$testsFlag" -DRUDRA_BUILD_CLI=ON -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_RENDER=ON `
         -DRUDRA_WITH_ONNXRUNTIME=ON "-DONNXRUNTIME_ROOT=$OrtRoot" -DRUDRA_WITH_LIBTORCH=OFF `
-        -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CvConfigDir" "-DCMAKE_PREFIX_PATH=$QtRoot" @OcioFlags
+        -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CvConfigDir" "-DCMAKE_PREFIX_PATH=$QtRoot" @OcioFlags -DRUDRA_BUILD_OFX=ON
     if ($LASTEXITCODE -ne 0) { Fail "cmake configure" }
-    $targets = @("RUDRA", "rudra-native")
+    $targets = @("RUDRA", "rudra-native", "rudra_ofx_plugin")   # 26 Nov 2026: the OFX plug-in, installed from Help
     if ($Tests) { $targets += "rudra_app_tests" }
     & $cmake --build $Build --config Release --parallel --target $targets
     if ($LASTEXITCODE -ne 0) { Fail "build" }
@@ -352,7 +352,14 @@ if (Test-Path $Out) { Remove-Item $Out -Recurse -Force }
 if (Test-Path $Zip) { Remove-Item $Zip -Force }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 Copy-Item $App, $Cli $Out
-Invoke-Sign @((Join-Path $Out "RUDRA.exe"), (Join-Path $Out "rudra-native.exe"))
+# 26 Nov 2026: the OFX plug-in for Resolve and Nuke, beside the app: Help > Install the OFX plug-in copies it into the
+# system's OFX folder (app/ofx_install.hpp). ofx\nuke: Nuke's toolbar icon.
+$OfxBundle = Join-Path $Build "RUDRA.ofx.bundle"
+if (-not (Test-Path (Join-Path $OfxBundle "Contents\Win64\RUDRA.ofx"))) { Fail "not built: $OfxBundle (rudra_ofx_plugin)" }
+New-Item -ItemType Directory -Force -Path (Join-Path $Out "ofx\nuke") | Out-Null
+Copy-Item $OfxBundle (Join-Path $Out "ofx") -Recurse -Force
+Copy-Item native\ofx\nuke\* (Join-Path $Out "ofx\nuke") -Force
+Invoke-Sign @((Join-Path $Out "RUDRA.exe"), (Join-Path $Out "rudra-native.exe"), (Join-Path $Out "ofx\RUDRA.ofx.bundle\Contents\Win64\RUDRA.ofx"))
 # Qt and its plugins beside the executables.
 & (Join-Path $QtRoot "bin\windeployqt.exe") --release --no-translations (Join-Path $Out "RUDRA.exe")
 if ($LASTEXITCODE -ne 0) { Fail "windeployqt" }

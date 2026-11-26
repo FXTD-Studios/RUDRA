@@ -80,6 +80,12 @@ rm -rf "$OUT" "dist/beta/$NAME.tar.gz" "dist/beta/$NAME.tar.gz.sha256"
 mkdir -p "$OUT/lib" "$OUT/plugins"
 cp "$APP_SRC" "$OUT/RUDRA"
 cp "$CLI_SRC" "$OUT/rudra-native"
+# 26 Nov 2026: the OFX plug-in for Resolve and Nuke beside the app: Help > Install the OFX plug-in copies it into
+# /usr/OFX/Plugins (pkexec; app/ofx_install.hpp). ofx/nuke: Nuke's toolbar icon.
+[ -f "$BUILD/RUDRA.ofx.bundle/Contents/Linux-x86-64/RUDRA.ofx" ] || fail "no OFX plug-in at $BUILD/RUDRA.ofx.bundle"
+mkdir -p "$OUT/ofx/nuke"
+cp -R "$BUILD/RUDRA.ofx.bundle" "$OUT/ofx/"
+cp native/ofx/nuke/* "$OUT/ofx/nuke/"
 
 say "Qt plug-ins"
 [ -d "$QT_PLUGINS/platforms" ] || fail "no Qt plug-ins at $QT_PLUGINS"

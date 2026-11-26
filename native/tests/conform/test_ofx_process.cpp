@@ -2,6 +2,7 @@
 // the output the plug-in offers, whatever the host's row order.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -35,6 +36,8 @@ PlanarBuffer reference(const OfxGrade& g) {
     const SdrImage sdr(std::move(code));
     MasterRequest q;
     q.analytic = true, q.source_curve = g.source_curve, q.exposure_ev = g.exposure_ev, q.container = "linear";
+    q.own_codes = true;   // the plug-in reads the host's codes as the app reads a movie's
+    q.region = g.region;  // the luminance limit (26 Nov 2026): the app's region
     auto m = grade_master(sdr, analytic_fields_for(sdr, q), FrameScalars{}, kAnalyticConstants, q);
     EXPECT_TRUE(m);
     PlanarBuffer nits(3, kH, kW);
@@ -100,4 +103,76 @@ TEST(OfxProcess, BadSettingsAreRefused) {
     g.exposure_ev = 4.0;
     EXPECT_FALSE(render_sdr_to_hdr(g, in.data(), kW * 4, out.data(), kW * 4, kW, kH));
     EXPECT_FALSE(render_sdr_to_hdr({}, in.data(), kW * 4, out.data(), kW * 4, 0, kH));
+}
+
+TEST(OfxProcess, Bt1886ReadsTheHostsCodesAsVideo) {
+    // 25 Nov 2026: a flat grey at codes 26, 51 and 128 comes out as code^2.4 (diffuse white = 1.0),
+    // not 0.36-2.7 stops darker as before own codes.
+    for (int code : {26, 51, 128}) {
+        std::vector<float> in(std::size_t(kW) * kH * 4), out(in.size());
+        for (std::size_t i = 0; i < std::size_t(kW) * kH; ++i)
+            for (int c = 0; c < 4; ++c) in[i * 4 + std::size_t(c)] = c == 3 ? 1.0f : float(code) / 255.0f;
+        OfxGrade g;
+        g.source_curve = "bt1886";
+        ASSERT_TRUE(render_sdr_to_hdr(g, in.data(), kW * 4, out.data(), kW * 4, kW, kH));
+        const double want = std::pow(double(code) / 255.0, 2.4);
+        const std::size_t mid = (std::size_t(kH / 2) * kW + std::size_t(kW / 2)) * 4;
+        EXPECT_NEAR(std::log2(double(out[mid + 1]) / want), 0.0, 0.1) << "code " << code;
+    }
+}
+
+// Phase 3 (26 Nov 2026): the luminance limit is the app's Reconstruct > Region, exactly.
+TEST(OfxProcess, TheLuminanceLimitIsTheAppsRegion) {
+    const auto in = rgba();
+    std::vector<float> out(in.size());
+    rudra_ofx::Settings s;
+    s.limit = "highlights", s.highlights_from = 0.6, s.limit_softness = 0.05;
+    OfxGrade g = ofx_grade(s);
+    ASSERT_TRUE(g.region.enabled);
+    EXPECT_EQ(g.region.highlight_strength, 1.0f);
+    EXPECT_EQ(g.region.shadow_strength, 0.0f);
+    ASSERT_TRUE(render_sdr_to_hdr(g, in.data(), kW * 4, out.data(), kW * 4, kW, kH));
+    const auto ref = reference(g);
+    for (std::size_t i = 0; i < std::size_t(kW) * kH; ++i)
+        for (int c = 0; c < 3; ++c) EXPECT_FLOAT_EQ(out[i * 4 + std::size_t(c)], std::max(ref.plane(c)[i], 0.0f) / 203.0f);
+    // A band and both edges map as the app's region does.
+    s.limit = "band", s.band_from = 0.2, s.band_to = 0.7;
+    g = ofx_grade(s);
+    EXPECT_TRUE(g.region.band);
+    EXPECT_FLOAT_EQ(g.region.band_low, 0.2f);
+    EXPECT_FLOAT_EQ(g.region.band_high, 0.7f);
+    s.limit = "both";
+    g = ofx_grade(s);
+    EXPECT_EQ(g.region.highlight_strength, 1.0f);
+    EXPECT_EQ(g.region.shadow_strength, 1.0f);
+    s.limit = "off";
+    EXPECT_FALSE(ofx_grade(s).region.enabled);
+}
+
+TEST(OfxProcess, AlphaCanCarryTheLimit) {
+    const auto in = rgba();
+    std::vector<float> out(in.size());
+    rudra_ofx::Settings s;
+    s.limit = "shadows", s.shadows_below = 0.3, s.limit_softness = 0.1, s.alpha = "limit";
+    ASSERT_EQ(rudra_ofx::render(s, in.data(), kW * 4, out.data(), kW * 4, kW, kH).error, "");
+    const ReconstructionRegion r = ofx_region(s);
+    for (std::size_t i = 0; i < std::size_t(kW) * kH; ++i) {
+        const float y = 0.2126f * in[i * 4] + 0.7152f * in[i * 4 + 1] + 0.0722f * in[i * 4 + 2];
+        float wh = 1.0f, ws = 1.0f;
+        region_weights(y, r, wh, ws);
+        EXPECT_FLOAT_EQ(out[i * 4 + 3], std::clamp(std::max(wh, ws), 0.0f, 1.0f)) << i;
+    }
+    s.alpha = "source", s.limit = "off";
+    ASSERT_EQ(rudra_ofx::render(s, in.data(), kW * 4, out.data(), kW * 4, kW, kH).error, "");
+    EXPECT_EQ(out[3], 0.25f);   // the source's alpha
+}
+
+TEST(OfxProcess, ABadLimitIsRefused) {
+    const auto in = rgba();
+    std::vector<float> out(in.size());
+    rudra_ofx::Settings s;
+    s.limit = "band", s.band_from = 0.8, s.band_to = 0.3;   // upside down
+    EXPECT_NE(rudra_ofx::render(s, in.data(), kW * 4, out.data(), kW * 4, kW, kH).error, "");
+    s.limit = "off", s.alpha = "everything";
+    EXPECT_NE(rudra_ofx::render(s, in.data(), kW * 4, out.data(), kW * 4, kW, kH).error, "");
 }

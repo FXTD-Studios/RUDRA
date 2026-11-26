@@ -11,7 +11,7 @@
   models\RUDRA_ACES_2\, models\rudra_genfill_v3\, models\rudra_genfill_v4\) to https://huggingface.co/<Repo>.
   Before the upload it checks every file against the expected SHA-256 values.
   Writes dist\hf\models.json, pinned to the uploaded commit; put that file at
-  https://www.fxtdstudios.com/rudra/models.json (the app's default index).
+  https://www.fxtdstudios.com/rudra-docs/models.json (the app's default index).
 
   Needs a Hugging Face login with write access to the org, done once:  .venv\Scripts\hf.exe auth login
 #>
@@ -126,5 +126,5 @@ Say "models.json for the app"
         --summary "LoRA for Wan2.1-VACE-1.3B: redraws a bright region (lamps, thin edges, doors, glare), steadier than v4.3; RUDRA 1.3 runs it with its thin hold (steady thin lights); needs the base model, Python and a 16 GB GPU" `
         --licence "Apache-2.0" --licence-url "https://huggingface.co/$Repo/blob/main/LICENSE"
 if ($LASTEXITCODE -ne 0) { Fail "make_models_json.py" }
-Write-Host "`nDone. Publish dist\hf\models.json at https://www.fxtdstudios.com/rudra/models.json" -ForegroundColor Green
+Write-Host "`nDone. Publish dist\hf\models.json at https://www.fxtdstudios.com/rudra-docs/models.json" -ForegroundColor Green
 if ($Private) { Write-Host "The repo is PRIVATE: the app cannot download from it until you make it public on huggingface.co." -ForegroundColor Yellow }

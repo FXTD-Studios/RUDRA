@@ -421,6 +421,7 @@ void MainWindow::bind_handlers() {
     h["check-updates"] = [this] { check_for_updates(true); };
     // 16 Nov 2026 (1.2.5): the once-a-day check, on or off (docs/PRIVACY.md; the installer asks too).
     h["system-check"] = [this] { open_system_check(false); };   // 1.2.5: Help and the toolbar's Check
+    h["install-ofx"] = [this] { install_ofx(true); };   // 26 Nov 2026: Help > Install the OFX plug-in
     h["auto-updates"] = [this] {
         QSettings st;
         const bool on = !st.value("updates/auto", true).toBool();

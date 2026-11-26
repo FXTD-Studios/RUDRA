@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <cwchar>
 #include <mutex>
 #include <thread>
 
@@ -215,6 +216,128 @@ bool Process::write(std::span<const std::uint8_t> data) {
 void Process::close_input() {
     if (d_->in) CloseHandle(d_->in);
     d_->in = nullptr;
+}
+
+namespace {
+// 26 Nov 2026: a host that calls SetDllDirectory (Nuke does) hands that folder to every program it starts:
+// Windows computes the child's DLL search path from the parent's (Microsoft's SetDllDirectory documentation;
+// PEB ProcessParameters->DllPath), so a child that finds its DLLs through PATH loads the host's copies first.
+// Nuke ships its own LibTorch: RUDRA's engine started from the plug-in loaded Nuke's c10.dll and ended at once
+// with 0xC0000139 (entry point not found). While a PATH-dependent program is started, the DLL folder is
+// cleared, and put back the moment CreateProcess returns. One start at a time.
+class InheritedDllDirectoryCleared {
+public:
+    explicit InheritedDllDirectoryCleared(bool on) {
+        if (!on) return;
+        lock_ = std::unique_lock<std::mutex>(mutex());
+        const DWORD need = GetDllDirectoryW(0, nullptr);
+        if (need <= 1) return;   // none set (or "", which only drops the current folder): nothing inherited
+        std::wstring saved(need, L'\0');
+        const DWORD got = GetDllDirectoryW(need, saved.data());
+        if (got == 0 || got >= need) return;
+        saved.resize(got);
+        if (SetDllDirectoryW(nullptr)) saved_ = std::move(saved), cleared_ = true;
+    }
+    ~InheritedDllDirectoryCleared() {
+        if (cleared_) SetDllDirectoryW(saved_.c_str());
+    }
+    InheritedDllDirectoryCleared(const InheritedDllDirectoryCleared&) = delete;
+    InheritedDllDirectoryCleared& operator=(const InheritedDllDirectoryCleared&) = delete;
+
+private:
+    static std::mutex& mutex() {
+        static std::mutex m;
+        return m;
+    }
+    std::unique_lock<std::mutex> lock_;
+    std::wstring saved_;
+    bool cleared_ = false;
+};
+
+// The environment block for CreateProcessW with `prepend` in front of PATH (25 Nov 2026).
+std::wstring environment_with_path(const std::string& prepend) {
+    std::wstring block;
+    const std::wstring add = fs::path(prepend).wstring();
+    bool found = false;
+    if (LPWCH env = GetEnvironmentStringsW()) {
+        for (const wchar_t* e = env; *e; e += wcslen(e) + 1) {
+            std::wstring var(e);
+            if (var.size() > 5 && _wcsnicmp(var.c_str(), L"PATH=", 5) == 0) {
+                var = L"PATH=" + add + L";" + var.substr(5);
+                found = true;
+            }
+            block += var;
+            block.push_back(L'\0');
+        }
+        FreeEnvironmentStringsW(env);
+    }
+    if (!found) {
+        block += L"PATH=" + add;
+        block.push_back(L'\0');
+    }
+    block.push_back(L'\0');
+    return block;
+}
+}  // namespace
+
+Result<std::unique_ptr<Process>> Process::start_duplex(const std::vector<std::string>& argv, const fs::path& stderr_file,
+                                                       const std::string& path_prepend) {
+    if (argv.empty()) return make_error(ErrorCode::InvalidArgument, "No program to run.");
+    SECURITY_ATTRIBUTES sa{sizeof sa, nullptr, TRUE};
+    HANDLE in_rd = nullptr, in_wr = nullptr, out_rd = nullptr, out_wr = nullptr;
+    if (!CreatePipe(&in_rd, &in_wr, &sa, 1 << 16)) return make_error(ErrorCode::IoError, "Could not create a pipe.");
+    if (!CreatePipe(&out_rd, &out_wr, &sa, 1 << 16)) {
+        CloseHandle(in_rd), CloseHandle(in_wr);
+        return make_error(ErrorCode::IoError, "Could not create a pipe.");
+    }
+    SetHandleInformation(in_wr, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(out_rd, HANDLE_FLAG_INHERIT, 0);
+    HANDLE err = !stderr_file.empty()
+                     ? CreateFileW(stderr_file.wstring().c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS,
+                                   FILE_ATTRIBUTE_NORMAL, nullptr)
+                     : CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
+    STARTUPINFOW si{};
+    si.cb = sizeof si;
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = in_rd;
+    si.hStdOutput = out_wr;
+    si.hStdError = err;
+    std::wstring cmd = command_line(argv);
+    std::wstring env;
+    if (!path_prepend.empty()) env = environment_with_path(path_prepend);
+    // Started in its own folder (25 Nov 2026): Windows looks for DLLs in the current folder before
+    // PATH, and a host's current folder (Nuke's install, with its own LibTorch) would win.
+    std::error_code dir_ec;
+    const fs::path exe_dir = fs::path(argv[0]).parent_path();
+    const std::wstring cwd = !exe_dir.empty() && fs::is_directory(exe_dir, dir_ec) ? exe_dir.wstring() : std::wstring();
+    auto impl = std::make_unique<Impl>();
+    BOOL ok = FALSE;
+    {
+        const InheritedDllDirectoryCleared clean(!path_prepend.empty());   // the program finds its DLLs through PATH
+        ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE,
+                            CREATE_NO_WINDOW | (env.empty() ? 0 : CREATE_UNICODE_ENVIRONMENT),
+                            env.empty() ? nullptr : env.data(), cwd.empty() ? nullptr : cwd.c_str(), &si, &impl->pi);
+    }
+    if (ok) bind_handle(impl->pi.hProcess);
+    CloseHandle(in_rd);
+    CloseHandle(out_wr);
+    if (err != INVALID_HANDLE_VALUE) CloseHandle(err);
+    if (!ok) {
+        CloseHandle(in_wr), CloseHandle(out_rd);
+        return make_error(ErrorCode::NotFound, "Could not start the program.", argv[0]);
+    }
+    impl->in = in_wr;
+    impl->out = out_rd;
+    std::unique_ptr<Process> p(new Process());
+    p->d_ = std::move(impl);
+    return p;
+}
+
+std::size_t Process::read_some(std::span<std::uint8_t> out) {
+    if (!d_->out || out.empty()) return 0;
+    DWORD n = 0;
+    if (!ReadFile(d_->out, out.data(), DWORD(std::min<std::size_t>(out.size(), 1u << 30)), &n, nullptr)) return 0;
+    return n;
 }
 
 Result<std::unique_ptr<Process>> Process::start(const std::vector<std::string>& argv, const fs::path& stderr_file) {
@@ -442,6 +565,68 @@ bool Process::write(std::span<const std::uint8_t> data) {
 void Process::close_input() {
     if (d_->in >= 0) ::close(d_->in);
     d_->in = -1;
+}
+
+Result<std::unique_ptr<Process>> Process::start_duplex(const std::vector<std::string>& argv, const fs::path& stderr_file,
+                                                       const std::string& path_prepend) {
+    if (argv.empty()) return make_error(ErrorCode::InvalidArgument, "No program to run.");
+    std::signal(SIGPIPE, SIG_IGN);
+    int in[2], out[2];
+    if (::pipe(in) != 0) return make_error(ErrorCode::IoError, "Could not create a pipe.");
+    if (::pipe(out) != 0) {
+        ::close(in[0]), ::close(in[1]);
+        return make_error(ErrorCode::IoError, "Could not create a pipe.");
+    }
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_addclose(&fa, in[1]);
+    posix_spawn_file_actions_addclose(&fa, out[0]);
+    posix_spawn_file_actions_adddup2(&fa, in[0], 0);
+    posix_spawn_file_actions_adddup2(&fa, out[1], 1);
+    posix_spawn_file_actions_addclose(&fa, in[0]);
+    posix_spawn_file_actions_addclose(&fa, out[1]);
+    const std::string err = stderr_file.empty() ? std::string("/dev/null") : stderr_file.string();
+    posix_spawn_file_actions_addopen(&fa, 2, err.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    // The child's environment: this one, with `path_prepend` in front of PATH.
+    std::vector<std::string> env_store;
+    bool found = false;
+    for (char** e = environ; e && *e; ++e) {
+        std::string var(*e);
+        if (!path_prepend.empty() && var.rfind("PATH=", 0) == 0) var = "PATH=" + path_prepend + ":" + var.substr(5), found = true;
+        env_store.push_back(std::move(var));
+    }
+    if (!path_prepend.empty() && !found) env_store.push_back("PATH=" + path_prepend);
+    std::vector<char*> envp;
+    for (auto& v : env_store) envp.push_back(v.data());
+    envp.push_back(nullptr);
+    auto args = c_argv(argv);
+    pid_t pid = -1;
+    const int rc = posix_spawnp(&pid, argv[0].c_str(), &fa, nullptr, args.data(), envp.data());
+    posix_spawn_file_actions_destroy(&fa);
+    ::close(in[0]);
+    ::close(out[1]);
+    if (rc != 0) {
+        ::close(in[1]), ::close(out[0]);
+        return make_error(ErrorCode::NotFound, "Could not start the program.", argv[0] + ": " + std::strerror(rc));
+    }
+    ::fcntl(in[1], F_SETFD, FD_CLOEXEC);
+    ::fcntl(out[0], F_SETFD, FD_CLOEXEC);
+    std::unique_ptr<Process> p(new Process());
+    p->d_ = std::make_unique<Impl>();
+    p->d_->pid = pid;
+    p->d_->in = in[1];
+    p->d_->out = out[0];
+    return p;
+}
+
+std::size_t Process::read_some(std::span<std::uint8_t> out) {
+    if (d_->out < 0 || out.empty()) return 0;
+    for (;;) {
+        const ssize_t n = ::read(d_->out, out.data(), out.size());
+        if (n > 0) return std::size_t(n);
+        if (n < 0 && errno == EINTR) continue;
+        return 0;
+    }
 }
 
 Result<std::unique_ptr<Process>> Process::start(const std::vector<std::string>& argv, const fs::path& stderr_file) {

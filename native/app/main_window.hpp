@@ -342,6 +342,9 @@ public:
     // own opening of it: after an update, or when this computer cannot run RUDRA, or when a retired
     // Beta 2 model was found.
     void open_system_check(bool first_run = false);
+    // Help > Install the OFX plug-in for Resolve and Nuke (ofx_install_ui.cpp, 26 Nov 2026): what happened, also
+    // logged; `interactive` asks first and shows it. Public for the tests.
+    QString install_ofx(bool interactive = true);
     void maybe_open_system_check();
     void refresh_check_attention();
     // The Beta 2 packages found and no longer opened (drop_beta2, at every rescan).

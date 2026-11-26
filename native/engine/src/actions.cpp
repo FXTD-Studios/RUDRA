@@ -131,6 +131,8 @@ const std::vector<ActionSpec> kActions = {
     // 16 Nov 2026 (1.2.5): the once-a-day check can be turned off here and in the installer (docs/PRIVACY.md).
     {"auto-updates", "Check for updates automatically", "", "autoUpdates", O::Native, E::Always, ""},
     {"open-log-folder", "Open log folder", "", "", O::Native, E::Always, ""},
+    // 26 Nov 2026: the OFX plug-in the package carries, into Resolve and Nuke (app/ofx_install.hpp).
+    {"install-ofx", "Install the OFX plug-in for Resolve and Nuke…", "", "", O::Native, E::Always, ""},
     // 26 Oct 2026: the learned ACES 2.0 model's masters (app/aces_master.hpp).
     {"aces-master", "Learned ACES 2.0 master…", "", "", O::Native, E::Always, "Ctrl+Shift+E"},
     // 28 Oct 2026: the batch queue (app/batch_queue.hpp).
@@ -167,7 +169,7 @@ const std::vector<MenuSpec> kMenus = {
       "-", "still-grab", "still-compare", "-", "colour-management"}},
     {"Window", {"rail-left", "rail-right", "scopes", "-", "zoom-fit", "zoom-actual"}},
     {"Help",
-     {"getting-started", "user-guide", "-", "shortcuts", "about", "first-run", "system-check", "-", "check-updates", "auto-updates", "open-log-folder"}},
+     {"getting-started", "user-guide", "-", "shortcuts", "about", "first-run", "system-check", "install-ofx", "-", "check-updates", "auto-updates", "open-log-folder"}},
 };
 
 // The keydown handler: the map, then Space, 1 to 4 and W, which it tests on

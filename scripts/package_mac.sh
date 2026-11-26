@@ -74,6 +74,12 @@ mkdir -p "$OUT"
 APP=$OUT/RUDRA.app
 cp -R "$APP_SRC" "$APP"
 cp "$CLI_SRC" "$APP/Contents/MacOS/rudra-native"
+# 26 Nov 2026: the OFX plug-in for Resolve and Nuke, in Contents/PlugIns (signed with the app): Help > Install the OFX
+# plug-in copies it into /Library/OFX/Plugins (app/ofx_install.hpp). ofx/nuke: Nuke's toolbar icon.
+[ -f "$BUILD/RUDRA.ofx.bundle/Contents/MacOS/RUDRA.ofx" ] || fail "no OFX plug-in at $BUILD/RUDRA.ofx.bundle"
+mkdir -p "$APP/Contents/PlugIns/ofx/nuke"
+cp -R "$BUILD/RUDRA.ofx.bundle" "$APP/Contents/PlugIns/ofx/"
+cp native/ofx/nuke/* "$APP/Contents/PlugIns/ofx/nuke/"
 
 # ONNX Runtime and OpenColorIO (the learned ACES 2.0 engine) beside Qt, found
 # through @rpath from both executables.
@@ -173,6 +179,7 @@ if [ -n "$IDENTITY" ]; then
   # then the second executable, then the app with its main executable.
   while IFS= read -r -d '' f; do sign "$f"; done < <(find "$APP/Contents" -type f \( -name "*.dylib" -o -name "*.so" \) -print0)
   for fw in "$APP"/Contents/Frameworks/*.framework; do [ -d "$fw" ] && sign "$fw"; done
+  sign "$APP/Contents/PlugIns/ofx/RUDRA.ofx.bundle"   # 26 Nov 2026: the OFX plug-in, a bundle of its own
   sign "$APP/Contents/MacOS/rudra-native"
   if [ -n "$FFMPEG_BUNDLED" ]; then
     sign "$APP/Contents/MacOS/ffmpeg/ffmpeg"
