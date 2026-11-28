@@ -3,7 +3,10 @@
 // TIFF, the master comes back as ACEScg planes, the plug-in puts it in the output.
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cmath>
+#include <future>
+#include <thread>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -50,9 +53,14 @@ protected:
     void SetUp() override {
         ofx_engine::stop_engine();
         set_env("RUDRA_OFX_FAKE_ENGINE", "");
+        set_env("RUDRA_OFX_ENGINE_TIMEOUT_S", "");
         set_env("RUDRA_OFX_ENGINE_CONFIG", fake_config().string());
     }
-    void TearDown() override { ofx_engine::stop_engine(); }
+    void TearDown() override {
+        ofx_engine::stop_engine();
+        set_env("RUDRA_OFX_FAKE_ENGINE", "");
+        set_env("RUDRA_OFX_ENGINE_TIMEOUT_S", "");
+    }
 };
 
 }  // namespace
@@ -139,4 +147,59 @@ TEST_F(OfxEngine, TheLuminanceLimitGoesToTheEngine) {
     ASSERT_EQ(rudra_ofx::render(s, in.data(), kW * 4, limited.data(), kW * 4, kW, kH).error, "");
     EXPECT_NEAR(limited[0], 0.5f * plain[0], plain[0] * 1e-5f);
     EXPECT_GT(plain[0], 0.0f);
+}
+
+// 28 Nov 2026 (review P2): an engine that stops answering held the plug-in's lock for as long as it hung, so
+// every render of every instance, and the host's exit, waited on it. Now a frame gives up after the timeout,
+// the engine is ended, and the next frame starts another.
+TEST_F(OfxEngine, AHungEngineIsEndedAfterTheTimeoutAndTheNextFrameStartsAnother) {
+    set_env("RUDRA_OFX_FAKE_ENGINE", "hang");
+    set_env("RUDRA_OFX_ENGINE_TIMEOUT_S", "1");
+    const auto in = grey(0.5f);
+    std::vector<float> out(in.size());
+    OfxGrade g;
+    g.route = "learned", g.output = "linear_acescg";
+    const auto t0 = std::chrono::steady_clock::now();
+    const auto r = render_sdr_to_hdr(g, in.data(), kW * 4, out.data(), kW * 4, kW, kH);
+    const double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    ASSERT_FALSE(r);
+    EXPECT_NE(r.error().message.find("did not answer in 1 second"), std::string::npos) << r.error().message;
+    EXPECT_LT(took, 5.0);   // one wait, not two (a timed-out frame is not retried at once)
+    set_env("RUDRA_OFX_FAKE_ENGINE", "");
+    EXPECT_TRUE(render_sdr_to_hdr(g, in.data(), kW * 4, out.data(), kW * 4, kW, kH));
+    EXPECT_GT(out[0], 0.0f);
+}
+
+TEST_F(OfxEngine, AnEngineThatNeverLoadsIsEndedAfterTheTimeout) {
+    set_env("RUDRA_OFX_FAKE_ENGINE", "hang_load");
+    set_env("RUDRA_OFX_ENGINE_TIMEOUT_S", "1");
+    const auto in = grey(0.5f);
+    std::vector<float> out(in.size());
+    OfxGrade g;
+    g.route = "learned";
+    const auto r = render_sdr_to_hdr(g, in.data(), kW * 4, out.data(), kW * 4, kW, kH);
+    ASSERT_FALSE(r);
+    EXPECT_NE(r.error().message.find("did not finish loading in 1 second"), std::string::npos) << r.error().message;
+}
+
+// The plug-in's unload while a frame waits on a hung engine: the frame gives up at once, and the unload
+// takes the engine's 2 s to quit, not the frame's 2 minutes.
+TEST_F(OfxEngine, StoppingTheEngineDoesNotWaitForAHungFrame) {
+    set_env("RUDRA_OFX_FAKE_ENGINE", "hang");
+    set_env("RUDRA_OFX_ENGINE_TIMEOUT_S", "20");   // bounds the test should stop() come first
+    const auto in = grey(0.5f);
+    auto frame = std::async(std::launch::async, [&in] {
+        std::vector<float> out(in.size());
+        OfxGrade g;
+        g.route = "learned";
+        return render_sdr_to_hdr(g, in.data(), kW * 4, out.data(), kW * 4, kW, kH);
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));   // the engine is up and the frame is waiting
+    const auto t0 = std::chrono::steady_clock::now();
+    ofx_engine::stop_engine();
+    const double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    ASSERT_EQ(frame.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    const auto r = frame.get();
+    EXPECT_FALSE(r);
+    EXPECT_LT(took, 5.0);
 }

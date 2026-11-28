@@ -5,6 +5,7 @@
 // and Process to stream a large stdout (decoded frames) while stderr goes to
 // a file, as the Python's Popen(stdout=PIPE, stderr=log) does.
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -75,6 +76,11 @@ public:
     std::size_t read(std::span<std::uint8_t> out);
     // Reads what is there, at least one byte, waiting for it; 0 only at the end of the stream.
     std::size_t read_some(std::span<std::uint8_t> out);
+    // read_some, waiting at most `timeout` (28 Nov 2026, the OFX plug-in's learned engine: a hung engine
+    // froze every render and the host's exit). nullopt when nothing came in time; 0 only at the end of the
+    // stream, which is also when the program has ended and nothing is left (a pipe end another child
+    // inherited no longer keeps it open).
+    std::optional<std::size_t> read_some_for(std::span<std::uint8_t> out, std::chrono::milliseconds timeout);
     // Waits for the program to end; its exit code.
     int wait();
     // Ends it now (the Python's kill on an error path).

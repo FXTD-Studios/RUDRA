@@ -1,5 +1,6 @@
 #include "rudra/platform/process.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
@@ -15,6 +16,7 @@
 #include <cerrno>
 #include <csignal>
 #include <fcntl.h>
+#include <poll.h>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -340,6 +342,31 @@ std::size_t Process::read_some(std::span<std::uint8_t> out) {
     return n;
 }
 
+std::optional<std::size_t> Process::read_some_for(std::span<std::uint8_t> out, std::chrono::milliseconds timeout) {
+    if (!d_->out || out.empty()) return std::size_t(0);
+    // Anonymous pipes have no overlapped reads: what is waiting is looked at, then read, so ReadFile never blocks.
+    const auto end = std::chrono::steady_clock::now() + timeout;
+    DWORD pause = 1;
+    for (;;) {
+        DWORD avail = 0;
+        if (!PeekNamedPipe(d_->out, nullptr, 0, nullptr, &avail, nullptr)) return std::size_t(0);   // broken: the end
+        if (avail > 0) {
+            DWORD n = 0;
+            if (!ReadFile(d_->out, out.data(), DWORD(std::min<std::size_t>(out.size(), avail)), &n, nullptr)) return std::size_t(0);
+            return std::size_t(n);
+        }
+        if (!running()) {   // ended: what it wrote last may still be in the pipe
+            if (!PeekNamedPipe(d_->out, nullptr, 0, nullptr, &avail, nullptr) || avail == 0) return std::size_t(0);
+            continue;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= end) return std::nullopt;
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count();
+        Sleep(DWORD(std::min<long long>(pause, std::max<long long>(left, 1))));
+        pause = std::min<DWORD>(pause * 2, 10);
+    }
+}
+
 Result<std::unique_ptr<Process>> Process::start(const std::vector<std::string>& argv, const fs::path& stderr_file) {
     if (argv.empty()) return make_error(ErrorCode::InvalidArgument, "No program to run.");
     SECURITY_ATTRIBUTES sa{sizeof sa, nullptr, TRUE};
@@ -626,6 +653,20 @@ std::size_t Process::read_some(std::span<std::uint8_t> out) {
         if (n > 0) return std::size_t(n);
         if (n < 0 && errno == EINTR) continue;
         return 0;
+    }
+}
+
+std::optional<std::size_t> Process::read_some_for(std::span<std::uint8_t> out, std::chrono::milliseconds timeout) {
+    if (d_->out < 0 || out.empty()) return std::size_t(0);
+    const auto end = std::chrono::steady_clock::now() + timeout;
+    for (;;) {
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(end - std::chrono::steady_clock::now()).count();
+        pollfd p{d_->out, POLLIN, 0};
+        const int r = ::poll(&p, 1, int(std::clamp<long long>(left, 0, 1 << 30)));
+        if (r < 0 && errno == EINTR) continue;
+        if (r < 0) return std::size_t(0);
+        if (r == 0) return std::nullopt;
+        return read_some(out);   // readable, or hung up: read() returns at once
     }
 }
 

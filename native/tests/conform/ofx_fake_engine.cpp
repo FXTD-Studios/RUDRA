@@ -2,11 +2,13 @@
 // tests: no model, the same line protocol. It reads the 16-bit TIFF the plug-in writes
 // (ofx/engine_client.cpp) and answers a preview with the planes 2 * code^2.4, ACEScg.
 //   RUDRA_OFX_FAKE_ENGINE=error  answers {"event":"error"} at start and exits 2.
+//   RUDRA_OFX_FAKE_ENGINE=hang_load  never says ready; hang  says ready, then never answers a preview
+//   (28 Nov 2026: the plug-in's timeouts and stop()).
 // A request with a "reconstruction_region" (the luminance limit, 26 Nov 2026) gets half the planes, so the
 // tests see that the limit reached the engine.
 // Started as `<it> .../ofx_job.py --dir <folder> ...` (26 Nov 2026), it stands in for AI fill's job
 // (rudra/genfill/ofx_job.py): each stored master becomes the "fill" of its frame, and status.json says done
-// (RUDRA_OFX_FAKE_JOB=fail: failed).
+// (RUDRA_OFX_FAKE_JOB=fail: failed; slow: says running for 3 s first, 28 Nov 2026).
 // Started as `<it> .../ofx_prompt.py suggest|embed ...` (1.3.2), it stands in for the plug-in's prompt helpers:
 // suggest writes two highlight suggestions and a shadow one to --out (RUDRA_OFX_FAKE_SUGGEST=slow: after 1.5 s;
 // fail: an error; nothing: no suggestion), embed writes --text and --device to <--cache>/embed_called.txt.
@@ -45,7 +47,13 @@ int fake_job(int argc, char** argv) {
     std::ifstream rq(dir / "request.json");
     const json req = json::parse(rq, nullptr, false);
     const int n = req.is_object() ? req.value("frames", 0) : 0;
-    const double now = std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+    double now = std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+    if (const char* f = std::getenv("RUDRA_OFX_FAKE_JOB"); f && std::string(f) == "slow") {
+        std::ofstream(dir / "status.json", std::ios::trunc)
+            << json({{"state", "running"}, {"done", 0}, {"of", n}, {"message", "drawing (stand-in)"}, {"updated", now}}).dump();
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        now = std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+    }
     json st = {{"state", "done"}, {"done", n}, {"of", n}, {"message", "done (stand-in)"}, {"updated", now}};
     if (const char* f = std::getenv("RUDRA_OFX_FAKE_JOB"); f && std::string(f) == "fail") {
         st = {{"state", "failed"}, {"message", "the stand-in failed"}, {"updated", now}};
@@ -115,6 +123,10 @@ int main(int argc, char** argv) {
         say({{"event", "error"}, {"message", "no model (fake)"}});
         return 2;
     }
+    const char* mode_env = std::getenv("RUDRA_OFX_FAKE_ENGINE");
+    const std::string mode = mode_env ? mode_env : "";
+    if (mode == "hang_load")
+        for (;;) std::this_thread::sleep_for(std::chrono::seconds(1));
     say({{"event", "ready"}, {"package", argv[2]}});
     std::string line;
     while (std::getline(std::cin, line)) {
@@ -122,6 +134,8 @@ int main(int argc, char** argv) {
         if (r.is_discarded()) continue;
         const std::string op = r.value("op", std::string());
         if (op == "quit") break;
+        if (op == "preview" && mode == "hang")
+            for (;;) std::this_thread::sleep_for(std::chrono::seconds(1));
         if (op != "preview") {
             say({{"id", r.value("id", 0)}, {"ok", false}, {"error", "unknown op"}});
             continue;

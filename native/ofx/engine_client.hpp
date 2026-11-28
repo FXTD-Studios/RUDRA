@@ -60,10 +60,11 @@ Result<void> write_tiff16(const std::filesystem::path& path, const SdrImage& cod
 // `strength` is the engine's trim (1 = as the model made it). `region_json`: the luminance limit, the app's
 // reconstruction region as deliver/master.hpp writes it ("" = the whole frame). Thread-safe: one frame at a
 // time. The engine starts on the first call (its model loads once, which takes seconds) and is started
-// again once if it has stopped.
+// again once if it has stopped. 28 Nov 2026: an engine that does not load in 5 minutes or answer a frame in 2
+// (RUDRA_OFX_ENGINE_TIMEOUT_S sets both) is ended with an error, and the next frame starts another.
 Result<PlanarBuffer> learned_master(const SdrImage& codes, double strength, const std::string& region_json = {});
 
-// Ends the engine (the plug-in's unload).
+// Ends the engine (the plug-in's unload). A frame waiting on it gives up at once; the engine has 2 s to quit.
 void stop_engine();
 
 }  // namespace rudra::ofx_engine
