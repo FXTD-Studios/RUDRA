@@ -40,12 +40,13 @@ fs::path find_repo() {
     QString own;   // the Python this package carries
     for (const QString& packaged : {app.filePath("python"), app.filePath("../Resources/python")})
         if (own.isEmpty() && QFileInfo::exists(packaged + "/rudra/genfill/run.py")) own = QDir::cleanPath(packaged);
-    // The saved one only while it holds the fill's code, and not when it is another RUDRA package's Python and this
-    // one carries its own (1.3.2, 28 Nov 2026, end-user report): after an update, the Python of an older RUDRA left
-    // in Downloads still ran the older setup, with the bugs this one fixes.
-    if (!saved.isEmpty() && QFileInfo::exists(saved + "/rudra/genfill/run.py")) {
+    // The saved one, except another RUDRA package's Python when this one carries its own (1.3.2, 28 Nov 2026, end-user
+    // report): after an update, the Python of an older RUDRA left in Downloads still ran the older setup, with the bugs
+    // this one fixes. A saved folder that is gone is still returned, so the setup says so (GenFill.SetupSaysWhatIsMissing).
+    if (!saved.isEmpty()) {
         const QDir s(saved);
         const bool other_package = !own.isEmpty() && QDir::cleanPath(saved) != own && s.dirName() == QLatin1String("python") &&
+                                   QFileInfo::exists(saved + "/rudra/genfill/run.py") &&
                                    (QFileInfo::exists(s.filePath("../RUDRA.exe")) || QFileInfo::exists(s.filePath("../RUDRA")) ||
                                     QFileInfo::exists(s.filePath("../MacOS/RUDRA")));
         if (!other_package) return pq(saved);
