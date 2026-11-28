@@ -107,7 +107,7 @@ def test_florence_only_downloads_at_the_pinned_revision_and_checks_it(tmp_path, 
     man.write_text(json.dumps({"florence": setup.manifest_entry(good, setup.FLORENCE_ID, "b" * 40)}))
     asked = {}
 
-    def fake_download(dest, repo_id=setup.REPO_ID, revision=None):
+    def fake_download(dest, repo_id=setup.REPO_ID, revision=None, **_):
         asked.update(repo=repo_id, rev=revision)
         _florence(dest)
 
@@ -124,7 +124,7 @@ def test_a_florence_download_that_does_not_match_is_removed(tmp_path, monkeypatc
     _florence(good)
     entry = setup.manifest_entry(good, setup.FLORENCE_ID, "d" * 40)   # pinned: downloads only from a pinned entry
 
-    def tampered(dest, repo_id=setup.REPO_ID, revision=None):
+    def tampered(dest, repo_id=setup.REPO_ID, revision=None, **_):
         _florence(dest)
         (dest / "model.safetensors").write_bytes(b"\x04" * 500)
 
@@ -135,7 +135,7 @@ def test_a_florence_download_that_does_not_match_is_removed(tmp_path, monkeypatc
 
 
 def test_a_florence_download_that_fails_is_only_a_warning(tmp_path, monkeypatch):
-    def offline(dest, repo_id=setup.REPO_ID, revision=None):
+    def offline(dest, repo_id=setup.REPO_ID, revision=None, **_):
         raise OSError("no network")
 
     monkeypatch.setattr(setup, "download_model", offline)
@@ -167,7 +167,7 @@ def test_a_florence_download_that_stopped_is_resumed(tmp_path, monkeypatch):
     (dest / "config.json").write_text('{"model_type": "florence2"}')   # what a stopped download leaves
     resumed = []
 
-    def resume(d, repo_id=setup.REPO_ID, revision=None):
+    def resume(d, repo_id=setup.REPO_ID, revision=None, **_):
         resumed.append(revision)
         _florence(d)
 
@@ -208,7 +208,7 @@ def test_a_wan_download_that_stopped_is_carried_on(tmp_path, monkeypatch, capsys
     _ready_machine(monkeypatch)
     asked = []
 
-    def finish(dest, repo_id=setup.REPO_ID, revision=None):
+    def finish(dest, repo_id=setup.REPO_ID, revision=None, **_):
         asked.append(revision)
         (dest / "vae.bin").write_bytes((good / "vae.bin").read_bytes())
 
@@ -346,3 +346,26 @@ def test_the_windows_bootstrap_hands_setup_its_options_as_an_array():
     text = (Path(__file__).resolve().parents[1] / "scripts" / "genfill_bootstrap.ps1").read_text(encoding="utf-8")
     line = next(l for l in text.splitlines() if l.lstrip().startswith("$extra ="))
     assert line.split("=", 1)[1].strip().startswith("@(if "), line
+
+
+def test_the_model_download_says_how_far_it_got_while_it_runs(tmp_path, monkeypatch, capsys):
+    # 28 Nov 2026 (end-user report): the setup window showed nothing for the whole Wan2.1-VACE download. The
+    # download now says how many GB are in every few seconds, whatever huggingface_hub's progress bars do.
+    import sys
+    import time
+    import types
+
+    def snapshot_download(repo_id, local_dir, revision):
+        part = Path(local_dir) / ".cache" / "huggingface" / "download"
+        part.mkdir(parents=True, exist_ok=True)
+        for i in range(3):
+            (part / f"f{i}.incomplete").write_bytes(b"0" * 1000)
+            time.sleep(0.25)
+
+    monkeypatch.setitem(sys.modules, "huggingface_hub", types.SimpleNamespace(snapshot_download=snapshot_download))
+    monkeypatch.setattr(setup, "_JSON", True)
+    monkeypatch.setattr(setup, "DOWNLOAD_HEARTBEAT_S", 0.2)
+    setup.download_model(tmp_path / "wan", "Wan-AI/test", None, 20.6)
+    steps = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert steps and all(s["event"] == "step" and s["step"] == "model" for s in steps)
+    assert "of about 21 GB" in steps[-1]["text"]

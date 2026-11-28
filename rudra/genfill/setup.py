@@ -386,11 +386,48 @@ def setup_florence(florence: Path, entry: dict, src: str | None,
     return problems, None
 
 
-def download_model(base: Path, repo_id: str = REPO_ID, revision: str | None = None) -> None:
+def bytes_under(root: Path) -> int:
+    """Every byte under root, what is still being downloaded included (huggingface_hub keeps an unfinished file in
+    root/.cache/huggingface/download)."""
+    total = 0
+    for dirpath, _dirs, files in os.walk(root):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, f))
+            except OSError:
+                pass
+    return total
+
+
+DOWNLOAD_HEARTBEAT_S = 15.0
+
+
+def download_model(base: Path, repo_id: str = REPO_ID, revision: str | None = None, total_gb: float = 0.0) -> None:
     from huggingface_hub import snapshot_download
     base.mkdir(parents=True, exist_ok=True)
-    # local_dir: real files in --base (what the app looks for), resumable; the pinned revision.
-    snapshot_download(repo_id, local_dir=str(base), revision=revision)
+    # 1.3.2 (28 Nov 2026, end-user report: the setup window sat at "Setting up the AI fill..." with nothing in its
+    # log): the download says how far it got every DOWNLOAD_HEARTBEAT_S seconds, whether or not huggingface_hub's
+    # own progress bars reach the window (they do not when it downloads through hf_xet, or stdout is not a console).
+    import threading
+    import time
+    stop = threading.Event()
+    start, t0 = bytes_under(base), time.monotonic()
+
+    def heartbeat() -> None:
+        while not stop.wait(DOWNLOAD_HEARTBEAT_S):
+            got = bytes_under(base)
+            rate = (got - start) / max(1e-6, time.monotonic() - t0) / 1e6
+            of = f' of about {total_gb:.0f} GB' if total_gb else ''
+            emit('step', step='model', text=f'Downloading {repo_id}: {got / 1e9:.1f} GB{of} in {base} ({rate:.0f} MB/s)')
+
+    beat = threading.Thread(target=heartbeat, daemon=True)
+    beat.start()
+    try:
+        # local_dir: real files in --base (what the app looks for), resumable; the pinned revision.
+        snapshot_download(repo_id, local_dir=str(base), revision=revision)
+    finally:
+        stop.set()
+        beat.join(timeout=2)
 
 
 def main(argv=None) -> int:
@@ -464,6 +501,8 @@ def _main(argv=None) -> int:
         emit('done', ok=True, base=str(base), florence=str(florence))
         return 0
 
+    # 1.3.2: said before the checks, which take a while (PyTorch loads, every package is imported) and print nothing.
+    emit('step', step='check', text='Checking the GPU, the disk and the AI fill\'s packages')
     m = machine(base)
     wan = manifest.get('wan') or {}
     model_there = have_model(base)
@@ -525,7 +564,7 @@ def _main(argv=None) -> int:
         emit('step', step='model', text=f'Downloading {REPO_ID}{"@" + rev[:12] if rev else ""} '
              f'(about {max(1.0, need_disk):.0f} GB{" still to come" if resume else ""}) into {base}')
         try:
-            download_model(base, REPO_ID, rev)
+            download_model(base, REPO_ID, rev, total_gb=sum(int(f.get('size') or 0) for f in (wan.get('files') or {}).values()) / 1e9 or MODEL_GB)
         except Exception as e:   # noqa: BLE001 (network, disk, auth: all end the same way)
             traceback.print_exc()
             emit('done', ok=False, error=f'the model download stopped ({str(e)[:300]}). Check the internet connection '

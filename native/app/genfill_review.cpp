@@ -598,6 +598,10 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         run->view = log_view;
         run->open(QDir::toNativeSeparators(proc->program()) + QLatin1Char(' ') + proc->arguments().join(QLatin1Char(' ')));
         run->write(QStringLiteral("== ") + QString(what).replace(QLatin1Char('\n'), QLatin1Char(' ')));
+        // 1.3.2 (28 Nov 2026, end-user report): the window stayed empty until the setup's first step, so a slow start
+        // looked like a setup that hung. It says at once that it started, and where the whole log goes.
+        run->show(QStringLiteral("Starting the setup. Everything it prints also goes to %1")
+                      .arg(QDir::toNativeSeparators(from_path(genfill_setup_log()))), false);
         connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc, run, status] {
             run->out.append(proc->readAllStandardOutput());
             for (int nl; (nl = run->out.indexOf('\n')) >= 0;) {

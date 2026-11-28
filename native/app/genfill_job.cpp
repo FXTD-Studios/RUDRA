@@ -36,10 +36,21 @@ fs::path pq(const QString& s) { return to_path(s); }
 fs::path find_repo() {
     QSettings st;
     const QString saved = st.value("genfill/repo").toString();
-    if (!saved.isEmpty()) return pq(saved);
     const QDir app(QCoreApplication::applicationDirPath());
+    QString own;   // the Python this package carries
     for (const QString& packaged : {app.filePath("python"), app.filePath("../Resources/python")})
-        if (QFileInfo::exists(packaged + "/rudra/genfill/run.py")) return pq(QDir::cleanPath(packaged));
+        if (own.isEmpty() && QFileInfo::exists(packaged + "/rudra/genfill/run.py")) own = QDir::cleanPath(packaged);
+    // The saved one only while it holds the fill's code, and not when it is another RUDRA package's Python and this
+    // one carries its own (1.3.2, 28 Nov 2026, end-user report): after an update, the Python of an older RUDRA left
+    // in Downloads still ran the older setup, with the bugs this one fixes.
+    if (!saved.isEmpty() && QFileInfo::exists(saved + "/rudra/genfill/run.py")) {
+        const QDir s(saved);
+        const bool other_package = !own.isEmpty() && QDir::cleanPath(saved) != own && s.dirName() == QLatin1String("python") &&
+                                   (QFileInfo::exists(s.filePath("../RUDRA.exe")) || QFileInfo::exists(s.filePath("../RUDRA")) ||
+                                    QFileInfo::exists(s.filePath("../MacOS/RUDRA")));
+        if (!other_package) return pq(saved);
+    }
+    if (!own.isEmpty()) return pq(own);
     for (const QString& start : {QCoreApplication::applicationDirPath(), QDir::currentPath()}) {
         QDir d(start);
         for (int i = 0; i < 8; ++i) {

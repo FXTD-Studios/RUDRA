@@ -114,6 +114,13 @@ and when Resolve or Nuke is still open. Details: [OFX_PLUGIN.md](OFX_PLUGIN.md).
   driver too old for PyTorch is named with its version, and a PyTorch that does not load names the Visual C++
   runtime it needs. Everything the setup printed is kept in `genfill\setup.log` in RUDRA's data folder, and
   **Copy log** puts it on the clipboard. Closing the window while the setup runs asks first, then stops all of it.
+- **AI fill setup stopped before downloading Wan2.1-VACE, and showed nothing while it ran.** The setup script handed
+  its last option to the model step one letter at a time, so the step refused it and the base model never downloaded.
+  It is handed over whole now. The window also said nothing until the first step (a slow start looked like a hang),
+  and nothing during the 20 GB download when its progress bars did not come through: it now says at once that it
+  started and where its log is, names each check as it runs, and gives the GB downloaded and the speed every
+  15 seconds. A RUDRA repository saved by an older RUDRA (its Python left in Downloads, say) no longer runs instead
+  of this RUDRA's own.
 - **AI fill's base model and Python in Install selected.** In Check this computer, "AI fill: base model and Python"
   now has a tick like the other downloads: ticked, **Install selected** sets up the Python and downloads
   Wan2.1-VACE-1.3B (about 23 GB in all) along with the ticked models, in its own window that shows each step and the

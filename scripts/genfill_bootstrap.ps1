@@ -92,6 +92,8 @@ $venv = Join-Path $Root 'venv'
 $py = Join-Path $venv 'Scripts\python.exe'
 
 # A venv that does not start (one behind a junction Windows refuses, one half made) is made again.
+# Said first (1.3.2, 28 Nov 2026): the checks below print nothing, and the window showed nothing while they ran.
+Step "Checking RUDRA's Python for the AI fill"
 $venvWorks = $false
 if (Test-Path -LiteralPath $py) {
     & $py -c 'import sys' 2>$null
@@ -135,6 +137,7 @@ if (-not $venvWorks) {
 Emit @{ event = 'bootstrap'; python = $py }
 
 $index = if ($env:RUDRA_TORCH_INDEX) { $env:RUDRA_TORCH_INDEX } else { 'https://download.pytorch.org/whl/cu128' }
+Step 'Checking PyTorch'
 & $py -c 'import torch' 2>$null
 if ($LASTEXITCODE -ne 0) {
     $free = Free-Gb $Root
