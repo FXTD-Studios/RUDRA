@@ -38,7 +38,15 @@ Feed it the SDR's own code values:
 
 - **Nuke:** read the SDR with **Raw Data** on. In an ACES script, set Output to **Scene-linear ACEScg**, Nuke's
   working space.
-- **Resolve:** a YRGB timeline (not ACES-managed), and an Output to suit the timeline.
+- **Resolve:** in a color-managed project, keep **Enable OpenFX Color Management** on (Project Settings › Color
+  Management). RUDRA then takes part in OpenFX colour management (1.3.2): it asks Resolve for the clip as Rec.709
+  display codes (`rec1886_rec709_display`) and tells it what Output puts out (`lin_rec2020`, `ACEScg` or
+  `rec2100_pq_display`), so Resolve converts in and out of its working space. Without it, use a **DaVinci YRGB**
+  project with the timeline color space **Rec.709 Gamma 2.4** and an Output to suit the timeline. A color-managed
+  project without OpenFX colour management hands a node its working space: on 27 Nov 2026 a new Resolve project
+  (DaVinci YRGB Color Managed, HDR) gave RUDRA the clip with its clipped sky flat at code 195 of 255, so RUDRA found
+  nothing to recover and AI fill nothing to draw. RUDRA says so on the node and, with AI fill on, in the picture, and
+  Generate refuses such a picture.
 
 ## The controls
 
@@ -75,16 +83,23 @@ steps, the same in Nuke and Resolve:
    choose the frames it draws (0: the clip's first and last): try it on a few, then the shot. The status says how
    many frames and roughly how long. The node starts collecting.
    **In Resolve, put the playhead on the first frame to draw before you press Generate.** Resolve numbers a
-   clip's frames from its source media (129, 130, ...) while it gives the clip's range from 0, so there the
-   frames are counted from the playhead: From (or the clip's first frame) is the frame under it. The status shows
-   Resolve's own frame numbers. Clear stored fill forgets it.
+   clip's frames by their source media (a clip trimmed to start at frame 129 renders 129, 130, ...) and does not
+   tell a plug-in where a trimmed clip starts, so there AI fill takes the frames from **From**, else the playhead,
+   to **To**, else the clip's end. From and To are Resolve's source frame numbers (right-click the viewer's
+   timecode › Source Frame to see them). The status and the log say which frames it took; Generate again takes
+   them anew, Clear stored fill forgets them.
 2. **Play the clip once at full size.** Nuke: proxy off and the viewer's downscale at 1:1, or render the node.
-   Resolve: playback with no timeline proxy. Every frame the host renders is stored, its SDR codes and its master;
-   **Refresh status** shows "collecting frames, k of n".
+   Resolve: playback on the **Color page** with no timeline proxy (the Edit page skips frames unless Show All Video
+   Frames is on). Every frame the host renders is stored, its SDR codes and its master. Until the fill is shown, a
+   line of words over a bar along the bottom of the picture says what to do and how far it got: green while frames
+   come in, blue while the fill is drawn, red when something needs you (it says what). **Refresh status** shows
+   "collecting frames, k of n" and which frames are still to play.
 3. **The fill is drawn.** When the last frame is in, the fill starts beside the host on the GPU, as the RUDRA app
-   runs AI fill v5: about 20 minutes for 100 frames. The status reads "drawing, frame k of n" and the master is
-   shown meanwhile. When **Refresh status** says ready, the host renders the clip again and every frame shows the
-   stored fill, after Exposure and in the chosen Output. **Alpha › What AI drew** shows where it drew.
+   runs AI fill v5: about 20 minutes for 100 frames. The picture shows the master with "drawing, N% done"; it
+   moves when the host renders again, so press **Refresh status** now and then. Keep the host open: the fill ends
+   with it. When it is ready, the host renders the clip again and every frame shows the stored fill, clean, after
+   Exposure and in the chosen Output. **Alpha › What AI drew** shows where it drew. The fill takes its GPU memory
+   mode from what the host leaves free and, if it runs out all the same, draws again in low-memory mode by itself.
 
 A prompt costs time once: a prompt the fill has not read before needs the 11 GB text model to read it. Since 1.3.2
 Generate starts reading it at once, on the CPU, while the frames are collected, so by the last frame it is usually
@@ -104,15 +119,18 @@ Generate (a grade above it, say) shows the master too. **Cancel** stops collecti
 What AI draws is generated, not recovered: review it before delivery. The node's frames and fills are kept in
 `%LOCALAPPDATA%\FXTD Studios\RUDRA\ofx_fill\<node>\<settings>\`: the SDR codes, the masters, `fill\` (an ACEScg EXR
 per frame, with `rudra.generated`), `status.json` and `job.log`. Allow roughly 30 MB a frame at 1080p (about 3 GB
-for 100 frames), four times that at 4K.
+for 100 frames), four times that at 4K: Generate and the clip's first frame check there is room, with 1 GB spare,
+and say how much is needed when there is not.
 
 ## When something goes wrong
 
 - Why a render failed, and the node's warnings, are in `%TEMP%\rudra_ofx.log` (and in Nuke's terminal): Nuke
   itself shows only "Effect raised an error during render".
 - The learned engine's own output is in `%TEMP%\rudra_ofx_engine.log`; an AI fill's is `job.log` in its folder.
-- Collecting does not move: the node says why. "Outside the clip (A to B)" means the host renders frame numbers
-  outside the clip's range; "full-size renders only" means a proxy is on.
+- Collecting does not move: the picture says why. "Frame N is not one of them" means the host renders frame numbers
+  outside the frames Generate took; "full-size renders only" means a proxy is on. In Resolve, play on the Color page.
+- "Not enough GPU memory, even in low-memory mode": close other programs that use the GPU (a second host, a game, a
+  browser playing video) and press Generate again; the stored frames are kept, so the fill starts at once.
 - The fill finished but the master is still shown: press **Refresh status**. If the host still shows the old
   frames, turn AI fill off and on.
 - **Suggest prompt** waits up to 45 seconds (Florence-2 loads the first time). If the status says it is still

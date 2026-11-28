@@ -5,7 +5,9 @@ status.json. Here a stand-in fill (a small Python script) speaks rudra.genfill.r
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 import sys
 import textwrap
 import threading
@@ -23,6 +25,10 @@ FAKE_RUN = textwrap.dedent('''
     mode = os.environ.get("FAKE_RUN", "ok")
     say = lambda **e: print(json.dumps(e), flush=True)
     say(event="ready", device="cpu")
+    low = a[a.index("--low-memory") + 1] if "--low-memory" in a else "auto"
+    if mode == "oom_always" or (mode == "oom" and low != "on"):
+        say(event="error", ok=False, error="OutOfMemoryError", detail="CUDA out of memory. Tried to allocate 2.00 GiB")
+        sys.exit(2)
     if mode == "cancel":
         for line in sys.stdin:
             if line.strip() == "cancel":
@@ -31,6 +37,9 @@ FAKE_RUN = textwrap.dedent('''
         say(event="error", ok=False, error="RuntimeError", detail="boom")
         sys.exit(2)
     os.makedirs(out)
+    print("env PYTHONPATH=" + os.environ.get("PYTHONPATH", "") + " PYTHONHOME=" + os.environ.get("PYTHONHOME", ""),
+          file=sys.stderr)
+    say(event="progress", window=1, windows=2, step=3, steps=30)
     for i in range(2):
         open(os.path.join(out, f"f.{i:06d}.exr"), "w").write("fill")
         say(event="frame", index=i + 1, of=2)
@@ -50,10 +59,12 @@ def stored_shot(tmp: Path, frames: int = 2, condition: str = "bt1886") -> Path:
     return d
 
 
-def run_job(tmp: Path, d: Path, mode: str, monkeypatch) -> int:
+def run_job(tmp: Path, d: Path, mode: str, monkeypatch, free: float | None = None) -> int:
+    """free: the GPU memory free the job is told (nvidia-smi's, on the computer that runs the tests, otherwise)."""
     script = tmp / "fake_run.py"
     script.write_text(FAKE_RUN, encoding="utf-8")
     monkeypatch.setenv("FAKE_RUN", mode)
+    monkeypatch.setattr(ofx_job, "free_gpu_gb", lambda: free)
     return ofx_job.main(["--dir", str(d), "--repo", str(REPO), "--base", "base", "--lora", "lora", "--skip-lora-check"],
                         runner=[sys.executable, str(script)])
 
@@ -216,3 +227,102 @@ def test_the_plug_ins_time_estimate_knows_the_prompt_pass():
     hpp = (REPO / "native" / "ofx" / "fill_store.hpp").read_text(encoding="utf-8")
     m = re.search(r"kSinglePromptPass\s*=\s*(true|false)", hpp)
     assert m and (m.group(1) == "true") == (run.PROMPT_PASS == "single")
+
+
+# ---- 1.3.2 (27 Nov 2026): the GPU memory beside a host, and progress within a window ----
+
+def test_the_memory_mode_follows_the_gpu_memory_free():
+    assert ofx_job.memory_mode_for(20.0) == "off"     # room for the fill as gated
+    assert ofx_job.memory_mode_for(12.0) == "swap"    # the same fill in 10.8 GB
+    assert ofx_job.memory_mode_for(8.0) == "on"
+    assert ofx_job.memory_mode_for(None) == "swap"    # not known
+    assert ofx_job.recipe("M", "O", "S", "B", "L", "bt1886", 0, "", "", low_memory="swap")[-2:] == ["--low-memory", "swap"]
+    assert "--low-memory" not in ofx_job.recipe("M", "O", "S", "B", "L", "bt1886", 0, "", "")
+
+
+def test_the_gpu_memory_free_is_read_from_nvidia_smi():
+    class Ran:
+        def __init__(self, out):
+            self.stdout = out
+
+    assert ofx_job.free_gpu_gb(lambda *a, **k: Ran("12288\n4096\n")) == 12.0   # MiB, the first GPU
+    assert ofx_job.free_gpu_gb(lambda *a, **k: Ran("[N/A]\n")) is None
+
+    def missing(*a, **k):
+        raise FileNotFoundError("nvidia-smi")
+    assert ofx_job.free_gpu_gb(missing) is None
+
+
+def test_a_fill_out_of_gpu_memory_runs_once_more_in_low_memory_mode(tmp_path, monkeypatch):
+    d = stored_shot(tmp_path)
+    assert run_job(tmp_path, d, "oom", monkeypatch, free=12.5) == 0
+    assert status(d)["state"] == "done"
+    log = (d / "job.log").read_text(encoding="utf-8")
+    assert "GPU memory free: 12.5 GB; memory mode swap" in log
+    assert "--low-memory swap" in log and "--low-memory on" in log
+    assert (d / "fill" / "f.000001.exr").is_file() and not (d / "fill.part").exists()
+
+
+def test_a_fill_out_of_gpu_memory_in_low_memory_mode_says_what_to_do(tmp_path, monkeypatch):
+    d = stored_shot(tmp_path)
+    assert run_job(tmp_path, d, "oom_always", monkeypatch, free=6.0) == 2   # 'on' already: no second run
+    s = status(d)
+    assert s["state"] == "failed"
+    assert s["message"].startswith("not enough GPU memory, even in low-memory mode: close other programs that use the GPU")
+    assert (d / "job.log").read_text(encoding="utf-8").count("--low-memory on") == 1
+
+
+def test_progress_says_the_window_and_the_step(tmp_path, monkeypatch):
+    seen = []
+    real = ofx_job.Status.set
+
+    def spy(self, **kw):
+        if "message" in kw:
+            seen.append(kw["message"])
+        real(self, **kw)
+    monkeypatch.setattr(ofx_job.Status, "set", spy)
+    d = stored_shot(tmp_path)
+    assert run_job(tmp_path, d, "ok", monkeypatch) == 0
+    assert "window 1 of 2, step 3 of 30" in seen   # what the plug-in's guide reads (ofx_process.cpp running_guide)
+
+
+def test_the_job_logs_to_its_stderr_when_the_plug_in_holds_job_log(tmp_path):
+    """The plug-in starts the job with job.log as its stderr, on Windows opened for itself (shared for reading only,
+    as platform/process.cpp does): the job must not open it a second time. Every fill started from Resolve or Nuke
+    stopped there before it began until 1.3.2 (PermissionError in job.log; "the AI fill ended without finishing")."""
+    d = stored_shot(tmp_path)
+    script = tmp_path / "fake_run.py"
+    script.write_text(FAKE_RUN, encoding="utf-8")
+    log = d / "job.log"
+    code = textwrap.dedent(f"""
+        import sys
+        from rudra.genfill import ofx_job
+        ofx_job.free_gpu_gb = lambda: None
+        sys.exit(ofx_job.main(["--dir", {str(d)!r}, "--repo", {str(REPO)!r}, "--base", "b", "--lora", "l",
+                               "--skip-lora-check"], runner=[sys.executable, {str(script)!r}]))
+    """)
+    env = dict(os.environ, FAKE_RUN="ok", PYTHONPATH=str(REPO))
+    if sys.platform == "win32":
+        import _winapi
+        import msvcrt
+        handle = _winapi.CreateFile(str(log), _winapi.GENERIC_WRITE, 1, 0, 2, 0, 0)   # FILE_SHARE_READ, CREATE_ALWAYS
+        err = os.fdopen(msvcrt.open_osfhandle(handle, os.O_WRONLY), "wb")
+    else:
+        err = open(log, "wb")
+    with err:
+        r = subprocess.run([sys.executable, "-c", code], stderr=err, stdout=subprocess.PIPE, env=env, timeout=120)
+    text = log.read_text(encoding="utf-8", errors="replace")
+    assert r.returncode == 0, text
+    assert status(d)["state"] == "done"
+    assert "memory mode swap" in text and "fake_run.py" in text   # the job's own lines and the fill's command line
+
+
+def test_the_fill_does_not_inherit_the_hosts_python(tmp_path, monkeypatch):
+    """The job inherits the host's environment; a PYTHONHOME or PYTHONPATH meant for Nuke's own Python must not reach
+    the fill's (it would load the host's library instead of its own)."""
+    d = stored_shot(tmp_path)
+    monkeypatch.setenv("PYTHONHOME", str(tmp_path / "host_python"))
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "host_plugins"))
+    assert run_job(tmp_path, d, "ok", monkeypatch) == 0
+    log = (d / "job.log").read_text(encoding="utf-8")
+    assert f"env PYTHONPATH={REPO} PYTHONHOME=\n" in log

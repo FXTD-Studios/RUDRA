@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -42,6 +43,27 @@ fs::path utf8_path(const std::string& s) { return fs::path(std::u8string(s.begin
 std::string utf8(const fs::path& p) {
     const std::u8string u = p.u8string();
     return std::string(u.begin(), u.end());
+}
+
+// The disk room AI fill needs (1.3.2), from the clip's frame size: the stored codes (16-bit TIFF) and master (half
+// EXR), the fill (half EXR with its masks) and its review pictures, about 30 MB a frame at 1080p (OFX_PLUGIN.md) or
+// 15 bytes a pixel, counted as 16, and 1 GB kept spare. RUDRA_OFX_FILL_FREE_BYTES stands in for the disk's free
+// bytes (tests).
+constexpr double kBytesPerPixel = 16.0;
+constexpr double kSpareBytes = 1e9;
+
+std::string gb(double bytes) {
+    char b[32];
+    std::snprintf(b, sizeof b, "%.1f GB", bytes / 1e9);
+    return b;
+}
+
+// The bytes free on the disk of `d`; -1 when it cannot be told.
+double free_bytes(const fs::path& d) {
+    if (const char* v = std::getenv("RUDRA_OFX_FILL_FREE_BYTES"); v && *v) return std::atof(v);
+    std::error_code ec;
+    const fs::space_info sp = fs::space(d, ec);
+    return ec ? -1.0 : double(sp.available);
 }
 
 std::string hex(std::uint64_t v) {
@@ -101,6 +123,81 @@ fs::path master_path(const fs::path& d, int index) { return d / "master" / (fram
 fs::path codes_path(const fs::path& d, int index) { return d / "codes" / (frame_stem(index) + ".tif"); }
 fs::path hash_path(const fs::path& d, int index) { return d / "hash" / (frame_stem(index) + ".txt"); }
 
+// 1.3.2 (27 Nov 2026): a frame's picture as a thumbnail of its codes (at most 48 x 27 cell averages, 8-bit), stored beside
+// its hash, to tell the same picture decoded a little differently from a changed one. Resolve handed a paused frame
+// codes that differed from the same frame played (the exact hash then showed nothing of a finished fill), where a grade
+// above RUDRA moves the whole picture by codes. Header: the frame's width and height, the thumbnail's (4 x uint32 LE).
+fs::path thumb_path(const fs::path& d, int index) { return d / "hash" / (frame_stem(index) + ".thumb"); }
+constexpr double kSameMean = 1.5, kSameMax = 16.0;   // codes of 255: the same picture
+
+std::vector<std::uint8_t> codes_thumb(const SdrImage& codes) {
+    const int w = codes.width(), h = codes.height(), tw = std::max(1, std::min(48, w)), th = std::max(1, std::min(27, h));
+    const std::size_t cells = std::size_t(tw) * std::size_t(th);
+    std::vector<double> sum(3 * cells, 0.0);
+    std::vector<int> n(cells, 0);
+    const PlanarBuffer& p = codes.buffer();
+    for (int y = 0; y < h; ++y) {
+        const std::size_t ty = std::size_t(std::min(th - 1, int(std::int64_t(y) * th / h)));
+        for (int x = 0; x < w; ++x) {
+            const std::size_t t = ty * std::size_t(tw) + std::size_t(std::min(tw - 1, int(std::int64_t(x) * tw / w)));
+            ++n[t];
+            for (int c = 0; c < 3; ++c) {
+                const float v = p.plane(c)[std::size_t(y) * std::size_t(w) + std::size_t(x)];
+                sum[std::size_t(c) * cells + t] += std::isfinite(v) ? std::clamp(v, 0.0f, 1.0f) : 0.0f;
+            }
+        }
+    }
+    std::vector<std::uint8_t> out(16 + 3 * cells);
+    const std::uint32_t head[4] = {std::uint32_t(w), std::uint32_t(h), std::uint32_t(tw), std::uint32_t(th)};
+    for (int k = 0; k < 4; ++k)
+        for (int b = 0; b < 4; ++b) out[std::size_t(k * 4 + b)] = std::uint8_t(head[k] >> (8 * b));
+    for (std::size_t i = 0; i < 3 * cells; ++i)
+        out[16 + i] = std::uint8_t(std::lround(255.0 * sum[i] / std::max(1, n[i % cells])));
+    return out;
+}
+
+std::vector<std::uint8_t> read_bytes(const fs::path& path) {
+    std::ifstream f(path, std::ios::binary);
+    return std::vector<std::uint8_t>((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+}
+
+// How far two thumbnails are apart: the mean and the largest difference in codes; mean -1 when one is missing or they
+// are of other sizes (`size` then holds the stored frame's "W x H").
+struct ThumbDiff {
+    double mean = -1.0, max = -1.0;
+    std::string size;
+};
+
+ThumbDiff thumb_diff(const std::vector<std::uint8_t>& now, const std::vector<std::uint8_t>& was) {
+    ThumbDiff d;
+    if (now.size() < 16 || was.size() < 16) return d;
+    const auto u32 = [](const std::vector<std::uint8_t>& b, int k) {
+        return std::uint32_t(b[std::size_t(k * 4)]) | std::uint32_t(b[std::size_t(k * 4 + 1)]) << 8 |
+               std::uint32_t(b[std::size_t(k * 4 + 2)]) << 16 | std::uint32_t(b[std::size_t(k * 4 + 3)]) << 24;
+    };
+    if (u32(now, 0) != u32(was, 0) || u32(now, 1) != u32(was, 1) || now.size() != was.size()) {
+        d.size = std::to_string(u32(was, 0)) + " x " + std::to_string(u32(was, 1));
+        return d;
+    }
+    double total = 0.0, top = 0.0;
+    for (std::size_t i = 16; i < now.size(); ++i) {
+        const double v = std::fabs(double(now[i]) - double(was[i]));
+        total += v;
+        top = std::max(top, v);
+    }
+    d.mean = total / double(now.size() - 16);
+    d.max = top;
+    return d;
+}
+
+bool same(const ThumbDiff& d) { return d.mean >= 0.0 && d.mean <= kSameMean && d.max <= kSameMax; }
+
+std::string one_decimal(double v) {
+    char b[32];
+    std::snprintf(b, sizeof b, "%.1f", v);
+    return b;
+}
+
 bool stored(const fs::path& d, int index) {
     std::error_code ec;
     return fs::is_regular_file(master_path(d, index), ec) && fs::is_regular_file(codes_path(d, index), ec) &&
@@ -130,6 +227,9 @@ Status read_status(const fs::path& d, int frames) {
         s.done = j->value("done", 0);
         s.of = j->value("of", frames);
         s.message = j->value("message", std::string());
+        if (const auto st = j->find("stats"); st != j->end() && st->is_object() && st->contains("generated_fraction") &&
+                                              (*st)["generated_fraction"].is_number())
+            s.generated = (*st)["generated_fraction"].get<double>();
         if (s.state == State::Done && !fs::is_directory(d / "fill", ec)) s.state = State::None;   // cleared by hand
         if (s.state == State::Running) {
             const auto it = jobs().find(utf8(d));
@@ -219,6 +319,11 @@ Result<void> begin_collect(const FillRequest& r) {
     std::error_code ec;
     for (const char* sub : {"codes", "master", "hash"}) fs::create_directories(d / sub, ec);
     if (ec) return make_error(ErrorCode::IoError, "AI fill: could not make its folder.", utf8(d));
+    // 1.3.2: a disk with no room left is said now, not when the fill fails (the clip's size is known at its first frame).
+    if (const double free = free_bytes(d); free >= 0.0 && free < kSpareBytes)
+        return make_error(ErrorCode::IoError, "AI fill: not enough disk space: " + gb(free) +
+                                                  " is free on the disk the frames go to. Free some space, then press Generate again.",
+                          utf8(root()));
     const Status s = read_status(d, r.frames());
     if (s.state == State::Done || s.state == State::Running) return {};   // nothing to collect
     if (s.state == State::Failed || s.state == State::Cancelled) fs::remove(d / "status.json", ec);   // a new start
@@ -234,6 +339,16 @@ Result<void> begin_collect(const FillRequest& r) {
     if (!write_text(d / "request.json", req.dump(1)) || !write_text(d / "collect", "Generate pressed\n"))
         return make_error(ErrorCode::IoError, "AI fill: could not write to its folder.", utf8(d));
     return {};
+}
+
+std::vector<int> missing_frames(const FillRequest& r) {
+    std::vector<int> out;
+    if (!check(r)) return out;
+    std::lock_guard<std::mutex> lock(store_mutex());
+    const fs::path d = folder(r);
+    for (int i = 0; i < r.frames(); ++i)
+        if (!stored(d, i)) out.push_back(i);
+    return out;
 }
 
 Status status(const FillRequest& r) {
@@ -257,6 +372,15 @@ Result<bool> store_frame(const FillRequest& r, int frame, const SdrImage& codes,
         auto req = read_json(d / "request.json");
         if (!req) return make_error(ErrorCode::IoError, "AI fill: its request.json is missing (press Generate again).");
         if (!req->contains("width")) {
+            // The clip's first frame (1.3.2): room for all of them, or a refusal with the numbers (asked again each
+            // frame until there is room).
+            const double need = double(r.frames()) * codes.width() * codes.height() * kBytesPerPixel + kSpareBytes;
+            if (const double free = free_bytes(d); free >= 0.0 && free < need)
+                return make_error(ErrorCode::IoError,
+                                  "AI fill: not enough disk space: " + std::to_string(r.frames()) + " frames of " +
+                                      std::to_string(codes.width()) + " x " + std::to_string(codes.height()) + " need about " + gb(need) +
+                                      ", and " + gb(free) + " is free on the disk the frames go to. Free some space, then play the frames again.",
+                                  utf8(root()));
             (*req)["width"] = codes.width(), (*req)["height"] = codes.height();
             write_text(d / "request.json", req->dump(1));
         } else if ((*req)["width"] != codes.width() || (*req)["height"] != codes.height()) {
@@ -279,6 +403,8 @@ Result<bool> store_frame(const FillRequest& r, int frame, const SdrImage& codes,
         fs::rename(tif_part, tif, ec);
         if (!ec) fs::rename(exr_part, exr, ec);
         if (ec || !write_text(hash_path(d, index), h)) return make_error(ErrorCode::IoError, "AI fill: could not store the frame.", utf8(exr));
+        const std::vector<std::uint8_t> t = codes_thumb(codes);
+        write_text(thumb_path(d, index), std::string(t.begin(), t.end()));
     }
     std::lock_guard<std::mutex> lock(store_mutex());
     return fs::is_regular_file(d / "collect", ec) && !fs::exists(d / "status.json", ec) && count_stored(d, r.frames()) == r.frames();
@@ -313,11 +439,30 @@ Result<void> start_job(const FillRequest& r, const ofx_engine::GenFillConfig& cf
     return {};
 }
 
+namespace {
+
+// The prompt reading started last, and its lock (never destroyed, as jobs()).
+std::mutex& embed_mutex() {
+    static std::mutex m;
+    return m;
+}
+
+std::unique_ptr<Process>& embed_process() {
+    static auto* p = new std::unique_ptr<Process>();
+    return *p;
+}
+
+}  // namespace
+
+bool prompt_embed_running() {
+    std::lock_guard<std::mutex> lock(embed_mutex());
+    return embed_process() && embed_process()->running();
+}
+
 Result<void> start_prompt_embed(const FillRequest& r, const ofx_engine::GenFillConfig& cfg) {
     if (r.prompt.empty()) return {};
-    static std::mutex m;
-    static std::unique_ptr<Process>* running = new std::unique_ptr<Process>();   // never destroyed, as jobs()
-    std::lock_guard<std::mutex> lock(m);
+    std::lock_guard<std::mutex> lock(embed_mutex());
+    std::unique_ptr<Process>* running = &embed_process();
     if (*running && (*running)->running()) return {};   // one reading at a time; ofx_prompt.py checks its lock too
     const fs::path cache = root() / "prompt_cache";
     std::error_code ec;
@@ -423,8 +568,27 @@ std::optional<FillFrame> fill_frame(const FillRequest& r, int frame, const SdrIm
     const int index = frame - r.first;
     if (index < 0 || index >= r.frames()) return no("this frame is outside the clip the fill was made for");
     if (status(r).state != State::Done) return no("the fill is not done");
-    if (read_text(hash_path(d, index)) != hex(codes_hash(codes)))
-        return no("the picture coming into the node has changed since Generate: press Generate again");
+    if (read_text(hash_path(d, index)) != hex(codes_hash(codes))) {
+        const std::vector<std::uint8_t> now = codes_thumb(codes);
+        const ThumbDiff here = thumb_diff(now, read_bytes(thumb_path(d, index)));
+        if (!here.size.empty())
+            return no("the picture coming into the node is " + std::to_string(codes.width()) + " x " + std::to_string(codes.height()) +
+                      ", the frames AI fill was made from " + here.size + ": press Generate again");
+        if (!same(here)) {
+            std::string w = "the picture coming into the node has changed since Generate";
+            if (here.mean >= 0.0) {
+                w += " (by " + one_decimal(here.mean) + " codes on average";
+                for (const int k : {index - 1, index + 1})   // a neighbour that is this picture: the host's frame numbers moved
+                    if (k >= 0 && k < r.frames()) {
+                        const ThumbDiff nb = thumb_diff(now, read_bytes(thumb_path(d, k)));
+                        if (same(nb)) w += "; it is the stored frame " + std::to_string(r.first + k) + "'s picture";
+                    }
+                w += ")";
+            }
+            return no(w + ": press Generate again");
+        }
+        // the same picture, decoded a little differently: its fill is shown
+    }
     auto ex = read_exr(d / "fill" / (frame_stem(index) + ".exr"));
     if (!ex) return no("the stored fill of this frame could not be read: " + ex.error().message);
     if (ex->pixels.channels() < 3 || ex->pixels.width() != codes.width() || ex->pixels.height() != codes.height())
@@ -450,7 +614,9 @@ std::optional<PlanarBuffer> master_frame(const FillRequest& r, int frame, const 
     if (!check(r)) return std::nullopt;
     const fs::path d = folder(r);
     const int index = frame - r.first;
-    if (index < 0 || index >= r.frames() || read_text(hash_path(d, index)) != hex(codes_hash(codes))) return std::nullopt;
+    if (index < 0 || index >= r.frames()) return std::nullopt;
+    if (read_text(hash_path(d, index)) != hex(codes_hash(codes)) && !same(thumb_diff(codes_thumb(codes), read_bytes(thumb_path(d, index)))))
+        return std::nullopt;
     auto ex = read_exr(master_path(d, index));
     if (!ex || ex->pixels.channels() < 3 || ex->pixels.width() != codes.width() || ex->pixels.height() != codes.height())
         return std::nullopt;

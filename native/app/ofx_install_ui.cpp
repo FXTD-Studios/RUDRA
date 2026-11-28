@@ -220,8 +220,10 @@ QString MainWindow::install_ofx(bool interactive) {
         nuke = ec ? QStringLiteral(" Nuke's toolbar icon could not be copied (%1).").arg(QString::fromStdString(ec.message()))
                   : QStringLiteral(" Nuke's toolbar gets the RUDRA icon (%1).").arg(from_path(to));
     }
-    return finish(QStringLiteral("RUDRA SDR to HDR %1 is in %2. In Resolve: Color page › OpenFX › RUDRA; in Nuke: Tab › "
-                                 "RUDRA SDR to HDR.%3\nLearned ACES 2.0: %4\nAI fill: %5")
+    return finish(QStringLiteral("RUDRA SDR to HDR %1 is in %2. In Resolve: Color page › OpenFX › RUDRA; in a color-managed "
+                                 "project keep Enable OpenFX Color Management on (Project Settings › Color Management), else use a "
+                                 "DaVinci YRGB project with the timeline in Rec.709 Gamma 2.4. In Nuke: Tab › RUDRA SDR to HDR, the "
+                                 "clip read with Raw Data on.%3\nLearned ACES 2.0: %4\nAI fill: %5")
                       .arg(version, from_path(dest), nuke, learned, aifill),
                   true);
 }

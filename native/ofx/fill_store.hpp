@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "engine_client.hpp"
 #include "rudra/core/image.hpp"
@@ -56,6 +57,7 @@ struct Status {
     State state = State::None;
     int done = 0, of = 0;      // frames collected (Collecting) or filled (Running)
     std::string message;       // the job's last word (Running, Failed)
+    double generated = -1.0;   // 1.3.2: the share of the clip's pixels the fill drew (Done), -1 when not said
 };
 
 std::filesystem::path root();
@@ -67,6 +69,8 @@ std::uint64_t codes_hash(const SdrImage& codes);       // xxh64 of the 8-bit cod
 inline constexpr int kMaxFrames = 2000;
 Result<void> begin_collect(const FillRequest& r);
 Status status(const FillRequest& r);
+// The clip's frames not stored yet, as indices from r.first (1.3.2: the status says which are still to play).
+std::vector<int> missing_frames(const FillRequest& r);
 // Stores one frame while collecting (codes and the 0 EV master, ACEScg planes). True when it was the last
 // frame missing. A frame already stored from the same codes is not written again.
 Result<bool> store_frame(const FillRequest& r, int frame, const SdrImage& codes, const PlanarBuffer& master_ap1);
@@ -97,6 +101,8 @@ std::string status_text(const Status& s);
 // CPU), into <root>/prompt_cache, so the fill does not wait for the text encoder after the last frame. Started by
 // Generate with a prompt; one at a time (a reading that runs is left alone).
 Result<void> start_prompt_embed(const FillRequest& r, const ofx_engine::GenFillConfig& cfg);
+// Whether the prompt reading started last still runs (1.3.2; the tests wait for one another's).
+bool prompt_embed_running();
 
 // 1.3.2, Suggest prompt: <root>/<shot id>/suggest/ (frame.tif, suggest.json, suggest.log). The frame's codes go to
 // ofx_prompt.py suggest beside the host (Florence-2 from cfg.florence when set up; on the CPU when `cpu`). Refused

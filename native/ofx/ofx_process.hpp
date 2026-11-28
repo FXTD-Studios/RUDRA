@@ -59,17 +59,56 @@ struct Settings {
     int steps = 30;                        // the fill's steps (27 Nov 2026): fewer is faster, below 20 can draw stripes
     double prompt_strength = 1.0;          // 1.3.2: how strongly the prompt steers the fill, 0 .. 2 (the app's Deliver's)
     int frame = 0, first_frame = 0, last_frame = 0;   // this frame and the clip's
+    int to_frame = 0;                      // 1.3.2: AI fill's To as set (0: the clip's end); Generate refuses one before the first
+    int flat_top = 0;                      // 1.3.2: flat_top_below_white of the picture coming in (the last full-size one)
+    std::string colour_style;              // 1.3.2: the OpenFX colour management style the host chose ("" without it)
+    std::string input_colourspace;         // 1.3.2: with it, the colourspace the host says the source arrives in
     bool full_size = true;                 // render scale 1: only then is a frame stored or a stored fill shown
+    std::string host_label;                // 1.3.2: "Resolve", "Nuke" or "": the guide in the picture names it
     // The Mask input (27 Nov 2026): width x height weights, the top row first, 0 .. 1; empty = none. Where it is 0
     // the picture is RUDRA's plain inverse (no reconstruction, no AI fill), where it is 1 RUDRA's in full.
     std::vector<float> mask;
 };
 
-// What a render did: `error` empty on success; `note` AI fill's state in one line ("" when off).
+// What a render did: `error` empty on success; `note` AI fill's state in one line ("" when off); `log` a line for the
+// plug-in's log only (1.3.2: each frame AI fill stored, so a session's log shows how far collecting got); `guide` the
+// words drawn in the picture until the fill is shown (1.3.2; "" when none).
 struct Outcome {
     std::string error;
     std::string note;
+    std::string log;
+    std::string guide;
 };
+
+// Resolve's AI fill frames (1.3.2). Resolve hands a plug-in its clip's frames by their source media numbers and does
+// not say where a trimmed clip starts (its frame range can be the whole media, or a placeholder), so Generate there
+// takes From, else the playhead, to To, else the clip's end as Resolve's timeline suite gives it (`timeline_end`),
+// else the clip's frame range end (`clip_end`) when either is at most kMaxFillFrames away, else 100 frames.
+inline constexpr int kMaxFillFrames = 2000;   // ofx_fill::kMaxFrames
+struct FrameSpan {
+    int first = 0, last = 0;
+};
+FrameSpan resolve_frames(int playhead, int from, int to, double timeline_end, double clip_end);
+
+// The code (of 255) where the picture's highlights stop flat when that is under AI fill's clipped code (240), else 0
+// (1.3.2, 27 Nov 2026). Clipped highlights are a flat top; one under 240 means the clip is clipped but arrives
+// re-encoded: a colour-managed Resolve project handed RUDRA's node an HDR picture whose clipped sky stopped at 195, and
+// RUDRA, which reads SDR Rec.709 codes, found nothing to recover. Flat: at least 0.5 % of the pixels (every other one in
+// each direction is looked at) within 2 codes of the brightest. RGBA rows, `row` floats apart.
+int flat_top_below_white(const float* rgba, std::ptrdiff_t row, int width, int height);
+// What the node says about such a picture, in the host's terms ("Resolve", "Nuke", else general); `managed`: the host
+// manages colour for RUDRA (OpenFX colour management) and handed it this all the same.
+std::string flat_top_advice(int code, const std::string& host_label, bool managed = false);
+
+// OpenFX colour management (1.3.2, 27 Nov 2026). A host that manages colour (Resolve's "Enable OpenFX Color Management")
+// is asked for RUDRA's source as the SDR's Rec.709 display codes, and told what its output is by Output; in the style
+// the host chose: the native config's names from Core up, the generic ones in Basic, nothing without colour management
+// (then the host hands its working space: a colour-managed Resolve project handed an HDR picture).
+std::vector<std::string> colour_source_preferences(const std::string& style);
+std::string colour_output(const std::string& output, const std::string& style);
+// Why the picture coming in is not what RUDRA reads, "" when it is: under colour management a colourspace that is not
+// SDR display, or highlights that stop flat under white (flat_top_below_white).
+std::string input_problem(const Settings& s);
 
 std::vector<std::string> source_ids();      // the Source menu, in order
 std::vector<std::string> source_labels();

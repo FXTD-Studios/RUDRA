@@ -208,3 +208,29 @@ TEST(OfxProcess, TheMaskBlendsRudraIntoThePlainInverse) {
     s.mask.assign(3, 1.0f);   // not the picture's size
     EXPECT_NE(rudra_ofx::render(s, in.data(), kW * 4, out.data(), kW * 4, kW, kH).error, "");
 }
+
+// 1.3.2: Resolve hands a plug-in its clip's frames by their source media numbers and does not say where a trimmed clip
+// starts, so AI fill there takes From (else the playhead) to To (else the clip's end on Resolve's timeline, else the
+// clip's frame range end, when either is near enough to be the clip's, else 100 frames).
+TEST(OfxProcess, ResolvesAiFillFramesComeFromThePlayheadToTheClipsEnd) {
+    using rudra_ofx::resolve_frames;
+    auto f = resolve_frames(129, 0, 0, 225.0, 1.0e9);        // a trimmed clip: source frames 129..225
+    EXPECT_EQ(f.first, 129);
+    EXPECT_EQ(f.last, 225);
+    f = resolve_frames(16, 0, 0, 0.0, 96.0);                  // no timeline suite: the clip's range end
+    EXPECT_EQ(f.first, 16);
+    EXPECT_EQ(f.last, 96);
+    f = resolve_frames(16, 0, 0, 0.0, 1.0e9);                 // a placeholder range: 100 frames
+    EXPECT_EQ(f.last, 115);
+    f = resolve_frames(16, 0, 0, 16.0 + 2500.0, 96.0);        // a timeline end too far to be the clip's
+    EXPECT_EQ(f.last, 96);
+    f = resolve_frames(300, 0, 0, 225.0, 96.0);               // both behind the playhead: 100 frames from it
+    EXPECT_EQ(f.first, 300);
+    EXPECT_EQ(f.last, 399);
+    f = resolve_frames(16, 1, 30, 225.0, 96.0);               // From and To as typed (Resolve's source frame numbers)
+    EXPECT_EQ(f.first, 1);
+    EXPECT_EQ(f.last, 30);
+    f = resolve_frames(16, 0, 5, 225.0, 96.0);                // To before the first frame: one frame
+    EXPECT_EQ(f.first, 16);
+    EXPECT_EQ(f.last, 16);
+}

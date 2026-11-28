@@ -20,6 +20,7 @@
 
 // HostSupport's headers depend on each other in this order (its hostDemo's).
 #include "ofxCore.h"
+#include "ofxColour.h"
 #include "ofxImageEffect.h"
 #include "ofxPixels.h"
 #include "ofxhBinary.h"
@@ -45,6 +46,8 @@ constexpr int kW = 48, kH = 27;
 std::map<std::string, double> g_values;
 // The Mask input (27 Nov 2026): every pixel's weight, or below 0 for nothing connected.
 float g_mask = -1.0f;
+// 1.3.2: the host abandons the render (abort() answers 1 and the source gives no picture), or the source gives none.
+bool g_abort = false, g_no_source = false;
 
 std::vector<float> source_pixels() {
     std::vector<float> p(std::size_t(kW) * kH * 4);
@@ -117,6 +120,7 @@ public:
             return output_;
         }
         if (name_ == "Mask") return new FloatImage(*this, std::vector<float>(std::size_t(kW) * kH * 4, g_mask));
+        if (g_abort || g_no_source) return nullptr;
         return new FloatImage(*this, source_pixels());
     }
 #ifdef OFX_SUPPORTS_OPENGLRENDER
@@ -219,6 +223,7 @@ public:
     double timeLineGetTime() { return 0.0; }
     void timeLineGotoTime(double) {}
     void timeLineGetBounds(double& a, double& b) { a = 0, b = 1; }
+    int abort() { return g_abort ? 1 : 0; }
     std::vector<std::string> messages;
 };
 
@@ -274,6 +279,15 @@ struct Loaded {
 Loaded& loaded() {
     static Loaded l = [] {
         Loaded x;
+        // The plug-in's log aside (1.3.2): not the user's %TEMP%\rudra_ofx.log.
+        const std::filesystem::path logs = std::filesystem::temp_directory_path() / "rudra_ofx_test_logs";
+        std::error_code ec;
+        std::filesystem::create_directories(logs, ec);
+#ifdef _WIN32
+        _putenv_s("RUDRA_OFX_LOG_DIR", logs.string().c_str());
+#else
+        setenv("RUDRA_OFX_LOG_DIR", logs.string().c_str(), 1);
+#endif
         PluginCache::getPluginCache()->setCacheVersion("rudra-test-host-1");
         x.cache = std::make_unique<ImageEffect::PluginCache>(x.host);
         x.cache->registerInCache(*PluginCache::getPluginCache());
@@ -290,7 +304,7 @@ Loaded& loaded() {
 
 // One frame through the plug-in, with these parameter values.
 std::vector<float> render(const std::map<std::string, double>& values, std::vector<std::string>* messages = nullptr,
-                          const char* context = kOfxImageEffectContextFilter) {
+                          const char* context = kOfxImageEffectContextFilter, OfxStatus* status = nullptr) {
     g_values = values;
     auto* plugin = loaded().plugin;
     if (!plugin) return {};
@@ -306,6 +320,7 @@ std::vector<float> render(const std::map<std::string, double>& values, std::vect
     instance->endRenderAction(0, 0, 1.0, false, scale, true, false);
     auto* out = dynamic_cast<Clip*>(instance->getClip(kOfxImageEffectOutputClipName));
     if (messages) *messages = static_cast<Effect*>(instance.get())->messages;
+    if (status) *status = s;
     if (s != kOfxStatOK || !out || !out->output()) return {};
     return out->output()->pixels();
 }
@@ -485,3 +500,57 @@ TEST(OfxHost, SuggestPromptPutsASuggestionInThePrompt) {
     fs::remove_all(root, ec);
 }
 #endif
+
+// 1.3.2 (27 Nov 2026): Nuke abandons a render when a knob moves while it runs (a Grade's gain dragged above RUDRA)
+// and hands it no picture. That render ends quietly: the error it used to leave on the node ("no picture from the
+// input") stayed after the picture came back. A picture missing for any other reason is still an error that says so.
+TEST(OfxHost, ARenderTheHostAbandonsLeavesNoErrorOnTheNode) {
+    std::vector<std::string> messages;
+    OfxStatus status = kOfxStatErrUnknown;
+    g_abort = true;
+    render({}, &messages, kOfxImageEffectContextFilter, &status);
+    g_abort = false;
+    EXPECT_EQ(status, kOfxStatOK);
+    EXPECT_TRUE(messages.empty()) << messages.front();
+    g_no_source = true;
+    render({}, &messages, kOfxImageEffectContextFilter, &status);
+    g_no_source = false;
+    EXPECT_EQ(status, kOfxStatFailed);
+    ASSERT_FALSE(messages.empty());
+    EXPECT_NE(messages.back().find("no picture from the input"), std::string::npos) << messages.back();
+    EXPECT_FALSE(render({}).empty());   // and the next render draws
+}
+
+// 1.3.2 (27 Nov 2026): OpenFX colour management through the plug-in's own entry point, as a colour-managing host (Resolve
+// with "Enable OpenFX Color Management") calls it: the source asked for as Rec.709 display codes, the output named by
+// Output. A host without colour management is not asked anything (the other tests).
+TEST(OfxHost, AColourManagingHostIsAskedForTheSdrAndToldTheOutput) {
+    auto* plugin = loaded().plugin;
+    ASSERT_NE(plugin, nullptr);
+    g_values = {{"output", 1.0}};   // Scene-linear ACEScg
+    std::unique_ptr<ImageEffect::Instance> instance(plugin->createInstance(kOfxImageEffectContextFilter, nullptr));
+    ASSERT_TRUE(instance);
+    const OfxStatus created = instance->createInstanceAction();
+    ASSERT_TRUE(created == kOfxStatOK || created == kOfxStatReplyDefault);
+    static const Property::PropSpec style = {kOfxImageEffectPropColourManagementStyle, Property::eString, 1, true,
+                                             kOfxImageEffectColourManagementCore};
+    instance->getProps().createProperty(style);
+
+    const std::string preferred = std::string(kOfxImageClipPropPreferredColourspaces) + "_Source";
+    const Property::PropSpec pref = {preferred.c_str(), Property::eString, 0, false, ""};
+    Property::Set prefs;
+    prefs.createProperty(pref);
+    EXPECT_EQ(instance->mainEntry(kOfxImageEffectActionGetClipPreferences, instance->getHandle(), nullptr, &prefs), kOfxStatOK);
+    ASSERT_EQ(prefs.getDimension(preferred), 2);
+    EXPECT_EQ(prefs.getStringProperty(preferred, 0), "rec1886_rec709_display");
+    EXPECT_EQ(prefs.getStringProperty(preferred, 1), "ofx_display_sdr");
+
+    static const Property::PropSpec ask = {kOfxImageClipPropPreferredColourspaces, Property::eString, 0, false, ""};
+    static const Property::PropSpec got = {kOfxImageClipPropColourspace, Property::eString, 1, false, ""};
+    Property::Set in, out;
+    in.createProperty(ask);
+    out.createProperty(got);
+    EXPECT_EQ(instance->mainEntry(kOfxImageEffectActionGetOutputColourspace, instance->getHandle(), &in, &out), kOfxStatOK);
+    EXPECT_EQ(out.getStringProperty(kOfxImageClipPropColourspace), "ACEScg");
+    g_values = {};
+}

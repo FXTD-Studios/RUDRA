@@ -147,9 +147,15 @@ private:
         }
     }
 
+    // <temp>, or RUDRA_OFX_LOG_DIR when set (1.3.2: the tests keep their lines out of the user's log).
+    static fs::path log_dir(std::error_code& ec) {
+        const char* aside = std::getenv("RUDRA_OFX_LOG_DIR");
+        return aside && *aside ? fs::path(aside) : fs::temp_directory_path(ec);
+    }
+
     static void log_line(const std::string& text) {
         std::error_code ec;
-        const fs::path dir = fs::temp_directory_path(ec);
+        const fs::path dir = log_dir(ec);
         if (ec) return;
         std::ofstream f(dir / "rudra_ofx.log", std::ios::app);
         const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -161,7 +167,8 @@ private:
     Result<void> start() {
         auto cfg = load_engine_config();
         if (!cfg) return cfg.error();
-        const fs::path log = fs::temp_directory_path() / "rudra_ofx_engine.log";
+        std::error_code ec;
+        const fs::path log = log_dir(ec) / "rudra_ofx_engine.log";
         auto p = Process::start_duplex({cfg->cli.string(), "aces-v2-serve", cfg->package.string(), "--runtime", cfg->runtime,
                                         "--device", cfg->device},
                                        log, path_list(cfg->path_prepend));
