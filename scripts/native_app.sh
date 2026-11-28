@@ -11,8 +11,9 @@
 #   Qt 6.8 with Shader Tools (aqtinstall, from a venv), as native_gate_b.sh;
 #   ONNX Runtime, the release archive, as native_gate_a.sh (Core ML on a Mac);
 #   OpenCV core + imgproc + imgcodecs, built from source with its own PNG,
-#   JPEG, TIFF, WebP and OpenEXR (a few minutes, once): the still decoder the
-#   Python uses, without Homebrew's opencv and everything it pulls in;
+#   JPEG, TIFF and WebP (a few minutes, once): the still decoder the Python
+#   uses, without Homebrew's opencv and everything it pulls in. No OpenEXR in
+#   it (1.3.2): RUDRA reads and writes EXR with the OpenEXR it links itself;
 #   OpenColorIO 2.5.2 (scripts/build_ocio.sh, once): the learned ACES 2.0
 #   engine in rudra-native (aces-v2, aces-v2-serve) on ONNX Runtime.
 # The model packages are found in dist/models (native_gate_a.sh exports one).
@@ -44,7 +45,8 @@ case "$(uname -s)-$(uname -m)" in
 esac
 QT_ROOT=$PWD/$DEPS/Qt/$QT_VERSION/$QT_DIR
 ORT_ROOT=$PWD/$DEPS/$ORT_ARCHIVE
-CV_ROOT=$PWD/$DEPS/opencv-$CV_VERSION-install
+# -noexr (1.3.2): built without OpenCV's own OpenEXR; the name makes an older build with it be built again.
+CV_ROOT=$PWD/$DEPS/opencv-$CV_VERSION-noexr-install
 OCIO_ROOT=$PWD/$DEPS/ocio-${OCIO_VERSION:-2.5.2}
 
 if [ -z "${SKIP_BUILD:-}" ]; then
@@ -86,11 +88,15 @@ if [ -z "${SKIP_BUILD:-}" ]; then
       rm -f "$DEPS/opencv-$CV_VERSION.tar.gz"
     fi
     GEN=(); command -v ninja >/dev/null && GEN=(-G Ninja)
-    cmake -S "$CV_SRC" -B "$DEPS/opencv-$CV_VERSION-build" ${GEN[@]+"${GEN[@]}"} \
+    # WITH_OPENEXR=OFF (1.3.2, 28 Nov 2026, the v1.3.2 release run): OpenCV's bundled OpenEXR 2.x and the OpenEXR 3.3
+    # RUDRA links (cmake/RudraDeps.cmake, RUDRA_OPENEXR_FETCH) both define iex_debugTrap() and printBits(), outside
+    # their versioned namespaces, so linking both statically failed ("multiple definition"). RUDRA reads EXR stills
+    # and sequences with its own OpenEXR (native/media/src/still.cpp), so OpenCV needs no EXR codec here.
+    cmake -S "$CV_SRC" -B "$DEPS/opencv-$CV_VERSION-noexr-build" ${GEN[@]+"${GEN[@]}"} \
       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$CV_ROOT" -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
       -DBUILD_LIST=core,imgproc,imgcodecs -DBUILD_SHARED_LIBS=OFF \
       -DBUILD_ZLIB=ON -DBUILD_PNG=ON -DBUILD_JPEG=ON -DBUILD_TIFF=ON -DBUILD_WEBP=ON \
-      -DWITH_OPENEXR=ON -DBUILD_OPENEXR=ON \
+      -DWITH_OPENEXR=OFF \
       -DWITH_OPENJPEG=OFF -DWITH_JASPER=OFF -DWITH_FFMPEG=OFF -DWITH_GSTREAMER=OFF \
       -DWITH_OPENCL=OFF -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_EIGEN=OFF -DWITH_LAPACK=OFF \
       -DWITH_PROTOBUF=OFF -DWITH_ADE=OFF -DWITH_GTK=OFF -DWITH_QT=OFF -DWITH_1394=OFF \
@@ -98,8 +104,8 @@ if [ -z "${SKIP_BUILD:-}" ]; then
       -DWITH_VTK=OFF -DBUILD_opencv_python2=OFF -DPYTHON3_EXECUTABLE= -Wno-dev \
       -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_opencv_apps=OFF \
       -DBUILD_JAVA=OFF -DBUILD_opencv_python3=OFF -DBUILD_DOCS=OFF >/dev/null
-    cmake --build "$DEPS/opencv-$CV_VERSION-build" --parallel "$JOBS"
-    cmake --install "$DEPS/opencv-$CV_VERSION-build" >/dev/null
+    cmake --build "$DEPS/opencv-$CV_VERSION-noexr-build" --parallel "$JOBS"
+    cmake --install "$DEPS/opencv-$CV_VERSION-noexr-build" >/dev/null
   fi
 
   # -------------------------------------------------------------------------
