@@ -196,6 +196,27 @@ fs::path genfill_bootstrap_python() {
 #endif
 }
 
+fs::path genfill_setup_log() { return genfill_bootstrap_root() / "setup.log"; }
+
+QString genfill_wan_missing(const fs::path& base) {
+    std::error_code ec;
+    for (const char* index : {"transformer/diffusion_pytorch_model.safetensors.index.json", "text_encoder/model.safetensors.index.json"}) {
+        const fs::path p = base / pq(QString::fromLatin1(index));
+        QFile f(qp(p));
+        if (!f.open(QIODevice::ReadOnly)) continue;   // weights in one file, or a stand-in: nothing to go by
+        const QJsonObject map = QJsonDocument::fromJson(f.readAll()).object().value(QStringLiteral("weight_map")).toObject();
+        QStringList shards;
+        for (auto it = map.constBegin(); it != map.constEnd(); ++it)
+            if (const QString s = it.value().toString(); !s.isEmpty() && !shards.contains(s)) shards << s;
+        for (const QString& s : shards)
+            if (!fs::exists(p.parent_path() / pq(s), ec)) return qp(p.parent_path().filename()) + QLatin1Char('/') + s;
+    }
+    if (fs::exists(base / "vae" / "config.json", ec) && !fs::exists(base / "vae" / "diffusion_pytorch_model.safetensors", ec) &&
+        !fs::exists(base / "vae" / "diffusion_pytorch_model.bin", ec))
+        return QStringLiteral("vae/diffusion_pytorch_model.safetensors");
+    return {};
+}
+
 fs::path genfill_bootstrap_script(const fs::path& repo) {
 #ifdef _WIN32
     const char* name = "genfill_bootstrap.ps1";
@@ -565,6 +586,9 @@ std::optional<GenFillSetup> genfill_setup(QString* why) {
         return refuse(QStringLiteral("AI fill: no Python at %1 (run %2).").arg(qp(s.python), kSetupScript));
     if (!fs::exists(s.base / "transformer" / "config.json", ec))
         return refuse(QStringLiteral("AI fill: no Wan2.1-VACE-1.3B model at %1 (run %2).").arg(qp(s.base), kSetupScript));
+    if (const QString gone = genfill_wan_missing(s.base); !gone.isEmpty())
+        return refuse(QStringLiteral("AI fill: the Wan2.1-VACE-1.3B download in %1 did not finish (%2 is not there yet): "
+                                     "Set up automatically… carries on where it stopped.").arg(qp(s.base), gone));
     if (!fs::exists(s.lora, ec))
         return refuse(QStringLiteral("AI fill: no LoRA at %1 (File > Model packages > AI fill v3 > Download).").arg(qp(s.lora)));
     if (why) why->clear();

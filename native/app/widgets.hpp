@@ -125,12 +125,15 @@ public:
     void set_lane(int frame, Lane l);
     Lane lane(int frame) const;
     std::function<void(double)> seek;
+    std::function<void()> released;   // 1.3.2: the press or drag that sought has ended
     QSize sizeHint() const override { return {400, 58}; }
+    int frame_at(double x) const;     // 1.3.2: the frame under x (0..count-1)
 
 protected:
     void paintEvent(class QPaintEvent* e) override;
     void mousePressEvent(class QMouseEvent* e) override;
     void mouseMoveEvent(class QMouseEvent* e) override;
+    void mouseReleaseEvent(class QMouseEvent* e) override;
 
 private:
     double pos_ = 0.0;

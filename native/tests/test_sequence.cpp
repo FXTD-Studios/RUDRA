@@ -171,3 +171,20 @@ TEST(Sequence, AVideoOpensAndReadsLikeThePython) {
     }
     fs::remove_all(root);
 }
+
+// 1.3.2 (27 Nov 2026, user feedback): File > Import image sequence takes one frame and finds its numbered siblings.
+TEST(Sequence, ANumberedSequenceIsFoundFromOneOfItsFrames) {
+    const fs::path d = fs::temp_directory_path() / "rudra_numbered_test";
+    fs::remove_all(d);
+    fs::create_directories(d);
+    for (const char* n : {"SH010.0998.exr", "SH010.0999.EXR", "SH010.1000.exr", "SH010.1001.exr", "SH010.10002.exr", "SH010.1000.png",
+                          "SH020.1000.exr", "SH010.v2.exr", "SH010.1000_matte.exr"})
+        std::ofstream(d / n, std::ios::binary);
+    const auto seq = numbered_sequence_of(d / "SH010.1000.exr");
+    std::vector<std::string> names;
+    for (const auto& p : seq) names.push_back(p.filename().string());
+    EXPECT_EQ(names, (std::vector<std::string>{"SH010.0998.exr", "SH010.0999.EXR", "SH010.1000.exr", "SH010.1001.exr", "SH010.10002.exr"}));
+    std::ofstream(d / "plate.exr", std::ios::binary);
+    EXPECT_EQ(numbered_sequence_of(d / "plate.exr"), std::vector<fs::path>{d / "plate.exr"});   // no number: itself
+    fs::remove_all(d);
+}

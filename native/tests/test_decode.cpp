@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "rudra/deliver/exr.hpp"
 #include "rudra/media/still.hpp"
 #include "rudra/platform/npy.hpp"
 
@@ -183,4 +184,24 @@ TEST(Decode, IccProfileSetsThePrimaries) {
     ASSERT_TRUE(plain);
     EXPECT_TRUE(std::equal(plain->rgb.buffer().span().begin(), plain->rgb.buffer().span().end(),
                            tagged->rgb.buffer().span().begin()));
+}
+
+// 1.3.2 (27 Nov 2026, user feedback: EXR sequences): an EXR frame holds linear light, read as Rec.709 SDR, clipped at
+// 1.0 and encoded with BT.1886, the display codes RUDRA reads. A failure here means this build's OpenCV reads no EXR.
+TEST(Decode, AnExrFrameIsLinearRec709ReadAsBt1886Codes) {
+    PlanarBuffer lin(3, 2, 2);
+    const float values[4] = {0.0f, 0.18f, 1.0f, 4.0f};   // black, mid grey, white, a clipped highlight
+    for (int c = 0; c < 3; ++c)
+        for (int i = 0; i < 4; ++i) lin.at(c, i / 2, i % 2) = values[i];
+    const fs::path path = fs::temp_directory_path() / "rudra_decode_test.exr";
+    ASSERT_TRUE(write_exr(path, lin, false));
+    auto r = decode_sdr_file(path);
+    ASSERT_TRUE(r) << r.error().message;
+    EXPECT_NE(r->source.find("EXR"), std::string::npos) << r->source;
+    for (int c = 0; c < 3; ++c) {
+        EXPECT_NEAR(r->rgb.buffer().at(c, 0, 0), 0.0f, 1e-6f);
+        EXPECT_NEAR(r->rgb.buffer().at(c, 0, 1), std::pow(0.18f, 1.0f / 2.4f), 1e-4f);
+        EXPECT_NEAR(r->rgb.buffer().at(c, 1, 0), 1.0f, 1e-6f);
+        EXPECT_NEAR(r->rgb.buffer().at(c, 1, 1), 1.0f, 1e-6f);   // above white: clipped, as the SDR was
+    }
 }

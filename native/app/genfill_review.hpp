@@ -11,6 +11,8 @@
 // No Q_OBJECT (as elsewhere in the app): connections are lambdas.
 
 #include <QDialog>
+#include <QPointer>
+#include <QProcess>
 #include <QString>
 
 #include <optional>
@@ -70,6 +72,14 @@ public:
     // Each part's box and mark from a fresh search (6 Nov 2026): the path found automatically
     // as the box's grey text, a tick or a cross beside it.
     void refresh_found();
+    // 1.3.2: closing the window while the setup runs asks first, then stops all of it.
+    void reject() override;
+    // 1.3.2: Set up automatically without its question (Check this computer's Install selected: the tick was the answer).
+    void start_automatic();
+
+private:
+    QPointer<QProcess> setup_;   // "Set up automatically"'s run, while there is one
+    bool skip_question_ = false;
 };
 
 }  // namespace rudra::app

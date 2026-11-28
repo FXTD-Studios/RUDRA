@@ -2,6 +2,7 @@
   "oracle": "ui/sequence.py",
   "frame_suffixes": [
     ".bmp",
+    ".exr",
     ".jpeg",
     ".jpg",
     ".png",
@@ -169,12 +170,12 @@
     {
       "name": "empty",
       "raw": "<root>/empty",
-      "error": "No frames in empty. Looked for .bmp .jpeg .jpg .png .tif .tiff .webp"
+      "error": "No frames in empty. Looked for .bmp .exr .jpeg .jpg .png .tif .tiff .webp"
     },
     {
       "name": "no_frames",
       "raw": "<root>/no_frames",
-      "error": "No frames in no_frames. Looked for .bmp .jpeg .jpg .png .tif .tiff .webp"
+      "error": "No frames in no_frames. Looked for .bmp .exr .jpeg .jpg .png .tif .tiff .webp"
     },
     {
       "name": "text_file",

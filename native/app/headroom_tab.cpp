@@ -401,6 +401,7 @@ bool MainWindow::start_headroom_export(const QString& format) {
     headroom_export_running_ = true;
     headroom_export_result_.clear();
     say(QStringLiteral("Exporting %1 with the headroom policy (decode, render, encode, check, then publish)").arg(format.toUpper()));
+    render_progress(QStringLiteral("Headroom %1").arg(format.toUpper()), 0, 0);   // 1.3.2: the Render card's bar
     QPointer<MainWindow> self(this);
     headroom_export_worker_ = std::thread([self, r, cancel = &headroom_export_cancel_] {
         auto out = export_headroom_movie(r, [self](const HeadroomExportProgress& p) {
@@ -410,11 +411,15 @@ bool MainWindow::start_headroom_export(const QString& format) {
                     status->setText(QStringLiteral("Headroom export: %1 %2/%3").arg(qs(p.phase)).arg(p.done).arg(p.total));
                     status->setVisible(true);
                 }
+                self->render_progress(QStringLiteral("Headroom export: ") + qs(p.phase), qint64(p.done), qint64(p.total));
             });
         }, cancel);
-        QMetaObject::invokeMethod(qApp, [self, out = std::move(out)] {
+        const bool stopped = cancel->load();
+        QMetaObject::invokeMethod(qApp, [self, stopped, out = std::move(out)] {
             if (!self) return;
             self->headroom_export_running_ = false;
+            self->render_progress_end(bool(out), stopped && !out, out ? qint64(out->frames) : 0,
+                                      out ? qs(out->file.string()) : QString());
             QString m;
             if (out) {
                 self->headroom_export_result_ = qs(out->file.string());

@@ -21,6 +21,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QSettings>
 #include <QSignalBlocker>
@@ -745,6 +746,113 @@ void MainWindow::deliver_render() {
     master();
 }
 
+// ---- 1.3.2 (user request): this render's progress bar under the Render card ----------------------------------
+
+namespace {
+
+QString render_duration(qint64 ms) {
+    const qint64 s = (std::max<qint64>(ms, 0) + 500) / 1000;
+    if (s < 60) return QStringLiteral("%1 s").arg(s);
+    if (s < 3600) return QStringLiteral("%1 min %2 s").arg(s / 60).arg(s % 60);
+    return QStringLiteral("%1 h %2 min").arg(s / 3600).arg((s % 3600) / 60);
+}
+
+// QProgressBar's format reads %p, %v and %m: a literal percent sign is doubled.
+QString bar_format(QString text) { return text.replace(QLatin1Char('%'), QStringLiteral("%%")); }
+
+}  // namespace
+
+bool MainWindow::render_busy() const {
+    return mastering() || encoding_movie_ || aces_delivering() || headroom_export_running_;
+}
+
+void MainWindow::render_progress(const QString& stage, qint64 done, qint64 total) {
+    auto* row = findChild<QWidget*>("renderProgressRow");
+    auto* bar = findChild<QProgressBar*>("renderProgress");
+    if (!row || !bar) return;
+    const bool fresh = bar->property("ended").toBool() || !render_total_clock_.isValid() || row->isHidden();
+    if (fresh) render_total_clock_.start();
+    if (fresh || stage != render_stage_ || !render_clock_.isValid()) {
+        render_stage_ = stage;
+        render_clock_.start();
+    }
+    bar->setProperty("ended", false);
+    if (auto* s = findChild<QPushButton*>("renderStop")) {
+        s->show();
+        s->setEnabled(true);
+    }
+    if (auto* o = findChild<QPushButton*>("renderOpenFolder")) o->hide();
+    QString text = stage;
+    if (total > 0) {
+        done = std::clamp<qint64>(done, 0, total);
+        bar->setRange(0, 1000);
+        bar->setValue(int(1000 * done / total));
+        text += QStringLiteral(" \u00b7 %1 / %2 \u00b7 %3%").arg(done).arg(total).arg(100 * done / total);
+        const qint64 ms = render_clock_.elapsed();
+        if (done >= 2 && done < total && ms > 3000)   // a guess only once a few frames are in
+            text += QStringLiteral(" \u00b7 about %1 left").arg(render_duration(ms * (total - done) / done));
+    } else {
+        bar->setRange(0, 0);   // busy, no count
+    }
+    bar->setFormat(bar_format(text));
+    bar->setToolTip(text);
+    row->show();
+}
+
+void MainWindow::render_progress_end(bool ok, bool cancelled, qint64 frames, const QString& folder) {
+    auto* row = findChild<QWidget*>("renderProgressRow");
+    auto* bar = findChild<QProgressBar*>("renderProgress");
+    if (!row || !bar) return;
+    const QString plural = frames == 1 ? QString() : QStringLiteral("s");
+    QString text;
+    bar->setRange(0, 1000);
+    if (ok && !cancelled) {
+        bar->setValue(1000);
+        text = QStringLiteral("Done: %1 frame%2 in %3").arg(frames).arg(plural).arg(render_duration(render_total_clock_.elapsed()));
+    } else if (cancelled) {
+        text = QStringLiteral("Stopped after %1 frame%2; what was written is kept").arg(frames).arg(plural);
+    } else {
+        text = QStringLiteral("Stopped: why is said above");
+    }
+    bar->setFormat(bar_format(text));
+    bar->setToolTip(text);
+    bar->setProperty("ended", true);
+    if (auto* s = findChild<QPushButton*>("renderStop")) s->hide();
+    if (auto* o = findChild<QPushButton*>("renderOpenFolder")) {
+        const QFileInfo fi(folder);
+        const QString dir = folder.isEmpty() ? QString() : fi.isDir() ? fi.absoluteFilePath() : fi.absolutePath();
+        o->setProperty("folder", dir);
+        o->setVisible(!dir.isEmpty() && QFileInfo(dir).isDir());
+        o->setToolTip(QDir::toNativeSeparators(dir));
+    }
+    row->show();
+}
+
+void MainWindow::stop_render() {
+    auto* status = findChild<QLabel*>("renderStatus");
+    auto say = [status](const QString& t) {
+        if (!status) return;
+        status->setText(t);
+        status->show();
+    };
+    if (mastering()) {
+        master_job_->cancel();
+        say(QStringLiteral("Stopping after this frame\u2026"));
+    } else if (encoding_movie_) {
+        encode_cancel_ = true;
+        say(QStringLiteral("Stopping the movie\u2026"));
+    } else if (aces_delivering()) {
+        if (aces_engine_ && aces_deliver_id_ > 0) aces_engine_->cancel_master(aces_deliver_id_);
+        say(QStringLiteral("Stopping after this frame\u2026"));
+    } else if (headroom_export_running_) {
+        headroom_export_cancel_ = true;
+        say(QStringLiteral("Stopping the headroom export\u2026"));
+    } else {
+        return;
+    }
+    if (auto* s = findChild<QPushButton*>("renderStop")) s->setEnabled(false);
+}
+
 void MainWindow::aces_deliver() {
     auto* status = findChild<QLabel*>("renderStatus");
     QString why;
@@ -779,6 +887,7 @@ void MainWindow::aces_deliver() {
     log("Render destination: " + QDir::toNativeSeparators(out) + " (learned ACES 2.0, " + container_field_->text() + ")");
     status->setText(QStringLiteral("Rendering with the learned ACES 2.0 model…"));
     status->show();
+    render_progress(QStringLiteral("Learned ACES 2.0 \u00b7 ") + container_field_->text(), 0, total);
     btn_master_->setToolTip("Click to stop after the frame being written");
     const QPointer<MainWindow> self(this);
     aces_deliver_id_ = -1;   // running; the engine's id once it is sent
@@ -796,6 +905,7 @@ void MainWindow::aces_deliver() {
             if (!self) return;
             const QJsonObject p = o.value("progress").toObject();
             const int n = total > 0 ? total : p.value("total").toInt();
+            self->render_progress(self->render_stage_, p.value("index").toInt(), n);
             if (auto* st = self->findChild<QLabel*>("renderStatus"))
                 st->setText(QStringLiteral("Rendering %1 / %2 · %3 ms a frame")
                                 .arg(p.value("index").toInt())
@@ -817,9 +927,11 @@ void MainWindow::aces_deliver_finished(const QJsonObject& o, const QString& out)
         const QString why = (o.value("error").toString() + ' ' + o.value("detail").toString()).trimmed();
         status->setText("Stopped: " + why);
         log("Render stopped: " + why);
+        render_progress_end(false, false, 0, out);
     } else {
         const int n = o.value("frames").toInt();
         const bool cancelled = o.value("cancelled").toBool();
+        render_progress_end(true, cancelled, n, out);
         QString text = cancelled ? QStringLiteral("Stopped after %1 frame(s); written to %2").arg(n).arg(QDir::toNativeSeparators(out))
                                  : QStringLiteral("Rendered %1 frame(s) to %2").arg(n).arg(QDir::toNativeSeparators(out));
         const QString prov = o.value("provenance").toString();
@@ -940,6 +1052,7 @@ void MainWindow::encode_aifill_movie(const QString& master_dir, const QString& f
     const int total = int(exrs.size());
     status->setText(QStringLiteral("Making the movie from the AI-filled frames…"));
     status->show();
+    render_progress(QStringLiteral("AI-filled MOV"), 0, total);
     btn_master_->setToolTip("Click to stop the movie (the filled EXR frames stay)");
     const QPointer<MainWindow> self(this);
     aces_deliver_id_ = -1;
@@ -968,11 +1081,14 @@ void MainWindow::encode_aifill_movie(const QString& master_dir, const QString& f
             st->setText(t);
             st->show();
             self->log(t);
+            self->render_progress_end(o.value("ok").toBool(), o.value("cancelled").toBool(), o.value("frames").toInt(),
+                                      o.value("movie").toString().isEmpty() ? master_dir : o.value("movie").toString());
             self->refresh_enabled();
             self->sync_ui();
         },
         [self, total](const QJsonObject& p) {
             if (!self) return;
+            self->render_progress(self->render_stage_, p.value("index").toInt(), total);
             if (auto* st = self->findChild<QLabel*>("renderStatus"))
                 st->setText(QStringLiteral("Making the AI-filled movie %1 / %2").arg(p.value("index").toInt()).arg(total));
         });

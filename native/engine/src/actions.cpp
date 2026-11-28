@@ -63,6 +63,7 @@ const std::vector<ActionSpec> kActions = {
     {"recent-clear", "Clear recent", "", "", O::Native, E::Always, ""},
     {"first-run", "Check the display and the model…", "", "", O::Native, E::Always, ""},
     {"open-folder", "Open folder of frames…", "", "", O::Native, E::Always, "Ctrl+Alt+O"},
+    {"import-sequence", "Import image sequence…", "", "", O::Native, E::Always, ""},   // 1.3.2: one frame, its numbered siblings
     {"quit", "Quit", "", "", O::Native, E::Always, "Ctrl+Q"},
     {"view-image", "Image", "", "view:0", O::Native, E::Always, ""},
     {"view-false-colour", "False colour", "", "view:1", O::Native, E::Always, ""},
@@ -151,7 +152,7 @@ const std::vector<ActionSpec> kActions = {
 
 const std::vector<MenuSpec> kMenus = {
     {"File",
-     {"open", "open-folder", ">Open recent", "recent-clear", "<", "open-package", "models", "close", "-", "open-project",
+     {"open", "open-folder", "import-sequence", ">Open recent", "recent-clear", "<", "open-package", "models", "close", "-", "open-project",
       "save-project", "save-project-as", "reopen-session", "-", "master", "-", "quit"}},
     {"Edit", {"undo", "redo", "-", "reset-recon", "reset-regions"}},
     {"Clip",

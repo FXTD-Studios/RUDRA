@@ -323,6 +323,7 @@ void MainWindow::encode_frames_movie(FramesMovie job) {
     if (!paths) {
         status->setText("Movie export stopped: " + QString::fromStdString(paths.error().message));
         status->show();
+        render_progress_end(false, false, 0, from_path(job.frames_dir));
         return;
     }
     if (encode_worker_.joinable()) encode_worker_.join();
@@ -337,12 +338,16 @@ void MainWindow::encode_frames_movie(FramesMovie job) {
     btn_master_->setToolTip("Click to stop the movie; the mastered frames stay");
     status->setText("Measuring " + QString::number(paths->size()) + " frames for the movie…");
     status->show();
+    render_progress(QStringLiteral("MOV 2 of 2: measuring"), 0, qint64(paths->size()));   // 1.3.2
     QPointer<MainWindow> self(this);
     encode_worker_ = std::thread([self, job, o, paths = std::move(*paths), cancel = &encode_cancel_]() mutable {
         auto progress = [self](const LinearDeliveryProgress& p) {
             const QString t = QStringLiteral("%1 %2 / %3").arg(p.encoding ? "Encoding" : "Measuring").arg(p.done).arg(p.total);
-            QMetaObject::invokeMethod(qApp, [self, t] {
+            const QString stage = p.encoding ? QStringLiteral("MOV 2 of 2: encoding") : QStringLiteral("MOV 2 of 2: measuring");
+            const qint64 done = qint64(p.done), total = qint64(p.total);
+            QMetaObject::invokeMethod(qApp, [self, t, stage, done, total] {
                 if (self) self->findChild<QLabel*>("renderStatus")->setText(t);
+                if (self) self->render_progress(stage, done, total);
             });
         };
         o.note = [self](const std::string& n) {
@@ -353,6 +358,9 @@ void MainWindow::encode_frames_movie(FramesMovie job) {
         };
         auto r = deliver_linear_frames(paths, job.output, o, 203.0 /* the linear master: 1.0 = 203 nits */, progress, cancel);
         QString line;
+        const bool ok = bool(r), stopped = cancel->load();
+        const qint64 written = r ? qint64(r->frames) : 0;
+        const QString where = r ? from_path(r->file) : from_path(job.frames_dir);
         if (r)
             line = QStringLiteral("Movie written: %1 · %2 frames · MaxCLL %3 · MaxFALL %4")
                        .arg(from_path(r->file))
@@ -362,9 +370,10 @@ void MainWindow::encode_frames_movie(FramesMovie job) {
         else
             line = "Movie export stopped: " + QString::fromStdString(r.error().message) + ". The mastered frames are in " +
                    from_path(job.frames_dir);
-        QMetaObject::invokeMethod(qApp, [self, line] {
+        QMetaObject::invokeMethod(qApp, [self, line, ok, stopped, written, where] {
             if (!self) return;
             self->encoding_movie_ = false;
+            self->render_progress_end(ok, stopped && !ok, written, where);
             self->btn_master_->setText("Master EXR");
             self->btn_master_->setToolTip({});
             auto* st = self->findChild<QLabel*>("renderStatus");

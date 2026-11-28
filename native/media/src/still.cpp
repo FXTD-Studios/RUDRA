@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <limits>
 #include <cstdio>
@@ -47,8 +48,25 @@ bool padded_8bit(const cv::Mat& m) {
 
 }  // namespace
 
+// OpenCV reads EXR only when asked to (OPENCV_IO_ENABLE_OPENEXR, read once, at its first EXR).
+static void enable_openexr() {
+    static const bool once = [] {
+#ifdef _WIN32
+        _putenv_s("OPENCV_IO_ENABLE_OPENEXR", "1");
+#else
+        setenv("OPENCV_IO_ENABLE_OPENEXR", "1", 0);
+#endif
+        return true;
+    }();
+    (void)once;
+}
+
 Result<DecodedStill> decode_sdr(std::span<const std::uint8_t> bytes) {
     if (bytes.empty()) return make_error(ErrorCode::ParseError, "The image file is empty.");
+    // 1.3.2: an EXR frame (by its magic number) holds linear light. It is read as Rec.709 SDR, clipped at 1.0 and
+    // encoded with BT.1886 (code = L^(1/2.4)): the display codes RUDRA reads. Values above 1.0 are what the SDR clipped.
+    const bool exr = bytes.size() >= 4 && bytes[0] == 0x76 && bytes[1] == 0x2f && bytes[2] == 0x31 && bytes[3] == 0x01;
+    if (exr) enable_openexr();
     const cv::Mat buf(1, static_cast<int>(bytes.size()), CV_8UC1, const_cast<std::uint8_t*>(bytes.data()));
     cv::Mat m;
     try {
@@ -56,7 +74,9 @@ Result<DecodedStill> decode_sdr(std::span<const std::uint8_t> bytes) {
     } catch (const cv::Exception& e) {
         return make_error(ErrorCode::ParseError, "The image could not be decoded.", e.what());
     }
-    if (m.empty()) return make_error(ErrorCode::Unsupported, "This image format is not readable by this build.");
+    if (m.empty())
+        return make_error(ErrorCode::Unsupported, exr ? "This EXR could not be read: this build's OpenCV reads no EXR."
+                                                      : "This image format is not readable by this build.");
     const int depth = m.depth(), ch = m.channels();
     if (depth != CV_8U && depth != CV_16U && depth != CV_32F)
         return make_error(ErrorCode::Unsupported, "Only 8-bit, 16-bit and float images are read.");
@@ -65,7 +85,7 @@ Result<DecodedStill> decode_sdr(std::span<const std::uint8_t> bytes) {
 
     const int h = m.rows, w = m.cols;
     DecodedStill out;
-    out.source = "opencv";
+    out.source = exr ? "opencv (EXR: linear Rec.709, as BT.1886 codes)" : "opencv";
     PlanarBuffer rgb(3, h, w);
     // BGR(A) -> RGB planes; grey replicated.
     auto channel_of = [&](int c) { return ch == 1 ? 0 : 2 - c; };
@@ -78,7 +98,7 @@ Result<DecodedStill> decode_sdr(std::span<const std::uint8_t> bytes) {
                 for (int c = 0; c < std::min(ch, 3); ++c)
                     if (!std::isnan(row[x * ch + c])) top = std::max(top, row[x * ch + c]);
         }
-        if (top > 1.0f + 1e-4f) {
+        if (!exr && top > 1.0f + 1e-4f) {
             char msg[256];
             std::snprintf(msg, sizeof msg,
                           "float input peaks at %.3f: this is scene-linear HDR, not an SDR frame. RUDRA "
@@ -89,7 +109,11 @@ Result<DecodedStill> decode_sdr(std::span<const std::uint8_t> bytes) {
         for (int c = 0; c < 3; ++c)
             for (int y = 0; y < h; ++y) {
                 const float* row = m.ptr<float>(y);
-                for (int x = 0; x < w; ++x) rgb.at(c, y, x) = std::clamp(row[x * ch + channel_of(c)], 0.0f, 1.0f);
+                for (int x = 0; x < w; ++x) {
+                    const float v = row[x * ch + channel_of(c)];
+                    rgb.at(c, y, x) = !exr ? std::clamp(v, 0.0f, 1.0f)
+                                           : std::isfinite(v) ? std::pow(std::clamp(v, 0.0f, 1.0f), 1.0f / 2.4f) : 0.0f;
+                }
             }
         out.bits = 32;
         out.distinct_codes = static_cast<int>(distinct_green<float>(m));

@@ -19,10 +19,12 @@
 #include <tuple>
 #include <QGridLayout>
 #include <QTextDocumentFragment>
+#include <QDesktopServices>
 #include <QHBoxLayout>
 #include <QEvent>
 #include <QLabel>
 #include <QProgressBar>
+#include <QUrl>
 #include <QScrollBar>
 #include <QLineEdit>
 #include <QMenuBar>
@@ -790,10 +792,20 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     trh->addWidget(src_info_);
     tv->addWidget(top);
     scrub_ = new ScrubBar(transport);
+    // 1.3.2 (user feedback: "move and see the frame we selected instead of waiting for the whole timeline to play"):
+    // a click or drag stops every kind of playback (it stopped only the plain one, so the learned route's and the
+    // headroom playback went on over the frame asked for), and while dragging only the playhead and the timecode
+    // follow; the panels catch up when the button is let go.
     scrub_->seek = [this](double f) {
         if (frames_.size() < 2) return;
-        play_.stop();
+        halt_playback();
+        scrubbing_ = true;
         step_to(int(std::lround(f * double(frames_.size() - 1))));
+    };
+    scrub_->released = [this] {
+        if (!scrubbing_) return;
+        scrubbing_ = false;
+        sync_ui();
     };
     tv->addWidget(scrub_, 1);
     v->addWidget(transport);
@@ -1946,6 +1958,37 @@ QWidget* MainWindow::build_right_rail() {
     status->setWordWrap(true);
     status->hide();
     form->addWidget(status);
+    {   // 1.3.2 (user request): this render's progress, apart from the Batch queue (MainWindow::render_progress)
+        auto* prow = new QWidget(rendc);
+        prow->setObjectName("renderProgressRow");
+        auto* ph = new QHBoxLayout(prow);
+        ph->setContentsMargins(0, 2, 0, 2);
+        ph->setSpacing(6);
+        auto* bar = new QProgressBar(prow);
+        bar->setObjectName("renderProgress");
+        bar->setRange(0, 1);
+        bar->setValue(0);
+        bar->setTextVisible(true);
+        bar->setFixedHeight(18);
+        ph->addWidget(bar, 1);
+        auto* stop = new QPushButton("Stop", prow);
+        stop->setObjectName("renderStop");
+        stop->setToolTip("Stop after the frame being written; the frames already written stay");
+        stop->setFixedHeight(22);
+        connect(stop, &QPushButton::clicked, this, [this] { stop_render(); });
+        ph->addWidget(stop);
+        auto* open = new QPushButton("Open folder", prow);
+        open->setObjectName("renderOpenFolder");
+        open->setFixedHeight(22);
+        open->hide();
+        connect(open, &QPushButton::clicked, this, [open] {
+            const QString f = open->property("folder").toString();
+            if (!f.isEmpty()) QDesktopServices::openUrl(QUrl::fromLocalFile(f));
+        });
+        ph->addWidget(open);
+        prow->hide();
+        form->addWidget(prow);
+    }
     auto* acts = new QWidget(rendc);
     auto* ah = new QHBoxLayout(acts);
     ah->setContentsMargins(0, 6, 0, 0);

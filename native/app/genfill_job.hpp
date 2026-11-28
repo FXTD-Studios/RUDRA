@@ -192,6 +192,13 @@ GenFillInstall genfill_install_plan();
 std::filesystem::path genfill_bootstrap_root();
 std::filesystem::path genfill_bootstrap_python();
 std::filesystem::path genfill_bootstrap_script(const std::filesystem::path& repo);
+// 1.3.2 (end-user report, 27 Nov 2026): everything "Set up automatically" printed, in a file the artist can
+// send: <genfill_bootstrap_root()>/setup.log (the run before it beside it, setup.previous.log).
+std::filesystem::path genfill_setup_log();
+// 1.3.2: the first weight file a Wan2.1-VACE folder's own index files name that is not there, relative to the
+// folder ("transformer/diffusion_pytorch_model-00002-of-00002.safetensors"); empty when every one is. A download
+// that stopped has its small files, transformer/config.json among them, and was taken for the model.
+QString genfill_wan_missing(const std::filesystem::path& base);
 
 // The setup: the saved paths while they exist, else the first candidate that
 // does (and it is saved); nullopt and `why` when a part is missing.

@@ -14,6 +14,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QPainter>
 #include <QPainterPath>
@@ -319,6 +320,7 @@ MediaPanel::MediaPanel(MediaLibrary* library, QWidget* parent) : QWidget(parent)
     auto* add = tool("mediaImport", QStringLiteral("+"), QStringLiteral("Import files or a folder of frames"), false);
     connect(add, &QPushButton::clicked, this, [this, add] {
         QMenu m(this);
+        if (import_media) m.addAction(QStringLiteral("Import\u2026 (videos, images, sequences)"), this, [this] { import_media(); });
         m.addAction(QStringLiteral("Import files…"), this, [this] { if (import_files) import_files(); });
         m.addAction(QStringLiteral("Import a folder of frames…"), this, [this] { if (import_folder) import_folder(); });
         m.exec(add->mapToGlobal(QPoint(0, add->height())));
@@ -710,9 +712,59 @@ void MediaPanel::select(const QStringList& paths) {
         list_view_->item(i)->setSelected(clean.contains(list_view_->item(i)->data(Qt::UserRole).toString()));
 }
 
+int MediaPanel::clear_kind(const QString& kind) {
+    QStringList gone;
+    for (const MediaClip& c : lib_->clips())
+        if (kind.isEmpty() || c.kind == kind) gone << c.path;
+    int n = 0;
+    for (const QString& p : gone) n += lib_->remove(p) ? 1 : 0;
+    if (n) {
+        refresh();
+        if (changed) changed();
+    }
+    return n;
+}
+
 void MediaPanel::context_menu(const QPoint& at) {
+    QMenu m(this);
+    // 1.3.2 (user request): importing, clearing and the GPU memory, wherever the panel is right-clicked.
+    auto common_top = [this, &m] {
+        if (import_media) m.addAction(QStringLiteral("Import\u2026 (videos, images, sequences)"), this, [this] { import_media(); });
+        if (import_folder) m.addAction(QStringLiteral("Import a folder of frames\u2026"), this, [this] { import_folder(); });
+    };
+    auto common_bottom = [this, &m] {
+        m.addSeparator();
+        QMenu* clr = m.addMenu(QStringLiteral("Clear from Media"));
+        clr->setObjectName(QStringLiteral("mediaClearMenu"));
+        for (const auto& [kind, words] : std::vector<std::pair<QString, QString>>{
+                 {QString(), QStringLiteral("Everything")},
+                 {QStringLiteral("movie"), QStringLiteral("Videos")},
+                 {QStringLiteral("still"), QStringLiteral("Images")},
+                 {QStringLiteral("folder"), QStringLiteral("Image sequences")}}) {
+            int count = 0;
+            for (const MediaClip& c : lib_->clips()) count += (kind.isEmpty() || c.kind == kind) ? 1 : 0;
+            QAction* a = clr->addAction(QStringLiteral("%1 (%2)").arg(words).arg(count), this, [this, kind, words, count] {
+                if (QMessageBox::question(this, QStringLiteral("Clear from Media"),
+                                          QStringLiteral("Take %1 off Media (%2 clip%3)?\n\nThe files stay on disk, and the "
+                                                         "shot on screen stays open.")
+                                              .arg(words.toLower()).arg(count).arg(count == 1 ? "" : "s")) == QMessageBox::Yes)
+                    clear_kind(kind);
+            });
+            a->setEnabled(count > 0);
+        }
+        if (clear_vram) {
+            QAction* v = m.addAction(QStringLiteral("Clear VRAM"), this, [this] { clear_vram(); });
+            v->setToolTip(QStringLiteral("Frees the GPU memory RUDRA holds: the AI fill preview model, and the learned model's "
+                                         "cache (it loads again by itself)"));
+        }
+    };
     QListWidgetItem* it = list_view_->itemAt(at);
-    if (!it) return;
+    if (!it) {   // the empty part of the panel: the panel's own commands only
+        common_top();
+        common_bottom();
+        m.exec(list_view_->viewport()->mapToGlobal(at));
+        return;
+    }
     if (!it->isSelected()) {   // a right click on a clip outside the selection: that clip alone
         list_view_->clearSelection();
         it->setSelected(true);
@@ -720,7 +772,6 @@ void MediaPanel::context_menu(const QPoint& at) {
     const QStringList sel = selected();
     const QString p = it->data(Qt::UserRole).toString();
     const QString n = sel.size() > 1 ? QStringLiteral(" (%1 clips)").arg(sel.size()) : QString();
-    QMenu m(this);
     m.addAction(QStringLiteral("Open in viewer") + n, this, [this, sel] { if (open) open(sel); });
     if (batch) m.addAction(QStringLiteral("Add to batch queue") + n, this, [this, sel] { batch(sel); });
     if (settings_menu) settings_menu(m.addMenu(QStringLiteral("Settings")), sel);
@@ -759,7 +810,47 @@ void MediaPanel::context_menu(const QPoint& at) {
             if (changed) changed();
         }
     });
+    m.addSeparator();
+    common_top();
+    common_bottom();
     m.exec(list_view_->viewport()->mapToGlobal(at));
+}
+
+QStringList media_import_paths(const QStringList& picked, bool sequences, QStringList* notes) {
+    QStringList out;
+    auto add = [&out](const QString& p) {
+        const QString c = MediaLibrary::clean(p);
+        if (!out.contains(c)) out << c;
+    };
+    for (const QString& p : picked) {
+        if (!sequences || MediaLibrary::kind_of(p) != QStringLiteral("still")) {
+            add(p);
+            continue;
+        }
+        const auto seq = numbered_sequence_of(std::filesystem::path(p.toStdWString()));
+        if (seq.size() < 2) {   // not a numbered sequence: the still alone
+            add(p);
+            continue;
+        }
+        const QString dir = QFileInfo(p).absolutePath();
+        if (out.contains(MediaLibrary::clean(dir))) continue;   // another frame of it was picked
+        add(dir);
+        // The folder clip opens every frame in it: say when there is more than this sequence.
+        int frames = 0;
+        const auto& sufs = frame_suffixes();
+        for (const QFileInfo& f : QDir(dir).entryInfoList(QDir::Files)) {
+            const std::string s = f.suffix().toLower().prepend('.').toStdString();
+            frames += std::find(sufs.begin(), sufs.end(), s) != sufs.end() ? 1 : 0;
+        }
+        if (notes)
+            *notes << (frames > int(seq.size())
+                           ? QStringLiteral("%1: a sequence of %2 frames, imported as its folder, which holds %3 other frame(s) "
+                                            "that open with it")
+                                 .arg(QDir::toNativeSeparators(dir)).arg(seq.size()).arg(frames - int(seq.size()))
+                           : QStringLiteral("%1: a sequence of %2 frames, imported as one clip")
+                                 .arg(QDir::toNativeSeparators(dir)).arg(seq.size()));
+    }
+    return out;
 }
 
 void MediaPanel::dragEnterEvent(QDragEnterEvent* e) {

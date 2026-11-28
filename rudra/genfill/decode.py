@@ -8,12 +8,16 @@ sources rounded to whole codes, as native/media/src/aces_frames.cpp); stills thr
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
 import numpy as np
 
-FRAME_EXT = {".png", ".tif", ".tiff", ".jpg", ".jpeg", ".dpx", ".bmp"}
+FRAME_EXT = {".png", ".tif", ".tiff", ".jpg", ".jpeg", ".dpx", ".bmp", ".exr"}
+# 1.3.2: an EXR frame holds linear light: read as Rec.709 SDR, clipped at 1.0 and encoded with BT.1886 (code =
+# L^(1/2.4)), as the app reads it (native/media/src/still.cpp). OpenCV reads EXR only when asked to.
+os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
 
 
 def _probe(movie: Path) -> dict:
@@ -52,6 +56,10 @@ def decode_frames(folder: Path, first: int, count: int) -> list[np.ndarray]:
             raise ValueError(f"cannot read {p}")
         if img.ndim == 2:
             img = np.repeat(img[..., None], 3, 2)
+        if p.suffix.lower() == ".exr":
+            lin = np.nan_to_num(img[..., :3][..., ::-1].astype(np.float64), nan=0.0, posinf=1.0, neginf=0.0)
+            out.append(np.clip(lin, 0.0, 1.0) ** (1.0 / 2.4))
+            continue
         scale = 65535.0 if img.dtype == np.uint16 else 255.0
         out.append(img[..., :3][..., ::-1].astype(np.float64) / scale)
     return out

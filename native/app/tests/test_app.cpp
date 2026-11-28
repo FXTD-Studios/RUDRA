@@ -35,6 +35,7 @@
 #include <QMouseEvent>
 #include <QComboBox>
 #include <QFile>
+#include <QProgressBar>
 #include <QPlainTextEdit>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
@@ -1343,6 +1344,53 @@ TEST(AppDeliver, MasterEXRStopsARenderAfterTheFrameInHand) {
     EXPECT_LT(started.load(), 20);
     EXPECT_EQ(w.findChild<QPushButton*>("btnMaster")->text(), "Master EXR");
     std::filesystem::remove_all(root);
+}
+
+// 1.3.2 (user request): the Render card shows this render's own progress, apart from the Batch queue: what is
+// written and how far, then Done with the time and Open folder; its Stop keeps what was written.
+TEST(AppDeliver, TheRenderCardShowsThisRendersProgress) {
+    app::MainWindow w(false);
+    w.show();
+    ASSERT_TRUE(QTest::qWaitForWindowExposed(&w));
+    auto* row = w.findChild<QWidget*>("renderProgressRow");
+    auto* bar = w.findChild<QProgressBar*>("renderProgress");
+    ASSERT_NE(row, nullptr);
+    ASSERT_NE(bar, nullptr);
+    EXPECT_TRUE(row->isHidden());
+    const auto root = fresh_dir("render-progress");
+    w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(root.string()));
+    w.findChild<QComboBox*>("renderMode")->setCurrentIndex(1);
+    w.master([&](std::size_t) -> Result<MasterFrame> {
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        return small_frame();
+    }, 3);
+    EXPECT_FALSE(row->isHidden());
+    EXPECT_TRUE(bar->format().contains("sequence")) << bar->format().toStdString();
+    EXPECT_FALSE(w.findChild<QPushButton*>("renderStop")->isHidden());
+    ASSERT_TRUE(wait_for([&] { return !w.mastering() && bar->format().startsWith("Done: 3 frames in"); }))
+        << bar->format().toStdString();
+    EXPECT_EQ(bar->value(), bar->maximum());
+    EXPECT_TRUE(w.findChild<QPushButton*>("renderStop")->isHidden());
+    EXPECT_FALSE(w.findChild<QPushButton*>("renderOpenFolder")->isHidden());
+
+    // A longer one, stopped from the bar.
+    const auto root2 = fresh_dir("render-progress-stop");
+    w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(root2.string()));
+    std::atomic<int> started{0};
+    w.master([&](std::size_t) -> Result<MasterFrame> {
+        ++started;
+        std::this_thread::sleep_for(std::chrono::milliseconds(60));
+        return small_frame();
+    }, 20);
+    ASSERT_TRUE(wait_for([&] { return started >= 1; }));
+    w.findChild<QPushButton*>("renderStop")->click();
+    ASSERT_TRUE(wait_for([&] { return !w.mastering() && bar->format().startsWith("Stopped after"); }))
+        << bar->format().toStdString();
+    EXPECT_LT(started.load(), 20);
+    w.stop_render();   // nothing running: it starts nothing
+    EXPECT_FALSE(w.mastering());
+    std::filesystem::remove_all(root);
+    std::filesystem::remove_all(root2);
 }
 
 // ---- step 5: the scope widgets against the page's own rasters -------------
@@ -3248,6 +3296,30 @@ TEST(AppPlayback, PlaysWithTheModelAndRefinesWhereItStops) {
     EXPECT_TRUE(w.action("playback-side-960")->isChecked());
 }
 
+// 1.3.2 (user feedback): a click on the timeline shows that frame at once, also while the shot plays (playback
+// stops: it used to carry on over the frame asked for on the learned and headroom routes).
+TEST(AppPlayback, AClickOnTheTimelineShowsThatFrameWhilePlaying) {
+    QSettings().clear();
+    Window win("full");   // 1600 x 1000, shown: the timeline has its width
+    auto& w = win.w;
+    w.open_source(QString::fromStdString(decode_dir().string()), true);
+    ASSERT_TRUE(wait_for([&] { return !w.frames().empty() && w.presented_index() == 0; }));
+    const int n = int(w.frames().size());
+    ASSERT_GE(n, 3);
+    QWidget* scrub = w.findChild<QWidget*>("scrub");   // ScrubBar has no Q_OBJECT: found as a QWidget
+    ASSERT_NE(scrub, nullptr);
+    ASSERT_GT(scrub->width(), 10);
+    w.run("play");
+    ASSERT_TRUE(w.playing());
+    QTest::mouseClick(scrub, Qt::LeftButton, Qt::NoModifier, QPoint(scrub->width() - 1, scrub->height() / 2));
+    EXPECT_FALSE(w.playing());
+    ASSERT_TRUE(wait_for([&] { return w.presented_index() == n - 1; })) << w.presented_index();
+    // And without playing: the middle.
+    QTest::mouseClick(scrub, Qt::LeftButton, Qt::NoModifier, QPoint(scrub->width() / 2, scrub->height() / 2));
+    ASSERT_TRUE(wait_for([&] { return std::abs(w.presented_index() - (n - 1) / 2) <= 1; })) << w.presented_index();
+    QSettings().clear();
+}
+
 TEST(AppPlayback, TheMovieDecoderSkipsAheadWithoutStalling) {
     if (!rudra::find_executable("ffmpeg") || !rudra::find_executable("ffprobe")) GTEST_SKIP() << "no ffmpeg";
     const auto clip = std::filesystem::path(RUDRA_GOLDEN_DIR) / "video" / "clips" / "bars_709.mp4";
@@ -4772,6 +4844,31 @@ TEST(GenFill, SetupSaysWhatIsMissing) {
     QSettings().setValue("genfill/repo", QString::fromStdString((root / "nowhere").string()));
     EXPECT_FALSE(app::genfill_setup(&why));
     EXPECT_TRUE(why.contains("repository")) << why.toStdString();
+    QSettings().clear();
+}
+
+// 1.3.2 (end-user report, 27 Nov 2026): a Wan download that stopped has its small files, transformer/config.json
+// among them, and was taken for the model. The weights its own index files name are there too, or it is not.
+TEST(GenFill, AWanDownloadThatStoppedIsNotTakenForTheModel) {
+    QSettings().clear();
+    const auto root = aces_tmp("genfill-stopped");
+    fake_genfill(root, kFillOk);
+    QSettings().setValue("genfill/search", false);   // this machine's own models must not stand in
+    const auto wan = root / "models" / "wan";
+    write_text(wan / "transformer" / "diffusion_pytorch_model.safetensors.index.json",
+               R"({"metadata": {}, "weight_map": {"a.weight": "diffusion_pytorch_model-00001-of-00002.safetensors",
+                  "b.weight": "diffusion_pytorch_model-00002-of-00002.safetensors"}})");
+    write_text(wan / "transformer" / "diffusion_pytorch_model-00001-of-00002.safetensors", "x");
+    EXPECT_EQ(app::genfill_wan_missing(wan).toStdString(), "transformer/diffusion_pytorch_model-00002-of-00002.safetensors");
+    QString why;
+    EXPECT_FALSE(app::genfill_setup(&why));
+    EXPECT_TRUE(why.contains("did not finish") && why.contains("carries on")) << why.toStdString();
+    write_text(wan / "transformer" / "diffusion_pytorch_model-00002-of-00002.safetensors", "x");
+    write_text(wan / "vae" / "config.json", "{}");
+    EXPECT_EQ(app::genfill_wan_missing(wan).toStdString(), "vae/diffusion_pytorch_model.safetensors");
+    write_text(wan / "vae" / "diffusion_pytorch_model.safetensors", "x");
+    EXPECT_TRUE(app::genfill_wan_missing(wan).isEmpty());
+    EXPECT_TRUE(app::genfill_setup(&why)) << why.toStdString();
     QSettings().clear();
 }
 
@@ -6705,6 +6802,10 @@ TEST(AppCheck, TheWindowOffersWhatIsMissingAndInstallsTheTickedOnes) {
     auto* setup = d->findChild<QPushButton*>("checkAifillSetup");
     ASSERT_NE(setup, nullptr);
     EXPECT_FALSE(setup->isEnabled());
+    if (auto* t = d->findChild<QCheckBox*>("checkTick_aifillSetup")) {   // 1.3.2: nor in Install selected
+        EXPECT_FALSE(t->isEnabled());
+        EXPECT_FALSE(t->isChecked());
+    }
     EXPECT_EQ(d->findChild<QPushButton*>("checkInstall")->text(), "Install selected (1)");
     d->install_selected();
     ASSERT_TRUE(wait_for([&] { return md->state("demo") == app::InstallState::Installed && md->active().isEmpty(); }));
@@ -6713,6 +6814,18 @@ TEST(AppCheck, TheWindowOffersWhatIsMissingAndInstallsTheTickedOnes) {
     EXPECT_TRUE(d->findChild<QLabel*>("checkProgressText")->text().contains("Demo model: installed and checked"));
     EXPECT_TRUE(d->report().contains("Demo model 1.0: installed"));
     EXPECT_TRUE(d->report().contains("[Warning] AI fill (optional)"));
+    // 1.3.2 (user request): where AI fill can run, its base model and Python are one more tick of Install selected,
+    // never ticked by itself (about 23 GB). A computer where the setup is found already has no tick (the studio PC).
+    f.gpus = std::vector<app::GpuFact>{{"NVIDIA GeForce RTX 4090", 24.0}};
+    d->set_facts(f);
+    if (auto* t = d->findChild<QCheckBox*>("checkTick_aifillSetup")) {
+        EXPECT_TRUE(t->isEnabled());
+        EXPECT_FALSE(t->isChecked());
+        t->setChecked(true);
+        EXPECT_TRUE(d->findChild<QPushButton*>("checkInstall")->isEnabled());
+        EXPECT_TRUE(d->findChild<QPushButton*>("checkInstall")->text().startsWith("Install selected ("));
+        t->setChecked(false);   // not installed here: that would run the real setup
+    }
     d->accept();
     EXPECT_EQ(QSettings().value("check/seenVersion").toString(), QCoreApplication::applicationVersion());
     QSettings().clear();
@@ -8791,6 +8904,47 @@ TEST(Media, ThePanelIsTheLeftRailAndAClipDragsAsItsFile) {
     QSettings().remove("media/library");
 }
 
+// 1.3.2 (user request): Media's right-click: Import… (videos, images, a box for image sequences), Clear from Media by
+// kind, and Clear VRAM.
+TEST(Media, ImportBringsASequenceInAsOneClipAndClearTakesAKindOff) {
+    QSettings().remove("media/library");
+    Window win("full");
+    auto* panel = win.w.media_panel();
+    auto& lib = win.w.library();
+    lib.clear();
+    const auto dir = fresh_dir("media-import");
+    std::filesystem::create_directories(dir / "seq");
+    for (const char* f : {"seq/sh_0001.exr", "seq/sh_0002.exr", "seq/sh_0003.exr", "photo.jpg", "clip.mov"})
+        std::ofstream(dir / f) << "x";
+    auto q = [&](const char* f) { return QString::fromStdString((dir / f).string()); };
+    QStringList notes;
+    // The box on: one frame of the sequence (or two) brings its folder in, once.
+    const QStringList with = app::media_import_paths({q("seq/sh_0002.exr"), q("seq/sh_0003.exr"), q("photo.jpg"), q("clip.mov")},
+                                                     true, &notes);
+    ASSERT_EQ(with.size(), 3) << with.join(" | ").toStdString();
+    EXPECT_EQ(QFileInfo(with[0]), QFileInfo(q("seq")));
+    EXPECT_EQ(notes.size(), 1);
+    EXPECT_TRUE(notes.front().contains("3 frames")) << notes.front().toStdString();
+    // Off: every image is a clip of its own.
+    EXPECT_EQ(app::media_import_paths({q("seq/sh_0002.exr"), q("seq/sh_0003.exr")}, false).size(), 2);
+    for (const QString& p : with) lib.add(p);
+    lib.add(q("seq/sh_0001.exr"));
+    panel->refresh();
+    ASSERT_EQ(panel->list()->count(), 4);
+    EXPECT_EQ(panel->clear_kind("folder"), 1);   // the sequence
+    EXPECT_EQ(panel->clear_kind("movie"), 1);
+    EXPECT_EQ(panel->list()->count(), 2);
+    EXPECT_EQ(panel->clear_kind({}), 2);         // everything
+    EXPECT_EQ(panel->list()->count(), 0);
+    EXPECT_TRUE(std::filesystem::exists(dir / "photo.jpg"));   // nothing on disk is touched
+    // Clear VRAM says what it did (here no AI fill preview; the studio PC may have the learned engine loaded).
+    const QString said = win.w.clear_vram();
+    EXPECT_TRUE(said.startsWith("Clear VRAM:")) << said.toStdString();
+    EXPECT_FALSE(said.contains("not while")) << said.toStdString();
+    std::filesystem::remove_all(dir);
+    QSettings().remove("media/library");
+}
+
 #ifdef RUDRA_HAVE_STILL_DECODE
 TEST(Media, AClipDroppedOnThePictureOpensAsAShotOfItsOwn) {
     QSettings().remove("media/library");
@@ -9302,6 +9456,31 @@ TEST(GenFill, TheSetupDialogInstallsFromAFolderOrZip) {
     ASSERT_NE(from->menu(), nullptr);
     EXPECT_EQ(from->menu()->actions().size(), 4);
     EXPECT_NE(d.findChild<QLineEdit*>("genfillSetup_florence"), nullptr);
+}
+
+// 1.3.2 (end-user report, 27 Nov 2026): the last setup's whole log is one click from the clipboard, once there is one.
+TEST(GenFill, TheSetupDialogCopiesTheLastSetupsLog) {
+    const QString log = app::from_path(app::genfill_setup_log());
+    QFile::remove(log);
+    {
+        app::GenFillSetupDialog none(nullptr);
+        auto* copy = none.findChild<QPushButton*>("genfillSetupCopyLog");
+        ASSERT_NE(copy, nullptr);
+        EXPECT_TRUE(copy->isHidden());
+    }
+    QDir().mkpath(QFileInfo(log).absolutePath());
+    {
+        QFile f(log);
+        ASSERT_TRUE(f.open(QIODevice::WriteOnly));
+        f.write("== the setup ended: exit code 2\n");
+    }
+    {
+        app::GenFillSetupDialog one(nullptr);
+        auto* copy = one.findChild<QPushButton*>("genfillSetupCopyLog");
+        ASSERT_NE(copy, nullptr);
+        EXPECT_FALSE(copy->isHidden());
+    }
+    QFile::remove(log);
 }
 
 // 1.2.6: Florence-2 (Suggest a prompt) is downloaded with the models the first time: Check this computer

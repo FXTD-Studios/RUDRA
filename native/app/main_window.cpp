@@ -7,6 +7,7 @@
 #include "qc_report.hpp"      // 1.2.6: the QC report
 #include "system_check.hpp"   // 1.2.5: the retired Beta 2 models, Check this computer
 #include "aces_engine.hpp"
+#include "genfill_preview.hpp"
 #include "rudra/engine/headroom_export.hpp"
 #include "rudra/video/headroom_render.hpp"
 #include "startup.hpp"
@@ -19,7 +20,9 @@
 
 #include <QActionGroup>
 #include <QApplication>
+#include <QCheckBox>
 #include <QDialog>
+#include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -357,6 +360,28 @@ void MainWindow::bind_handlers() {
         if (!files.isEmpty()) open_paths(files);
     };
     h["open-folder"] = [this] { open_source({}, true); };
+    // 1.3.2 (user feedback): an image sequence (EXR, PNG, JPG, TIFF ...) from one of its frames: the numbered frames
+    // beside it, in order, open as one shot.
+    h["import-sequence"] = [this] {
+        if (waits_for_model()) return;
+        const QString f = QFileDialog::getOpenFileName(
+            this, "Import an image sequence: choose one of its frames", {},
+            QStringLiteral("Image sequences (*.exr *.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp);;All files (*)"));
+        if (f.isEmpty()) return;
+        std::vector<std::filesystem::path> frames = numbered_sequence_of(to_path(f));
+        log(QStringLiteral("Import image sequence: %1 frame%2, %3 to %4")
+                .arg(frames.size())
+                .arg(frames.size() == 1 ? "" : "s")
+                .arg(from_path(frames.front().filename()), from_path(frames.back().filename())));
+        // A shot of its own, as open_source opens one: these frames, kept by name in the project.
+        remember_source(f);
+        shot_kind_ = "files";
+        shot_sources_.clear();
+        for (const auto& p : frames) shot_sources_.push_back(std::filesystem::absolute(p));
+        shot_video_.reset();
+        start_engine(std::move(frames));
+        mark_dirty();
+    };
     h["open-package"] = [this] { open_package(); };
     h["models"] = [this] { open_model_manager(); };
     h["aces-master"] = [this] { open_aces_master(); };
@@ -1333,6 +1358,9 @@ void MainWindow::close_frames() {
 }
 
 void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at) {
+    // 1.3.2: another shot: the last render's bar goes, unless that render is still going.
+    if (!render_busy())
+        if (auto* row = findChild<QWidget*>("renderProgressRow")) row->hide();
     play_hold_.reset();   // another model or shot: nothing of the last one is held
     halt_playback();
     engine_.reset();   // joins the old worker before the new one starts
@@ -1451,7 +1479,8 @@ void MainWindow::step_to(int i) {
         current_ = ((i % n) + n) % n;
         waiting_ = true;
         aces_request(current_);
-        sync_ui();
+        if (scrubbing_) sync_playhead();   // 1.3.2: dragging the timeline: the panels follow on release
+        else sync_ui();
         return;
     }
     if (!engine_ || frames_.empty()) return;
@@ -1462,7 +1491,7 @@ void MainWindow::step_to(int i) {
     engine_->show(current_);
     // Playing: only the playhead moves, so only it is drawn again. sync_ui()
     // rebuilt every panel for every frame (4 Nov 2026); the stop calls it.
-    if (play_.isActive()) sync_playhead();
+    if (play_.isActive() || scrubbing_) sync_playhead();
     else sync_ui();
 }
 
@@ -2636,11 +2665,18 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     render_qc_context_ = qc_context_now(QStringLiteral("Analytic reconstruction"),
                                         QJsonDocument::fromJson(QByteArray::fromStdString(master_request_json(q))).object());
     master_job_ = std::make_unique<MasterJob>(model, q, *targets, std::move(prepare));
+    // 1.3.2: the Render card's progress bar (render_progress): what is written, and for a MOV its first step.
+    const QString ext = QString::fromStdString(targets->front().extension().string()).mid(1).toUpper();
+    const QString stage = to_movie ? QStringLiteral("MOV 1 of 2: its frames")
+                                   : QStringLiteral("%1 %2").arg(ext.isEmpty() ? QStringLiteral("Master") : ext,
+                                                                 sequence ? QStringLiteral("sequence") : QStringLiteral("still"));
+    render_progress(stage, 0, qint64(n));
     master_job_->start(
-        [self, n](std::size_t i) {
-            QMetaObject::invokeMethod(qApp, [self, i, n] {
+        [self, n, stage](std::size_t i) {
+            QMetaObject::invokeMethod(qApp, [self, i, n, stage] {
                 if (self) self->findChild<QLabel*>("renderStatus")->setText(QStringLiteral("Rendering %1 / %2").arg(i + 1).arg(n));
                 if (self) self->findChild<QLabel*>("renderStatus")->show();
+                if (self) self->render_progress(stage, qint64(i), qint64(n));
             });
         },
         [self](const MasterProgress& p) {
@@ -2680,6 +2716,8 @@ void MainWindow::master_finished(const MasterOutcome& o, const QString& folder) 
         if (!o.error && !o.cancelled) movie = std::move(*frames_movie_);
         frames_movie_.reset();
     }
+    // 1.3.2: the bar ends here, unless the movie's encode carries it on.
+    if (!movie) render_progress_end(!o.error, o.cancelled, qint64(o.completed), folder);
     delivered_ += int(o.completed);
     findChild<QLabel*>("colDelivered")->setText(QString::number(delivered_));
     if (o.completed > 0) note_media_delivered();
@@ -2755,7 +2793,7 @@ QString open_file_filter() {
     // Every movie the reader opens (video_suffixes) beside the stills; the movies first, so a .mov or .mp4 is never hidden.
     QStringList movies;
     for (const auto& s : video_suffixes()) movies << "*" + QString::fromStdString(s);
-    const QString stills = QStringLiteral("*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp");
+    const QString stills = QStringLiteral("*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp *.exr");   // .exr: 1.3.2
     return QStringLiteral("Stills and movies (%1 %2);;Movies (%2);;Stills (%1);;RUDRA projects (*.rudra);;All files (*)")
         .arg(stills, movies.join(' '));
 }
@@ -2815,7 +2853,7 @@ void MainWindow::open_paths(const QStringList& paths) {
     if (!skipped.isEmpty()) {
         QStringList movies;
         for (const auto& s : video_suffixes()) movies << QString::fromStdString(s.substr(1)).toUpper();
-        say(QStringLiteral("RUDRA does not open %1 (stills: PNG, JPEG, TIFF, BMP, WebP; movies: %2)")
+        say(QStringLiteral("RUDRA does not open %1 (stills: PNG, JPEG, TIFF, BMP, WebP, EXR; movies: %2)")
                 .arg(skipped.join(QStringLiteral(", ")), movies.join(QStringLiteral(", "))));
     }
     add_files(files);
@@ -3599,6 +3637,66 @@ void MainWindow::build_media_panel(QVBoxLayout* v, int at) {
         const QString dir = QFileDialog::getExistingDirectory(this, QStringLiteral("Import a folder of frames"));
         if (!dir.isEmpty()) import({dir});
     };
+    // 1.3.2 (user request): Import… from the right-click menu: videos and images, and a box that brings a numbered
+    // image sequence in as one clip (media_import_paths).
+    media_panel_->import_media = [this, import] {
+        QDialog d(this);
+        d.setObjectName(QStringLiteral("mediaImportDialog"));
+        d.setWindowTitle(QStringLiteral("Import into Media"));
+        auto* v = new QVBoxLayout(&d);
+        auto* what = new QLabel(QStringLiteral("Nothing picked yet."), &d);
+        what->setObjectName(QStringLiteral("mediaImportPicked"));
+        what->setWordWrap(true);
+        auto* row = new QHBoxLayout;
+        auto* files_btn = new QPushButton(QStringLiteral("Videos and images\u2026"), &d);
+        auto* folder_btn = new QPushButton(QStringLiteral("Folder of frames\u2026"), &d);
+        row->addWidget(files_btn);
+        row->addWidget(folder_btn);
+        row->addStretch(1);
+        auto* seq = new QCheckBox(QStringLiteral("Image sequence: numbered frames come in as one clip"), &d);
+        seq->setObjectName(QStringLiteral("mediaImportSequence"));
+        seq->setChecked(QSettings().value(QStringLiteral("media/importSequence"), false).toBool());   // off: phone photos are numbered too
+        seq->setToolTip(QStringLiteral("Pick one frame of shot_0001.exr to shot_0240.exr (or all of them) and the sequence is one "
+                                       "clip. Off: every image is a clip of its own"));
+        auto* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &d);
+        box->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Import"));
+        box->button(QDialogButtonBox::Ok)->setEnabled(false);
+        v->addLayout(row);
+        v->addWidget(what);
+        v->addWidget(seq);
+        v->addWidget(box);
+        auto picked = std::make_shared<QStringList>();
+        auto show = [what, box, picked] {
+            QStringList names;
+            for (const QString& p : *picked) names << QFileInfo(p).fileName();
+            what->setText(picked->isEmpty() ? QStringLiteral("Nothing picked yet.")
+                                            : QStringLiteral("%1 picked: %2").arg(picked->size()).arg(names.mid(0, 6).join(QStringLiteral(", ")) +
+                                                                                                     (names.size() > 6 ? QStringLiteral(", \u2026") : QString())));
+            box->button(QDialogButtonBox::Ok)->setEnabled(!picked->isEmpty());
+        };
+        connect(files_btn, &QPushButton::clicked, &d, [&d, picked, show] {
+            const QStringList f = QFileDialog::getOpenFileNames(&d, QStringLiteral("Videos and images"), {}, open_file_filter());
+            for (const QString& p : f) if (!picked->contains(p)) *picked << p;
+            show();
+        });
+        connect(folder_btn, &QPushButton::clicked, &d, [&d, picked, show] {
+            const QString f = QFileDialog::getExistingDirectory(&d, QStringLiteral("A folder of frames"));
+            if (!f.isEmpty() && !picked->contains(f)) *picked << f;
+            show();
+        });
+        connect(box, &QDialogButtonBox::accepted, &d, &QDialog::accept);
+        connect(box, &QDialogButtonBox::rejected, &d, &QDialog::reject);
+        if (d.exec() != QDialog::Accepted || picked->isEmpty()) return;
+        QSettings().setValue(QStringLiteral("media/importSequence"), seq->isChecked());
+        QStringList notes;
+        import(media_import_paths(*picked, seq->isChecked(), &notes));
+        for (const QString& n : notes) log(QStringLiteral("Media: ") + n);
+        if (!notes.isEmpty()) statusBar()->showMessage(notes.back(), 10000);
+    };
+    media_panel_->clear_vram = [this] {
+        const QString s = clear_vram();
+        statusBar()->showMessage(s, 12000);
+    };
     media_panel_->settings_menu = [this](QMenu* m, const QStringList& paths) { fill_settings_menu(m, paths); };
     media_panel_->bin_settings_menu = [this](QMenu* m, const QString& bin) {
         QAction* a = m->addAction(QStringLiteral("Paste settings to every clip in this bin"), this, [this, bin] {
@@ -3744,6 +3842,37 @@ void MainWindow::open_media_list(const QStringList& paths) {
         log(s);
         statusBar()->showMessage(s, 12000);
     }
+}
+
+QString MainWindow::clear_vram() {
+    QString s;
+    if (render_busy() || genfill_running() || batch_running()) {
+        s = QStringLiteral("Clear VRAM: not while a render, the batch or an AI fill runs (it uses that memory); stop it first.");
+    } else {
+        QStringList freed, kept;
+        if (genfill_server_) {
+            if (genfill_server_->busy()) {
+                kept << QStringLiteral("the AI fill preview, which is drawing");
+            } else {
+                const bool was = genfill_server_->loaded();
+                genfill_server_.reset();   // its process ends, and the model's memory with it
+                if (was) freed << QStringLiteral("the AI fill preview's model (it loads again at the next preview)");
+            }
+        }
+        if (aces_engine_ && aces_engine_->state() == AcesEngine::State::Ready && !aces_engine_->busy()) {
+            aces_rt_stop();
+            const AcesEngine::Config c = aces_engine_->config();
+            if (aces_engine_->stop()) {
+                aces_engine_->start(c);   // loads again with nothing cached
+                freed << QStringLiteral("the learned ACES 2.0 engine's cache (the model is loading again)");
+            }
+        }
+        s = freed.isEmpty() ? QStringLiteral("Clear VRAM: RUDRA held no GPU memory it could free.")
+                            : QStringLiteral("Clear VRAM: freed ") + freed.join(QStringLiteral("; ")) + QLatin1Char('.');
+        if (!kept.isEmpty()) s += QStringLiteral(" Kept ") + kept.join(QStringLiteral("; ")) + QLatin1Char('.');
+    }
+    log(s);
+    return s;
 }
 
 int MainWindow::batch_add_media(const QStringList& paths, QString* why) {

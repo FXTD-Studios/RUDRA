@@ -41,6 +41,11 @@ Result<FrameSequence> open_sequence(const std::string& raw);
 bool natural_less(const std::string& a, const std::string& b);
 
 const std::vector<std::string>& frame_suffixes();   // sorted, as the Python prints them
+
+// The numbered sequence a frame belongs to (1.3.2, File > Import image sequence): the files beside it whose names
+// differ from its own only in their last run of digits (SH010.0998.exr ... SH010.1002.exr, any padding), with its
+// extension, in frame-number order. A name without digits is a sequence of one.
+std::vector<std::filesystem::path> numbered_sequence_of(const std::filesystem::path& frame);
 const std::vector<std::string>& video_suffixes();
 
 }  // namespace rudra

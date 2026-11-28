@@ -614,10 +614,30 @@ void SystemCheckDialog::build_parts() {
         const auto s = genfill_setup(&why);
         const bool base_ok = s.has_value() || why.contains(QStringLiteral("no LoRA"));
         auto [c, h] = card(QStringLiteral("aifillSetup"));
-        h->addSpacing(22);
+        // 1.3.2 (user request): ticked, Install selected sets it up with the ticked downloads (in its own window, which
+        // shows the setup); never ticked by itself, as it is about 23 GB. Ticking it ticks the AI fill model too.
+        if (base_ok) {
+            h->addSpacing(22);
+        } else {
+            auto* tick = new QCheckBox(c);
+            tick->setObjectName(QStringLiteral("checkTick_aifillSetup"));
+            tick->setEnabled(ai_problem.isEmpty());
+            tick->setChecked(ai_problem.isEmpty() && was.count(QStringLiteral("aifillSetup")) && was[QStringLiteral("aifillSetup")]);
+            if (!ai_problem.isEmpty()) tick->setToolTip(ai_problem);
+            connect(tick, &QCheckBox::toggled, this, [this](bool on) {
+                if (on)   // the base model is no use without RUDRA's AI fill model
+                    for (const auto& m : md_->models())
+                        if (m.kind == QStringLiteral("genfill"))
+                            if (auto it = ticks_.find(m.id); it != ticks_.end() && it->second->isEnabled()) it->second->setChecked(true);
+                update_progress();
+            });
+            h->addWidget(tick, 0, Qt::AlignTop);
+            ticks_[QStringLiteral("aifillSetup")] = tick;
+        }
         QString detail = QStringLiteral("Optional. The base model AI fill draws with (Wan2.1-VACE-1.3B, from Wan-AI, Apache 2.0, "
-                                        "about 25 GB) and a Python with PyTorch for RUDRA only (about 5 GB). Set up installs "
-                                        "both, and resumes where it stopped.");
+                                        "about 18 GB) and a Python with PyTorch for RUDRA only (about 5 GB). Tick it and "
+                                        "Install selected sets up both (Set up\u2026 does the same on its own), and carries on "
+                                        "where it stopped.");
         if (!ai_problem.isEmpty()) detail += QStringLiteral("\n") + ai_problem;
         words(c, h, QStringLiteral("AI fill: base model and Python"), detail,
               base_ok ? QStringLiteral("Installed") : QStringLiteral("Not set up"), base_ok ? QStringLiteral("ok") : QString(),
@@ -717,6 +737,24 @@ void SystemCheckDialog::install_selected() {
         if (auto it = ticks_.find(m.id); it != ticks_.end() && it->second->isChecked() && it->second->isEnabled())
             queue_ << m.id;
     results_.clear();
+    // 1.3.2 (user request): AI fill's base model and Python, ticked: its setup runs in its own window (the steps, the
+    // log, Copy log) beside the downloads, with no second question (the tick was the answer).
+    if (auto it = ticks_.find(QStringLiteral("aifillSetup")); it != ticks_.end() && it->second->isChecked() && it->second->isEnabled()) {
+        it->second->setChecked(false);
+        auto* d = new GenFillSetupDialog(this);
+        d->setAttribute(Qt::WA_DeleteOnClose);
+        d->setModal(false);
+        connect(d, &QDialog::finished, this, [this] {
+            parts_shape_.clear();
+            build_parts();
+            update_progress();
+            w_->refresh_check_attention();
+        });
+        d->show();
+        d->start_automatic();
+        results_ << QStringLiteral("AI fill base model and Python: setting up in its own window (about 23 GB; if it stops, "
+                                   "Install selected or Set up\u2026 carries on where it stopped)");
+    }
     download_next();
 }
 

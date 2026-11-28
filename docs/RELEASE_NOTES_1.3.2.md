@@ -57,21 +57,113 @@ and when Resolve or Nuke is still open. Details: [OFX_PLUGIN.md](OFX_PLUGIN.md).
 - **Prompt strength in the plug-in**, as in the app's Deliver: above 1 the fill follows the prompt more closely
   (experimental). At 1.5 the sky on 09V came out smoother and still passed every check.
 
+## Opening frames
+
+- **File › Import image sequence…**: pick any one frame of a numbered sequence (`shot_0001.exr` to `shot_0240.exr`,
+  say) and RUDRA opens every frame of it, in order, as one shot. EXR, PNG, JPEG, TIFF, BMP and WebP.
+- **Media's right-click menu**, anywhere in the panel on the left: **Import…** for videos and images, with an
+  **Image sequence** box that brings a numbered sequence in as one clip; **Clear from Media** (everything, or only
+  the videos, images or image sequences; the files stay on disk); and **Clear VRAM**, which frees the GPU memory RUDRA
+  holds (the AI fill preview's model, about 16 GB, and the learned model's cache, which loads again at once).
+- **EXR stills and sequences** open as PNG, JPEG and TIFF frames do, and in Open frames, Open folder of frames and a
+  drop on the window. RUDRA reads an EXR as a linear Rec.709 picture of an SDR display: values above 1.0 are clipped,
+  the rest encoded with the Rec.709 display curve (BT.1886, gamma 2.4), like the SDR frames it is made for. An EXR
+  that is already HDR loses what is above 1.0.
+
+## Deliver
+
+- **A progress bar for this shot's render**, under the Render card and apart from the Batch queue: what is being
+  written (an EXR or DPX still or sequence, a MOV's frames and then its encode, the learned ACES 2.0 master, an
+  AI-filled movie, a headroom export), frames done of all, the share and, once a few frames are in, the time left.
+  **Stop** beside it stops after the frame being written and keeps what was written. At the end it says
+  "Done: 240 frames in 3 min 12 s" with **Open folder**, or how far it got. The AI fill keeps its own bar in its card.
+
 ## Fixed
 
+- **The timeline jumps to the frame you click, also while the shot plays.** A click on the frame strip stopped only
+  the plain playback: on the learned ACES 2.0 route and the headroom route the playback carried on over the frame
+  asked for, so you had to wait or pause first. A click (or a drag) now stops any playback and shows that frame;
+  while dragging, only the playhead and the timecode follow, so the drag keeps up, and hovering says which frame a
+  click shows.
+- **AI fill: "Set up automatically" stopped at "could not make the Python environment"** on a computer where Windows
+  does not let a program through a folder junction a user made ("The path cannot be traversed because it contains
+  an untrusted mount point. (os error 448)"). uv, which installed AI fill's private Python, keeps that Python behind
+  such a junction, so the setup never reached the model. The setup now downloads the Python itself
+  (python-build-standalone 3.12.13, checked by its SHA-256), makes AI fill's environment with Python's own venv and
+  uses uv only to install packages: no junction anywhere. An environment that does not start is made again.
+- **An AI fill setup that stopped once kept failing.** A setup stopped partway (the window closed, the network
+  dropped) left a Python without PyTorch, or a model download with its small files and not its weights. Every later
+  Set up automatically then failed ("PyTorch is not installed", "the model does not match the manifest"), and the app
+  took the half-downloaded model for an installed one. Set up automatically now carries on where it stopped, and a
+  model whose weights are missing says so: "the download … did not finish".
+- **AI fill setup now says why it stopped.** A setup that stopped before it could say why (Windows refusing the
+  setup script, a Python error) left the step before it on the screen. Every end now gives its reason: an NVIDIA
+  driver too old for PyTorch is named with its version, and a PyTorch that does not load names the Visual C++
+  runtime it needs. Everything the setup printed is kept in `genfill\setup.log` in RUDRA's data folder, and
+  **Copy log** puts it on the clipboard. Closing the window while the setup runs asks first, then stops all of it.
+- **AI fill's base model and Python in Install selected.** In Check this computer, "AI fill: base model and Python"
+  now has a tick like the other downloads: ticked, **Install selected** sets up the Python and downloads
+  Wan2.1-VACE-1.3B (about 23 GB in all) along with the ticked models, in its own window that shows each step and the
+  log. Ticking it ticks RUDRA's AI fill model too. It is never ticked by itself, and only offered where AI fill can run.
+- **Install from a folder or zip** works on a computer without AI fill's Python: it sets the Python up first (about
+  5 GB from the internet), then installs the model from the folder or zip with no download.
 - **AI fill in the installed app.** The AI fill preview and the region re-render failed with
   "ModuleNotFoundError: No module named 'tools'" in every installed RUDRA since 1.3.0, so pressing AI fill seemed
   to do nothing. They read the source through a helper that only a source checkout has. The helper is now part
   of RUDRA itself, a test loads AI fill the way the installed app does, and the Windows build stops if any of
   RUDRA's Python imports from outside what it ships.
 
-- **AI fill in Resolve collected no frames.** Resolve numbers a clip's frames from its source media but gives
-  the clip's range from 0, so every frame fell outside the range and the status stayed at "0 of n". In Resolve,
-  AI fill now counts its frames from the playhead: put it on the first frame to draw, then press Generate.
+- **AI fill in Resolve and Nuke never drew.** Once every frame was in, the fill stopped before it began ("the AI
+  fill ended without finishing"): on Windows the plug-in hands the fill its log file already open, and the fill
+  opened it a second time, which Windows refused. The fill now writes to the log it is given, and no longer takes on
+  a host's own Python settings (PYTHONHOME, PYTHONPATH). A test starts it the way the plug-in does.
+- **In a color-managed Resolve project RUDRA seemed to do nothing.** Such a project hands a node its HDR working
+  picture, not the SDR clip: the clipped sky of the test shot arrived flat at code 195 of 255, so RUDRA found nothing
+  to recover and AI fill nothing to draw. RUDRA now takes part in OpenFX colour management (Resolve's Enable OpenFX
+  Color Management): it asks for the clip as Rec.709 display codes and tells Resolve what its Output is, so Resolve
+  converts in and out of its working space. Where a host hands it a picture whose highlights stop flat below white
+  anyway, RUDRA says so and what to do. Help › Install says so too.
+- **A finished fill was not shown in Resolve.** RUDRA checked that the picture coming in is the one the fill was
+  made from with an exact fingerprint of its codes, and Resolve decodes a paused frame a little differently from the
+  same frame played. It now compares a small thumbnail with a tolerance (1.5 codes on average), so a changed grade
+  above RUDRA is still caught, and says by how much a picture changed.
+- **AI fill drew nothing without saying why.** In a picture where nothing clips (no code of 240 or more), AI fill has
+  nothing to draw. The picture now says so before Generate, with the frame's brightest code, and a fill that found
+  nothing to draw says so too. A To set before the first frame made a fill of a single frame; Generate now refuses it
+  and says why.
+- **AI fill in Resolve collected no frames.** Resolve numbers a clip's frames by their source media and does not
+  tell a plug-in where a trimmed clip starts, so every frame fell outside the range AI fill waited for and the
+  status stayed at "0 of n". In Resolve, AI fill now takes the frames from From (else the playhead) to To (else the
+  clip's end): put the playhead on the first frame to draw, then press Generate.
+- **AI fill in the plug-in left you guessing.** Its state was only in the Status line, which changes only when a
+  button is pressed and which Resolve may not show. Until the fill is shown, the picture itself now says what to do
+  and how far it got, in a line of words over a bar along its bottom: green while frames come in ("12 of 97 frames
+  in. Play the clip through once on the Color page"), blue while the fill is drawn ("drawing, 37% done. Keep Resolve
+  open; press Refresh status to update this"), red when something needs you (Generate refused and why, a fill that
+  failed and what to do, a frame that changed since Generate). A ready fill, and a frame the fill was not made for,
+  show clean, so nothing is burned into a render. Refresh status says which frames are still to play, and the
+  plug-in's log records each stored frame, what the picture said, and what the host said about its frame numbers
+  at Generate.
+- **AI fill beside a host could run out of GPU memory.** The fill was set up for a whole 16 GB card, and Resolve or
+  Nuke hold part of it. It now chooses its memory mode from the memory free when it starts: as tested with room for
+  it, else a mode that draws the same fill in 10.8 GB instead of 16.2, else one that needs 6.7 GB. If it runs out
+  all the same, it draws again in low-memory mode by itself, and if that fails too the picture says to close other
+  programs that use the GPU.
+- **Nuke: "no picture from the input" after a knob moved.** Dragging a knob above RUDRA (a Grade's gain) while a
+  frame rendered made Nuke abandon that render without a picture, and RUDRA put an error on the node that could stay
+  after the picture came back. An abandoned render now ends quietly, and the node's message is always the latest
+  render's.
+- **A full disk was found out late.** Generate, and the clip's first frame, now check there is room for the clip's
+  stored frames and fills (about 30 MB a frame at 1080p, and 1 GB spare) and say how much is needed when there is not.
 
 ## Also
 
-- `RUDRA.ofx` carries a version resource and is signed with RUDRA.exe and rudra-native.exe.
+- The user guide lists the system requirements: the computers and GPUs RUDRA runs on, and those AI fill needs
+  (an NVIDIA GPU with 16 GB and driver 570 or newer, or Apple silicon with 16 GB), with recommended cards.
+- `RUDRA.ofx` carries a version resource and is signed with RUDRA.exe and rudra-native.exe, and so is AI fill's
+  setup script (`python\genfill_bootstrap.ps1`): a computer whose policy runs only signed PowerShell scripts refused
+  it, and Set up automatically stopped there. (Release builds signed only the two programs until now, whatever the
+  signing policy said about the plug-in.)
 - Release builds: when the app tests crash on macOS, the log now shows where, and a test run can be repeated to
   catch a crash that comes and goes (1.3.1's macOS build crashed twice before it passed).
 
@@ -86,6 +178,13 @@ and when Resolve or Nuke is still open. Details: [OFX_PLUGIN.md](OFX_PLUGIN.md).
   against the blend, strength 1.5 and guidance 2. 09V passes every check in every variant. 04 fails the flicker
   check in every variant, prompt or not (0.22 stop against 0.10), as in 1.3.1 (below).
 - In Resolve and Nuke: to be completed before release.
+- AI fill setup (Python): a download that stopped carries on, a model of another size or revision is refused and not
+  downloaded over, a setup that breaks still says why, the driver, Visual C++ and GPU memory reasons, nvidia-smi read,
+  only the missing packages installed. The Windows setup run from a new folder, with no junction or other link
+  anywhere under it: to be completed before release.
+- EXR: a linear Rec.709 EXR frame decodes to its BT.1886 codes; a numbered sequence is found from one of its frames.
+- Deliver's progress bar: a render shows its count and ends with Done and Open folder; Stop from the bar keeps the
+  frames written and starts nothing when nothing runs.
 
 ## Known limits
 
