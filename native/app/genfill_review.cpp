@@ -472,8 +472,11 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
     auto* automatic = box->addButton("Set up automatically…", QDialogButtonBox::ActionRole);
     automatic->setObjectName("genfillSetupAuto");
     // 1.3.2 (end-user report, 27 Nov 2026): the whole of the last setup's log, for whoever helps.
-    auto* copy_log = box->addButton("Copy log", QDialogButtonBox::ActionRole);
+    // Its own button, not the button box's: Qt before 6.7 shows every button of a box again when it lays them out
+    // (the Qt shell CI, 28 Nov 2026: "Copy log" showed with no log to copy).
+    auto* copy_log = new QPushButton(QStringLiteral("Copy log"), this);
     copy_log->setObjectName("genfillSetupCopyLog");
+    v->addWidget(copy_log, 0, Qt::AlignLeft);
     copy_log->setToolTip(QStringLiteral("Puts everything the last setup printed on the clipboard\n(%1)")
                              .arg(QDir::toNativeSeparators(from_path(genfill_setup_log()))));
     copy_log->setVisible(QFileInfo::exists(from_path(genfill_setup_log())));
