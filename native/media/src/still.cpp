@@ -1,5 +1,4 @@
 #include "rudra/media/still.hpp"
-#include "rudra/deliver/exr.hpp"   // 1.3.2: RUDRA's own EXR reader, where OpenCV reads none
 
 #include <algorithm>
 #include <cmath>
@@ -170,49 +169,11 @@ Result<DecodedStill> decode_sdr(std::span<const std::uint8_t> bytes) {
     return out;
 }
 
-// 1.3.2 (28 Nov 2026, CI): an OpenCV built without OpenEXR (the GitHub Windows runner's, and maybe a user's own
-// build) reads no EXR. RUDRA's own reader (deliver/exr.hpp: uncompressed, ZIP and ZIPS, and every other compression
-// when built with OpenEXR) reads it then, as the same linear Rec.709 SDR picture: clipped at 1.0, BT.1886 codes.
-static Result<DecodedStill> decode_exr_own(const std::filesystem::path& path) {
-    auto ex = read_exr(path);
-    if (!ex) return ex.error();
-    const PlanarBuffer& p = ex->pixels;
-    if (p.channels() < 3) return make_error(ErrorCode::Unsupported, "Only RGB and RGBA EXRs are read.");
-    const int h = p.height(), w = p.width();
-    PlanarBuffer rgb(3, h, w);
-    for (int c = 0; c < 3; ++c)
-        for (int y = 0; y < h; ++y)
-            for (int x = 0; x < w; ++x) {
-                const float v = p.at(c, y, x);
-                rgb.at(c, y, x) = std::isfinite(v) ? std::pow(std::clamp(v, 0.0f, 1.0f), 1.0f / 2.4f) : 0.0f;
-            }
-    DecodedStill out;
-    out.source = "rudra (EXR: linear Rec.709, as BT.1886 codes)";
-    out.bits = 32;
-    std::vector<float> g(p.plane(1), p.plane(1) + p.plane_size());
-    std::sort(g.begin(), g.end());
-    out.distinct_codes = static_cast<int>(std::unique(g.begin(), g.end()) - g.begin());
-    if (p.channels() >= 4) {
-        PlanarBuffer a(1, h, w);
-        for (int y = 0; y < h; ++y)
-            for (int x = 0; x < w; ++x) a.at(0, y, x) = std::clamp(p.at(3, y, x), 0.0f, 1.0f);
-        out.alpha = std::move(a);
-    }
-    out.rgb = SdrImage(std::move(rgb));
-    return out;
-}
-
 Result<DecodedStill> decode_sdr_file(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) return make_error(ErrorCode::NotFound, "The image file could not be opened.", path.string());
     std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     auto r = decode_sdr(bytes);
-    const bool exr = bytes.size() >= 4 && bytes[0] == 0x76 && bytes[1] == 0x2f && bytes[2] == 0x31 && bytes[3] == 0x01;
-    if (!r && exr) {
-        auto own = decode_exr_own(path);
-        if (own) return own;
-        return make_error(r.error().code, "This EXR could not be read: " + own.error().message, path.string());
-    }
     if (!r) return make_error(r.error().code, r.error().message, path.string() + (r.error().detail.empty() ? "" : ": " + r.error().detail));
     return r;
 }

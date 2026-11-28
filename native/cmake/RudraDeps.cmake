@@ -44,7 +44,10 @@ option(RUDRA_WITH_OPENEXR "Every OpenEXR compression in Deliver (the OpenEXR lib
 option(RUDRA_OPENEXR_FETCH "Build the pinned OpenEXR, static, even when the system has one (the packages)" OFF)
 if(RUDRA_WITH_OPENEXR)
   if(NOT RUDRA_OPENEXR_FETCH)
-    find_package(OpenEXR 3 CONFIG QUIET)
+    # 3.3 or newer (28 Nov 2026, PR #105's CI): exr_openexr.cpp reads through IStream's stateless read and size and
+    # makes OpaqueAttribute from bytes, which 3.3 added. Ubuntu 24.04's libopenexr-dev is 3.1: it is passed over and
+    # the pinned release below is built instead.
+    find_package(OpenEXR 3.3 CONFIG QUIET)
   endif()
   if(NOT TARGET OpenEXR::OpenEXR)
     set(OPENEXR_INSTALL OFF CACHE BOOL "" FORCE)

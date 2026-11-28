@@ -13,6 +13,4 @@ if(RUDRA_WITH_OPENCV)
   target_link_libraries(rudra_media PRIVATE ${OpenCV_LIBS})
   target_include_directories(rudra_media SYSTEM PRIVATE ${OpenCV_INCLUDE_DIRS})
   target_compile_definitions(rudra_media PUBLIC RUDRA_HAVE_STILL_DECODE)
-  # 1.3.2: still.cpp reads an EXR with RUDRA's own reader where this OpenCV reads none (deliver/exr.hpp).
-  target_link_libraries(rudra_media PRIVATE rudra::rudra_deliver)
 endif()
