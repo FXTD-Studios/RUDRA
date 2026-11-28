@@ -345,11 +345,33 @@ struct ViewerWindow::Impl {
         return build_blit_pipeline();
     }
 
+    // 1.3.2 (28 Nov 2026, the macOS app tests of the v1.3.2 release run): under Qt's offscreen or minimal platform
+    // (the headless tests) a window has no native view, its winId is only a counter, and Qt's Metal swap chain takes
+    // it for an NSView when asked about HDR (QMetalSwapChain::hdrInfo, which the format check calls too): the app
+    // tests crashed in objc_msgSend at address 0x2. Such a window has no display to ask. Other backends and real
+    // windows are asked as before.
+    bool metal_without_view() const {
+        if (!rhi || rhi->backend() != QRhi::Metal) return false;
+        const QString platform = QGuiApplication::platformName();
+        return platform == QLatin1String("offscreen") || platform == QLatin1String("minimal");
+    }
+    // The swap chain's HDR info; for a Metal window without a view, the values Qt gives a Metal swap chain that has
+    // no window (qrhimetal.mm): SDR, display-referred.
+    QRhiSwapChainHdrInfo hdr_info() const {
+        if (!metal_without_view()) return sc->hdrInfo();
+        QRhiSwapChainHdrInfo info = {};
+        info.limitsType = QRhiSwapChainHdrInfo::ColorComponentValue;
+        info.limits.colorComponentValue.maxColorComponentValue = 1.0f;
+        info.limits.colorComponentValue.maxPotentialColorComponentValue = 1.0f;
+        info.luminanceBehavior = QRhiSwapChainHdrInfo::DisplayReferred;
+        return info;
+    }
+
     void choose_format() {
         // HDR when the display offers it: scRGB (Windows, Linux Vulkan) or
         // EDR (macOS) first, then HDR10, else SDR. The status says which.
         format = QRhiSwapChain::SDR;
-        if (prefer_hdr)
+        if (prefer_hdr && !metal_without_view())
             for (auto f : {QRhiSwapChain::HDRExtendedSrgbLinear, QRhiSwapChain::HDRExtendedDisplayP3Linear,
                            QRhiSwapChain::HDR10})
                 if (sc->isFormatSupported(f)) {
@@ -360,7 +382,7 @@ struct ViewerWindow::Impl {
     }
 
     void update_target() {
-        const QRhiSwapChainHdrInfo info = sc->hdrInfo();
+        const QRhiSwapChainHdrInfo info = hdr_info();
         const bool display_referred = info.luminanceBehavior == QRhiSwapChainHdrInfo::DisplayReferred;
         double nits = info.limitsType == QRhiSwapChainHdrInfo::LuminanceInNits
                           ? double(info.limits.luminanceInNits.maxLuminance)
@@ -1042,7 +1064,7 @@ struct ViewerWindow::Impl {
         ViewerStatus s;
         s.backend = rhi ? rhi->backendName() : "";
         const bool display_referred =
-            sc && has_swapchain && sc->hdrInfo().luminanceBehavior == QRhiSwapChainHdrInfo::DisplayReferred;
+            sc && has_swapchain && hdr_info().luminanceBehavior == QRhiSwapChainHdrInfo::DisplayReferred;
         s.swapchain = swapchain_name(format, display_referred);
         s.target = view.target;
         // In device pixels: 100 % is one frame pixel per screen pixel.
