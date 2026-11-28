@@ -310,7 +310,7 @@ if (-not $SkipBuild) {
     & $cmake -S native -B $Build -G $tc.Generator -A x64 `
         "-DRUDRA_BUILD_TESTS=$testsFlag" -DRUDRA_BUILD_CLI=ON -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_RENDER=ON `
         -DRUDRA_WITH_ONNXRUNTIME=ON "-DONNXRUNTIME_ROOT=$OrtRoot" -DRUDRA_WITH_LIBTORCH=OFF `
-        -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CvConfigDir" "-DCMAKE_PREFIX_PATH=$QtRoot" @OcioFlags -DRUDRA_BUILD_OFX=ON
+        -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CvConfigDir" "-DCMAKE_PREFIX_PATH=$QtRoot" @OcioFlags -DRUDRA_BUILD_OFX=ON -DRUDRA_OPENEXR_FETCH=ON
     if ($LASTEXITCODE -ne 0) { Fail "cmake configure" }
     $targets = @("RUDRA", "rudra-native", "rudra_ofx_plugin")   # 26 Nov 2026: the OFX plug-in, installed from Help
     if ($Tests) { $targets += "rudra_app_tests" }
