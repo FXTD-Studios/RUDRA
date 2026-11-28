@@ -334,3 +334,36 @@ def test_lora_round_trip(tmp_path):
     save_file({'x': torch.zeros(1)}, str(bad))
     with pytest.raises(ValueError):
         load_lora(tiny_components()[1], bad)
+
+
+# ---- 1.3.2 (26 Nov 2026): one region prompt at strength 1 in one pass a step (FillSettings.prompt_pass) ----
+def test_single_pass_is_the_region_prompt_everywhere_and_blend_is_unchanged():
+    from genfill_tiny import tiny_fill
+    f = tiny_fill()
+    v = torch.rand(1, 3, 5, 32, 32) * 2 - 1
+    m = torch.zeros(1, 1, 5, 32, 32); m[..., :16, :] = 1
+    ctx = f.context(v, m)
+    blend = f.denoise(ctx, FillSettings(steps=3, seed=7, prompt_highlight='a bright sun'), {'highlight': m})
+    again = f.denoise(ctx, FillSettings(steps=3, seed=7, prompt_highlight='a bright sun', prompt_pass='blend'),
+                      {'highlight': m})
+    assert torch.equal(blend, again)                                    # 'blend' is the default, as gated
+    single = f.denoise(ctx, FillSettings(steps=3, seed=7, prompt_highlight='a bright sun', prompt_pass='single'),
+                       {'highlight': m})
+    everywhere = f.denoise(ctx, FillSettings(steps=3, seed=7, prompt='a bright sun'))
+    assert torch.equal(single, everywhere) and not torch.equal(single, blend)
+    # a region that covers the whole window: the blend takes the region's prediction everywhere, so the two agree
+    full = torch.ones(1, 1, 5, 32, 32)
+    ctx_full = f.context(v, full)
+    b = f.denoise(ctx_full, FillSettings(steps=3, seed=7, prompt_highlight='a bright sun'), {'highlight': full})
+    s1 = f.denoise(ctx_full, FillSettings(steps=3, seed=7, prompt_highlight='a bright sun', prompt_pass='single'),
+                   {'highlight': full})
+    assert torch.allclose(b, s1, atol=1e-6)
+    # a strength other than 1, or two region prompts, blend whatever prompt_pass says
+    for kw in ({'prompt_strength': 1.5}, {'prompt_shadow': 'deep blue shadow'}):
+        s = FillSettings(steps=3, seed=7, prompt_highlight='a bright sun', **kw)
+        masks = {'highlight': m, 'shadow': 1 - m}
+        x = f.denoise(ctx, s, masks)
+        s.prompt_pass = 'single'
+        assert torch.equal(f.denoise(ctx, s, masks), x)
+    with pytest.raises(ValueError, match='prompt_pass'):
+        f.denoise(ctx, FillSettings(steps=3, seed=7, prompt_pass='both'))

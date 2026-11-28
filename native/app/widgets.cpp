@@ -274,6 +274,12 @@ ScrubBar::ScrubBar(QWidget* parent) : QWidget(parent) {
     setObjectName("scrub");
     setMinimumHeight(58);
     setCursor(Qt::PointingHandCursor);
+    setMouseTracking(true);   // 1.3.2: the frame under the pointer, before a click
+}
+
+int ScrubBar::frame_at(double x) const {
+    if (count_ <= 1 || width() <= 0) return 0;
+    return int(std::lround(std::clamp(x / width(), 0.0, 1.0) * double(count_ - 1)));
 }
 
 void ScrubBar::set_position(double f) {
@@ -366,8 +372,20 @@ void ScrubBar::mousePressEvent(QMouseEvent* e) {
 }
 
 void ScrubBar::mouseMoveEvent(QMouseEvent* e) {
-    if ((e->buttons() & Qt::LeftButton) && seek && width() > 0)
+    if ((e->buttons() & Qt::LeftButton) && seek && width() > 0) {
         seek(std::clamp(e->position().x() / width(), 0.0, 1.0));
+        return;
+    }
+    // 1.3.2 (user feedback): which frame a click here shows, even while the shot plays.
+    if (count_ > 1)
+        QToolTip::showText(e->globalPosition().toPoint(),
+                           QStringLiteral("Frame %1 of %2: click to see it, drag to scrub").arg(frame_at(e->position().x()) + 1).arg(count_),
+                           this);
+}
+
+void ScrubBar::mouseReleaseEvent(QMouseEvent* e) {
+    QWidget::mouseReleaseEvent(e);
+    if (released) released();
 }
 
 ClipBar::ClipBar(QWidget* parent) : QWidget(parent) {

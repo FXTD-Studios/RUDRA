@@ -32,7 +32,7 @@ from pathlib import Path
 # training pipeline's list: these are the ones PIL opens without a plugin, and
 # an EXR that silently failed to load would look like a black frame rather
 # than an error.
-FRAME_SUFFIXES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
+FRAME_SUFFIXES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp", ".exr"}   # .exr: 1.3.2
 VIDEO_SUFFIXES = {".mov", ".mp4", ".mxf", ".mkv", ".avi", ".m2ts", ".ts", ".webm", ".m4v"}
 
 _NUMBER = re.compile(r"(\d+)")

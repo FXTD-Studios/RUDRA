@@ -54,6 +54,14 @@ Result<AcesDeliverOptions> aces_deliver_from_json(const nlohmann::json& req) {
         o.exr_gamut = req.value("exr_gamut", std::string("acescg"));
         o.exr_zip = req.value("exr_zip", false);
         o.exr_zip_lines = req.value("exr_zip_lines", 16) == 1 ? 1 : 16;   // 1.3: ZIPS
+        o.exr_compression = req.value("exr_compression", std::string());   // 1.3.2
+        if (!o.exr_compression.empty()) {
+            const auto c = parse_exr_compression(o.exr_compression);
+            if (!c) return make_error(ErrorCode::InvalidArgument, "Unknown EXR compression", o.exr_compression);
+            if (!exr_compression_available(*c))
+                return make_error(ErrorCode::Unsupported, std::string("This build of RUDRA writes no ") + exr_compression_label(*c) +
+                                                              " EXR (it has no OpenEXR library): choose ZIP, ZIPS or none.");
+        }
         if (req.contains("frames"))
             for (const auto& f : req.at("frames")) o.frames.push_back(f.get<int>());
         o.fps = req.value("fps", 0.0);
@@ -230,11 +238,19 @@ std::string aces_movie_file(const AcesDeliverOptions& o, const std::string& stem
 
 std::string aces_exr_label(const AcesDeliverOptions& o) {
     if (!o.writes_exr()) return "none (encoded copies only)";
+    const ExrCompression c = o.compression();
+    const bool written = c != ExrCompression::None && exr_compression_available(c);
+    const std::string how = !written                       ? ""
+                            : c == ExrCompression::Zips      ? ", ZIPS (lossless, one scanline a block)"
+                            : exr_compression_lossy(c)       ? std::string(", ") + exr_compression_label(c) + " (lossy)"
+                                                             : std::string(", ") + exr_compression_label(c) + " (lossless)";
     if (o.exr_gamut == "ap0")
-        return "ACES 2065-1 (AP0), SMPTE ST 2065-4 container: half float RGB, uncompressed, acesImageContainerFlag 1; "
-               "scene-linear, signed, unclamped; the reconstruction mask in mask/<frame>.exr";
-    return std::string("ACEScg scene-linear, signed, unclamped, ") + (o.exr == "half" ? "half float (16-bit)" : "float32") +
-           (o.exr_zip && exr_zip_available() ? (o.exr_zip_lines == 1 ? ", ZIPS (lossless, one scanline a block)" : ", ZIP (lossless)") : "") +
+        return !written ? std::string("ACES 2065-1 (AP0), SMPTE ST 2065-4 container: half float RGB, uncompressed, acesImageContainerFlag 1; "
+                                      "scene-linear, signed, unclamped; the reconstruction mask in mask/<frame>.exr")
+                        : "ACES 2065-1 (AP0), half float RGB" + how +
+                              ": not the SMPTE ST 2065-4 container (uncompressed); scene-linear, signed, unclamped; the "
+                              "reconstruction mask in mask/<frame>.exr";
+    return std::string("ACEScg scene-linear, signed, unclamped, ") + (o.exr == "half" ? "half float (16-bit)" : "float32") + how +
            "; the reconstruction mask as the rudra.reconstructed channel";
 }
 
@@ -245,9 +261,10 @@ Result<void> write_aces_master_exr(const fs::path& path, const PlanarBuffer& ace
     const fs::path part = aces_part_file(path);
     // ST 2065-4: the AP0 file is RGB only, so its mask is a file of its own (mask/<frame>.exr, R=G=B).
     const bool ap0 = o.exr_gamut == "ap0";
-    auto w = ap0 ? write_aces_exr(part, acescg, Primaries::Ap1, 1.0, provenance, true, nullptr, typed, alpha)
-                 : write_acescg_exr(part, acescg, Primaries::Ap1, 1.0, provenance, half, &mask, typed, alpha,
-                                    !o.exr_zip ? ExrCompression::None : o.exr_zip_lines == 1 ? ExrCompression::Zips : ExrCompression::Zip);
+    // Deliver's EXR compression (1.3.2: every OpenEXR one, the AP0 file too, which is then not the ST 2065-4 container).
+    const ExrCompression c = o.compression();
+    auto w = ap0 ? write_aces_exr(part, acescg, Primaries::Ap1, 1.0, provenance, true, nullptr, typed, alpha, c)
+                 : write_acescg_exr(part, acescg, Primaries::Ap1, 1.0, provenance, half, &mask, typed, alpha, c);
     std::error_code ec;
     if (!w) {
         fs::remove(part, ec);
@@ -258,9 +275,12 @@ Result<void> write_aces_master_exr(const fs::path& path, const PlanarBuffer& ace
         PlanarBuffer m3(3, mask.height(), mask.width());
         for (int c = 0; c < 3; ++c) std::copy(mask.plane(0), mask.plane(0) + mask.plane_size(), m3.plane(c));
         const fs::path mpart = aces_part_file(mf);
+        // The mask with the master's compression when it is lossless; kept exact (ZIP) under a lossy one (1.3.2).
+        const ExrCompression mc = !exr_compression_lossy(c) ? c : exr_zip_available() ? ExrCompression::Zip : ExrCompression::None;
         auto mw = write_exr(mpart, m3, true, std::nullopt,
                             {{"rudra:mask", "rudra.reconstructed of " + path.filename().string() +
-                                             ": highlight reconstruction weight, 0 = from source"}});
+                                             ": highlight reconstruction weight, 0 = from source"}},
+                            nullptr, {}, mc);
         if (!mw) {
             fs::remove(part, ec);
             fs::remove(mpart, ec);

@@ -3,6 +3,8 @@
 // `aces-v2-serve` so the app's Deliver tab and the command line agree:
 //   exr        "float" (32-bit, the default), "half" (16-bit) or "none"
 //   exr_gamut  "acescg" (AP1, the default) or "ap0" (ACES 2065-1)
+//   exr_compression  1.3.2: "none", "zip", "zips", "rle", "piz", "pxr24", "b44", "b44a", "dwaa" or "dwab"
+//              (deliver/exr.hpp), for ACEScg and ACES 2065-1 alike; without it exr_zip / exr_zip_lines decide
 //   log / log_formats   the encoded copies (aces_v2_log.hpp): DPX, TIFF, ProRes, 16-bit movie
 //   frames     only these frames of one video (a still from a movie); none: every frame
 //   range      [first, last]: only these frames of one video, in order (a shot's in and out)
@@ -43,6 +45,10 @@ struct AcesDeliverOptions {
     std::string exr_gamut = "acescg";
     bool exr_zip = false;   // 1.2.6 (item 8): lossless ZIP for the ACEScg master; never the AP0 container
     int exr_zip_lines = 16; // 1.3: 16 scanlines a block (ZIP) or 1 (ZIPS)
+    // 1.3.2 (28 Nov 2026): any OpenEXR compression by its id, AP0 included (it is then no longer the ST 2065-4
+    // container, and says so); empty: exr_zip and exr_zip_lines decide, as before.
+    std::string exr_compression;
+    ExrCompression compression() const noexcept { return exr_compression_from(exr_compression, exr_zip, exr_zip_lines); }
     AcesLogOptions copies;
     std::vector<int> frames;
     int range_first = -1, range_last = -1;

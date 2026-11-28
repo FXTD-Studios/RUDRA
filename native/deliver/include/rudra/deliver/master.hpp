@@ -82,6 +82,10 @@ struct MasterRequest {
     // 1.3 (24 Nov 2026): Deliver's EXR compression: 16 scanlines a block (ZIP) or 1 (ZIPS); in the
     // JSON only when 1, so every request before reads the same.
     int exr_zip_lines = 16;
+    // 1.3.2 (28 Nov 2026): any other OpenEXR compression ("rle", "piz", "pxr24", "b44", "b44a", "dwaa", "dwab";
+    // deliver/exr.hpp exr_compression_id), for every container, ACES 2065-1 included. Empty: exr_zip and exr_zip_lines
+    // decide, as before; in the JSON only when set, so every request before reads the same.
+    std::string exr_compression;
     // Roadmap 3.1: the curve that made the SDR (core/source_curve.hpp ids).
     // "unknown" is the ACES inverse, and is left out of the JSON and the
     // sidecar so every master before 3.1 reads the same.

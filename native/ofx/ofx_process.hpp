@@ -14,18 +14,31 @@
 //   linear_rec2020   scene-linear Rec.2020, 1.0 = diffuse white (203 nits)
 //   linear_acescg    scene-linear ACEScg (AP1), 1.0 = diffuse white
 //   pq_rec2020       ST 2084 code in [0, 1], Rec.2020 (an HDR10 timeline)
-// Alpha is carried as it came.
+// Alpha: the source's (default), or, for a matte in the host, the luminance limit or what AI drew.
+//
+// Two routes (25 Nov 2026, phase 2): "analytic", in this process on the CPU, and "learned",
+// RUDRA's learned ACES 2.0 engine run beside the host (engine_client.hpp). The learned route
+// uses Exposure, Strength (the engine's trim), the luminance limit and Output; Source curve, Recovery,
+// Fill clipped highlights and Anchor are the analytic route's.
+//
+// 26 Nov 2026 (phase 3): the luminance limit (the app's Reconstruct > Region, core/composite.hpp
+// ReconstructionRegion) on both routes and for AI fill, and AI fill itself (fill_store.hpp). Exposure is
+// applied after the master (grade_master scales by 2^EV only, below its ceiling), so a stored fill, made at
+// 0 EV, takes it too.
+//
+// Rows: the first row given is the picture's top (the plug-in hands the host's rows top first, with a
+// negative stride for OFX's bottom-up images), so the learned model and AI fill see the picture upright.
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
-#ifndef RUDRA_OFX_PLAIN
-#include "rudra/platform/result.hpp"
+// What the plug-in itself passes (ofx/plugin.cpp keeps to this plain interface): no RUDRA types.
+namespace rudra_ofx {
 
-namespace rudra {
-
-struct OfxGrade {
+struct Settings {
+    std::string route = "analytic";        // analytic, learned
     std::string source_curve = "bt1886";   // core/source_curve.hpp ids
     double exposure_ev = 0.0;              // -3 .. +3
     double strength = 1.0;                 // the reconstruction's, 0 .. 1
@@ -33,28 +46,141 @@ struct OfxGrade {
     bool clip_fill = true;
     bool anchor = true;
     std::string output = "linear_rec2020";
+    // The luminance limit, by the SDR's Rec.709 luma (0 .. 1): off, highlights (above highlights_from),
+    // shadows (below shadows_below), both, band (band_from .. band_to); each edge `limit_softness` wide.
+    std::string limit = "off";
+    double highlights_from = 0.75, shadows_below = 0.15, band_from = 0.50, band_to = 0.90, limit_softness = 0.10;
+    std::string alpha = "source";          // source, limit, ai_fill
+    // AI fill (phase 3).
+    bool ai_fill = false;
+    std::string shot_id;                   // the instance's own (a hidden parameter, made at the first Generate)
+    std::string prompt;
+    int seed = 0;
+    int steps = 30;                        // the fill's steps (27 Nov 2026): fewer is faster, below 20 can draw stripes
+    double prompt_strength = 1.0;          // 1.3.2: how strongly the prompt steers the fill, 0 .. 2 (the app's Deliver's)
+    int frame = 0, first_frame = 0, last_frame = 0;   // this frame and the clip's
+    int to_frame = 0;                      // 1.3.2: AI fill's To as set (0: the clip's end); Generate refuses one before the first
+    int flat_top = 0;                      // 1.3.2: flat_top_below_white of the picture coming in (the last full-size one)
+    std::string colour_style;              // 1.3.2: the OpenFX colour management style the host chose ("" without it)
+    std::string input_colourspace;         // 1.3.2: with it, the colourspace the host says the source arrives in
+    bool full_size = true;                 // render scale 1: only then is a frame stored or a stored fill shown
+    std::string host_label;                // 1.3.2: "Resolve", "Nuke" or "": the guide in the picture names it
+    // The Mask input (27 Nov 2026): width x height weights, the top row first, 0 .. 1; empty = none. Where it is 0
+    // the picture is RUDRA's plain inverse (no reconstruction, no AI fill), where it is 1 RUDRA's in full.
+    std::vector<float> mask;
+};
+
+// What a render did: `error` empty on success; `note` AI fill's state in one line ("" when off); `log` a line for the
+// plug-in's log only (1.3.2: each frame AI fill stored, so a session's log shows how far collecting got); `guide` the
+// words drawn in the picture until the fill is shown (1.3.2; "" when none).
+struct Outcome {
+    std::string error;
+    std::string note;
+    std::string log;
+    std::string guide;
+};
+
+// Resolve's AI fill frames (1.3.2). Resolve hands a plug-in its clip's frames by their source media numbers and does
+// not say where a trimmed clip starts (its frame range can be the whole media, or a placeholder), so Generate there
+// takes From, else the playhead, to To, else the clip's end as Resolve's timeline suite gives it (`timeline_end`),
+// else the clip's frame range end (`clip_end`) when either is at most kMaxFillFrames away, else 100 frames.
+inline constexpr int kMaxFillFrames = 2000;   // ofx_fill::kMaxFrames
+struct FrameSpan {
+    int first = 0, last = 0;
+};
+FrameSpan resolve_frames(int playhead, int from, int to, double timeline_end, double clip_end);
+
+// The code (of 255) where the picture's highlights stop flat when that is under AI fill's clipped code (240), else 0
+// (1.3.2, 27 Nov 2026). Clipped highlights are a flat top; one under 240 means the clip is clipped but arrives
+// re-encoded: a colour-managed Resolve project handed RUDRA's node an HDR picture whose clipped sky stopped at 195, and
+// RUDRA, which reads SDR Rec.709 codes, found nothing to recover. Flat: at least 0.5 % of the pixels (every other one in
+// each direction is looked at) within 2 codes of the brightest. RGBA rows, `row` floats apart.
+int flat_top_below_white(const float* rgba, std::ptrdiff_t row, int width, int height);
+// What the node says about such a picture, in the host's terms ("Resolve", "Nuke", else general); `managed`: the host
+// manages colour for RUDRA (OpenFX colour management) and handed it this all the same.
+std::string flat_top_advice(int code, const std::string& host_label, bool managed = false);
+
+// OpenFX colour management (1.3.2, 27 Nov 2026). A host that manages colour (Resolve's "Enable OpenFX Color Management")
+// is asked for RUDRA's source as the SDR's Rec.709 display codes, and told what its output is by Output; in the style
+// the host chose: the native config's names from Core up, the generic ones in Basic, nothing without colour management
+// (then the host hands its working space: a colour-managed Resolve project handed an HDR picture).
+std::vector<std::string> colour_source_preferences(const std::string& style);
+std::string colour_output(const std::string& output, const std::string& style);
+// Why the picture coming in is not what RUDRA reads, "" when it is: under colour management a colourspace that is not
+// SDR display, or highlights that stop flat under white (flat_top_below_white).
+std::string input_problem(const Settings& s);
+
+std::vector<std::string> source_ids();      // the Source menu, in order
+std::vector<std::string> source_labels();
+int default_source();                       // BT.1886's index
+
+// The picture (above). `src`/`dst`: the first pixel of the top row; `*_row_floats`: floats from one row
+// to the next down (negative for OFX's bottom-up rows).
+Outcome render(const Settings& s, const float* src, std::ptrdiff_t src_row_floats, float* dst, std::ptrdiff_t dst_row_floats,
+               int width, int height);
+// Phase 1's call, every newer setting at its default; "" on success, else why not.
+std::string render(const std::string& route, const std::string& source_curve, double exposure_ev, double strength,
+                   const std::string& recovery_mode, bool clip_fill, bool anchor, const std::string& output, const float* src,
+                   std::ptrdiff_t src_row_floats, float* dst, std::ptrdiff_t dst_row_floats, int width, int height);
+
+// AI fill's buttons, from the host's main thread: "" on success, else why not.
+std::string ai_generate(const Settings& s);
+std::string ai_cancel(const Settings& s);
+std::string ai_clear(const Settings& s);
+std::string ai_status(const Settings& s);   // one line for the Status parameter
+std::string new_shot_id();                  // 16 hex digits, for the hidden parameter
+
+// Suggest prompt (1.3.2): a prompt for AI fill from one frame, as the RUDRA app's Suggest a prompt makes it (what the
+// clipped areas point to and, when RUDRA's AI fill setup installed Florence-2, "From this shot" first).
+struct PromptSuggestion {
+    bool ready = false;                 // false and no error: still being made (ask again with ai_suggestion)
+    std::string error;                  // why there is none
+    std::string text, label, reason;    // the first suggestion, what Prompt takes
+    std::vector<std::string> others;    // the other suggestions' labels
+    std::string note;                   // why there is no "From this shot", when there is none
+};
+// From the host's main thread: starts a suggestion for this frame (8-bit RGB, the top row first) and waits up to
+// `wait_seconds` for it, calling `tick` (the share of the wait gone) meanwhile; tick returning false stops the wait.
+PromptSuggestion ai_suggest(const Settings& s, const unsigned char* rgb, int width, int height, double wait_seconds,
+                            const std::function<bool(double)>& tick = {});
+// The suggestion started last for this shot, read again (ready once made).
+PromptSuggestion ai_suggestion(const Settings& s);
+
+// Ends the learned engine, if one runs (the plug-in's unload). A running AI fill ends with the host.
+void stop_engine();
+
+}  // namespace rudra_ofx
+
+#ifndef RUDRA_OFX_PLAIN
+#include "rudra/core/composite.hpp"
+#include "rudra/platform/result.hpp"
+
+namespace rudra {
+
+struct OfxGrade {
+    std::string route = "analytic";        // analytic, learned
+    std::string source_curve = "bt1886";   // core/source_curve.hpp ids
+    double exposure_ev = 0.0;              // -3 .. +3
+    double strength = 1.0;                 // the reconstruction's, 0 .. 1
+    std::string recovery_mode = "all";     // all, highlights, shadows, off
+    bool clip_fill = true;
+    bool anchor = true;
+    std::string output = "linear_rec2020";
+    ReconstructionRegion region;           // the luminance limit (off: the whole frame)
+    std::string alpha = "source";          // source, limit, ai_fill (no fill here: 0)
 };
 
 // The output choices, in the plug-in's menu order.
 inline constexpr const char* kOfxOutputs[] = {"linear_rec2020", "linear_acescg", "pq_rec2020"};
 
-// `src`/`dst`: the first pixel of the first row; `*_row_floats`: floats from one
-// row to the next (may be negative: OFX rows go bottom up). The whole frame:
-// the anchor and the grain settling look at neighbours.
+// The luminance limit of the plain settings (off: disabled).
+ReconstructionRegion ofx_region(const rudra_ofx::Settings& s);
+OfxGrade ofx_grade(const rudra_ofx::Settings& s);
+
+// `src`/`dst`: the first pixel of the top row; `*_row_floats`: floats from one row to the next down.
+// The whole frame: the anchor and the grain settling look at neighbours.
 Result<void> render_sdr_to_hdr(const OfxGrade& grade, const float* src, std::ptrdiff_t src_row_floats, float* dst,
                                std::ptrdiff_t dst_row_floats, int width, int height);
 
 }  // namespace rudra
 #endif  // RUDRA_OFX_PLAIN
-
-// What the plug-in itself calls (ofx/plugin.cpp builds as C++14, as the OFX
-// Support library of the 1.4 SDK requires): no RUDRA types.
-namespace rudra_ofx {
-std::vector<std::string> source_ids();      // the Source menu, in order
-std::vector<std::string> source_labels();
-int default_source();                       // BT.1886's index
-// The picture (above), every setting as plain values; "" on success, else why not.
-std::string render(const std::string& source_curve, double exposure_ev, double strength, const std::string& recovery_mode,
-                   bool clip_fill, bool anchor, const std::string& output, const float* src, std::ptrdiff_t src_row_floats,
-                   float* dst, std::ptrdiff_t dst_row_floats, int width, int height);
-}  // namespace rudra_ofx

@@ -7,11 +7,45 @@ curve (the *baseline*), fills what the SDR clipped, and can add a learned
 model's reconstruction on top (optional, off by default), and it shows you
 where it made something up.
 
-This guide is for the desktop app, RUDRA 1.2.4. The illustrated guide is at
+This guide is for the desktop app, RUDRA 1.3.2. The illustrated guide is at
 https://www.fxtdstudios.com/rudra-docs/. Help > Getting started shows the short
 version inside the app; F1 opens this page.
 
 ## 1. Install
+
+### System requirements (1.3.2)
+
+**RUDRA** (the reconstruction, the learned ACES 2.0 model, every export):
+
+| | |
+|---|---|
+| Windows | 10 (22H2) or 11, 64-bit. Windows on Arm runs the x64 build through emulation, more slowly. |
+| macOS | 13 or later on Apple silicon (M1 or later). Intel Macs are not supported. |
+| Linux | Built from source; not released. |
+| GPU (Windows) | Any DirectX 12 GPU (NVIDIA, AMD or Intel): the learned model runs on it through DirectML. Without one, on the CPU, more slowly. |
+| GPU (Mac) | The built-in GPU and Neural Engine (Core ML). |
+| Memory | 8 GB or more; long 4K movies need more. |
+| Display | An HDR monitor is recommended for judging the result; RUDRA simulates HDR on an SDR screen. |
+
+**AI fill** (optional, experimental):
+
+| | |
+|---|---|
+| Windows | An NVIDIA GPU with 16 GB of memory or more, and an NVIDIA driver of version 570 or newer (AI fill's PyTorch is the CUDA 12.8 build). AMD and Intel GPUs do not run it. |
+| Recommended cards | RTX 30, 40 or 50 series and the professional Ampere, Ada and Blackwell cards, with 16 GB or more: for example RTX 3090, 4060 Ti 16 GB, 4070 Ti Super, 4080, 4090, 5070 Ti, 5080, 5090, RTX A4000 to A6000, RTX 4000 / 5000 / 6000 Ada. Tested on an RTX 4090. |
+| Older cards | Turing (RTX 20, Quadro RTX) and Pascal (Quadro P5000 / P6000) are untested and not recommended: AI fill runs in bfloat16, which they do not do natively, and current PyTorch may not support Pascal. |
+| Mac | Apple silicon with 16 GB of memory or more. |
+| Disk | About 23 GB for its setup (its Python and PyTorch, and Wan2.1-VACE-1.3B), and room for each fill (about 30 MB a frame at 1080p). |
+| Speed | On an RTX 4090, 100 frames at 30 steps take about 20 minutes. |
+
+Check this computer (below) reads your computer and says what runs on it. On a
+computer that cannot run AI fill, everything else in RUDRA still runs.
+
+**The OFX plug-in:** DaVinci Resolve (tested with Resolve 21) and Nuke, on
+Windows ([OFX_PLUGIN.md](OFX_PLUGIN.md)). AI fill in a host needs the GPU above,
+shared with the host.
+
+### Installing
 
 - **Windows 10 or 11 (x64):** run `RUDRA-<version>-windows-x64-setup.exe`
   (installs for your user, no administrator prompt), or unzip the portable
@@ -43,7 +77,8 @@ words:
   memory) still lets you work;
 - what RUDRA can install, with size and licence: the learned ACES 2.0 model
   (recommended, ticked) and AI fill's model, and AI fill's base model and
-  Python (**Set up…**). AI fill needs a 16 GB NVIDIA GPU (on a Mac, 16 GB of
+  Python (1.3.2: tick it and **Install selected** sets it up with the rest,
+  about 23 GB, in its own window; or **Set up…**). AI fill needs a 16 GB NVIDIA GPU (on a Mac, 16 GB of
   memory); on a smaller card it is not offered, and the window says why.
   **Install selected** downloads the ticked models one after the other while
   you work;
@@ -76,6 +111,22 @@ grade and does not identify the original tone mapper.
   opens a numbered sequence; a movie (`.mov`, `.mp4`, `.mxf`, `.mkv`, …)
   opens as a shot of its own. Dropping files or a folder on the window does
   the same.
+- **Media, on the left** (1.3.2): right-click anywhere in it for **Import…**
+  (videos and images; tick **Image sequence** and the numbered frames of a
+  sequence come in as one clip), **Import a folder of frames…**, **Clear
+  from Media** (everything, or only the videos, images or image sequences;
+  the files stay on disk) and **Clear VRAM** (frees the AI fill preview's
+  model and the learned model's cache; not while a render or a fill runs).
+- **File > Import image sequence…** (1.3.2): pick any one frame of a
+  numbered sequence (`shot_0001.exr` to `shot_0240.exr`, say) and RUDRA
+  opens every frame of it, in order, as one shot. Frames of the sequence share
+  the name before and after the number and the extension; other files in the
+  folder stay out. EXR, PNG, JPEG, TIFF, BMP and WebP.
+- **EXR frames** (1.3.2) are read as a linear Rec.709 picture of an SDR
+  display: values above 1.0 are clipped and the rest are encoded with the
+  Rec.709 display curve (BT.1886, gamma 2.4), like the SDR frames RUDRA is
+  made for. An EXR that is already HDR (scene-linear light above 1.0) loses
+  what is above 1.0: RUDRA rebuilds clipped SDR, it does not grade HDR.
 - **Stills keep their colour and orientation.** A still's own colour tag
   (an ICC profile, a PNG cICP / sRGB / cHRM chunk) sets the primaries the
   master converts from: Display P3 (phones), Adobe RGB (1998), Rec.2020 or
@@ -304,8 +355,8 @@ for example):
 4. For HDR, view **Rec.2100-PQ - Display / ACES 2.0 - HDR 1000 nits (P3 D65)**
    on an HDR monitor.
 
-An sRGB choice in Reconstruct › Source, so that an analytic master lines up with
-an SDR read as sRGB, is planned for 1.3.1.
+Reconstruct › Source › sRGB (1.3.1) makes an analytic master line up with an SDR
+read as sRGB.
 
 ### AI fill: the viewer, Reconstruct and Deliver
 
@@ -345,7 +396,14 @@ The AI fill is in three places, each with one job:
   prompt box; you can still edit it. No model runs for the suggestion. A
   preset marked *ready* is already embedded, so the fill starts without
   loading the 11 GB text model; `scripts\GENFILL.ps1 -PrecachePrompts` embeds
-  them all once. With **Limit to a
+  them all once. (1.3.2) The suggestions describe more of what the area looks
+  like and end with the words the AI fill model was trained under
+  ("scene-referred high dynamic range footage, physically plausible
+  highlights"), so a prompt steers what is drawn without leaving the
+  conditions the model learned in. A new prompt is read in seconds, not
+  minutes: the text model reads only the prompt's own words. At Prompt
+  strength 1 a prompt no longer slows the fill (one pass of the model a
+  step); another strength takes about a third longer. With **Limit to a
   luminance region** on (Reconstruct), the fill acts only inside that region
   and every pixel outside it is the master's, bit for bit. No 8-bit code of
   the SDR view ever changes, and every drawn pixel is marked in
@@ -374,8 +432,22 @@ The AI fill is in three places, each with one job:
   fast-moving water it can flicker slightly.
 - **Master EXR** (M): ACES 2065-1 (or linear Rec.2020) EXR, a frame, all
   frames or a range, with a JSON sidecar describing exactly how it was made.
+- **The render's progress bar** (1.3.2), under the Render card: what is
+  being written, frames done of all, the share and the time left; **Stop**
+  stops after the frame being written and keeps what was written. At the end:
+  "Done: … frames in …" and **Open folder**. It is this shot's render only;
+  the Batch queue keeps its own.
 - **Containers** (1.1): the analytic master writes ACES 2065-1, ACEScg,
   linear Rec.2020 or linear Rec.709 (Deliver › Gamut).
+- **EXR compression** (1.3.2): every OpenEXR compression, on the analytic and
+  the learned route. Lossless, every value kept: ZIP (the default, about half
+  the size), ZIPS (one line a block), PIZ (smallest on grainy pictures), RLE
+  (fast, for flat areas) and None. Lossy, much smaller, for reviews and
+  dailies rather than the grade: DWAA, DWAB, B44 and B44A (half float only)
+  and PXR24 (32-bit float kept to 24 bits). Masks and mattes stay lossless.
+  An ACES 2065-1 file can be compressed too, but then it is not the SMPTE
+  ST 2065-4 container, which is uncompressed: choose None when a facility asks
+  for the strict container.
 - **AI fill on the analytic route** (1.1): with the analytic master in ACES
   2065-1, AI fill runs after the render as it does on the learned route, so
   the luminance region, its mattes and the prompts work on one render.
@@ -497,10 +569,30 @@ The packaged ffmpeg is used first. To use your own instead, set
 `RUDRA_FFMPEG_DIR` to its folder, or `RUDRA_FFMPEG_DIR=path` for the one on
 the PATH.
 
+### In Resolve and Nuke: the OFX plug-in
+
+**RUDRA SDR to HDR** (in development) is the same master chain as an OpenFX
+effect for DaVinci Resolve and Nuke: the analytic and learned ACES 2.0
+routes, the luminance limit with its matte, and AI fill (Generate, then play
+the clip once). It downloads no model: it uses the RUDRA installed on the
+same computer: **Help › Install the OFX plug-in for Resolve and Nuke…** puts it in both hosts. Setup, the controls and AI fill's steps are in
+[OFX_PLUGIN.md](OFX_PLUGIN.md).
+
 ## 6. When something goes wrong
 
 - **Help > Check this computer…** first: it names what is missing and
   installs it.
+- **AI fill setup** (Reconstruct › AI generation › **Setup…**, or **Set up…**
+  in Check this computer): **Set up automatically…** installs AI fill's own
+  Python (in RUDRA's data folder, nothing else on the computer changes) and
+  downloads its base model; pressed again after a stop, it carries on where
+  it stopped. When it stops, the window says why, and **Copy log** puts
+  everything it printed on the clipboard (the file is `genfill\setup.log` in
+  RUDRA's data folder: on Windows `%LOCALAPPDATA%\FXTD Studios\RUDRA`). Send
+  that with a report. **Install from a folder or zip…** installs the base
+  model (or Florence-2) from a copy you were given, checked file by file,
+  with no 18 GB download; on a computer without AI fill's Python it sets that
+  up first (about 5 GB from the internet).
 - **Help > Open log folder** opens the log (`rudra.log`, kept to 5 MB, three
   old copies). Attach it to a report.
 - A failed write says why: the disk is full (with the space free and

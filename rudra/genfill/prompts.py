@@ -24,8 +24,15 @@ People and objects in the captions are left out, so the fill is never asked to d
 first suggestion ("From this shot"); without the model (not installed, no network the first time)
 the presets are suggested as before and the reason says why.
 
+1.3.2 (26 Nov 2026, Ahmed: "enhance the prompt"): the suggestions describe more of what the area looks
+like (a sky's gradient, a lamp's core and falloff), and every one ends with the words the AI fill LoRA
+was trained under (HIGHLIGHT_TAIL, from model.BASE_PROMPT: the LoRA saw no other prompt), so a prompt
+steers what is drawn without leaving the conditions the LoRA learned the HDR fill in. Checked on the
+gate shots against 1.3.1's wording (tmp/09V_test/v4_gates/run_prompt_check.py).
+
     python -m rudra.genfill.prompts suggest <image|EXR> [more frames] [--tau-high 250] [--tau-low -1] [--cache DIR] [--json]
                                             [--describe off|auto] [--describe-model florence-community/Florence-2-base]
+                                            [--describe-device auto|cpu|cuda]
     python -m rudra.genfill.prompts list [--cache DIR] [--json]
     python -m rudra.genfill.prompts precache --base <Wan2.1-VACE-1.3B-diffusers> --cache <LoRA folder>/prompt_cache
 
@@ -52,18 +59,34 @@ class Preset:
     region: str          # 'highlight' or 'shadow': which prompt box it fills
 
 
+# The words the LoRA was trained under (model.BASE_PROMPT), closing every suggestion (1.3.2, module docstring).
+HIGHLIGHT_TAIL = "scene-referred high dynamic range footage, physically plausible highlights"
+SHADOW_TAIL = "scene-referred high dynamic range footage, natural light, physically plausible highlights and shadow detail"
+
+
+def _hdr(subject: str, region: str = "highlight") -> str:
+    """A suggestion's text: what the area shows, then the training tail of its region."""
+    return f"{subject}, {HIGHLIGHT_TAIL if region == 'highlight' else SHADOW_TAIL}"
+
+
 PRESETS: tuple[Preset, ...] = (
-    Preset("sky_blue", "Clear blue sky", "clear blue sky, smooth gradient toward the horizon, soft high clouds", "highlight"),
-    Preset("sky_overcast", "Overcast sky", "bright overcast sky, soft even white light, subtle cloud texture", "highlight"),
-    Preset("sky_sunset", "Sunset sky", "glowing sunset sky, warm orange to pink gradient, soft clouds", "highlight"),
-    Preset("sun_disc", "Sun", "warm sun disc with a soft halo and a smooth glow", "highlight"),
-    Preset("light_source", "Lamp / practical", "practical lamp, bright core with a soft falloff", "highlight"),
-    Preset("window_daylight", "Window daylight", "window daylight, soft bright exterior, smooth falloff at the frame",
+    Preset("sky_blue", "Clear blue sky",
+           _hdr("clear blue sky, smooth gradient from deep blue overhead to pale blue at the horizon, a few thin high clouds"),
            "highlight"),
-    Preset("specular_glints", "Specular glints", "small specular glints on glossy surfaces, sharp bright cores",
-           "highlight"),
-    Preset("flame", "Flame", "flame core, bright yellow center with an orange glow", "highlight"),
-    Preset("shadow_detail", "Shadow detail", "dark shadow detail, soft texture, low light", "shadow"),
+    Preset("sky_overcast", "Overcast sky",
+           _hdr("bright overcast sky, soft even white light, gentle grey and white cloud texture"), "highlight"),
+    Preset("sky_sunset", "Sunset sky",
+           _hdr("glowing sunset sky, warm orange near the horizon fading to soft pink, thin backlit clouds"), "highlight"),
+    Preset("sun_disc", "Sun", _hdr("bright sun disc with a soft halo, a smooth glow fading into the sky"), "highlight"),
+    Preset("light_source", "Lamp / practical",
+           _hdr("practical lamp, intensely bright core with a smooth falloff into its glow"), "highlight"),
+    Preset("window_daylight", "Window daylight",
+           _hdr("daylight through a window, soft bright exterior with faint detail, smooth falloff at the frame"), "highlight"),
+    Preset("specular_glints", "Specular glints",
+           _hdr("small specular glints on glossy surfaces, tiny intense cores with soft edges"), "highlight"),
+    Preset("flame", "Flame", _hdr("flame, bright yellow-white core with flickering orange edges and a soft glow"), "highlight"),
+    Preset("shadow_detail", "Shadow detail", _hdr("dark shadow detail, soft low-light texture, gentle gradients", "shadow"),
+           "shadow"),
 )
 BY_ID = {p.id: p for p in PRESETS}
 
@@ -205,16 +228,22 @@ DESCRIBE_MODEL = "florence-community/Florence-2-base"
 
 # What a caption may say about the bright area, in the order they are tried: (words, subject, preset).
 _SUBJECTS: tuple[tuple[tuple[str, ...], str, str], ...] = (
-    (("fire", "flame", "flames", "candle", "bonfire", "fireplace", "burning"), "flame core, bright yellow center with an orange glow", "flame"),
-    (("sunset", "sunrise", "dusk", "golden hour", "orange sky", "pink sky"), "glowing sunset sky, warm orange to pink gradient", "sky_sunset"),
-    (("blue sky", "clear sky", "clear blue", "sunny", "sunshine"), "clear blue sky, smooth gradient toward the horizon", "sky_blue"),
-    (("sun", "sunlight"), "warm sun disc with a soft halo and a smooth glow", "sun_disc"),
+    # 1.3.2: Florence-2 calls the welding shot (04) "a welder ... sparks flying", which named no subject before
+    (("weld", "welds", "welding", "welder", "welders", "spark", "sparks", "arc welding", "welding arc"),
+     "welding arc, intense blue-white core with bright sparks and a hot glow", "light_source"),
+    (("fire", "flame", "flames", "candle", "bonfire", "fireplace", "burning"),
+     "flame, bright yellow-white core with flickering orange edges and a soft glow", "flame"),
+    (("sunset", "sunrise", "dusk", "golden hour", "orange sky", "pink sky"),
+     "glowing sunset sky, warm orange near the horizon fading to soft pink", "sky_sunset"),
+    (("blue sky", "clear sky", "clear blue", "sunny", "sunshine"),
+     "clear blue sky, smooth gradient from deep blue overhead to pale blue at the horizon", "sky_blue"),
+    (("sun", "sunlight"), "bright sun disc with a soft halo, a smooth glow fading into the sky", "sun_disc"),
     (("lamp", "light bulb", "bulb", "chandelier", "lantern", "neon", "headlight", "spotlight", "street light", "streetlight"),
-     "practical lamp, bright core with a soft falloff", "light_source"),
-    (("snow", "snowy", "ice"), "bright snow, soft white texture", "sky_overcast"),
+     "practical lamp, intensely bright core with a smooth falloff into its glow", "light_source"),
+    (("snow", "snowy", "ice"), "bright snow, soft white texture with gentle shading", "sky_overcast"),
     (("sky", "clouds", "cloud", "cloudy", "overcast", "horizon", "haze", "hazy", "fog", "foggy", "mist", "misty"),
      "bright sky", "sky_overcast"),
-    (("window",), "window daylight, soft bright exterior", "window_daylight"),
+    (("window",), "daylight through a window, soft bright exterior with faint detail", "window_daylight"),
 )
 _LOOKS = (("hazy", "hazy"), ("haze", "hazy"), ("fog", "foggy"), ("foggy", "foggy"), ("mist", "misty"), ("misty", "misty"),
           ("overcast", "overcast"), ("cloudy", "cloudy"))
@@ -256,9 +285,9 @@ def shot_prompt(scene: str, area: str, fallback: str = "sky_overcast") -> tuple[
         for w, look in _LOOKS:
             if _has(both, w) and look not in looks:
                 looks.append(look)
-        subject = "bright " + " ".join(looks[:2] + ["sky"]) + ", soft even white light" + (", subtle cloud texture" if clouds else "")
+        subject = "bright " + " ".join(looks[:2] + ["sky"]) + ", soft even white light" + (", gentle cloud texture" if clouds else "")
     elif pid == "sky_blue" and clouds:
-        subject += ", soft high clouds"
+        subject += ", a few thin high clouds"
     parts = [subject]
     if pid not in ("window_daylight", "light_source", "flame"):
         for w, phrase in _THROUGH:
@@ -272,7 +301,7 @@ def shot_prompt(scene: str, area: str, fallback: str = "sky_overcast") -> tuple[
             else:
                 parts.append(("over " if phrase in ("the sea", "the ocean", "water", "a lake", "a river") else "above ") + phrase)
             break
-    return ", ".join(parts), pid
+    return _hdr(", ".join(parts)), pid
 
 
 class Describer:
@@ -322,10 +351,11 @@ def bright_crop(codes: np.ndarray, tau: int = 240, grow: float = 0.5) -> np.ndar
 
 
 def describe_suggestion(codes: np.ndarray, model_id: str = DESCRIBE_MODEL, describer=None,
-                        fallback: str = "sky_overcast") -> dict:
+                        fallback: str = "sky_overcast", device: str = "auto") -> dict:
     """The "From this shot" suggestion for one frame, or raises (no model). `fallback`: the preset
-    the rules picked, used when the captions name no bright subject."""
-    d = describer or Describer(model_id)
+    the rules picked, used when the captions name no bright subject. `device` (1.3.2): Florence-2's,
+    auto (CUDA when there is one) or cpu (the OFX plug-in's choice while its fill holds the GPU)."""
+    d = describer or Describer(model_id, device)
     scene = d.caption(codes)
     crop = bright_crop(codes)
     area = d.caption(crop) if crop is not None else ""
@@ -348,6 +378,8 @@ def main(argv=None) -> int:
     s.add_argument("--describe", default="off", choices=("off", "auto"),
                    help="auto: Florence-2 describes the shot and a prompt is made from it (1.2.6)")
     s.add_argument("--describe-model", default=DESCRIBE_MODEL)
+    s.add_argument("--describe-device", default="auto", choices=("auto", "cpu", "cuda"),
+                   help="1.3.2: where Florence-2 runs (auto: CUDA when there is one)")
     li = sub.add_parser("list")
     li.add_argument("--cache", default="")
     li.add_argument("--json", action="store_true")
@@ -357,7 +389,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.cmd == "precache":
         from .model import BASE_PROMPT, PromptBank
-        bank = PromptBank(a.base, a.cache, device="cpu")
+        bank = PromptBank(a.base, a.cache, device="cpu")    # 1.3.2: the prompt's own tokens, seconds on the CPU
         for text in (BASE_PROMPT,) + tuple(p.text for p in PRESETS):
             was = cached(text, a.cache)
             bank.get(text)
@@ -378,7 +410,8 @@ def main(argv=None) -> int:
         try:
             top_id = res["suggestions"][0]["id"] if res["suggestions"] else "sky_overcast"
             res["suggestions"].insert(0, describe_suggestion(codes_of(a.frames[len(a.frames) // 2]), a.describe_model,
-                                                             fallback=top_id if top_id in BY_ID else "sky_overcast"))
+                                                             fallback=top_id if top_id in BY_ID else "sky_overcast",
+                                                             device=a.describe_device))
         except Exception as e:                                          # noqa: BLE001
             res["describe_error"] = f"{type(e).__name__}: {e}"[:300]
     for sgg in res["suggestions"]:

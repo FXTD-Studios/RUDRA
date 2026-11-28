@@ -19,15 +19,21 @@ gtest_discover_tests(rudra_conform_tests DISCOVERY_MODE PRE_TEST)
 
 # The OFX plug-in's picture (roadmap 5.1), and, with the plug-in built and the
 # SDK's HostSupport available, the plug-in in a test host.
-target_sources(rudra_conform_tests PRIVATE test_ofx_process.cpp)
+target_sources(rudra_conform_tests PRIVATE test_ofx_process.cpp test_ofx_engine.cpp test_ofx_fill.cpp)   # test_ofx_fill: AI fill (26 Nov 2026)
 target_link_libraries(rudra_conform_tests PRIVATE rudra_ofx_process)
+# The learned route's tests talk to a stand-in for `rudra-native aces-v2-serve` (25 Nov 2026).
+add_executable(rudra_ofx_fake_engine ofx_fake_engine.cpp)
+target_link_libraries(rudra_ofx_fake_engine PRIVATE nlohmann_json::nlohmann_json)
+add_dependencies(rudra_conform_tests rudra_ofx_fake_engine)
+target_compile_definitions(rudra_conform_tests PRIVATE RUDRA_OFX_FAKE_ENGINE="$<TARGET_FILE:rudra_ofx_fake_engine>")
 if(RUDRA_OFX_HOST_TEST)
   add_executable(rudra_ofx_host_tests test_ofx_host.cpp)
-  set_target_properties(rudra_ofx_host_tests PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS ON)   # gnu++14: the SDK tests the `linux` macro
+  set_target_properties(rudra_ofx_host_tests PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS ON)   # gnu++17, as the 1.5 SDK: it tests the `linux` macro
   target_link_libraries(rudra_ofx_host_tests PRIVATE rudra_ofx_hostsupport $<LINK_ONLY:rudra_ofx_process> GTest::gtest_main)
   target_include_directories(rudra_ofx_host_tests PRIVATE ${PROJECT_SOURCE_DIR}/ofx)
   target_include_directories(rudra_ofx_host_tests BEFORE PRIVATE $<TARGET_PROPERTY:GTest::gtest,INTERFACE_INCLUDE_DIRECTORIES>)
-  target_compile_definitions(rudra_ofx_host_tests PRIVATE RUDRA_OFX_BUNDLE_DIR="${CMAKE_BINARY_DIR}")
-  add_dependencies(rudra_ofx_host_tests rudra_ofx_plugin)
+  target_compile_definitions(rudra_ofx_host_tests PRIVATE RUDRA_OFX_BUNDLE_DIR="${CMAKE_BINARY_DIR}"
+                             RUDRA_OFX_FAKE_ENGINE="$<TARGET_FILE:rudra_ofx_fake_engine>")   # 1.3.2: Suggest prompt's stand-in
+  add_dependencies(rudra_ofx_host_tests rudra_ofx_plugin rudra_ofx_fake_engine)
   gtest_discover_tests(rudra_ofx_host_tests DISCOVERY_MODE PRE_TEST)
 endif()

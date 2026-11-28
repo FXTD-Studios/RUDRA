@@ -20,6 +20,7 @@
 #include <vector>
 
 #include <QDialog>
+#include <QElapsedTimer>
 #include <QImage>
 #include <QPointer>
 #include <QTimer>
@@ -231,6 +232,19 @@ public:
     void set_deliver(const QString& key, const QString& value);
     void deliver_render();                       // the Render button (action "master")
     bool aces_delivering() const { return aces_deliver_id_ != 0; }
+    // 1.3.2 (user request): this shot's render, shown under Deliver's Render card apart from the Batch queue:
+    // renderProgress (what is written, frames done of all, the share, the time left), Stop, and Open folder when it
+    // ends. Every render the Render card starts reports here: the analytic and learned masters, a frames' MOV and
+    // its encode, the AI-filled movie, the headroom export. total <= 0: busy, no count. A new stage restarts the clock.
+    void render_progress(const QString& stage, qint64 done, qint64 total);
+    // The end: "Done: N frames in 1 min 12 s", "Stopped after N frames", or "Stopped" (the status says why).
+    void render_progress_end(bool ok, bool cancelled, qint64 frames, const QString& folder = {});
+    void stop_render();   // the bar's Stop: what Master EXR's click stops while a render runs, and nothing else
+    bool render_busy() const;
+    // 1.3.2 (user request, Media's right-click): frees the GPU memory RUDRA holds and can let go of now: the AI fill
+    // preview's model (about 16 GB; it loads again at the next preview), and the learned ACES 2.0 engine's cache (it is
+    // restarted at once, so the learned view keeps working). Refused while a render or an AI fill runs. What it said.
+    QString clear_vram();
     // The AI fill (layer 3, genfill_job.hpp) of a learned EXR render: runs after the
     // render when chosen, or on any master folder; a Render click while it runs stops it.
     bool genfill_running() const;
@@ -342,6 +356,9 @@ public:
     // own opening of it: after an update, or when this computer cannot run RUDRA, or when a retired
     // Beta 2 model was found.
     void open_system_check(bool first_run = false);
+    // Help > Install the OFX plug-in for Resolve and Nuke (ofx_install_ui.cpp, 26 Nov 2026): what happened, also
+    // logged; `interactive` asks first and shows it. Public for the tests.
+    QString install_ofx(bool interactive = true);
     void maybe_open_system_check();
     void refresh_check_attention();
     // The Beta 2 packages found and no longer opened (drop_beta2, at every rescan).
@@ -981,6 +998,10 @@ private:
     std::thread encode_worker_;
     std::atomic<bool> encode_cancel_{false};
     bool encoding_movie_ = false;
+    bool scrubbing_ = false;       // 1.3.2: the timeline is being dragged: only the playhead follows
+    QElapsedTimer render_clock_;   // 1.3.2: renderProgress's, from the stage's start
+    QElapsedTimer render_total_clock_;   // and from the render's start (the time Done says)
+    QString render_stage_;
     bool probe_on_ = false;
     Session session_;
     QTimer play_;

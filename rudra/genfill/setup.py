@@ -40,10 +40,13 @@ import argparse
 import hashlib
 import importlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import traceback
+import warnings
 import zipfile
 from pathlib import Path
 
@@ -53,11 +56,17 @@ FLORENCE_DIR = 'Florence-2-base'                     # beside the Wan folder
 MANIFEST = Path(__file__).with_name('model_manifest.json')
 MODEL_GB = 25.0          # the snapshot on disk, rounded up
 MIN_MEMORY_GB = 15.5     # a 16 GB GPU (or a Mac with 16 GB) reports a little under 16
-# pyproject.toml [project.optional-dependencies] genfill, plus OpenColorIO for the AP0 masters.
-PACKAGES = ['diffusers>=0.35', 'transformers>=4.48', 'peft>=0.13', 'accelerate>=1.0', 'OpenEXR>=3.2',
-            'safetensors>=0.4', 'sentencepiece', 'ftfy', 'huggingface-hub>=0.25', 'opencolorio>=2.4']
-IMPORTS = ['diffusers', 'transformers', 'peft', 'accelerate', 'OpenEXR', 'safetensors', 'sentencepiece',
-           'ftfy', 'huggingface_hub', 'PyOpenColorIO']
+# pyproject.toml [project.optional-dependencies] genfill, plus OpenColorIO for the AP0 masters, as (what the
+# fill imports, the package that brings it). 1.3.2: NumPy and OpenCV too (decode.py, masks.py and composite.py
+# import cv2): the bootstrap installed them and this list did not, so a Python set up here lacked them.
+REQUIREMENTS = [('numpy', 'numpy>=1.26,<3'), ('cv2', 'opencv-python-headless>=4.9'), ('diffusers', 'diffusers>=0.35'),
+                ('transformers', 'transformers>=4.48'), ('peft', 'peft>=0.13'), ('accelerate', 'accelerate>=1.0'),
+                ('OpenEXR', 'OpenEXR>=3.2'), ('safetensors', 'safetensors>=0.4'), ('sentencepiece', 'sentencepiece'),
+                ('ftfy', 'ftfy'), ('huggingface_hub', 'huggingface-hub>=0.25'), ('PyOpenColorIO', 'opencolorio>=2.4')]
+PACKAGES = [req for _, req in REQUIREMENTS]
+IMPORTS = [name for name, _ in REQUIREMENTS]
+# The driver PyTorch's CUDA 12.8 build (the bootstrap's) asks for on Windows and Linux.
+DRIVER_FOR_CUDA_12_8 = 570
 
 _JSON = False
 
@@ -70,12 +79,52 @@ def emit(event: str, **fields) -> None:
         print(f'[{event}] {text}', flush=True)
 
 
+def nvidia_smi() -> tuple[list[dict] | None, str | None]:
+    """The NVIDIA GPUs nvidia-smi lists, as {'name', 'memory_gb', 'driver'}, and what it said when it failed:
+    (None, None) on a computer with no nvidia-smi (no NVIDIA driver), ([], error) when it is there and fails."""
+    exe = shutil.which('nvidia-smi')
+    if not exe and sys.platform == 'win32':
+        for p in (Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32' / 'nvidia-smi.exe',
+                  Path(os.environ.get('ProgramFiles', r'C:\Program Files')) / 'NVIDIA Corporation' / 'NVSMI' / 'nvidia-smi.exe'):
+            if p.is_file():
+                exe = str(p)
+                break
+    if not exe:
+        return None, None
+    try:
+        r = subprocess.run([exe, '--query-gpu=name,memory.total,driver_version', '--format=csv,noheader,nounits'],
+                           capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        return [], str(e)
+    if r.returncode != 0:
+        said = (r.stdout + r.stderr).strip().splitlines()
+        return [], said[0] if said else f'exit code {r.returncode}'
+    gpus = []
+    for line in r.stdout.splitlines():
+        parts = [p.strip() for p in line.split(',')]
+        if len(parts) < 3:
+            continue
+        try:
+            memory = round(float(parts[1]) / 1024, 1)
+        except ValueError:
+            memory = None
+        gpus.append({'name': parts[0], 'memory_gb': memory, 'driver': parts[2]})
+    return gpus, None
+
+
 def machine(base: Path) -> dict:
-    """The device the fill would run on, its memory, and the free disk where the model goes."""
+    """The device the fill would run on, its memory, and the free disk where the model goes. When PyTorch
+    sees no GPU, what nvidia-smi says too (1.3.2), so the reason can name the driver."""
     out = {'device': 'cpu', 'memory_gb': None, 'gpu': None}
     try:
         import torch
-        if torch.cuda.is_available():
+        # 1.3.2: PyTorch says why it sees no GPU as a warning (an old driver, most often): kept for the reason.
+        with warnings.catch_warnings(record=True) as said:
+            warnings.simplefilter('always')
+            cuda = torch.cuda.is_available()
+        if not cuda and said:
+            out['cuda_warning'] = ' '.join(str(said[0].message).split())[:240]
+        if cuda:
             p = torch.cuda.get_device_properties(0)
             out.update(device='cuda', gpu=p.name, memory_gb=round(p.total_memory / 2**30, 1))
         elif getattr(torch.backends, 'mps', None) and torch.backends.mps.is_available():
@@ -86,8 +135,13 @@ def machine(base: Path) -> dict:
             except (OSError, ValueError):
                 pass
         out['torch'] = torch.__version__
-    except ImportError:
+    except Exception as e:   # noqa: BLE001
         out['torch'] = None
+        if not (isinstance(e, ModuleNotFoundError) and e.name == 'torch'):
+            # 1.3.2: installed but does not load ("DLL load failed", WinError 126, a package it needs); was a traceback
+            out['torch_error'] = f'{type(e).__name__}: {e}'[:300]
+    if out['device'] == 'cpu' and out.get('torch') and '+cpu' not in str(out['torch']) and sys.platform != 'darwin':
+        out['nvidia'], out['nvidia_error'] = nvidia_smi()
     probe = base
     while not probe.exists() and probe.parent != probe:
         probe = probe.parent
@@ -98,16 +152,35 @@ def machine(base: Path) -> dict:
 def no_gpu_reason(m: dict) -> str:
     """Why the fill cannot run here, in words that say what to do (6 Nov 2026: a Python without
     PyTorch was reported as 'no GPU', and the artist went looking for a driver problem)."""
+    if m.get('torch_error'):
+        # 1.3.2 (end-user setups): PyTorch that is there and does not load. On Windows that is a DLL it needs,
+        # the Microsoft Visual C++ runtime most often.
+        low = m['torch_error'].lower()
+        dll = 'winerror 126' in low or '.dll' in low or 'dll load failed' in low
+        return (f"PyTorch is installed in {sys.executable} but does not load ({m['torch_error']})" +
+                (': install the Microsoft Visual C++ Redistributable (x64), https://aka.ms/vs/17/release/vc_redist.x64.exe, '
+                 'restart the computer, then press Set up automatically again' if dll else
+                 ': press Set up automatically again, and if this comes back, send the setup log'))
     if m.get('torch') is None:
         return (f'PyTorch is not installed in {sys.executable}. Install the build for your GPU '
                 '(https://pytorch.org/get-started/locally/: CUDA on Windows and Linux), then run this again')
     if m['device'] == 'cpu' and '+cpu' in str(m.get('torch')):
         return (f"PyTorch {m['torch']} is the CPU-only build: install the CUDA build instead "
                 '(https://pytorch.org/get-started/locally/)')
+    if m['device'] == 'cpu' and m.get('nvidia'):
+        # 1.3.2: an NVIDIA GPU is there and PyTorch cannot use it: the driver, almost always.
+        g = max(m['nvidia'], key=lambda x: x.get('memory_gb') or 0)
+        why = f" (PyTorch: {m['cuda_warning']})" if m.get('cuda_warning') else ''
+        return (f"PyTorch {m['torch']} cannot use the {g['name']} with the NVIDIA driver installed ({g['driver']}){why}: "
+                f'install the current driver ({DRIVER_FOR_CUDA_12_8} or newer, https://www.nvidia.com/drivers), restart the '
+                'computer, then press Set up automatically again')
+    if m['device'] == 'cpu' and m.get('nvidia_error'):
+        return (f"the NVIDIA driver does not answer (nvidia-smi: {m['nvidia_error']}): reinstall the current driver "
+                '(https://www.nvidia.com/drivers), restart the computer, then press Set up automatically again')
     if m['device'] == 'cpu':
         return (f"PyTorch {m['torch']} found no CUDA GPU or Apple GPU: the AI fill needs an NVIDIA GPU with 16 GB "
                 'and a current driver (Windows, Linux) or Apple silicon with 16 GB (Mac)')
-    return f"the GPU has {m['memory_gb']} GB; the AI fill needs 16 GB"
+    return f"the {m.get('gpu') or 'GPU'} has {m['memory_gb']} GB of memory; the AI fill needs 16 GB"
 
 
 def have_model(base: Path) -> bool:
@@ -124,8 +197,11 @@ def missing_packages() -> list[str]:
     return missing
 
 
-def install_packages() -> bool:
-    cmd = [sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', *PACKAGES]
+def install_packages(missing: list[str] | None = None) -> bool:
+    """pip install the packages the fill needs: those of the missing imports (1.3.2: only those, so a Python
+    of one's own keeps the versions it has), or all of them."""
+    wanted = [req for name, req in REQUIREMENTS if missing is None or name in missing] or PACKAGES
+    cmd = [sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', *wanted]
     emit('log', text=' '.join(cmd))
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     assert proc.stdout is not None
@@ -169,9 +245,9 @@ def sha256_file(p: Path, chunk: int = 1 << 22) -> str:
     return h.hexdigest()
 
 
-def snapshot_revision(root: Path) -> str | None:
-    """The commit a local_dir download came from: huggingface_hub writes it as the first line of
-    .cache/huggingface/download/<file>.metadata. None when there is none or they disagree."""
+def download_revisions(root: Path) -> set[str]:
+    """The commits the files of a local_dir download came from: huggingface_hub writes each as the first line
+    of .cache/huggingface/download/<file>.metadata once that file is in."""
     d = root / '.cache' / 'huggingface' / 'download'
     revs = set()
     for m in (d.rglob('*.metadata') if d.is_dir() else []):
@@ -181,7 +257,39 @@ def snapshot_revision(root: Path) -> str | None:
             continue
         if re.fullmatch(r'[0-9a-f]{40}', first):
             revs.add(first)
+    return revs
+
+
+def snapshot_revision(root: Path) -> str | None:
+    """The commit a local_dir download came from. None when there is none or they disagree."""
+    revs = download_revisions(root)
     return revs.pop() if len(revs) == 1 else None
+
+
+def stopped_download(base: Path, entry: dict) -> list[str]:
+    """The manifest's files a download into base has not brought in yet, when base is such a download that
+    stopped (1.3.2): huggingface_hub's .cache is in it, every file it has came from the manifest's revision, and
+    every file that differs from the manifest is missing, not another size (a file being downloaded waits in
+    .cache until it is whole). [] for a whole model, and for a folder that is something else: another revision
+    or a model put there by hand is still checked, and refused, as before."""
+    if not pinned(entry) or not (base / '.cache' / 'huggingface').is_dir():
+        return []
+    if not download_revisions(base) <= {entry['revision']}:
+        return []
+    problems = verify(base, entry, hashes=False)
+    return problems if problems and all(p.startswith('missing ') for p in problems) else []
+
+
+def download_gb(base: Path, entry: dict) -> float:
+    """The disk a download into base needs: MODEL_GB for the whole model, its share for what is still to come
+    when some of the manifest's files are there already at their size."""
+    files = entry.get('files') or {}
+    total = sum(int(f.get('size') or 0) for f in files.values())
+    if not total:
+        return MODEL_GB
+    there = sum(int(f.get('size') or 0) for rel, f in files.items()
+                if (base / rel).is_file() and (base / rel).stat().st_size == f.get('size'))
+    return round(MODEL_GB * (total - there) / total, 1)
 
 
 def manifest_entry(root: Path, repo_id: str, revision: str | None = None) -> dict:
@@ -278,14 +386,60 @@ def setup_florence(florence: Path, entry: dict, src: str | None,
     return problems, None
 
 
-def download_model(base: Path, repo_id: str = REPO_ID, revision: str | None = None) -> None:
+def bytes_under(root: Path) -> int:
+    """Every byte under root, what is still being downloaded included (huggingface_hub keeps an unfinished file in
+    root/.cache/huggingface/download)."""
+    total = 0
+    for dirpath, _dirs, files in os.walk(root):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, f))
+            except OSError:
+                pass
+    return total
+
+
+DOWNLOAD_HEARTBEAT_S = 15.0
+
+
+def download_model(base: Path, repo_id: str = REPO_ID, revision: str | None = None, total_gb: float = 0.0) -> None:
     from huggingface_hub import snapshot_download
     base.mkdir(parents=True, exist_ok=True)
-    # local_dir: real files in --base (what the app looks for), resumable; the pinned revision.
-    snapshot_download(repo_id, local_dir=str(base), revision=revision)
+    # 1.3.2 (28 Nov 2026, end-user report: the setup window sat at "Setting up the AI fill..." with nothing in its
+    # log): the download says how far it got every DOWNLOAD_HEARTBEAT_S seconds, whether or not huggingface_hub's
+    # own progress bars reach the window (they do not when it downloads through hf_xet, or stdout is not a console).
+    import threading
+    import time
+    stop = threading.Event()
+    start, t0 = bytes_under(base), time.monotonic()
+
+    def heartbeat() -> None:
+        while not stop.wait(DOWNLOAD_HEARTBEAT_S):
+            got = bytes_under(base)
+            rate = (got - start) / max(1e-6, time.monotonic() - t0) / 1e6
+            of = f' of about {total_gb:.0f} GB' if total_gb else ''
+            emit('step', step='model', text=f'Downloading {repo_id}: {got / 1e9:.1f} GB{of} in {base} ({rate:.0f} MB/s)')
+
+    beat = threading.Thread(target=heartbeat, daemon=True)
+    beat.start()
+    try:
+        # local_dir: real files in --base (what the app looks for), resumable; the pinned revision.
+        snapshot_download(repo_id, local_dir=str(base), revision=revision)
+    finally:
+        stop.set()
+        beat.join(timeout=2)
 
 
 def main(argv=None) -> int:
+    try:
+        return _main(argv)
+    except Exception as e:   # noqa: BLE001 (1.3.2: whatever stops it, the app hears why; the traceback goes to the log)
+        traceback.print_exc()
+        emit('done', ok=False, error=f'the setup stopped: {type(e).__name__}: {e}'[:400])
+        return 1
+
+
+def _main(argv=None) -> int:
     global _JSON
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--base', required=True, help='where Wan2.1-VACE-1.3B-diffusers goes (or already is)')
@@ -347,9 +501,21 @@ def main(argv=None) -> int:
         emit('done', ok=True, base=str(base), florence=str(florence))
         return 0
 
+    # 1.3.2: said before the checks, which take a while (PyTorch loads, every package is imported) and print nothing.
+    emit('step', step='check', text='Checking the GPU, the disk and the AI fill\'s packages')
     m = machine(base)
+    wan = manifest.get('wan') or {}
     model_there = have_model(base)
-    need_disk = 0.0 if model_there else MODEL_GB
+    # 1.3.2 (end-user report, 27 Nov 2026): a download that stopped (18 GB of it; the window closed, the network
+    # dropped) has its small files in first, transformer/config.json among them, and that was taken for the
+    # model: every run after it skipped the download and then refused the folder for the files it lacked. Such a
+    # folder is downloaded again now, which fetches only what is still missing (huggingface_hub keeps the rest).
+    resume = stopped_download(base, wan) if model_there and not a.from_ else []
+    if resume:
+        model_there = False
+        emit('log', text=f'The download into {base} stopped before it finished ({len(resume)} files to come): '
+                         'it carries on from there')
+    need_disk = 0.0 if model_there else download_gb(base, wan)
     enough_mem = m['memory_gb'] is not None and m['memory_gb'] >= MIN_MEMORY_GB
     enough_disk = m['free_gb'] >= need_disk
     missing = missing_packages()
@@ -372,7 +538,7 @@ def main(argv=None) -> int:
 
     if missing and not a.skip_packages:
         emit('step', step='packages', text='Installing ' + ', '.join(missing))
-        if not install_packages():
+        if not install_packages(missing):
             emit('done', ok=False, error='pip install failed (see the log)', base=str(base))
             return 1
         importlib.invalidate_caches()
@@ -381,7 +547,6 @@ def main(argv=None) -> int:
             emit('done', ok=False, error='still missing after the install: ' + ', '.join(still), base=str(base))
             return 1
 
-    wan = manifest.get('wan') or {}
     fresh = False
     if a.from_:
         emit('step', step='model', text=f'Installing {REPO_ID} from {a.from_} into {base}')
@@ -397,18 +562,23 @@ def main(argv=None) -> int:
             return 1
         rev = wan.get('revision')
         emit('step', step='model', text=f'Downloading {REPO_ID}{"@" + rev[:12] if rev else ""} '
-             f'(about {MODEL_GB:.0f} GB) into {base}')
+             f'(about {max(1.0, need_disk):.0f} GB{" still to come" if resume else ""}) into {base}')
         try:
-            download_model(base, REPO_ID, rev)
+            download_model(base, REPO_ID, rev, total_gb=sum(int(f.get('size') or 0) for f in (wan.get('files') or {}).values()) / 1e9 or MODEL_GB)
         except Exception as e:   # noqa: BLE001 (network, disk, auth: all end the same way)
-            emit('done', ok=False, error=f'model download: {e}', base=str(base))
+            traceback.print_exc()
+            emit('done', ok=False, error=f'the model download stopped ({str(e)[:300]}). Check the internet connection '
+                 '(huggingface.co), then press Set up automatically again: it carries on where it stopped',
+                 base=str(base))
             return 1
         fresh = True
     if wan.get('files') and not a.from_:
         emit('step', step='verify', text='Checking the model against the manifest' + (' (SHA-256)' if fresh or a.verify else ''))
         problems = verify(base, wan, hashes=fresh or a.verify)
         if problems:
-            emit('done', ok=False, error='the model does not match the manifest: ' + '; '.join(problems[:5]), base=str(base))
+            emit('done', ok=False, error='the model does not match the manifest: ' + '; '.join(problems[:5]) +
+                 ('' if fresh else f'. Move {base} aside (or delete it), then press Set up automatically again: it '
+                                   'downloads the model RUDRA was tested with'), base=str(base))
             return 1
 
     florence_warning = None

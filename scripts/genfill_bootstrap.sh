@@ -6,13 +6,16 @@
 #   ROOT/python  a private Python 3.12 (uv's managed CPython)
 #   ROOT/venv    the fill's environment: PyTorch, diffusers, OpenColorIO, OpenEXR, ...
 # then rudra.genfill.setup checks the GPU and the disk and downloads Wan2.1-VACE-1.3B into BASE.
-#   genfill_bootstrap.sh ROOT BASE REPO
-# REPO: the folder that holds rudra/ (the app's python/ folder, or the repository).
+#   genfill_bootstrap.sh ROOT BASE REPO [--from FOLDER_OR_ZIP | --florence-from FOLDER_OR_ZIP]
+# REPO: the folder that holds rudra/ (the app's python/ folder, or the repository). 1.3.2: the app runs this
+# for RUDRA's own Python every time (each step is passed over when it is done), and with --from or
+# --florence-from to install a model from a folder or zip once the Python is there.
 # stdout: one JSON object per line for the app ({"event": "step" | "bootstrap" | ...}); the
 # installers' own progress goes to stderr. Exit code: rudra.genfill.setup's (0 ready, 1 failed, 2 no GPU).
 # RUDRA_TORCH_INDEX overrides where PyTorch comes from (default: PyPI on macOS, CUDA 12.8 on Linux).
 set -euo pipefail
 ROOT="$1"; BASE="$2"; REPO="$3"
+EXTRA_FLAG="${4:---florence}"; EXTRA_PATH="${5:-}"
 step() { printf '{"event": "step", "step": "bootstrap", "text": "%s"}\n' "$1"; }
 fail() { printf '{"event": "done", "ok": false, "error": "%s"}\n' "$1"; exit 1; }
 mkdir -p "$ROOT"
@@ -46,9 +49,11 @@ fi
 export UV_PYTHON_INSTALL_DIR="$ROOT/python" UV_CACHE_DIR="$ROOT/cache" UV_NO_PROGRESS=1
 
 PY="$ROOT/venv/bin/python"
-if [ ! -x "$PY" ]; then
+# 1.3.2: a venv that does not start (one half made) is made again.
+if [ ! -x "$PY" ] || ! "$PY" -c "import sys" >/dev/null 2>&1; then
   step "Installing a private Python 3.12 for the AI fill"
-  "$UV" venv --seed --python 3.12 "$ROOT/venv" >&2 || fail "could not make the Python environment"
+  rm -rf "$ROOT/venv"
+  "$UV" venv --seed --python 3.12 "$ROOT/venv" >&2 || fail "could not make the Python environment (see the log)"
 fi
 printf '{"event": "bootstrap", "python": "%s"}\n' "$PY"
 
@@ -69,5 +74,10 @@ if [ -f "$CONS" ]; then set -- -c "$CONS"; else set --; echo "no genfill_constra
 export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 cd "$REPO"
 set +e
-"$PY" -m rudra.genfill.setup --base "$BASE" --json --skip-packages --florence   # 1.2.6: Florence-2 for Suggest a prompt
+# 1.2.6: Florence-2 for Suggest a prompt. 1.3.2: or a model from a folder or zip, with no download.
+if [ -n "$EXTRA_PATH" ]; then
+  "$PY" -m rudra.genfill.setup --base "$BASE" --json --skip-packages "$EXTRA_FLAG" "$EXTRA_PATH"
+else
+  "$PY" -m rudra.genfill.setup --base "$BASE" --json --skip-packages "$EXTRA_FLAG"
+fi
 exit $?

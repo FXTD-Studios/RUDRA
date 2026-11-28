@@ -91,6 +91,12 @@ private:
     QStringList bins_;
 };
 
+// 1.3.2 (user request): what Import… adds to Media for the files and folders picked. A folder is a clip of its
+// own frames, a movie and a still are clips each; with `sequences`, a still that is a frame of a numbered sequence
+// (two frames or more: numbered_sequence_of) brings in its folder as one clip, once. `notes`: what to know (a
+// sequence's folder that holds other frames too opens with them).
+QStringList media_import_paths(const QStringList& picked, bool sequences, QStringList* notes = nullptr);
+
 // The list of clips: drags its items out as files.
 class ClipList : public QListWidget {
 public:
@@ -116,6 +122,9 @@ public:
     // What the window does for the panel.
     std::function<void(const QStringList& paths)> open;       // into the viewer (several stills: one shot of them)
     std::function<void()> import_files, import_folder;        // the + menu
+    // 1.3.2 (user request): the right-click menu, anywhere in the panel: Import… (videos and images, with an image
+    // sequence box) and Clear VRAM (what RUDRA holds on the GPU).
+    std::function<void()> import_media, clear_vram;
     std::function<void(const QStringList& paths)> imported;   // dropped from the computer onto the panel
     std::function<void(const QStringList& paths)> batch;      // Add to batch queue (no need to open them)
     std::function<void()> changed;                            // the library changed: save it
@@ -133,6 +142,9 @@ public:
     bool list_mode() const { return list_; }
     ClipList* list() const { return list_view_; }
     QStringList selected() const;   // the selected clips' paths, in the panel's order
+    // 1.3.2: off Media, every clip of a kind ("movie", "still", "folder"; "" every clip), bins kept; nothing on
+    // disk is touched. How many went.
+    int clear_kind(const QString& kind);
     void select(const QStringList& paths);
 
 protected:

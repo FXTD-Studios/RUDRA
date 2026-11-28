@@ -63,6 +63,7 @@ const std::vector<ActionSpec> kActions = {
     {"recent-clear", "Clear recent", "", "", O::Native, E::Always, ""},
     {"first-run", "Check the display and the model…", "", "", O::Native, E::Always, ""},
     {"open-folder", "Open folder of frames…", "", "", O::Native, E::Always, "Ctrl+Alt+O"},
+    {"import-sequence", "Import image sequence…", "", "", O::Native, E::Always, ""},   // 1.3.2: one frame, its numbered siblings
     {"quit", "Quit", "", "", O::Native, E::Always, "Ctrl+Q"},
     {"view-image", "Image", "", "view:0", O::Native, E::Always, ""},
     {"view-false-colour", "False colour", "", "view:1", O::Native, E::Always, ""},
@@ -131,6 +132,8 @@ const std::vector<ActionSpec> kActions = {
     // 16 Nov 2026 (1.2.5): the once-a-day check can be turned off here and in the installer (docs/PRIVACY.md).
     {"auto-updates", "Check for updates automatically", "", "autoUpdates", O::Native, E::Always, ""},
     {"open-log-folder", "Open log folder", "", "", O::Native, E::Always, ""},
+    // 26 Nov 2026: the OFX plug-in the package carries, into Resolve and Nuke (app/ofx_install.hpp).
+    {"install-ofx", "Install the OFX plug-in for Resolve and Nuke…", "", "", O::Native, E::Always, ""},
     // 26 Oct 2026: the learned ACES 2.0 model's masters (app/aces_master.hpp).
     {"aces-master", "Learned ACES 2.0 master…", "", "", O::Native, E::Always, "Ctrl+Shift+E"},
     // 28 Oct 2026: the batch queue (app/batch_queue.hpp).
@@ -149,7 +152,7 @@ const std::vector<ActionSpec> kActions = {
 
 const std::vector<MenuSpec> kMenus = {
     {"File",
-     {"open", "open-folder", ">Open recent", "recent-clear", "<", "open-package", "models", "close", "-", "open-project",
+     {"open", "open-folder", "import-sequence", ">Open recent", "recent-clear", "<", "open-package", "models", "close", "-", "open-project",
       "save-project", "save-project-as", "reopen-session", "-", "master", "-", "quit"}},
     {"Edit", {"undo", "redo", "-", "reset-recon", "reset-regions"}},
     {"Clip",
@@ -167,7 +170,7 @@ const std::vector<MenuSpec> kMenus = {
       "-", "still-grab", "still-compare", "-", "colour-management"}},
     {"Window", {"rail-left", "rail-right", "scopes", "-", "zoom-fit", "zoom-actual"}},
     {"Help",
-     {"getting-started", "user-guide", "-", "shortcuts", "about", "first-run", "system-check", "-", "check-updates", "auto-updates", "open-log-folder"}},
+     {"getting-started", "user-guide", "-", "shortcuts", "about", "first-run", "system-check", "install-ofx", "-", "check-updates", "auto-updates", "open-log-folder"}},
 };
 
 // The keydown handler: the map, then Space, 1 to 4 and W, which it tests on

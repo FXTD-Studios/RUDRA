@@ -1,6 +1,9 @@
 #include "genfill_review.hpp"
 #include "child_process.hpp"
 
+#include <QClipboard>
+#include <QCoreApplication>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -8,6 +11,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGridLayout>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QJsonArray>
@@ -21,12 +25,18 @@
 #include <QPixmap>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QProcess>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
+#include <QScrollBar>
 #include <QSettings>
+#include <QSysInfo>
+#include <QTextBlock>
+#include <QTextCursor>
+#include <QTextDocument>
 #include <QTimer>
 #include <QTreeWidget>
 #include <QUrl>
@@ -43,6 +53,108 @@
 #include <utility>
 
 namespace rudra::app {
+
+namespace {
+
+// 1.3.2 (end-user report, 27 Nov 2026, "Wan2.1-VACE does not set up"): what one "Set up automatically" run
+// printed, in the dialog and in setup.log (genfill_setup_log), which the artist can send. The dialog used to keep
+// only the last line of each piece the installers wrote, nothing went to a file, and a run that stopped before it
+// could say why (a Python error, Windows refusing the script) left the step before it on the status line.
+struct SetupRun {
+    QFile file;
+    QPointer<QPlainTextEdit> view;
+    bool progress = false;   // the view's last line is a progress bar, redrawn in place
+    QString progress_text;   // that bar's latest state: written to the file once it is left behind
+    QStringList tail;        // the installers' last lines (stderr): the reason of a run that stopped
+    QByteArray out, err;     // what is not a whole line yet
+    bool done = false, ok = false;
+    bool blocked = false;    // Windows refused to run the PowerShell script (its execution policy)
+
+    void open(const QString& command) {
+        const QString path = from_path(genfill_setup_log());
+        QDir().mkpath(QFileInfo(path).absolutePath());
+        const QString before = QFileInfo(path).dir().filePath(QStringLiteral("setup.previous.log"));
+        QFile::remove(before);
+        QFile::rename(path, before);
+        file.setFileName(path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) return;
+        write(QStringLiteral("RUDRA %1, AI fill setup, %2, %3")
+                  .arg(QCoreApplication::applicationVersion(), QDateTime::currentDateTime().toString(Qt::ISODate),
+                       QSysInfo::prettyProductName()));
+        write(QStringLiteral("== ") + command);
+    }
+    void write(const QString& text) {
+        if (!file.isOpen()) return;
+        file.write(text.toUtf8());
+        file.write("\n");
+        file.flush();
+    }
+    void show(const QString& text, bool in_place) {
+        if (!view) return;
+        if (in_place && progress) {
+            QTextCursor c(view->document()->lastBlock());
+            c.movePosition(QTextCursor::StartOfBlock);
+            c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+            c.insertText(text);
+        } else {
+            view->appendPlainText(text);
+        }
+        view->verticalScrollBar()->setValue(view->verticalScrollBar()->maximum());
+    }
+    // A line of the setup's own (stdout, JSON): the file gets it as it came, the view what it says.
+    void event_line(const QString& raw, const QString& shown) {
+        if (progress) write(progress_text);
+        progress = false;
+        write(raw);
+        if (!shown.isEmpty()) show(shown, false);
+    }
+    // A line of the installers (stderr): whole, or the latest state of a progress bar being redrawn.
+    void err_line(const QString& text, bool unfinished) {
+        show(text, true);
+        progress = unfinished;
+        progress_text = unfinished ? text : QString();
+        if (unfinished) return;
+        write(text);
+        // PowerShell names a refused script in words of the system's language, and this way in any language.
+        static const QRegularExpression policy(QStringLiteral("PSSecurityException|UnauthorizedAccess|running scripts is disabled|"
+                                                              "is not digitally signed"));
+        blocked = blocked || text.contains(policy);
+        if (text.startsWith(QLatin1String("+ ")) || text.startsWith(QLatin1String("At line")) || text.startsWith(QLatin1Char('~')))
+            return;   // PowerShell's own decoration around an error
+        tail << text;
+        if (tail.size() > 40) tail.removeFirst();
+    }
+    // The installers' last line that reads as an error; with any_line, else their last line.
+    QString last_error(bool any_line) const {
+        static const QRegularExpression words(QStringLiteral("(?i)\\b(error|exception|failed|denied|cannot|could not|not found|"
+                                                             "refused|timed out|no space|unable)\\b"));
+        for (auto it = tail.crbegin(); it != tail.crend(); ++it)
+            if (it->contains(words)) return *it;
+        return any_line && !tail.isEmpty() ? tail.back() : QString();
+    }
+    QString stopped_text(int code, QProcess::ExitStatus how) const {
+        if (blocked)
+            return QStringLiteral("AI fill setup: Windows did not let RUDRA run its setup script, as PowerShell scripts are "
+                                  "blocked on this computer%1. Whoever looks after this computer can allow it: trust the "
+                                  "publisher the script is signed by (RUDRA's releases sign it), or change PowerShell's "
+                                  "execution policy; then press Set up automatically again.")
+                .arg(tail.isEmpty() ? QString() : QStringLiteral(" (\"%1\")").arg(tail.front()));
+        const QString last = last_error(true);
+        return QStringLiteral("AI fill setup stopped before it finished (%1)%2")
+            .arg(how == QProcess::NormalExit ? QStringLiteral("exit code %1").arg(code) : QStringLiteral("stopped or crashed"),
+                 last.isEmpty() ? QStringLiteral(".") : QStringLiteral(": ") + last);
+    }
+    void finish(int code, QProcess::ExitStatus how) {
+        if (!err.isEmpty() && !progress) err_line(QString::fromUtf8(err).trimmed(), false);   // a last line with no newline
+        if (progress) write(progress_text);
+        progress = false;
+        write(QStringLiteral("== the setup ended: %1").arg(how == QProcess::NormalExit ? QStringLiteral("exit code %1").arg(code)
+                                                                                        : QStringLiteral("stopped or crashed")));
+        file.close();
+    }
+};
+
+}  // namespace
 
 int GenFillReview::flagged() const {
     int n = 0;
@@ -359,7 +471,23 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
     auto* box = new QDialogButtonBox(QDialogButtonBox::Close, this);
     auto* automatic = box->addButton("Set up automatically…", QDialogButtonBox::ActionRole);
     automatic->setObjectName("genfillSetupAuto");
-    connect(automatic, &QPushButton::clicked, this, [this, status, log_view, busy, automatic] {
+    // 1.3.2 (end-user report, 27 Nov 2026): the whole of the last setup's log, for whoever helps.
+    // Its own button, not the button box's: Qt before 6.7 shows every button of a box again when it lays them out
+    // (the Qt shell CI, 28 Nov 2026: "Copy log" showed with no log to copy).
+    auto* copy_log = new QPushButton(QStringLiteral("Copy log"), this);
+    copy_log->setObjectName("genfillSetupCopyLog");
+    v->addWidget(copy_log, 0, Qt::AlignLeft);
+    copy_log->setToolTip(QStringLiteral("Puts everything the last setup printed on the clipboard\n(%1)")
+                             .arg(QDir::toNativeSeparators(from_path(genfill_setup_log()))));
+    copy_log->setVisible(QFileInfo::exists(from_path(genfill_setup_log())));
+    connect(copy_log, &QPushButton::clicked, this, [copy_log] {
+        QFile f(from_path(genfill_setup_log()));
+        if (!f.open(QIODevice::ReadOnly)) return;
+        QGuiApplication::clipboard()->setText(QString::fromUtf8(f.readAll()));
+        copy_log->setText(QStringLiteral("Copied"));
+        QTimer::singleShot(2500, copy_log, [copy_log] { copy_log->setText(QStringLiteral("Copy log")); });
+    });
+    connect(automatic, &QPushButton::clicked, this, [this, status, log_view, busy, automatic, copy_log] {
         // 1.2.6 (checklist item 7): set by "Install from a folder or zip…": --from / --florence-from.
         const QStringList offline = automatic->property("offlineArgs").toStringList();
         automatic->setProperty("offlineArgs", QVariant());
@@ -370,35 +498,58 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
             status->setText("AI fill setup: the RUDRA repository (rudra/genfill/setup.py) was not found; set it above.");
             return;
         }
-        // 7 Nov 2026: no Python for the fill: the bootstrap makes RUDRA its own (uv, Python 3.12,
-        // PyTorch, the packages) under the app's data folder, then runs the same setup.
+        // 7 Nov 2026: no Python for the fill: the bootstrap makes RUDRA its own (Python 3.12, PyTorch,
+        // the packages) under the app's data folder, then runs the same setup.
         const std::filesystem::path script = genfill_bootstrap_script(plan.repo);
-        const bool bootstrap = !QFileInfo::exists(from_path(plan.python)) && !script.empty();
-        if (!QFileInfo::exists(from_path(plan.python)) && !bootstrap) {
+        const bool python_there = QFileInfo::exists(from_path(plan.python));
+        // 1.3.2 (end-user report, 27 Nov 2026): RUDRA's own Python goes through the bootstrap every time, not only
+        // when it is missing. A bootstrap that stopped (the 2.5 GB PyTorch download, the window closed) left a
+        // Python with no PyTorch, and every click after it ended in "PyTorch is not installed". Each step of the
+        // bootstrap checks itself and is passed over when it is done, so a second run reaches the model in seconds.
+        const bool own_python =
+            python_there && QFileInfo(from_path(plan.python)).absoluteFilePath().compare(
+                                QFileInfo(from_path(genfill_bootstrap_python())).absoluteFilePath(), Qt::CaseInsensitive) == 0;
+        // 1.3.2 (user feedback): installing a model from a folder or zip goes through the bootstrap too, so it works
+        // on a computer with no Python for the fill yet: the bootstrap makes it, then installs the model.
+        const bool bootstrap = !script.empty() && (!python_there || own_python);
+        if (!python_there && !bootstrap) {
             status->setText(QStringLiteral("AI fill setup: no Python at %1. Set the Python above (one with PyTorch for your GPU).")
                                 .arg(from_path(plan.python)));
             return;
         }
-        if (!offline.isEmpty() && bootstrap) {
-            status->setText("AI fill setup: set up the Python first (Set up automatically…, or set the Python above); "
-                            "then install the models from the folder or zip.");
-            return;
-        }
-        const bool have_model = QFileInfo::exists(from_path(plan.base / "transformer" / "config.json"));
-        const QString what = !offline.isEmpty()
+        // 1.3.2: a download that stopped has transformer/config.json too; the setup carries it on.
+        const bool model_files = QFileInfo::exists(from_path(plan.base / "transformer" / "config.json"));
+        const QString unfinished = model_files ? genfill_wan_missing(plan.base) : QString();
+        const bool have_model = model_files && unfinished.isEmpty();
+        const QString model_step =
+            have_model ? QStringLiteral("checks the base model already at\n%1").arg(from_path(plan.base))
+            : !unfinished.isEmpty()
+                ? QStringLiteral("finishes the Wan2.1-VACE-1.3B download that stopped, in\n%1").arg(from_path(plan.base))
+                : QStringLiteral("downloads Wan2.1-VACE-1.3B (Apache 2.0, about 18 GB) into\n%1").arg(from_path(plan.base));
+        const QString offline_model = offline.value(0) == QLatin1String("--from") ? QStringLiteral("Wan2.1-VACE-1.3B")
+                                                                                  : QStringLiteral("Florence-2");
+        const QString what = !offline.isEmpty() && !python_there
+            ? QStringLiteral("This computer has no Python for the AI fill yet. This first installs one for RUDRA only, in\n%1\n\n"
+                             "(Python 3.12, PyTorch and the fill's packages: about 5 GB from the internet), then installs %2 "
+                             "from\n%3\n\nwith no download. Every file is checked against the model manifest (its SHA-256) "
+                             "before it is moved into place.")
+                  .arg(from_path(genfill_bootstrap_root()), offline_model, QDir::toNativeSeparators(offline.value(1)))
+            : !offline.isEmpty()
             ? QStringLiteral("This installs %1 from\n%2\n\nwith no download. Every file is checked against the model "
                              "manifest (its SHA-256) before it is moved into place; a model already there is kept beside it.")
-                  .arg(offline.first() == QLatin1String("--from") ? QStringLiteral("Wan2.1-VACE-1.3B") : QStringLiteral("Florence-2"),
-                       QDir::toNativeSeparators(offline.value(1)))
+                  .arg(offline_model, QDir::toNativeSeparators(offline.value(1)))
+            : bootstrap && python_there
+            ? QStringLiteral("This checks RUDRA's own Python for the AI fill, in\n%1\n\nand installs whatever it is missing "
+                             "(PyTorch, the fill's packages), then %2\n\nand Florence-2 (MIT, about 0.5 GB) for Suggest a "
+                             "prompt. A step that stopped carries on where it stopped.")
+                  .arg(from_path(genfill_bootstrap_root()), model_step)
             : bootstrap
             ? QStringLiteral("This computer has no Python for the AI fill. This installs one for RUDRA only, in\n%1\n\n"
                              "Python 3.12, PyTorch and the fill's packages (about 5 GB), then %2\n\n"
                              "Nothing else on this computer changes. It needs a 16 GB GPU (NVIDIA, or Apple silicon). "
                              "A step that stops resumes when you run this again.")
                   .arg(from_path(genfill_bootstrap_root()),
-                       (have_model ? QStringLiteral("checks the base model already at\n%1").arg(from_path(plan.base))
-                                   : QStringLiteral("downloads Wan2.1-VACE-1.3B (Apache 2.0, about 18 GB) into\n%1").arg(from_path(plan.base))) +
-                           QStringLiteral("\n\nand Florence-2 (MIT, about 0.5 GB) for Suggest a prompt."))
+                       model_step + QStringLiteral("\n\nand Florence-2 (MIT, about 0.5 GB) for Suggest a prompt."))
             : have_model
             ? QStringLiteral("The base model is already at\n%1\n\nThis installs the missing Python packages into\n%2\n\n"
                              "and Florence-2 (MIT, about 0.5 GB) for Suggest a prompt, if it is not there yet.")
@@ -408,19 +559,25 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
                              "and installs the Python packages the fill needs into\n%2\n\n"
                              "It needs a 16 GB GPU. A download that stops resumes when you run this again.")
                   .arg(from_path(plan.base), from_path(plan.python));
-        if (QMessageBox::question(this, "Set up AI fill", what) != QMessageBox::Yes) return;
-        auto* proc = new QProcess(this);   // the dialog's: closing it ends the setup
+        if (!skip_question_ && QMessageBox::question(this, "Set up AI fill", what) != QMessageBox::Yes) return;
+        auto* proc = new QProcess(this);   // the dialog's: closing it ends the setup (1.3.2: it asks first, reject())
+        setup_ = proc;
         proc->setWorkingDirectory(from_path(plan.repo));
         if (bootstrap) {
 #ifdef _WIN32
             // By its full path: a bare name is also looked for in the current folder (11 Nov 2026).
             proc->setProgram(QDir(qEnvironmentVariable("SystemRoot", QStringLiteral("C:/Windows")))
                                  .filePath(QStringLiteral("System32/WindowsPowerShell/v1.0/powershell.exe")));
-            proc->setArguments({"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", from_path(script), "-Root",
-                                from_path(genfill_bootstrap_root()), "-Base", from_path(plan.base), "-Repo", from_path(plan.repo)});
+            QStringList args{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", from_path(script), "-Root",
+                             from_path(genfill_bootstrap_root()), "-Base", from_path(plan.base), "-Repo", from_path(plan.repo)};
+            if (offline.size() == 2)   // 1.3.2: --from / --florence-from, as the bootstrap's -From / -FlorenceFrom
+                args << (offline.first() == QLatin1String("--from") ? QStringLiteral("-From") : QStringLiteral("-FlorenceFrom"))
+                     << offline.value(1);
+            proc->setArguments(args);
 #else
             proc->setProgram(QStringLiteral("/bin/bash"));
-            proc->setArguments({from_path(script), from_path(genfill_bootstrap_root()), from_path(plan.base), from_path(plan.repo)});
+            proc->setArguments(QStringList{from_path(script), from_path(genfill_bootstrap_root()), from_path(plan.base),
+                                           from_path(plan.repo)} + offline);   // 1.3.2: --from / --florence-from
 #endif
         } else {
             proc->setProgram(from_path(plan.python));
@@ -435,45 +592,95 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
         log_view->clear();
         busy->setVisible(true);
         automatic->setEnabled(false);
+        copy_log->setVisible(false);
         status->setText("Setting up the AI fill…");
-        auto out_buf = std::make_shared<QByteArray>();
-        connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc, out_buf, status, log_view] {
-            out_buf->append(proc->readAllStandardOutput());
-            for (int nl; (nl = out_buf->indexOf('\n')) >= 0;) {
-                const QByteArray line = out_buf->left(nl).trimmed();
-                out_buf->remove(0, nl + 1);
+        auto run = std::make_shared<SetupRun>();
+        run->view = log_view;
+        run->open(QDir::toNativeSeparators(proc->program()) + QLatin1Char(' ') + proc->arguments().join(QLatin1Char(' ')));
+        run->write(QStringLiteral("== ") + QString(what).replace(QLatin1Char('\n'), QLatin1Char(' ')));
+        // 1.3.2 (28 Nov 2026, end-user report): the window stayed empty until the setup's first step, so a slow start
+        // looked like a setup that hung. It says at once that it started, and where the whole log goes.
+        run->show(QStringLiteral("Starting the setup. Everything it prints also goes to %1")
+                      .arg(QDir::toNativeSeparators(from_path(genfill_setup_log()))), false);
+        connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc, run, status] {
+            run->out.append(proc->readAllStandardOutput());
+            for (int nl; (nl = run->out.indexOf('\n')) >= 0;) {
+                const QByteArray line = run->out.left(nl).trimmed();
+                run->out.remove(0, nl + 1);
+                if (line.isEmpty()) continue;
                 const QJsonObject o = QJsonDocument::fromJson(line).object();
                 const QString ev = o.value("event").toString();
-                if (ev == "step") status->setText(o.value("text").toString());
-                else if (ev == "bootstrap") {   // the fill's own Python exists now: it is the one to use
-                    QSettings().setValue("genfill/python", o.value("python").toString());
-                    if (auto* le = findChild<QLineEdit*>("genfillSetup_python")) le->setText(o.value("python").toString());
-                    log_view->appendPlainText(QStringLiteral("Python for the AI fill: ") + o.value("python").toString());
+                QString shown;
+                if (ev == "step") {
+                    status->setText(o.value("text").toString());
+                    shown = o.value("text").toString();
+                } else if (ev == "bootstrap") {
+                    // The fill's own Python exists now: it is the one to use. Its path is the app's own (1.3.2), not
+                    // the script's line, which a console code page garbled for a user name in another alphabet.
+                    const QString py = from_path(genfill_bootstrap_python());
+                    QSettings().setValue("genfill/python", py);
+                    if (auto* le = findChild<QLineEdit*>("genfillSetup_python")) le->setText(py);
+                    shown = QStringLiteral("Python for the AI fill: ") + QDir::toNativeSeparators(py);
+                } else if (ev == "check") {
+                    shown = QStringLiteral("%1 %2 GB on %3 · %4 GB free · model %5")
+                                .arg(o.value("gpu").toString(o.value("device").toString()))
+                                .arg(o.value("memory_gb").toDouble(), 0, 'f', 1)
+                                .arg(o.value("device").toString())
+                                .arg(o.value("free_gb").toDouble(), 0, 'f', 0)
+                                .arg(o.value("model").toBool() ? "found" : "to download");
+                } else if (ev == "done") {
+                    run->done = true;
+                    run->ok = o.value("ok").toBool();
+                    if (!run->ok) status->setText("AI fill setup: " + o.value("error").toString());
+                    shown = !run->ok ? QStringLiteral("Stopped: ") + o.value("error").toString()
+                                     : o.value("florence_warning").toString();
+                } else {
+                    shown = o.isEmpty() ? QString::fromUtf8(line) : o.value("text").toString();
                 }
-                else if (ev == "check")
-                    log_view->appendPlainText(QStringLiteral("%1 %2 GB on %3 · %4 GB free · model %5")
-                                                  .arg(o.value("gpu").toString(o.value("device").toString()))
-                                                  .arg(o.value("memory_gb").toDouble(), 0, 'f', 1)
-                                                  .arg(o.value("device").toString())
-                                                  .arg(o.value("free_gb").toDouble(), 0, 'f', 0)
-                                                  .arg(o.value("model").toBool() ? "found" : "to download"));
-                else if (ev == "done" && !o.value("ok").toBool()) status->setText("AI fill setup: " + o.value("error").toString());
-                else if (ev == "done" && !o.value("florence_warning").toString().isEmpty())
-                    log_view->appendPlainText(o.value("florence_warning").toString());
-                else if (!line.isEmpty()) log_view->appendPlainText(o.isEmpty() ? QString::fromUtf8(line) : o.value("text").toString());
+                run->event_line(QString::fromUtf8(line), shown);
             }
         });
-        // The download's progress bars (tqdm, on stderr): the latest line only.
-        connect(proc, &QProcess::readyReadStandardError, this, [proc, log_view] {
-            const QString chunk = QString::fromUtf8(proc->readAllStandardError());
-            const QStringList parts = chunk.split(QRegularExpression("[\r\n]"), Qt::SkipEmptyParts);
-            if (!parts.isEmpty()) log_view->appendPlainText(parts.back().trimmed());
+        // The installers' own lines (stderr): every whole line, and a progress bar (tqdm: redrawn after a carriage
+        // return) as its latest state, in place.
+        connect(proc, &QProcess::readyReadStandardError, this, [proc, run] {
+            run->err.append(proc->readAllStandardError());
+            for (int nl; (nl = run->err.indexOf('\n')) >= 0;) {
+                QString line = QString::fromUtf8(run->err.left(nl));
+                run->err.remove(0, nl + 1);
+                if (line.endsWith(QLatin1Char('\r'))) line.chop(1);
+                line = line.mid(line.lastIndexOf(QLatin1Char('\r')) + 1).trimmed();
+                if (!line.isEmpty()) run->err_line(line, false);
+            }
+            // What is left has no newline yet. A progress bar redraws itself after a carriage return: its latest state
+            // is shown in place, and only that is kept. A carriage return at the very end is half of a Windows line
+            // end (the newline comes in the next piece): the line is kept whole until it does.
+            qsizetype cr = run->err.lastIndexOf('\r');
+            if (cr >= 0 && cr == run->err.size() - 1) cr = cr > 0 ? run->err.lastIndexOf('\r', cr - 1) : -1;
+            if (cr >= 0) {
+                const QString latest = QString::fromUtf8(run->err.mid(cr + 1)).trimmed();
+                run->err.remove(0, cr);   // the bar's line is whole once its newline comes
+                if (!latest.isEmpty()) run->err_line(latest, true);
+            }
         });
-        connect(proc, &QProcess::finished, this, [this, proc, status, busy, automatic, plan](int code, QProcess::ExitStatus) {
+        connect(proc, &QProcess::finished, this, [this, proc, run, status, busy, automatic, copy_log, plan](int code, QProcess::ExitStatus how) {
             busy->setVisible(false);
             automatic->setEnabled(true);
             proc->deleteLater();
-            if (code != 0) return;   // the reason is on the status line already
+            run->finish(code, how);
+            copy_log->setVisible(true);
+            // 1.3.2: success is the setup's own "done" with ok, not the exit code alone (a PowerShell that refused
+            // the script can end with 0), and every other end says why and where the whole log is.
+            if (how != QProcess::NormalExit || code != 0 || !run->ok) {
+                if (!run->done) {
+                    status->setText(run->stopped_text(code, how));
+                } else if (status->text().contains(QLatin1String("see the log"))) {   // the installer's own words for it
+                    if (const QString last = run->last_error(false); !last.isEmpty()) status->setText(status->text() + QStringLiteral("\n") + last);
+                }
+                status->setText(status->text() + QStringLiteral("\n\nEverything the setup printed is in %1: Copy log puts it "
+                                                                "on the clipboard.")
+                                                     .arg(QDir::toNativeSeparators(from_path(genfill_setup_log()))));
+                return;
+            }
             QSettings s;
             s.setValue("genfill/base", from_path(plan.base));
             if (auto* le = findChild<QLineEdit*>("genfillSetup_base")) le->setText(from_path(plan.base));
@@ -485,10 +692,16 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
             if (auto* lora = findChild<QPushButton*>("genfillGetLora")) lora->setVisible(!ok && w.contains("no LoRA"));
             refresh_found();
         });
-        connect(proc, &QProcess::errorOccurred, this, [status, busy, automatic](QProcess::ProcessError) {
+        connect(proc, &QProcess::errorOccurred, this, [proc, run, status, busy, automatic, copy_log](QProcess::ProcessError e) {
+            if (e != QProcess::FailedToStart) return;   // a crash or a stop ends in finished(), which says so
             busy->setVisible(false);
             automatic->setEnabled(true);
-            status->setText("AI fill setup: the Python could not be started.");
+            run->write(QStringLiteral("== could not start: ") + proc->errorString());
+            run->finish(-1, QProcess::CrashExit);
+            copy_log->setVisible(true);
+            status->setText(QStringLiteral("AI fill setup: %1 could not be started (%2).")
+                                .arg(QDir::toNativeSeparators(proc->program()), proc->errorString()));
+            proc->deleteLater();   // no finished() after a start that failed
         });
         end_with_rudra(proc);   // 1.3: the set-up (and the installers it runs) ends with RUDRA
         proc->start();
@@ -498,7 +711,8 @@ GenFillSetupDialog::GenFillSetupDialog(QWidget* parent) : QDialog(parent) {
     // rudra/genfill/model_manifest.json (the pinned revision's SHA-256) before it is used.
     auto* from = box->addButton("Install from a folder or zip…", QDialogButtonBox::ActionRole);
     from->setObjectName("genfillSetupFrom");
-    from->setToolTip("No internet: install Wan2.1-VACE or Florence-2 from a folder or zip, checked by SHA-256");
+    from->setToolTip("Install Wan2.1-VACE or Florence-2 from a folder or zip, with no model download, checked by SHA-256 "
+                     "(1.3.2: without AI fill's Python, it sets that up first, about 5 GB from the internet)");
     auto* from_menu = new QMenu(from);
     for (const auto& [label, flag, zip] : std::vector<std::tuple<QString, QString, bool>>{
              {"Wan2.1-VACE-1.3B from a zip…", "--from", true},
@@ -579,6 +793,35 @@ void GenFillSetupDialog::refresh_found() {
                             : QStringLiteral("Installs the Python packages and downloads the base model, then finds every part by itself"));
         a->setDefault(!found);
     }
+}
+
+void GenFillSetupDialog::start_automatic() {
+    skip_question_ = true;
+    if (auto* a = findChild<QPushButton*>(QStringLiteral("genfillSetupAuto"))) a->click();   // runs the setup at once
+    skip_question_ = false;
+}
+
+void GenFillSetupDialog::reject() {
+    // 1.3.2 (end-user report, 27 Nov 2026): closing this window stops the setup. It did so without a word, mid
+    // download, and on Windows the installers the setup had started went on unseen beside the next run.
+    if (setup_ && setup_->state() != QProcess::NotRunning) {
+        if (QMessageBox::question(this, QStringLiteral("AI fill setup"),
+                                  QStringLiteral("The AI fill setup is still running. Closing this window stops it; Set up "
+                                                 "automatically… carries on where it stopped the next time.\n\n"
+                                                 "Stop the setup and close?")) != QMessageBox::Yes)
+            return;
+        const QString pid = QString::number(setup_->processId());
+#ifdef _WIN32
+        // The whole tree: PowerShell, and the uv or Python under it (by its full path, like PowerShell's).
+        QProcess::execute(QDir(qEnvironmentVariable("SystemRoot", QStringLiteral("C:/Windows"))).filePath(QStringLiteral("System32/taskkill.exe")),
+                          {QStringLiteral("/T"), QStringLiteral("/F"), QStringLiteral("/PID"), pid});
+#else
+        QProcess::execute(QStringLiteral("pkill"), {QStringLiteral("-TERM"), QStringLiteral("-P"), pid});
+#endif
+        if (setup_) setup_->kill();
+        if (setup_) setup_->waitForFinished(5000);
+    }
+    QDialog::reject();
 }
 
 }  // namespace rudra::app

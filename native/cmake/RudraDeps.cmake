@@ -33,6 +33,56 @@ if(NOT TARGET ZLIB::ZLIB)
   message(STATUS "zlib 1.3.1 fetched and linked static (no system zlib)")
 endif()
 
+# OpenEXR (1.3.2, 28 Nov 2026), for the EXR compressions RUDRA's own writer does not do: RLE, PIZ, PXR24, B44, B44A,
+# DWAA and DWAB (deliver/src/exr_openexr.cpp; None, ZIP and ZIPS stay RUDRA's own, byte for byte). vcpkg
+# (native/vcpkg.json), Homebrew (openexr) and the Linux systems (libopenexr-dev) have it; without one it is fetched at a
+# pinned release and linked static, as zlib above, so every package offers every compression. RUDRA_WITH_OPENEXR=OFF
+# builds without it: Deliver then lists ZIP, ZIPS and None only.
+# The packages (scripts/native_app.sh, PACKAGE_WINDOWS.ps1) set RUDRA_OPENEXR_FETCH: the pinned copy, static, even where
+# the system has one, so nothing in a package points at a Homebrew or system OpenEXR.
+option(RUDRA_WITH_OPENEXR "Every OpenEXR compression in Deliver (the OpenEXR library)" ON)
+option(RUDRA_OPENEXR_FETCH "Build the pinned OpenEXR, static, even when the system has one (the packages)" OFF)
+if(RUDRA_WITH_OPENEXR)
+  if(NOT RUDRA_OPENEXR_FETCH)
+    # 3.3 or newer (28 Nov 2026, PR #105's CI): exr_openexr.cpp reads through IStream's stateless read and size and
+    # makes OpaqueAttribute from bytes, which 3.3 added. Ubuntu 24.04's libopenexr-dev is 3.1: it is passed over and
+    # the pinned release below is built instead.
+    find_package(OpenEXR 3.3 CONFIG QUIET)
+  endif()
+  if(NOT TARGET OpenEXR::OpenEXR)
+    set(OPENEXR_INSTALL OFF CACHE BOOL "" FORCE)
+    set(OPENEXR_INSTALL_TOOLS OFF CACHE BOOL "" FORCE)
+    set(OPENEXR_INSTALL_PKG_CONFIG OFF CACHE BOOL "" FORCE)
+    set(OPENEXR_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    set(OPENEXR_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(OPENEXR_BUILD_PYTHON OFF CACHE BOOL "" FORCE)
+    set(IMATH_INSTALL OFF CACHE BOOL "" FORCE)
+    set(IMATH_INSTALL_PKG_CONFIG OFF CACHE BOOL "" FORCE)
+    set(CMAKE_DEBUG_POSTFIX "" CACHE STRING "")   # OpenEXR would set "_d" for every library and module, the plug-in's too
+    # Its own Imath and libdeflate, static too: a system one would leave the package pointing at the system's libraries.
+    set(OPENEXR_FORCE_INTERNAL_IMATH ON CACHE BOOL "" FORCE)
+    set(OPENEXR_FORCE_INTERNAL_DEFLATE ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(openexr
+      GIT_REPOSITORY https://github.com/AcademySoftwareFoundation/openexr.git
+      GIT_TAG v3.3.2   # 28 Nov 2026; it fetches Imath 3.1 and libdeflate itself when the system has none
+      GIT_SHALLOW TRUE)
+    # Static (as a subproject it would otherwise build shared libraries a package would have to carry); RUDRA's own
+    # BUILD_SHARED_LIBS, if any, is put back after.
+    if(DEFINED BUILD_SHARED_LIBS)
+      set(_rudra_shared "${BUILD_SHARED_LIBS}")
+    endif()
+    set(BUILD_SHARED_LIBS OFF)
+    FetchContent_MakeAvailable(openexr)
+    if(DEFINED _rudra_shared)
+      set(BUILD_SHARED_LIBS "${_rudra_shared}")
+      unset(_rudra_shared)
+    else()
+      unset(BUILD_SHARED_LIBS)
+    endif()
+    message(STATUS "OpenEXR 3.3.2 fetched and linked static (no system OpenEXR)")
+  endif()
+endif()
+
 # A Windows executable must carry the runtime matching the headers/import
 # library it was built with. PATH cannot override Windows' System32 copy, which
 # can expose an older C API even when the correct SDK is first on PATH.

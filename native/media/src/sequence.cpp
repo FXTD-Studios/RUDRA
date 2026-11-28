@@ -88,8 +88,48 @@ fs::path pathlib_clean(const std::string& s) {
 
 }  // namespace
 
+std::vector<fs::path> numbered_sequence_of(const fs::path& frame) {
+    // The last run of digits in the name without its extension: prefix, digits, the rest.
+    const auto split = [](const std::string& stem, std::string& pre, std::string& post) {
+        std::size_t end = stem.size();
+        while (end > 0 && !std::isdigit(static_cast<unsigned char>(stem[end - 1]))) --end;
+        std::size_t begin = end;
+        while (begin > 0 && std::isdigit(static_cast<unsigned char>(stem[begin - 1]))) --begin;
+        if (begin == end) return false;
+        pre = stem.substr(0, begin), post = stem.substr(end);
+        return true;
+    };
+    const auto number_of = [](const std::string& stem, std::size_t from, std::size_t to) {
+        long long n = 0;
+        for (std::size_t i = from; i < to && n < 1000000000LL; ++i) n = n * 10 + (stem[i] - '0');
+        return n;
+    };
+    std::string pre, post;
+    const std::string stem = frame.stem().string(), ext = lower(frame.extension().string());
+    if (!split(stem, pre, post)) return {frame};
+    std::vector<std::pair<long long, fs::path>> found;
+    std::error_code ec;
+    for (const auto& e : fs::directory_iterator(frame.parent_path().empty() ? fs::path(".") : frame.parent_path(), ec)) {
+        if (!e.is_regular_file(ec) || lower(e.path().extension().string()) != ext) continue;
+        const std::string other = e.path().stem().string();
+        if (other.size() <= pre.size() + post.size() || other.compare(0, pre.size(), pre) != 0 ||
+            other.compare(other.size() - post.size(), post.size(), post) != 0)
+            continue;
+        const std::size_t from = pre.size(), to = other.size() - post.size();
+        bool digits = true;
+        for (std::size_t i = from; i < to; ++i) digits = digits && std::isdigit(static_cast<unsigned char>(other[i]));
+        if (digits) found.emplace_back(number_of(other, from, to), e.path());
+    }
+    if (found.empty()) return {frame};
+    std::stable_sort(found.begin(), found.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::vector<fs::path> out;
+    for (auto& f : found) out.push_back(std::move(f.second));
+    return out;
+}
+
 const std::vector<std::string>& frame_suffixes() {
-    static const std::vector<std::string> s{".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"};
+    // 1.3.2: .exr (linear Rec.709 SDR, read by still.cpp as BT.1886 codes)
+    static const std::vector<std::string> s{".bmp", ".exr", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"};
     return s;
 }
 const std::vector<std::string>& video_suffixes() {

@@ -116,11 +116,11 @@ if [ -z "${SKIP_BUILD:-}" ]; then
     -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_RENDER=ON -DRUDRA_BUILD_CLI=ON -DRUDRA_BUILD_TESTS=$TESTS \
     -DRUDRA_WITH_ONNXRUNTIME=ON "-DONNXRUNTIME_ROOT=$ORT_ROOT" -DRUDRA_WITH_LIBTORCH=OFF \
     -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CV_ROOT/lib/cmake/opencv4" \
-    -DRUDRA_WITH_OCIO=ON "-DOpenColorIO_DIR=$OCIO_ROOT/lib/cmake/OpenColorIO" \
+    -DRUDRA_WITH_OCIO=ON "-DOpenColorIO_DIR=$OCIO_ROOT/lib/cmake/OpenColorIO" -DRUDRA_BUILD_OFX=ON -DRUDRA_OPENEXR_FETCH=ON \
     "-DCMAKE_PREFIX_PATH=$QT_ROOT" "-DQt6_DIR=$QT_ROOT/lib/cmake/Qt6" \
     "-DCMAKE_BUILD_RPATH=$ORT_ROOT/lib;$OCIO_ROOT/lib" > "$DEPS/rudra_configure.log" 2>&1 ||
     { tail -n 40 "$DEPS/rudra_configure.log" >&2; fail "cmake configure (the whole output: $DEPS/rudra_configure.log)"; }
-  targets=(RUDRA rudra-native)
+  targets=(RUDRA rudra-native rudra_ofx_plugin)   # 26 Nov 2026: the OFX plug-in, installed from Help
   [ "$TESTS" = ON ] && targets+=(rudra_app_tests)
   cmake --build "$BUILD" --target "${targets[@]}" --parallel "$JOBS" || fail "build"
   aces_usage=$("$BUILD/cli/rudra-native" aces-v2 --help 2>&1 || true)   # it exits non-zero after the usage
@@ -133,8 +133,15 @@ if [ -z "${SKIP_BUILD:-}" ]; then
     TEST_EXE=$(find "$BUILD/app" -name rudra_app_tests -type f -perm -u+x | head -1)
     [ -n "$TEST_EXE" ] || fail "rudra_app_tests not built"
     TEST_LOG=$DEPS/app_tests.log
+    # APP_TEST_RUNS above 1: the whole run again until one fails, for a crash that comes and goes (release.yml's
+    # app_test_runs, by hand; 26 Nov 2026).
+    runs=${APP_TEST_RUNS:-1}
+    case "$runs" in '' | *[!0-9]*) runs=1 ;; esac
     code=0
-    QT_QPA_PLATFORM=offscreen "$TEST_EXE" 2>&1 | tee "$TEST_LOG" || code=${PIPESTATUS[0]}
+    for ((run = 1; run <= runs && code == 0; run++)); do
+      [ "$runs" -gt 1 ] && say "The app's Qt tests, run $run of $runs"
+      QT_QPA_PLATFORM=offscreen "$TEST_EXE" 2>&1 | tee "$TEST_LOG" || code=${PIPESTATUS[0]}
+    done
     if [ "$code" -ne 0 ]; then
       # A crash (a signal: exit above 128) leaves no failing assertion to read. On a Mac the test it crashed in is
       # run again under lldb, alone and then (if it passes alone) with the whole run, and the backtrace goes

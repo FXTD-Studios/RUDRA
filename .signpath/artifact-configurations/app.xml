@@ -2,9 +2,11 @@
 <!--
   RUDRA for Windows: the package folder (SignPath artifact configuration "app").
   release.yml uploads the folder's contents (scripts/PACKAGE_WINDOWS.ps1 -NoArchive) as a GitHub
-  artifact, which is a ZIP. Only RUDRA's own executables are signed, and only when their version
-  resource says RUDRA and this release's version; the rest (Qt, ONNX Runtime, OpenCV, OCIO,
-  ffmpeg, the MSVC runtime) is passed through as its makers built it.
+  artifact, which is a ZIP. Only RUDRA's own files are signed: its executables and the OFX plug-in
+  only when their version resource says RUDRA and this release's version, and (1.3.2) AI fill's
+  setup script, which "Set up automatically" runs with PowerShell (a computer whose policy runs only
+  signed scripts refused it). The rest (Qt, ONNX Runtime, OpenCV, OCIO, ffmpeg, the MSVC runtime)
+  is passed through as its makers built it.
   This file is the copy kept with the code: paste it into the SignPath project's artifact
   configuration of the same slug when it changes.
 -->
@@ -19,5 +21,13 @@
     <pe-file path="rudra-native.exe" product-name="RUDRA" product-version="${version}">
       <authenticode-sign />
     </pe-file>
+    <!-- 1.3.2: the plug-in (a DLL; its version resource is native/ofx/windows/rudra_ofx.rc.in) -->
+    <pe-file path="ofx/RUDRA.ofx.bundle/Contents/Win64/RUDRA.ofx" product-name="RUDRA" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+    <!-- 1.3.2: AI fill's setup script (scripts/genfill_bootstrap.ps1, copied into python/) -->
+    <powershell-file path="python/genfill_bootstrap.ps1">
+      <authenticode-sign />
+    </powershell-file>
   </zip-file>
 </artifact-configuration>

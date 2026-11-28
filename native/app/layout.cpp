@@ -19,10 +19,12 @@
 #include <tuple>
 #include <QGridLayout>
 #include <QTextDocumentFragment>
+#include <QDesktopServices>
 #include <QHBoxLayout>
 #include <QEvent>
 #include <QLabel>
 #include <QProgressBar>
+#include <QUrl>
 #include <QScrollBar>
 #include <QLineEdit>
 #include <QMenuBar>
@@ -47,6 +49,7 @@
 #ifdef RUDRA_APP_VIEWER
 #include "rudra/render/viewer_window.hpp"
 #endif
+#include "rudra/deliver/exr.hpp"   // 1.3.2: the EXR compressions Deliver lists
 
 namespace rudra::app {
 namespace {
@@ -790,10 +793,20 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     trh->addWidget(src_info_);
     tv->addWidget(top);
     scrub_ = new ScrubBar(transport);
+    // 1.3.2 (user feedback: "move and see the frame we selected instead of waiting for the whole timeline to play"):
+    // a click or drag stops every kind of playback (it stopped only the plain one, so the learned route's and the
+    // headroom playback went on over the frame asked for), and while dragging only the playhead and the timecode
+    // follow; the panels catch up when the button is let go.
     scrub_->seek = [this](double f) {
         if (frames_.size() < 2) return;
-        play_.stop();
+        halt_playback();
+        scrubbing_ = true;
         step_to(int(std::lround(f * double(frames_.size() - 1))));
+    };
+    scrub_->released = [this] {
+        if (!scrubbing_) return;
+        scrubbing_ = false;
+        sync_ui();
     };
     tv->addWidget(scrub_, 1);
     v->addWidget(transport);
@@ -1701,16 +1714,31 @@ QWidget* MainWindow::build_right_rail() {
                   "The size the files are written at: the source's, twice it, UHD (3840 wide) or HD (1920 wide), "
                   "keeping the picture's shape. A clean resize, never an AI upscale");
         }
-        {   // 1.3 (24 Nov 2026): EXR compression, lossless; sync_deliver greys it for ACES 2065-1 (ST 2065-4)
+        {   // 1.3 (24 Nov 2026): EXR compression; 1.3.2 (28 Nov 2026): every OpenEXR one this build writes, on both
+            // routes and for ACES 2065-1 too (deliver/exr.hpp)
             auto* zc = new QComboBox;
             zc->setObjectName("deliverExrCompression");
-            zc->addItem("ZIP \u00b7 lossless, smaller", "zip");
-            zc->addItem("ZIPS \u00b7 lossless, one line a block", "zips");
-            zc->addItem("None \u00b7 uncompressed", "none");
+            for (const rudra::ExrCompression ec : rudra::exr_compressions()) {
+                if (!rudra::exr_compression_available(ec)) continue;
+                const char* words = "";
+                switch (ec) {
+                    case rudra::ExrCompression::Zip: words = "ZIP \u00b7 lossless, smaller"; break;
+                    case rudra::ExrCompression::Zips: words = "ZIPS \u00b7 lossless, one line a block"; break;
+                    case rudra::ExrCompression::Piz: words = "PIZ \u00b7 lossless, best for grain"; break;
+                    case rudra::ExrCompression::Rle: words = "RLE \u00b7 lossless, fast"; break;
+                    case rudra::ExrCompression::None: words = "None \u00b7 uncompressed"; break;
+                    case rudra::ExrCompression::Dwaa: words = "DWAA \u00b7 lossy, small"; break;
+                    case rudra::ExrCompression::Dwab: words = "DWAB \u00b7 lossy, small, big blocks"; break;
+                    case rudra::ExrCompression::B44: words = "B44 \u00b7 lossy, half float"; break;
+                    case rudra::ExrCompression::B44a: words = "B44A \u00b7 lossy, half float, flat areas smaller"; break;
+                    case rudra::ExrCompression::Pxr24: words = "PXR24 \u00b7 lossy for float32 (24 bits)"; break;
+                }
+                zc->addItem(QString::fromUtf8(words), QString::fromLatin1(rudra::exr_compression_id(ec)));
+            }
             connect(zc, &QComboBox::activated, this, [this, zc](int i) { set_deliver("exr_compression", zc->itemData(i).toString()); });
             field("EXR compression", zc, "deliverExrCompressionRow",
-                  "How the EXR masters are stored. ZIP and ZIPS are lossless (every value kept exactly) and about half "
-                  "the size; ZIPS reads a few lines faster. Nuke, Resolve and every OpenEXR reader take all three");
+                  "How the EXR masters are stored: lossless (ZIP, ZIPS, PIZ, RLE, or none) keeps every value; lossy (DWAA, "
+                  "DWAB, B44, B44A, PXR24) is much smaller, for reviews rather than the grade. Every OpenEXR reader takes them all");
         }
         auto* keep = new CheckRow("deliverKeepExr", "Keep the EXR masters", "deliverKeepExrHint", "beside the movie", kc);
         keep->setToolTip("Also write the EXR master of every frame: ACEScg float32 with the mask channel, or ACES 2065-1 "
@@ -1946,6 +1974,37 @@ QWidget* MainWindow::build_right_rail() {
     status->setWordWrap(true);
     status->hide();
     form->addWidget(status);
+    {   // 1.3.2 (user request): this render's progress, apart from the Batch queue (MainWindow::render_progress)
+        auto* prow = new QWidget(rendc);
+        prow->setObjectName("renderProgressRow");
+        auto* ph = new QHBoxLayout(prow);
+        ph->setContentsMargins(0, 2, 0, 2);
+        ph->setSpacing(6);
+        auto* bar = new QProgressBar(prow);
+        bar->setObjectName("renderProgress");
+        bar->setRange(0, 1);
+        bar->setValue(0);
+        bar->setTextVisible(true);
+        bar->setFixedHeight(18);
+        ph->addWidget(bar, 1);
+        auto* stop = new QPushButton("Stop", prow);
+        stop->setObjectName("renderStop");
+        stop->setToolTip("Stop after the frame being written; the frames already written stay");
+        stop->setFixedHeight(22);
+        connect(stop, &QPushButton::clicked, this, [this] { stop_render(); });
+        ph->addWidget(stop);
+        auto* open = new QPushButton("Open folder", prow);
+        open->setObjectName("renderOpenFolder");
+        open->setFixedHeight(22);
+        open->hide();
+        connect(open, &QPushButton::clicked, this, [open] {
+            const QString f = open->property("folder").toString();
+            if (!f.isEmpty()) QDesktopServices::openUrl(QUrl::fromLocalFile(f));
+        });
+        ph->addWidget(open);
+        prow->hide();
+        form->addWidget(prow);
+    }
     auto* acts = new QWidget(rendc);
     auto* ah = new QHBoxLayout(acts);
     ah->setContentsMargins(0, 6, 0, 0);

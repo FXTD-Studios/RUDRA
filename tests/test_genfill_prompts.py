@@ -1,6 +1,7 @@
 """RUDRA 1.1: the AI fill's prompt presets and the suggestion (rudra/genfill/prompts.py)."""
 import json
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -112,15 +113,16 @@ def test_shot_prompt_says_what_the_bright_area_is_and_nothing_in_front_of_it():
     text, pid = P.shot_prompt("Two soldiers standing in the open cargo door of a military aircraft, looking out at a "
                               "bright, hazy sky over the ocean.", "A bright white hazy sky seen through an open door.")
     assert pid == "sky_overcast"
-    assert text == "bright hazy sky, soft even white light, seen through an open cargo door, over the ocean"
+    assert text == ("bright hazy sky, soft even white light, seen through an open cargo door, over the ocean, "
+                    "scene-referred high dynamic range footage, physically plausible highlights")
     assert "soldier" not in text and "aircraft" not in text
     assert P.shot_prompt("A beach at sunset.", "An orange sky with clouds above the sea.")[1] == "sky_sunset"
     assert P.shot_prompt("A living room.", "A lamp with a white shade glowing.")[1] == "light_source"
     assert P.shot_prompt("A campfire at night in a forest.", "Flames of a fire.")[1] == "flame"
     t, pid = P.shot_prompt("A man by a window in a dark room.", "A bright window with trees outside.")
-    assert pid == "window_daylight" and t.endswith("trees outside")
+    assert pid == "window_daylight" and "trees outside, scene-referred" in t
     t, pid = P.shot_prompt("A clear blue sky over mountains.", "Blue sky with white clouds.")
-    assert pid == "sky_blue" and "soft high clouds" in t and "mountains" in t
+    assert pid == "sky_blue" and "a few thin high clouds" in t and "mountains" in t
     assert P.shot_prompt("A street with cars.", "", fallback="light_source")[1] == "light_source"   # nothing named: the rules' pick
 
 
@@ -148,7 +150,8 @@ def test_describe_suggestion_is_first_and_says_why():
     d = _FakeDescriber()
     s = P.describe_suggestion(im, describer=d)
     assert s["id"] == "shot" and s["label"] == "From this shot" and s["region"] == "highlight"
-    assert s["text"] == "bright hazy sky, soft even white light, seen through an open doorway, over the sea"
+    assert s["text"] == ("bright hazy sky, soft even white light, seen through an open doorway, over the sea, "
+                         "scene-referred high dynamic range footage, physically plausible highlights")
     assert "Florence-2" in s["reason"] and len(d.seen) == 2
 
 
@@ -169,3 +172,57 @@ def test_cli_describe_falls_back_without_the_model(tmp_path, capsys, monkeypatch
     assert P.main(["suggest", str(f), "--json", "--describe", "auto"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["suggestions"][0]["id"] == "shot" and out["suggestions"][1]["id"] == "sky_blue"
+
+
+# ---- 1.3.2 (26 Nov 2026): the wording ends with the words the LoRA was trained under ----
+def _base_prompt():
+    """model.BASE_PROMPT without importing torch: read from model.py."""
+    import ast
+    src = (Path(P.__file__).parent / "model.py").read_text(encoding="utf-8")
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "BASE_PROMPT" for t in node.targets):
+            return ast.literal_eval(node.value)
+    raise AssertionError("no BASE_PROMPT in model.py")
+
+
+def test_every_suggestion_ends_with_the_training_words():
+    base = _base_prompt()
+    for tail in (P.HIGHLIGHT_TAIL, P.SHADOW_TAIL):
+        for phrase in tail.split(", "):
+            assert phrase in base, (phrase, base)
+    for p in P.PRESETS:
+        assert p.text.endswith(P.HIGHLIGHT_TAIL if p.region == "highlight" else P.SHADOW_TAIL), p.id
+        assert p.text.count("scene-referred") == 1
+    for scene, area in (("A beach at sunset.", "An orange sky with clouds above the sea."),
+                        ("A living room.", "A lamp with a white shade glowing."),
+                        ("A street with cars.", "")):
+        assert P.shot_prompt(scene, area)[0].endswith(P.HIGHLIGHT_TAIL)
+
+
+def test_cli_describe_device_reaches_florence(tmp_path, capsys, monkeypatch):
+    import cv2
+    im = base((150, 180, 240))
+    im[: H // 3] = 255
+    f = tmp_path / "sky.png"
+    cv2.imwrite(str(f), cv2.cvtColor(im, cv2.COLOR_RGB2BGR))
+    seen = []
+
+    def describer(model_id, device="auto"):
+        seen.append(device)
+        return _FakeDescriber()
+    monkeypatch.setattr(P, "Describer", describer)
+    assert P.main(["suggest", str(f), "--json", "--describe", "auto", "--describe-device", "cpu"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert seen == ["cpu"] and out["suggestions"][0]["id"] == "shot"
+
+
+def test_a_welding_shot_is_suggested_as_a_welding_arc():
+    """1.3.2: Florence-2's captions of the welding shot (04) named no subject the rules knew, so the suggestion
+    fell back to specular glints."""
+    scene = ("The image shows a welder wearing a helmet and welding a large metal pipe in a factory. The factory is "
+             "filled with machines and lights, and the welder is focused on the task at hand.")
+    area = "The image shows a welder working on a piece of metal in a factory, with sparks flying from the welding process."
+    text, pid = P.shot_prompt(scene, area, fallback="specular_glints")
+    assert pid == "light_source" and text.startswith("welding arc, intense blue-white core with bright sparks")
+    assert "welder" not in text and text.endswith(P.HIGHLIGHT_TAIL)
+    assert P.shot_prompt("A dark archway in an old town.", "")[1] != "light_source"   # "arc" alone is not welding

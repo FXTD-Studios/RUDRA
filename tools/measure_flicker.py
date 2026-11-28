@@ -43,7 +43,8 @@ AP0_TO_AP1 = np.array([[1.4514393161, -0.2365107469, -0.2149285693],
                        [0.0083161484, -0.0060324498, 0.9977163014]], np.float64)
 GRID = (36, 64)
 LIMIT_EV = 0.02
-FRAME_EXT = {".png", ".tif", ".tiff", ".jpg", ".jpeg", ".dpx", ".bmp"}
+# Decoding moved into the package (the packaged app has no tools/); the names stay here.
+from rudra.genfill.decode import FRAME_EXT, _probe, decode_frames, decode_movie  # noqa: E402,F401
 
 
 def adaptive_pool(y: np.ndarray, out=GRID) -> np.ndarray:
@@ -102,47 +103,6 @@ def read_master(path: Path):
     if ap0:
         rgb = rgb @ AP0_TO_AP1.T
     return rgb, alpha
-
-
-def _probe(movie: Path) -> dict:
-    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                        "stream=width,height,pix_fmt,color_range", "-of", "json", str(movie)],
-                       capture_output=True, text=True, check=True)
-    return json.loads(r.stdout)["streams"][0]
-
-
-def decode_movie(movie: Path, first: int, count: int) -> list[np.ndarray]:
-    """Frames first..first+count-1 as display codes in [0, 1], as the engine reads them."""
-    s = _probe(movie)
-    w, h = int(s["width"]), int(s["height"])
-    rng = "pc" if s.get("color_range") == "pc" else "tv"
-    eight = not any(k in s.get("pix_fmt", "") for k in ("10", "12", "16"))
-    vf = (f"select=gte(n\\,{first}),scale=in_color_matrix=bt709:in_range={rng}:out_range=pc:"
-          "flags=accurate_rnd+full_chroma_int,format=rgb48le")
-    r = subprocess.run(["ffmpeg", "-v", "error", "-nostdin", "-noautorotate", "-i", str(movie), "-map", "0:v:0",
-                        "-vf", vf, "-fps_mode", "passthrough", "-frames:v", str(count), "-f", "rawvideo", "-"],
-                       capture_output=True, check=True)
-    raw = np.frombuffer(r.stdout, np.uint16).reshape(-1, h, w, 3)
-    out = []
-    for fr in raw:
-        codes = fr.astype(np.float64) / 65535.0
-        out.append(np.rint(codes * 255.0) / 255.0 if eight else codes)
-    return out
-
-
-def decode_frames(folder: Path, first: int, count: int) -> list[np.ndarray]:
-    import cv2
-    files = sorted(p for p in folder.iterdir() if p.suffix.lower() in FRAME_EXT)[first:first + count]
-    out = []
-    for p in files:
-        img = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
-        if img is None:
-            raise ValueError(f"cannot read {p}")
-        if img.ndim == 2:
-            img = np.repeat(img[..., None], 3, 2)
-        scale = 65535.0 if img.dtype == np.uint16 else 255.0
-        out.append(img[..., :3][..., ::-1].astype(np.float64) / scale)
-    return out
 
 
 def measure_clip(name: str, clip: Path, masters: Path, first: int = 0, view=None) -> dict:

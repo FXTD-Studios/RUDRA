@@ -4,9 +4,13 @@
 # plug-in itself, RUDRA.ofx.bundle, needs the OpenFX SDK (BSD): set
 # RUDRA_OFX_SDK_DIR to a checkout (include/, Support/, HostSupport/), or leave
 # it empty to fetch the pinned release. Built with -DRUDRA_BUILD_OFX=ON.
-rudra_library(rudra_ofx_process SOURCES ofx_process.cpp)
+# engine_client.cpp (25 Nov 2026, phase 2): the learned ACES 2.0 route through RUDRA's engine,
+# `rudra-native aces-v2-serve`, run beside the host; nothing of LibTorch or ONNX Runtime is linked.
+# fill_store.cpp (26 Nov 2026, phase 3): AI fill's stored frames and fills, the job beside the host.
+rudra_library(rudra_ofx_process SOURCES ofx_process.cpp engine_client.cpp fill_store.cpp)
 target_include_directories(rudra_ofx_process PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(rudra_ofx_process PUBLIC rudra::rudra_deliver rudra::rudra_core)
+target_link_libraries(rudra_ofx_process PUBLIC rudra::rudra_deliver rudra::rudra_core rudra::rudra_platform
+                      PRIVATE nlohmann_json::nlohmann_json)
 
 if(NOT RUDRA_BUILD_OFX)
   return()
@@ -17,7 +21,7 @@ if(NOT RUDRA_OFX_SDK_DIR)
   include(FetchContent)
   FetchContent_Declare(openfx
     GIT_REPOSITORY https://github.com/AcademySoftwareFoundation/openfx.git
-    GIT_TAG OFX_Release_1.4_TAG
+    GIT_TAG OFX_Release_1.5.1   # 25 Nov 2026: there is no 1.4 tag (git ls-remote); 1.5.1 = ab77951
     GIT_SHALLOW TRUE
     SOURCE_SUBDIR do-not-add)   # headers and sources only, not its own build
   FetchContent_MakeAvailable(openfx)
@@ -40,13 +44,20 @@ set_source_files_properties(${_ofxs_sources} PROPERTIES COMPILE_OPTIONS "$<IF:$<
 add_library(rudra_ofx_plugin MODULE plugin.cpp ${_ofxs_sources})
 target_include_directories(rudra_ofx_plugin PRIVATE ${RUDRA_OFX_SDK_DIR}/include ${RUDRA_OFX_SDK_DIR}/Support/include ${_ofxs})
 # Link-only: rudra_ofx_process carries C++20 in its usage requirements, and the
-# plug-in builds as C++14 (below); it needs nothing from it but the plain interface.
+# plug-in builds as C++17 (below); it needs nothing from it but the plain interface.
 target_include_directories(rudra_ofx_plugin PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(rudra_ofx_plugin PRIVATE $<LINK_ONLY:rudra_ofx_process>)
-# The 1.4 SDK's Support library has dynamic exception specifications, which
-# C++17 removed: the plug-in and the library build as C++14 (RUDRA itself is
-# reached through rudra_ofx_process's plain interface).
-set_target_properties(rudra_ofx_plugin PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS ON)   # gnu++14: the SDK tests the `linux` macro
+if(WIN32)
+  # 1.3.2: a version resource, as RUDRA.exe and rudra-native.exe have. SignPath signs a file only when its
+  # product name and version are the release's (docs/CODE_SIGNING_POLICY.md).
+  enable_language(RC)
+  configure_file(windows/rudra_ofx.rc.in "${CMAKE_CURRENT_BINARY_DIR}/rudra_ofx.rc" @ONLY)
+  target_sources(rudra_ofx_plugin PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/rudra_ofx.rc")
+endif()
+# The 1.5 SDK builds as C++17 (its own CMakeLists sets it; the 1.4 Support
+# library's dynamic exception specifications are gone). RUDRA itself is reached
+# through rudra_ofx_process's plain interface.
+set_target_properties(rudra_ofx_plugin PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS ON)   # gnu++17: the SDK tests the `linux` macro
 # The bundle layout every OFX host scans: RUDRA.ofx.bundle/Contents/<arch>/RUDRA.ofx.
 if(WIN32)
   set(_ofx_arch Win64)
@@ -74,6 +85,17 @@ endif()
 if(APPLE)
   configure_file(Info.plist.in ${RUDRA_OFX_BUNDLE}/Contents/Info.plist @ONLY)
 endif()
+# The effect's icon (26 Nov 2026): Contents/Resources/<pluginIdentifier>.png and .svg, where every OFX host looks for
+# it (Nuke's menus and node, Resolve's OpenFX library where it shows icons). The FXTD RUDRA mark, from resources/.
+# version.txt: the RUDRA version the bundle came with, which the app's Help > Install compares (app/ofx_install.hpp).
+file(WRITE ${RUDRA_OFX_BUNDLE}/Contents/Resources/version.txt "${PROJECT_VERSION}\n")
+add_custom_command(TARGET rudra_ofx_plugin POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${RUDRA_OFX_BUNDLE}/Contents/Resources
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          ${CMAKE_CURRENT_SOURCE_DIR}/resources/com.fxtdstudios.rudra.SdrToHdr.png
+          ${CMAKE_CURRENT_SOURCE_DIR}/resources/com.fxtdstudios.rudra.SdrToHdr.svg
+          ${RUDRA_OFX_BUNDLE}/Contents/Resources/
+  VERBATIM)
 
 # A test host (the SDK's HostSupport, which needs expat) that loads the bundle
 # and renders a frame through it: tests/conform/test_ofx_host.cpp.
@@ -82,7 +104,7 @@ if(RUDRA_BUILD_TESTS AND EXPAT_FOUND AND EXISTS ${RUDRA_OFX_SDK_DIR}/HostSupport
   file(GLOB _ofxh_sources ${RUDRA_OFX_SDK_DIR}/HostSupport/src/*.cpp)
   set_source_files_properties(${_ofxh_sources} PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
   add_library(rudra_ofx_hostsupport STATIC ${_ofxh_sources})
-  set_target_properties(rudra_ofx_hostsupport PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS ON)   # gnu++14: the SDK tests the `linux` macro
+  set_target_properties(rudra_ofx_hostsupport PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS ON)   # gnu++17: the SDK tests the `linux` macro
   target_include_directories(rudra_ofx_hostsupport PUBLIC ${RUDRA_OFX_SDK_DIR}/include ${RUDRA_OFX_SDK_DIR}/HostSupport/include)
   target_link_libraries(rudra_ofx_hostsupport PUBLIC EXPAT::EXPAT ${CMAKE_DL_LIBS})
   set(RUDRA_OFX_HOST_TEST ON CACHE INTERNAL "")

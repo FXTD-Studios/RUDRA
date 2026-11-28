@@ -20,7 +20,7 @@ std::string lower_ext(const fs::path& p) {
 
 bool aces_is_still(const fs::path& p) {
     const std::string e = lower_ext(p);
-    return e == ".png" || e == ".tif" || e == ".tiff" || e == ".jpg" || e == ".jpeg" || e == ".bmp" || e == ".webp";
+    return e == ".png" || e == ".tif" || e == ".tiff" || e == ".jpg" || e == ".jpeg" || e == ".bmp" || e == ".webp" || e == ".exr";
 }
 
 bool aces_is_video(const fs::path& p) {

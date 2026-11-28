@@ -356,6 +356,183 @@ TEST(Exr, ZipMastersAreLosslessAndTheAcesContainerStaysUncompressed) {
     EXPECT_NE(r.error().detail.find("claims more than it can hold"), std::string::npos) << r.error().detail;
 }
 
+// 1.3.2 (28 Nov 2026): every OpenEXR compression Deliver lists, written and read back: the lossless ones value for value
+// (the same halves as the uncompressed file), the lossy ones close, their masks exact; a build without the OpenEXR
+// library offers None, ZIP and ZIPS only and refuses the others with a reason.
+TEST(Exr, EveryCompressionIsWrittenAndReadBack) {
+    const int W = 61, H = 45;   // odd sizes: short last blocks for every block height (16, 32, 256 ...)
+    PlanarBuffer img(3, H, W), mask(1, H, W), alpha(1, H, W);
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) {
+            for (int c = 0; c < 3; ++c)
+                img.at(c, y, x) = 0.18f + 0.6f * std::sin(0.11f * float(x + 5 * c)) * std::cos(0.07f * float(y)) + (x == 30 ? 9.0f : 0.0f);
+            mask.at(0, y, x) = (x > 40) ? 1.0f : (x > 35 ? 0.5f : 0.0f);
+            alpha.at(0, y, x) = (y < 3) ? 0.0f : 1.0f;
+        }
+    auto compression_of = [](const ExrImage& r) {
+        for (const auto& [k, v] : r.attributes)
+            if (k == "compression") return int(v.at(0));
+        return -1;
+    };
+    const std::map<ExrCompression, int> code = {{ExrCompression::None, 0},  {ExrCompression::Rle, 1},  {ExrCompression::Zips, 2},
+                                                {ExrCompression::Zip, 3},   {ExrCompression::Piz, 4},  {ExrCompression::Pxr24, 5},
+                                                {ExrCompression::B44, 6},   {ExrCompression::B44a, 7}, {ExrCompression::Dwaa, 8},
+                                                {ExrCompression::Dwab, 9}};
+    EXPECT_EQ(exr_compressions().size(), code.size());
+    for (bool half : {true, false}) {
+        const auto plain_path = scratch(half ? "every_none_h.exr" : "every_none_f.exr");
+        ASSERT_TRUE(write_acescg_exr(plain_path, img, Primaries::Ap1, 1.0, {}, half, &mask, {}, &alpha));
+        const auto plain = read_exr(plain_path);
+        ASSERT_TRUE(plain);
+        for (const ExrCompression c : exr_compressions()) {
+            const std::string id = exr_compression_id(c);
+            EXPECT_EQ(parse_exr_compression(id), c);
+            const auto path = scratch(std::string("every_") + id + (half ? "_h.exr" : "_f.exr"));
+            auto w = write_acescg_exr(path, img, Primaries::Ap1, 1.0, {{"test", id}}, half, &mask, {}, &alpha, c);
+            if (!exr_compression_available(c)) {
+                ASSERT_FALSE(w) << id;
+                EXPECT_NE(w.error().message.find("choose ZIP, ZIPS or none"), std::string::npos) << w.error().message;
+                continue;
+            }
+            ASSERT_TRUE(w) << id << ": " << w.error().message << " " << w.error().detail;
+            const auto r = read_exr(path);
+            ASSERT_TRUE(r) << id << ": " << r.error().detail;
+            EXPECT_EQ(compression_of(*r), code.at(c)) << id;
+            ASSERT_EQ(r->pixels.channels(), 4) << id;
+            ASSERT_TRUE(r->reconstruction_mask) << id;
+            bool provenance = false;   // the string attributes come through whoever wrote the file
+            for (const auto& [k, v] : r->attributes)
+                if (k == "rudra:provenance") provenance = std::string(v.begin(), v.end()).find("\"" + id + "\"") != std::string::npos;
+            EXPECT_TRUE(provenance) << id;
+            // B44 and B44A touch half channels only; PXR24 is lossless on half. A float32 file under them is exact.
+            const bool lossy_here = exr_compression_lossy(c) && !(!half && (c == ExrCompression::B44 || c == ExrCompression::B44a)) &&
+                                    !(half && c == ExrCompression::Pxr24);
+            double worst = 0.0;
+            for (int ch = 0; ch < 4; ++ch)
+                for (int y = 0; y < H; ++y)
+                    for (int x = 0; x < W; ++x) {
+                        const double a = plain->pixels.at(ch, y, x), b = r->pixels.at(ch, y, x);
+                        worst = std::max(worst, std::fabs(a - b) / std::max(1.0, std::fabs(a)));
+                    }
+            if (!lossy_here) {
+                EXPECT_EQ(worst, 0.0) << id << (half ? " half" : " float");
+                if (half) EXPECT_EQ(r->half_bits, plain->half_bits) << id;
+            } else {   // B44 works on 4 x 4 blocks and smears a hard spike most; DWA and PXR24 stay close
+                const double most = (c == ExrCompression::B44 || c == ExrCompression::B44a) ? 0.25 : c == ExrCompression::Pxr24 ? 1e-4 : 0.08;
+                EXPECT_LT(worst, most) << id << (half ? " half" : " float");
+            }
+            // The mask is not R, G or B: DWA keeps it lossless; B44 and PXR24 change it no more than the picture.
+            double mask_worst = 0.0;
+            for (std::size_t i = 0; i < mask.plane_size(); ++i)
+                mask_worst = std::max(mask_worst, double(std::fabs(r->reconstruction_mask->plane(0)[i] - plain->reconstruction_mask->plane(0)[i])));
+            if (!lossy_here || c == ExrCompression::Dwaa || c == ExrCompression::Dwab) EXPECT_EQ(mask_worst, 0.0) << id;
+            else EXPECT_LT(mask_worst, 0.01) << id;
+        }
+    }
+}
+
+// 1.3.2: a damaged PIZ or DWAA file (read through OpenEXR) is refused, never read as pixels and never a crash: the
+// file is not trusted (read_exr's security review, 11 Nov 2026).
+TEST(Exr, DamagedOpenExrFilesAreRefused) {
+    PlanarBuffer img(3, 20, 24);
+    for (int c = 0; c < 3; ++c)
+        for (int y = 0; y < 20; ++y)
+            for (int x = 0; x < 24; ++x) img.at(c, y, x) = 0.05f * float(x + y + c);
+    const auto path = scratch("damaged_openexr.exr");
+    auto reads = [&](const std::vector<std::uint8_t>& b) {
+        {
+            std::ofstream f(path, std::ios::binary | std::ios::trunc);
+            f.write(reinterpret_cast<const char*>(b.data()), std::streamsize(b.size()));
+        }
+        return bool(read_exr(path));
+    };
+    for (const ExrCompression c : {ExrCompression::Piz, ExrCompression::Dwaa, ExrCompression::Rle}) {
+        if (!exr_compression_available(c)) continue;
+        auto made = exr_bytes(img, true, kAp1Chromaticities, {}, nullptr, {}, c);
+        ASSERT_TRUE(made) << exr_compression_id(c);
+        const std::vector<std::uint8_t> good = *made;
+        ASSERT_TRUE(reads(good)) << exr_compression_id(c);
+        for (std::size_t n = 0; n + 1 < good.size(); n += 7)   // cut anywhere
+            EXPECT_FALSE(reads(std::vector<std::uint8_t>(good.begin(), good.begin() + std::ptrdiff_t(n)))) << exr_compression_id(c) << " cut at " << n;
+        for (std::size_t at = good.size() / 2; at < good.size(); at += 13) {   // a flipped byte in the pixel data: refused or read, never a crash
+            auto b = good;
+            b[at] ^= 0xa5;
+            (void)reads(b);
+        }
+    }
+}
+
+// 1.3.2: ACES 2065-1 takes the compression too, and then is not the SMPTE ST 2065-4 container: no
+// acesImageContainerFlag, a rudra:container line that says why. Uncompressed it is the container as before.
+TEST(Exr, ACompressedAp0FileIsNotFlaggedAsTheContainer) {
+    const PlanarBuffer img(3, 9, 7, 0.5f);
+    auto attr = [](const fs::path& p, const std::string& name) -> std::optional<std::string> {
+        auto r = read_exr(p);
+        if (!r) return std::nullopt;
+        for (const auto& [k, v] : r->attributes)
+            if (k == name) return std::string(v.begin(), v.end());
+        return std::nullopt;
+    };
+    for (const ExrCompression c : exr_compressions()) {
+        if (!exr_compression_available(c)) continue;
+        const auto p = scratch(std::string("ap0_") + exr_compression_id(c) + ".exr");
+        ASSERT_TRUE(write_aces_exr(p, img, Primaries::Ap0, 1.0, {}, true, nullptr, {}, nullptr, c)) << exr_compression_id(c);
+        if (c == ExrCompression::None) {
+            EXPECT_TRUE(attr(p, "acesImageContainerFlag"));
+            EXPECT_FALSE(attr(p, "rudra:container"));
+        } else {
+            EXPECT_FALSE(attr(p, "acesImageContainerFlag")) << exr_compression_id(c);
+            const auto why = attr(p, "rudra:container");
+            ASSERT_TRUE(why) << exr_compression_id(c);
+            EXPECT_NE(why->find(std::string(exr_compression_label(c)) + " compressed: not the SMPTE ST 2065-4 container"), std::string::npos)
+                << *why;
+        }
+        // The chromaticities stay AP0's, whoever wrote the file.
+        const auto r = read_exr(p);
+        ASSERT_TRUE(r);
+        EXPECT_NEAR(r->pixels.at(0, 4, 3), 0.5f, 1e-3f) << exr_compression_id(c);
+        const auto chroma = attr(p, "chromaticities");
+        ASSERT_TRUE(chroma && chroma->size() >= 4);
+        float rx = 0.0f;
+        std::memcpy(&rx, chroma->data(), 4);
+        EXPECT_NEAR(rx, 0.7347f, 1e-4f);
+    }
+}
+
+// 1.3.2: the request keeps the 1.3 keys for ZIP and ZIPS and says exr_compression for the others; an unknown name
+// is refused; mattes take the compression and stay exact.
+TEST(Exr, TheRequestCarriesEveryCompression) {
+    EXPECT_EQ(exr_compression_from("", false, 16), ExrCompression::None);
+    EXPECT_EQ(exr_compression_from("", true, 16), ExrCompression::Zip);
+    EXPECT_EQ(exr_compression_from("", true, 1), ExrCompression::Zips);
+    EXPECT_EQ(exr_compression_from("DWAA", true, 1), ExrCompression::Dwaa);
+    EXPECT_EQ(exr_compression_from("lz4", true, 16), ExrCompression::Zip);
+    EXPECT_FALSE(parse_exr_compression("htj2k"));
+    MasterRequest q;
+    q.container = "aces";
+    EXPECT_EQ(master_request_json(q).find("exr_compression"), std::string::npos);   // every request before reads the same
+    q.exr_compression = "piz";
+    const std::string js = master_request_json(q);
+    EXPECT_NE(js.find("\"exr_compression\":\"piz\""), std::string::npos) << js;
+    const auto back = master_request_from_json(js);
+    ASSERT_TRUE(back);
+    EXPECT_EQ(back->exr_compression, "piz");
+    std::string bad = js;
+    bad.replace(bad.find("\"piz\""), 5, "\"lz4\"");
+    EXPECT_FALSE(master_request_from_json(bad));
+    if (exr_compression_available(ExrCompression::Piz)) {
+        PlanarBuffer m(1, 5, 6, 0.0f);
+        m.at(0, 2, 3) = 1.0f;
+        const auto p = scratch("mattes_piz.exr");
+        ASSERT_TRUE(write_mattes_exr(p, {{"rudra.highlight", m}}, {}, ExrCompression::Piz));
+        const auto r = read_exr(p);
+        ASSERT_TRUE(r);
+        ASSERT_EQ(r->other.size(), 1u);
+        EXPECT_EQ(r->other[0].first, "rudra.highlight");
+        EXPECT_EQ(r->other[0].second.at(0, 2, 3), 1.0f);
+    }
+}
+
 TEST(Exr, FloatToHalfMatchesNumpy) {
     const auto& e = idx().at("exr");
     const auto in = f32(e.at("half_in")), bits = f32(e.at("half_bits"));

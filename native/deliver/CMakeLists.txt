@@ -1,7 +1,7 @@
 # deliver: what leaves the app. EXR/ACES/OCIO writers and the metadata
 # sidecars now (byte-identical ports of rudra/delivery); presets, the ffmpeg
 # pipe, QC and the queue follow in Phase 1 steps 8-9 and Phase 4.
-rudra_library(rudra_deliver SOURCES src/exr.cpp src/sidecars.cpp src/qc.cpp src/queue.cpp src/master.cpp src/video_master.cpp src/video_encode.cpp src/video_qc.cpp src/sequence_encode.cpp src/shot_grades.cpp src/conform.cpp src/correction_log.cpp src/dolby_vision.cpp)
+rudra_library(rudra_deliver SOURCES src/exr.cpp src/exr_openexr.cpp src/sidecars.cpp src/qc.cpp src/queue.cpp src/master.cpp src/video_master.cpp src/video_encode.cpp src/video_qc.cpp src/sequence_encode.cpp src/shot_grades.cpp src/conform.cpp src/correction_log.cpp src/dolby_vision.cpp)
 target_link_libraries(rudra_deliver PUBLIC rudra::rudra_core rudra::rudra_platform PRIVATE nlohmann_json::nlohmann_json)
 # Provenance (roadmap 1.3): every master records the build that wrote it.
 target_compile_definitions(rudra_deliver PRIVATE RUDRA_VERSION_LABEL="${RUDRA_VERSION_LABEL}"
@@ -16,4 +16,14 @@ if(TARGET ZLIB::ZLIB)
 else()
   target_compile_definitions(rudra_deliver PRIVATE RUDRA_HAVE_ZLIB=0)
   message(STATUS "zlib not found: EXR masters are written uncompressed")
+endif()
+# 1.3.2 (28 Nov 2026): every other OpenEXR compression (RLE, PIZ, PXR24, B44, B44A, DWAA, DWAB) through the OpenEXR
+# library (cmake/RudraDeps.cmake: the system's or vcpkg's, else a pinned copy built with RUDRA). Without it Deliver
+# lists ZIP, ZIPS and None only, and such a file is refused when read, with the reason.
+if(TARGET OpenEXR::OpenEXR)
+  target_link_libraries(rudra_deliver PRIVATE OpenEXR::OpenEXR)
+  target_compile_definitions(rudra_deliver PRIVATE RUDRA_HAVE_OPENEXR=1)
+else()
+  target_compile_definitions(rudra_deliver PRIVATE RUDRA_HAVE_OPENEXR=0)
+  message(STATUS "OpenEXR not found: EXR masters can be ZIP, ZIPS or uncompressed only")
 endif()

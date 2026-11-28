@@ -9,14 +9,16 @@ This page says what is signed, how, by whom, and what RUDRA sends over the netwo
 
 ## What is signed
 
-- `RUDRA.exe` and `rudra-native.exe`, RUDRA's own programs, in both the installer and the
-  portable ZIP, and the installer `RUDRA-<version>-windows-x64-setup.exe`.
+- `RUDRA.exe` and `rudra-native.exe`, RUDRA's own programs, the OFX plug-in `RUDRA.ofx` and AI fill's
+  setup script `python\genfill_bootstrap.ps1` (both from 1.3.2), in both the installer and the portable ZIP,
+  and the installer `RUDRA-<version>-windows-x64-setup.exe`.
 - Only the files of a release published on
   [GitHub](https://github.com/FXTD-Studios/RUDRA/releases). They are built from the tagged
   commit of this repository by [`.github/workflows/release.yml`](../.github/workflows/release.yml)
   on GitHub-hosted runners, never on a team member's computer.
-- A file is signed only when its version resource names the product RUDRA and the release's
-  version ([`.signpath/artifact-configurations/`](../.signpath/artifact-configurations/)).
+- A program or the plug-in is signed only when its version resource names the product RUDRA and the
+  release's version; the setup script by its path in the package
+  ([`.signpath/artifact-configurations/`](../.signpath/artifact-configurations/)).
 - Every release is two signing requests (the programs, then the installer), and each one is
   approved by hand by an approver below.
 
