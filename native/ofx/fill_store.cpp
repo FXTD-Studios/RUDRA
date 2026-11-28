@@ -1,6 +1,7 @@
 #include "fill_store.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -14,6 +15,7 @@
 #include <span>
 #include <sstream>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -76,21 +78,47 @@ double now_seconds() {
     return std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-// Written whole or not at all: <file>.part, then renamed over the file.
+// Written whole or not at all: a part file of its own, then renamed over the file.
+// `path` + ".part." + a number of its own (28 Nov 2026, review P2): two renders of one frame (the viewer and a
+// render queue, two instances) wrote the same fixed ".part" at once, and one renamed the other's half-written file.
+fs::path part_of(const fs::path& path) {
+    static std::atomic<std::uint64_t> next{0};
+    return path.string() + ".part." + std::to_string(++next);
+}
+
+// `part` renamed over `path`; false (and `part` removed) when it could not be.
+// Windows will not rename over a file another reader holds open (a host thread reading it, an antivirus scan):
+// a few tries a moment apart (28 Nov 2026: one store in 120 failed so with eight renders of one frame), then once
+// more after removing it.
+bool replace_with(const fs::path& part, const fs::path& path) {
+    std::error_code ec;
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        if (attempt) std::this_thread::sleep_for(std::chrono::milliseconds(10 * attempt));
+        fs::rename(part, path, ec);
+        if (!ec) return true;
+    }
+    fs::remove(path, ec);
+    fs::rename(part, path, ec);
+    if (ec) {
+        std::error_code rm;
+        fs::remove(part, rm);
+    }
+    return !ec;
+}
+
 bool write_text(const fs::path& path, const std::string& text) {
-    const fs::path part = path.string() + ".part";
+    const fs::path part = part_of(path);
     {
         std::ofstream f(part, std::ios::binary | std::ios::trunc);
         f << text;
-        if (!f) return false;
+        if (!f) {
+            f.close();
+            std::error_code ec;
+            fs::remove(part, ec);
+            return false;
+        }
     }
-    std::error_code ec;
-    fs::rename(part, path, ec);
-    if (ec) {   // Windows will not rename over a file another reader holds open: once more after removing it
-        fs::remove(path, ec);
-        fs::rename(part, path, ec);
-    }
-    return !ec;
+    return replace_with(part, path);
 }
 
 std::optional<json> read_json(const fs::path& path) {
@@ -391,19 +419,36 @@ Result<bool> store_frame(const FillRequest& r, int frame, const SdrImage& codes,
         }
     }
     const std::string h = hex(codes_hash(codes));
-    if (!(stored(d, index) && read_text(hash_path(d, index)) == h)) {
+    bool have = false;
+    {
+        // Read under the lock (28 Nov 2026): read outside it, the hash file was open here while another render of
+        // this frame renamed its own over it, which Windows refuses, and that render's store failed.
+        std::lock_guard<std::mutex> lock(store_mutex());
+        have = stored(d, index) && read_text(hash_path(d, index)) == h;
+    }
+    if (!have) {
+        // Written to files of this call's own, then put in place together under the lock: the codes, the master
+        // and the hash of one render, never one render's codes with another's master (28 Nov 2026, review P2).
         const fs::path tif = codes_path(d, index), exr = master_path(d, index);
-        const fs::path tif_part = tif.string() + ".part", exr_part = exr.string() + ".part";
+        const fs::path tif_part = part_of(tif), exr_part = part_of(exr);
+        struct Parts {
+            fs::path a, b;
+            ~Parts() {
+                std::error_code rm;
+                fs::remove(a, rm), fs::remove(b, rm);   // nothing left when renamed; a failed write's leftovers otherwise
+            }
+        } parts{tif_part, exr_part};
         if (auto ok = ofx_engine::write_tiff16(tif_part, codes); !ok) return ok.error();
         const ExrCompression zip = exr_zip_available() ? ExrCompression::Zip : ExrCompression::None;
         if (auto ok = write_acescg_exr(exr_part, master_ap1, Primaries::Ap1, 1.0, {{"rudra:ofxFrame", std::to_string(frame)}}, true,
                                        nullptr, {}, nullptr, zip);
             !ok)
             return ok.error();
-        fs::rename(tif_part, tif, ec);
-        if (!ec) fs::rename(exr_part, exr, ec);
-        if (ec || !write_text(hash_path(d, index), h)) return make_error(ErrorCode::IoError, "AI fill: could not store the frame.", utf8(exr));
         const std::vector<std::uint8_t> t = codes_thumb(codes);
+        std::lock_guard<std::mutex> lock(store_mutex());
+        if (!fs::is_regular_file(d / "collect", ec)) return false;   // Cancel while it was written
+        if (!replace_with(tif_part, tif) || !replace_with(exr_part, exr) || !write_text(hash_path(d, index), h))
+            return make_error(ErrorCode::IoError, "AI fill: could not store the frame.", utf8(exr));
         write_text(thumb_path(d, index), std::string(t.begin(), t.end()));
     }
     std::lock_guard<std::mutex> lock(store_mutex());
@@ -475,6 +520,13 @@ Result<void> start_prompt_embed(const FillRequest& r, const ofx_engine::GenFillC
     (*p)->close_input();
     *running = std::move(*p);
     return {};
+}
+
+bool fill_running() {
+    std::lock_guard<std::mutex> lock(store_mutex());
+    for (const auto& [at, p] : jobs())   // the fills, by their folders; Suggest prompt's are "<shot>/suggest"
+        if (p && fs::path(at).filename() != "suggest" && p->running()) return true;
+    return false;
 }
 
 namespace {

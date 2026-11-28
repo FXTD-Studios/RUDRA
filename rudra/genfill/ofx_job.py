@@ -160,16 +160,47 @@ class Status:
         self.lock = threading.Lock()
 
     def set(self, **kw):
+        """Writes the state. On Windows the rename fails while the plug-in has status.json open (MSVC's ifstream
+        does not share delete), so it is tried again for a while: up to REPLACE_WAIT seconds for a running state,
+        whose next write comes soon anyway (then it is left to that one), and FINAL_REPLACE_WAIT for done, failed
+        or cancelled, which must land (then the error is raised)."""
         with self.lock:
             self.state.update(kw)
             self.state["updated"] = time.time()
             part = self.path.with_name(self.path.name + ".part")
             part.write_text(json.dumps(self.state), encoding="utf-8")
-            os.replace(part, self.path)
+            final = self.state.get("state") != "running"
+            replace_retrying(part, self.path, FINAL_REPLACE_WAIT if final else REPLACE_WAIT, raise_last=final)
 
     def beat(self, stop: threading.Event):
+        """The heartbeat; a write that fails (a full disk, a file held open) does not end it."""
         while not stop.wait(HEARTBEAT):
-            self.set()
+            try:
+                self.set()
+            except OSError:
+                pass
+
+
+# Status.set: how long the rename over status.json is tried while the plug-in reads it (26-28 Nov 2026 review, P2).
+REPLACE_WAIT = 2.0
+FINAL_REPLACE_WAIT = 30.0
+REPLACE_PAUSE = 0.02
+
+
+def replace_retrying(src: Path, dst: Path, wait: float, raise_last: bool = True) -> bool:
+    """os.replace(src, dst), tried again on PermissionError (Windows: dst open without delete sharing) for up to
+    `wait` seconds. True once replaced; False when it gave up and raise_last is False."""
+    end = time.monotonic() + wait
+    while True:
+        try:
+            os.replace(src, dst)
+            return True
+        except PermissionError:
+            if time.monotonic() >= end:
+                if raise_last:
+                    raise
+                return False
+            time.sleep(REPLACE_PAUSE)
 
 
 def sha256(path: Path) -> str:

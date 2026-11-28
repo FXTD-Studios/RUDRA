@@ -326,3 +326,68 @@ def test_the_fill_does_not_inherit_the_hosts_python(tmp_path, monkeypatch):
     assert run_job(tmp_path, d, "ok", monkeypatch) == 0
     log = (d / "job.log").read_text(encoding="utf-8")
     assert f"env PYTHONPATH={REPO} PYTHONHOME=\n" in log
+
+
+def _blocked_replace(monkeypatch, times):
+    """os.replace that fails with PermissionError `times` times (the plug-in holding status.json open on Windows)."""
+    real, left = os.replace, {"n": times}
+
+    def replace(src, dst):
+        if left["n"] > 0:
+            left["n"] -= 1
+            raise PermissionError(13, "The process cannot access the file because it is being used", str(dst))
+        return real(src, dst)
+
+    monkeypatch.setattr(ofx_job.os, "replace", replace)
+    return left
+
+
+def test_status_waits_while_the_plug_in_reads_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(ofx_job, "REPLACE_PAUSE", 0.001)
+    _blocked_replace(monkeypatch, 5)
+    st = ofx_job.Status(tmp_path, 4)
+    st.set(done=1, message="window 1 of 2")
+    assert json.loads((tmp_path / "status.json").read_text())["done"] == 1
+
+
+def test_a_running_status_held_too_long_is_left_to_the_next_write(tmp_path, monkeypatch):
+    monkeypatch.setattr(ofx_job, "REPLACE_PAUSE", 0.001)
+    monkeypatch.setattr(ofx_job, "REPLACE_WAIT", 0.02)
+    left = _blocked_replace(monkeypatch, 10**9)
+    st = ofx_job.Status(tmp_path, 4)
+    st.set(done=1)                                   # no error: the job goes on
+    assert not (tmp_path / "status.json").exists()
+    left["n"] = 0
+    st.set(done=2)
+    assert json.loads((tmp_path / "status.json").read_text())["done"] == 2
+
+
+def test_a_final_status_that_cannot_land_is_an_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(ofx_job, "REPLACE_PAUSE", 0.001)
+    monkeypatch.setattr(ofx_job, "FINAL_REPLACE_WAIT", 0.02)
+    _blocked_replace(monkeypatch, 10**9)
+    st = ofx_job.Status(tmp_path, 4)
+    import pytest
+    with pytest.raises(PermissionError):
+        st.set(state="done", done=4, message="done")
+
+
+def test_the_heartbeat_outlives_a_failed_write(tmp_path, monkeypatch):
+    monkeypatch.setattr(ofx_job, "HEARTBEAT", 0.01)
+    st, calls = ofx_job.Status(tmp_path, 4), {"n": 0}
+
+    def flaky(**kw):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(st, "set", flaky)
+    stop = threading.Event()
+    t = threading.Thread(target=st.beat, args=(stop,), daemon=True)
+    t.start()
+    deadline = time.time() + 5
+    while calls["n"] < 5 and time.time() < deadline:
+        time.sleep(0.01)
+    stop.set()
+    t.join(2)
+    assert calls["n"] >= 5 and not t.is_alive()

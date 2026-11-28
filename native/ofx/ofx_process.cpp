@@ -80,7 +80,19 @@ Result<void> check_grade(const OfxGrade& g) {
 
 std::string region_json(const OfxGrade& g) { return g.region.enabled ? reconstruction_region_json(g.region) : std::string(); }
 
+// Set by make_master when a learned frame was made on the analytic route instead (an AI fill holds the GPU);
+// render() reads it for the note, and keeps such a frame out of a fill's collection.
+thread_local bool t_stood_in = false;
+
 Result<Master> make_master(const OfxGrade& g, const SdrImage& sdr) {
+    if (g.route == "learned" && ofx_fill::fill_running()) {
+        // 28 Nov 2026 (review P2): the engine is ended when a fill starts, and starting it again here (a proxy
+        // render, another instance, a frame not stored) loaded the model onto the GPU the fill is drawing on.
+        t_stood_in = true;
+        OfxGrade analytic = g;
+        analytic.route = "analytic";
+        return make_master(analytic, sdr);
+    }
     if (g.route == "learned") {
         // The learned ACES 2.0 master (ACEScg, 1.0 = diffuse white), the luminance limit applied by the engine.
         auto planes = ofx_engine::learned_master(sdr, g.strength, region_json(g));
@@ -649,7 +661,20 @@ FrameSpan resolve_frames(int playhead, int from, int to, double timeline_end, do
     return r;
 }
 
+namespace {
+Outcome render_frame(const Settings& s, const float* src, std::ptrdiff_t src_row, float* dst, std::ptrdiff_t dst_row, int width, int height);
+}
+
 Outcome render(const Settings& s, const float* src, std::ptrdiff_t src_row, float* dst, std::ptrdiff_t dst_row, int width, int height) {
+    rudra::t_stood_in = false;
+    Outcome out = render_frame(s, src, src_row, dst, dst_row, width, height);
+    if (rudra::t_stood_in && out.error.empty() && out.note.empty())
+        out.note = "AI fill is drawing on the GPU: the learned route shows the analytic master until it is done.";
+    return out;
+}
+
+namespace {
+Outcome render_frame(const Settings& s, const float* src, std::ptrdiff_t src_row, float* dst, std::ptrdiff_t dst_row, int width, int height) {
     using namespace rudra;
     namespace fill = rudra::ofx_fill;
     Outcome out;
@@ -768,6 +793,10 @@ Outcome render(const Settings& s, const float* src, std::ptrdiff_t src_row, floa
                     : s.frame < req.first ? std::string("This frame comes before them: play on.")
                                           : std::to_string(st.of - st.done) + (st.of - st.done == 1 ? " was" : " were") +
                                                 " missed: go back to where you pressed Generate and play through again on the Color page.");
+        } else if (t_stood_in) {
+            // Not the learned master this fill is for: not stored (another shot's fill holds the GPU).
+            out.note = "AI fill: another fill is drawing, so this frame is not stored; play the frames again when it is done.";
+            guide = collecting_guide(st, "Another AI fill is drawing on the GPU: play these frames again when it is done.");
         } else if (auto last = fill::store_frame(req, s.frame, sdr, master_ap1(*m, width, height)); !last) {
             out.note = last.error().message;
             guide = {"RUDRA AI fill: " + bare(last.error().message), st.of > 0 ? double(st.done) / st.of : 0.0, GuideKind::Problem};
@@ -829,6 +858,7 @@ Outcome render(const Settings& s, const float* src, std::ptrdiff_t src_row, floa
     show(std::move(*m), nullptr);
     return guided(out);
 }
+}  // namespace
 
 std::string render(const std::string& route, const std::string& source_curve, double exposure_ev, double strength,
                    const std::string& recovery_mode, bool clip_fill, bool anchor, const std::string& output, const float* src,

@@ -94,6 +94,10 @@ std::optional<FillFrame> fill_frame(const FillRequest& r, int frame, const SdrIm
 // runs, so the learned engine stays off the GPU the fill uses.
 std::optional<PlanarBuffer> master_frame(const FillRequest& r, int frame, const SdrImage& codes);
 
+// 28 Nov 2026 (review P2): whether an AI fill this host started is drawing. The learned route does not start
+// its engine then (it would load a second model onto the GPU the fill is using; ofx_process.cpp make_master).
+bool fill_running();
+
 // One line for the plug-in's Status parameter and messages.
 std::string status_text(const Status& s);
 

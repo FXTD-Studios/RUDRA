@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <thread>
 #include <vector>
 
@@ -753,4 +754,83 @@ TEST_F(OfxFill, ColourManagementAsksForTheSdrAndNamesTheOutput) {
     s.colour_style.clear(), s.input_colourspace.clear(), s.flat_top = 195;   // no colour management: turn it on
     EXPECT_NE(rudra_ofx::input_problem(s).find("In Resolve, turn on Enable OpenFX Color Management"), std::string::npos)
         << rudra_ofx::input_problem(s);
+}
+
+// 28 Nov 2026 (review P2): two renders of one frame at once (the viewer and a render, two instances) wrote the
+// same fixed .part files, so one could rename the other's half-written file, or leave one render's codes beside
+// another's master. Each call now writes files of its own and puts codes, master and hash in place together.
+TEST_F(OfxFill, RendersOfOneFrameAtOnceLeaveOneRendersCodesAndMaster) {
+    const auto r = request();
+    ASSERT_TRUE(fill::begin_collect(r));
+    constexpr int kThreads = 8, kRounds = 15;
+    std::vector<std::thread> threads;
+    std::vector<int> failed(kThreads, 0);
+    for (int t = 0; t < kThreads; ++t)
+        threads.emplace_back([&r, &failed, t] {
+            for (int i = 0; i < kRounds; ++i) {
+                // Render t: codes 0.1 (t + 1), master t + 1 (exact in half).
+                auto ok = fill::store_frame(r, 10, codes(0.1f * float(t + 1)), PlanarBuffer(3, kH, kW, float(t + 1)));
+                if (!ok) ++failed[std::size_t(t)];
+            }
+        });
+    for (auto& th : threads) th.join();
+    for (int t = 0; t < kThreads; ++t) EXPECT_EQ(failed[std::size_t(t)], 0) << t;
+    const fs::path d = fill::folder(r);
+    auto master = read_exr(d / "master" / "f.000000.exr");
+    ASSERT_TRUE(master);
+    const float which = master->pixels.plane(0)[0];
+    ASSERT_GE(which, 1.0f);
+    ASSERT_LE(which, float(kThreads));
+    std::ifstream f(d / "codes" / "f.000000.tif", std::ios::binary);
+    std::vector<unsigned char> tif((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    ASSERT_GT(tif.size(), 10u);
+    const int code = tif[8] | tif[9] << 8;   // the first sample, right after the header
+    EXPECT_EQ(code, int(0.1f * which * 65535.0f + 0.5f)) << "codes of one render beside the master of another";
+    for (const auto& e : fs::recursive_directory_iterator(d))
+        EXPECT_EQ(e.path().filename().string().find(".part"), std::string::npos) << e.path();
+    // The hash names the stored codes: the same codes again are not written again, and the frame counts as stored.
+    EXPECT_EQ(fill::status(r).done, 1);
+}
+
+// 28 Nov 2026 (review P2): while a fill draws, a learned render that has no stored master (another instance, a
+// proxy, a frame not stored) started the learned engine again, a second model on the GPU the fill is using. It
+// now gets the analytic master and says so. (The settings file here has no engine: a learned render that tried to
+// start it would fail.)
+TEST_F(OfxFill, WhileAFillDrawsTheLearnedRouteDoesNotStartItsEngine) {
+    set_env("RUDRA_OFX_FAKE_JOB", "slow");
+    rudra_ofx::Settings s;
+    s.ai_fill = true, s.shot_id = "test09", s.first_frame = 0, s.last_frame = 0, s.output = "linear_acescg";
+    ASSERT_EQ(rudra_ofx::ai_generate(s), "");
+    const auto px = pixels();
+    std::vector<float> out(px.size());
+    const auto collected = rudra_ofx::render(s, px.data(), kW * 4, out.data(), kW * 4, kW, kH);
+    ASSERT_EQ(collected.error, "");
+    ASSERT_NE(collected.note.find("has started"), std::string::npos) << collected.note;
+    ASSERT_TRUE(fill::fill_running());
+
+    rudra_ofx::Settings other;   // another instance, on the learned route
+    other.route = "learned", other.output = "linear_acescg";
+    const auto during = rudra_ofx::render(other, px.data(), kW * 4, out.data(), kW * 4, kW, kH);
+    EXPECT_EQ(during.error, "");
+    EXPECT_NE(during.note.find("analytic master"), std::string::npos) << during.note;
+    std::vector<float> analytic(px.size());
+    rudra_ofx::Settings plain = other;
+    plain.route = "analytic";
+    ASSERT_EQ(rudra_ofx::render(plain, px.data(), kW * 4, analytic.data(), kW * 4, kW, kH).error, "");
+    EXPECT_EQ(out, analytic);
+
+    // Another shot collecting meanwhile: its frames are not stored as analytic stand-ins for a learned fill.
+    rudra_ofx::Settings second = other;
+    second.ai_fill = true, second.shot_id = "test10", second.first_frame = 0, second.last_frame = 0;
+    ASSERT_EQ(rudra_ofx::ai_generate(second), "");
+    const auto refused = rudra_ofx::render(second, px.data(), kW * 4, out.data(), kW * 4, kW, kH);
+    EXPECT_EQ(refused.error, "");
+    EXPECT_NE(refused.note.find("another fill is drawing"), std::string::npos) << refused.note;
+    EXPECT_NE(rudra_ofx::ai_status(second).find("0 of 1"), std::string::npos) << rudra_ofx::ai_status(second);
+
+    ASSERT_TRUE(wait_for(s, "ready")) << rudra_ofx::ai_status(s);
+    for (int i = 0; i < 100 && fill::fill_running(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_FALSE(fill::fill_running());
+    const auto after = rudra_ofx::render(other, px.data(), kW * 4, out.data(), kW * 4, kW, kH);
+    EXPECT_NE(after.error, "");   // the engine again (none here)
 }

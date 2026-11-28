@@ -1,5 +1,6 @@
 #include "engine_client.hpp"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -13,6 +14,7 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <thread>
 
 #include <nlohmann/json.hpp>
 
@@ -98,6 +100,7 @@ public:
                 auto started = start();
                 if (!started) return started.error();
             }
+            gave_up_ = false;
             auto r = request(codes, strength, region_json);
             if (r) {
                 remember(key, *r);
@@ -108,6 +111,7 @@ public:
                              std::to_string(hits_) + " of " + std::to_string(asked_) + " frames from the cache");
             }
             if (r || (proc_ && proc_->running())) return r;   // a refused frame is an answer; a dead engine is retried once
+            if (gave_up_) return r;                            // 28 Nov 2026: not a hung or stopped one (another wait)
             proc_.reset();
             cache_.clear();
             if (attempt == 1) return r;
@@ -115,15 +119,21 @@ public:
         return make_error(ErrorCode::IoError, "RUDRA's learned engine stopped.");
     }
 
+    // 28 Nov 2026 (review P2/P3): a frame waiting on the engine gives up at once (it took mu_ for as long as
+    // the engine took, so a hung engine held the host's exit), and the engine gets a moment to quit.
     void stop() {
+        ++stopping_;
         std::lock_guard<std::mutex> lock(mu_);
+        --stopping_;
         cache_.clear();   // the next engine may be another model or settings file
         if (proc_ && proc_->running()) {
             static const char quit[] = "{\"op\":\"quit\"}\n";
             proc_->write({reinterpret_cast<const std::uint8_t*>(quit), sizeof quit - 1});
             proc_->close_input();
+            const auto until = std::chrono::steady_clock::now() + kQuitWait;
+            while (proc_->running() && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-        proc_.reset();
+        proc_.reset();   // ends it if it has not
     }
 
 private:
@@ -176,8 +186,17 @@ private:
         proc_ = std::move(*p);
         buffer_.clear();
         // The model loads, then the engine says ready (or why not).
+        const auto deadline = std::chrono::steady_clock::now() + timeout(kLoadTimeout);
         for (;;) {
-            auto line = read_line();
+            std::string text;
+            const Read got = read_line(text, deadline);
+            if (got == Read::TimedOut || got == Read::Stopped) {
+                give_up();
+                if (got == Read::Stopped) return make_error(ErrorCode::Cancelled, "RUDRA's learned engine was stopped.");
+                return make_error(ErrorCode::IoError, "RUDRA's learned engine did not finish loading in " + seconds(timeout(kLoadTimeout)) +
+                                                          "; it was stopped" + log_tail(log) + "; see " + log.string());
+            }
+            const std::optional<std::string> line = got == Read::Line ? std::optional<std::string>(text) : std::nullopt;
             if (!line) {
                 const int code = proc_->wait();
                 proc_.reset();
@@ -219,10 +238,23 @@ private:
         const std::string line = req.dump() + "\n";
         if (!proc_->write({reinterpret_cast<const std::uint8_t*>(line.data()), line.size()}))
             return make_error(ErrorCode::IoError, "RUDRA's learned engine stopped.");
+        const auto deadline = std::chrono::steady_clock::now() + timeout(kFrameTimeout);
         for (;;) {
-            auto ans = read_line();
-            if (!ans) return make_error(ErrorCode::IoError, "RUDRA's learned engine stopped.");
-            json j = json::parse(*ans, nullptr, false);
+            std::string ans;
+            const Read got = read_line(ans, deadline);
+            if (got == Read::Stopped) {
+                give_up();
+                return make_error(ErrorCode::Cancelled, "RUDRA's learned engine was stopped.");
+            }
+            if (got == Read::TimedOut) {
+                give_up();
+                std::error_code lec;
+                return make_error(ErrorCode::IoError, "RUDRA's learned engine did not answer in " + seconds(timeout(kFrameTimeout)) +
+                                                          "; it was stopped and starts again with the next frame (see " +
+                                                          (log_dir(lec) / "rudra_ofx_engine.log").string() + ").");
+            }
+            if (got == Read::End) return make_error(ErrorCode::IoError, "RUDRA's learned engine stopped.");
+            json j = json::parse(ans, nullptr, false);
             if (j.is_discarded() || !j.contains("id") || j["id"] != id) continue;
             if (!j.value("ok", false)) return make_error(ErrorCode::IoError, "RUDRA's learned engine: " + j.value("error", j.dump()));
             last_engine_ms_ = j.value("ms", 0.0);
@@ -239,22 +271,61 @@ private:
         return out;
     }
 
-    // One line of the engine's stdout, without its newline; nullopt at the end of the stream.
-    std::optional<std::string> read_line() {
+    enum class Read { Line, End, TimedOut, Stopped };
+
+    // One line of the engine's stdout into `line`, without its newline. Waits until `deadline` at most, in
+    // short slices so that stop() is seen at once (28 Nov 2026).
+    Read read_line(std::string& line, std::chrono::steady_clock::time_point deadline) {
         for (;;) {
             const auto nl = buffer_.find('\n');
             if (nl != std::string::npos) {
-                std::string line = buffer_.substr(0, nl);
+                line = buffer_.substr(0, nl);
                 buffer_.erase(0, nl + 1);
                 if (!line.empty() && line.back() == '\r') line.pop_back();
-                return line;
+                return Read::Line;
             }
+            if (stopping_.load() > 0) return Read::Stopped;
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= deadline) return Read::TimedOut;
+            const auto slice = std::min<std::chrono::steady_clock::duration>(deadline - now, kSlice);
             std::array<std::uint8_t, 4096> chunk{};
-            const std::size_t got = proc_ ? proc_->read_some(chunk) : 0;
-            if (got == 0) return std::nullopt;
-            buffer_.append(reinterpret_cast<const char*>(chunk.data()), got);
+            if (!proc_) return Read::End;
+            const auto got = proc_->read_some_for(chunk, std::chrono::duration_cast<std::chrono::milliseconds>(slice) +
+                                                             std::chrono::milliseconds(1));
+            if (!got) continue;
+            if (*got == 0) return Read::End;
+            buffer_.append(reinterpret_cast<const char*>(chunk.data()), *got);
         }
     }
+
+    // A hung or stopped engine is ended; the next frame starts another (and is not retried at once).
+    void give_up() {
+        if (proc_) proc_->kill();
+        proc_.reset();
+        cache_.clear();
+        buffer_.clear();
+        gave_up_ = true;
+    }
+
+    // How long the engine may take: kLoadTimeout to load, kFrameTimeout a frame; RUDRA_OFX_ENGINE_TIMEOUT_S
+    // (seconds) sets both (a slow GPU, the tests).
+    static std::chrono::milliseconds timeout(std::chrono::milliseconds fallback) {
+        const char* v = std::getenv("RUDRA_OFX_ENGINE_TIMEOUT_S");
+        if (!v || !*v) return fallback;
+        char* end = nullptr;
+        const double s = std::strtod(v, &end);
+        if (end == v || !(s > 0.0) || s > 86400.0) return fallback;
+        return std::chrono::milliseconds(static_cast<long long>(s * 1000.0));
+    }
+    static std::string seconds(std::chrono::milliseconds ms) {
+        const long long s = (ms.count() + 999) / 1000;
+        return std::to_string(s) + (s == 1 ? " second" : " seconds");
+    }
+
+    static constexpr std::chrono::milliseconds kLoadTimeout{std::chrono::minutes(5)};   // a cold model and CUDA start
+    static constexpr std::chrono::milliseconds kFrameTimeout{std::chrono::minutes(2)};  // a 4K frame takes seconds
+    static constexpr std::chrono::milliseconds kSlice{100};
+    static constexpr std::chrono::milliseconds kQuitWait{2000};
 
     std::mutex mu_;
     std::deque<std::pair<std::uint64_t, PlanarBuffer>> cache_;
@@ -263,6 +334,8 @@ private:
     std::unique_ptr<Process> proc_;
     std::string buffer_;
     std::atomic<std::uint64_t> next_id_{0};
+    std::atomic<int> stopping_{0};
+    bool gave_up_ = false;
 };
 
 Engine& engine() {
