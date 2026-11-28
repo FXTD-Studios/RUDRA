@@ -1,6 +1,7 @@
 #include "main_window.hpp"
 #include "batch_queue.hpp"
 #include "rudra/deliver/video_encode.hpp"
+#include "rudra/deliver/exr.hpp"
 #include "paths.hpp"
 #include "aces_master.hpp"   // find_aces_packages: a dropped learned ACES 2.0 package
 #include "media_library.hpp"   // 1.2.6: the Media panel
@@ -2550,10 +2551,15 @@ MasterRequest MainWindow::master_request() const {
     q.carry_chroma = session_.carry_chroma;
     q.container = session_.container;
     q.exr_half = false;  // Grading masters retain float32 precision and range.
-    // 1.2.6 (checklist item 8): lossless ZIP for ACEScg and linear; 1.3: Deliver's EXR compression
-    // (ZIP, ZIPS or none). The ACES 2065-1 container is never compressed.
-    q.exr_zip = deliver_.exr_compression != "none";
-    q.exr_zip_lines = deliver_.exr_compression == "zips" ? 1 : 16;
+    // 1.2.6 (checklist item 8): lossless ZIP for ACEScg and linear; 1.3: Deliver's EXR compression (ZIP, ZIPS or
+    // none); 1.3.2: every OpenEXR compression, ACES 2065-1 included (deliver/exr.hpp).
+    {
+        const rudra::ExrCompression ec =
+            rudra::parse_exr_compression(deliver_.exr_compression.toStdString()).value_or(rudra::ExrCompression::Zip);
+        q.exr_zip = ec == rudra::ExrCompression::Zip || ec == rudra::ExrCompression::Zips;
+        q.exr_zip_lines = ec == rudra::ExrCompression::Zips ? 1 : 16;
+        q.exr_compression = q.exr_zip || ec == rudra::ExrCompression::None ? std::string() : rudra::exr_compression_id(ec);
+    }
     q.source_curve = session_.grade.source;
     q.own_codes = session_.own_codes();   // 24 Nov 2026: the app's frames are the source's own codes
     q.calibration = session_.calibration_points();

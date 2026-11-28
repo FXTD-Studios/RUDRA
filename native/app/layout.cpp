@@ -49,6 +49,7 @@
 #ifdef RUDRA_APP_VIEWER
 #include "rudra/render/viewer_window.hpp"
 #endif
+#include "rudra/deliver/exr.hpp"   // 1.3.2: the EXR compressions Deliver lists
 
 namespace rudra::app {
 namespace {
@@ -1713,16 +1714,31 @@ QWidget* MainWindow::build_right_rail() {
                   "The size the files are written at: the source's, twice it, UHD (3840 wide) or HD (1920 wide), "
                   "keeping the picture's shape. A clean resize, never an AI upscale");
         }
-        {   // 1.3 (24 Nov 2026): EXR compression, lossless; sync_deliver greys it for ACES 2065-1 (ST 2065-4)
+        {   // 1.3 (24 Nov 2026): EXR compression; 1.3.2 (28 Nov 2026): every OpenEXR one this build writes, on both
+            // routes and for ACES 2065-1 too (deliver/exr.hpp)
             auto* zc = new QComboBox;
             zc->setObjectName("deliverExrCompression");
-            zc->addItem("ZIP \u00b7 lossless, smaller", "zip");
-            zc->addItem("ZIPS \u00b7 lossless, one line a block", "zips");
-            zc->addItem("None \u00b7 uncompressed", "none");
+            for (const rudra::ExrCompression ec : rudra::exr_compressions()) {
+                if (!rudra::exr_compression_available(ec)) continue;
+                const char* words = "";
+                switch (ec) {
+                    case rudra::ExrCompression::Zip: words = "ZIP \u00b7 lossless, smaller"; break;
+                    case rudra::ExrCompression::Zips: words = "ZIPS \u00b7 lossless, one line a block"; break;
+                    case rudra::ExrCompression::Piz: words = "PIZ \u00b7 lossless, best for grain"; break;
+                    case rudra::ExrCompression::Rle: words = "RLE \u00b7 lossless, fast"; break;
+                    case rudra::ExrCompression::None: words = "None \u00b7 uncompressed"; break;
+                    case rudra::ExrCompression::Dwaa: words = "DWAA \u00b7 lossy, small"; break;
+                    case rudra::ExrCompression::Dwab: words = "DWAB \u00b7 lossy, small, big blocks"; break;
+                    case rudra::ExrCompression::B44: words = "B44 \u00b7 lossy, half float"; break;
+                    case rudra::ExrCompression::B44a: words = "B44A \u00b7 lossy, half float, flat areas smaller"; break;
+                    case rudra::ExrCompression::Pxr24: words = "PXR24 \u00b7 lossy for float32 (24 bits)"; break;
+                }
+                zc->addItem(QString::fromUtf8(words), QString::fromLatin1(rudra::exr_compression_id(ec)));
+            }
             connect(zc, &QComboBox::activated, this, [this, zc](int i) { set_deliver("exr_compression", zc->itemData(i).toString()); });
             field("EXR compression", zc, "deliverExrCompressionRow",
-                  "How the EXR masters are stored. ZIP and ZIPS are lossless (every value kept exactly) and about half "
-                  "the size; ZIPS reads a few lines faster. Nuke, Resolve and every OpenEXR reader take all three");
+                  "How the EXR masters are stored: lossless (ZIP, ZIPS, PIZ, RLE, or none) keeps every value; lossy (DWAA, "
+                  "DWAB, B44, B44A, PXR24) is much smaller, for reviews rather than the grade. Every OpenEXR reader takes them all");
         }
         auto* keep = new CheckRow("deliverKeepExr", "Keep the EXR masters", "deliverKeepExrHint", "beside the movie", kc);
         keep->setToolTip("Also write the EXR master of every frame: ACEScg float32 with the mask channel, or ACES 2065-1 "

@@ -207,7 +207,8 @@ void MainWindow::set_deliver(const QString& key, const QString& value) {
     } else if (key == "size" && (value == "source" || value == "2x" || value == "uhd" || value == "hd")) {   // 1.3
         deliver_.size = value;
         st.setValue("deliver/size", value);
-    } else if (key == "exr_compression" && (value == "zip" || value == "zips" || value == "none")) {   // 1.3
+    } else if (key == "exr_compression" && rudra::parse_exr_compression(value.toStdString()) &&
+               rudra::exr_compression_available(*rudra::parse_exr_compression(value.toStdString()))) {   // 1.3; 1.3.2: every one
         deliver_.exr_compression = value;
         st.setValue("deliver/exrCompression", value);
     } else if (key == "fps") {
@@ -409,16 +410,23 @@ void MainWindow::sync_deliver() {
         show("deliverExrCompressionRow", exr);
         if (auto* zc = findChild<QComboBox*>("deliverExrCompression")) {
             const QSignalBlocker b(zc);
+            // 1.3.2 (28 Nov 2026): every OpenEXR compression, ACES 2065-1 included (no longer greyed there).
             const bool ap0 = c.gamut == "ap0";
-            const bool zlib = rudra::exr_zip_available();   // a build without zlib writes every EXR uncompressed
-            zc->setCurrentIndex(std::max(0, zc->findData(ap0 || !zlib ? QStringLiteral("none") : c.exr_compression)));
-            zc->setEnabled(!ap0 && zlib);
-            zc->setToolTip(!zlib ? QStringLiteral("This build of RUDRA has no zlib: EXRs are written uncompressed.")
-                           : ap0 ? QStringLiteral("ACES 2065-1 files are uncompressed: the SMPTE ST 2065-4 container asks for it. "
-                                                "ACEScg or linear can be ZIP or ZIPS.")
-                               : QStringLiteral("How the EXR masters are stored. ZIP and ZIPS are lossless (every value kept "
-                                                "exactly) and make smaller files; ZIPS packs one line at a time instead of 16, a "
-                                                "little faster to read a line at a time. Every OpenEXR reader takes all three."));
+            zc->setCurrentIndex(std::max(0, zc->findData(c.exr_compression)));
+            zc->setEnabled(zc->count() > 1);
+            const auto ec = rudra::parse_exr_compression(c.exr_compression.toStdString()).value_or(rudra::ExrCompression::Zip);
+            QString tip = QStringLiteral("How the EXR masters are stored. Lossless: ZIP (the default, about half the size), ZIPS (one "
+                                         "line a block), PIZ (smallest for grainy pictures), RLE (fast, for flat areas). Lossy, much "
+                                         "smaller, for reviews and dailies rather than the grade: DWAA, DWAB, B44, B44A (half float "
+                                         "only) and PXR24 (32-bit float kept to 24 bits). Nuke, Resolve and every OpenEXR reader take "
+                                         "them all.");
+            if (zc->count() < int(rudra::exr_compressions().size()))
+                tip += QStringLiteral(" This build of RUDRA writes ZIP, ZIPS and uncompressed only.");
+            if (rudra::exr_compression_lossy(ec)) tip += QStringLiteral(" The masks and mattes stay lossless.");
+            if (ap0 && ec != rudra::ExrCompression::None)
+                tip += QStringLiteral(" A compressed ACES 2065-1 file is not the SMPTE ST 2065-4 container (which is uncompressed); "
+                                      "choose None for the strict container.");
+            zc->setToolTip(tip);
         }
     }
     show("deliverKeepExr", aces && movie);
@@ -879,6 +887,7 @@ void MainWindow::aces_deliver() {
         aifill_movie_req_ = enc;
         req["exr"] = c.gamut == "ap0" ? "half" : "float";
         req["exr_gamut"] = c.gamut == "ap0" ? "ap0" : "acescg";
+        put_exr_compression(req, c.exr_compression);   // 1.3.2: the masters the fill reads, as Deliver says
         req.remove("log");
         req.remove("log_formats");
     }

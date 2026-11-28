@@ -337,3 +337,12 @@ def test_only_the_missing_packages_are_installed(monkeypatch):
     assert setup.install_packages(["cv2"])
     assert ran[0][-1] == "opencv-python-headless>=4.9" and "diffusers>=0.35" not in ran[0]
     assert "cv2" in setup.IMPORTS and "numpy" in setup.IMPORTS
+
+
+def test_the_windows_bootstrap_hands_setup_its_options_as_an_array():
+    # 28 Nov 2026: `$extra = if (...) { @('--check-only') } ...` gave a plain string (PowerShell unrolls a
+    # one-item array an if returns), and `@extra` then passed it one character at a time, so setup.py
+    # stopped with "unrecognized arguments: - - c h e c k - o n l y" (and the same for --florence).
+    text = (Path(__file__).resolve().parents[1] / "scripts" / "genfill_bootstrap.ps1").read_text(encoding="utf-8")
+    line = next(l for l in text.splitlines() if l.lstrip().startswith("$extra ="))
+    assert line.split("=", 1)[1].strip().startswith("@(if "), line

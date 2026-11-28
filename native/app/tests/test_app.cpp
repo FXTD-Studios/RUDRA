@@ -5272,7 +5272,7 @@ for line in sys.stdin:
 
 // 1.3 (24 Nov 2026): EXR compression in Deliver: ZIP (the default since 1.2.6), ZIPS or none, to the
 // learned engine and the analytic master; the ACES 2065-1 container stays uncompressed (ST 2065-4).
-TEST(AppDeliver, TheExrCompressionGoesToTheEnginesAndAcesStaysUncompressed) {
+TEST(AppDeliver, TheExrCompressionGoesToTheEnginesAndAcesTakesItToo) {
     app::DeliverChoice c;
     c.source = "aces";
     c.output = "sequence";
@@ -5282,32 +5282,59 @@ TEST(AppDeliver, TheExrCompressionGoesToTheEnginesAndAcesStaysUncompressed) {
     QJsonObject f = app::aces_deliver_format_fields(c);
     EXPECT_TRUE(f.value("exr_zip").toBool());
     EXPECT_FALSE(f.contains("exr_zip_lines"));
+    EXPECT_FALSE(f.contains("exr_compression"));
     c.exr_compression = "zips";
     f = app::aces_deliver_format_fields(c);
     EXPECT_TRUE(f.value("exr_zip").toBool());
     EXPECT_EQ(f.value("exr_zip_lines").toInt(), 1);
     c.exr_compression = "none";
     EXPECT_FALSE(app::aces_deliver_format_fields(c).value("exr_zip").toBool());
+    // 1.3.2 (28 Nov 2026): ACES 2065-1 takes it too (it is then not the ST 2065-4 container, and says so).
     c.exr_compression = "zips";
     c.gamut = "ap0";
     f = app::aces_deliver_format_fields(c);
+    EXPECT_TRUE(f.value("exr_zip").toBool());
+    EXPECT_EQ(f.value("exr_zip_lines").toInt(), 1);
+    // Every other OpenEXR compression goes as exr_compression, ZIP's keys off.
+    c.exr_compression = "dwaa";
+    f = app::aces_deliver_format_fields(c);
     EXPECT_FALSE(f.value("exr_zip").toBool());
-    EXPECT_FALSE(f.contains("exr_zip_lines"));
-    c.exr_compression = "lz4";   // not one of the three: back to ZIP
+    EXPECT_EQ(f.value("exr_compression").toString(), "dwaa");
+    // The kept EXR masters of a learned movie too.
+    c.output = "movie";
+    c.keep_exr = true;
+    c.exr_compression = "piz";
+    EXPECT_EQ(app::aces_deliver_format_fields(c).value("exr_compression").toString(), "piz");
+    c.keep_exr = false;
+    EXPECT_FALSE(app::aces_deliver_format_fields(c).contains("exr_compression"));
+    c.output = "sequence";
+    c.exr_compression = "lz4";   // not an OpenEXR compression: back to ZIP
     EXPECT_EQ(app::deliver_fit(c, true, false, false).exr_compression, "zip");
+    c.exr_compression = "b44a";   // one this build may lack: kept only when it writes it
+    EXPECT_EQ(app::deliver_fit(c, true, false, false).exr_compression,
+              rudra::exr_compression_available(rudra::ExrCompression::B44a) ? "b44a" : "zip");
 
     QSettings().clear();
     {
         app::MainWindow w(false);
         auto* zc = w.findChild<QComboBox*>("deliverExrCompression");
         ASSERT_NE(zc, nullptr);
-        EXPECT_EQ(zc->count(), 3);
+        int available = 0;   // every compression this build writes, ZIP first
+        for (const rudra::ExrCompression ec : rudra::exr_compressions()) available += rudra::exr_compression_available(ec) ? 1 : 0;
+        EXPECT_EQ(zc->count(), available);
+        EXPECT_GE(zc->count(), 3);
+        EXPECT_EQ(zc->itemData(0).toString(), "zip");
         EXPECT_EQ(w.deliver_choice().exr_compression, "zip");
         w.set_deliver("exr_compression", "zips");
         EXPECT_EQ(w.deliver_choice().exr_compression, "zips");
         EXPECT_EQ(QSettings().value("deliver/exrCompression").toString(), "zips");
         w.set_deliver("exr_compression", "lz4");   // refused
         EXPECT_EQ(w.deliver_choice().exr_compression, "zips");
+        if (rudra::exr_compression_available(rudra::ExrCompression::Piz)) {   // 1.3.2
+            w.set_deliver("exr_compression", "piz");
+            EXPECT_EQ(w.deliver_choice().exr_compression, "piz");
+            EXPECT_GE(zc->findData("dwab"), 0);
+        }
     }
     // Before 1.3 the hidden deliver/exrZip decided: turned off, it reads as none.
     QSettings().clear();

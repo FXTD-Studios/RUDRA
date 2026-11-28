@@ -160,6 +160,8 @@ $env:PYTHONUNBUFFERED = '1'
 $env:PYTHONDONTWRITEBYTECODE = '1'
 Set-Location -LiteralPath $Repo
 # 1.2.6: Florence-2 for Suggest a prompt. 1.3.2: or a model from a folder or zip, with no download.
-$extra = if ($CheckOnly) { @('--check-only') } elseif ($From) { @('--from', $From) } elseif ($FlorenceFrom) { @('--florence-from', $FlorenceFrom) } else { @('--florence') }
+# @( ) keeps it an array: an if that yields one item gives a plain string, and @extra then passed it one
+# character at a time (28 Nov: "unrecognized arguments: - - c h e c k - o n l y"; --florence alike).
+$extra = @(if ($CheckOnly) { '--check-only' } elseif ($From) { '--from', $From } elseif ($FlorenceFrom) { '--florence-from', $FlorenceFrom } else { '--florence' })
 & $py -m rudra.genfill.setup --base $Base --json --skip-packages @extra
 exit $LASTEXITCODE
