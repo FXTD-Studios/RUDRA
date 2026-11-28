@@ -109,6 +109,58 @@ TEST(AcesDeliver, OptionsDefaultToTheFloatAcescgMaster) {
                                   "acesImageContainerFlag 1; scene-linear, signed, unclamped; the reconstruction mask in mask/<frame>.exr");
 }
 
+// 1.3.2 (28 Nov 2026): the learned route takes every OpenEXR compression, ACES 2065-1 included (no longer always
+// uncompressed): the label says which and, for a compressed AP0 file, that it is not the ST 2065-4 container; the
+// AP0 file's mask in mask/ stays lossless under a lossy choice.
+TEST(AcesDeliver, EveryExrCompressionOnBothGamuts) {
+    EXPECT_FALSE(aces_deliver_from_json({{"exr_compression", "lz4"}}));
+    auto zips = aces_deliver_from_json({{"exr_zip", true}, {"exr_zip_lines", 1}});   // 1.3's keys read as before
+    ASSERT_TRUE(zips);
+    EXPECT_EQ(zips->compression(), ExrCompression::Zips);
+    for (const char* id : {"piz", "dwaa"}) {
+        const ExrCompression c = *parse_exr_compression(id);
+        auto cg = aces_deliver_from_json({{"exr_compression", id}});
+        if (!exr_compression_available(c)) {
+            EXPECT_FALSE(cg) << id;   // refused with the reason, never written uncompressed without a word
+            continue;
+        }
+        ASSERT_TRUE(cg) << id;
+        EXPECT_EQ(cg->compression(), c);
+        const std::string kind = exr_compression_lossy(c) ? " (lossy)" : " (lossless)";
+        EXPECT_NE(aces_exr_label(*cg).find(std::string(", ") + exr_compression_label(c) + kind), std::string::npos) << aces_exr_label(*cg);
+        auto ap0 = aces_deliver_from_json({{"exr", "half"}, {"exr_gamut", "ap0"}, {"exr_compression", id}});
+        ASSERT_TRUE(ap0);
+        EXPECT_NE(aces_exr_label(*ap0).find("not the SMPTE ST 2065-4 container"), std::string::npos) << aces_exr_label(*ap0);
+        const fs::path d = fs::temp_directory_path() / (std::string("rudra_aces_compression_") + id);
+        fs::remove_all(d);
+        fs::create_directories(d);
+        PlanarBuffer px(3, 12, 10, 0.3f), mask(1, 12, 10, 0.0f);
+        mask.at(0, 5, 5) = 1.0f;
+        ASSERT_TRUE(write_aces_master_exr(d / "f.exr", px, mask, *ap0, {}));
+        auto compression_of = [](const fs::path& p) {
+            auto r = read_exr(p);
+            if (!r) return -1;
+            for (const auto& [k, v] : r->attributes)
+                if (k == "compression") return int(v.at(0));
+            return -1;
+        };
+        auto flag = [](const fs::path& p) {
+            auto r = read_exr(p);
+            for (const auto& [k, v] : r->attributes)
+                if (k == "acesImageContainerFlag") return true;
+            return false;
+        };
+        EXPECT_EQ(compression_of(d / "f.exr"), c == ExrCompression::Piz ? 4 : 8) << id;
+        EXPECT_FALSE(flag(d / "f.exr")) << id;
+        const fs::path mf = aces_mask_file(d / "f.exr");
+        EXPECT_EQ(compression_of(mf), exr_compression_lossy(c) ? (exr_zip_available() ? 3 : 0) : 4) << id;
+        auto m = read_exr(mf);
+        ASSERT_TRUE(m);
+        EXPECT_EQ(m->pixels.at(0, 5, 5), 1.0f);   // exact
+        fs::remove_all(d);
+    }
+}
+
 TEST(AcesDeliver, OptionsRefuseWhatCannotBeWritten) {
     EXPECT_FALSE(aces_deliver_from_json({{"exr", "int8"}}));
     EXPECT_FALSE(aces_deliver_from_json({{"exr_gamut", "rec709"}}));

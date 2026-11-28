@@ -116,7 +116,7 @@ if [ -z "${SKIP_BUILD:-}" ]; then
     -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_RENDER=ON -DRUDRA_BUILD_CLI=ON -DRUDRA_BUILD_TESTS=$TESTS \
     -DRUDRA_WITH_ONNXRUNTIME=ON "-DONNXRUNTIME_ROOT=$ORT_ROOT" -DRUDRA_WITH_LIBTORCH=OFF \
     -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CV_ROOT/lib/cmake/opencv4" \
-    -DRUDRA_WITH_OCIO=ON "-DOpenColorIO_DIR=$OCIO_ROOT/lib/cmake/OpenColorIO" -DRUDRA_BUILD_OFX=ON \
+    -DRUDRA_WITH_OCIO=ON "-DOpenColorIO_DIR=$OCIO_ROOT/lib/cmake/OpenColorIO" -DRUDRA_BUILD_OFX=ON -DRUDRA_OPENEXR_FETCH=ON \
     "-DCMAKE_PREFIX_PATH=$QT_ROOT" "-DQt6_DIR=$QT_ROOT/lib/cmake/Qt6" \
     "-DCMAKE_BUILD_RPATH=$ORT_ROOT/lib;$OCIO_ROOT/lib" > "$DEPS/rudra_configure.log" 2>&1 ||
     { tail -n 40 "$DEPS/rudra_configure.log" >&2; fail "cmake configure (the whole output: $DEPS/rudra_configure.log)"; }

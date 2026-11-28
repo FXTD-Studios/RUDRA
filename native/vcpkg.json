@@ -5,7 +5,8 @@
   "description": "RUDRA native app: layered C++20 core, QRhi viewer, LibTorch and ONNX Runtime inference",
   "dependencies": [
     "nlohmann-json",
-    "zlib"
+    "zlib",
+    "openexr"
   ],
   "features": {
     "tests": {

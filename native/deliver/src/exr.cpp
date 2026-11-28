@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cctype>
 #include <cerrno>
 #include <cmath>
 #include <cstdio>
@@ -12,6 +13,7 @@
 #include <iterator>
 #include <limits>
 
+#include "exr_openexr.hpp"
 #include "rudra/core/gamut.hpp"
 #include "rudra/platform/io_error.hpp"
 #include "rudra/platform/pyjson.hpp"
@@ -82,6 +84,74 @@ std::uint16_t float_to_half(float f) noexcept {
 
 bool exr_zip_available() noexcept { return RUDRA_HAVE_ZLIB != 0; }
 
+const std::vector<ExrCompression>& exr_compressions() {
+    static const std::vector<ExrCompression> all = {ExrCompression::Zip,   ExrCompression::Zips, ExrCompression::Piz,
+                                                    ExrCompression::Rle,   ExrCompression::None, ExrCompression::Dwaa,
+                                                    ExrCompression::Dwab,  ExrCompression::B44,  ExrCompression::B44a,
+                                                    ExrCompression::Pxr24};
+    return all;
+}
+
+bool exr_compression_available(ExrCompression c) noexcept {
+    switch (c) {
+        case ExrCompression::None: return true;
+        case ExrCompression::Zip:
+        case ExrCompression::Zips: return exr_zip_available();
+        default: return exr_detail::openexr_available();
+    }
+}
+
+bool exr_compression_lossy(ExrCompression c) noexcept {
+    return c == ExrCompression::Pxr24 || c == ExrCompression::B44 || c == ExrCompression::B44a || c == ExrCompression::Dwaa ||
+           c == ExrCompression::Dwab;
+}
+
+const char* exr_compression_id(ExrCompression c) noexcept {
+    switch (c) {
+        case ExrCompression::None: return "none";
+        case ExrCompression::Zip: return "zip";
+        case ExrCompression::Zips: return "zips";
+        case ExrCompression::Rle: return "rle";
+        case ExrCompression::Piz: return "piz";
+        case ExrCompression::Pxr24: return "pxr24";
+        case ExrCompression::B44: return "b44";
+        case ExrCompression::B44a: return "b44a";
+        case ExrCompression::Dwaa: return "dwaa";
+        case ExrCompression::Dwab: return "dwab";
+    }
+    return "none";
+}
+
+const char* exr_compression_label(ExrCompression c) noexcept {
+    switch (c) {
+        case ExrCompression::None: return "uncompressed";
+        case ExrCompression::Zip: return "ZIP";
+        case ExrCompression::Zips: return "ZIPS";
+        case ExrCompression::Rle: return "RLE";
+        case ExrCompression::Piz: return "PIZ";
+        case ExrCompression::Pxr24: return "PXR24";
+        case ExrCompression::B44: return "B44";
+        case ExrCompression::B44a: return "B44A";
+        case ExrCompression::Dwaa: return "DWAA";
+        case ExrCompression::Dwab: return "DWAB";
+    }
+    return "uncompressed";
+}
+
+std::optional<ExrCompression> parse_exr_compression(const std::string& id) {
+    std::string l = id;
+    for (char& ch : l) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+    for (ExrCompression c : exr_compressions())
+        if (l == exr_compression_id(c)) return c;
+    return std::nullopt;
+}
+
+ExrCompression exr_compression_from(const std::string& id, bool zip, int zip_lines) noexcept {
+    if (!id.empty())
+        if (const auto c = parse_exr_compression(id)) return *c;
+    return !zip ? ExrCompression::None : zip_lines == 1 ? ExrCompression::Zips : ExrCompression::Zip;
+}
+
 namespace {
 // The bytes of a scanline EXR whose channel i is `names[i]`, read from `planes[i]`
 // (w x h floats each), written in name order as the format asks; uncompressed, or ZIP.
@@ -91,6 +161,39 @@ std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, co
                                        ExrCompression compression = ExrCompression::None);
 
 constexpr int kZipLines = 16;   // OpenEXR's ZIP_COMPRESSION: 16 scanlines a block
+
+// What RUDRA's own writer does: None, ZIP and ZIPS (a build without zlib writes ZIP and ZIPS uncompressed, as before).
+bool own_writer(ExrCompression c) { return c == ExrCompression::None || c == ExrCompression::Zip || c == ExrCompression::Zips; }
+
+// The value as it goes into the file: NaN 0, +inf the largest float, -inf 0, half clipped to its range.
+float clean_value(float v, bool half) {
+    if (std::isnan(v)) v = 0.0f;
+    else if (v == std::numeric_limits<float>::infinity()) v = 3.4e38f;
+    else if (v == -std::numeric_limits<float>::infinity()) v = 0.0f;
+    if (half) v = std::clamp(v, -65504.0f, 65504.0f);
+    return v;
+}
+
+// The file's bytes: RUDRA's own writer for None / ZIP / ZIPS, the OpenEXR library for every other compression (1.3.2),
+// with the values cleaned the same way.
+Result<std::vector<std::uint8_t>> encode_planes(const std::vector<std::string>& names, const std::vector<const float*>& planes,
+                                                int w, int h, bool half, const std::optional<Chromaticities>& chroma,
+                                                const ExrAttributes& attributes, const ExrTypedAttributes& typed,
+                                                ExrCompression compression) {
+    if (own_writer(compression)) return planes_bytes(names, planes, w, h, half, chroma, attributes, typed, compression);
+    if (!exr_compression_available(compression))
+        return make_error(ErrorCode::Unsupported, std::string("This build of RUDRA writes no ") + exr_compression_label(compression) +
+                                                      " EXR (it has no OpenEXR library): choose ZIP, ZIPS or none.");
+    const std::size_t n = std::size_t(w) * std::size_t(h);
+    std::vector<std::vector<float>> cleaned(planes.size());
+    std::vector<const float*> ptrs;
+    for (std::size_t i = 0; i < planes.size(); ++i) {
+        cleaned[i].resize(n);
+        for (std::size_t k = 0; k < n; ++k) cleaned[i][k] = clean_value(planes[i][k], half);
+        ptrs.push_back(cleaned[i].data());
+    }
+    return exr_detail::openexr_encode(names, ptrs, w, h, half, chroma, attributes, typed, compression);
+}
 
 // OpenEXR's ZIP (ImfZip.cpp): the bytes split into even and odd halves, then each a delta of the
 // one before (+128), then zlib. A block that does not shrink is stored as it is (the reader knows
@@ -150,11 +253,11 @@ Result<std::vector<std::uint8_t>> exr_bytes(const PlanarBuffer& rgb, bool half,
     std::vector<const float*> planes;
     for (int c = 0; c < n_ch; ++c) planes.push_back(rgb.plane(c));
     if (reconstruction_mask) planes.push_back(reconstruction_mask->plane(0));
-    return planes_bytes(names, planes, w, h, half, chroma, attributes, typed, compression);
+    return encode_planes(names, planes, w, h, half, chroma, attributes, typed, compression);
 }
 
 Result<void> write_mattes_exr(const std::filesystem::path& path, const NamedPlanes& planes,
-                              const ExrAttributes& attributes) {
+                              const ExrAttributes& attributes, ExrCompression compression) {
     if (planes.empty()) return make_error(ErrorCode::InvalidArgument, "a mattes EXR needs at least one matte");
     const int w = planes.front().second.width(), h = planes.front().second.height();
     std::vector<std::string> names;
@@ -169,7 +272,9 @@ Result<void> write_mattes_exr(const std::filesystem::path& path, const NamedPlan
         names.push_back(name);
         data.push_back(p.plane(0));
     }
-    const auto bytes = planes_bytes(names, data, w, h, false, std::nullopt, attributes, {});
+    const auto encoded = encode_planes(names, data, w, h, false, std::nullopt, attributes, {}, compression);
+    if (!encoded) return encoded.error();
+    const std::vector<std::uint8_t>& bytes = *encoded;
     std::error_code ec;
     if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), ec);
     std::ofstream out(path, std::ios::binary);
@@ -240,13 +345,7 @@ std::vector<std::uint8_t> planes_bytes(const std::vector<std::string>& names, co
         for (int y = 0; y < h; ++y) put_u64(out, std::uint64_t(data_start + std::int64_t(y) * chunk));
     }
 
-    auto clean = [half](float v) {
-        if (std::isnan(v)) v = 0.0f;
-        else if (v == std::numeric_limits<float>::infinity()) v = 3.4e38f;
-        else if (v == -std::numeric_limits<float>::infinity()) v = 0.0f;
-        if (half) v = std::clamp(v, -65504.0f, 65504.0f);
-        return v;
-    };
+    auto clean = [half](float v) { return clean_value(v, half); };
     if (zip) {   // blocks of 16 scanlines (ZIPS: 1), each zipped; the offset table one entry a block
         const int blocks = (h + zip_lines - 1) / zip_lines;
         std::vector<std::vector<std::uint8_t>> zipped(static_cast<std::size_t>(blocks));
@@ -376,11 +475,16 @@ Result<void> write_aces_like(const std::filesystem::path& path, const PlanarBuff
     // that is the container: AP0, RGB(A), half float, uncompressed scanlines (28 Oct 2026 review).
     // 1.2.6 (readiness report, checklist item 3): a float32 AP0 file (the analytic route's grading
     // master) carried the flag too, but the container is half float only: it is labelled instead.
-    if (ap0 && !reconstruction_mask && half) all_typed.push_back({"acesImageContainerFlag", "int", {1, 0, 0, 0}});
+    // 1.3.2 (28 Nov 2026): the AP0 file takes Deliver's EXR compression too; compressed, it is not the container
+    // either (ST 2065-4 is uncompressed), and is labelled with its compression instead.
+    const bool compressed = compression != ExrCompression::None && exr_compression_available(compression);
+    if (ap0 && !reconstruction_mask && half && !compressed) all_typed.push_back({"acesImageContainerFlag", "int", {1, 0, 0, 0}});
     else
         attrs.emplace_back("rudra:container", !ap0                 ? "ACEScg (AP1)"
                                               : reconstruction_mask ? "AP0 linear with reconstruction mask"
-                                                                    : "AP0 linear, float32: not the SMPTE ST 2065-4 container (half float)");
+                                              : compressed ? std::string("AP0 linear, ") + exr_compression_label(compression) +
+                                                                 " compressed: not the SMPTE ST 2065-4 container (uncompressed)"
+                                                           : "AP0 linear, float32: not the SMPTE ST 2065-4 container (half float)");
     attrs.emplace_back("rudra:sourceSpace", primaries_name(source));
     attrs.emplace_back("rudra:exposureConvention", "0.18 = 18% grey (scene), diffuse white = 1.0");
     attrs.emplace_back("rudra:exposureScale", pyjson::repr(exposure));
@@ -390,17 +494,17 @@ Result<void> write_aces_like(const std::filesystem::path& path, const PlanarBuff
         for (const auto& [kk, v] : provenance) d.emplace_back(kk, v);
         attrs.emplace_back("rudra:provenance", pyjson::dumps(d, -1, true));
     }
-    // ST 2065-4: the AP0 container is uncompressed; only ACEScg may be zipped (1.2.6, item 8).
     return write_exr(path, out, half, ap0 ? kAp0Chromaticities : kAp1Chromaticities, attrs, reconstruction_mask, all_typed,
-                     ap0 ? ExrCompression::None : compression);
+                     compression);
 }
 
 }  // namespace
 
 Result<void> write_aces_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
                             double exposure, const ExrAttributes& provenance, bool half, const PlanarBuffer* reconstruction_mask,
-                            const ExrTypedAttributes& typed, const PlanarBuffer* alpha) {
-    return write_aces_like(path, rgb, source, Primaries::Ap0, exposure, provenance, true, half, reconstruction_mask, typed, alpha);
+                            const ExrTypedAttributes& typed, const PlanarBuffer* alpha, ExrCompression compression) {
+    return write_aces_like(path, rgb, source, Primaries::Ap0, exposure, provenance, true, half, reconstruction_mask, typed, alpha,
+                           compression);
 }
 
 Result<void> write_acescg_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
@@ -525,9 +629,13 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
         pos += size;
     }
     ++pos;
-    // 1.2.6 (item 8): ZIPS (2, one scanline a block) and ZIP (3, sixteen) besides uncompressed.
-    if (compression != 0 && compression != 2 && compression != 3) return bad("compressed with a method RUDRA does not read");
-    if (compression != 0 && !exr_zip_available()) return bad("ZIP-compressed, and this build has no zlib");
+    // 1.2.6 (item 8): ZIPS (2, one scanline a block) and ZIP (3, sixteen) besides uncompressed; 1.3.2: RLE (1), PIZ (4),
+    // PXR24 (5), B44 (6), B44A (7), DWAA (8) and DWAB (9) through the OpenEXR library, when the build has it.
+    const bool by_openexr = compression == 1 || (compression >= 4 && compression <= 9);
+    if (compression != 0 && compression != 2 && compression != 3 && !by_openexr) return bad("compressed with a method RUDRA does not read");
+    if (by_openexr && !exr_detail::openexr_available())
+        return bad("compressed with a method this build of RUDRA does not read (it has no OpenEXR library)");
+    if ((compression == 2 || compression == 3) && !exr_zip_available()) return bad("ZIP-compressed, and this build has no zlib");
     // In 64 bits: x1 - x0 + 1 overflows an int for a hostile window.
     const std::int64_t w64 = std::int64_t(x1) - std::int64_t(x0) + 1, h64 = std::int64_t(y1) - std::int64_t(y0) + 1;
     if (w64 <= 0 || h64 <= 0 || channels.empty()) return bad("empty data window");
@@ -546,6 +654,17 @@ Result<ExrImage> read_exr(const std::filesystem::path& path) {
         if (!has(pos, 8 * std::size_t(h))) return bad("truncated data");
         pos += 8 * std::size_t(h);
         if ((n - pos) / line_bytes < std::size_t(h)) return bad("truncated data");
+    } else if (by_openexr) {
+        // The same budget as ZIP's before anything is decoded (a hostile header can claim any size).
+        std::uint64_t pixel_bytes = 0;
+        for (int t : img.pixel_types) pixel_bytes += std::uint64_t(w) * (t == 1 ? 2u : 4u);
+        constexpr std::uint64_t kMaxDecoded = 2ull << 30;
+        if (std::uint64_t(h) * (pixel_bytes + 8) > kMaxDecoded) return bad("more pixel data than RUDRA reads from one file");
+        auto decoded = exr_detail::openexr_decode_flat(raw, channels, img.pixel_types, x0, y0, w, h);
+        if (!decoded) return make_error(ErrorCode::ParseError, "The EXR file is not readable.", path.string() + ": " + decoded.error().detail);
+        flat = std::move(*decoded);
+        px = &flat;
+        pos = 0;
     } else {
         // Each block unzipped into flat as the uncompressed layout (row, size, channels), so the
         // reading below is the same. Nothing past what zlib can expand the file to is allocated.

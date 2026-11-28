@@ -147,6 +147,12 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
         r.exr_half = j.value("exr_half", true);
         r.exr_zip = j.value("exr_zip", false);
         r.exr_zip_lines = j.value("exr_zip_lines", 16) == 1 ? 1 : 16;   // 1.3: ZIPS
+        // 1.3.2: every other compression; an unknown name is refused, not written uncompressed without a word.
+        if (j.contains("exr_compression")) {
+            r.exr_compression = j.value("exr_compression", std::string());
+            if (!r.exr_compression.empty() && !parse_exr_compression(r.exr_compression))
+                return make_error(ErrorCode::InvalidArgument, "Unknown EXR compression", r.exr_compression);
+        }
         r.source_curve = j.value("source_curve", std::string("unknown"));
         r.own_codes = j.value("own_codes", false);   // 24 Nov 2026
         if (j.contains("calibration"))
@@ -227,6 +233,7 @@ std::string master_request_json(const MasterRequest& q) {
     if (!q.exr_half) j["exr_half"] = false;
     if (q.exr_zip) j["exr_zip"] = true;
     if (q.exr_zip && q.exr_zip_lines == 1) j["exr_zip_lines"] = 1;   // 1.3: ZIPS
+    if (!q.exr_compression.empty()) j["exr_compression"] = q.exr_compression;   // 1.3.2
     if (q.exposure_ev != 0.0) j["exposure_ev"] = q.exposure_ev;
     if (q.region.enabled) j["reconstruction_region"] = region_to_json(q.region);
     if (q.mattes) j["mattes"] = true;
@@ -448,9 +455,10 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         }
         return rgba;
     };
-    const ExrCompression zip = !q.exr_zip ? ExrCompression::None : q.exr_zip_lines == 1 ? ExrCompression::Zips
-                                                                                         : ExrCompression::Zip;   // never the AP0 container
-    auto w = aces     ? write_aces_exr(out, linear, *src, 1.0, provenance, q.exr_half, nullptr, {}, alpha)
+    // Deliver's EXR compression (1.3; 1.3.2: every OpenEXR one, for ACES 2065-1 too, which is then no longer the
+    // ST 2065-4 container and says so: deliver/exr.hpp).
+    const ExrCompression zip = exr_compression_from(q.exr_compression, q.exr_zip, q.exr_zip_lines);
+    auto w = aces     ? write_aces_exr(out, linear, *src, 1.0, provenance, q.exr_half, nullptr, {}, alpha, zip)
              : acescg ? write_acescg_exr(out, linear, *src, 1.0, provenance, q.exr_half, nullptr, {}, alpha, zip)
                       : write_exr(out, rec2020_rgba(), q.exr_half, rec709 ? kRec709Chromaticities : kRec2020Chromaticities,
                                   provenance, nullptr, {}, zip);
@@ -562,7 +570,9 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
                                           "0.25 follows, 0.5 reconstructed, 0.75 estimated, 1 generated; confidence: "
                                           "how tightly the SDR pins the value (not a probability). Before the grade."},
                          {"rudra:appVersion", RUDRA_VERSION_LABEL}};
-        if (auto wm = write_mattes_exr(mattes_path, planes, ma); !wm) return wm.error();
+        // 1.3.2: the master's EXR compression when it is lossless; a matte is kept exact (ZIP) under a lossy one.
+        const ExrCompression matte_zip = !exr_compression_lossy(zip) ? zip : exr_zip_available() ? ExrCompression::Zip : ExrCompression::None;
+        if (auto wm = write_mattes_exr(mattes_path, planes, ma, matte_zip); !wm) return wm.error();
     }
     auto pct3 = [](double v) {
         char b[64];

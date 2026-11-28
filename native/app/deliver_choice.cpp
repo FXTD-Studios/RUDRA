@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "rudra/deliver/exr.hpp"
+
 namespace rudra::app {
 
 DeliverChoice deliver_fit(DeliverChoice c, bool aces_source, bool shot_movie, bool shot_folder) {
@@ -30,7 +32,9 @@ DeliverChoice deliver_fit(DeliverChoice c, bool aces_source, bool shot_movie, bo
     }
     if (!(c.fps > 0.0 && c.fps <= 240.0)) c.fps = 24.0;
     if (c.size != "source" && c.size != "2x" && c.size != "uhd" && c.size != "hd") c.size = "source";
-    if (c.exr_compression != "zip" && c.exr_compression != "zips" && c.exr_compression != "none") c.exr_compression = "zip";
+    // 1.3.2: any OpenEXR compression this build writes; anything else (or one this build lacks) is ZIP again.
+    if (const auto ec = rudra::parse_exr_compression(c.exr_compression.toStdString()); !ec || !rudra::exr_compression_available(*ec))
+        c.exr_compression = "zip";
     // A movie is made from a movie or a folder of frames, not from one still.
     if (c.output == "movie" && !shot_movie && !shot_folder) c.output = "still";
     c.ai.tau_high = std::clamp(c.ai.tau_high, 128, 256);
@@ -79,16 +83,30 @@ QJsonObject aces_deliver_format_fields(const DeliverChoice& c) {
                                               : c.encoding;
     if (c.output == "movie") {
         const QString fmt = c.bits == 16 ? QStringLiteral("mov16") : c.codec;
-        return {{"exr", !c.keep_exr ? "none" : c.gamut == "ap0" ? "half" : "float"}, {"exr_gamut", c.gamut}, {"log", log},
-                {"log_formats", fmt}};
+        QJsonObject o{{"exr", !c.keep_exr ? "none" : c.gamut == "ap0" ? "half" : "float"}, {"exr_gamut", c.gamut}, {"log", log},
+                      {"log_formats", fmt}};
+        if (c.keep_exr) put_exr_compression(o, c.exr_compression);   // 1.3.2: the kept EXR masters too
+        return o;
     }
     if (c.image == "dpx10") return {{"exr", "none"}, {"log", log}, {"log_formats", "dpx10"}};
-    // 1.2.6 (readiness report, checklist item 8): the ACEScg master lossless ZIP; 1.3 (24 Nov 2026):
-    // Deliver's EXR compression (ZIP, ZIPS or none). The ACES 2065-1 container is never compressed.
-    const bool zip = c.gamut != "ap0" && c.exr_compression != "none";
-    QJsonObject o{{"exr", c.image == "exr16" ? "half" : "float"}, {"exr_gamut", c.gamut}, {"exr_zip", zip}};
-    if (zip && c.exr_compression == "zips") o["exr_zip_lines"] = 1;
+    // 1.2.6 (readiness report, checklist item 8): the ACEScg master lossless ZIP; 1.3 (24 Nov 2026): Deliver's EXR
+    // compression; 1.3.2 (28 Nov 2026): every OpenEXR compression, ACES 2065-1 included.
+    QJsonObject o{{"exr", c.image == "exr16" ? "half" : "float"}, {"exr_gamut", c.gamut}};
+    put_exr_compression(o, c.exr_compression);
     return o;
+}
+
+void put_exr_compression(QJsonObject& o, const QString& id) {
+    const rudra::ExrCompression c = rudra::parse_exr_compression(id.toStdString()).value_or(rudra::ExrCompression::Zip);
+    o.remove("exr_compression");
+    o.remove("exr_zip_lines");
+    if (c == rudra::ExrCompression::None || c == rudra::ExrCompression::Zip || c == rudra::ExrCompression::Zips) {
+        o["exr_zip"] = c != rudra::ExrCompression::None;
+        if (c == rudra::ExrCompression::Zips) o["exr_zip_lines"] = 1;
+    } else {
+        o["exr_zip"] = false;
+        o["exr_compression"] = QString::fromLatin1(rudra::exr_compression_id(c));
+    }
 }
 
 QJsonObject aces_trims_fields(double strength, double saturation, double peak_nits, double exposure_ev, double contrast) {

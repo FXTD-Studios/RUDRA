@@ -48,9 +48,10 @@ struct DeliverChoice {
     // "hd" (1920 wide). A clean resize of the master (no ringing, nothing invented); the source's
     // own size while the AI fill is on, and for the analytic movie of a movie (the export queue).
     QString size = "source";
-    // 1.3 (24 Nov 2026): EXR compression, lossless: "zip" (16 scanlines a block, the default since
-    // 1.2.6), "zips" (1 scanline) or "none". The ACES 2065-1 container is always uncompressed
-    // (SMPTE ST 2065-4), whatever this says.
+    // 1.3 (24 Nov 2026): EXR compression: "zip" (16 scanlines a block, the default since 1.2.6), "zips"
+    // (1 scanline) or "none"; 1.3.2 (28 Nov 2026): every OpenEXR compression the build writes (deliver/exr.hpp:
+    // "rle", "piz", "pxr24", "b44", "b44a", "dwaa", "dwab"), on both routes and for ACES 2065-1 too, which is then
+    // no longer the SMPTE ST 2065-4 container (uncompressed) and says so in its header.
     QString exr_compression = "zip";
     bool operator==(const DeliverChoice&) const = default;
 };
@@ -69,6 +70,9 @@ bool ai_fill_possible(const DeliverChoice& c, bool aces_source);
 QJsonObject aces_deliver_fields(const DeliverChoice& c);
 // The file fields alone (what aces_deliver_fields adds the Output size to).
 QJsonObject aces_deliver_format_fields(const DeliverChoice& c);
+// 1.3.2: an EXR compression id into a request: none, ZIP and ZIPS as 1.3 wrote them (exr_zip, exr_zip_lines), every
+// other one as exr_compression (cli/aces_v2_deliver.hpp, deliver/master.hpp).
+void put_exr_compression(QJsonObject& o, const QString& id);
 
 // The trims as the engine takes them ({} when they change nothing).
 QJsonObject aces_trims_fields(double strength, double saturation, double peak_nits, double exposure_ev = 0.0,

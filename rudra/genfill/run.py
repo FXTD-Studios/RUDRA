@@ -238,10 +238,9 @@ def write_frame(path: Path, fr: dict, out_ap1: np.ndarray, alpha: np.ndarray, at
         ch[GENERATED_PARTS[0]] = np.where(hi, gen, 0).astype(gen.dtype)
         ch[GENERATED_PARTS[1]] = np.where(hi, 0, gen).astype(gen.dtype)
     header = {k: v for k, v in fr['header'].items() if k not in ('channels', 'dataWindow', 'displayWindow')}
-    # The app reads uncompressed and, since 1.2.6 (readiness report item 8), ZIP: a ZIP master
-    # (the ACEScg / linear default) stays ZIP, anything else is written uncompressed.
-    zipped = fr['header'].get('compression') == OpenEXR.ZIP_COMPRESSION
-    header['compression'] = OpenEXR.ZIP_COMPRESSION if zipped else OpenEXR.NO_COMPRESSION
+    # The filled frame keeps its master's compression (1.3.2, 28 Nov 2026: Deliver writes every OpenEXR one, and the
+    # app reads them all back). A lossy master stays lossy here: the fill is drawn on what was written.
+    header['compression'] = fr['header'].get('compression', OpenEXR.NO_COMPRESSION)
     header['type'] = OpenEXR.scanlineimage
     for k, v in attrs.items():
         header[k] = str(v)
