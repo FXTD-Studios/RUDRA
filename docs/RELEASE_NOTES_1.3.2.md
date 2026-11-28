@@ -91,6 +91,10 @@ and when Resolve or Nuke is still open. Details: [OFX_PLUGIN.md](OFX_PLUGIN.md).
   such a junction, so the setup never reached the model. The setup now downloads the Python itself
   (python-build-standalone 3.12.13, checked by its SHA-256), makes AI fill's environment with Python's own venv and
   uses uv only to install packages: no junction anywhere. An environment that does not start is made again.
+- **AI fill setup: "the AI fill's packages did not install" on every new computer.** One of the pinned package
+  versions (tokenizers, raised by an automatic update) could not go with the pinned transformers, so the package step
+  failed for everyone setting up fresh. It is back to the tested version, and every change to the pinned list is now
+  checked for Windows, Linux and macOS before it is merged.
 - **An AI fill setup that stopped once kept failing.** A setup stopped partway (the window closed, the network
   dropped) left a Python without PyTorch, or a model download with its small files and not its weights. Every later
   Set up automatically then failed ("PyTorch is not installed", "the model does not match the manifest"), and the app
