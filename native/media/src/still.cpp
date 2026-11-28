@@ -12,6 +12,14 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
+#if RUDRA_MEDIA_HAVE_OPENEXR
+#include <ImathBox.h>
+#include <ImfChannelList.h>
+#include <ImfFrameBuffer.h>
+#include <ImfHeader.h>
+#include <ImfInputFile.h>
+#endif
+
 namespace rudra {
 namespace {
 
@@ -169,10 +177,83 @@ Result<DecodedStill> decode_sdr(std::span<const std::uint8_t> bytes) {
     return out;
 }
 
+#if RUDRA_MEDIA_HAVE_OPENEXR
+// 1.3.2 (28 Nov 2026, PR #105's Windows CI): an EXR is read with the OpenEXR library RUDRA builds with, not through
+// OpenCV. OpenCV's EXR decoder is off unless OPENCV_IO_ENABLE_OPENEXR reaches it, and whether the variable set here
+// reaches it depends on how that OpenCV was built: the Windows runner's refused it ("The image could not be decoded").
+// Every compression; half and float both read as float. The same picture as the OpenCV path: linear Rec.709 SDR,
+// clipped at 1.0, as BT.1886 codes; a grey (Y) file is replicated.
+static Result<DecodedStill> decode_exr_openexr(const std::filesystem::path& path) {
+    try {
+        const std::u8string u8 = path.u8string();   // OpenEXR takes UTF-8 names, also on Windows
+        Imf::InputFile file(std::string(u8.begin(), u8.end()).c_str());
+        const Imath::Box2i dw = file.header().dataWindow();
+        const long long w64 = static_cast<long long>(dw.max.x) - dw.min.x + 1, h64 = static_cast<long long>(dw.max.y) - dw.min.y + 1;
+        if (w64 <= 0 || h64 <= 0 || w64 > 65536 || h64 > 65536)
+            return make_error(ErrorCode::Unsupported, "This EXR's picture is empty or larger than 65536 pixels a side.");
+        const int w = static_cast<int>(w64), h = static_cast<int>(h64);
+        const Imf::ChannelList& channels = file.header().channels();
+        const bool rgb = channels.findChannel("R") && channels.findChannel("G") && channels.findChannel("B");
+        const bool grey = !rgb && channels.findChannel("Y");
+        if (!rgb && !grey) return make_error(ErrorCode::Unsupported, "Only RGB, RGBA and grey (Y) EXRs are read.");
+        const bool has_alpha = channels.findChannel("A") != nullptr;
+        const std::size_t n = static_cast<std::size_t>(w) * static_cast<std::size_t>(h);
+        std::vector<float> r(n), g(rgb ? n : 0), b(rgb ? n : 0), a(has_alpha ? n : 0);
+        Imf::FrameBuffer fb;
+        // OpenEXR addresses a slice by the data window's own coordinates: the base is moved back by its origin.
+        const std::ptrdiff_t origin = static_cast<std::ptrdiff_t>(dw.min.x) + static_cast<std::ptrdiff_t>(dw.min.y) * w;
+        auto slice = [&](const char* name, std::vector<float>& v, double fill) {
+            char* base = reinterpret_cast<char*>(v.data()) - origin * static_cast<std::ptrdiff_t>(sizeof(float));
+            fb.insert(name, Imf::Slice(Imf::FLOAT, base, sizeof(float), sizeof(float) * static_cast<std::size_t>(w), 1, 1, fill));
+        };
+        if (rgb) {
+            slice("R", r, 0.0), slice("G", g, 0.0), slice("B", b, 0.0);
+        } else {
+            slice("Y", r, 0.0);
+        }
+        if (has_alpha) slice("A", a, 1.0);
+        file.setFrameBuffer(fb);
+        file.readPixels(dw.min.y, dw.max.y);
+
+        auto code = [](float v) { return std::isfinite(v) ? std::pow(std::clamp(v, 0.0f, 1.0f), 1.0f / 2.4f) : 0.0f; };
+        PlanarBuffer rgb_codes(3, h, w);
+        const std::vector<float>* src[3] = {&r, rgb ? &g : &r, rgb ? &b : &r};
+        for (int c = 0; c < 3; ++c) {
+            float* dst = rgb_codes.plane(c);
+            const std::vector<float>& s = *src[c];
+            for (std::size_t i = 0; i < n; ++i) dst[i] = code(s[i]);
+        }
+        DecodedStill out;
+        out.source = "openexr (EXR: linear Rec.709, as BT.1886 codes)";
+        out.bits = 32;
+        std::vector<float> green(src[1]->begin(), src[1]->end());
+        std::sort(green.begin(), green.end());
+        out.distinct_codes = static_cast<int>(std::unique(green.begin(), green.end()) - green.begin());
+        if (has_alpha) {
+            PlanarBuffer alpha(1, h, w);
+            float* dst = alpha.plane(0);
+            for (std::size_t i = 0; i < n; ++i) dst[i] = std::isfinite(a[i]) ? std::clamp(a[i], 0.0f, 1.0f) : 0.0f;
+            out.alpha = std::move(alpha);
+        }
+        out.rgb = SdrImage(std::move(rgb_codes));
+        return out;
+    } catch (const std::exception& e) {
+        return make_error(ErrorCode::ParseError, "This EXR could not be read.", e.what());
+    }
+}
+#endif
+
 Result<DecodedStill> decode_sdr_file(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) return make_error(ErrorCode::NotFound, "The image file could not be opened.", path.string());
     std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+#if RUDRA_MEDIA_HAVE_OPENEXR
+    if (bytes.size() >= 4 && bytes[0] == 0x76 && bytes[1] == 0x2f && bytes[2] == 0x31 && bytes[3] == 0x01) {   // EXR
+        auto e = decode_exr_openexr(path);
+        if (!e) return make_error(e.error().code, e.error().message, path.string() + (e.error().detail.empty() ? "" : ": " + e.error().detail));
+        return e;
+    }
+#endif
     auto r = decode_sdr(bytes);
     if (!r) return make_error(r.error().code, r.error().message, path.string() + (r.error().detail.empty() ? "" : ": " + r.error().detail));
     return r;

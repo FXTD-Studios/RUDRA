@@ -13,4 +13,12 @@ if(RUDRA_WITH_OPENCV)
   target_link_libraries(rudra_media PRIVATE ${OpenCV_LIBS})
   target_include_directories(rudra_media SYSTEM PRIVATE ${OpenCV_INCLUDE_DIRS})
   target_compile_definitions(rudra_media PUBLIC RUDRA_HAVE_STILL_DECODE)
+  # 1.3.2 (28 Nov 2026): EXR stills and sequence frames through the OpenEXR library (cmake/RudraDeps.cmake), not
+  # OpenCV's EXR decoder, which is off unless OPENCV_IO_ENABLE_OPENEXR reaches it. Without OpenEXR, OpenCV reads them.
+  if(TARGET OpenEXR::OpenEXR)
+    target_link_libraries(rudra_media PRIVATE OpenEXR::OpenEXR)
+    target_compile_definitions(rudra_media PRIVATE RUDRA_MEDIA_HAVE_OPENEXR=1)
+  else()
+    target_compile_definitions(rudra_media PRIVATE RUDRA_MEDIA_HAVE_OPENEXR=0)
+  endif()
 endif()
