@@ -439,6 +439,15 @@ The AI fill is in three places, each with one job:
   the Batch queue keeps its own.
 - **Containers** (1.1): the analytic master writes ACES 2065-1, ACEScg,
   linear Rec.2020 or linear Rec.709 (Deliver › Gamut).
+- **EXR compression** (1.3.2): every OpenEXR compression, on the analytic and
+  the learned route. Lossless, every value kept: ZIP (the default, about half
+  the size), ZIPS (one line a block), PIZ (smallest on grainy pictures), RLE
+  (fast, for flat areas) and None. Lossy, much smaller, for reviews and
+  dailies rather than the grade: DWAA, DWAB, B44 and B44A (half float only)
+  and PXR24 (32-bit float kept to 24 bits). Masks and mattes stay lossless.
+  An ACES 2065-1 file can be compressed too, but then it is not the SMPTE
+  ST 2065-4 container, which is uncompressed: choose None when a facility asks
+  for the strict container.
 - **AI fill on the analytic route** (1.1): with the analytic master in ACES
   2065-1, AI fill runs after the render as it does on the learned route, so
   the luminance region, its mattes and the prompts work on one render.

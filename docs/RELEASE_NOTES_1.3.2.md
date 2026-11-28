@@ -72,6 +72,15 @@ and when Resolve or Nuke is still open. Details: [OFX_PLUGIN.md](OFX_PLUGIN.md).
 
 ## Deliver
 
+- **Every EXR compression, on both routes.** Deliver's EXR compression lists every OpenEXR one: lossless **ZIP** (the
+  default), **ZIPS**, **PIZ**, **RLE** and **None**, and lossy **DWAA**, **DWAB**, **B44**, **B44A** and **PXR24** for
+  reviews and dailies. It applies to the analytic and the learned ACES 2.0 masters alike, to a learned movie's kept EXR
+  masters and to the masters AI fill draws on, whose filled frames keep the same compression. The learned route wrote
+  ACES 2065-1 uncompressed whatever was chosen: the AP0 file now takes the compression too. Compressed, it is no longer
+  the SMPTE ST 2065-4 container (which is uncompressed), and its header says so; choose None for the strict container.
+  Masks and mattes stay lossless under a lossy choice. ZIP, ZIPS and None are written exactly as before; the others by
+  the OpenEXR library, which RUDRA now builds with. The command line takes the same names: `rudra-native aces-v2 ...
+  --exr-compression piz`.
 - **A progress bar for this shot's render**, under the Render card and apart from the Batch queue: what is being
   written (an EXR or DPX still or sequence, a MOV's frames and then its encode, the learned ACES 2.0 master, an
   AI-filled movie, a headroom export), frames done of all, the share and, once a few frames are in, the time left.
@@ -159,33 +168,45 @@ and when Resolve or Nuke is still open. Details: [OFX_PLUGIN.md](OFX_PLUGIN.md).
   render's.
 - **A full disk was found out late.** Generate, and the clip's first frame, now check there is room for the clip's
   stored frames and fills (about 30 MB a frame at 1080p, and 1 GB spare) and say how much is needed when there is not.
+- **A learned engine that hung froze the host.** If RUDRA's learned engine did not load in 5 minutes or answer a frame
+  in 2, every render waited on it, and so did closing Resolve or Nuke. It is now ended with an error on the node, and
+  the next frame starts it again; closing the host gives it 2 seconds.
+- **The learned route and AI fill no longer fight over the GPU.** While a fill draws, a frame on the learned route
+  (a proxy render, another instance) loaded the learned model onto the same GPU. It now shows the analytic master
+  and says so until the fill is done, and such a frame is not stored for a fill.
+- **Two renders of one frame at once** (the viewer and a render, two instances) could leave one render's codes
+  beside the other's master, or fail to store the frame on Windows. Each writes files of its own and puts them in
+  place together; the fill's status file is written the same way.
 
 ## Also
 
 - The user guide lists the system requirements: the computers and GPUs RUDRA runs on, and those AI fill needs
   (an NVIDIA GPU with 16 GB and driver 570 or newer, or Apple silicon with 16 GB), with recommended cards.
-- `RUDRA.ofx` carries a version resource and is signed with RUDRA.exe and rudra-native.exe, and so is AI fill's
-  setup script (`python\genfill_bootstrap.ps1`): a computer whose policy runs only signed PowerShell scripts refused
-  it, and Set up automatically stopped there. (Release builds signed only the two programs until now, whatever the
-  signing policy said about the plug-in.)
+- `RUDRA.ofx` carries a version resource, and the release's signing now covers it and AI fill's setup script
+  (`python\genfill_bootstrap.ps1`) along with RUDRA.exe and rudra-native.exe, from the first release signed through
+  SignPath Foundation (above). Until then, a computer whose policy runs only signed PowerShell scripts refuses the
+  setup script, and Set up automatically says so instead of stopping without a reason.
 - Release builds: when the app tests crash on macOS, the log now shows where, and a test run can be repeated to
   catch a crash that comes and goes (1.3.1's macOS build crashed twice before it passed).
 
 ## Tested
 
-- OFX: the plug-in's tests (33 of 33: the picture, the learned engine, AI fill, Suggest prompt, Prompt strength) and
-  a test host that loads the bundle and renders through it, with the mask and Suggest prompt (7 of 7). App tests
+- OFX: the plug-in's tests (47 of 47: the picture, the learned engine, AI fill, Suggest prompt, Prompt strength) and
+  a test host that loads the bundle and renders through it, with the mask, Suggest prompt, an abandoned render and a colour-managing host (9 of 9). App tests
   for AI fill, Deliver, Batch, the QC report and Help: 68 pass; 6 skip because they need the learned model loaded.
 - Python, AI fill and the plug-in's helpers with PyTorch: 149 pass.
 - AI fill in an installed layout: `rudra.genfill` loads with only RUDRA's shipped folders on the path.
 - Prompts on the gate shots (33 frames each, the analytic route): no prompt, 1.3.1's and 1.3.2's wording, one pass
   against the blend, strength 1.5 and guidance 2. 09V passes every check in every variant. 04 fails the flicker
   check in every variant, prompt or not (0.22 stop against 0.10), as in 1.3.1 (below).
-- In Resolve and Nuke: to be completed before release.
+- In Resolve and Nuke, as an end user would: RUDRA installed from its installer, AI fill set up in it, the plug-in
+  from Help, then in Resolve the effect, Generate, frames coming in, drawing, ready, the whole clip, out of date and
+  Deliver, and in Nuke the node, Generate and play, ready, proxy and Cancel: 18 of 18 on an RTX 4080 SUPER (16 GB).
 - AI fill setup (Python): a download that stopped carries on, a model of another size or revision is refused and not
   downloaded over, a setup that breaks still says why, the driver, Visual C++ and GPU memory reasons, nvidia-smi read,
-  only the missing packages installed. The Windows setup run from a new folder, with no junction or other link
-  anywhere under it: to be completed before release.
+  only the missing packages installed. The Windows setup run from a new folder, as Set up automatically runs it:
+  uv, Python 3.12.13, its environment, PyTorch 2.11 (CUDA 12.8) and the packages in 7 minutes, with no junction or
+  other link anywhere under it; it then found the test machine's model three small files short and set out to fetch them.
 - EXR: a linear Rec.709 EXR frame decodes to its BT.1886 codes; a numbered sequence is found from one of its frames.
 - Deliver's progress bar: a render shows its count and ends with Done and Open folder; Stop from the bar keeps the
   frames written and starts nothing when nothing runs.
